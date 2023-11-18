@@ -85,6 +85,17 @@ public:
   expr_node() : base_node(T::static_type) {}
 };
 
+class expr;
+
+expr operator+(expr a, expr b);
+expr operator-(expr a, expr b);
+expr operator*(expr a, expr b);
+expr operator/(expr a, expr b);
+expr operator%(expr a, expr b);
+expr operator&(expr a, expr b);
+expr operator|(expr a, expr b);
+expr operator^(expr a, expr b);
+
 class expr {
 public:
   std::shared_ptr<const base_node> e;
@@ -110,6 +121,15 @@ public:
       return nullptr;
     }
   }
+
+  expr& operator+=(const expr& r) { *this = *this + r; return *this; }
+  expr& operator-=(const expr& r) { *this = *this - r; return *this; }
+  expr& operator*=(const expr& r) { *this = *this * r; return *this; }
+  expr& operator/=(const expr& r) { *this = *this / r; return *this; }
+  expr& operator%=(const expr& r) { *this = *this % r; return *this; }
+  expr& operator&=(const expr& r) { *this = *this & r; return *this; }
+  expr& operator^=(const expr& r) { *this = *this ^ r; return *this; }
+  expr& operator|=(const expr& r) { *this = *this | r; return *this; }
 };
 
 class let : public expr_node<let> {
@@ -223,25 +243,16 @@ inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
 
 expr make_variable(node_context& ctx, const std::string& name);
 
-expr operator+(expr a, expr b);
-expr operator-(expr a, expr b);
-expr operator*(expr a, expr b);
-expr operator/(expr a, expr b);
-expr operator%(expr a, expr b);
-expr min(expr a, expr b);
-expr max(expr a, expr b);
 expr operator==(expr a, expr b);
 expr operator!=(expr a, expr b);
 expr operator<(expr a, expr b);
 expr operator<=(expr a, expr b);
 expr operator>(expr a, expr b);
 expr operator>=(expr a, expr b);
-expr operator&(expr a, expr b);
-expr operator|(expr a, expr b);
-expr operator^(expr a, expr b);
 expr operator&&(expr a, expr b);
 expr operator||(expr a, expr b);
-
+expr min(expr a, expr b);
+expr max(expr a, expr b);
 
 }  // namespace slinky
 
