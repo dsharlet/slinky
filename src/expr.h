@@ -104,6 +104,7 @@ public:
   expr(const expr&) = default;
   expr(expr&&) = default;
   expr(index_t x);
+  expr(int x) : expr(static_cast<index_t>(x)) {}
   expr(const base_node* e) : e(e) {}
 
   expr& operator=(const expr&) = default;
