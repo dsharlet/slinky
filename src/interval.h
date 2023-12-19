@@ -1,5 +1,5 @@
-#ifndef LOCALITY_INTERVAL_H
-#define LOCALITY_INTERVAL_H
+#ifndef SLINKY_INTERVAL_H
+#define SLINKY_INTERVAL_H
 
 #include "expr.h"
 
@@ -70,4 +70,4 @@ struct interval {
 
 }  // namespace slinky
 
-#endif  // LOCALITY_INTERVAL_H
+#endif  // SLINKY_INTERVAL_H

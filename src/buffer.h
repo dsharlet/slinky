@@ -1,5 +1,5 @@
-#ifndef LOCALITY_BUFFER_H
-#define LOCALITY_BUFFER_H
+#ifndef SLINKY_BUFFER_H
+#define SLINKY_BUFFER_H
 
 #include <cstdint>
 #include <cassert>
@@ -211,4 +211,4 @@ const buffer<NewT>& buffer_base::cast() const {
 
 }  // namespace slinky
 
-#endif  // LOCALITY_BUFFER_H
+#endif  // SLINKY_BUFFER_H

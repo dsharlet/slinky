@@ -1,5 +1,5 @@
-#ifndef LOCALITY_PIPELINE_H
-#define LOCALITY_PIPELINE_H
+#ifndef SLINKY_PIPELINE_H
+#define SLINKY_PIPELINE_H
 
 #include "interval.h"
 #include "evaluate.h"
@@ -133,4 +133,4 @@ public:
 
 }  // namespace slinky
 
-#endif
+#endif  // SLINKY_PIPELINE_H

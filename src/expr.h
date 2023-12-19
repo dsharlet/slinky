@@ -1,5 +1,5 @@
-#ifndef LOCALITY_EXPR_H
-#define LOCALITY_EXPR_H
+#ifndef SLINKY_EXPR_H
+#define SLINKY_EXPR_H
 
 #include "buffer.h"
 
@@ -416,4 +416,4 @@ expr max(expr a, expr b);
 
 }  // namespace slinky
 
-#endif
+#endif  // SLINKY_EXPR_H

@@ -1,5 +1,5 @@
-#ifndef LOCALITY_PRINT_H
-#define LOCALITY_PRINT_H
+#ifndef SLINKY_PRINT_H
+#define SLINKY_PRINT_H
 
 #include "expr.h"
 
@@ -13,4 +13,4 @@ std::ostream& operator<<(std::ostream& os, const stmt& s);
 
 }  // namespace slinky
 
-#endif
+#endif  // SLINKY_PRINT_H

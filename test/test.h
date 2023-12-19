@@ -1,5 +1,5 @@
-#ifndef LOCALITY_TEST_TEST_H
-#define LOCALITY_TEST_TEST_H
+#ifndef SLINKY_TEST_TEST_H
+#define SLINKY_TEST_TEST_H
 
 #include <chrono>
 #include <cmath>
@@ -102,4 +102,4 @@ struct move_only {
 
 } // namespace slinky
 
-#endif // LOCALITY_TEST_TEST_H
+#endif // SLINKY_TEST_TEST_H

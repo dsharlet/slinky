@@ -1,5 +1,5 @@
-#ifndef LOCALITY_EUCLIDEAN_DIVISION_H
-#define LOCALITY_EUCLIDEAN_DIVISION_H
+#ifndef SLINKY_EUCLIDEAN_DIVISION_H
+#define SLINKY_EUCLIDEAN_DIVISION_H
 
 #include <cmath>
 
@@ -58,4 +58,4 @@ inline T align_down(T x, T n) {
 
 }  // namespace slinky
 
-#endif  // LOCALITY_EUCLIDEAN_DIVISION_H
+#endif  // SLINKY_EUCLIDEAN_DIVISION_H

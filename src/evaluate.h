@@ -1,5 +1,5 @@
-#ifndef LOCALITY_EVALUATE_H
-#define LOCALITY_EVALUATE_H
+#ifndef SLINKY_EVALUATE_H
+#define SLINKY_EVALUATE_H
 
 #include <optional>
 
@@ -70,4 +70,4 @@ index_t evaluate(const stmt& s);
 
 }  // namespace slinky
 
-#endif
+#endif  // SLINKY_EVALUATE_H
