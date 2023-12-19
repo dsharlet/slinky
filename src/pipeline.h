@@ -54,7 +54,7 @@ public:
 // Represents a node of computation in a pipeline.
 class func {
 public:
-  using callable = std::function<index_t(std::span<buffer<const void>*>, std::span<buffer_base*>)>;
+  using callable = std::function<index_t(std::span<buffer_base*>, std::span<buffer_base*>)>;
 
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
@@ -95,25 +95,26 @@ public:
   // TODO: Try to do this with a variadic template implementation.
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output arg) {
-    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
+    return func([impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(outputs[0]->cast<Out1>());
     }, {}, { std::move(arg) });
   }
 
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
-    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
+    return func([impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>());
       }, { std::move(in1) }, { std::move(out1) });
   }
 
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
-    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
+    return func([impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(inputs[0]->cast<const In1>(), inputs[1]->cast<const In2>(), outputs[0]->cast<Out1>());
       }, { std::move(in1), std::move(in2) }, { std::move(out1) });
   }
 
+  const callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
 };
