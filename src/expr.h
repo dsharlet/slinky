@@ -51,6 +51,14 @@ enum class node_type {
   bitwise_xor,
   logical_and,
   logical_or,
+
+  call,
+  let_stmt,
+  block,
+  loop,
+  if_then_else,
+  allocate,
+  check,
 };
 
 enum class memory_type {
@@ -79,10 +87,26 @@ public:
   }
 };
 
-template <typename T>
-class expr_node : public base_node {
+class base_expr_node : public base_node {
 public:
-  expr_node() : base_node(T::static_type) {}
+  base_expr_node(node_type type) : base_node(type) {}
+};
+
+class base_stmt_node : public base_node {
+public:
+  base_stmt_node(node_type type) : base_node(type) {}
+};
+
+template <typename T>
+class expr_node : public base_expr_node {
+public:
+  expr_node() : base_expr_node(T::static_type) {}
+};
+
+template <typename T>
+class stmt_node : public base_stmt_node {
+public:
+  stmt_node() : base_stmt_node(T::static_type) {}
 };
 
 class expr;
@@ -98,14 +122,14 @@ expr operator^(expr a, expr b);
 
 class expr {
 public:
-  std::shared_ptr<const base_node> e;
+  std::shared_ptr<const base_expr_node> e;
 
   expr() = default;
   expr(const expr&) = default;
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
-  expr(const base_node* e) : e(e) {}
+  expr(const base_expr_node* e) : e(e) {}
 
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
@@ -131,6 +155,34 @@ public:
   expr& operator&=(const expr& r) { *this = *this & r; return *this; }
   expr& operator^=(const expr& r) { *this = *this ^ r; return *this; }
   expr& operator|=(const expr& r) { *this = *this | r; return *this; }
+};
+
+class stmt {
+public:
+  std::shared_ptr<const base_stmt_node> s;
+
+  stmt() = default;
+  stmt(const stmt&) = default;
+  stmt(stmt&&) = default;
+  stmt(const base_stmt_node* s) : s(s) {}
+  stmt(std::initializer_list<stmt> stmts);
+
+  stmt& operator=(const stmt&) = default;
+  stmt& operator=(stmt&&) = default;
+
+  void accept(node_visitor* v) const { s->accept(v); }
+
+  bool defined() const { return s != nullptr; }
+
+  template <typename T>
+  const T* as() const {
+    if (s->type == T::static_type) {
+      return reinterpret_cast<const T*>(s.get());
+    }
+    else {
+      return nullptr;
+    }
+  }
 };
 
 class let : public expr_node<let> {
@@ -197,6 +249,97 @@ DECLARE_BINARY_OP(logical_or)
 
 #undef DECLARE_BINARY_OP
 
+class call : public stmt_node<call> {
+public:
+  typedef index_t(*callable_t)(std::span<const index_t>, std::span<buffer<void>*>);
+  using callable = std::function<index_t(std::span<const index_t>, std::span<buffer<void>*>)>;
+
+  callable fn;
+  std::vector<expr> scalar_args;
+  std::vector<expr> buffer_args;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(callable fn, std::vector<expr> scalar_args, std::vector<expr> buffer_args);
+
+  static constexpr node_type static_type = node_type::call;
+};
+
+class let_stmt : public stmt_node<let_stmt> {
+public:
+  symbol_id name;
+  expr value;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, expr value, stmt body);
+
+  static constexpr node_type static_type = node_type::let_stmt;
+};
+
+class block : public stmt_node<block> {
+public:
+  stmt a, b;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(stmt a, stmt b);
+
+  static constexpr node_type static_type = node_type::block;
+};
+
+class loop : public stmt_node<loop> {
+public:
+  symbol_id name;
+  expr n;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, expr n, stmt body);
+
+  static constexpr node_type static_type = node_type::loop;
+};
+
+class if_then_else : public stmt_node<if_then_else> {
+public:
+  expr condition;
+  stmt true_body;
+  stmt false_body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(expr condition, stmt true_body, stmt false_body = stmt());
+
+  static constexpr node_type static_type = node_type::if_then_else;
+};
+
+class allocate : public stmt_node<allocate> {
+public:
+  memory_type type;
+  symbol_id name;
+  expr size;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(memory_type type, symbol_id name, expr size, stmt body);
+
+  static constexpr node_type static_type = node_type::allocate;
+};
+
+class check : public stmt_node<check> {
+public:
+  expr condition;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(expr condition);
+
+  static constexpr node_type static_type = node_type::check;
+};
+
 class node_visitor {
 public:
   virtual ~node_visitor() {}
@@ -220,6 +363,14 @@ public:
   virtual void visit(const bitwise_xor*) = 0;
   virtual void visit(const logical_and*) = 0;
   virtual void visit(const logical_or*) = 0;
+
+  virtual void visit(const let_stmt*) = 0;
+  virtual void visit(const block*) = 0;
+  virtual void visit(const loop*) = 0;
+  virtual void visit(const if_then_else*) = 0;
+  virtual void visit(const call*) = 0;
+  virtual void visit(const allocate*) = 0;
+  virtual void visit(const check*) = 0;
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }
@@ -241,6 +392,14 @@ inline void bitwise_or::accept(node_visitor* v) const { v->visit(this); }
 inline void bitwise_xor::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
+
+inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
+inline void block::accept(node_visitor* v) const { v->visit(this); }
+inline void loop::accept(node_visitor* v) const { v->visit(this); }
+inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
+inline void call::accept(node_visitor* v) const { v->visit(this); }
+inline void allocate::accept(node_visitor* v) const { v->visit(this); }
+inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 expr make_variable(node_context& ctx, const std::string& name);
 

@@ -39,12 +39,21 @@ const T* make_bin_op(expr a, expr b) {
   return n;
 }
 
-expr let::make(symbol_id name, expr value, expr body) {
-  let* n = new let();
+template <typename T, typename Body>
+const T* make_let(symbol_id name, expr value, Body body) {
+  T* n = new T();
   n->name = name;
   n->value = std::move(value);
   n->body = std::move(body);
   return n;
+}
+
+expr let::make(symbol_id name, expr value, expr body) {
+  return make_let<let>(name, std::move(value), std::move(body));
+}
+
+stmt let_stmt::make(symbol_id name, expr value, stmt body) {
+  return make_let<let_stmt>(name, std::move(value), std::move(body));
 }
 
 expr variable::make(symbol_id name) {
@@ -67,6 +76,18 @@ expr::expr(index_t value) : expr(make_constant(value)) {}
 
 expr constant::make(const void* value) {
   return make(reinterpret_cast<index_t>(value));
+}
+
+stmt::stmt(std::initializer_list<stmt> stmts) {
+  stmt result;
+  for (const stmt& i : stmts) {
+    if (result.defined()) {
+      result = block::make(std::move(result), std::move(i));
+    } else {
+      result = std::move(i);
+    }
+  }
+  s = result.s;
 }
 
 expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
@@ -108,5 +129,51 @@ expr operator|(expr a, expr b) { return bitwise_or::make(std::move(a), std::move
 expr operator^(expr a, expr b) { return bitwise_xor::make(std::move(a), std::move(b)); }
 expr operator&&(expr a, expr b) { return logical_and::make(std::move(a), std::move(b)); }
 expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::move(b)); }
+
+stmt call::make(call::callable fn, std::vector<expr> scalar_args, std::vector<expr> buffer_args) {
+  call* n = new call();
+  n->fn = std::move(fn);
+  n->scalar_args = std::move(scalar_args);
+  n->buffer_args = std::move(buffer_args);
+  return n;
+}
+
+stmt block::make(stmt a, stmt b) {
+  block* n = new block();
+  n->a = std::move(a);
+  n->b = std::move(b);
+  return n;
+}
+
+stmt loop::make(symbol_id name, expr n, stmt body) {
+  loop* l = new loop();
+  l->name = name;
+  l->n = std::move(n);
+  l->body = std::move(body);
+  return l;
+}
+
+stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
+  if_then_else* n = new if_then_else();
+  n->condition = std::move(condition);
+  n->true_body = std::move(true_body);
+  n->false_body = std::move(false_body);
+  return n;
+}
+
+stmt allocate::make(memory_type type, symbol_id name, expr size, stmt body) {
+  allocate* n = new allocate();
+  n->type = type;
+  n->name = name;
+  n->size = std::move(size);
+  n->body = std::move(body);
+  return n;
+}
+
+stmt check::make(expr condition) {
+  check* n = new check();
+  n->condition = std::move(condition);
+  return n;
+}
 
 }  // namespace slinky

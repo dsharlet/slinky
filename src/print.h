@@ -6,8 +6,10 @@
 namespace slinky {
 
 void print(std::ostream& os, const expr& e, const node_context* ctx = nullptr);
+void print(std::ostream& os, const stmt& s, const node_context* ctx = nullptr);
 
 std::ostream& operator<<(std::ostream& os, const expr& e);
+std::ostream& operator<<(std::ostream& os, const stmt& s);
 
 }  // namespace slinky
 

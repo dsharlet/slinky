@@ -40,10 +40,21 @@ public:
     result = c->value;
   }
 
-  void visit(const let* l) override {
-    scoped_value<index_t> s(context, l->name, eval_expr(l->value));
+  template <typename T>
+  void visit_let(const T* l) {
+    const T* next = l;
+
+    // TODO: Try to do this without allocating on the heap.
+    std::vector<scoped_value<index_t>> scope;
+    do {
+      scope.emplace_back(context, next->name, eval_expr(next->value));
+      l = next;
+    } while ((next = l->body.template as<T>()));
     l->body.accept(this);
   }
+
+  void visit(const let* l) override { visit_let(l); }
+  void visit(const let_stmt* l) override { visit_let(l); }
 
   void visit(const add* x) override { result = eval_expr(x->a) + eval_expr(x->b); }
   void visit(const sub* x) override { result = eval_expr(x->a) - eval_expr(x->b); }
@@ -61,17 +72,96 @@ public:
   void visit(const bitwise_xor* x) override { result = eval_expr(x->a) ^ eval_expr(x->b); }
   void visit(const logical_and* x) override { result = eval_expr(x->a) && eval_expr(x->b); }
   void visit(const logical_or* x) override { result = eval_expr(x->a) || eval_expr(x->b); }
+
+  void visit(const block* b) override {
+    b->a.accept(this);
+    b->b.accept(this);
+  }
+
+  void visit(const loop* l) override {
+    index_t n = eval_expr(l->n);
+    for (index_t i = 0; i < n; ++i) {
+      scoped_value<index_t> l_name(context, l->name, i);
+      l->body.accept(this);
+    }
+  }
+
+  void visit(const if_then_else* n) override {
+    if (eval_expr(n->condition)) {
+      n->true_body.accept(this);
+    }
+    else if (n->false_body.defined()) {
+      n->false_body.accept(this);
+    }
+  }
+
+  void visit(const call* n) override {
+    index_t* scalars = reinterpret_cast<index_t*>(alloca(n->scalar_args.size() * sizeof(index_t)));
+    for (std::size_t i = 0; i < n->scalar_args.size(); ++i) {
+      scalars[i] = eval_expr(n->scalar_args[i]);
+    }
+
+    buffer<void>** buffers = reinterpret_cast<buffer<void>**>(alloca(n->buffer_args.size() * sizeof(buffer<void>*)));
+    for (std::size_t i = 0; i < n->buffer_args.size(); ++i) {
+      buffers[i] = reinterpret_cast<buffer<void>*>(eval_expr(n->buffer_args[i]));
+    }
+
+    std::span<const index_t> scalars_span(scalars, n->scalar_args.size());
+    std::span<buffer<void>*> buffers_span(buffers, n->buffer_args.size());
+    result = n->fn(scalars_span, buffers_span);
+    if (result) {
+      std::cerr << "call failed: " << stmt(n) << "->" << result << std::endl;
+      std::abort();
+    }
+  }
+
+  void visit(const allocate* n) override {
+    index_t size = eval_expr(n->size);
+    void* data;
+    if (n->type == memory_type::stack) {
+      data = alloca(size);
+    } else {
+      assert(n->type == memory_type::heap);
+      data = malloc(size);
+    }
+
+    scoped_value<index_t> n_name(context, n->name, reinterpret_cast<index_t>(data));
+    n->body.accept(this);
+
+    if (n->type == memory_type::heap) {
+      free(data);
+    }
+  }
+
+  void visit(const check* n) override {
+    result = eval_expr(n->condition);
+    if (!result) {
+      std::cerr << "check failed: " << n->condition << std::endl;
+      std::abort();
+    }
+  }
 };
 
-index_t evaluate(expr e, eval_context& context) {
+index_t evaluate(const expr& e, eval_context& context) {
   evaluator eval(context);
   e.accept(&eval);
   return eval.result;
 }
 
-index_t evaluate(expr e) {
+index_t evaluate(const stmt& s, eval_context& context) {
+  evaluator eval(context);
+  s.accept(&eval);
+  return eval.result;
+}
+
+index_t evaluate(const expr& e) {
   eval_context ctx;
   return evaluate(e, ctx);
+}
+
+index_t evaluate(const stmt& s) {
+  eval_context ctx;
+  return evaluate(s, ctx);
 }
 
 }  // namespace slinky

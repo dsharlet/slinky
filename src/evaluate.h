@@ -63,8 +63,10 @@ public:
 
 using eval_context = symbol_map<index_t>;
 
-index_t evaluate(expr e, eval_context& context);
-index_t evaluate(expr e);
+index_t evaluate(const expr& e, eval_context& context);
+index_t evaluate(const stmt& s, eval_context& context);
+index_t evaluate(const expr& e);
+index_t evaluate(const stmt& s);
 
 }  // namespace slinky
 
