@@ -315,16 +315,23 @@ public:
   static constexpr node_type static_type = node_type::if_then_else;
 };
 
+struct dim_expr {
+  expr min;
+  expr extent;
+  expr stride_bytes;
+  expr fold_factor;
+};
+
 class allocate : public stmt_node<allocate> {
 public:
   memory_type type;
   symbol_id name;
-  expr size;
+  std::vector<dim_expr> dims;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(memory_type type, symbol_id name, expr size, stmt body);
+  static stmt make(memory_type type, symbol_id name, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
 };

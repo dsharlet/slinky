@@ -116,20 +116,33 @@ public:
   }
 
   void visit(const allocate* n) override {
-    index_t size = eval_expr(n->size);
-    void* data;
-    if (n->type == memory_type::stack) {
-      data = alloca(size);
-    } else {
-      assert(n->type == memory_type::heap);
-      data = malloc(size);
+    std::size_t rank = n->dims.size();
+    // Allocate a buffer with space for its dims on the stack.
+    char* storage = reinterpret_cast<char*>(alloca(sizeof(buffer_base) + sizeof(dim) * rank));
+    buffer_base* buffer = reinterpret_cast<buffer_base*>(&storage[0]);
+    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
+
+    for (std::size_t i = 0; i < rank; ++i) {
+      buffer->dims[i].min = eval_expr(n->dims[i].min);
+      buffer->dims[i].extent = eval_expr(n->dims[i].extent);
+      buffer->dims[i].stride_bytes = eval_expr(n->dims[i].stride_bytes);
+      buffer->dims[i].fold_factor = eval_expr(n->dims[i].fold_factor);
     }
 
-    scoped_value<index_t> n_name(context, n->name, reinterpret_cast<index_t>(data));
+    std::size_t size = buffer->size_bytes();
+
+    if (n->type == memory_type::stack) {
+      buffer->base = alloca(size);
+    } else {
+      assert(n->type == memory_type::heap);
+      buffer->base = malloc(size);
+    }
+
+    scoped_value<index_t> n_name(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
     if (n->type == memory_type::heap) {
-      free(data);
+      free(buffer->base);
     }
   }
 

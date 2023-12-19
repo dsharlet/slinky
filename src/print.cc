@@ -168,9 +168,22 @@ public:
   void visit(const allocate* n) override {
     os << indent();
     print_symbol_id(n->name);
-    os << " = allocate(";
-    print(n->size);
-    os << " on " << n->type << ") {" << std::endl;
+    os << " = allocate({";
+    for (const dim_expr& d : n->dims) {
+      os << "{";
+      print(d.min);
+      os << ", ";
+      print(d.extent);
+      os << ", ";
+      print(d.stride_bytes);
+      os << ", ";
+      print(d.fold_factor);
+      os << "}";
+      if (&d != &n->dims.back()) {
+        os << ", ";
+      }
+    }
+    os << "} on " << n->type << ") {" << std::endl;
     ++depth;
     print(n->body);
     --depth;

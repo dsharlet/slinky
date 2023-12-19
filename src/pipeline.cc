@@ -10,7 +10,7 @@
 namespace slinky {
 
 buffer_expr::buffer_expr(node_context& ctx, const std::string& name, std::size_t rank) : producer_(nullptr) {
-  base_ = make_variable(ctx, name + ".base");
+  name_ = ctx.insert(name);
   dims_.reserve(rank);
   for (std::size_t i = 0; i < rank; ++i) {
     std::string dim_name = name + "." + std::to_string(i);
@@ -54,15 +54,17 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   std::set<buffer_expr_ptr> produced;
   stmt result;
 
-  std::map<buffer_expr_ptr, expr> buffers;
+  std::set<buffer_expr_ptr> defined;
 
   // To start with, we need to produce the outputs.
   for (auto& i : outputs) {
     to_produce.insert(i);
+    defined.insert(i);
   }
   // And we've already "produced" the inputs.
   for (auto& i : inputs) {
     produced.insert(i);
+    defined.insert(i);
   }
 
   while (!to_produce.empty()) {
@@ -99,23 +101,23 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
     };
     std::vector<expr> buffer_args;
-    std::map<symbol_id, buffer_expr_ptr> buffer_exprs;
     buffer_args.reserve(input_count + output_count);
+    std::vector<buffer_expr_ptr> allocations;
+    allocations.reserve(output_count);
     for (const func::input& i : f->inputs()) {
-      symbol_id name = ctx.insert();
-      buffer_exprs[name] = i.buffer;
-      buffer_args.push_back(variable::make(name));
+      buffer_args.push_back(variable::make(i.buffer->name()));
     }
     for (const func::output& i : f->outputs()) {
-      symbol_id name = ctx.insert();
-      buffer_exprs[name] = i.buffer;
-      buffer_args.push_back(variable::make(name));
+      buffer_args.push_back(variable::make(i.buffer->name()));
+      if (!defined.count(i.buffer)) {
+        allocations.push_back(i.buffer);
+      }
     }
     stmt call_f = call::make(wrapper, {}, std::move(buffer_args));
-    for (const auto& i : buffer_exprs) {
-      call_f = let_stmt::make(i.first, 0, call_f);
+    result = result.defined() ? block::make(call_f, result) : call_f;
+    for (const auto& i : allocations) {
+      result = allocate::make(memory_type::heap, i->name(), i->dims(), result);
     }
-    result = result.defined() ? block::make(result, call_f) : call_f;
 
     // We've just run f, which produced its outputs.
     for (auto& i : f->outputs()) {
@@ -129,8 +131,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       }
     }
   }
-
-  std::cout << result << std::endl;
 
   return result;
 }
@@ -156,8 +156,7 @@ void set_or_assert(eval_context& ctx, const expr& e, index_t value) {
 void set_buffer(eval_context& ctx, const buffer_expr_ptr& buf_expr, const buffer_base* buf) {
   assert(buf_expr->rank() == buf->rank);
 
-  // set_or_assert is probably overkill here.
-  set_or_assert(ctx, buf_expr->base(), reinterpret_cast<index_t>(buf->base));
+  ctx.set(buf_expr->name(), reinterpret_cast<index_t>(buf));
 
   // TODO: It might be useful/necessary to first set all the variable fields, and then
   // assert all the non-variable fields, to support doing something like this

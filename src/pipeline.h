@@ -12,16 +12,7 @@ using buffer_expr_ptr = std::shared_ptr<buffer_expr>;
 
 // Represents a symbolic buffer in a pipeline.
 class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
-public:
-  struct dim_expr {
-    expr min;
-    expr extent;
-    expr stride_bytes;
-    expr fold_factor;
-  };
-
-private:
-  expr base_;
+  symbol_id name_;
   std::vector<dim_expr> dims_;
 
   func* producer_;
@@ -41,8 +32,9 @@ private:
 public:
   static buffer_expr_ptr make(node_context& ctx, const std::string& name, std::size_t rank);
 
-  const expr& base() const { return base_; }
+  symbol_id name() const { return name_; }
   std::size_t rank() const { return dims_.size(); }
+  const std::vector<dim_expr>& dims() const { return dims_; }
   dim_expr& dim(int i) { return dims_[i]; }
   const dim_expr& dim(int i) const { return dims_[i]; }
 

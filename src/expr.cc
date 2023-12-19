@@ -166,11 +166,11 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n;
 }
 
-stmt allocate::make(memory_type type, symbol_id name, expr size, stmt body) {
+stmt allocate::make(memory_type type, symbol_id name, std::vector<dim_expr> dims, stmt body) {
   allocate* n = new allocate();
   n->type = type;
   n->name = name;
-  n->size = std::move(size);
+  n->dims = std::move(dims);
   n->body = std::move(body);
   return n;
 }
