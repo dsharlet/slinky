@@ -251,8 +251,8 @@ DECLARE_BINARY_OP(logical_or)
 
 class call : public stmt_node<call> {
 public:
-  typedef index_t(*callable_t)(std::span<const index_t>, std::span<buffer<void>*>);
-  using callable = std::function<index_t(std::span<const index_t>, std::span<buffer<void>*>)>;
+  typedef index_t(*callable_t)(std::span<const index_t>, std::span<buffer_base*>);
+  using callable = std::function<index_t(std::span<const index_t>, std::span<buffer_base*>)>;
 
   callable fn;
   std::vector<expr> scalar_args;

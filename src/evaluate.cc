@@ -101,13 +101,13 @@ public:
       scalars[i] = eval_expr(n->scalar_args[i]);
     }
 
-    buffer<void>** buffers = reinterpret_cast<buffer<void>**>(alloca(n->buffer_args.size() * sizeof(buffer<void>*)));
+    buffer_base** buffers = reinterpret_cast<buffer_base**>(alloca(n->buffer_args.size() * sizeof(buffer_base*)));
     for (std::size_t i = 0; i < n->buffer_args.size(); ++i) {
-      buffers[i] = reinterpret_cast<buffer<void>*>(eval_expr(n->buffer_args[i]));
+      buffers[i] = reinterpret_cast<buffer_base*>(eval_expr(n->buffer_args[i]));
     }
 
     std::span<const index_t> scalars_span(scalars, n->scalar_args.size());
-    std::span<buffer<void>*> buffers_span(buffers, n->buffer_args.size());
+    std::span<buffer_base*> buffers_span(buffers, n->buffer_args.size());
     result = n->fn(scalars_span, buffers_span);
     if (result) {
       std::cerr << "call failed: " << stmt(n) << "->" << result << std::endl;

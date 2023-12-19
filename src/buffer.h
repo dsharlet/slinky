@@ -44,6 +44,10 @@ struct dim {
   }
 };
 
+
+template <typename T, std::size_t DimsSize = 0>
+struct buffer;
+
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
 // 2. We want to store metadata (dimensions) efficiently.
@@ -135,11 +139,17 @@ public:
     allocation = nullptr;
     base = nullptr;
   }
+
+  template <typename NewT>
+  const buffer<NewT>& cast() const;
 };
 
-template <typename T, std::size_t DimsSize = 0>
+template <typename T, std::size_t DimsSize>
 struct buffer : public buffer_base {
 private:
+  // TODO: When DimsSize is 0, this still makes sizeof(buffer) bigger than sizeof(buffer_base).
+  // This might be a problem because we can cast buffer_base to buffer<T>. When DimsSize is 0,
+  // we shouldn't actually access this, so it might be harmless, but it still seems ugly.
   dim dims_storage[DimsSize];
 
 public:
@@ -149,6 +159,7 @@ public:
   using buffer_base::flat_offset_bytes;
   using buffer_base::allocate;
   using buffer_base::free;
+  using buffer_base::cast;
 
   buffer() {
     buffer_base::base = nullptr;
@@ -188,13 +199,14 @@ public:
   auto& operator() (Indices... indices) const {
     return at(indices...);
   }
-
-  template <typename NewT>
-  const buffer<NewT>& cast() const {
-    assert(buffer_base::elem_size == sizeof(NewT));
-    return *reinterpret_cast<const buffer<NewT>*>(this);
-  }
 };
+
+
+template <typename NewT>
+const buffer<NewT>& buffer_base::cast() const {
+  assert(elem_size == sizeof(NewT));
+  return *reinterpret_cast<const buffer<NewT>*>(this);
+}
 
 }  // namespace slinky
 

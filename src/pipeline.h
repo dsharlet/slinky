@@ -50,7 +50,7 @@ public:
 
 class func {
 public:
-  using callable = std::function<index_t(std::span<buffer<const void>*>, std::span<buffer<void>*>)>;
+  using callable = std::function<index_t(std::span<buffer<const void>*>, std::span<buffer_base*>)>;
 
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
@@ -91,21 +91,21 @@ public:
   // TODO: Try to do this with a variadic template implementation.
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output arg) {
-    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer<void>*> outputs) -> index_t {
+    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(outputs[0]->cast<Out1>());
     }, {}, { arg });
   }
 
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
-    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer<void>*> outputs) -> index_t {
+    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>());
       }, { in1 }, { out1 });
   }
 
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
-    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer<void>*> outputs) -> index_t {
+    return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(inputs[0]->cast<const In1>(), inputs[1]->cast<const In2>(), outputs[0]->cast<Out1>());
       }, { in1, in2 }, { out1 });
   }
