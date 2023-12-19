@@ -34,6 +34,11 @@ private:
   buffer_expr& operator=(const buffer_expr&) = delete;
   buffer_expr& operator=(buffer_expr&&) = delete;
 
+  // Only func::func should add producers/consumers.
+  friend class func;
+  void add_producer(func* f);
+  void add_consumer(func* f);
+
 public:
   static buffer_expr_ptr make(node_context& ctx, const std::string& name, std::size_t rank);
 
@@ -42,13 +47,12 @@ public:
   dim_expr& dim(int i) { return dims_[i]; }
   const dim_expr& dim(int i) const { return dims_[i]; }
 
-  void add_producer(func* f);
-  void add_consumer(func* f);
-
+  // buffer_exprs can have many consumers, but only one producer.
   const func* producer() const { return producer_; }
   const std::vector<func*>& consumers() const { return consumers_; }
 };
 
+// Represents a node of computation in a pipeline.
 class func {
 public:
   using callable = std::function<index_t(std::span<buffer<const void>*>, std::span<buffer_base*>)>;
@@ -94,21 +98,21 @@ public:
   static func make(callable_wrapper<Out1> impl, output arg) {
     return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(outputs[0]->cast<Out1>());
-    }, {}, { arg });
+    }, {}, { std::move(arg) });
   }
 
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
     return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>());
-      }, { in1 }, { out1 });
+      }, { std::move(in1) }, { std::move(out1) });
   }
 
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
     return func([impl = std::move(impl)](std::span<buffer<const void>*> inputs, std::span<buffer_base*> outputs) -> index_t {
       return impl(inputs[0]->cast<const In1>(), inputs[1]->cast<const In2>(), outputs[0]->cast<Out1>());
-      }, { in1, in2 }, { out1 });
+      }, { std::move(in1), std::move(in2) }, { std::move(out1) });
   }
 
   const std::vector<input>& inputs() const { return inputs_; }

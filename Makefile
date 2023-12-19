@@ -2,7 +2,7 @@ CFLAGS := $(CFLAGS) -O2 -ffast-math -fstrict-aliasing -fPIE
 CXXFLAGS := $(CXXFLAGS) -std=c++20 -Wall
 LDFLAGS := $(LDFLAGS)
 
-DEPS := src/euclidean_division.h src/expr.h src/evaluate.h src/print.h src/interval.h src/buffer.h
+DEPS := src/euclidean_division.h src/expr.h src/evaluate.h src/print.h src/interval.h src/buffer.h src/pipeline.h
 
 TEST_SRC := $(wildcard test/*.cc)
 TEST_OBJ := $(TEST_SRC:%.cc=obj/%.o)
