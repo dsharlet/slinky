@@ -2,7 +2,6 @@
 #define SLINKY_PIPELINE_H
 
 #include "interval.h"
-#include "evaluate.h"
 
 namespace slinky {
 

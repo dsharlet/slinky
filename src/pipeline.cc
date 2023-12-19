@@ -1,9 +1,9 @@
 #include "pipeline.h"
 
 #include <cassert>
-#include <iostream>
 #include <set>
 
+#include "evaluate.h"
 #include "print.h"
 
 namespace slinky {

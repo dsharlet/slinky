@@ -171,6 +171,9 @@ public:
     memset(dims_storage, 0, sizeof(dims_storage));
   }
 
+  // Construct a buffer with extents, and strides computed such that the stride of dimension
+  // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
+  // dimension is "innermost".
   buffer(std::initializer_list<index_t> extents) : buffer() {
     assert(extents.size() <= rank);
     index_t stride_bytes = elem_size;
@@ -185,17 +188,18 @@ public:
 
   T* base() const { return reinterpret_cast<T*>(buffer_base::base); }
 
-  // Make a buffer and space for dims in the same object.
+  // Make a buffer and space for dims in the same allocation.
   static std::unique_ptr<buffer<T>, void(*)(buffer<T>*)> make(std::size_t rank) {
     auto buf = buffer_base::make(rank, sizeof(T));
     return { static_cast<buffer<T>*>(buf.release()), (void(*)(buffer<T>*))buffer_base::destroy};
   }
 
+  // These accessors are not designed to be fast. They exist to facilitate testing,
+  // and maybe they are useful to compute addresses.
   template <typename... Indices>
   auto& at(Indices... indices) const {
     return *offset_bytes(base(), flat_offset_bytes(indices...));
   }
-
   template <typename... Indices>
   auto& operator() (Indices... indices) const {
     return at(indices...);
