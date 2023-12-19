@@ -134,7 +134,7 @@ public:
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
 
-  void accept(node_visitor* v) const { e->accept(v); }
+  void accept(node_visitor* v) const { assert(defined()); e->accept(v); }
 
   bool defined() const { return e != nullptr; }
 
@@ -170,7 +170,7 @@ public:
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
 
-  void accept(node_visitor* v) const { s->accept(v); }
+  void accept(node_visitor* v) const { assert(defined()); s->accept(v); }
 
   bool defined() const { return s != nullptr; }
 
@@ -178,8 +178,7 @@ public:
   const T* as() const {
     if (s->type == T::static_type) {
       return reinterpret_cast<const T*>(s.get());
-    }
-    else {
+    } else {
       return nullptr;
     }
   }
