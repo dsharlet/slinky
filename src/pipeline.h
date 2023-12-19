@@ -17,7 +17,7 @@ public:
   struct dim_expr {
     expr min;
     expr extent;
-    expr stride;
+    expr stride_bytes;
     expr fold_factor;
   };
 
@@ -37,6 +37,7 @@ private:
 public:
   static buffer_expr_ptr make(node_context& ctx, const std::string& name, std::size_t rank);
 
+  const expr& base() const { return base_; }
   std::size_t rank() const { return dims_.size(); }
   dim_expr& dim(int i) { return dims_[i]; }
   const dim_expr& dim(int i) const { return dims_[i]; }
@@ -117,10 +118,12 @@ class pipeline {
   std::vector<buffer_expr_ptr> inputs_;
   std::vector<buffer_expr_ptr> outputs_;
   
+  stmt body;
+
 public:
   pipeline(std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs);
 
-  index_t evaluate(eval_context& ctx);
+  index_t evaluate(std::span<buffer_base*> inputs, std::span<buffer_base*> outputs);
 };
 
 }  // namespace slinky
