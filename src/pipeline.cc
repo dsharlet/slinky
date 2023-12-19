@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <set>
+#include <iostream>
 
 #include "evaluate.h"
 #include "print.h"
@@ -64,15 +65,28 @@ stmt build_pipeline(const std::vector<buffer_expr_ptr>& inputs, const std::vecto
 
   while (!to_produce.empty()) {
     // Find a buffer to produce.
-    func* f = nullptr;
+    const func* f = nullptr;
     for (auto i = to_produce.begin(); !f && i != to_produce.end(); ++i) {
-      for (auto j = (*i)->consumers().begin(); !f && j != (*i)->consumers().end(); ++j) {
+      f = (*i)->producer();
 
+      for (const func* j : (*i)->consumers()) {
+        for (auto& k : j->outputs()) {
+          if (k.buffer == *i) continue;
+          if (to_produce.count(k.buffer)) {
+            // j produces a buffer that is needed by another func that has not yet run.
+            f = nullptr;
+            break;
+          }
+        }
       }
     }
 
     // Call the producer.
-    assert(f);
+    if (!f) {
+      // TODO: Make a better error here.
+      std::cerr << "Problem in dependency graph" << std::endl;
+      std::abort();
+    }
     stmt call_f;
     result = result.defined() ? block::make(result, call_f) : call_f;
 
