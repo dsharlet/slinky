@@ -43,21 +43,33 @@ public:
 // Set a value in an eval_context upon construction, and restore the old value upon destruction.
 template <typename T>
 class scoped_value {
-  symbol_map<T>& context;
+  symbol_map<T>* context;
   symbol_id name;
   std::optional<T> old_value;
 
 public:
-  scoped_value(symbol_map<T>& context, symbol_id name, T value) : context(context), name(name) {
+  scoped_value(symbol_map<T>& context, symbol_id name, T value) : context(&context), name(name) {
     old_value = context.set(name, std::move(value));
   }
 
-  scoped_value(scoped_value&&) = default;
+  scoped_value(scoped_value&& other) : context(other.context), name(other.name), old_value(std::move(other.old_value)) {
+    // Don't let other.~scoped_value() unset this value.
+    other.context = nullptr;
+  }
   scoped_value(const scoped_value&) = delete;
   scoped_value& operator=(const scoped_value&) = delete;
+  scoped_value& operator=(scoped_value&& other) {
+    context = other.context;
+    name = other.name;
+    old_value = std::move(other.old_value);
+    // Don't let other.~scoped_value() unset this value.
+    other.context = nullptr;
+  }
 
   ~scoped_value() {
-    context.set(name, std::move(old_value));
+    if (context) {
+      context->set(name, std::move(old_value));
+    }
   }
 };
 
