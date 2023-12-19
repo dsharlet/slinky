@@ -23,6 +23,42 @@ index_t add_1(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
+// A trivial pipeline with one stage.
+TEST(pipeline_trivial) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1);
+  auto out = buffer_expr::make(ctx, "out", 1);
+
+  expr x = make_variable(ctx, "x");
+
+  func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { out, {x} });
+
+  pipeline p({ in }, { out });
+
+  // Run the pipeline
+  const int N = 10;
+
+  buffer<int, 1> in_buf({ N });
+  in_buf.allocate();
+  for (int i = 0; i < N; ++i) {
+    in_buf(i) = i;
+  }
+
+  buffer<int, 1> out_buf({ N });
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &in_buf };
+  buffer_base* outputs[] = { &out_buf };
+  p.evaluate(inputs, outputs);
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(out_buf(i), 2 * i);
+  }
+}
+
 // An example of two 1D elementwise operations in sequence.
 TEST(pipeline_elementwise_1d) {
   // Make the pipeline
