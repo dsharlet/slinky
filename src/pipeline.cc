@@ -48,11 +48,13 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
 
 namespace {
 
-stmt build_pipeline(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
   // We're going to incrementally build the body, starting at the end of the pipeline and adding producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
   std::set<buffer_expr_ptr> produced;
   stmt result;
+
+  std::map<buffer_expr_ptr, expr> buffers;
 
   // To start with, we need to produce the outputs.
   for (auto& i : outputs) {
@@ -87,7 +89,32 @@ stmt build_pipeline(const std::vector<buffer_expr_ptr>& inputs, const std::vecto
       std::cerr << "Problem in dependency graph" << std::endl;
       std::abort();
     }
-    stmt call_f;
+
+    // TODO: We shouldn't need this wrapper, it might add measureable overhead.
+    // All it does is split a span of buffers into two spans of buffers.
+    std::size_t input_count = f->inputs().size();
+    std::size_t output_count = f->outputs().size();
+    auto wrapper = [impl = f->impl(), input_count, output_count](std::span<const index_t>, std::span<buffer_base*> buffers) -> index_t {
+      assert(buffers.size() == input_count + output_count);
+      return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
+    };
+    std::vector<expr> buffer_args;
+    std::map<symbol_id, buffer_expr_ptr> buffer_exprs;
+    buffer_args.reserve(input_count + output_count);
+    for (const func::input& i : f->inputs()) {
+      symbol_id name = ctx.insert();
+      buffer_exprs[name] = i.buffer;
+      buffer_args.push_back(variable::make(name));
+    }
+    for (const func::output& i : f->outputs()) {
+      symbol_id name = ctx.insert();
+      buffer_exprs[name] = i.buffer;
+      buffer_args.push_back(variable::make(name));
+    }
+    stmt call_f = call::make(wrapper, {}, std::move(buffer_args));
+    for (const auto& i : buffer_exprs) {
+      call_f = let_stmt::make(i.first, 0, call_f);
+    }
     result = result.defined() ? block::make(result, call_f) : call_f;
 
     // We've just run f, which produced its outputs.
@@ -103,14 +130,16 @@ stmt build_pipeline(const std::vector<buffer_expr_ptr>& inputs, const std::vecto
     }
   }
 
+  std::cout << result << std::endl;
+
   return result;
 }
 
 }  // namespace
 
-pipeline::pipeline(std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs)
+pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs)
   : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
-  body = build_pipeline(inputs_, outputs_);
+  body = build_pipeline(ctx, inputs_, outputs_);
 }
 
 namespace {

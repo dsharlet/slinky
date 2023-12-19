@@ -35,7 +35,7 @@ TEST(pipeline_trivial) {
 
   func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { out, {x} });
 
-  pipeline p({ in }, { out });
+  pipeline p(ctx, { in }, { out });
 
   // Run the pipeline
   const int N = 10;
@@ -73,7 +73,7 @@ TEST(pipeline_elementwise_1d) {
   func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { intm, {x} });
   func add = func::make<const int, int>(add_1, { intm, {interval(x)} }, { out, {x} });
 
-  pipeline p({ in }, { out });
+  pipeline p(ctx, { in }, { out });
 
   // Run the pipeline
   const int N = 10;
@@ -87,9 +87,10 @@ TEST(pipeline_elementwise_1d) {
   buffer<int, 1> out_buf({ N });
   out_buf.allocate();
 
-  //eval_context ctx;
-
-  //p.evaluate(ctx);
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &in_buf };
+  buffer_base* outputs[] = { &out_buf };
+  p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
@@ -133,6 +134,8 @@ TEST(pipeline_matmuls) {
   func matmul_ab = func::make<const int, const int, int>(matmul, { a, { interval(i), interval(0, K_ab) } }, { b, {interval(0, K_ab), interval(j)} }, { ab, {i, j} });
   func matmul_abc = func::make<const int, const int, int>(matmul, { ab, { interval(i), interval(0, K_d) } }, { c, {interval(0, K_d), interval(j)} }, { d, {i, j} });
 
-  // Run the pipeline.
+  pipeline p(ctx, { a, b, c }, { d });
 
+  // Run the pipeline.
+  // TODO
 }
