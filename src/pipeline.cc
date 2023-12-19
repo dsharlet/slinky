@@ -2,12 +2,13 @@
 
 #include <cassert>
 #include <iostream>
+#include <set>
 
 #include "print.h"
 
 namespace slinky {
 
-buffer_expr::buffer_expr(node_context& ctx, const std::string& name, std::size_t rank) {
+buffer_expr::buffer_expr(node_context& ctx, const std::string& name, std::size_t rank) : producer_(nullptr) {
   base_ = make_variable(ctx, name + ".base");
   dims_.reserve(rank);
   for (std::size_t i = 0; i < rank; ++i) {
@@ -25,8 +26,8 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& name, st
 }
 
 void buffer_expr::add_producer(func* f) {
-  assert(std::find(producers_.begin(), producers_.end(), f) == producers_.end());
-  producers_.push_back(f);
+  assert(producer_ == nullptr);
+  producer_ = f;
 }
 
 void buffer_expr::add_consumer(func* f) {
@@ -35,22 +36,67 @@ void buffer_expr::add_consumer(func* f) {
 }
 
 func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs)
-  : impl(std::move(impl)), inputs(std::move(inputs)), outputs(std::move(outputs)) {
-  for (auto& i : inputs) {
+  : impl_(std::move(impl)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+  for (auto& i : inputs_) {
     i.buffer->add_consumer(this);
   }
-  for (auto& i : outputs) {
+  for (auto& i : outputs_) {
     i.buffer->add_producer(this);
   }
 }
 
-index_t func::evaluate(eval_context& ctx) {
-  return 0;
+namespace {
+
+stmt build_pipeline(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+  // We're going to incrementally build the body, starting at the end of the pipeline and adding producers as necessary.
+  std::set<buffer_expr_ptr> to_produce;
+  std::set<buffer_expr_ptr> produced;
+  stmt result;
+
+  // To start with, we need to produce the outputs.
+  for (auto& i : outputs) {
+    to_produce.insert(i);
+  }
+  // And we've already "produced" the inputs.
+  for (auto& i : inputs) {
+    produced.insert(i);
+  }
+
+  while (!to_produce.empty()) {
+    // Find a buffer to produce.
+    func* f = nullptr;
+    for (auto i = to_produce.begin(); !f && i != to_produce.end(); ++i) {
+      for (auto j = (*i)->consumers().begin(); !f && j != (*i)->consumers().end(); ++j) {
+
+      }
+    }
+
+    // Call the producer.
+    assert(f);
+    stmt call_f;
+    result = result.defined() ? block::make(result, call_f) : call_f;
+
+    // We've just run f, which produced its outputs.
+    for (auto& i : f->outputs()) {
+      produced.insert(i.buffer);
+      to_produce.erase(i.buffer);
+    }
+    // Now make sure its inputs get produced.
+    for (auto& i : f->inputs()) {
+      if (!produced.count(i.buffer)) {
+        to_produce.insert(i.buffer);
+      }
+    }
+  }
+
+  return result;
 }
+
+}  // namespace
 
 pipeline::pipeline(std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs)
   : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
-
+  body = build_pipeline(inputs_, outputs_);
 }
 
 namespace {

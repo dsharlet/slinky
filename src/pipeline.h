@@ -25,7 +25,7 @@ private:
   expr base_;
   std::vector<dim_expr> dims_;
 
-  std::vector<func*> producers_;
+  func* producer_;
   std::vector<func*> consumers_;
 
   buffer_expr(node_context& ctx, const std::string& name, std::size_t rank);
@@ -45,7 +45,7 @@ public:
   void add_producer(func* f);
   void add_consumer(func* f);
 
-  const std::vector<func*>& producers() const { return producers_; }
+  const func* producer() const { return producer_; }
   const std::vector<func*>& consumers() const { return consumers_; }
 };
 
@@ -75,9 +75,9 @@ public:
   };
 
 private:
-  callable impl;
-  std::vector<input> inputs;
-  std::vector<output> outputs;
+  callable impl_;
+  std::vector<input> inputs_;
+  std::vector<output> outputs_;
 
 public:
   func() {}
@@ -87,7 +87,7 @@ public:
   func& operator=(const func&) = default;
   func& operator=(func&&) = default;
 
-  bool defined() const { return impl != nullptr; }
+  bool defined() const { return impl_ != nullptr; }
 
   // TODO: Try to do this with a variadic template implementation.
   template <typename Out1>
@@ -111,7 +111,8 @@ public:
       }, { in1, in2 }, { out1 });
   }
 
-  index_t evaluate(eval_context& ctx);
+  const std::vector<input>& inputs() const { return inputs_; }
+  const std::vector<output>& outputs() const { return outputs_; }
 };
 
 class pipeline {
