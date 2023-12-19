@@ -2,7 +2,6 @@
 
 namespace slinky {
 
-// Get the name of a symbol_id.
 std::string node_context::name(symbol_id i) const { 
   if (i < id_to_name.size()) {
     return id_to_name[i];
@@ -11,7 +10,6 @@ std::string node_context::name(symbol_id i) const {
   }
 }
 
-// Get or insert a new symbol_id for a name.
 symbol_id node_context::insert(const std::string& name) {
   auto i = name_to_id.find(name);
   if (i == name_to_id.end()) {
@@ -21,6 +19,13 @@ symbol_id node_context::insert(const std::string& name) {
     return id;
   }
   return i->second;
+}
+symbol_id node_context::insert() {
+  symbol_id id = id_to_name.size();
+  std::string name = "t" + std::to_string(id);
+  id_to_name.push_back(name);
+  name_to_id[name] = id;
+  return id;
 }
 symbol_id node_context::lookup(const std::string& name) const {
   auto i = name_to_id.find(name);

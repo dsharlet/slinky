@@ -28,6 +28,7 @@ public:
 
   // Get or insert a new symbol_id for a name.
   symbol_id insert(const std::string& name);
+  symbol_id insert();
   symbol_id lookup(const std::string& name) const;
 };
 
