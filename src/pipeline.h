@@ -6,23 +6,46 @@
 
 namespace slinky {
 
+class func;
+class buffer_expr;
+
+using buffer_expr_ptr = std::shared_ptr<buffer_expr>;
+
 // Represents a symbolic buffer in a pipeline.
-struct buffer_expr {
-  struct dim {
+class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
+public:
+  struct dim_expr {
     expr min;
     expr extent;
     expr stride;
     expr fold_factor;
   };
-  expr base;
-  std::vector<dim> dims;
+
+private:
+  expr base_;
+  std::vector<dim_expr> dims_;
+
+  std::vector<func*> producers_;
+  std::vector<func*> consumers_;
 
   buffer_expr(node_context& ctx, const std::string& name, std::size_t rank);
+  buffer_expr(const buffer_expr&) = delete;
+  buffer_expr(buffer_expr&&) = delete;
+  buffer_expr& operator=(const buffer_expr&) = delete;
+  buffer_expr& operator=(buffer_expr&&) = delete;
 
-  buffer_expr(const buffer_expr&) = default;
-  buffer_expr(buffer_expr&&) = default;
-  buffer_expr& operator=(const buffer_expr&) = default;
-  buffer_expr& operator=(buffer_expr&&) = default;
+public:
+  static buffer_expr_ptr make(node_context& ctx, const std::string& name, std::size_t rank);
+
+  std::size_t rank() const { return dims_.size(); }
+  dim_expr& dim(int i) { return dims_[i]; }
+  const dim_expr& dim(int i) const { return dims_[i]; }
+
+  void add_producer(func* f);
+  void add_consumer(func* f);
+
+  const std::vector<func*>& producers() const { return producers_; }
+  const std::vector<func*>& consumers() const { return consumers_; }
 };
 
 class func {
@@ -33,18 +56,21 @@ public:
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
 
   struct input {
-    symbol_id buffer;
+    buffer_expr_ptr buffer;
 
     // These intervals should be a function of the expressions found in the output dims.
     std::vector<interval> bounds;
   };
 
   struct output {
-    symbol_id buffer;
+    buffer_expr_ptr buffer;
 
     // dims must be be variable nodes. It would be nice to enforce this via the type system.
     // TODO: Maybe they don't need to be variables?
     std::vector<expr> dims;
+
+    // If this exists for a dimension, specifies the alignment required in that dimension.
+    std::vector<index_t> alignment;
   };
 
 private:
@@ -54,8 +80,7 @@ private:
 
 public:
   func() {}
-  func(callable impl, std::vector<input> inputs, std::vector<output> outputs)
-    : impl(std::move(impl)), inputs(std::move(inputs)), outputs(std::move(outputs)) {}
+  func(callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(const func&) = default;
   func(func&&) = default;
   func& operator=(const func&) = default;
@@ -89,37 +114,11 @@ public:
 };
 
 class pipeline {
-private:
-  struct stage {
-    index_t loop_level;
-    func f;
-  };
-  std::vector<stage> stages_;
-
-  std::vector<buffer_expr> buffers_;
-
-  node_context context_;
-
-  index_t run_loop_level(eval_context& ctx, index_t loop_level, std::size_t stage_begin, std::size_t stage_end);
-
+  std::vector<buffer_expr_ptr> inputs_;
+  std::vector<buffer_expr_ptr> outputs_;
+  
 public:
-  pipeline() {}
-
-  node_context& context() { return context_; }
-  const node_context& context() const { return context_; }
-
-  symbol_id add_buffer(const std::string& name, std::size_t rank) {
-    symbol_id id = buffers_.size();
-    buffers_.emplace_back(context_, name, rank);
-    return id;
-  }
-
-  buffer_expr& get_buffer(symbol_id id) { return buffers_[id]; }
-  const buffer_expr& get_buffer(symbol_id id) const { return buffers_[id]; }
-    
-  void add_stage(index_t loop_level, func f) {
-    stages_.emplace_back(loop_level, std::move(f));
-  }
+  pipeline(std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs);
 
   index_t evaluate(eval_context& ctx);
 };
