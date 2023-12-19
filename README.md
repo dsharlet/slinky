@@ -64,7 +64,7 @@ expr i = make_variable(ctx, "i");
 expr j = make_variable(ctx, "j");
 
 expr K_ab = a->dim(1).extent;
-expr K_d = ab->dim(1).extent;
+expr K_d = c->dim(0).extent;
 
 func matmul_ab = func::make<const float, const float, float>(matmul, { a, { interval(i), interval(0, K_ab) } }, { b, {interval(0, K_ab), interval(j)} }, { ab, {i, j} });
 func matmul_abc = func::make<const float, const float, float>(matmul, { ab, { interval(i), interval(0, K_d) } }, { c, {interval(0, K_d), interval(j)} }, { d, {i, j} });
@@ -76,7 +76,7 @@ func matmul_abc = func::make<const float, const float, float>(matmul, { ab, { in
 	- Consume two operands, produce one operand.
 	- The first `func` produces `ab`, the second `func` consumes it.
 	- The bounds required by output element `i`, `j` of the first operand is the `i`th row and all the columns of the first operand. We use `dim(1).extent` of the first operand, but `dim(0).extent` of the second operand should be equal to this.
-	- The bounds required of the second operand is similar, we just need all the rows and one column instead.
+	- The bounds required of the second operand is similar, we just need all the rows and one column instead. We use `dim(0).extent` of the second operand to avoid relying on the intermediate buffer, which will have its bounds inferred (maybe this would still work...).
 
 This pipeline could be implemented in two ways by Slinky:
 1. Allocating `ab` to have the full extent of the product `a x b`, and executing all of the first multiply followed by all of the second multiply.

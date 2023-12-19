@@ -60,6 +60,7 @@ TEST(pipeline_elementwise_1d) {
   }
 }
 
+// This matrix multiply operates on integers, so we can test for correctness exactly.
 index_t matmul(const buffer<const int>& a, const buffer<const int>& b, const buffer<int>& c) {
   for (index_t i = c.dims[0].begin(); i < c.dims[0].end(); ++i) {
     for (index_t j = c.dims[1].begin(); j < c.dims[1].end(); ++j) {
@@ -91,7 +92,7 @@ TEST(pipeline_matmuls) {
   // The bounds required of the dimensions consumed by the reduction depend on the size of the buffers passed in.
   // Note that we haven't used any constants yet.
   expr K_ab = a->dim(1).extent;
-  expr K_d = ab->dim(1).extent;
+  expr K_d = c->dim(0).extent;
 
   func matmul_ab = func::make<const int, const int, int>(matmul, { a, { interval(i), interval(0, K_ab) } }, { b, {interval(0, K_ab), interval(j)} }, { ab, {i, j} });
   func matmul_abc = func::make<const int, const int, int>(matmul, { ab, { interval(i), interval(0, K_d) } }, { c, {interval(0, K_d), interval(j)} }, { d, {i, j} });
