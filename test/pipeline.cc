@@ -110,6 +110,15 @@ index_t matmul(const buffer<const int>& a, const buffer<const int>& b, const buf
   return 0;
 }
 
+void init_random(buffer<int, 2>& x) {
+  x.allocate();
+  for (int i = x.dims[1].begin(); i < x.dims[1].end(); ++i) {
+    for (int j = x.dims[0].begin(); j < x.dims[0].end(); ++j) {
+      x(j, i) = rand() % 10;
+    }
+  }
+}
+
 // Two matrix multiplies: D = (A x B) x C.
 TEST(pipeline_matmuls) {
   // Make the pipeline
@@ -137,5 +146,20 @@ TEST(pipeline_matmuls) {
   pipeline p(ctx, { a, b, c }, { d });
 
   // Run the pipeline.
-  // TODO
+  const int M = 10;
+  const int N = 10;
+  buffer<int, 2> a_buf({ M, N });
+  buffer<int, 2> b_buf({ M, N });
+  buffer<int, 2> c_buf({ M, N });
+  buffer<int, 2> d_buf({ M, N });
+
+  init_random(a_buf);
+  init_random(b_buf);
+  init_random(c_buf);
+  init_random(d_buf);
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &a_buf, &b_buf, &c_buf };
+  buffer_base* outputs[] = { &d_buf };
+  p.evaluate(inputs, outputs);
 }
