@@ -2,7 +2,7 @@ CFLAGS := $(CFLAGS) -O2 -ffast-math -fstrict-aliasing -fPIE -g
 CXXFLAGS := $(CXXFLAGS) -std=c++20 -Wall
 LDFLAGS := $(LDFLAGS)
 
-DEPS := src/euclidean_division.h src/expr.h src/evaluate.h src/print.h src/interval.h src/buffer.h src/pipeline.h
+DEPS := src/*.h
 
 TEST_SRC := $(wildcard test/*.cc)
 TEST_OBJ := $(TEST_SRC:%.cc=obj/%.o)
@@ -15,7 +15,7 @@ obj/test/%.o: test/%.cc $(DEPS)
 	mkdir -p $(@D)
 	$(CXX) -Isrc -c -o $@ $< $(CFLAGS) $(CXXFLAGS)
 
-bin/libslinky.a: obj/evaluate.o obj/pipeline.o obj/print.o obj/expr.o
+bin/libslinky.a: obj/evaluate.o obj/pipeline.o obj/print.o obj/expr.o obj/substitute.o
 	mkdir -p $(@D)
 	ar rc $@ $+
 	ranlib $@

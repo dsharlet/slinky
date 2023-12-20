@@ -138,6 +138,7 @@ public:
   void accept(node_visitor* v) const { assert(defined()); e->accept(v); }
 
   bool defined() const { return e != nullptr; }
+  bool same_as(const expr& other) const { return e == other.e; }
 
   template <typename T>
   const T* as() const {
@@ -174,6 +175,7 @@ public:
   void accept(node_visitor* v) const { assert(defined()); s->accept(v); }
 
   bool defined() const { return s != nullptr; }
+  bool same_as(const stmt& other) const { return s == other.s; }
 
   template <typename T>
   const T* as() const {
