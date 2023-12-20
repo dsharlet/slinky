@@ -54,6 +54,7 @@ enum class node_type {
   logical_or,
   shift_left,
   shift_right,
+  load_buffer_meta,
 
   call,
   let_stmt,
@@ -67,6 +68,15 @@ enum class node_type {
 enum class memory_type {
   stack,
   heap,
+};
+
+enum class buffer_meta {
+  base,
+  min,
+  max,
+  extent,
+  stride_bytes,
+  fold_factor,
 };
 
 class node_visitor;
@@ -259,18 +269,35 @@ DECLARE_BINARY_OP(shift_right)
 
 #undef DECLARE_BINARY_OP
 
+class load_buffer_meta : public expr_node<load_buffer_meta> {
+public:
+  symbol_id buffer;
+  buffer_meta meta;
+  // This is an index and not an expr, which means we can't read expr-dependent dims.
+  index_t dim;
+
+  void accept(node_visitor* v) const;
+
+  static expr make(symbol_id buffer, buffer_meta meta, index_t dim);
+
+  static constexpr node_type static_type = node_type::load_buffer_meta;
+};
+
+class func;
+
 class call : public stmt_node<call> {
 public:
   typedef index_t(*callable_t)(std::span<const index_t>, std::span<buffer_base*>);
   using callable = std::function<index_t(std::span<const index_t>, std::span<buffer_base*>)>;
 
-  callable fn;
+  callable target;
   std::vector<expr> scalar_args;
-  std::vector<expr> buffer_args;
+  std::vector<symbol_id> buffer_args;
+  const func* fn;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(callable fn, std::vector<expr> scalar_args, std::vector<expr> buffer_args);
+  static stmt make(callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn);
 
   static constexpr node_type static_type = node_type::call;
 };
@@ -336,12 +363,13 @@ class allocate : public stmt_node<allocate> {
 public:
   memory_type type;
   symbol_id name;
+  index_t elem_size;
   std::vector<dim_expr> dims;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(memory_type type, symbol_id name, std::vector<dim_expr> dims, stmt body);
+  static stmt make(memory_type type, symbol_id name, index_t elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
 };
@@ -382,6 +410,7 @@ public:
   virtual void visit(const logical_or*) = 0;
   virtual void visit(const shift_left*) = 0;
   virtual void visit(const shift_right*) = 0;
+  virtual void visit(const load_buffer_meta*) = 0;
 
   virtual void visit(const let_stmt*) = 0;
   virtual void visit(const block*) = 0;
@@ -413,6 +442,7 @@ inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
 inline void shift_left::accept(node_visitor* v) const { v->visit(this); }
 inline void shift_right::accept(node_visitor* v) const { v->visit(this); }
+inline void load_buffer_meta::accept(node_visitor* v) const { v->visit(this); }
 
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void block::accept(node_visitor* v) const { v->visit(this); }

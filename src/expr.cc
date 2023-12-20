@@ -139,11 +139,20 @@ expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::mov
 expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
 expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
-stmt call::make(call::callable fn, std::vector<expr> scalar_args, std::vector<expr> buffer_args) {
+expr load_buffer_meta::make(symbol_id buffer, buffer_meta meta, index_t dim) {
+  load_buffer_meta* n = new load_buffer_meta();
+  n->buffer = buffer;
+  n->meta = meta;
+  n->dim = dim;
+  return n;
+}
+
+stmt call::make(call::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
   call* n = new call();
-  n->fn = std::move(fn);
+  n->target = std::move(target);
   n->scalar_args = std::move(scalar_args);
   n->buffer_args = std::move(buffer_args);
+  n->fn = fn;
   return n;
 }
 
@@ -170,10 +179,11 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n;
 }
 
-stmt allocate::make(memory_type type, symbol_id name, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(memory_type type, symbol_id name, index_t elem_size, std::vector<dim_expr> dims, stmt body) {
   allocate* n = new allocate();
   n->type = type;
   n->name = name;
+  n->elem_size = elem_size;
   n->dims = std::move(dims);
   n->body = std::move(body);
   return n;

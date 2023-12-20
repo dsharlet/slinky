@@ -44,7 +44,7 @@ TEST(evaluate_call) {
   stmt c = call::make([&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
     calls.push_back(scalars[0]);
     return 0;
-  }, { x }, {});
+  }, { x }, {}, nullptr);
 
   eval_context context;
   context.set(ctx.lookup("x"), 2);
@@ -62,7 +62,7 @@ TEST(evaluate_loop) {
   stmt c = call::make([&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
     calls.push_back(scalars[0]);
     return 0;
-  }, { x }, {});
+  }, { x }, {}, nullptr);
 
   stmt l = loop::make(ctx.lookup("x"), 10, c);
 

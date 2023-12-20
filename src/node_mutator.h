@@ -64,6 +64,10 @@ public:
   virtual void visit(const logical_or* x) { e = mutate_binary(x); }
   virtual void visit(const shift_left* x) { e = mutate_binary(x); }
   virtual void visit(const shift_right* x) { e = mutate_binary(x); }
+  
+  virtual void visit(const load_buffer_meta* x) {
+    e = load_buffer_meta::make(x->buffer, x->meta, x->dim);
+  }
 
   virtual void visit(const let_stmt* x) { s = mutate_let(x); }
   virtual void visit(const block* x) {
@@ -106,12 +110,7 @@ public:
     for (const expr& i : x->scalar_args) {
       scalar_args.push_back(mutate(i));
     }
-    std::vector<expr> buffer_args;
-    buffer_args.reserve(x->buffer_args.size());
-    for (const expr& i : x->buffer_args) {
-      buffer_args.push_back(mutate(i));
-    }
-    s = call::make(x->fn, std::move(scalar_args), std::move(buffer_args));
+    s = call::make(x->target, std::move(scalar_args), x->buffer_args, x->fn);
   }
   virtual void visit(const allocate* x) {
     std::vector<dim_expr> dims;
@@ -120,7 +119,7 @@ public:
       dims.emplace_back(mutate(i.min), mutate(i.extent), mutate(i.stride_bytes), mutate(i.fold_factor));
     }
     stmt body = mutate(x->body);
-    s = allocate::make(x->type, x->name, std::move(dims), std::move(body));
+    s = allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body));
   }
   virtual void visit(const check* x) {
     expr condition = mutate(x->condition);

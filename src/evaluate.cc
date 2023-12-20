@@ -75,6 +75,18 @@ public:
   void visit(const shift_left* x) override { result = eval_expr(x->a) << eval_expr(x->b); }
   void visit(const shift_right* x) override { result = eval_expr(x->a) >> eval_expr(x->b); }
 
+  void visit(const load_buffer_meta* x) override {
+    buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(x->buffer));
+    switch (x->meta) {
+    case buffer_meta::base: result = reinterpret_cast<index_t>(buffer->base); return;
+    case buffer_meta::min: result = buffer->dims[x->dim].min; return;
+    case buffer_meta::max: result = buffer->dims[x->dim].max(); return;
+    case buffer_meta::extent: result = buffer->dims[x->dim].extent; return;
+    case buffer_meta::stride_bytes: result = buffer->dims[x->dim].stride_bytes; return;
+    case buffer_meta::fold_factor: result = buffer->dims[x->dim].fold_factor; return;
+    }
+  }
+
   void visit(const block* b) override {
     b->a.accept(this);
     b->b.accept(this);
@@ -105,12 +117,12 @@ public:
 
     buffer_base** buffers = reinterpret_cast<buffer_base**>(alloca(n->buffer_args.size() * sizeof(buffer_base*)));
     for (std::size_t i = 0; i < n->buffer_args.size(); ++i) {
-      buffers[i] = reinterpret_cast<buffer_base*>(eval_expr(n->buffer_args[i]));
+      buffers[i] = reinterpret_cast<buffer_base*>(*context.lookup(n->buffer_args[i]));
     }
 
     std::span<const index_t> scalars_span(scalars, n->scalar_args.size());
     std::span<buffer_base*> buffers_span(buffers, n->buffer_args.size());
-    result = n->fn(scalars_span, buffers_span);
+    result = n->target(scalars_span, buffers_span);
     if (result) {
       std::cerr << "call failed: " << stmt(n) << "->" << result << std::endl;
       std::abort();
@@ -122,6 +134,7 @@ public:
     // Allocate a buffer with space for its dims on the stack.
     char* storage = reinterpret_cast<char*>(alloca(sizeof(buffer_base) + sizeof(dim) * rank));
     buffer_base* buffer = reinterpret_cast<buffer_base*>(&storage[0]);
+    buffer->elem_size = n->elem_size;
     buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
 
     for (std::size_t i = 0; i < rank; ++i) {

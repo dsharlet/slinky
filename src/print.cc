@@ -4,11 +4,22 @@
 #include <iostream>
 
 namespace slinky {
- 
+
 std::ostream& operator<<(std::ostream& os, memory_type type) {
   switch (type) {
   case memory_type::stack: return os << "stack";
   case memory_type::heap: return os << "heap";
+  }
+}
+
+std::ostream& operator<<(std::ostream& os, buffer_meta meta) {
+  switch (meta) {
+  case buffer_meta::base: return os << "base";
+  case buffer_meta::min: return os << "min";
+  case buffer_meta::max: return os << "max";
+  case buffer_meta::extent: return os << "extent";
+  case buffer_meta::stride_bytes: return os << "stride_bytes";
+  case buffer_meta::fold_factor: return os << "fold_factor";
   }
 }
 
@@ -114,6 +125,16 @@ public:
     os << ")";
   }
 
+  void visit(const load_buffer_meta* x) override {
+    print_symbol_id(x->buffer);
+    os << "->";
+    if (x->meta == buffer_meta::base) {
+      os << "base";
+    } else {
+      os << "dims[" << x->dim << "]." << x->meta;
+    }
+  }
+
   void visit(const block* b) override {
     print(b->a);
     print(b->b);
@@ -158,9 +179,9 @@ public:
       }
     }
     os << "}, {";
-    for (const expr& e : n->buffer_args) {
-      print(e);
-      if (&e != &n->buffer_args.back()) {
+    for (symbol_id id : n->buffer_args) {
+      print_symbol_id(id);
+      if (id != n->buffer_args.back()) {
         os << ", ";
       }
     }

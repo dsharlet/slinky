@@ -13,12 +13,13 @@ using buffer_expr_ptr = std::shared_ptr<buffer_expr>;
 // Represents a symbolic buffer in a pipeline.
 class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
   symbol_id name_;
+  index_t elem_size_;
   std::vector<dim_expr> dims_;
 
   func* producer_;
   std::vector<func*> consumers_;
 
-  buffer_expr(node_context& ctx, const std::string& name, std::size_t rank);
+  buffer_expr(symbol_id name, index_t elem_size, std::size_t rank);
   buffer_expr(const buffer_expr&) = delete;
   buffer_expr(buffer_expr&&) = delete;
   buffer_expr& operator=(const buffer_expr&) = delete;
@@ -30,9 +31,11 @@ class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
   void add_consumer(func* f);
 
 public:
-  static buffer_expr_ptr make(node_context& ctx, const std::string& name, std::size_t rank);
+  static buffer_expr_ptr make(symbol_id name, index_t elem_size, std::size_t rank);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& name, index_t elem_size, std::size_t rank);
 
   symbol_id name() const { return name_; }
+  index_t elem_size() const { return elem_size_; }
   std::size_t rank() const { return dims_.size(); }
   const std::vector<dim_expr>& dims() const { return dims_; }
   dim_expr& dim(int i) { return dims_[i]; }

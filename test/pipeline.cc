@@ -28,8 +28,8 @@ TEST(pipeline_trivial) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", 1);
-  auto out = buffer_expr::make(ctx, "out", 1);
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
 
   expr x = make_variable(ctx, "x");
 
@@ -64,9 +64,9 @@ TEST(pipeline_elementwise_1d) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", 1);
-  auto out = buffer_expr::make(ctx, "out", 1);
-  auto intm = buffer_expr::make(ctx, "intm", 1);
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
 
   expr x = make_variable(ctx, "x");
 
@@ -124,12 +124,12 @@ TEST(pipeline_matmuls) {
   // Make the pipeline
   node_context ctx;
 
-  auto a = buffer_expr::make(ctx, "a", 2);
-  auto b = buffer_expr::make(ctx, "b", 2);
-  auto c = buffer_expr::make(ctx, "c", 2);
-  auto d = buffer_expr::make(ctx, "d", 2);
+  auto a = buffer_expr::make(ctx, "a", sizeof(int), 2);
+  auto b = buffer_expr::make(ctx, "b", sizeof(int), 2);
+  auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
+  auto d = buffer_expr::make(ctx, "d", sizeof(int), 2);
 
-  auto ab = buffer_expr::make(ctx, "ab", 2);
+  auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
   expr i = make_variable(ctx, "i");
   expr j = make_variable(ctx, "j");

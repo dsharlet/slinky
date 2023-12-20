@@ -6,24 +6,27 @@
 
 #include "evaluate.h"
 #include "print.h"
+#include "infer_allocate_bounds.h"
 
 namespace slinky {
-
-buffer_expr::buffer_expr(node_context& ctx, const std::string& name, std::size_t rank) : producer_(nullptr) {
-  name_ = ctx.insert(name);
+  
+buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank) : name_(name), elem_size_(elem_size), producer_(nullptr) {
   dims_.reserve(rank);
-  for (std::size_t i = 0; i < rank; ++i) {
-    std::string dim_name = name + "." + std::to_string(i);
-    expr min = make_variable(ctx, dim_name + ".min");
-    expr extent = make_variable(ctx, dim_name + ".extent");
-    expr stride = make_variable(ctx, dim_name + ".stride");
-    expr fold_factor = make_variable(ctx, dim_name + ".fold_factor");
-    dims_.emplace_back(min, extent, stride, fold_factor);
+  for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
+    expr min = load_buffer_meta::make(name_, buffer_meta::min, i);
+    expr extent = load_buffer_meta::make(name_, buffer_meta::extent, i);
+    expr stride_bytes = load_buffer_meta::make(name_, buffer_meta::stride_bytes, i);
+    expr fold_factor = load_buffer_meta::make(name_, buffer_meta::fold_factor, i);
+    dims_.emplace_back(min, extent, stride_bytes, fold_factor);
   }
 }
 
-buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& name, std::size_t rank) {
-  return buffer_expr_ptr(new buffer_expr(ctx, name, rank));
+buffer_expr_ptr buffer_expr::make(symbol_id name, index_t elem_size, std::size_t rank) {
+  return buffer_expr_ptr(new buffer_expr(name, elem_size, rank));
+}
+
+buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& name, index_t elem_size, std::size_t rank) {
+  return buffer_expr_ptr(new buffer_expr(ctx.insert(name), elem_size, rank));
 }
 
 void buffer_expr::add_producer(func* f) {
@@ -100,23 +103,24 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       assert(buffers.size() == input_count + output_count);
       return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
     };
-    std::vector<expr> buffer_args;
+    std::vector<symbol_id> buffer_args;
     buffer_args.reserve(input_count + output_count);
     std::vector<buffer_expr_ptr> allocations;
     allocations.reserve(output_count);
     for (const func::input& i : f->inputs()) {
-      buffer_args.push_back(variable::make(i.buffer->name()));
+      buffer_args.push_back(i.buffer->name());
     }
     for (const func::output& i : f->outputs()) {
-      buffer_args.push_back(variable::make(i.buffer->name()));
+      buffer_args.push_back(i.buffer->name());
       if (!defined.count(i.buffer)) {
         allocations.push_back(i.buffer);
       }
     }
-    stmt call_f = call::make(wrapper, {}, std::move(buffer_args));
+    stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
     result = result.defined() ? block::make(call_f, result) : call_f;
     for (const auto& i : allocations) {
-      result = allocate::make(memory_type::heap, i->name(), i->dims(), result);
+      result = allocate::make(memory_type::heap, i->name(), i->elem_size(), i->dims(), result);
+      defined.insert(i);
     }
 
     // We've just run f, which produced its outputs.
@@ -132,6 +136,17 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     }
   }
 
+  print(std::cout, result, &ctx);
+  symbol_map<std::vector<dim_expr>> bounds;
+  for (const auto& i : inputs) {
+    bounds.set(i->name(), i->dims());
+  }
+  for (const auto& i : outputs) {
+    bounds.set(i->name(), i->dims());
+  }
+  result = infer_allocate_bounds(result, bounds);
+  print(std::cerr, result, &ctx);
+
   return result;
 }
 
@@ -144,34 +159,19 @@ pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::
 
 namespace {
 
-void set_or_assert(eval_context& ctx, const expr& e, index_t value) {
-  if (const variable* v = e.as<variable>()) {
-    ctx.set(v->name, value);
-  } else {
-    assert(evaluate(e) == value);
-  }
-}
-
 void set_buffer(eval_context& ctx, const buffer_expr_ptr& buf_expr, const buffer_base* buf) {
   assert(buf_expr->rank() == buf->rank);
 
   ctx.set(buf_expr->name(), reinterpret_cast<index_t>(buf));
 
-  // TODO: It might be useful/necessary to first set all the variable fields, and then
-  // assert all the non-variable fields, to support doing something like this
-  // (e is buffer_expr_ptr):
-  //
-  // e->dim(1).stride_bytes = e->dim(0).extent * e->dim(0).stride_bytes
-  //
-  // i.e. require that the buffer has no padding between each instance of dim(1).
   for (std::size_t i = 0; i < buf->rank; ++i) {
-    const auto& dim_expr = buf_expr->dim(i);
-    const auto& dim = buf->dims[i];
-
-    set_or_assert(ctx, dim_expr.min, dim.min);
-    set_or_assert(ctx, dim_expr.extent, dim.extent);
-    set_or_assert(ctx, dim_expr.stride_bytes, dim.stride_bytes);
-    set_or_assert(ctx, dim_expr.fold_factor, dim.fold_factor);
+    // If these asserts fail, it's because the user has added constraints to the buffer_expr,
+    // e.g. buf.dim[0].stride_bytes = 4, and the buffer passed in does not satisfy that
+    // constraint.
+    assert(evaluate(buf_expr->dim(i).min, ctx) == buf->dims[i].min);
+    assert(evaluate(buf_expr->dim(i).extent, ctx) == buf->dims[i].extent);
+    assert(evaluate(buf_expr->dim(i).stride_bytes, ctx) == buf->dims[i].stride_bytes);
+    assert(evaluate(buf_expr->dim(i).fold_factor, ctx) == buf->dims[i].fold_factor);
   }
 }
 
