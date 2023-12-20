@@ -147,8 +147,7 @@ namespace {
 void set_or_assert(eval_context& ctx, const expr& e, index_t value) {
   if (const variable* v = e.as<variable>()) {
     ctx.set(v->name, value);
-  }
-  else {
+  } else {
     assert(evaluate(e) == value);
   }
 }
