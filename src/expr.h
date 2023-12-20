@@ -52,6 +52,8 @@ enum class node_type {
   bitwise_xor,
   logical_and,
   logical_or,
+  shift_left,
+  shift_right,
 
   call,
   let_stmt,
@@ -120,6 +122,8 @@ expr operator%(expr a, expr b);
 expr operator&(expr a, expr b);
 expr operator|(expr a, expr b);
 expr operator^(expr a, expr b);
+expr operator<<(expr a, expr b);
+expr operator>>(expr a, expr b);
 
 class expr {
 public:
@@ -157,6 +161,8 @@ public:
   expr& operator&=(const expr& r) { *this = *this & r; return *this; }
   expr& operator^=(const expr& r) { *this = *this ^ r; return *this; }
   expr& operator|=(const expr& r) { *this = *this | r; return *this; }
+  expr& operator<<=(const expr& r) { *this = *this << r; return *this; }
+  expr& operator>>=(const expr& r) { *this = *this >> r; return *this; }
 };
 
 class stmt {
@@ -248,6 +254,8 @@ DECLARE_BINARY_OP(bitwise_or)
 DECLARE_BINARY_OP(bitwise_xor)
 DECLARE_BINARY_OP(logical_and)
 DECLARE_BINARY_OP(logical_or)
+DECLARE_BINARY_OP(shift_left)
+DECLARE_BINARY_OP(shift_right)
 
 #undef DECLARE_BINARY_OP
 
@@ -372,6 +380,8 @@ public:
   virtual void visit(const bitwise_xor*) = 0;
   virtual void visit(const logical_and*) = 0;
   virtual void visit(const logical_or*) = 0;
+  virtual void visit(const shift_left*) = 0;
+  virtual void visit(const shift_right*) = 0;
 
   virtual void visit(const let_stmt*) = 0;
   virtual void visit(const block*) = 0;
@@ -401,6 +411,8 @@ inline void bitwise_or::accept(node_visitor* v) const { v->visit(this); }
 inline void bitwise_xor::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
+inline void shift_left::accept(node_visitor* v) const { v->visit(this); }
+inline void shift_right::accept(node_visitor* v) const { v->visit(this); }
 
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void block::accept(node_visitor* v) const { v->visit(this); }

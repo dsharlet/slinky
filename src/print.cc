@@ -95,6 +95,8 @@ public:
   void visit(const bitwise_xor* x) override { visit_bin_op(x, " ^ "); }
   void visit(const logical_and* x) override { visit_bin_op(x, " && "); }
   void visit(const logical_or* x) override { visit_bin_op(x, " || "); }
+  void visit(const shift_left* x) override { visit_bin_op(x, " << "); }
+  void visit(const shift_right* x) override { visit_bin_op(x, " >> "); }
 
   void visit(const class min* op) override {
     os << "min(";

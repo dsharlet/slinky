@@ -61,6 +61,8 @@ public:
   virtual void visit(const bitwise_xor* x) { e = mutate_binary(x); }
   virtual void visit(const logical_and* x) { e = mutate_binary(x); }
   virtual void visit(const logical_or* x) { e = mutate_binary(x); }
+  virtual void visit(const shift_left* x) { e = mutate_binary(x); }
+  virtual void visit(const shift_right* x) { e = mutate_binary(x); }
 
   virtual void visit(const let_stmt* x) { s = mutate_let(x); }
   virtual void visit(const block* x) {

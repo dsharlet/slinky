@@ -31,6 +31,8 @@ TEST(evaluate_arithmetic) {
   ASSERT_EQ(evaluate(x == 5, context), 0);
   ASSERT_EQ(evaluate(x != 4, context), 0);
   ASSERT_EQ(evaluate(x != 5, context), 1);
+  ASSERT_EQ(evaluate(x << 2, context), 16);
+  ASSERT_EQ(evaluate(x >> 1, context), 2);
 
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 }

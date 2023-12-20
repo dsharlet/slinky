@@ -72,6 +72,8 @@ public:
   void visit(const bitwise_xor* x) override { result = eval_expr(x->a) ^ eval_expr(x->b); }
   void visit(const logical_and* x) override { result = eval_expr(x->a) && eval_expr(x->b); }
   void visit(const logical_or* x) override { result = eval_expr(x->a) || eval_expr(x->b); }
+  void visit(const shift_left* x) override { result = eval_expr(x->a) << eval_expr(x->b); }
+  void visit(const shift_right* x) override { result = eval_expr(x->a) >> eval_expr(x->b); }
 
   void visit(const block* b) override {
     b->a.accept(this);
