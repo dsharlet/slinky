@@ -14,8 +14,8 @@ public:
     x.accept(this);
     return e;
   }
-  stmt mutate(const stmt& s) {
-    s.accept(this);
+  stmt mutate(const stmt& x) {
+    x.accept(this);
     return s;
   }
 
@@ -41,8 +41,9 @@ public:
     }
   }
 
-  virtual void visit(const variable* x) { e = x; }
-  virtual void visit(const constant* x) { e = x; }
+  // TODO: There's some reference counting bug here when setting e = x.
+  virtual void visit(const variable* x) { e = variable::make(x->name); }
+  virtual void visit(const constant* x) { e = constant::make(x->value); }
 
   virtual void visit(const let* x) { e = mutate_let(x); }
   virtual void visit(const add* x) { e = mutate_binary(x); }

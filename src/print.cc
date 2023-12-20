@@ -160,7 +160,7 @@ public:
     os << "}, {";
     for (const expr& e : n->buffer_args) {
       print(e);
-      if (&e != &n->scalar_args.back()) {
+      if (&e != &n->buffer_args.back()) {
         os << ", ";
       }
     }
