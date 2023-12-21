@@ -156,10 +156,62 @@ TEST(pipeline_matmuls) {
   init_random(a_buf);
   init_random(b_buf);
   init_random(c_buf);
-  init_random(d_buf);
+  d_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   buffer_base* inputs[] = { &a_buf, &b_buf, &c_buf };
   buffer_base* outputs[] = { &d_buf };
+  p.evaluate(inputs, outputs);
+}
+
+index_t upsample2x(const buffer<const int>& in, const buffer<int>& out) {
+  for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
+    for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+      out(x, y) = in(x >> 1, y >> 1);
+    }
+  }
+  return 0;
+}
+
+index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
+  for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
+    for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+      out(x, y) = (
+        in(2*x + 0, 2*y + 0) + in(2*x + 1, 2*y + 0) + 
+        in(2*x + 0, 2*y + 1) + in(2*x + 1, 2*y + 1) + 2) / 4;
+    }
+  }
+  return 0;
+}
+
+TEST(pipeline_pyramid) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+
+  expr x = make_variable(ctx, "x");
+  expr y = make_variable(ctx, "y");
+
+  func downsample = func::make<const int, int>(downsample2x, { in, { 2*x + interval(0, 1), 2*y + interval(0, 1)} }, { intm, {x, y} });
+  func upsample = func::make<const int, int>(upsample2x, { intm, { interval(x)/2, interval(y)/2}}, {out, {x, y}});
+
+  pipeline p(ctx, { in }, { out });
+
+  // Run the pipeline.
+  const int M = 10;
+  const int N = 10;
+  buffer<int, 2> in_buf({ M, N });
+  buffer<int, 2> out_buf({ M, N });
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &in_buf };
+  buffer_base* outputs[] = { &out_buf };
   p.evaluate(inputs, outputs);
 }

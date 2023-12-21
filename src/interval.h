@@ -96,6 +96,9 @@ struct interval {
   }
 };
 
+inline interval operator*(const expr& a, const interval& b) { return b * a; }
+inline interval operator+(const expr& a, const interval& b) { return b + a; }
+
 using box = std::vector<interval>;
 
 inline box operator|(box a, const box& b) {

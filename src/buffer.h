@@ -35,6 +35,8 @@ struct dim {
   index_t max() const { return min + extent - 1; }
 
   constexpr std::ptrdiff_t flat_offset_bytes(index_t i) const {
+    assert(i >= min);
+    assert(i <= max());
     // If we use a mask instead of a fold factor, we can just make the mask -1 by default, and always
     // bitwise and to implement the fold factor.
     if (fold_factor <= 0) {

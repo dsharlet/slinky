@@ -122,6 +122,7 @@ public:
 
     static std::vector<rule> rules = {
       {x - x, 0},
+      {(x + y) - z, x + (y - z), y - z > -100},
       {(load_buffer_meta::make(x, buffer_meta::min, y) + load_buffer_meta::make(x, buffer_meta::extent, y)) - 1, load_buffer_meta::make(x, buffer_meta::max, y)},
     };
     e = apply_rules(rules, e);
