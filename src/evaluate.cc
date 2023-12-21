@@ -135,6 +135,7 @@ public:
     char* storage = reinterpret_cast<char*>(alloca(sizeof(buffer_base) + sizeof(dim) * rank));
     buffer_base* buffer = reinterpret_cast<buffer_base*>(&storage[0]);
     buffer->elem_size = n->elem_size;
+    buffer->rank = rank;
     buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
 
     for (std::size_t i = 0; i < rank; ++i) {
