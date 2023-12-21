@@ -115,6 +115,9 @@ public:
       e = *ca + *cb;
       return;
     }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -122,6 +125,7 @@ public:
     }
 
     static std::vector<rule> rules = {
+      {x + 0, x},
       {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
     };
     e = apply_rules(rules, e);
@@ -144,7 +148,56 @@ public:
 
     static std::vector<rule> rules = {
       {x - x, 0},
+      {x - 0, x},
       {(buffer_min(x, y) + buffer_extent(x, y)) - 1, buffer_max(x, y)},
+    };
+    e = apply_rules(rules, e);
+  }
+
+  void visit(const mul* op) {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    auto ca = is_constant(a);
+    auto cb = is_constant(b);
+    if (ca && cb) {
+      e = *ca * *cb;
+      return;
+    }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      e = op;
+    } else {
+      e = a * b;
+    }
+
+    static std::vector<rule> rules = {
+      {x*0, 0},
+      {x*1, x},
+      {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
+    };
+    e = apply_rules(rules, e);
+  }
+
+  void visit(const div* op) {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    auto ca = is_constant(a);
+    auto cb = is_constant(b);
+    if (ca && cb) {
+      e = euclidean_div(*ca, *cb);
+      return;
+    }
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      e = op;
+    } else {
+      e = a / b;
+    }
+
+    static std::vector<rule> rules = {
+      {x/1, x},
+      {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -177,7 +230,7 @@ public:
       // This let is dead
       return body;
     } else if (refs == 1 || value.as<constant>() || value.as<variable>() || value.as<load_buffer_meta>()) {
-      return substitute(body, { { op->name, value} });
+      return mutate(substitute(body, { { op->name, value } }));
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
       return decltype(body){op};
     } else {
