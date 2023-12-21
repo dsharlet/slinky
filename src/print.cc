@@ -211,7 +211,7 @@ public:
       os << std::endl;
     }
     --depth;
-    os << "} on " << n->type << ") {" << std::endl;
+    os << indent() << "} on " << n->type << ") {" << std::endl;
     ++depth;
     print(n->body);
     --depth;
