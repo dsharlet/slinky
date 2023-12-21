@@ -26,7 +26,7 @@ public:
     if (value.same_as(x->value) && body.same_as(x->body)) {
       return decltype(body){x};
     } else {
-      return T::make(x->name, std::move(x->value), std::move(x->body));
+      return T::make(x->name, std::move(value), std::move(body));
     }
   }
 
