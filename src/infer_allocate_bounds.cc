@@ -48,7 +48,7 @@ public:
       // TODO: We need a better way to map inputs/outputs between func and call.
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
       for (const auto& output : c->fn->outputs()) {
-        symbol_id arg = *arg_i++;
+        expr arg = variable::make(*arg_i++);
         for (index_t d = 0; d < output.dims.size(); ++d) {
           symbol_id dim = output.dims[d].as<variable>()->name;
           mins[dim] = load_buffer_meta::make(arg, buffer_meta::min, d);

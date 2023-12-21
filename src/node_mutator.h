@@ -41,9 +41,8 @@ public:
     }
   }
 
-  // TODO: There's some reference counting bug here when setting e = x.
-  virtual void visit(const variable* x) { e = variable::make(x->name); }
-  virtual void visit(const constant* x) { e = constant::make(x->value); }
+  virtual void visit(const variable* x) { e = x; }
+  virtual void visit(const constant* x) { e = x; }
 
   virtual void visit(const let* x) { e = mutate_let(x); }
   virtual void visit(const add* x) { e = mutate_binary(x); }
@@ -66,7 +65,13 @@ public:
   virtual void visit(const shift_right* x) { e = mutate_binary(x); }
   
   virtual void visit(const load_buffer_meta* x) {
-    e = load_buffer_meta::make(x->buffer, x->meta, x->dim);
+    expr buffer = mutate(x->buffer);
+    expr dim = mutate(x->dim);
+    if (buffer.same_as(x->buffer) && dim.same_as(x->dim)) {
+      e = x;
+    } else {
+      e = load_buffer_meta::make(std::move(buffer), x->meta, std::move(dim));
+    }
   }
 
   virtual void visit(const let_stmt* x) { s = mutate_let(x); }

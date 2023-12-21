@@ -81,7 +81,7 @@ enum class buffer_meta {
 
 class node_visitor;
 
-class base_node : public std::enable_shared_from_this<base_node> {
+class base_node  {
 public:
   base_node(node_type type) : type(type) {}
   virtual ~base_node() {}
@@ -100,12 +100,12 @@ public:
   }
 };
 
-class base_expr_node : public base_node {
+class base_expr_node : public base_node, public std::enable_shared_from_this<base_expr_node> {
 public:
   base_expr_node(node_type type) : base_node(type) {}
 };
 
-class base_stmt_node : public base_node {
+class base_stmt_node : public base_node, public std::enable_shared_from_this<base_stmt_node> {
 public:
   base_stmt_node(node_type type) : base_node(type) {}
 };
@@ -144,7 +144,14 @@ public:
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
-  expr(const base_expr_node* e) : e(e) {}
+
+  // Unfortunately, std::enable_shared_from_this doesn't mean we can just do this:
+  // T* n = new T();
+  // std::shared_ptr<T> shared(n);
+  // Instead, we have to use shared_from_this().
+  // This also means all the initializations in expr.cc are a mess.
+  // TODO: Maybe we should just roll our own smart pointer, this sucks.
+  expr(const base_expr_node* e) : e(e->shared_from_this()) {}
 
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
@@ -182,7 +189,7 @@ public:
   stmt() = default;
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
-  stmt(const base_stmt_node* s) : s(s) {}
+  stmt(const base_stmt_node* s) : s(s->shared_from_this()) {}
   stmt(std::initializer_list<stmt> stmts);
 
   stmt& operator=(const stmt&) = default;
@@ -236,7 +243,7 @@ public:
   static expr make(index_t value);
   static expr make(const void* value);
 
-  static constexpr node_type static_type = node_type::variable;
+  static constexpr node_type static_type = node_type::constant;
 };
 
 #define DECLARE_BINARY_OP(op) \
@@ -271,14 +278,14 @@ DECLARE_BINARY_OP(shift_right)
 
 class load_buffer_meta : public expr_node<load_buffer_meta> {
 public:
-  symbol_id buffer;
+  expr buffer;
   buffer_meta meta;
   // This is an index and not an expr, which means we can't read expr-dependent dims.
-  index_t dim;
+  expr dim;
 
   void accept(node_visitor* v) const;
 
-  static expr make(symbol_id buffer, buffer_meta meta, index_t dim);
+  static expr make(expr buffer, buffer_meta meta, expr dim);
 
   static constexpr node_type static_type = node_type::load_buffer_meta;
 };
@@ -466,6 +473,16 @@ expr operator&&(expr a, expr b);
 expr operator||(expr a, expr b);
 expr min(expr a, expr b);
 expr max(expr a, expr b);
+
+inline const index_t* is_constant(const expr& x) {
+  const constant* cx = x.as<constant>();
+  return cx ? &cx->value : nullptr;
+}
+
+inline const symbol_id* is_variable(const expr& x) {
+  const variable* vx = x.as<variable>();
+  return vx ? &vx->name : nullptr;
+}
 
 }  // namespace slinky
 

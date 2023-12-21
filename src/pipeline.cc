@@ -7,16 +7,18 @@
 #include "evaluate.h"
 #include "print.h"
 #include "infer_allocate_bounds.h"
+#include "simplify.h"
 
 namespace slinky {
   
 buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank) : name_(name), elem_size_(elem_size), producer_(nullptr) {
   dims_.reserve(rank);
+  auto var = variable::make(name);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
-    expr min = load_buffer_meta::make(name_, buffer_meta::min, i);
-    expr extent = load_buffer_meta::make(name_, buffer_meta::extent, i);
-    expr stride_bytes = load_buffer_meta::make(name_, buffer_meta::stride_bytes, i);
-    expr fold_factor = load_buffer_meta::make(name_, buffer_meta::fold_factor, i);
+    expr min = load_buffer_meta::make(var, buffer_meta::min, i);
+    expr extent = load_buffer_meta::make(var, buffer_meta::extent, i);
+    expr stride_bytes = load_buffer_meta::make(var, buffer_meta::stride_bytes, i);
+    expr fold_factor = load_buffer_meta::make(var, buffer_meta::fold_factor, i);
     dims_.emplace_back(min, extent, stride_bytes, fold_factor);
   }
 }
@@ -145,6 +147,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     bounds.set(i->name(), i->dims());
   }
   result = infer_allocate_bounds(result, bounds);
+  print(std::cerr, result, &ctx);
+
+  result = simplify(result);
   print(std::cerr, result, &ctx);
 
   return result;

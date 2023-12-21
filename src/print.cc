@@ -126,12 +126,14 @@ public:
   }
 
   void visit(const load_buffer_meta* x) override {
-    print_symbol_id(x->buffer);
+    print(x->buffer);
     os << "->";
     if (x->meta == buffer_meta::base) {
       os << "base";
     } else {
-      os << "dims[" << x->dim << "]." << x->meta;
+      os << "dims[";
+      print(x->dim);
+      os << "]." << x->meta;
     }
   }
 
@@ -191,9 +193,10 @@ public:
   void visit(const allocate* n) override {
     os << indent();
     print_symbol_id(n->name);
-    os << " = allocate({";
+    os << " = allocate({" << std::endl;
+    ++depth;
     for (const dim_expr& d : n->dims) {
-      os << "{";
+      os << indent() << "{";
       print(d.min);
       os << ", ";
       print(d.extent);
@@ -205,7 +208,9 @@ public:
       if (&d != &n->dims.back()) {
         os << ", ";
       }
+      os << std::endl;
     }
+    --depth;
     os << "} on " << n->type << ") {" << std::endl;
     ++depth;
     print(n->body);
