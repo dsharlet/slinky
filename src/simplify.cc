@@ -31,6 +31,8 @@ expr buffer_extent(expr buf, expr dim) {
 }
 
 class simplifier : public node_mutator {
+  symbol_map<int> references;
+
 public:
   simplifier() {}
 
@@ -46,6 +48,16 @@ public:
       }
     }
     return x;
+  }
+
+  void visit(const variable* op) {
+    auto& ref_count = references[op->name];
+    if (!ref_count) {
+      ref_count = 1;
+    } else {
+      *ref_count += 1;
+    }
+    e = op;
   }
 
   void visit(const class min* op) {
@@ -152,6 +164,29 @@ public:
       e = a < b;
     }
   }
+
+  template <typename T>
+  auto visit_let(const T* op) {
+    expr value = mutate(op->value);
+
+    scoped_value<int> ref_count(references, op->name, 0);
+    auto body = mutate(op->body);
+
+    int refs = *references[op->name];
+    if (refs == 0) {
+      // This let is dead
+      return body;
+    } else if (refs == 1 || value.as<constant>() || value.as<variable>() || value.as<load_buffer_meta>()) {
+      return substitute(body, { { op->name, value} });
+    } else if (value.same_as(op->value) && body.same_as(op->body)) {
+      return decltype(body){op};
+    } else {
+      return T::make(op->name, std::move(value), std::move(body));
+    }
+  }
+
+  void visit(const let* op) { e = visit_let(op); }
+  void visit(const let_stmt* op) { s = visit_let(op); }
 };
 
 }  // namespace
