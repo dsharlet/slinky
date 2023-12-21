@@ -77,14 +77,18 @@ public:
 
   void visit(const load_buffer_meta* x) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(eval_expr(x->buffer));
-    index_t dim = eval_expr(x->dim);
-    switch (x->meta) {
-    case buffer_meta::base: result = reinterpret_cast<index_t>(buffer->base); return;
-    case buffer_meta::min: result = buffer->dims[dim].min; return;
-    case buffer_meta::max: result = buffer->dims[dim].max(); return;
-    case buffer_meta::extent: result = buffer->dims[dim].extent; return;
-    case buffer_meta::stride_bytes: result = buffer->dims[dim].stride_bytes; return;
-    case buffer_meta::fold_factor: result = buffer->dims[dim].fold_factor; return;
+    if (x->meta == buffer_meta::base) {
+      result = reinterpret_cast<index_t>(buffer->base);
+    } else {
+      index_t dim = eval_expr(x->dim);
+      switch (x->meta) {
+      case buffer_meta::min: result = buffer->dims[dim].min; return;
+      case buffer_meta::max: result = buffer->dims[dim].max(); return;
+      case buffer_meta::extent: result = buffer->dims[dim].extent; return;
+      case buffer_meta::stride_bytes: result = buffer->dims[dim].stride_bytes; return;
+      case buffer_meta::fold_factor: result = buffer->dims[dim].fold_factor; return;
+      case buffer_meta::base: std::abort(); // Handled above.
+      }
     }
   }
 
