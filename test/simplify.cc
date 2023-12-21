@@ -20,12 +20,17 @@ void test_simplify(const expr& test, const expr& expected) {
 }
 
 TEST(simplify) {
-  test_simplify(1 + 2, 3);
-  test_simplify(1 - 2, -1);
+  test_simplify(expr(1) + 2, 3);
+  test_simplify(expr(1) - 2, -1);
+  test_simplify(expr(1) < 2, 1);
+  test_simplify(expr(1) > 2, 0);
 
   test_simplify(min(1, 2), 1);
   test_simplify(max(1, 2), 2);
-  test_simplify(min(x, x), x);
   test_simplify(min(x, y), min(x, y));
+  test_simplify(max(x, y), max(x, y));
+  test_simplify(min(x, x), x);
   test_simplify(max(x, x), x);
+  test_simplify(min(x / 2, y / 2), min(x, y) / 2);
+  test_simplify(max(x / 2, y / 2), max(x, y) / 2);
 }
