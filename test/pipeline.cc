@@ -137,11 +137,11 @@ TEST(pipeline_matmuls) {
 
   // The bounds required of the dimensions consumed by the reduction depend on the size of the buffers passed in.
   // Note that we haven't used any constants yet.
-  expr K_ab = a->dim(1).extent;
-  expr K_d = c->dim(0).extent;
+  interval K_ab(a->dim(1).min, a->dim(1).max());
+  interval K_d(c->dim(0).min, c->dim(0).max());
 
-  func matmul_ab = func::make<const int, const int, int>(matmul, { a, { interval(i), interval(0, K_ab) } }, { b, {interval(0, K_ab), interval(j)} }, { ab, {i, j} });
-  func matmul_abc = func::make<const int, const int, int>(matmul, { ab, { interval(i), interval(0, K_d) } }, { c, {interval(0, K_d), interval(j)} }, { d, {i, j} });
+  func matmul_ab = func::make<const int, const int, int>(matmul, { a, { interval(i), K_ab } }, { b, {K_ab, interval(j)} }, { ab, {i, j} });
+  func matmul_abc = func::make<const int, const int, int>(matmul, { ab, { interval(i), K_d } }, { c, {K_d, interval(j)} }, { d, {i, j} });
 
   pipeline p(ctx, { a, b, c }, { d });
 

@@ -357,6 +357,8 @@ struct dim_expr {
   expr extent;
   expr stride_bytes;
   expr fold_factor;
+
+  expr max() const { return min + extent - 1; }
 };
 
 class allocate : public stmt_node<allocate> {
