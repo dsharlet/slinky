@@ -91,12 +91,13 @@ public:
     }
   }
   virtual void visit(const loop* x) {
-    expr n = mutate(x->n);
+    expr begin = mutate(x->begin);
+    expr end = mutate(x->end);
     stmt body = mutate(x->body);
-    if (n.same_as(x->n) && body.same_as(x->body)) {
+    if (begin.same_as(x->begin) && end.same_as(x->end) && body.same_as(x->body)) {
       s = x;
     } else {
-      s = loop::make(x->name, std::move(x->n), std::move(x->body));
+      s = loop::make(x->name, std::move(begin), std::move(end), std::move(body));
     }
   }
   virtual void visit(const if_then_else* x) {
@@ -125,6 +126,16 @@ public:
     }
     stmt body = mutate(x->body);
     s = allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body));
+  }
+  virtual void visit(const crop* x) {
+    expr min = mutate(x->min);
+    expr extent = mutate(x->extent);
+    stmt body = mutate(x->body);
+    if (min.same_as(x->min) && extent.same_as(x->extent) && body.same_as(x->body)) {
+      s = x;
+    } else {
+      s = crop::make(x->name, x->dim, std::move(min), std::move(extent), std::move(body));
+    }
   }
   virtual void visit(const check* x) {
     expr condition = mutate(x->condition);

@@ -145,8 +145,10 @@ public:
   void visit(const loop* l) override {
     os << indent() << "loop(";
     print_symbol_id(l->name);
-    os << " in [0, ";
-    print(l->n);
+    os << " in [";
+    print(l->begin);
+    os << ", ";
+    print(l->end);
     os << ")) {" << std::endl;
     ++depth;
     print(l->body);
@@ -212,6 +214,21 @@ public:
     }
     --depth;
     os << indent() << "} on " << n->type << ") {" << std::endl;
+    ++depth;
+    print(n->body);
+    --depth;
+    os << indent() << "}" << std::endl;
+  }
+
+  void visit(const crop* n) override {
+    os << indent();
+    os << "crop(";
+    print_symbol_id(n->name);
+    os << ", " << n->dim << ", ";
+    print(n->min);
+    os << ", ";
+    print(n->extent);
+    os << ") {" << std::endl;
     ++depth;
     print(n->body);
     --depth;

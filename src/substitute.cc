@@ -146,6 +146,9 @@ public:
   virtual void visit(const allocate* x) {
     std::abort();
   }
+  virtual void visit(const crop* x) {
+    std::abort();
+  }
   virtual void visit(const check* x) {
     std::abort();
   }

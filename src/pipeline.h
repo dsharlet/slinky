@@ -15,6 +15,7 @@ class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
   symbol_id name_;
   index_t elem_size_;
   std::vector<dim_expr> dims_;
+  memory_type storage_ = memory_type::heap;
 
   func* producer_;
   std::vector<func*> consumers_;
@@ -40,6 +41,9 @@ public:
   const std::vector<dim_expr>& dims() const { return dims_; }
   dim_expr& dim(int i) { return dims_[i]; }
   const dim_expr& dim(int i) const { return dims_[i]; }
+
+  buffer_expr& store_in(memory_type type) { storage_ = type; return *this; }
+  memory_type storage() const { return storage_; }
 
   // buffer_exprs can have many consumers, but only one producer.
   const func* producer() const { return producer_; }
@@ -77,6 +81,8 @@ private:
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
+  std::vector<expr> loops_;
+
 public:
   func() {}
   func(callable impl, std::vector<input> inputs, std::vector<output> outputs);
@@ -86,6 +92,10 @@ public:
   func& operator=(func&&) = default;
 
   bool defined() const { return impl_ != nullptr; }
+
+  // Describes which loops should be explicit for this func.
+  func& loops(std::vector<expr> l) { loops_ = std::move(l); return *this; }
+  const std::vector<expr>& loops() const { return loops_; }
 
   // TODO: Try to do this with a variadic template implementation.
   template <typename Out1>

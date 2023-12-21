@@ -64,12 +64,12 @@ TEST(evaluate_loop) {
     return 0;
   }, { x }, {}, nullptr);
 
-  stmt l = loop::make(ctx.lookup("x"), 10, c);
+  stmt l = loop::make(ctx.lookup("x"), 2, 12, c);
 
   int result = evaluate(l);
   ASSERT_EQ(result, 0);
   ASSERT_EQ(calls.size(), 10);
   for (int i = 0; i < 10; ++i) {
-    ASSERT_EQ(calls[i], i);
+    ASSERT_EQ(calls[i], i + 2);
   }
 }

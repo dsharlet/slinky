@@ -98,8 +98,9 @@ public:
   }
 
   void visit(const loop* l) override {
-    index_t n = eval_expr(l->n);
-    for (index_t i = 0; i < n; ++i) {
+    index_t begin = eval_expr(l->begin, 0);
+    index_t end = eval_expr(l->end);
+    for (index_t i = begin; i < end; ++i) {
       scoped_value<index_t> l_name(context, l->name, i);
       l->body.accept(this);
     }
@@ -165,6 +166,27 @@ public:
     if (n->type == memory_type::heap) {
       free(buffer->base);
     }
+  }
+
+  void visit(const crop* n) override {
+    buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
+
+    void* old_base = buffer->base;
+    index_t old_min = buffer->dims[n->dim].min;
+    index_t old_extent = buffer->dims[n->dim].extent;
+
+    index_t min = eval_expr(n->min);
+    index_t extent = eval_expr(n->extent);
+
+    buffer->base = offset_bytes(buffer->base, buffer->dims[n->dim].flat_offset_bytes(min));
+    buffer->dims[n->dim].min = min;
+    buffer->dims[n->dim].extent = extent;
+
+    n->body.accept(this);
+
+    buffer->base = old_base;
+    buffer->dims[n->dim].min = old_min;
+    buffer->dims[n->dim].extent = old_extent;
   }
 
   void visit(const check* n) override {

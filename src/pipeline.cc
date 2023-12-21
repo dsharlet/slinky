@@ -8,6 +8,7 @@
 #include "print.h"
 #include "infer_allocate_bounds.h"
 #include "simplify.h"
+#include "substitute.h"
 
 namespace slinky {
   
@@ -119,9 +120,32 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       }
     }
     stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
+    for (const auto& loop : f->loops()) {
+      interval bounds;
+      std::vector<std::pair<index_t, buffer_expr_ptr>> to_crop;
+      for (const auto& o : f->outputs()) {
+        for (index_t d = 0; d < o.dims.size(); ++d) {
+          if (match(o.dims[d], loop)) {
+            to_crop.emplace_back(d, o.buffer);
+            // This output uses this loop. Add it to the bounds.
+            interval bounds_d(o.buffer->dim(d).min, o.buffer->dim(d).max());
+            if (bounds.min.defined() && bounds.max.defined()) {
+              bounds |= bounds_d;
+            } else {
+              bounds = bounds_d;
+            }
+          }
+        }
+      }
+
+      for (const auto& i : to_crop) {
+        call_f = crop::make(i.second->name(), i.first, loop, 1, call_f);
+      }
+      call_f = loop::make(loop.as<variable>()->name, bounds.min, bounds.max + 1, call_f);
+    }
     result = result.defined() ? block::make(call_f, result) : call_f;
     for (const auto& i : allocations) {
-      result = allocate::make(memory_type::heap, i->name(), i->elem_size(), i->dims(), result);
+      result = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), result);
       defined.insert(i);
     }
 
@@ -146,7 +170,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   for (const auto& i : outputs) {
     bounds.set(i->name(), i->dims());
   }
-  result = infer_allocate_bounds(result, bounds);
+  result = infer_allocate_bounds(result, ctx, bounds);
   print(std::cerr, result, &ctx);
 
   result = simplify(result);

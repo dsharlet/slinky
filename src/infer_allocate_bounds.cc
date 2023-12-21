@@ -11,10 +11,11 @@ namespace slinky {
 
 class allocate_bounds_inferrer : public node_mutator {
 public:
+  node_context& ctx;
   symbol_map<std::vector<dim_expr>>& buffers;
   symbol_map<box> inferring;
 
-  allocate_bounds_inferrer(symbol_map<std::vector<dim_expr>>& buffers) : buffers(buffers) {}
+  allocate_bounds_inferrer(node_context& ctx, symbol_map<std::vector<dim_expr>>& buffers) : ctx(ctx), buffers(buffers) {}
 
   void visit(const allocate* alloc) override {
     assert(!inferring.contains(alloc->name));
@@ -29,12 +30,18 @@ public:
     std::vector<dim_expr> dims;
     dims.reserve(bounds->size());
     expr stride_bytes = alloc->elem_size;
+    std::vector<std::pair<symbol_id, expr>> lets;
     for (const interval& i : *bounds) {
-      expr extent = i.extent();
+      symbol_id extent_name = ctx.insert();
+      lets.emplace_back(extent_name, i.extent());
+      expr extent = variable::make(extent_name);
       dims.emplace_back(i.min, extent, stride_bytes, -1);
       stride_bytes *= extent;
     }
     s = allocate::make(alloc->type, alloc->name, alloc->elem_size, dims, body);
+    for (const auto& i : lets) {
+      s = let_stmt::make(i.first, i.second, s);
+    }
   }
 
   void visit(const call* c) override {
@@ -73,8 +80,8 @@ public:
   }
 };
 
-stmt infer_allocate_bounds(const stmt& s, symbol_map<std::vector<dim_expr>>& buffers) {
-  return allocate_bounds_inferrer(buffers).mutate(s);
+stmt infer_allocate_bounds(const stmt& s, node_context& ctx, symbol_map<std::vector<dim_expr>>& buffers) {
+  return allocate_bounds_inferrer(ctx, buffers).mutate(s);
 }
 
 }  // namespace slinky

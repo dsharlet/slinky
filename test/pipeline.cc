@@ -59,6 +59,53 @@ TEST(pipeline_trivial) {
   }
 }
 
+index_t multiply_2_assert_1_element(const buffer<const int>& in, const buffer<int>& out) {
+  std::size_t count = 0;
+  for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
+    out(i) = in(i) * 2;
+    ++count;
+  }
+  ASSERT_EQ(count, 1);
+  return 0;
+}
+
+// A trivial pipeline with one stage, where the loop over the one dimesion is explicit.
+TEST(pipeline_trivial_explicit) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+
+  expr x = make_variable(ctx, "x");
+
+  func mul = func::make<const int, int>(multiply_2_assert_1_element, { in, {interval(x)} }, { out, {x} });
+  mul.loops({ x });
+
+  pipeline p(ctx, { in }, { out });
+
+  // Run the pipeline
+  const int N = 10;
+
+  buffer<int, 1> in_buf({ N });
+  in_buf.allocate();
+  for (int i = 0; i < N; ++i) {
+    in_buf(i) = i;
+  }
+
+  buffer<int, 1> out_buf({ N });
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &in_buf };
+  buffer_base* outputs[] = { &out_buf };
+  p.evaluate(inputs, outputs);
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(out_buf(i), 2 * i);
+  }
+}
+
 // An example of two 1D elementwise operations in sequence.
 TEST(pipeline_elementwise_1d) {
   // Make the pipeline

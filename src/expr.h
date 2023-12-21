@@ -62,6 +62,7 @@ enum class node_type {
   loop,
   if_then_else,
   allocate,
+  crop,
   check,
 };
 
@@ -144,6 +145,7 @@ public:
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
+  expr(symbol_id var);
 
   // Unfortunately, std::enable_shared_from_this doesn't mean we can just do this:
   // T* n = new T();
@@ -336,12 +338,13 @@ public:
 class loop : public stmt_node<loop> {
 public:
   symbol_id name;
-  expr n;
+  expr begin;
+  expr end;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, expr n, stmt body);
+  static stmt make(symbol_id name, expr begin, expr end, stmt body);
 
   static constexpr node_type static_type = node_type::loop;
 };
@@ -381,6 +384,25 @@ public:
   static stmt make(memory_type type, symbol_id name, index_t elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
+};
+
+// This node is equivalent to the following:
+// 1. Crop `name` to the interval `min, max` in-place
+// 2. Evaluate `body`
+// 3. Restore the original buffer
+class crop : public stmt_node<crop> {
+public:
+  symbol_id name;
+  index_t dim;
+  expr min;
+  expr extent;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, index_t dim, expr min, expr extent, stmt body);
+
+  static constexpr node_type static_type = node_type::crop;
 };
 
 class check : public stmt_node<check> {
@@ -427,6 +449,7 @@ public:
   virtual void visit(const if_then_else*) = 0;
   virtual void visit(const call*) = 0;
   virtual void visit(const allocate*) = 0;
+  virtual void visit(const crop*) = 0;
   virtual void visit(const check*) = 0;
 };
 
@@ -459,6 +482,7 @@ inline void loop::accept(node_visitor* v) const { v->visit(this); }
 inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
+inline void crop::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 expr make_variable(node_context& ctx, const std::string& name);

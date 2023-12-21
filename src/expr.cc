@@ -61,10 +61,14 @@ stmt let_stmt::make(symbol_id name, expr value, stmt body) {
   return make_let<let_stmt>(name, std::move(value), std::move(body)).get();
 }
 
-expr variable::make(symbol_id name) {
+std::shared_ptr<const variable> make_variable(symbol_id name) {
   auto n = std::make_shared<variable>();
   n->name = name;
-  return n.get();
+  return n;
+}
+
+expr variable::make(symbol_id name) {
+  return make_variable(name).get();
 }
 
 std::shared_ptr<const constant> make_constant(index_t value) {
@@ -78,6 +82,7 @@ expr constant::make(index_t value) {
 }
 
 expr::expr(index_t value) : expr(make_constant(value).get()) {}
+expr::expr(symbol_id name) : expr(make_variable(name).get()) {}
 
 expr constant::make(const void* value) {
   return make(reinterpret_cast<index_t>(value));
@@ -163,10 +168,11 @@ stmt block::make(stmt a, stmt b) {
   return n.get();
 }
 
-stmt loop::make(symbol_id name, expr n, stmt body) {
+stmt loop::make(symbol_id name, expr begin, expr end, stmt body) {
   auto l = std::make_shared<loop>();
   l->name = name;
-  l->n = std::move(n);
+  l->begin = std::move(begin);
+  l->end = std::move(end);
   l->body = std::move(body);
   return l.get();
 }
@@ -185,6 +191,16 @@ stmt allocate::make(memory_type type, symbol_id name, index_t elem_size, std::ve
   n->name = name;
   n->elem_size = elem_size;
   n->dims = std::move(dims);
+  n->body = std::move(body);
+  return n.get();
+}
+
+stmt crop::make(symbol_id name, index_t dim, expr min, expr extent, stmt body) {
+  auto n = std::make_shared<crop>();
+  n->name = name;
+  n->dim = dim;
+  n->min = std::move(min);
+  n->extent = std::move(extent);
   n->body = std::move(body);
   return n.get();
 }
