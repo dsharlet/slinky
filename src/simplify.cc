@@ -20,6 +20,16 @@ struct rule {
   expr predicate;
 };
 
+expr buffer_min(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim));
+}
+expr buffer_max(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim));
+}
+expr buffer_extent(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
+}
+
 class simplifier : public node_mutator {
 public:
   simplifier() {}
@@ -56,7 +66,7 @@ public:
     static std::vector<rule> rules = {
       {min(x, x), x},
       {min(x / z, y / z), min(x, y) / z, z > 0},
-      {min(load_buffer_meta::make(x, buffer_meta::min, y), load_buffer_meta::make(x, buffer_meta::max, y)), load_buffer_meta::make(x, buffer_meta::min, y)},
+      {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -79,7 +89,7 @@ public:
     static std::vector<rule> rules = {
       {max(x, x), x},
       {max(x / z, y / z), max(x, y) / z, z > 0},
-      {max(load_buffer_meta::make(x, buffer_meta::min, y), load_buffer_meta::make(x, buffer_meta::max, y)), load_buffer_meta::make(x, buffer_meta::max, y)},
+      {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -100,7 +110,7 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {(load_buffer_meta::make(x, buffer_meta::max, y) - load_buffer_meta::make(x, buffer_meta::min, y)) + 1, load_buffer_meta::make(x, buffer_meta::extent, y)},
+      {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -122,8 +132,7 @@ public:
 
     static std::vector<rule> rules = {
       {x - x, 0},
-      {(x + y) - z, x + (y - z), y - z > -100},
-      {(load_buffer_meta::make(x, buffer_meta::min, y) + load_buffer_meta::make(x, buffer_meta::extent, y)) - 1, load_buffer_meta::make(x, buffer_meta::max, y)},
+      {(buffer_min(x, y) + buffer_extent(x, y)) - 1, buffer_max(x, y)},
     };
     e = apply_rules(rules, e);
   }
