@@ -42,6 +42,7 @@ public:
   }
 
   virtual void visit(const variable* x) { e = x; }
+  virtual void visit(const wildcard* x) { e = x; }
   virtual void visit(const constant* x) { e = x; }
 
   virtual void visit(const let* x) { e = mutate_let(x); }

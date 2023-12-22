@@ -36,6 +36,13 @@ public:
     result = *value;
   }
 
+  void visit(const wildcard* w) override {
+    // Maybe evaluating this should just be an error.
+    auto value = context.lookup(w->name);
+    assert(value);
+    result = *value;
+  }
+
   void visit(const constant* c) override {
     result = c->value;
   }

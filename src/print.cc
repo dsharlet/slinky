@@ -58,6 +58,9 @@ public:
   void visit(const variable* v) override {
     print_symbol_id(v->name);
   }
+  void visit(const wildcard* w) override {
+    print_symbol_id(w->name);
+  }
   void visit(const constant* c) override {
     os << c->value;
   }
@@ -76,11 +79,12 @@ public:
     print_symbol_id(l->name);
     os << " = ";
     print(l->value);
-    os << " in " << std::endl;
+    os << " { " << std::endl;
     ++depth;
     indent();
     print(l->body);
     --depth;
+    os << indent() << "}" << std::endl;
   }
 
   template <typename T>

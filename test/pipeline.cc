@@ -262,3 +262,54 @@ TEST(pipeline_pyramid) {
   buffer_base* outputs[] = { &out_buf };
   p.evaluate(inputs, outputs);
 }
+
+index_t sum3x3(const buffer<const int>& in, const buffer<int>& out) {
+  for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
+    for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+      int sum = 0;
+      for (index_t dy = -1; dy <= 1; ++dy) {
+        for (index_t dx = -1; dx <= 1; ++dx) {
+          sum += in(x + dx, y + dy);
+        }
+      }
+      out(x, y) = sum;
+    }
+  }
+  return 0;
+}
+
+TEST(pipeline_stencil) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+
+  expr x = make_variable(ctx, "x");
+  expr y = make_variable(ctx, "y");
+
+  func add = func::make<const int, int>(add_1, { in, {interval(x) / 2, interval(y) / 2} }, { intm, {x, y} });
+  func stencil = func::make<const int, int>(sum3x3, { intm, {interval(-1, 1) + x, interval(-1, 1) + y} }, { out, {x, y} });
+
+  pipeline p(ctx, { in }, { out });
+
+  // Run the pipeline.
+  const int M = 10;
+  const int N = 10;
+  buffer<int, 2> in_buf({ M + 2, N + 2 });
+  in_buf.dims[0].min = -1;
+  in_buf.dims[1].min = -1;
+  buffer<int, 2> out_buf({ M, N });
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &in_buf };
+  buffer_base* outputs[] = { &out_buf };
+  p.evaluate(inputs, outputs);
+
+
+}

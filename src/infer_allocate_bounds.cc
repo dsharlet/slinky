@@ -68,7 +68,8 @@ public:
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
         expr max = substitute(input.bounds[d].max, maxs);
-        interval required_d(slinky::min(min, max), slinky::max(min, max));
+        // TODO: Do we need to worry about the possibility of min > max here? 
+        interval required_d(min, max);
         if (bounds[d].min.defined() && bounds[d].max.defined()) {
           bounds[d] |= required_d;
         } else {

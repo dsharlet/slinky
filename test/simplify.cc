@@ -46,6 +46,8 @@ TEST(simplify) {
 
   test_simplify(x/x, x/x);  // Not simplified due to possible division by zero.
   test_simplify(0/x, 0/x);  // Not simplified due to possible division by zero.
+
+  test_simplify(((x + 1) - (y - 1)) + 1, x - y + 3);
 }
 
 TEST(simplify_let) {

@@ -60,22 +60,38 @@ public:
     e = ex->b;
     x->b.accept(this);
   }
+  
+  void match_wildcard(symbol_id name, std::function<bool(const expr&)> predicate) {
+    if (!match) return;
+
+    expr& matched = (*matches)[name];
+    if (matched.defined()) {
+      // We already matched this variable. The expression must match.
+      match = slinky::match(matched, e);
+    } else if (!predicate || predicate(e)) {
+      // This is a new match.
+      matched = e;
+    } else {
+      // The predicate failed, we can't match this.
+      match = false;
+    }
+  }
 
   virtual void visit(const variable* x) {
-    if (!match) return;
-  
     if (matches) {
-      expr& matched = (*matches)[x->name];
-      if (matched.defined()) {
-        // We already matched this variable. The expression must match.
-        match = slinky::match(matched, e);
-      } else {
-        // This is a new match.
-        matched = e;
-      }
+      match_wildcard(x->name, nullptr);
     } else {
       const variable* ev = e.as<variable>();
-      match = x->name == ev->name;
+      match = ev != nullptr && x->name == ev->name;
+    }
+  }
+
+  virtual void visit(const wildcard* x) {
+    if (matches) {
+      match_wildcard(x->name, x->matches);
+    } else {
+      const wildcard* ew = e.as<wildcard>();
+      match = ew != nullptr && x->name == ew->name;
     }
   }
 
@@ -171,8 +187,17 @@ class substitutor : public node_mutator {
 
 public:
   substitutor(const std::map<symbol_id, expr>& replacements) : replacements(replacements) {}
-
+  
   void visit(const variable* v) override {
+    auto i = replacements.find(v->name);
+    if (i != replacements.end()) {
+      e = i->second;
+    } else {
+      e = v;
+    }
+  }
+
+  void visit(const wildcard* v) override {
     auto i = replacements.find(v->name);
     if (i != replacements.end()) {
       e = i->second;

@@ -71,6 +71,13 @@ expr variable::make(symbol_id name) {
   return make_variable(name).get();
 }
 
+expr wildcard::make(symbol_id name, std::function<bool(const expr&)> matches) {
+  auto n = std::make_shared<wildcard>();
+  n->name = name;
+  n->matches = std::move(matches);
+  return n.get();
+}
+
 std::shared_ptr<const constant> make_constant(index_t value) {
   auto n = std::make_shared<constant>();
   n->value = value;

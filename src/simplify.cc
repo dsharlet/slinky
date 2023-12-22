@@ -14,6 +14,9 @@ expr x = variable::make(0);
 expr y = variable::make(1);
 expr z = variable::make(2);
 
+expr c0 = wildcard::make(10, is_constant);
+expr c1 = wildcard::make(11, is_constant);
+
 struct rule {
   expr pattern;
   expr replacement;
@@ -126,7 +129,9 @@ public:
 
     static std::vector<rule> rules = {
       {x + 0, x},
-      {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
+      {(x + c0) + c1, x + (c0 + c1)},
+      {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
+      {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
     };
     e = apply_rules(rules, e);
   }
@@ -139,6 +144,10 @@ public:
     if (ca && cb) {
       e = *ca - *cb;
       return;
+    } else if (cb) {
+      // Canonicalize to addition with constants.
+      e = mutate(a + -*cb);
+      return;
     }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
@@ -149,7 +158,8 @@ public:
     static std::vector<rule> rules = {
       {x - x, 0},
       {x - 0, x},
-      {(buffer_min(x, y) + buffer_extent(x, y)) - 1, buffer_max(x, y)},
+      {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
+      {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
     };
     e = apply_rules(rules, e);
   }
@@ -175,7 +185,6 @@ public:
     static std::vector<rule> rules = {
       {x*0, 0},
       {x*1, x},
-      {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -197,7 +206,6 @@ public:
 
     static std::vector<rule> rules = {
       {x/1, x},
-      {(buffer_max(x, y) - buffer_min(x, y)) + 1, buffer_extent(x, y)},
     };
     e = apply_rules(rules, e);
   }
