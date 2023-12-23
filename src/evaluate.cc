@@ -7,6 +7,8 @@
 
 namespace slinky {
 
+// TODO: I think the T::accept/node_visitor::visit overhead (two virtual function calls per node)
+// might be significant. This could be implemented as a switch statement instead.
 class evaluator : public node_visitor {
 public:
   index_t result = 0;
