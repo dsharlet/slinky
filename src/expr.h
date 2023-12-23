@@ -330,8 +330,12 @@ DECLARE_BINARY_OP(shift_right)
 
 #undef DECLARE_BINARY_OP
 
+// This expression loads buffer->base or a field from buffer->dims.
 class load_buffer_meta : public expr_node<load_buffer_meta> {
 public:
+  // TODO: These should not be exprs, they are only because the simplifier wants to put wildcards
+  // here. A better pattern matching engine or just not using patterns to simplify these would
+  // eliminate this requirement.
   expr buffer;
   buffer_meta meta;
   // This is an index and not an expr, which means we can't read expr-dependent dims.
