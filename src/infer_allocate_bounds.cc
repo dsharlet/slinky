@@ -14,6 +14,7 @@ public:
   node_context& ctx;
   symbol_map<std::vector<dim_expr>>& buffers;
   symbol_map<box> inferring;
+  symbol_map<box> crops;
 
   allocate_bounds_inferrer(node_context& ctx, symbol_map<std::vector<dim_expr>>& buffers) : ctx(ctx), buffers(buffers) {}
 
@@ -57,11 +58,17 @@ public:
       // in that order.
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
       for (const auto& output : c->fn->outputs()) {
+        const std::optional<box>& cropped_bounds = crops[*arg_i];
         expr arg = variable::make(*arg_i++);
         for (index_t d = 0; d < output.dims.size(); ++d) {
           symbol_id dim = output.dims[d].as<variable>()->name;
-          mins[dim] = load_buffer_meta::make(arg, buffer_meta::min, d);
-          maxs[dim] = load_buffer_meta::make(arg, buffer_meta::max, d);
+          if (cropped_bounds && (*cropped_bounds)[d].min.defined() && (*cropped_bounds)[d].max.defined()) {
+            mins[dim] = (*cropped_bounds)[d].min;
+            maxs[dim] = (*cropped_bounds)[d].max;
+          } else {
+            mins[dim] = load_buffer_meta::make(arg, buffer_meta::min, d);
+            maxs[dim] = load_buffer_meta::make(arg, buffer_meta::max, d);
+          }
         }
       }
 
@@ -77,6 +84,21 @@ public:
         }
       }
     }
+    node_mutator::visit(c);
+  }
+
+  void visit(const crop* c) override {
+
+    std::optional<box> cropped_bounds = crops[c->name];
+    if (!cropped_bounds) {
+      cropped_bounds = std::vector<interval>(c->dim + 1);
+    } else if (c->dim >= cropped_bounds->size()) {
+      cropped_bounds->resize(c->dim + 1);
+    }
+    (*cropped_bounds)[c->dim].min = c->min;
+    (*cropped_bounds)[c->dim].max = c->min + c->extent - 1;
+
+    scoped_value<box> new_crop(crops, c->name, *cropped_bounds);
     node_mutator::visit(c);
   }
 };
