@@ -247,7 +247,7 @@ void set_buffer(eval_context& ctx, const buffer_expr_ptr& buf_expr, const buffer
 
 }  // namespace
 
-index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) {
+index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const {
   assert(inputs.size() == inputs_.size());
   assert(outputs.size() == outputs_.size());
 
