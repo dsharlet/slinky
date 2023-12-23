@@ -8,16 +8,11 @@ It can be described by starting with Halide, and making the following changes:
 - Slinky is a runtime, not a compiler.
 - All operations that read and write buffers are user defined callbacks.
 - Bounds are manually provided instead of inferred (as in Halide).
-- All scheduling is automatic (TDB for sure...).
 
 Because we are not responsible for generating the inner loop code like Halide, scheduling is a dramatically simpler problem.
 Without needing to worry about instruction selection, register pressure, and so on, the cost function for scheduling is a much more straightforward function of high level memory access patterns.
 
-Some other design decisions of Slinky that further simplify the auto-scheduling problem:
-- There are no loop splitting decisions to be made by the system (the user can provide a single split per dimension in the form of alignment requirements).
-- We assume that all buffers will have storage folding/sliding window optimizations applied.
-	- This means that stencil scheduling never has a redundant compute tradeoff to be made.
-	- We get parallelism by allowing producers to run "ahead" of consumers, expanding the storage folding window as necessary.
+The ultimate goal of Slinky is to make automatic scheduling of data flow pipelines reliable and fast enough to be used as a just-in-time optimization engine for runtimes executing suitable data flow pipelines.
 
 ## Graph description
 The pipelines are described by operators called `func`s and connected by `buffer_expr`s.
@@ -41,7 +36,7 @@ pipeline p({ in }, { out });
 - To describe this pipeline, we need one variable `x`.
 - Both `func` objects have the same signature:
 	- Consume a buffer of `const int`, produce a buffer of `int`.
-	- The output dimension is indexed by `x`, and both operations require a the single pointed interval `[x, x]` of their inputs.
+	- The output dimension is indexed by `x`, and both operations require a the single point interval `[x, x]` of their inputs.
 
 This pipeline could be implemented in two ways by Slinky:
 1. Allocating `intm` to have the same size as `out`, and executing all of `mul`, followed by all of `add`.
@@ -82,7 +77,7 @@ This pipeline could be implemented in two ways by Slinky:
 1. Allocating `ab` to have the full extent of the product `a x b`, and executing all of the first multiply followed by all of the second multiply.
 2. Each row of the second product depends only on the same row of the first product. Therefore, we can allocate `ab` to hold only one row of the product `a x b`, and compute both products in a loop over rows of the final result	.
 
-Much like the first example, the strategy is not optimal by splitting the loop into individual elements.
+Much like the first example, the second strategy would not be optimal.
 We really want to split this loop into a small chunk to use the best matrix multiply inner loops, which compute small tiles of the output, not single rows.
 In both cases, this can be achieved by specifying an alignment that we want the operations to be executed with, e.g. 8 rows at a time, or 256 elements at a time.
 
@@ -91,9 +86,9 @@ We expect this approach to fill a gap between two extremes that seem prevalent t
 1. Pipeline interpreters that execute entire operations one at a time.
 2. Pipeline compilers that generate code specific to a pipeline.
 
-We expect Slinky to generate code that uses less memory than (1), but at a lower performance than what is *possible* with (2).
+We expect Slinky to execute suitable pipelines using less memory than (1), but at a lower performance than what is *possible* with (2).
 We emphasize *possible* because actually building a compiler that does this well is very difficult.
-We *think* Slinky's approach is a more easily solved problem, and will fail more gracefully.
+We *think* Slinky's approach is a more easily solved problem, and will degrade more gracefully in failure cases.
 
 For example, consider a simple sequence of elementwise operations.
 This is a worst case scenario for (1), which will allocate a lot of memory, and access it with poor locality.
