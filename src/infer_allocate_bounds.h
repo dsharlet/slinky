@@ -5,7 +5,7 @@
 
 namespace slinky {
 
-stmt infer_allocate_bounds(const stmt& s, node_context& ctx, symbol_map<std::vector<dim_expr>>& buffers);
+stmt infer_allocate_bounds(const stmt& s, node_context& ctx);
 
 }  // namespace slinky
 

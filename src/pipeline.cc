@@ -218,14 +218,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     builder.produce(result, f);
   }
 
-  symbol_map<std::vector<dim_expr>> bounds;
-  for (const auto& i : inputs) {
-    bounds.set(i->name(), i->dims());
-  }
-  for (const auto& i : outputs) {
-    bounds.set(i->name(), i->dims());
-  }
-  result = infer_allocate_bounds(result, ctx, bounds);
+  result = infer_allocate_bounds(result, ctx);
 
   result = simplify(result);
   print(std::cerr, result, &ctx);

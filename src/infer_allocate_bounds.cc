@@ -12,11 +12,10 @@ namespace slinky {
 class allocate_bounds_inferrer : public node_mutator {
 public:
   node_context& ctx;
-  symbol_map<std::vector<dim_expr>>& buffers;
   symbol_map<box> inferring;
   symbol_map<box> crops;
 
-  allocate_bounds_inferrer(node_context& ctx, symbol_map<std::vector<dim_expr>>& buffers) : ctx(ctx), buffers(buffers) {}
+  allocate_bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* alloc) override {
     assert(!inferring.contains(alloc->name));
@@ -88,7 +87,7 @@ public:
   }
 
   void visit(const crop* c) override {
-
+    // TODO: This is pretty messy, a better way to implement this would be nice.
     std::optional<box> cropped_bounds = crops[c->name];
     if (!cropped_bounds) {
       cropped_bounds = std::vector<interval>(c->dim + 1);
@@ -103,8 +102,8 @@ public:
   }
 };
 
-stmt infer_allocate_bounds(const stmt& s, node_context& ctx, symbol_map<std::vector<dim_expr>>& buffers) {
-  return allocate_bounds_inferrer(ctx, buffers).mutate(s);
+stmt infer_allocate_bounds(const stmt& s, node_context& ctx) {
+  return allocate_bounds_inferrer(ctx).mutate(s);
 }
 
 }  // namespace slinky
