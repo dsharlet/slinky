@@ -67,6 +67,6 @@ void benchmark_pipelines(bool explicit_y) {
 }
 
 // Benchmark copying a 2D buffer, where the loop over y is explicit.
-TEST(performance_copy_explicit_y) { benchmark_pipelines(false); }
-TEST(performance_copy_implicit_y) { benchmark_pipelines(true); }
+TEST(performance_copy_explicit_y) { benchmark_pipelines(true); }
+TEST(performance_copy_implicit_y) { benchmark_pipelines(false); }
 
