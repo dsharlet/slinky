@@ -78,13 +78,13 @@ public:
     if (x->meta == buffer_meta::base) {
       result = reinterpret_cast<index_t>(buffer->base);
     } else {
-      index_t dim = eval_expr(x->dim);
+      const buffer_base::dim& dim = buffer->dims[eval_expr(x->dim)];
       switch (x->meta) {
-      case buffer_meta::min: result = buffer->dims[dim].min; return;
-      case buffer_meta::max: result = buffer->dims[dim].max(); return;
-      case buffer_meta::extent: result = buffer->dims[dim].extent; return;
-      case buffer_meta::stride_bytes: result = buffer->dims[dim].stride_bytes; return;
-      case buffer_meta::fold_factor: result = buffer->dims[dim].fold_factor; return;
+      case buffer_meta::min: result = dim.min; return;
+      case buffer_meta::max: result = dim.max(); return;
+      case buffer_meta::extent: result = dim.extent; return;
+      case buffer_meta::stride_bytes: result = dim.stride_bytes; return;
+      case buffer_meta::fold_factor: result = dim.fold_factor; return;
       case buffer_meta::base: std::abort();  // Handled above.
       }
     }
@@ -169,23 +169,24 @@ public:
 
   void visit(const crop* n) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
+    buffer_base::dim& dim = buffer->dims[n->dim];
 
     void* old_base = buffer->base;
-    index_t old_min = buffer->dims[n->dim].min;
-    index_t old_extent = buffer->dims[n->dim].extent;
+    index_t old_min = dim.min;
+    index_t old_extent = dim.extent;
 
     index_t min = eval_expr(n->min);
     index_t extent = eval_expr(n->extent);
 
-    buffer->base = offset_bytes(buffer->base, buffer->dims[n->dim].flat_offset_bytes(min));
-    buffer->dims[n->dim].min = min;
-    buffer->dims[n->dim].extent = extent;
+    buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
+    dim.min = min;
+    dim.extent = extent;
 
     n->body.accept(this);
 
     buffer->base = old_base;
-    buffer->dims[n->dim].min = old_min;
-    buffer->dims[n->dim].extent = old_extent;
+    dim.min = old_min;
+    dim.extent = old_extent;
   }
 
   void visit(const check* n) override {
