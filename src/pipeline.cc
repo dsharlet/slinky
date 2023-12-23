@@ -160,7 +160,7 @@ public:
       std::vector<std::pair<int, buffer_expr_ptr>> to_crop;
       for (const auto& o : f->outputs()) {
         for (int d = 0; d < o.dims.size(); ++d) {
-          if (match(o.dims[d], loop)) {
+          if (*as_variable(o.dims[d]) == *as_variable(loop)) {
             to_crop.emplace_back(d, o.buffer);
             // This output uses this loop. Add it to the bounds.
             bounds |= interval(o.buffer->dim(d).min, o.buffer->dim(d).max());
