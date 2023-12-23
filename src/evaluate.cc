@@ -49,14 +49,7 @@ public:
 
   template <typename T>
   void visit_let(const T* l) {
-    const T* next = l;
-
-    // TODO: Try to do this without allocating on the heap.
-    std::vector<scoped_value<index_t>> scope;
-    do {
-      scope.emplace_back(context, next->name, eval_expr(next->value));
-      l = next;
-    } while ((next = l->body.template as<T>()));
+    scoped_value<index_t> set_value(context, l->name, eval_expr(l->value));
     l->body.accept(this);
   }
 
@@ -107,10 +100,14 @@ public:
   void visit(const loop* l) override {
     index_t begin = eval_expr(l->begin, 0);
     index_t end = eval_expr(l->end);
+    std::optional<index_t>& value = context[l->name];
+    std::optional<index_t> old_value;
+    old_value = value;
     for (index_t i = begin; i < end; ++i) {
-      scoped_value<index_t> l_name(context, l->name, i);
+      value = i;
       l->body.accept(this);
     }
+    value = old_value;
   }
 
   void visit(const if_then_else* n) override {
@@ -167,7 +164,7 @@ public:
       buffer->base = malloc(size);
     }
 
-    scoped_value<index_t> n_name(context, n->name, reinterpret_cast<index_t>(buffer));
+    scoped_value<index_t> set_buffer(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
     if (n->type == memory_type::heap) {
