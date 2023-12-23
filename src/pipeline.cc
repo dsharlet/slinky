@@ -54,6 +54,30 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
 
 namespace {
 
+// Find the func f to run next. This is the func that produces a buffer we need that we have not yet produced,
+// and all the buffers produced by f are ready to be consumed.
+const func* find_next_producer(const std::set<buffer_expr_ptr>& to_produce) {
+  const func* f;
+  for (auto i = to_produce.begin(); i != to_produce.end(); ++i) {
+    f = (*i)->producer();
+
+    for (const func* j : (*i)->consumers()) {
+      for (const func::output& k : j->outputs()) {
+        if (k.buffer == *i) continue;  // This is the buffer we are proposing to produce now.
+        if (to_produce.count(k.buffer)) {
+          // f produces a buffer that is needed by another func that has not yet run.
+          f = nullptr;
+          break;
+        }
+      }
+    }
+    if (f) {
+      return f;
+    }
+  }
+  return nullptr;
+}
+
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
   // We're going to incrementally build the body, starting at the end of the pipeline and adding producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
@@ -75,21 +99,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   while (!to_produce.empty()) {
     // Find a buffer to produce.
-    const func* f = nullptr;
-    for (auto i = to_produce.begin(); !f && i != to_produce.end(); ++i) {
-      f = (*i)->producer();
-
-      for (const func* j : (*i)->consumers()) {
-        for (auto& k : j->outputs()) {
-          if (k.buffer == *i) continue;
-          if (to_produce.count(k.buffer)) {
-            // j produces a buffer that is needed by another func that has not yet run.
-            f = nullptr;
-            break;
-          }
-        }
-      }
-    }
+    const func* f = find_next_producer(to_produce);
 
     // Call the producer.
     if (!f) {
