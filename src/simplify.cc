@@ -14,8 +14,8 @@ expr x = variable::make(0);
 expr y = variable::make(1);
 expr z = variable::make(2);
 
-expr c0 = wildcard::make(10, is_constant);
-expr c1 = wildcard::make(11, is_constant);
+expr c0 = wildcard::make(10, as_constant);
+expr c1 = wildcard::make(11, as_constant);
 
 struct rule {
   expr pattern;
@@ -66,8 +66,8 @@ public:
   void visit(const class min* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = std::min(*ca, *cb);
       return;
@@ -89,8 +89,8 @@ public:
   void visit(const class max* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = std::max(*ca, *cb);
       return;
@@ -112,8 +112,8 @@ public:
   void visit(const add* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = *ca + *cb;
       return;
@@ -139,8 +139,8 @@ public:
   void visit(const sub* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = *ca - *cb;
       return;
@@ -167,8 +167,8 @@ public:
   void visit(const mul* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = *ca * *cb;
       return;
@@ -192,8 +192,8 @@ public:
   void visit(const div* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = euclidean_div(*ca, *cb);
       return;
@@ -213,8 +213,8 @@ public:
   void visit(const less* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    auto ca = is_constant(a);
-    auto cb = is_constant(b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = *ca < *cb;
       return;
@@ -257,7 +257,7 @@ stmt simplify(const stmt& s) { return simplifier().mutate(s); }
 
 bool can_prove(const expr& e) {
   expr simplified = simplify(e);
-  if (const index_t* c = is_constant(simplified)) {
+  if (const index_t* c = as_constant(simplified)) {
     return *c != 0;
   }
   return false;

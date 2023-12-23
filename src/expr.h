@@ -516,12 +516,12 @@ expr operator||(expr a, expr b);
 expr min(expr a, expr b);
 expr max(expr a, expr b);
 
-inline const index_t* is_constant(const expr& x) {
+inline const index_t* as_constant(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? &cx->value : nullptr;
 }
 
-inline const symbol_id* is_variable(const expr& x) {
+inline const symbol_id* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->name : nullptr;
 }

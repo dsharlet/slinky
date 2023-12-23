@@ -183,12 +183,13 @@ public:
           // Must be an input.
           continue;
         }
-        if (i->producer()->compute_at().f == f && i->producer()->compute_at().loop.as<variable>()->name == loop.as<variable>()->name) {
+        const func::loop_id& compute_at = i->producer()->compute_at();
+        if (compute_at.f == f && *as_variable(compute_at.loop) == *as_variable(loop)) {
           produce(call_f, i->producer());
         }
       }
 
-      call_f = loop::make(loop.as<variable>()->name, bounds.min, bounds.max + 1, call_f);
+      call_f = loop::make(*as_variable(loop), bounds.min, bounds.max + 1, call_f);
     }
     result = result.defined() ? block::make(call_f, result) : call_f;
     for (const auto& i : allocations) {

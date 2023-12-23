@@ -60,7 +60,7 @@ public:
         const std::optional<box>& cropped_bounds = crops[*arg_i];
         expr arg = variable::make(*arg_i++);
         for (index_t d = 0; d < output.dims.size(); ++d) {
-          symbol_id dim = output.dims[d].as<variable>()->name;
+          symbol_id dim = *as_variable(output.dims[d]);
           if (cropped_bounds && (*cropped_bounds)[d].min.defined() && (*cropped_bounds)[d].max.defined()) {
             mins[dim] = (*cropped_bounds)[d].min;
             maxs[dim] = (*cropped_bounds)[d].max;
