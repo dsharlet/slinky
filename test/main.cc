@@ -14,8 +14,7 @@ bool wildcard_match(const char* p, const char* str) {
 
   if (!*p) {
     return *str == 0;
-  }
-  else if (*p == '*') {
+  } else if (*p == '*') {
     p++;
     do {
       if (wildcard_match(p, str)) { return true; }
@@ -29,17 +28,15 @@ std::vector<std::pair<std::string, std::function<void()>>>& tests() {
   return v;
 }
 
-} // namespace
+}  // namespace
 
 namespace slinky {
 
 test::test(const std::string& name, std::function<void()> fn) { add_test(name, fn); }
 
-void add_test(const std::string& name, std::function<void()> fn) {
-  tests().push_back(std::make_pair(name, fn));
-}
+void add_test(const std::string& name, std::function<void()> fn) { tests().push_back(std::make_pair(name, fn)); }
 
-} // namespace slinky
+}  // namespace slinky
 
 using namespace slinky;
 
@@ -62,11 +59,9 @@ int main(int argc, const char** argv) {
       i.second();
       std::cout << "passed" << std::endl;
       passed++;
-    }
-    catch (const std::exception& e) { std::cout << "failed: " << e.what() << std::endl; }
+    } catch (const std::exception& e) { std::cout << "failed: " << e.what() << std::endl; }
     total++;
   }
-  std::cout << passed << " of " << total << " tests passed, " << tests().size() - total
-    << " skipped" << std::endl;
+  std::cout << passed << " of " << total << " tests passed, " << tests().size() - total << " skipped" << std::endl;
   return passed < total ? -1 : 0;
 }

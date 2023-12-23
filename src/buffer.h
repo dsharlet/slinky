@@ -1,12 +1,12 @@
 #ifndef SLINKY_BUFFER_H
 #define SLINKY_BUFFER_H
 
-#include <cstdint>
+#include <bit>
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <bit>
-#include <cmath>
 #include <memory>
 
 #include "euclidean_division.h"
@@ -23,7 +23,8 @@ const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
   return reinterpret_cast<const T*>(reinterpret_cast<const char*>(x) + bytes);
 }
 
-// TODO: This and buffer_expr in pipeline.h should have the same API (except for expr instead of index_t).
+// TODO: This and buffer_expr in pipeline.h should have the same API (except for expr instead of
+// index_t).
 struct dim {
   index_t min;
   index_t extent;
@@ -37,8 +38,8 @@ struct dim {
   constexpr std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(i >= min);
     assert(i <= max());
-    // If we use a mask instead of a fold factor, we can just make the mask -1 by default, and always
-    // bitwise and to implement the fold factor.
+    // If we use a mask instead of a fold factor, we can just make the mask -1 by default, and
+    // always bitwise and to implement the fold factor.
     if (fold_factor <= 0) {
       return (i - min) * stride_bytes;
     } else {
@@ -46,7 +47,6 @@ struct dim {
     }
   }
 };
-
 
 template <typename T, std::size_t DimsSize = 0>
 struct buffer;
@@ -63,7 +63,7 @@ struct buffer;
 //
 // And a class buffer<T, DimsSize>:
 // - Has a type, can be accessed via operator() and at.
-// - Provides storage for DimsSize dims (default is 0). 
+// - Provides storage for DimsSize dims (default is 0).
 struct buffer_base : public std::enable_shared_from_this<buffer_base> {
   using dim = slinky::dim;
 
@@ -79,7 +79,7 @@ protected:
 
   static void destroy(buffer_base* buf) {
     buf->~buffer_base();
-    delete[](char*)buf;
+    delete[] (char*)buf;
   }
 
   char* allocation;
@@ -95,13 +95,11 @@ public:
   buffer_base(buffer_base&&) = delete;
   void operator=(const buffer_base&) = delete;
   void operator=(buffer_base&&) = delete;
-  ~buffer_base() {
-    free();
-  }
+  ~buffer_base() { free(); }
 
   // Make a buffer and space for dims in the same object. Returns a unique_ptr, with the
   // understanding that unique_ptr can be converted to shared_ptr if needed.
-  static std::unique_ptr<buffer_base, void(*)(buffer_base*)> make(std::size_t rank, std::size_t elem_size) {
+  static std::unique_ptr<buffer_base, void (*)(buffer_base*)> make(std::size_t rank, std::size_t elem_size) {
     char* buf_and_dims = new char[sizeof(buffer_base) + sizeof(dim) * rank];
     buffer_base* buf = new (buf_and_dims) buffer_base();
     buf->base = nullptr;
@@ -110,7 +108,7 @@ public:
     buf->elem_size = elem_size;
     buf->dims = reinterpret_cast<dim*>(buf_and_dims + sizeof(buffer_base));
     memset(&buf->dims[0], 0, sizeof(dim) * rank);
-    return { buf, destroy };
+    return {buf, destroy};
   }
 
   template <typename... Indices>
@@ -156,13 +154,13 @@ private:
   dim dims_storage[DimsSize];
 
 public:
+  using buffer_base::allocate;
+  using buffer_base::cast;
   using buffer_base::dims;
-  using buffer_base::rank;
   using buffer_base::elem_size;
   using buffer_base::flat_offset_bytes;
-  using buffer_base::allocate;
   using buffer_base::free;
-  using buffer_base::cast;
+  using buffer_base::rank;
 
   buffer() {
     buffer_base::base = nullptr;
@@ -191,9 +189,9 @@ public:
   T* base() const { return reinterpret_cast<T*>(buffer_base::base); }
 
   // Make a buffer and space for dims in the same allocation.
-  static std::unique_ptr<buffer<T>, void(*)(buffer<T>*)> make(std::size_t rank) {
+  static std::unique_ptr<buffer<T>, void (*)(buffer<T>*)> make(std::size_t rank) {
     auto buf = buffer_base::make(rank, sizeof(T));
-    return { static_cast<buffer<T>*>(buf.release()), (void(*)(buffer<T>*))buffer_base::destroy};
+    return {static_cast<buffer<T>*>(buf.release()), (void (*)(buffer<T>*))buffer_base::destroy};
   }
 
   // These accessors are not designed to be fast. They exist to facilitate testing,
@@ -203,11 +201,10 @@ public:
     return *offset_bytes(base(), flat_offset_bytes(indices...));
   }
   template <typename... Indices>
-  auto& operator() (Indices... indices) const {
+  auto& operator()(Indices... indices) const {
     return at(indices...);
   }
 };
-
 
 template <typename NewT>
 const buffer<NewT>& buffer_base::cast() const {

@@ -2,7 +2,7 @@
 
 namespace slinky {
 
-std::string node_context::name(symbol_id i) const { 
+std::string node_context::name(symbol_id i) const {
   if (i < id_to_name.size()) {
     return id_to_name[i];
   } else {
@@ -67,9 +67,7 @@ std::shared_ptr<const variable> make_variable(symbol_id name) {
   return n;
 }
 
-expr variable::make(symbol_id name) {
-  return make_variable(name).get();
-}
+expr variable::make(symbol_id name) { return make_variable(name).get(); }
 
 expr wildcard::make(symbol_id name, std::function<bool(const expr&)> matches) {
   auto n = std::make_shared<wildcard>();
@@ -84,15 +82,11 @@ std::shared_ptr<const constant> make_constant(index_t value) {
   return n;
 }
 
-expr constant::make(index_t value) {
-  return make_constant(value).get();
-}
+expr constant::make(index_t value) { return make_constant(value).get(); }
 
 expr::expr(index_t value) : expr(make_constant(value).get()) {}
 
-expr constant::make(const void* value) {
-  return make(reinterpret_cast<index_t>(value));
-}
+expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
 stmt::stmt(std::initializer_list<stmt> stmts) {
   stmt result;
@@ -125,9 +119,7 @@ expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move
 expr shift_left::make(expr a, expr b) { return make_bin_op<shift_left>(std::move(a), std::move(b)).get(); }
 expr shift_right::make(expr a, expr b) { return make_bin_op<shift_right>(std::move(a), std::move(b)).get(); }
 
-expr make_variable(node_context& ctx, const std::string& name) {
-  return variable::make(ctx.insert(name));
-}
+expr make_variable(node_context& ctx, const std::string& name) { return variable::make(ctx.insert(name)); }
 
 expr operator+(expr a, expr b) { return add::make(std::move(a), std::move(b)); }
 expr operator-(expr a, expr b) { return sub::make(std::move(a), std::move(b)); }
@@ -158,7 +150,8 @@ expr load_buffer_meta::make(expr buffer, buffer_meta meta, expr dim) {
   return n.get();
 }
 
-stmt call::make(call::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
+stmt call::make(
+    call::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
   auto n = std::make_shared<call>();
   n->target = std::move(target);
   n->scalar_args = std::move(scalar_args);

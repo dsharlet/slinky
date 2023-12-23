@@ -18,17 +18,15 @@ public:
 
   matcher(const expr& e, std::map<symbol_id, expr>* matches = nullptr) : e(e), matches(matches) {}
 
-  void fail() {
-    match = false;
-  }
+  void fail() { match = false; }
 
   template <typename T>
   void match_let(const T* x) {
     if (!match) return;
     const T* el = e.as<T>();
-    if (!el) { 
+    if (!el) {
       match = false;
-      return; 
+      return;
     }
 
     if (el->name != x->name) {
@@ -60,7 +58,7 @@ public:
     e = ex->b;
     x->b.accept(this);
   }
-  
+
   void match_wildcard(symbol_id name, std::function<bool(const expr&)> predicate) {
     if (!match) return;
 
@@ -144,30 +142,14 @@ public:
     x->dim.accept(this);
   }
 
-  virtual void visit(const let_stmt* x) {
-    std::abort();
-  }
-  virtual void visit(const block* x) {
-    std::abort();
-  }
-  virtual void visit(const loop* x) {
-    std::abort();
-  }
-  virtual void visit(const if_then_else* x) {
-    std::abort();
-  }
-  virtual void visit(const call* x) {
-    std::abort();
-  }
-  virtual void visit(const allocate* x) {
-    std::abort();
-  }
-  virtual void visit(const crop* x) {
-    std::abort();
-  }
-  virtual void visit(const check* x) {
-    std::abort();
-  }
+  virtual void visit(const let_stmt* x) { std::abort(); }
+  virtual void visit(const block* x) { std::abort(); }
+  virtual void visit(const loop* x) { std::abort(); }
+  virtual void visit(const if_then_else* x) { std::abort(); }
+  virtual void visit(const call* x) { std::abort(); }
+  virtual void visit(const allocate* x) { std::abort(); }
+  virtual void visit(const crop* x) { std::abort(); }
+  virtual void visit(const check* x) { std::abort(); }
 };
 
 bool match(const expr& p, const expr& e, std::map<symbol_id, expr>& matches) {
@@ -187,7 +169,7 @@ class substitutor : public node_mutator {
 
 public:
   substitutor(const std::map<symbol_id, expr>& replacements) : replacements(replacements) {}
-  
+
   void visit(const variable* v) override {
     auto i = replacements.find(v->name);
     if (i != replacements.end()) {

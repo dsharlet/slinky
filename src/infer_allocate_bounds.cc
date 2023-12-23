@@ -4,8 +4,8 @@
 #include <iostream>
 
 #include "node_mutator.h"
-#include "substitute.h"
 #include "pipeline.h"
+#include "substitute.h"
 
 namespace slinky {
 
@@ -19,7 +19,7 @@ public:
 
   void visit(const allocate* alloc) override {
     assert(!inferring.contains(alloc->name));
-    
+
     auto& bounds = inferring[alloc->name];
     assert(!bounds);
     bounds = box(alloc->dims.size(), interval::union_identity);
@@ -74,7 +74,7 @@ public:
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
         expr max = substitute(input.bounds[d].max, maxs);
-        // TODO: Do we need to worry about the possibility of min > max here? 
+        // TODO: Do we need to worry about the possibility of min > max here?
         bounds[d] |= interval(min, max);
       }
     }
@@ -97,8 +97,6 @@ public:
   }
 };
 
-stmt infer_allocate_bounds(const stmt& s, node_context& ctx) {
-  return allocate_bounds_inferrer(ctx).mutate(s);
-}
+stmt infer_allocate_bounds(const stmt& s, node_context& ctx) { return allocate_bounds_inferrer(ctx).mutate(s); }
 
 }  // namespace slinky

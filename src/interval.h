@@ -15,12 +15,8 @@ struct interval {
   static interval union_identity;
   static interval intersection_identity;
 
-  expr extent() const {
-    return max - min + 1;
-  }
-  void set_extent(expr extent) {
-    max = min + extent - 1;
-  }
+  expr extent() const { return max - min + 1; }
+  void set_extent(expr extent) { max = min + extent - 1; }
 
   interval& operator*=(expr scale) {
     min *= scale;

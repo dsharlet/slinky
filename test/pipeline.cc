@@ -1,7 +1,7 @@
-#include "test.h"
-#include "expr.h"
 #include "pipeline.h"
+#include "expr.h"
 #include "print.h"
+#include "test.h"
 
 #include <cassert>
 
@@ -12,7 +12,7 @@ using namespace slinky;
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
-    out(i) = in(i) * 2;
+    out(i) = in(i)*2;
   }
   return 0;
 }
@@ -35,25 +35,25 @@ TEST(pipeline_trivial) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, { in, {interval(x)} }, { out, {x} });
+  func mul = func::make<const int, int>(multiply_2<int>, {in, {interval(x)}}, {out, {x}});
 
-  pipeline p(ctx, { in }, { out });
+  pipeline p(ctx, {in}, {out});
 
   // Run the pipeline
   const int N = 10;
 
-  buffer<int, 1> in_buf({ N });
+  buffer<int, 1> in_buf({N});
   in_buf.allocate();
   for (int i = 0; i < N; ++i) {
     in_buf(i) = i;
   }
 
-  buffer<int, 1> out_buf({ N });
+  buffer<int, 1> out_buf({N});
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &in_buf };
-  buffer_base* outputs[] = { &out_buf };
+  buffer_base* inputs[] = {&in_buf};
+  buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -64,7 +64,7 @@ TEST(pipeline_trivial) {
 index_t multiply_2_assert_1_element(const buffer<const int>& in, const buffer<int>& out) {
   std::size_t count = 0;
   for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
-    out(i) = in(i) * 2;
+    out(i) = in(i)*2;
     ++count;
   }
   ASSERT_EQ(count, 1);
@@ -81,26 +81,26 @@ TEST(pipeline_trivial_explicit) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2_assert_1_element, { in, {interval(x)} }, { out, {x} });
-  mul.loops({ x });
+  func mul = func::make<const int, int>(multiply_2_assert_1_element, {in, {interval(x)}}, {out, {x}});
+  mul.loops({x});
 
-  pipeline p(ctx, { in }, { out });
+  pipeline p(ctx, {in}, {out});
 
   // Run the pipeline
   const int N = 10;
 
-  buffer<int, 1> in_buf({ N });
+  buffer<int, 1> in_buf({N});
   in_buf.allocate();
   for (int i = 0; i < N; ++i) {
     in_buf(i) = i;
   }
 
-  buffer<int, 1> out_buf({ N });
+  buffer<int, 1> out_buf({N});
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &in_buf };
-  buffer_base* outputs[] = { &out_buf };
+  buffer_base* inputs[] = {&in_buf};
+  buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -119,26 +119,26 @@ TEST(pipeline_elementwise_1d) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, { in, {interval(x)} }, { intm, {x} });
-  func add = func::make<const int, int>(add_1<int>, { intm, {interval(x)} }, { out, {x} });
+  func mul = func::make<const int, int>(multiply_2<int>, {in, {interval(x)}}, {intm, {x}});
+  func add = func::make<const int, int>(add_1<int>, {intm, {interval(x)}}, {out, {x}});
 
-  pipeline p(ctx, { in }, { out });
+  pipeline p(ctx, {in}, {out});
 
   // Run the pipeline
   const int N = 10;
 
-  buffer<int, 1> in_buf({ N });
+  buffer<int, 1> in_buf({N});
   in_buf.allocate();
   for (int i = 0; i < N; ++i) {
     in_buf(i) = i;
   }
 
-  buffer<int, 1> out_buf({ N });
+  buffer<int, 1> out_buf({N});
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &in_buf };
-  buffer_base* outputs[] = { &out_buf };
+  buffer_base* inputs[] = {&in_buf};
+  buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -157,29 +157,29 @@ TEST(pipeline_elementwise_1d_explicit) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, { in, {interval(x)} }, { intm, {x} });
-  func add = func::make<const int, int>(add_1<int>, { intm, {interval(x)} }, { out, {x} });
+  func mul = func::make<const int, int>(multiply_2<int>, {in, {interval(x)}}, {intm, {x}});
+  func add = func::make<const int, int>(add_1<int>, {intm, {interval(x)}}, {out, {x}});
 
-  add.loops({ x });
-  mul.compute_at({ &add, x });
+  add.loops({x});
+  mul.compute_at({&add, x});
 
-  pipeline p(ctx, { in }, { out });
+  pipeline p(ctx, {in}, {out});
 
   // Run the pipeline
   const int N = 10;
 
-  buffer<int, 1> in_buf({ N });
+  buffer<int, 1> in_buf({N});
   in_buf.allocate();
   for (int i = 0; i < N; ++i) {
     in_buf(i) = i;
   }
 
-  buffer<int, 1> out_buf({ N });
+  buffer<int, 1> out_buf({N});
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &in_buf };
-  buffer_base* outputs[] = { &out_buf };
+  buffer_base* inputs[] = {&in_buf};
+  buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -226,23 +226,25 @@ TEST(pipeline_matmuls) {
   expr j = make_variable(ctx, "j");
   expr k = make_variable(ctx, "k");
 
-  // The bounds required of the dimensions consumed by the reduction depend on the size of the buffers passed in.
-  // Note that we haven't used any constants yet.
+  // The bounds required of the dimensions consumed by the reduction depend on the size of the
+  // buffers passed in. Note that we haven't used any constants yet.
   interval K_ab(a->dim(1).min, a->dim(1).max());
   interval K_d(c->dim(0).min, c->dim(0).max());
 
-  func matmul_ab = func::make<const int, const int, int>(matmul, { a, { interval(i), K_ab } }, { b, {K_ab, interval(j)} }, { ab, {i, j} });
-  func matmul_abc = func::make<const int, const int, int>(matmul, { ab, { interval(i), K_d } }, { c, {K_d, interval(j)} }, { d, {i, j} });
+  func matmul_ab =
+      func::make<const int, const int, int>(matmul, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
+  func matmul_abc =
+      func::make<const int, const int, int>(matmul, {ab, {interval(i), K_d}}, {c, {K_d, interval(j)}}, {d, {i, j}});
 
-  pipeline p(ctx, { a, b, c }, { d });
+  pipeline p(ctx, {a, b, c}, {d});
 
   // Run the pipeline.
   const int M = 10;
   const int N = 10;
-  buffer<int, 2> a_buf({ M, N });
-  buffer<int, 2> b_buf({ M, N });
-  buffer<int, 2> c_buf({ M, N });
-  buffer<int, 2> d_buf({ M, N });
+  buffer<int, 2> a_buf({M, N});
+  buffer<int, 2> b_buf({M, N});
+  buffer<int, 2> c_buf({M, N});
+  buffer<int, 2> d_buf({M, N});
 
   init_random(a_buf);
   init_random(b_buf);
@@ -250,8 +252,8 @@ TEST(pipeline_matmuls) {
   d_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &a_buf, &b_buf, &c_buf };
-  buffer_base* outputs[] = { &d_buf };
+  buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
+  buffer_base* outputs[] = {&d_buf};
   p.evaluate(inputs, outputs);
 }
 
@@ -287,23 +289,24 @@ TEST(pipeline_pyramid) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func downsample = func::make<const int, int>(downsample2x, { in, { 2*x + interval(0, 1), 2*y + interval(0, 1)} }, { intm, {x, y} });
-  func upsample = func::make<const int, int>(upsample2x, { intm, { interval(x)/2, interval(y)/2}}, {out, {x, y}});
+  func downsample =
+      func::make<const int, int>(downsample2x, {in, {2 * x + interval(0, 1), 2 * y + interval(0, 1)}}, {intm, {x, y}});
+  func upsample = func::make<const int, int>(upsample2x, {intm, {interval(x) / 2, interval(y) / 2}}, {out, {x, y}});
 
-  pipeline p(ctx, { in }, { out });
+  pipeline p(ctx, {in}, {out});
 
   // Run the pipeline.
   const int M = 10;
   const int N = 10;
-  buffer<int, 2> in_buf({ M, N });
-  buffer<int, 2> out_buf({ M, N });
+  buffer<int, 2> in_buf({M, N});
+  buffer<int, 2> out_buf({M, N});
 
   init_random(in_buf);
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &in_buf };
-  buffer_base* outputs[] = { &out_buf };
+  buffer_base* inputs[] = {&in_buf};
+  buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 }
 
@@ -335,29 +338,28 @@ TEST(pipeline_stencil) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func add = func::make<const short, short>(add_1<short>, { in, {interval(x) / 2, interval(y) / 2} }, { intm, {x, y} });
-  func stencil = func::make<const short, short>(sum3x3<short>, { intm, {interval(-1, 1) + x, interval(-1, 1) + y} }, { out, {x, y} });
+  func add = func::make<const short, short>(add_1<short>, {in, {interval(x) / 2, interval(y) / 2}}, {intm, {x, y}});
+  func stencil =
+      func::make<const short, short>(sum3x3<short>, {intm, {interval(-1, 1) + x, interval(-1, 1) + y}}, {out, {x, y}});
 
-  stencil.loops({ y });
-  add.compute_at({ &stencil, y });
+  stencil.loops({y});
+  add.compute_at({&stencil, y});
 
-  pipeline p(ctx, { in }, { out });
+  pipeline p(ctx, {in}, {out});
 
   // Run the pipeline.
   const int M = 10;
   const int N = 10;
-  buffer<short, 2> in_buf({ M + 2, N + 2 });
+  buffer<short, 2> in_buf({M + 2, N + 2});
   in_buf.dims[0].min = -1;
   in_buf.dims[1].min = -1;
-  buffer<short, 2> out_buf({ M, N });
+  buffer<short, 2> out_buf({M, N});
 
   init_random(in_buf);
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = { &in_buf };
-  buffer_base* outputs[] = { &out_buf };
+  buffer_base* inputs[] = {&in_buf};
+  buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
-
-
 }

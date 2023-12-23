@@ -64,7 +64,7 @@ public:
   virtual void visit(const logical_or* x) { e = mutate_binary(x); }
   virtual void visit(const shift_left* x) { e = mutate_binary(x); }
   virtual void visit(const shift_right* x) { e = mutate_binary(x); }
-  
+
   virtual void visit(const load_buffer_meta* x) {
     expr buffer = mutate(x->buffer);
     expr dim = mutate(x->dim);

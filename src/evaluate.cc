@@ -6,7 +6,7 @@
 #include "print.h"
 
 namespace slinky {
- 
+
 class evaluator : public node_visitor {
 public:
   index_t result = 0;
@@ -43,9 +43,7 @@ public:
     result = *value;
   }
 
-  void visit(const constant* c) override {
-    result = c->value;
-  }
+  void visit(const constant* c) override { result = c->value; }
 
   template <typename T>
   void visit_let(const T* l) {
@@ -87,7 +85,7 @@ public:
       case buffer_meta::extent: result = buffer->dims[dim].extent; return;
       case buffer_meta::stride_bytes: result = buffer->dims[dim].stride_bytes; return;
       case buffer_meta::fold_factor: result = buffer->dims[dim].fold_factor; return;
-      case buffer_meta::base: std::abort(); // Handled above.
+      case buffer_meta::base: std::abort();  // Handled above.
       }
     }
   }
@@ -113,8 +111,7 @@ public:
   void visit(const if_then_else* n) override {
     if (eval_expr(n->condition)) {
       n->true_body.accept(this);
-    }
-    else if (n->false_body.defined()) {
+    } else if (n->false_body.defined()) {
       n->false_body.accept(this);
     }
   }
@@ -167,9 +164,7 @@ public:
     scoped_value<index_t> set_buffer(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
-    if (n->type == memory_type::heap) {
-      free(buffer->base);
-    }
+    if (n->type == memory_type::heap) { free(buffer->base); }
   }
 
   void visit(const crop* n) override {

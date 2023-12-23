@@ -1,18 +1,19 @@
 #include "pipeline.h"
 
 #include <cassert>
-#include <set>
 #include <iostream>
+#include <set>
 
 #include "evaluate.h"
-#include "print.h"
 #include "infer_allocate_bounds.h"
+#include "print.h"
 #include "simplify.h"
 #include "substitute.h"
 
 namespace slinky {
 
-buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank) : name_(name), elem_size_(elem_size), producer_(nullptr) {
+buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank)
+    : name_(name), elem_size_(elem_size), producer_(nullptr) {
   dims_.reserve(rank);
   auto var = variable::make(name);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
@@ -43,7 +44,7 @@ void buffer_expr::add_consumer(func* f) {
 }
 
 func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs)
-  : impl_(std::move(impl)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+    : impl_(std::move(impl)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   for (auto& i : inputs_) {
     i.buffer->add_consumer(this);
   }
@@ -55,7 +56,8 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
 namespace {
 
 class pipeline_builder {
-  // We're going to incrementally build the body, starting at the end of the pipeline and adding producers as necessary.
+  // We're going to incrementally build the body, starting at the end of the pipeline and adding
+  // producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
   std::set<buffer_expr_ptr> produced;
   std::set<buffer_expr_ptr> allocated;
@@ -82,20 +84,16 @@ public:
         }
 
         for (const func::input& j : i->producer()->inputs()) {
-          if (!to_produce.count(j.buffer)) {
-            produce_next.insert(j.buffer);
-          }
+          if (!to_produce.count(j.buffer)) { produce_next.insert(j.buffer); }
         }
       }
-      if (produce_next.empty()) {
-        break;
-      }
+      if (produce_next.empty()) { break; }
       to_produce.insert(produce_next.begin(), produce_next.end());
     }
   }
 
-  // Find the func f to run next. This is the func that produces a buffer we need that we have not yet produced,
-  // and all the buffers produced by f are ready to be consumed.
+  // Find the func f to run next. This is the func that produces a buffer we need that we have not
+  // yet produced, and all the buffers produced by f are ready to be consumed.
   const func* find_next_producer() const {
     const func* f;
     for (const buffer_expr_ptr& i : to_produce) {
@@ -118,23 +116,20 @@ public:
           }
         }
       }
-      if (f) {
-        return f;
-      }
+      if (f) { return f; }
     }
     return nullptr;
   }
 
-  bool complete() const {
-    return produced.size() == to_produce.size(); 
-  }
+  bool complete() const { return produced.size() == to_produce.size(); }
 
   void produce(stmt& result, const func* f) {
     // TODO: We shouldn't need this wrapper, it might add measureable overhead.
     // All it does is split a span of buffers into two spans of buffers.
     std::size_t input_count = f->inputs().size();
     std::size_t output_count = f->outputs().size();
-    auto wrapper = [impl = f->impl(), input_count, output_count](std::span<const index_t>, std::span<buffer_base*> buffers) -> index_t {
+    auto wrapper = [impl = f->impl(), input_count, output_count](
+                       std::span<const index_t>, std::span<buffer_base*> buffers) -> index_t {
       assert(buffers.size() == input_count + output_count);
       return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
     };
@@ -154,7 +149,7 @@ public:
     }
     stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
 
-    // Generate the loops that we want to be explicit. 
+    // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       interval bounds = interval::union_identity;
       std::vector<std::pair<int, buffer_expr_ptr>> to_crop;
@@ -197,7 +192,8 @@ public:
   }
 };
 
-stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+stmt build_pipeline(
+    node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
   pipeline_builder builder(inputs, outputs);
 
   stmt result;
@@ -227,7 +223,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 }  // namespace
 
 pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs)
-  : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+    : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   body = build_pipeline(ctx, inputs_, outputs_);
 }
 

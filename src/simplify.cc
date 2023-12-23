@@ -3,9 +3,9 @@
 #include <cassert>
 #include <limits>
 
-#include "substitute.h"
-#include "node_mutator.h"
 #include "evaluate.h"
+#include "node_mutator.h"
+#include "substitute.h"
 
 namespace slinky {
 
@@ -24,12 +24,8 @@ struct rule {
   expr predicate;
 };
 
-expr buffer_min(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim));
-}
-expr buffer_max(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim));
-}
+expr buffer_min(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim)); }
+expr buffer_max(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim)); }
 expr buffer_extent(expr buf, expr dim) {
   return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
 }
@@ -73,9 +69,7 @@ public:
       e = std::min(*ca, *cb);
       return;
     }
-    if (ca && !cb) {
-      std::swap(a, b);
-    }
+    if (ca && !cb) { std::swap(a, b); }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -83,11 +77,11 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {min(x, std::numeric_limits<index_t>::max()), x},
-      {min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()},
-      {min(x, x), x},
-      {min(x / z, y / z), min(x, y) / z, z > 0},
-      {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
+        {min(x, std::numeric_limits<index_t>::max()), x},
+        {min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()},
+        {min(x, x), x},
+        {min(x / z, y / z), min(x, y) / z, z > 0},
+        {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -101,9 +95,7 @@ public:
       e = std::max(*ca, *cb);
       return;
     }
-    if (ca && !cb) {
-      std::swap(a, b);
-    }
+    if (ca && !cb) { std::swap(a, b); }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -111,15 +103,15 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {max(x, std::numeric_limits<index_t>::min()), x},
-      {max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()},
-      {max(x, x), x},
-      {max(x / z, y / z), max(x, y) / z, z > 0},
-      {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
+        {max(x, std::numeric_limits<index_t>::min()), x},
+        {max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()},
+        {max(x, x), x},
+        {max(x / z, y / z), max(x, y) / z, z > 0},
+        {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
     };
     e = apply_rules(rules, e);
   }
-  
+
   void visit(const add* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
@@ -129,9 +121,7 @@ public:
       e = *ca + *cb;
       return;
     }
-    if (ca && !cb) {
-      std::swap(a, b);
-    }
+    if (ca && !cb) { std::swap(a, b); }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -139,10 +129,10 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {x + 0, x},
-      {(x + c0) + c1, x + (c0 + c1)},
-      {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
-      {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
+        {x + 0, x},
+        {(x + c0) + c1, x + (c0 + c1)},
+        {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
+        {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
     };
     e = apply_rules(rules, e);
   }
@@ -167,10 +157,10 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {x - x, 0},
-      {x - 0, x},
-      {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
-      {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
+        {x - x, 0},
+        {x - 0, x},
+        {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
+        {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
     };
     e = apply_rules(rules, e);
   }
@@ -184,9 +174,7 @@ public:
       e = *ca * *cb;
       return;
     }
-    if (ca && !cb) {
-      std::swap(a, b);
-    }
+    if (ca && !cb) { std::swap(a, b); }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -194,8 +182,8 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {x*0, 0},
-      {x*1, x},
+        {x * 0, 0},
+        {x * 1, x},
     };
     e = apply_rules(rules, e);
   }
@@ -216,7 +204,7 @@ public:
     }
 
     static std::vector<rule> rules = {
-      {x/1, x},
+        {x / 1, x},
     };
     e = apply_rules(rules, e);
   }
@@ -249,7 +237,7 @@ public:
       // This let is dead
       return body;
     } else if (refs == 1 || value.as<constant>() || value.as<variable>() || value.as<load_buffer_meta>()) {
-      return mutate(substitute(body, { { op->name, value } }));
+      return mutate(substitute(body, {{op->name, value}}));
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
       return decltype(body){op};
     } else {
@@ -268,9 +256,7 @@ stmt simplify(const stmt& s) { return simplifier().mutate(s); }
 
 bool can_prove(const expr& e) {
   expr simplified = simplify(e);
-  if (const index_t* c = as_constant(simplified)) {
-    return *c != 0;
-  }
+  if (const index_t* c = as_constant(simplified)) { return *c != 0; }
   return false;
 }
 

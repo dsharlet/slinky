@@ -12,33 +12,25 @@ class symbol_map {
   std::vector<std::optional<T>> values;
 
   void grow(std::size_t size) {
-    if (size >= values.size()) {
-      values.resize(std::max(values.size() * 2, size + 1));
-    }
+    if (size >= values.size()) { values.resize(std::max(values.size() * 2, size + 1)); }
   }
 
 public:
   symbol_map() {}
 
   std::optional<T> lookup(symbol_id name) const {
-    if (name < values.size()) {
-      return values[name];
-    }
+    if (name < values.size()) { return values[name]; }
     return std::nullopt;
   }
 
-  std::optional<T> operator[] (symbol_id name) const {
-    return lookup(name);
-  }
-  std::optional<T>& operator[] (symbol_id name) {
+  std::optional<T> operator[](symbol_id name) const { return lookup(name); }
+  std::optional<T>& operator[](symbol_id name) {
     grow(name);
     return values[name];
   }
 
   bool contains(symbol_id name) const {
-    if (name >= values.size()) {
-      return false;
-    }
+    if (name >= values.size()) { return false; }
     return !!values[name];
   }
 
@@ -86,9 +78,7 @@ public:
   }
 
   ~scoped_value() {
-    if (context) {
-      context->set(name, std::move(old_value));
-    }
+    if (context) { context->set(name, std::move(old_value)); }
   }
 };
 

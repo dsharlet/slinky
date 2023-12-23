@@ -42,7 +42,10 @@ public:
   dim_expr& dim(int i) { return dims_[i]; }
   const dim_expr& dim(int i) const { return dims_[i]; }
 
-  buffer_expr& store_in(memory_type type) { storage_ = type; return *this; }
+  buffer_expr& store_in(memory_type type) {
+    storage_ = type;
+    return *this;
+  }
   memory_type storage() const { return storage_; }
 
   // buffer_exprs can have many consumers, but only one producer.
@@ -100,44 +103,56 @@ public:
   bool defined() const { return impl_ != nullptr; }
 
   // Describes which loops should be explicit for this func.
-  func& loops(std::vector<expr> l) { loops_ = std::move(l); return *this; }
+  func& loops(std::vector<expr> l) {
+    loops_ = std::move(l);
+    return *this;
+  }
   const std::vector<expr>& loops() const { return loops_; }
 
-  func& compute_at(const loop_id& at) { compute_at_ = at; return *this; }
+  func& compute_at(const loop_id& at) {
+    compute_at_ = at;
+    return *this;
+  }
   const loop_id& compute_at() const { return compute_at_; }
 
   // TODO: Try to do this with a variadic template implementation.
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output arg) {
-    return func([impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
-      assert(inputs.size() == 0);
-      assert(outputs.size() == 1);
-      assert(outputs[0] != nullptr);
-      return impl(outputs[0]->cast<Out1>());
-    }, {}, { std::move(arg) });
+    return func(
+        [impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
+          assert(inputs.size() == 0);
+          assert(outputs.size() == 1);
+          assert(outputs[0] != nullptr);
+          return impl(outputs[0]->cast<Out1>());
+        },
+        {}, {std::move(arg)});
   }
 
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
-    return func([impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
-      assert(inputs.size() == 1);
-      assert(outputs.size() == 1);
-      assert(inputs[0] != nullptr);
-      assert(outputs[0] != nullptr);
-      return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>());
-      }, { std::move(in1) }, { std::move(out1) });
+    return func(
+        [impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
+          assert(inputs.size() == 1);
+          assert(outputs.size() == 1);
+          assert(inputs[0] != nullptr);
+          assert(outputs[0] != nullptr);
+          return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>());
+        },
+        {std::move(in1)}, {std::move(out1)});
   }
 
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
-    return func([impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
-      assert(inputs.size() == 2);
-      assert(outputs.size() == 1);
-      assert(inputs[0] != nullptr);
-      assert(inputs[1] != nullptr);
-      assert(outputs[0] != nullptr);
-      return impl(inputs[0]->cast<const In1>(), inputs[1]->cast<const In2>(), outputs[0]->cast<Out1>());
-      }, { std::move(in1), std::move(in2) }, { std::move(out1) });
+    return func(
+        [impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
+          assert(inputs.size() == 2);
+          assert(outputs.size() == 1);
+          assert(inputs[0] != nullptr);
+          assert(inputs[1] != nullptr);
+          assert(outputs[0] != nullptr);
+          return impl(inputs[0]->cast<const In1>(), inputs[1]->cast<const In2>(), outputs[0]->cast<Out1>());
+        },
+        {std::move(in1), std::move(in2)}, {std::move(out1)});
   }
 
   const callable& impl() const { return impl_; }
@@ -148,7 +163,7 @@ public:
 class pipeline {
   std::vector<buffer_expr_ptr> inputs_;
   std::vector<buffer_expr_ptr> outputs_;
-  
+
   stmt body;
 
 public:

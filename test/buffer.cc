@@ -1,5 +1,5 @@
-#include "test.h"
 #include "buffer.h"
+#include "test.h"
 
 using namespace slinky;
 
@@ -14,7 +14,7 @@ TEST(buffer_base_make) {
 }
 
 TEST(buffer) {
-  buffer<int, 2> buf({ 10, 20 });
+  buffer<int, 2> buf({10, 20});
 
   ASSERT_EQ(buf.dims[0].min, 0);
   ASSERT_EQ(buf.dims[0].extent, 10);

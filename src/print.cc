@@ -38,7 +38,7 @@ public:
       os << "<" << id << ">";
     }
   }
-  
+
   void print(const expr& e) {
     if (e.defined()) {
       e.accept(this);
@@ -47,23 +47,13 @@ public:
     }
   }
 
-  void print(const stmt& s) {
-    s.accept(this);
-  }
+  void print(const stmt& s) { s.accept(this); }
 
-  std::string indent() const {
-    return std::string(depth, ' ');
-  }
+  std::string indent() const { return std::string(depth, ' '); }
 
-  void visit(const variable* v) override {
-    print_symbol_id(v->name);
-  }
-  void visit(const wildcard* w) override {
-    print_symbol_id(w->name);
-  }
-  void visit(const constant* c) override {
-    os << c->value;
-  }
+  void visit(const variable* v) override { print_symbol_id(v->name); }
+  void visit(const wildcard* w) override { print_symbol_id(w->name); }
+  void visit(const constant* c) override { os << c->value; }
 
   void visit(const let* l) override {
     os << "let ";
@@ -182,16 +172,12 @@ public:
     os << indent() << "call(<fn>, {";
     for (const expr& e : n->scalar_args) {
       print(e);
-      if (&e != &n->scalar_args.back()) {
-        os << ", ";
-      }
+      if (&e != &n->scalar_args.back()) { os << ", "; }
     }
     os << "}, {";
     for (symbol_id id : n->buffer_args) {
       print_symbol_id(id);
-      if (id != n->buffer_args.back()) {
-        os << ", ";
-      }
+      if (id != n->buffer_args.back()) { os << ", "; }
     }
     os << "})" << std::endl;
   }
@@ -211,9 +197,7 @@ public:
       os << ", ";
       print(d.fold_factor);
       os << "}";
-      if (&d != &n->dims.back()) {
-        os << ", ";
-      }
+      if (&d != &n->dims.back()) { os << ", "; }
       os << std::endl;
     }
     --depth;

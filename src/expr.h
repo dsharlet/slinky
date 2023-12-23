@@ -4,13 +4,13 @@
 #include "buffer.h"
 
 #include <cstdlib>
-#include <initializer_list>
-#include <vector>
-#include <memory>
-#include <map>
-#include <string>
-#include <span>
 #include <functional>
+#include <initializer_list>
+#include <map>
+#include <memory>
+#include <span>
+#include <string>
+#include <vector>
 
 namespace slinky {
 
@@ -83,7 +83,7 @@ enum class buffer_meta {
 
 class node_visitor;
 
-class base_node  {
+class base_node {
 public:
   base_node(node_type type) : type(type) {}
   virtual ~base_node() {}
@@ -158,7 +158,10 @@ public:
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
 
-  void accept(node_visitor* v) const { assert(defined()); e->accept(v); }
+  void accept(node_visitor* v) const {
+    assert(defined());
+    e->accept(v);
+  }
 
   bool defined() const { return e != nullptr; }
   bool same_as(const expr& other) const { return e == other.e; }
@@ -172,16 +175,46 @@ public:
     }
   }
 
-  expr& operator+=(const expr& r) { *this = *this + r; return *this; }
-  expr& operator-=(const expr& r) { *this = *this - r; return *this; }
-  expr& operator*=(const expr& r) { *this = *this * r; return *this; }
-  expr& operator/=(const expr& r) { *this = *this / r; return *this; }
-  expr& operator%=(const expr& r) { *this = *this % r; return *this; }
-  expr& operator&=(const expr& r) { *this = *this & r; return *this; }
-  expr& operator^=(const expr& r) { *this = *this ^ r; return *this; }
-  expr& operator|=(const expr& r) { *this = *this | r; return *this; }
-  expr& operator<<=(const expr& r) { *this = *this << r; return *this; }
-  expr& operator>>=(const expr& r) { *this = *this >> r; return *this; }
+  expr& operator+=(const expr& r) {
+    *this = *this + r;
+    return *this;
+  }
+  expr& operator-=(const expr& r) {
+    *this = *this - r;
+    return *this;
+  }
+  expr& operator*=(const expr& r) {
+    *this = *this * r;
+    return *this;
+  }
+  expr& operator/=(const expr& r) {
+    *this = *this / r;
+    return *this;
+  }
+  expr& operator%=(const expr& r) {
+    *this = *this % r;
+    return *this;
+  }
+  expr& operator&=(const expr& r) {
+    *this = *this & r;
+    return *this;
+  }
+  expr& operator^=(const expr& r) {
+    *this = *this ^ r;
+    return *this;
+  }
+  expr& operator|=(const expr& r) {
+    *this = *this | r;
+    return *this;
+  }
+  expr& operator<<=(const expr& r) {
+    *this = *this << r;
+    return *this;
+  }
+  expr& operator>>=(const expr& r) {
+    *this = *this >> r;
+    return *this;
+  }
 };
 
 class stmt {
@@ -197,7 +230,10 @@ public:
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
 
-  void accept(node_visitor* v) const { assert(defined()); s->accept(v); }
+  void accept(node_visitor* v) const {
+    assert(defined());
+    s->accept(v);
+  }
 
   bool defined() const { return s != nullptr; }
   bool same_as(const stmt& other) const { return s == other.s; }
@@ -264,14 +300,14 @@ public:
   static constexpr node_type static_type = node_type::constant;
 };
 
-#define DECLARE_BINARY_OP(op) \
-class op : public expr_node<op> { \
-public: \
-  expr a, b; \
-  void accept(node_visitor* v) const; \
-  static expr make(expr a, expr b); \
-  static constexpr node_type static_type = node_type::op; \
-};
+#define DECLARE_BINARY_OP(op)                                                                                          \
+  class op : public expr_node<op> {                                                                                    \
+  public:                                                                                                              \
+    expr a, b;                                                                                                         \
+    void accept(node_visitor* v) const;                                                                                \
+    static expr make(expr a, expr b);                                                                                  \
+    static constexpr node_type static_type = node_type::op;                                                            \
+  };
 
 DECLARE_BINARY_OP(add)
 DECLARE_BINARY_OP(sub)
@@ -312,7 +348,7 @@ class func;
 
 class call : public stmt_node<call> {
 public:
-  typedef index_t(*callable_t)(std::span<const index_t>, std::span<buffer_base*>);
+  typedef index_t (*callable_t)(std::span<const index_t>, std::span<buffer_base*>);
   using callable = std::function<index_t(std::span<const index_t>, std::span<buffer_base*>)>;
 
   callable target;

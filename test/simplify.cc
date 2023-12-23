@@ -1,8 +1,8 @@
-#include "test.h"
-#include "expr.h"
 #include "simplify.h"
+#include "expr.h"
 #include "print.h"
 #include "substitute.h"
+#include "test.h"
 
 #include <cassert>
 
@@ -39,24 +39,24 @@ TEST(simplify) {
   test_simplify(x - 0, x);
   test_simplify(0 + x + 0, x);
   test_simplify(x - 0, x);
-  test_simplify(1*x*1, x);
-  test_simplify(x*0, 0);
-  test_simplify(0*x, 0);
-  test_simplify(x/1, x);
+  test_simplify(1 * x * 1, x);
+  test_simplify(x * 0, 0);
+  test_simplify(0 * x, 0);
+  test_simplify(x / 1, x);
 
-  test_simplify(x/x, x/x);  // Not simplified due to possible division by zero.
-  test_simplify(0/x, 0/x);  // Not simplified due to possible division by zero.
+  test_simplify(x / x, x / x);  // Not simplified due to possible division by zero.
+  test_simplify(0 / x, 0 / x);  // Not simplified due to possible division by zero.
 
   test_simplify(((x + 1) - (y - 1)) + 1, x - y + 3);
 }
 
 TEST(simplify_let) {
   // lets that should be removed
-  test_simplify(let::make(0, y, z), z);  // Dead let
-  test_simplify(let::make(0, y*2, x), y*2);  // Single use, substitute
-  test_simplify(let::make(0, y, x/x), y/y);  // Trivial value, substitute
-  test_simplify(let::make(0, 10, x/x), 1);  // Trivial value, substitute
+  test_simplify(let::make(0, y, z), z);          // Dead let
+  test_simplify(let::make(0, y * 2, x), y * 2);  // Single use, substitute
+  test_simplify(let::make(0, y, x / x), y / y);  // Trivial value, substitute
+  test_simplify(let::make(0, 10, x / x), 1);     // Trivial value, substitute
 
   // lets that should be kept
-  test_simplify(let::make(0, y*2, x/x), let::make(0, y*2, x/x));  // Non-trivial, used more than once.
+  test_simplify(let::make(0, y * 2, x / x), let::make(0, y * 2, x / x));  // Non-trivial, used more than once.
 }

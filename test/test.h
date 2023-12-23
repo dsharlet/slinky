@@ -28,9 +28,7 @@ class assert_stream {
 public:
   assert_stream(bool condition, const std::string& check) : fail_(!condition) { msg_ << check; }
   ~assert_stream() noexcept(false) {
-    if (fail_) {
-      throw std::runtime_error(msg_.str());
-    }
+    if (fail_) { throw std::runtime_error(msg_.str()); }
   }
 
   template <class T>
@@ -42,10 +40,10 @@ public:
 
 // Make a new test object. The body of the test should follow this
 // macro, e.g. TEST(equality) { ASSERT(1 == 1); }
-#define TEST(name)                                                                                 \
-void test_##name##_body();                                                                       \
-static ::slinky::test test_##name##_obj(#name, test_##name##_body);                                 \
-void test_##name##_body()
+#define TEST(name)                                                                                                     \
+  void test_##name##_body();                                                                                           \
+  static ::slinky::test test_##name##_obj(#name, test_##name##_body);                                                  \
+  void test_##name##_body()
 
 #define ASSERT(condition) assert_stream(condition, #condition)
 
@@ -71,8 +69,7 @@ double benchmark(F op) {
       op();
     }
     auto t2 = std::chrono::high_resolution_clock::now();
-    time_per_iteration_s =
-      std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count() / (iterations * 1e9);
+    time_per_iteration_s = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count() / (iterations * 1e9);
     if (time_per_iteration_s * iterations > min_time_s) { break; }
 
     long next_iterations = static_cast<long>(std::ceil((min_time_s * 2) / time_per_iteration_s));
@@ -100,6 +97,6 @@ struct move_only {
   move_only& operator=(const move_only&) = delete;
 };
 
-} // namespace slinky
+}  // namespace slinky
 
-#endif // SLINKY_TEST_TEST_H
+#endif  // SLINKY_TEST_TEST_H

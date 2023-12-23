@@ -1,7 +1,7 @@
-#include "test.h"
-#include "expr.h"
 #include "evaluate.h"
+#include "expr.h"
 #include "print.h"
+#include "test.h"
 
 #include <cassert>
 
@@ -41,10 +41,12 @@ TEST(evaluate_call) {
   node_context ctx;
   expr x = make_variable(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call::make([&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
-    calls.push_back(scalars[0]);
-    return 0;
-  }, { x }, {}, nullptr);
+  stmt c = call::make(
+      [&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
+        calls.push_back(scalars[0]);
+        return 0;
+      },
+      {x}, {}, nullptr);
 
   eval_context context;
   context.set(ctx.lookup("x"), 2);
@@ -59,10 +61,12 @@ TEST(evaluate_loop) {
   node_context ctx;
   expr x = make_variable(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call::make([&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
-    calls.push_back(scalars[0]);
-    return 0;
-  }, { x }, {}, nullptr);
+  stmt c = call::make(
+      [&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
+        calls.push_back(scalars[0]);
+        return 0;
+      },
+      {x}, {}, nullptr);
 
   stmt l = loop::make(ctx.lookup("x"), 2, 12, c);
 
