@@ -36,3 +36,6 @@ docs/*
 
 # Visual Studio folder status
 .vs
+
+# perf outputs
+perf.data*

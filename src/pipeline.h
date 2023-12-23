@@ -169,7 +169,7 @@ class pipeline {
 public:
   pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs);
 
-  index_t evaluate(std::span<buffer_base*> inputs, std::span<buffer_base*> outputs);
+  index_t evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs);
 };
 
 }  // namespace slinky

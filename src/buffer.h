@@ -112,8 +112,13 @@ public:
   }
 
   template <typename... Indices>
-  constexpr std::ptrdiff_t flat_offset_bytes(Indices... indices) const {
+  std::ptrdiff_t flat_offset_bytes(Indices... indices) const {
     return flat_offset_bytes_impl(dims, indices...);
+  }
+
+  template <typename... Indices>
+  void* address_at(Indices... indices) const {
+    return offset_bytes(base, flat_offset_bytes(indices...));
   }
 
   std::size_t size_bytes() const {

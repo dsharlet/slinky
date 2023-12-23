@@ -52,8 +52,8 @@ TEST(pipeline_trivial) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&in_buf};
-  buffer_base* outputs[] = {&out_buf};
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -99,8 +99,8 @@ TEST(pipeline_trivial_explicit) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&in_buf};
-  buffer_base* outputs[] = {&out_buf};
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -137,8 +137,8 @@ TEST(pipeline_elementwise_1d) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&in_buf};
-  buffer_base* outputs[] = {&out_buf};
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -178,8 +178,8 @@ TEST(pipeline_elementwise_1d_explicit) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&in_buf};
-  buffer_base* outputs[] = {&out_buf};
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for (int i = 0; i < N; ++i) {
@@ -252,8 +252,8 @@ TEST(pipeline_matmuls) {
   d_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
-  buffer_base* outputs[] = {&d_buf};
+  const buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
+  const buffer_base* outputs[] = {&d_buf};
   p.evaluate(inputs, outputs);
 }
 
@@ -305,8 +305,8 @@ TEST(pipeline_pyramid) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&in_buf};
-  buffer_base* outputs[] = {&out_buf};
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 }
 
@@ -359,7 +359,7 @@ TEST(pipeline_stencil) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  buffer_base* inputs[] = {&in_buf};
-  buffer_base* outputs[] = {&out_buf};
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 }
