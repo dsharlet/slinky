@@ -9,14 +9,16 @@ using namespace slinky;
 
 // These functions use buffer<>::operator(), which is not designed to be fast.
 // TODO: Maybe eliminate this helper entirely and move it to be only for tests.
-index_t multiply_2(const buffer<const int>& in, const buffer<int>& out) {
+template <typename T>
+index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
     out(i) = in(i) * 2;
   }
   return 0;
 }
 
-index_t add_1(const buffer<const int>& in, const buffer<int>& out) {
+template <typename T>
+index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
     out(i) = in(i) + 1;
   }
@@ -33,7 +35,7 @@ TEST(pipeline_trivial) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { out, {x} });
+  func mul = func::make<const int, int>(multiply_2<int>, { in, {interval(x)} }, { out, {x} });
 
   pipeline p(ctx, { in }, { out });
 
@@ -117,8 +119,8 @@ TEST(pipeline_elementwise_1d) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { intm, {x} });
-  func add = func::make<const int, int>(add_1, { intm, {interval(x)} }, { out, {x} });
+  func mul = func::make<const int, int>(multiply_2<int>, { in, {interval(x)} }, { intm, {x} });
+  func add = func::make<const int, int>(add_1<int>, { intm, {interval(x)} }, { out, {x} });
 
   pipeline p(ctx, { in }, { out });
 
@@ -155,8 +157,8 @@ TEST(pipeline_elementwise_1d_explicit) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { intm, {x} });
-  func add = func::make<const int, int>(add_1, { intm, {interval(x)} }, { out, {x} });
+  func mul = func::make<const int, int>(multiply_2<int>, { in, {interval(x)} }, { intm, {x} });
+  func add = func::make<const int, int>(add_1<int>, { intm, {interval(x)} }, { out, {x} });
 
   add.loops({ x });
   mul.compute_at({ &add, x });
@@ -198,7 +200,8 @@ index_t matmul(const buffer<const int>& a, const buffer<const int>& b, const buf
   return 0;
 }
 
-void init_random(buffer<int, 2>& x) {
+template <typename T>
+void init_random(buffer<T, 2>& x) {
   x.allocate();
   for (int i = x.dims[1].begin(); i < x.dims[1].end(); ++i) {
     for (int j = x.dims[0].begin(); j < x.dims[0].end(); ++j) {
@@ -304,10 +307,11 @@ TEST(pipeline_pyramid) {
   p.evaluate(inputs, outputs);
 }
 
-index_t sum3x3(const buffer<const int>& in, const buffer<int>& out) {
+template <typename T>
+index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
   for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
     for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
-      int sum = 0;
+      T sum = 0;
       for (index_t dy = -1; dy <= 1; ++dy) {
         for (index_t dx = -1; dx <= 1; ++dx) {
           sum += in(x + dx, y + dy);
@@ -323,16 +327,16 @@ TEST(pipeline_stencil) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
 
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func add = func::make<const int, int>(add_1, { in, {interval(x) / 2, interval(y) / 2} }, { intm, {x, y} });
-  func stencil = func::make<const int, int>(sum3x3, { intm, {interval(-1, 1) + x, interval(-1, 1) + y} }, { out, {x, y} });
+  func add = func::make<const short, short>(add_1<short>, { in, {interval(x) / 2, interval(y) / 2} }, { intm, {x, y} });
+  func stencil = func::make<const short, short>(sum3x3<short>, { intm, {interval(-1, 1) + x, interval(-1, 1) + y} }, { out, {x, y} });
 
   stencil.loops({ y });
   add.compute_at({ &stencil, y });
@@ -342,10 +346,10 @@ TEST(pipeline_stencil) {
   // Run the pipeline.
   const int M = 10;
   const int N = 10;
-  buffer<int, 2> in_buf({ M + 2, N + 2 });
+  buffer<short, 2> in_buf({ M + 2, N + 2 });
   in_buf.dims[0].min = -1;
   in_buf.dims[1].min = -1;
-  buffer<int, 2> out_buf({ M, N });
+  buffer<short, 2> out_buf({ M, N });
 
   init_random(in_buf);
   out_buf.allocate();
