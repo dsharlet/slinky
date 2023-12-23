@@ -89,7 +89,6 @@ expr constant::make(index_t value) {
 }
 
 expr::expr(index_t value) : expr(make_constant(value).get()) {}
-expr::expr(symbol_id name) : expr(make_variable(name).get()) {}
 
 expr constant::make(const void* value) {
   return make(reinterpret_cast<index_t>(value));
@@ -192,7 +191,7 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n.get();
 }
 
-stmt allocate::make(memory_type type, symbol_id name, index_t elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = std::make_shared<allocate>();
   n->type = type;
   n->name = name;
@@ -202,7 +201,7 @@ stmt allocate::make(memory_type type, symbol_id name, index_t elem_size, std::ve
   return n.get();
 }
 
-stmt crop::make(symbol_id name, index_t dim, expr min, expr extent, stmt body) {
+stmt crop::make(symbol_id name, int dim, expr min, expr extent, stmt body) {
   auto n = std::make_shared<crop>();
   n->name = name;
   n->dim = dim;

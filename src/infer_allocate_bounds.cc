@@ -29,7 +29,7 @@ public:
     assert(!!bounds);
     std::vector<dim_expr> dims;
     dims.reserve(bounds->size());
-    expr stride_bytes = alloc->elem_size;
+    expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
     for (const interval& i : *bounds) {
       symbol_id extent_name = ctx.insert();

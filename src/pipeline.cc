@@ -153,11 +153,13 @@ public:
       }
     }
     stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
+
+    // Generate the loops that we want to be explicit. 
     for (const auto& loop : f->loops()) {
       interval bounds;
-      std::vector<std::pair<index_t, buffer_expr_ptr>> to_crop;
+      std::vector<std::pair<int, buffer_expr_ptr>> to_crop;
       for (const auto& o : f->outputs()) {
-        for (index_t d = 0; d < o.dims.size(); ++d) {
+        for (int d = 0; d < o.dims.size(); ++d) {
           if (match(o.dims[d], loop)) {
             to_crop.emplace_back(d, o.buffer);
             // This output uses this loop. Add it to the bounds.

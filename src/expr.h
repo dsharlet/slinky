@@ -146,7 +146,6 @@ public:
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
-  expr(symbol_id var);
 
   // Unfortunately, std::enable_shared_from_this doesn't mean we can just do this:
   // T* n = new T();
@@ -392,13 +391,13 @@ class allocate : public stmt_node<allocate> {
 public:
   memory_type type;
   symbol_id name;
-  index_t elem_size;
+  std::size_t elem_size;
   std::vector<dim_expr> dims;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(memory_type type, symbol_id name, index_t elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
 };
@@ -410,14 +409,14 @@ public:
 class crop : public stmt_node<crop> {
 public:
   symbol_id name;
-  index_t dim;
+  int dim;
   expr min;
   expr extent;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, index_t dim, expr min, expr extent, stmt body);
+  static stmt make(symbol_id name, int dim, expr min, expr extent, stmt body);
 
   static constexpr node_type static_type = node_type::crop;
 };
