@@ -76,12 +76,18 @@ public:
     std::vector<index_t> alignment;
   };
 
+  struct loop_id {
+    const func* f;
+    expr loop;
+  };
+
 private:
   callable impl_;
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
   std::vector<expr> loops_;
+  loop_id compute_at_;
 
 public:
   func() {}
@@ -96,6 +102,9 @@ public:
   // Describes which loops should be explicit for this func.
   func& loops(std::vector<expr> l) { loops_ = std::move(l); return *this; }
   const std::vector<expr>& loops() const { return loops_; }
+
+  func& compute_at(const loop_id& at) { compute_at_ = at; return *this; }
+  const loop_id& compute_at() const { return compute_at_; }
 
   // TODO: Try to do this with a variadic template implementation.
   template <typename Out1>

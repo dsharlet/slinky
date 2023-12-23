@@ -144,6 +144,47 @@ TEST(pipeline_elementwise_1d) {
   }
 }
 
+// An example of two 1D elementwise operations in sequence.
+TEST(pipeline_elementwise_1d_explicit) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
+
+  expr x = make_variable(ctx, "x");
+
+  func mul = func::make<const int, int>(multiply_2, { in, {interval(x)} }, { intm, {x} });
+  func add = func::make<const int, int>(add_1, { intm, {interval(x)} }, { out, {x} });
+
+  add.loops({ x });
+  mul.compute_at({ &add, x });
+
+  pipeline p(ctx, { in }, { out });
+
+  // Run the pipeline
+  const int N = 10;
+
+  buffer<int, 1> in_buf({ N });
+  in_buf.allocate();
+  for (int i = 0; i < N; ++i) {
+    in_buf(i) = i;
+  }
+
+  buffer<int, 1> out_buf({ N });
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  buffer_base* inputs[] = { &in_buf };
+  buffer_base* outputs[] = { &out_buf };
+  p.evaluate(inputs, outputs);
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(out_buf(i), 2 * i + 1);
+  }
+}
+
 // This matrix multiply operates on integers, so we can test for correctness exactly.
 index_t matmul(const buffer<const int>& a, const buffer<const int>& b, const buffer<int>& c) {
   for (index_t i = c.dims[0].begin(); i < c.dims[0].end(); ++i) {
@@ -292,6 +333,9 @@ TEST(pipeline_stencil) {
 
   func add = func::make<const int, int>(add_1, { in, {interval(x) / 2, interval(y) / 2} }, { intm, {x, y} });
   func stencil = func::make<const int, int>(sum3x3, { intm, {interval(-1, 1) + x, interval(-1, 1) + y} }, { out, {x, y} });
+
+  stencil.loops({ y });
+  add.compute_at({ &stencil, y });
 
   pipeline p(ctx, { in }, { out });
 

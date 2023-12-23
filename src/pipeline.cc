@@ -11,7 +11,7 @@
 #include "substitute.h"
 
 namespace slinky {
-  
+
 buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank) : name_(name), elem_size_(elem_size), producer_(nullptr) {
   dims_.reserve(rank);
   auto var = variable::make(name);
@@ -54,60 +54,82 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
 
 namespace {
 
-// Find the func f to run next. This is the func that produces a buffer we need that we have not yet produced,
-// and all the buffers produced by f are ready to be consumed.
-const func* find_next_producer(const std::set<buffer_expr_ptr>& to_produce) {
-  const func* f;
-  for (auto i = to_produce.begin(); i != to_produce.end(); ++i) {
-    f = (*i)->producer();
-
-    for (const func* j : (*i)->consumers()) {
-      for (const func::output& k : j->outputs()) {
-        if (k.buffer == *i) continue;  // This is the buffer we are proposing to produce now.
-        if (to_produce.count(k.buffer)) {
-          // f produces a buffer that is needed by another func that has not yet run.
-          f = nullptr;
-          break;
-        }
-      }
-    }
-    if (f) {
-      return f;
-    }
-  }
-  return nullptr;
-}
-
-stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+class pipeline_builder {
   // We're going to incrementally build the body, starting at the end of the pipeline and adding producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
   std::set<buffer_expr_ptr> produced;
+  std::set<buffer_expr_ptr> allocated;
   stmt result;
 
-  std::set<buffer_expr_ptr> defined;
-
-  // To start with, we need to produce the outputs.
-  for (auto& i : outputs) {
-    to_produce.insert(i);
-    defined.insert(i);
-  }
-  // And we've already "produced" the inputs.
-  for (auto& i : inputs) {
-    produced.insert(i);
-    defined.insert(i);
-  }
-
-  while (!to_produce.empty()) {
-    // Find a buffer to produce.
-    const func* f = find_next_producer(to_produce);
-
-    // Call the producer.
-    if (!f) {
-      // TODO: Make a better error here.
-      std::cerr << "Problem in dependency graph" << std::endl;
-      std::abort();
+public:
+  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+    // To start with, we need to produce the outputs.
+    for (auto& i : outputs) {
+      to_produce.insert(i);
+      allocated.insert(i);
+    }
+    for (auto& i : inputs) {
+      produced.insert(i);
     }
 
+    // Find all the buffers we need to produce.
+    while (true) {
+      std::set<buffer_expr_ptr> produce_next;
+      for (const buffer_expr_ptr& i : to_produce) {
+        if (!i->producer()) {
+          // Must be an input.
+          continue;
+        }
+
+        for (const func::input& j : i->producer()->inputs()) {
+          if (!to_produce.count(j.buffer)) {
+            produce_next.insert(j.buffer);
+          }
+        }
+      }
+      if (produce_next.empty()) {
+        break;
+      }
+      to_produce.insert(produce_next.begin(), produce_next.end());
+    }
+  }
+
+  // Find the func f to run next. This is the func that produces a buffer we need that we have not yet produced,
+  // and all the buffers produced by f are ready to be consumed.
+  const func* find_next_producer() const {
+    const func* f;
+    for (const buffer_expr_ptr& i : to_produce) {
+      if (produced.count(i)) {
+        // Already produced.
+        continue;
+      }
+      f = i->producer();
+
+      for (const func* j : i->consumers()) {
+        for (const func::output& k : j->outputs()) {
+          if (k.buffer == i) {
+            // This is the buffer we are proposing to produce now.
+            continue;
+          }
+          if (!produced.count(k.buffer)) {
+            // f produces a buffer that is needed by another func that has not yet run.
+            f = nullptr;
+            break;
+          }
+        }
+      }
+      if (f) {
+        return f;
+      }
+    }
+    return nullptr;
+  }
+
+  bool complete() const {
+    return produced.size() == to_produce.size(); 
+  }
+
+  void produce(stmt& result, const func* f) {
     // TODO: We shouldn't need this wrapper, it might add measureable overhead.
     // All it does is split a span of buffers into two spans of buffers.
     std::size_t input_count = f->inputs().size();
@@ -125,8 +147,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     }
     for (const func::output& i : f->outputs()) {
       buffer_args.push_back(i.buffer->name());
-      if (!defined.count(i.buffer)) {
+      if (!allocated.count(i.buffer)) {
         allocations.push_back(i.buffer);
+        allocated.insert(i.buffer);
       }
     }
     stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
@@ -151,28 +174,50 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       for (const auto& i : to_crop) {
         call_f = crop::make(i.second->name(), i.first, loop, 1, call_f);
       }
+
+      // Before making this loop, see if there are any producers we need to insert here.
+      for (const buffer_expr_ptr& i : to_produce) {
+        if (!i->producer()) {
+          // Must be an input.
+          continue;
+        }
+        if (i->producer()->compute_at().f == f && i->producer()->compute_at().loop.as<variable>()->name == loop.as<variable>()->name) {
+          produce(call_f, i->producer());
+        }
+      }
+
       call_f = loop::make(loop.as<variable>()->name, bounds.min, bounds.max + 1, call_f);
     }
     result = result.defined() ? block::make(call_f, result) : call_f;
     for (const auto& i : allocations) {
       result = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), result);
-      defined.insert(i);
     }
 
-    // We've just run f, which produced its outputs.
-    for (auto& i : f->outputs()) {
+    for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);
-      to_produce.erase(i.buffer);
-    }
-    // Now make sure its inputs get produced.
-    for (auto& i : f->inputs()) {
-      if (!produced.count(i.buffer)) {
-        to_produce.insert(i.buffer);
-      }
     }
   }
+};
 
-  print(std::cout, result, &ctx);
+stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+  pipeline_builder builder(inputs, outputs);
+
+  stmt result;
+
+  while (!builder.complete()) {
+    // Find a buffer to produce.
+    const func* f = builder.find_next_producer();
+
+    // Call the producer.
+    if (!f) {
+      // TODO: Make a better error here.
+      std::cerr << "Problem in dependency graph" << std::endl;
+      std::abort();
+    }
+
+    builder.produce(result, f);
+  }
+
   symbol_map<std::vector<dim_expr>> bounds;
   for (const auto& i : inputs) {
     bounds.set(i->name(), i->dims());
@@ -181,7 +226,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     bounds.set(i->name(), i->dims());
   }
   result = infer_allocate_bounds(result, ctx, bounds);
-  print(std::cerr, result, &ctx);
 
   result = simplify(result);
   print(std::cerr, result, &ctx);
