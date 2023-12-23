@@ -22,7 +22,7 @@ public:
     
     auto& bounds = inferring[alloc->name];
     assert(!bounds);
-    bounds = box(alloc->dims.size());
+    bounds = box(alloc->dims.size(), interval::union_identity);
 
     stmt body = mutate(alloc->body);
 
@@ -75,12 +75,7 @@ public:
         expr min = substitute(input.bounds[d].min, mins);
         expr max = substitute(input.bounds[d].max, maxs);
         // TODO: Do we need to worry about the possibility of min > max here? 
-        interval required_d(min, max);
-        if (bounds[d].min.defined() && bounds[d].max.defined()) {
-          bounds[d] |= required_d;
-        } else {
-          bounds[d] = required_d;
-        }
+        bounds[d] |= interval(min, max);
       }
     }
     node_mutator::visit(c);

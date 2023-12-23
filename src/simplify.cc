@@ -1,6 +1,7 @@
 #include "simplify.h"
 
 #include <cassert>
+#include <limits>
 
 #include "substitute.h"
 #include "node_mutator.h"
@@ -72,6 +73,9 @@ public:
       e = std::min(*ca, *cb);
       return;
     }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -79,6 +83,8 @@ public:
     }
 
     static std::vector<rule> rules = {
+      {min(x, std::numeric_limits<index_t>::max()), x},
+      {min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()},
       {min(x, x), x},
       {min(x / z, y / z), min(x, y) / z, z > 0},
       {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
@@ -95,6 +101,9 @@ public:
       e = std::max(*ca, *cb);
       return;
     }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -102,6 +111,8 @@ public:
     }
 
     static std::vector<rule> rules = {
+      {max(x, std::numeric_limits<index_t>::min()), x},
+      {max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()},
       {max(x, x), x},
       {max(x / z, y / z), max(x, y) / z, z > 0},
       {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},

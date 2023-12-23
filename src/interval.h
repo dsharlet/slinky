@@ -12,6 +12,9 @@ struct interval {
   explicit interval(const expr& point) : min(point), max(point) {}
   interval(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
+  static interval union_identity;
+  static interval intersection_identity;
+
   expr extent() const {
     return max - min + 1;
   }
@@ -101,21 +104,8 @@ inline interval operator+(const expr& a, const interval& b) { return b + a; }
 
 using box = std::vector<interval>;
 
-inline box operator|(box a, const box& b) {
-  assert(a.size() == b.size());
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    a[i] |= b[i];
-  }
-  return a;
-}
-
-inline box operator&(box a, const box& b) {
-  assert(a.size() == b.size());
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    a[i] &= b[i];
-  }
-  return a;
-}
+box operator|(box a, const box& b);
+box operator&(box a, const box& b);
 
 }  // namespace slinky
 

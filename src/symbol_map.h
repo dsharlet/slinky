@@ -48,8 +48,7 @@ public:
       grow(name);
       std::swap(values[name], value);
       return value;
-    }
-    else {
+    } else {
       if (name < values.size()) {
         std::swap(values[name], value);
         return value;

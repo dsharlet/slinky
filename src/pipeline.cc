@@ -156,19 +156,14 @@ public:
 
     // Generate the loops that we want to be explicit. 
     for (const auto& loop : f->loops()) {
-      interval bounds;
+      interval bounds = interval::union_identity;
       std::vector<std::pair<int, buffer_expr_ptr>> to_crop;
       for (const auto& o : f->outputs()) {
         for (int d = 0; d < o.dims.size(); ++d) {
           if (match(o.dims[d], loop)) {
             to_crop.emplace_back(d, o.buffer);
             // This output uses this loop. Add it to the bounds.
-            interval bounds_d(o.buffer->dim(d).min, o.buffer->dim(d).max());
-            if (bounds.min.defined() && bounds.max.defined()) {
-              bounds |= bounds_d;
-            } else {
-              bounds = bounds_d;
-            }
+            bounds |= interval(o.buffer->dim(d).min, o.buffer->dim(d).max());
           }
         }
       }
