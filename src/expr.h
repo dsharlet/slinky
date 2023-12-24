@@ -175,6 +175,8 @@ public:
     }
   }
 
+  expr operator-() const { return 0 - *this; }
+
   expr& operator+=(const expr& r) {
     *this = *this + r;
     return *this;

@@ -2,6 +2,7 @@
 #include "expr.h"
 #include "print.h"
 #include "test.h"
+#include "funcs.h"
 
 #include <cassert>
 
@@ -189,19 +190,6 @@ TEST(pipeline_elementwise_1d_explicit) {
   }
 }
 
-// This matrix multiply operates on integers, so we can test for correctness exactly.
-index_t matmul(const buffer<const int>& a, const buffer<const int>& b, const buffer<int>& c) {
-  for (index_t i = c.dims[0].begin(); i < c.dims[0].end(); ++i) {
-    for (index_t j = c.dims[1].begin(); j < c.dims[1].end(); ++j) {
-      c(i, j) = 0;
-      for (index_t k = a.dims[1].begin(); k < a.dims[1].end(); ++k) {
-        c(i, j) += a(i, k) * b(k, j);
-      }
-    }
-  }
-  return 0;
-}
-
 template <typename T>
 void init_random(buffer<T, 2>& x) {
   x.allocate();
@@ -233,10 +221,11 @@ TEST(pipeline_matmuls) {
   interval K_ab(a->dim(1).min, a->dim(1).max());
   interval K_d(c->dim(0).min, c->dim(0).max());
 
+  // We use int for this pipeline so we can test for correctness exactly.
   func matmul_ab =
-      func::make<const int, const int, int>(matmul, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
+      func::make<const int, const int, int>(matmul<int>, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
   func matmul_abc =
-      func::make<const int, const int, int>(matmul, {ab, {interval(i), K_d}}, {c, {K_d, interval(j)}}, {d, {i, j}});
+      func::make<const int, const int, int>(matmul<int>, {ab, {interval(i), K_d}}, {c, {K_d, interval(j)}}, {d, {i, j}});
 
   pipeline p(ctx, {a, b, c}, {d});
 
@@ -312,22 +301,6 @@ TEST(pipeline_pyramid) {
   p.evaluate(inputs, outputs);
 }
 
-template <typename T>
-index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
-  for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
-    for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
-      T sum = 0;
-      for (index_t dy = -1; dy <= 1; ++dy) {
-        for (index_t dx = -1; dx <= 1; ++dx) {
-          sum += in(x + dx, y + dy);
-        }
-      }
-      out(x, y) = sum;
-    }
-  }
-  return 0;
-}
-
 TEST(pipeline_stencil) {
   // Make the pipeline
   node_context ctx;
@@ -364,4 +337,40 @@ TEST(pipeline_stencil) {
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
+}
+
+TEST(pipeline_flip_y) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+
+  expr x = make_variable(ctx, "x");
+  expr y = make_variable(ctx, "y");
+
+  func flip = func::make<const char, char>(flip_y<char>, {in, {interval(x), interval(-y)}}, {out, {x, y}});
+
+  flip.loops({y});
+
+  pipeline p(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  buffer<char, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  buffer<char, 2> out_buf({W, H});
+  out_buf.dims[1].min = -H + 1;
+  out_buf.allocate();
+  const buffer_base* inputs[] = {&in_buf};
+  const buffer_base* outputs[] = {&out_buf};
+  p.evaluate(inputs, outputs);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, -y), in_buf(x, y));
+    }
+  }
 }

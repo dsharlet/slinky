@@ -2,22 +2,11 @@
 #include "pipeline.h"
 #include "print.h"
 #include "test.h"
+#include "funcs.h"
 
 #include <cassert>
 
 using namespace slinky;
-
-index_t copy(const buffer<const char>& in, const buffer<char>& out) {
-  const char* src = &in(out.dims[0].min, out.dims[1].min);
-  char* dst = &out(out.dims[0].min, out.dims[1].min);
-  std::size_t size = out.dims[0].extent * out.elem_size;
-  for (int y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
-    std::copy(src, src + size, dst);
-    dst += out.dims[1].stride_bytes;
-    src += in.dims[1].stride_bytes;
-  }
-  return 0;
-}
 
 double benchmark_pipeline(const pipeline& p, index_t total_size, index_t copy_size) {
   buffer<char, 2> in_buf({copy_size, total_size / copy_size});
@@ -50,7 +39,7 @@ void benchmark_pipelines(bool explicit_y) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func copy = func::make<const char, char>(::copy, {in, {interval(x), interval(y)}}, {out, {x, y}});
+  func copy = func::make<const char, char>(::copy<char>, {in, {interval(x), interval(y)}}, {out, {x, y}});
 
   if (explicit_y) {
     copy.loops({y});
