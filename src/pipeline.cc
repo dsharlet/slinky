@@ -247,7 +247,7 @@ namespace {
 void set_buffer(eval_context& ctx, const buffer_expr_ptr& buf_expr, const buffer_base* buf) {
   assert(buf_expr->rank() == buf->rank);
 
-  ctx.set(buf_expr->name(), reinterpret_cast<index_t>(buf));
+  ctx[buf_expr->name()] = reinterpret_cast<index_t>(buf);
 
   for (std::size_t i = 0; i < buf->rank; ++i) {
     // If these asserts fail, it's because the user has added constraints to the buffer_expr,

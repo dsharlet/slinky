@@ -12,7 +12,7 @@ TEST(evaluate_arithmetic) {
   expr x = make_variable(ctx, "x");
 
   eval_context context;
-  context.set(ctx.lookup("x"), 4);
+  context[ctx.lookup("x")] = 4;
 
   ASSERT_EQ(evaluate(x + 5, context), 9);
   ASSERT_EQ(evaluate(x - 3, context), 1);
@@ -49,7 +49,7 @@ TEST(evaluate_call) {
       {x}, {}, nullptr);
 
   eval_context context;
-  context.set(ctx.lookup("x"), 2);
+  context[ctx.lookup("x")] = 2;
 
   int result = evaluate(c, context);
   ASSERT_EQ(result, 0);

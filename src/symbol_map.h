@@ -34,22 +34,6 @@ public:
     return !!values[name];
   }
 
-  // Returns the previous state of `name`.
-  std::optional<T> set(symbol_id name, std::optional<T> value) {
-    if (value) {
-      grow(name);
-      std::swap(values[name], value);
-      return value;
-    } else {
-      if (name < values.size()) {
-        std::swap(values[name], value);
-        return value;
-      } else {
-        return std::nullopt;
-      }
-    }
-  }
-
   std::size_t size() const { return values.size(); }
   auto begin() { return values.begin(); }
   auto end() { return values.end(); }
@@ -66,7 +50,9 @@ class scoped_value {
 
 public:
   scoped_value(symbol_map<T>& context, symbol_id name, T value) : context(&context), name(name) {
-    old_value = context.set(name, std::move(value));
+    std::optional<T>& ctx_value = context[name];
+    old_value = std::move(ctx_value);
+    ctx_value = std::move(value);
   }
 
   scoped_value(scoped_value&& other) : context(other.context), name(other.name), old_value(std::move(other.old_value)) {
@@ -84,7 +70,7 @@ public:
   }
 
   ~scoped_value() {
-    if (context) { context->set(name, std::move(old_value)); }
+    if (context) { (*context)[name] = std::move(old_value); }
   }
 };
 
