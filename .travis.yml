@@ -1,7 +1,7 @@
 language: cpp
 install: make
 os: linux
-compiler: gcc
+compiler: clang-10
 
 script:
   - make test
