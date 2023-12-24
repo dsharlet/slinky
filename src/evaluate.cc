@@ -77,10 +77,13 @@ public:
 
   void visit(const load_buffer_meta* x) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(eval_expr(x->buffer));
+    assert(buffer);
     if (x->meta == buffer_meta::base) {
       result = reinterpret_cast<index_t>(buffer->base);
     } else {
-      const buffer_base::dim& dim = buffer->dims[eval_expr(x->dim)];
+      index_t d = eval_expr(x->dim);
+      assert(d < buffer->rank);
+      const buffer_base::dim& dim = buffer->dims[d];
       switch (x->meta) {
       case buffer_meta::min: result = dim.min; return;
       case buffer_meta::max: result = dim.max(); return;
