@@ -1,7 +1,6 @@
 #ifndef SLINKY_BUFFER_H
 #define SLINKY_BUFFER_H
 
-#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
