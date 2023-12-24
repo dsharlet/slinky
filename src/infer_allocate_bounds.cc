@@ -104,15 +104,17 @@ public:
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
-    // TODO: Do we need to worry about the possibility of min > max here?
     std::map<symbol_id, expr> mins = {{l->name, l->begin}};
     std::map<symbol_id, expr> maxs = {{l->name, l->end - 1}};
     for (std::optional<box>& i : inferring) {
       if (!i) continue;
 
       for (interval& j : *i) {
-        j.min = substitute(j.min, mins);
-        j.max = substitute(j.max, maxs);
+        // We need to be careful of the case where min > max, such as when a pipeline
+        // flips a dimension.
+        // TODO: This seems janky/possibly not right.
+        j.min = min(substitute(j.min, mins), substitute(j.min, maxs));
+        j.max = max(substitute(j.max, mins), substitute(j.max, maxs));
       }
     }
   }
