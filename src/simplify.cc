@@ -79,9 +79,16 @@ public:
     static std::vector<rule> rules = {
         {min(x, std::numeric_limits<index_t>::max()), x},
         {min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()},
+        {min(c0, min(x, c1)), min(x, min(c0, c1))},
+        {min(min(x, c0), c1), min(x, min(c0, c1))},
         {min(x, x), x},
         {min(x / z, y / z), min(x, y) / z, z > 0},
+        {min(x + z, y + z), min(x, y) + z},
+        {min(z + x, z + y), z + min(x, y)},
+        {min(x - z, y - z), min(x, y) - z},
+        {min(z - x, z - y), z - max(x, y)},
         {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
+        {min(buffer_max(x, y), buffer_min(x, y)), buffer_min(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -105,9 +112,16 @@ public:
     static std::vector<rule> rules = {
         {max(x, std::numeric_limits<index_t>::min()), x},
         {max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()},
+        {max(c0, max(x, c1)), max(x, max(c0, c1))},
+        {max(max(x, c0), c1), max(x, max(c0, c1))},
         {max(x, x), x},
         {max(x / z, y / z), max(x, y) / z, z > 0},
+        {max(x + z, y + z), max(x, y) + z},
+        {max(z + x, z + y), z + max(x, y)},
+        {max(x - z, y - z), max(x, y) - z},
+        {max(z - x, z - y), z - min(x, y)},
         {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
+        {max(buffer_max(x, y), buffer_min(x, y)), buffer_max(x, y)},
     };
     e = apply_rules(rules, e);
   }
@@ -130,9 +144,13 @@ public:
 
     static std::vector<rule> rules = {
         {x + 0, x},
+        {x + x, x * 2},
+        {x + (0 - y), x - y},
+        {(0 - x) + y, y - x},
         {(x + c0) + c1, x + (c0 + c1)},
         {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
         {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
+        {buffer_extent(x, y) + buffer_min(x, y), buffer_max(x, y) + 1},
     };
     e = apply_rules(rules, e);
   }
@@ -159,6 +177,7 @@ public:
     static std::vector<rule> rules = {
         {x - x, 0},
         {x - 0, x},
+        {x - (0 - y), x + y},
         {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
         {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
     };
@@ -205,6 +224,27 @@ public:
 
     static std::vector<rule> rules = {
         {x / 1, x},
+    };
+    e = apply_rules(rules, e);
+  }
+
+  void visit(const mod* op) {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      e = euclidean_mod(*ca, *cb);
+      return;
+    }
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      e = op;
+    } else {
+      e = a % b;
+    }
+
+    static std::vector<rule> rules = {
+        {x % 1, 0},
     };
     e = apply_rules(rules, e);
   }

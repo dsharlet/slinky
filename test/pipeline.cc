@@ -345,13 +345,13 @@ TEST(pipeline_flip_y) {
 
   auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
 
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func flip = func::make<const char, char>(flip_y<char>, {in, {interval(x), interval(-y)}}, {out, {x, y}});
-
-  flip.loops({y});
+  func copy = func::make<const char, char>(::copy<char>, {in, {interval(x), interval(y)}}, {intm, {x, y}});
+  func flip = func::make<const char, char>(flip_y<char>, {intm, {interval(x), interval(-y)}}, {out, {x, y}});
 
   pipeline p(ctx, {in}, {out});
 

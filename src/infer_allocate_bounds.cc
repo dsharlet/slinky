@@ -75,8 +75,10 @@ public:
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
         expr max = substitute(input.bounds[d].max, maxs);
-        // TODO: Do we need to worry about the possibility of min > max here?
-        bounds[d] |= interval(min, max);
+        // We need to be careful of the case where min > max, such as when a pipeline
+        // flips a dimension.
+        // TODO: This seems janky/possibly not right.
+        bounds[d] |= interval(min, max) | interval(max, min);
       }
     }
     node_mutator::visit(c);
