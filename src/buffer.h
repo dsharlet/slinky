@@ -51,6 +51,10 @@ struct dim {
 template <typename T, std::size_t DimsSize = 0>
 struct buffer;
 
+struct buffer_base;
+
+using buffer_base_ptr = std::unique_ptr<buffer_base, void (*)(buffer_base*)>;
+
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
 // 2. We want to store metadata (dimensions) efficiently.
@@ -99,7 +103,7 @@ public:
 
   // Make a buffer and space for dims in the same object. Returns a unique_ptr, with the
   // understanding that unique_ptr can be converted to shared_ptr if needed.
-  static std::unique_ptr<buffer_base, void (*)(buffer_base*)> make(std::size_t rank, std::size_t elem_size) {
+  static buffer_base_ptr make(std::size_t rank, std::size_t elem_size) {
     char* buf_and_dims = new char[sizeof(buffer_base) + sizeof(dim) * rank];
     buffer_base* buf = new (buf_and_dims) buffer_base();
     buf->base = nullptr;
