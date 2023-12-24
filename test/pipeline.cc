@@ -340,7 +340,7 @@ TEST(pipeline_stencil) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func add = func::make<const short, short>(add_1<short>, {in, {interval(x) / 2, interval(y) / 2}}, {intm, {x, y}});
+  func add = func::make<const short, short>(add_1<short>, {in, {interval(x), interval(y)}}, {intm, {x, y}});
   func stencil =
       func::make<const short, short>(sum3x3<short>, {intm, {interval(-1, 1) + x, interval(-1, 1) + y}}, {out, {x, y}});
 
