@@ -10,7 +10,7 @@ using namespace slinky;
 
 expr x = variable::make(0);
 expr y = variable::make(1);
-expr z = variable::make(1);
+expr z = variable::make(2);
 
 void test_simplify(const expr& test, const expr& expected) {
   expr result = simplify(test);
