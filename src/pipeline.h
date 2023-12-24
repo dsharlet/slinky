@@ -10,15 +10,22 @@ class buffer_expr;
 
 using buffer_expr_ptr = std::shared_ptr<buffer_expr>;
 
+struct loop_id {
+  const func* f;
+  expr loop;
+};
+
 // Represents a symbolic buffer in a pipeline.
 class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
   symbol_id name_;
   index_t elem_size_;
   std::vector<dim_expr> dims_;
-  memory_type storage_ = memory_type::heap;
 
   func* producer_;
   std::vector<func*> consumers_;
+
+  memory_type storage_ = memory_type::heap;
+  loop_id store_at_;
 
   buffer_expr(symbol_id name, index_t elem_size, std::size_t rank);
   buffer_expr(const buffer_expr&) = delete;
@@ -47,6 +54,9 @@ public:
     return *this;
   }
   memory_type storage() const { return storage_; }
+
+  buffer_expr& store_at(loop_id at) { store_at_ = at; return *this; }
+  const loop_id& store_at() const { return store_at_; }
 
   // buffer_exprs can have many consumers, but only one producer.
   const func* producer() const { return producer_; }
@@ -77,11 +87,6 @@ public:
 
     // If this exists for a dimension, specifies the alignment required in that dimension.
     std::vector<index_t> alignment;
-  };
-
-  struct loop_id {
-    const func* f;
-    expr loop;
   };
 
 private:

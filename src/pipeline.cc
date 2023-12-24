@@ -59,6 +59,7 @@ class pipeline_builder {
   // We're going to incrementally build the body, starting at the end of the pipeline and adding
   // producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
+  std::set<buffer_expr_ptr> to_allocate;
   std::set<buffer_expr_ptr> produced;
   std::set<buffer_expr_ptr> allocated;
   stmt result;
@@ -123,7 +124,34 @@ public:
 
   bool complete() const { return produced.size() == to_produce.size(); }
 
-  void produce(stmt& result, const func* f) {
+  stmt make_loop(stmt body, const func* f, const expr& loop, const interval& bounds) {
+    // Before making this loop, see if there are any producers we need to insert here.
+    for (const buffer_expr_ptr& i : to_produce) {
+      if (!i->producer()) {
+        // Must be an input.
+        continue;
+      }
+      const loop_id& at = i->producer()->compute_at();
+      if (at.f == f && *as_variable(at.loop) == *as_variable(loop)) { 
+        produce(body, i->producer()); 
+      }
+    }
+
+    for (const buffer_expr_ptr& i : to_allocate) {
+      const loop_id& at = i->store_at();
+      if (at.f == f && *as_variable(at.loop) == *as_variable(loop)) {
+        body = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), body);
+        allocated.insert(i);
+      }
+    }
+    for (const buffer_expr_ptr& i : allocated) {
+      to_allocate.erase(i);
+    }
+
+    return loop::make(*as_variable(loop), bounds.min, bounds.max + 1, body);
+  }
+
+  void produce(stmt& result, const func* f, bool root = false) {
     // TODO: We shouldn't need this wrapper, it might add measureable overhead.
     // All it does is split a span of buffers into two spans of buffers.
     std::size_t input_count = f->inputs().size();
@@ -135,17 +163,12 @@ public:
     };
     std::vector<symbol_id> buffer_args;
     buffer_args.reserve(input_count + output_count);
-    std::vector<buffer_expr_ptr> allocations;
-    allocations.reserve(output_count);
     for (const func::input& i : f->inputs()) {
       buffer_args.push_back(i.buffer->name());
     }
     for (const func::output& i : f->outputs()) {
       buffer_args.push_back(i.buffer->name());
-      if (!allocated.count(i.buffer)) {
-        allocations.push_back(i.buffer);
-        allocated.insert(i.buffer);
-      }
+      if (!allocated.count(i.buffer)) { to_allocate.insert(i.buffer); }
     }
     stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
 
@@ -167,23 +190,15 @@ public:
         call_f = crop::make(i.second->name(), i.first, loop, 1, call_f);
       }
 
-      // Before making this loop, see if there are any producers we need to insert here.
-      for (const buffer_expr_ptr& i : to_produce) {
-        if (!i->producer()) {
-          // Must be an input.
-          continue;
-        }
-        const func::loop_id& compute_at = i->producer()->compute_at();
-        if (compute_at.f == f && *as_variable(compute_at.loop) == *as_variable(loop)) {
-          produce(call_f, i->producer());
-        }
-      }
-
-      call_f = loop::make(*as_variable(loop), bounds.min, bounds.max + 1, call_f);
+      call_f = make_loop(call_f, f, loop, bounds);
     }
     result = result.defined() ? block::make(call_f, result) : call_f;
-    for (const auto& i : allocations) {
-      result = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), result);
+    if (root) {
+      for (const auto& i : to_allocate) {
+        result = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), result);
+        allocated.insert(i);
+      }
+      to_allocate.clear();
     }
 
     for (const func::output& i : f->outputs()) {
@@ -209,7 +224,7 @@ stmt build_pipeline(
       std::abort();
     }
 
-    builder.produce(result, f);
+    builder.produce(result, f, /*root=*/true);
   }
 
   result = infer_allocate_bounds(result, ctx);

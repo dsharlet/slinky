@@ -163,6 +163,8 @@ TEST(pipeline_elementwise_1d_explicit) {
   add.loops({x});
   mul.compute_at({&add, x});
 
+  intm->store_at({&add, x});
+
   pipeline p(ctx, {in}, {out});
 
   // Run the pipeline

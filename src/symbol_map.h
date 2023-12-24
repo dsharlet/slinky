@@ -49,6 +49,11 @@ public:
       }
     }
   }
+
+  auto begin() { return values.begin(); }
+  auto end() { return values.end(); }
+  auto begin() const { return values.begin(); }
+  auto end() const { return values.end(); }
 };
 
 // Set a value in an eval_context upon construction, and restore the old value upon destruction.

@@ -6,6 +6,7 @@
 #include "node_mutator.h"
 #include "pipeline.h"
 #include "substitute.h"
+#include "print.h"
 
 namespace slinky {
 
@@ -94,6 +95,24 @@ public:
 
     scoped_value<box> new_crop(crops, c->name, *cropped_bounds);
     node_mutator::visit(c);
+  }
+
+  void visit(const loop* l) override {
+    node_mutator::visit(l);
+
+    // We're leaving the body of l. If any of the bounds used that loop variable, we need
+    // to replace those uses with the bounds of the loop.
+    // TODO: Do we need to worry about the possibility of min > max here?
+    std::map<symbol_id, expr> mins = {{l->name, l->begin}};
+    std::map<symbol_id, expr> maxs = {{l->name, l->end - 1}};
+    for (std::optional<box>& i : inferring) {
+      if (!i) continue;
+
+      for (interval& j : *i) {
+        j.min = substitute(j.min, mins);
+        j.max = substitute(j.max, maxs);
+      }
+    }
   }
 };
 
