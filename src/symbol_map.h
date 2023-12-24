@@ -50,6 +50,7 @@ public:
     }
   }
 
+  std::size_t size() const { return values.size(); }
   auto begin() { return values.begin(); }
   auto end() { return values.end(); }
   auto begin() const { return values.begin(); }
