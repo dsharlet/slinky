@@ -257,9 +257,7 @@ stmt build_pipeline(
     builder.produce(result, f, /*root=*/true);
   }
 
-  print(std::cerr, result, &ctx);
   result = infer_bounds(result, ctx);
-  print(std::cerr, result, &ctx);
 
   result = sliding_window(result, ctx);
 

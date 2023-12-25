@@ -102,7 +102,7 @@ public:
     // TODO: This is pretty messy, a better way to implement this would be nice.
     std::optional<box> cropped_bounds = crops[c->name];
     if (!cropped_bounds) {
-      cropped_bounds = std::vector<interval>(c->dim + 1);
+      cropped_bounds = box(c->dim + 1);
     } else if (c->dim >= cropped_bounds->size()) {
       cropped_bounds->resize(c->dim + 1);
     }
