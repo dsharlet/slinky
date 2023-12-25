@@ -87,6 +87,11 @@ public:
     node_mutator::visit(c);
   }
 
+  void visit(const crop_buffer* c) override {
+    auto new_crop = set_value_in_scope(crops, c->name, c->bounds);
+    node_mutator::visit(c);
+  }
+
   void visit(const crop_dim* c) override {
     // TODO: This is pretty messy, a better way to implement this would be nice.
     std::optional<box> cropped_bounds = crops[c->name];
