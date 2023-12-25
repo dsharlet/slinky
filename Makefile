@@ -15,7 +15,7 @@ obj/test/%.o: test/%.cc $(DEPS)
 	mkdir -p $(@D)
 	$(CXX) -Isrc -c -o $@ $< $(CFLAGS) $(CXXFLAGS)
 
-bin/libslinky.a: obj/evaluate.o obj/pipeline.o obj/print.o obj/expr.o obj/substitute.o obj/infer_allocate_bounds.o obj/simplify.o
+bin/libslinky.a: obj/evaluate.o obj/pipeline.o obj/print.o obj/expr.o obj/substitute.o obj/infer_bounds.o obj/simplify.o
 	mkdir -p $(@D)
 	ar rc $@ $+
 	ranlib $@

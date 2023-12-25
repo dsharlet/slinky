@@ -1,4 +1,4 @@
-#include "infer_allocate_bounds.h"
+#include "infer_bounds.h"
 
 #include <cassert>
 #include <iostream>
@@ -13,18 +13,18 @@ namespace slinky {
 
 namespace {
 
-class allocate_bounds_inferrer : public node_mutator {
+class bounds_inferrer : public node_mutator {
 public:
   node_context& ctx;
   symbol_map<box> inferring;
   symbol_map<box> crops;
 
-  allocate_bounds_inferrer(node_context& ctx) : ctx(ctx) {}
+  bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* alloc) override {
     assert(!inferring.contains(alloc->name));
 
-    auto& bounds = inferring[alloc->name];
+    std::optional<box>& bounds = inferring[alloc->name];
     assert(!bounds);
     bounds = box(alloc->dims.size(), interval::union_identity);
 
@@ -50,17 +50,16 @@ public:
 
   void visit(const call* c) override {
     assert(c->fn);
-    for (const auto& input : c->fn->inputs()) {
-      auto& maybe_bounds = inferring[input.buffer->name()];
-      if (!maybe_bounds) continue;
-      std::vector<interval>& bounds = *maybe_bounds;
+    for (const func::input& input : c->fn->inputs()) {
+      std::optional<box>& bounds = inferring[input.buffer->name()];
+      if (!bounds) continue;
 
       std::map<symbol_id, expr> mins, maxs;
       // TODO: We need a better way to map inputs/outputs between func and call.
       // Here, we are assuming that c->buffer_args is the inputs concatenated with the outputs,
       // in that order.
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
-      for (const auto& output : c->fn->outputs()) {
+      for (const func::output& output : c->fn->outputs()) {
         const std::optional<box>& cropped_bounds = crops[*arg_i];
         expr arg = variable::make(*arg_i++);
         for (index_t d = 0; d < output.dims.size(); ++d) {
@@ -81,10 +80,17 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        bounds[d] |= interval(min, max) | interval(max, min);
+        (*bounds)[d] |= interval(min, max) | interval(max, min);
       }
     }
-    node_mutator::visit(c);
+
+    s = c;
+    for (const func::output& output : c->fn->outputs()) {
+      std::optional<box>& bounds = inferring[output.buffer->name()];
+      if (!bounds) continue;
+
+      s = crop_buffer::make(output.buffer->name(), *bounds, s);
+    }
   }
 
   void visit(const crop_buffer* c) override {
@@ -126,6 +132,17 @@ public:
       }
     }
   }
+
+  void visit(const block* x) override {
+    // Visit blocks in reverse order. TODO: Is this really sufficient?
+    stmt b = mutate(x->b);
+    stmt a = mutate(x->a);
+    if (a.same_as(x->a) && b.same_as(x->b)) { 
+      s = x;
+    } else {
+      s = block::make(a, b);
+    }
+  }
 };
 
 // The idea behind this pass is:
@@ -162,7 +179,7 @@ public:
 
 }  // namespace
 
-stmt infer_allocate_bounds(const stmt& s, node_context& ctx) { return allocate_bounds_inferrer(ctx).mutate(s); }
+stmt infer_bounds(const stmt& s, node_context& ctx) { return bounds_inferrer(ctx).mutate(s); }
 
 stmt sliding_window(const stmt& s, node_context& ctx) { return slider(ctx).mutate(s); }
 

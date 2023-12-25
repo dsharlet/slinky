@@ -5,7 +5,7 @@
 #include <set>
 
 #include "evaluate.h"
-#include "infer_allocate_bounds.h"
+#include "infer_bounds.h"
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
@@ -258,7 +258,7 @@ stmt build_pipeline(
   }
 
   print(std::cerr, result, &ctx);
-  result = infer_allocate_bounds(result, ctx);
+  result = infer_bounds(result, ctx);
   print(std::cerr, result, &ctx);
 
   result = sliding_window(result, ctx);

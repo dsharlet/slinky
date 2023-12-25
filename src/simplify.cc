@@ -277,6 +277,7 @@ public:
       // This let is dead
       return body;
     } else if (refs == 1 || value.as<constant>() || value.as<variable>() || value.as<load_buffer_meta>()) {
+      // TODO: Should load_buffer_meta be considered one expression? It needs two evaluates.
       return mutate(substitute(body, {{op->name, value}}));
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
       return decltype(body){op};
