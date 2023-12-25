@@ -185,7 +185,7 @@ public:
   void visit(const allocate* n) override {
     os << indent();
     print_symbol_id(n->name);
-    os << " = allocate(" << n->elem_size << ", {" << std::endl;
+    os << " = allocate<" << n->elem_size << ">({" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
       os << indent() << "{";
@@ -211,9 +211,9 @@ public:
   void visit(const make_buffer* n) override {
     os << indent();
     print_symbol_id(n->name);
-    os << " = make_buffer(";
+    os << " = make_buffer<" << n->elem_size << ">(";
     print(n->base);
-    os << ", " << n->elem_size << ", {" << std::endl;
+    os << ", {" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
       os << indent() << "{";
@@ -261,9 +261,9 @@ public:
 
   void visit(const crop_dim* n) override {
     os << indent();
-    os << "crop_dim(";
+    os << "crop_dim<" << n->dim << ">(";
     print_symbol_id(n->name);
-    os << ", " << n->dim << ", ";
+    os << ", ";
     print(n->min);
     os << ", ";
     print(n->extent);
