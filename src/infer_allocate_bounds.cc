@@ -7,6 +7,7 @@
 #include "pipeline.h"
 #include "substitute.h"
 #include "print.h"
+#include "simplify.h"
 
 namespace slinky {
 
@@ -36,9 +37,9 @@ public:
     std::vector<std::pair<symbol_id, expr>> lets;
     for (const interval& i : *bounds) {
       symbol_id extent_name = ctx.insert();
-      lets.emplace_back(extent_name, i.extent());
+      lets.emplace_back(extent_name, simplify(i.extent()));
       expr extent = variable::make(extent_name);
-      dims.emplace_back(i.min, extent, stride_bytes, -1);
+      dims.emplace_back(simplify(i.min), extent, stride_bytes, -1);
       stride_bytes *= extent;
     }
     s = allocate::make(alloc->type, alloc->name, alloc->elem_size, dims, body);

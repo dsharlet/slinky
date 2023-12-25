@@ -192,7 +192,7 @@ public:
       to_allocate.erase(i);
     }
 
-    stmt result = loop::make(*as_variable(loop), bounds.min, bounds.max + 1, body);
+    stmt result = loop::make(*as_variable(loop), simplify(bounds.min), simplify(bounds.max + 1), body);
     crops.pop_back();
     return result;
   }
