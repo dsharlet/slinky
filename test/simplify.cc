@@ -65,6 +65,13 @@ TEST(simplify_let) {
   test_simplify(let::make(0, y * 2, x / x), let::make(0, y * 2, x / x));  // Non-trivial, used more than once.
 }
 
+TEST(simplify_load_buffer_meta) {
+  test_simplify(load_buffer_meta::make(x, buffer_meta::extent, y) >= 0, true);
+  test_simplify(
+      max(load_buffer_meta::make(x, buffer_meta::max, y) + 1, load_buffer_meta::make(x, buffer_meta::min, y) - 1),
+      load_buffer_meta::make(x, buffer_meta::max, y) + 1);
+}
+
 std::vector<expr> vars = {x, y, z};
 std::vector<symbol_id> bufs = {symbols.insert("buf0"), symbols.insert("buf1")};
 

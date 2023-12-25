@@ -84,6 +84,11 @@ public:
         {min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()},
         {min(c0, min(x, c1)), min(x, min(c0, c1))},
         {min(min(x, c0), c1), min(x, min(c0, c1))},
+        {min(x, x + c0), x, c0 > 0},
+        {min(x, x + c0), x + c0, c0 < 0},
+        {min(x + c0, y + c1), min(x, y + c1 - c0) + c0},
+        {min(x + c0, c1), min(x, c1 - c0) + c0},
+        {min(x + c0, y), min(y, x + c0)},
         {min(x, x), x},
         {min(x / z, y / z), min(x, y) / z, z > 0},
         {min(x + z, y + z), min(x, y) + z},
@@ -91,7 +96,9 @@ public:
         {min(x - z, y - z), min(x, y) - z},
         {min(z - x, z - y), z - max(x, y)},
         {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
+        {min(buffer_min(x, y), buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
         {min(buffer_max(x, y), buffer_min(x, y)), buffer_min(x, y)},
+        {min(buffer_max(x, y), buffer_min(x, y) + c0), buffer_min(x, y) + c0, c0 < 0},
     };
     e = apply_rules(rules, e);
   }
@@ -117,6 +124,11 @@ public:
         {max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()},
         {max(c0, max(x, c1)), max(x, max(c0, c1))},
         {max(max(x, c0), c1), max(x, max(c0, c1))},
+        {max(x, x + c0), x + c0, c0 > 0},
+        {max(x, x + c0), x, c0 < 0},
+        {max(x + c0, y + c1), max(x, y + c1 - c0) + c0},
+        {max(x + c0, c1), max(x, c1 - c0) + c0},
+        {max(x + c0, y), max(y, x + c0)},
         {max(x, x), x},
         {max(x / z, y / z), max(x, y) / z, z > 0},
         {max(x + z, y + z), max(x, y) + z},
@@ -124,7 +136,9 @@ public:
         {max(x - z, y - z), max(x, y) - z},
         {max(z - x, z - y), z - min(x, y)},
         {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
+        {max(buffer_min(x, y), buffer_max(x, y) + c0), buffer_max(x, y) + c0, c0 > 0},
         {max(buffer_max(x, y), buffer_min(x, y)), buffer_max(x, y)},
+        {max(buffer_max(x, y), buffer_min(x, y) + c0), buffer_max(x, y), c0 < 0},
     };
     e = apply_rules(rules, e);
   }
@@ -261,11 +275,59 @@ public:
       e = *ca < *cb;
       return;
     }
-    if (a.same_as(op->a) && b.same_as(op->b)) {
-      e = op;
+    if (ca) {
+      if (a.same_as(op->a) && b.same_as(op->b)) {
+        e = op;
+      } else {
+        e = a < b;
+      }
+    } else if (cb) {
+      e = -*cb < mutate(-a);
     } else {
-      e = a < b;
+      e = 0 < mutate(b - a);
     }
+
+
+    static std::vector<rule> rules = {
+        {c0 < c1 + x, c0 - c1 < x},
+        {c0 <= c1 - x, c0 - c1 < -x, c1 != 0},
+        {c0 < x + c1, c0 - c1 < x},
+        {c0 < buffer_extent(x, y), true, c0 < 0},
+        {c0 < -buffer_extent(x, y), false, 0 < c0},
+    };
+    e = apply_rules(rules, e);
+
+  }
+  void visit(const less_equal* op) override {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      e = *ca <= *cb;
+      return;
+    }
+    // Canonicalize to constant <= other
+    if (ca) {
+      if (a.same_as(op->a) && b.same_as(op->b)) {
+        e = op;
+      } else {
+        e = a <= b;
+      }
+    } else if (cb) {
+      e = -*cb <= mutate(-a);
+    } else {
+      e = 0 <= mutate(b - a);
+    }
+
+    static std::vector<rule> rules = {
+        {c0 <= c1 + x, c0 - c1 <= x},
+        {c0 <= c1 - x, c0 - c1 <= -x, c1 != 0},
+        {c0 <= x + c1, c0 - c1 <= x},
+        {c0 <= buffer_extent(x, y), true, c0 <= 0},
+        {c0 <= -buffer_extent(x, y), false, 0 <= c0},
+    };
+    e = apply_rules(rules, e);
   }
 
   template <typename T>
