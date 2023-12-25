@@ -25,6 +25,8 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
 // Like copy, but flips in the y dimension.
 template <typename T>
 index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == 2);
+  assert(out.rank == 2);
   std::size_t size = out.dims[0].extent * out.elem_size;
   for (int y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
     const T* src = &in(out.dims[0].min, -y);
@@ -37,6 +39,11 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 // Matrix multiplication (not fast!)
 template <typename T>
 index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
+  assert(a.rank == 2);
+  assert(b.rank == 2);
+  assert(c.rank == 2);
+  assert(a.dims[1].begin() == b.dims[0].begin());
+  assert(a.dims[1].end() == b.dims[0].end());
   for (index_t i = c.dims[0].begin(); i < c.dims[0].end(); ++i) {
     for (index_t j = c.dims[1].begin(); j < c.dims[1].end(); ++j) {
       c(i, j) = 0;
@@ -51,6 +58,8 @@ index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<
 // A 2D 3x3 stencil operation.
 template <typename T>
 index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == 2);
+  assert(out.rank == 2);
   for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
     for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
       T sum = 0;

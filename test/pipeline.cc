@@ -12,6 +12,8 @@ using namespace slinky;
 // TODO: Maybe eliminate this helper entirely and move it to be only for tests.
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  assert(out.rank == 1);
   for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
     out(i) = in(i)*2;
   }
@@ -73,6 +75,8 @@ TEST(pipeline_trivial) {
 }
 
 index_t multiply_2_assert_1_element(const buffer<const int>& in, const buffer<int>& out) {
+  assert(in.rank == out.rank);
+  assert(out.rank == 1);
   std::size_t count = 0;
   for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
     out(i) = in(i)*2;
