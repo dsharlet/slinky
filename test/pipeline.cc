@@ -14,7 +14,7 @@ template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
   assert(out.rank == 1);
-  for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
+  for (index_t i = out.dim(0).begin(); i < out.dim(0).end(); ++i) {
     out(i) = in(i)*2;
   }
   return 0;
@@ -24,13 +24,13 @@ template <typename T>
 index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
   if (out.rank == 1) {
-    for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
+    for (index_t i = out.dim(0).begin(); i < out.dim(0).end(); ++i) {
       out(i) = in(i) + 1;
     }
   } else {
     assert(out.rank == 2);
-    for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
-      for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+    for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+      for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
         out(x, y) = in(x, y) + 1;
       }
     }
@@ -78,7 +78,7 @@ index_t multiply_2_assert_1_element(const buffer<const int>& in, const buffer<in
   assert(in.rank == out.rank);
   assert(out.rank == 1);
   std::size_t count = 0;
-  for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
+  for (index_t i = out.dim(0).begin(); i < out.dim(0).end(); ++i) {
     out(i) = in(i)*2;
     ++count;
   }
@@ -207,8 +207,8 @@ TEST(pipeline_elementwise_1d_explicit) {
 template <typename T>
 void init_random(buffer<T, 2>& x) {
   x.allocate();
-  for (int i = x.dims[1].begin(); i < x.dims[1].end(); ++i) {
-    for (int j = x.dims[0].begin(); j < x.dims[0].end(); ++j) {
+  for (int i = x.dim(1).begin(); i < x.dim(1).end(); ++i) {
+    for (int j = x.dim(0).begin(); j < x.dim(0).end(); ++j) {
       x(j, i) = rand() % 10;
     }
   }
@@ -275,8 +275,8 @@ TEST(pipeline_matmuls) {
 }
 
 index_t upsample2x(const buffer<const int>& in, const buffer<int>& out) {
-  for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
-    for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
       out(x, y) = in(x >> 1, y >> 1);
     }
   }
@@ -284,8 +284,8 @@ index_t upsample2x(const buffer<const int>& in, const buffer<int>& out) {
 }
 
 index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
-  for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
-    for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
       out(x, y) = (
         in(2*x + 0, 2*y + 0) + in(2*x + 1, 2*y + 0) + 
         in(2*x + 0, 2*y + 1) + in(2*x + 1, 2*y + 1) + 2) / 4;
@@ -352,8 +352,8 @@ TEST(pipeline_stencil) {
   const int W = 20;
   const int H = 10;
   buffer<short, 2> in_buf({W + 2, H + 2});
-  in_buf.dims[0].min = -1;
-  in_buf.dims[1].min = -1;
+  in_buf.dim(0).translate(-1);
+  in_buf.dim(1).translate(-1);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -400,7 +400,7 @@ TEST(pipeline_flip_y) {
   init_random(in_buf);
 
   buffer<char, 2> out_buf({W, H});
-  out_buf.dims[1].min = -H + 1;
+  out_buf.dim(1).translate(-H + 1);
   out_buf.allocate();
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};

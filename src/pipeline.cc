@@ -285,10 +285,10 @@ void set_buffer(eval_context& ctx, const buffer_expr_ptr& buf_expr, const buffer
     // If these asserts fail, it's because the user has added constraints to the buffer_expr,
     // e.g. buf.dim[0].stride_bytes = 4, and the buffer passed in does not satisfy that
     // constraint.
-    assert(evaluate(buf_expr->dim(i).min, ctx) == buf->dims[i].min);
-    assert(evaluate(buf_expr->dim(i).extent, ctx) == buf->dims[i].extent);
-    assert(evaluate(buf_expr->dim(i).stride_bytes, ctx) == buf->dims[i].stride_bytes);
-    assert(evaluate(buf_expr->dim(i).fold_factor, ctx) == buf->dims[i].fold_factor);
+    assert(evaluate(buf_expr->dim(i).min, ctx) == buf->dim(i).min());
+    assert(evaluate(buf_expr->dim(i).extent, ctx) == buf->dim(i).extent());
+    assert(evaluate(buf_expr->dim(i).stride_bytes, ctx) == buf->dim(i).stride_bytes());
+    assert(evaluate(buf_expr->dim(i).fold_factor, ctx) == buf->dim(i).fold_factor());
   }
 }
 

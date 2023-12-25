@@ -141,10 +141,9 @@ TEST(simplify_fuzz) {
       for (const expr& v : vars) {
         ctx[*as_variable(v)] = rand() - RAND_MAX / 2;
       }
-      for (const auto& b : buffers) {
+      for (auto& b : buffers) {
         for (int d = 0; d < max_rank; ++d) {
-          b->dims[d].min = rand() - RAND_MAX / 2;
-          b->dims[d].extent = rand();
+          b->dim(d).set_min_extent(rand() - RAND_MAX / 2, rand());
         }
       }
       index_t a = evaluate(test, ctx);

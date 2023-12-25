@@ -83,13 +83,13 @@ public:
     } else {
       index_t d = eval_expr(x->dim);
       assert(d < buffer->rank);
-      const buffer_base::dim& dim = buffer->dims[d];
+      const slinky::dim& dim = buffer->dim(d);
       switch (x->meta) {
-      case buffer_meta::min: result = dim.min; return;
+      case buffer_meta::min: result = dim.min(); return;
       case buffer_meta::max: result = dim.max(); return;
-      case buffer_meta::extent: result = dim.extent; return;
-      case buffer_meta::stride_bytes: result = dim.stride_bytes; return;
-      case buffer_meta::fold_factor: result = dim.fold_factor; return;
+      case buffer_meta::extent: result = dim.extent(); return;
+      case buffer_meta::stride_bytes: result = dim.stride_bytes(); return;
+      case buffer_meta::fold_factor: result = dim.fold_factor(); return;
       case buffer_meta::base: std::abort();  // Handled above.
       }
     }
@@ -152,10 +152,10 @@ public:
     buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
 
     for (std::size_t i = 0; i < rank; ++i) {
-      buffer->dims[i].min = eval_expr(n->dims[i].min);
-      buffer->dims[i].extent = eval_expr(n->dims[i].extent);
-      buffer->dims[i].stride_bytes = eval_expr(n->dims[i].stride_bytes);
-      buffer->dims[i].fold_factor = eval_expr(n->dims[i].fold_factor);
+      slinky::dim& dim = buffer->dim(i);
+      dim.set_min_extent(eval_expr(n->dims[i].min), eval_expr(n->dims[i].extent));
+      dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
+      dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
 
     std::size_t size = buffer->size_bytes();
@@ -184,10 +184,10 @@ public:
     buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
 
     for (std::size_t i = 0; i < rank; ++i) {
-      buffer->dims[i].min = eval_expr(n->dims[i].min);
-      buffer->dims[i].extent = eval_expr(n->dims[i].extent);
-      buffer->dims[i].stride_bytes = eval_expr(n->dims[i].stride_bytes);
-      buffer->dims[i].fold_factor = eval_expr(n->dims[i].fold_factor);
+      slinky::dim& dim = buffer->dim(i);
+      dim.set_min_extent(eval_expr(n->dims[i].min), eval_expr(n->dims[i].extent));
+      dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
+      dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
 
 
@@ -197,45 +197,47 @@ public:
 
   void visit(const crop_dim* n) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
-    buffer_base::dim& dim = buffer->dims[n->dim];
+    slinky::dim& dim = buffer->dims[n->dim];
 
     void* old_base = buffer->base;
-    index_t old_min = dim.min;
-    index_t old_extent = dim.extent;
+    index_t old_min = dim.min();
+    index_t old_extent = dim.extent();
 
     index_t min = eval_expr(n->min);
     index_t extent = eval_expr(n->extent);
 
     buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-    dim.min = min;
-    dim.extent = extent;
+    dim.set_min_extent(min, extent);
 
     n->body.accept(this);
 
     buffer->base = old_base;
-    dim.min = old_min;
-    dim.extent = old_extent;
+    dim.set_min_extent(old_min, old_extent);
   }
 
   void visit(const crop_buffer* n) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
 
+    struct range {
+      index_t min;
+      index_t extent;
+    };
+
     std::size_t crop_rank = n->bounds.size();
-    index_t* old_bounds = reinterpret_cast<index_t*>(alloca(sizeof(index_t) * 2 * crop_rank));
+    range* old_bounds = reinterpret_cast<range*>(alloca(sizeof(range) * crop_rank));
 
     index_t offset = 0;
     for (std::size_t d = 0; d < crop_rank; ++d) {
-      buffer_base::dim& dim = buffer->dims[d];
-      old_bounds[d * 2 + 0] = dim.min;
-      old_bounds[d * 2 + 1] = dim.extent;
+      slinky::dim& dim = buffer->dims[d];
+      old_bounds[d].min = dim.min();
+      old_bounds[d].extent = dim.extent();
 
       // Allow these expressions to be undefined, and if so, they default to their existing values.
-      index_t min = eval_expr(n->bounds[d].min, dim.min);
+      index_t min = eval_expr(n->bounds[d].min, dim.min());
       index_t max = eval_expr(n->bounds[d].max, dim.max());
       offset += dim.flat_offset_bytes(min);
       
-      dim.min = min;
-      dim.extent = max - min + 1;
+      dim.set_bounds(min, max);
     }
 
     void* old_base = buffer->base;
@@ -245,9 +247,8 @@ public:
 
     buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
-      buffer_base::dim& dim = buffer->dims[d];
-      dim.min = old_bounds[d * 2 + 0];
-      dim.extent = old_bounds[d * 2 + 1];
+      slinky::dim& dim = buffer->dims[d];
+      dim.set_min_extent(old_bounds[d].min, old_bounds[d].extent);
     }
   }
 
