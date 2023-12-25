@@ -124,6 +124,26 @@ public:
   virtual void visit(const logical_or* x) { match_binary(x); }
   virtual void visit(const shift_left* x) { match_binary(x); }
   virtual void visit(const shift_right* x) { match_binary(x); }
+  
+  virtual void visit(const select* x) {
+    if (!match) return;
+    const select* se = e.as<select>();
+    if (!se) {
+      match = false;
+      return;
+    }
+
+    e = se->condition;
+    x->condition.accept(this);
+    if (!match) return;
+
+    e = se->true_value;
+    x->true_value.accept(this);
+    if (!match) return;
+
+    e = se->false_value;
+    x->false_value.accept(this);
+  }
 
   virtual void visit(const load_buffer_meta* x) {
     if (!match) return;

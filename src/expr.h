@@ -55,6 +55,7 @@ enum class node_type {
   logical_or,
   shift_left,
   shift_right,
+  select,
   load_buffer_meta,
 
   call,
@@ -443,6 +444,19 @@ DECLARE_BINARY_OP(shift_right)
 
 #undef DECLARE_BINARY_OP
 
+class select : public expr_node<select> {
+public:
+  expr condition;
+  expr true_value;
+  expr false_value;
+
+  void accept(node_visitor* v) const;
+
+  static expr make(expr condition, expr true_value, expr false_value);
+
+  static constexpr node_type static_type = node_type::select;
+};
+
 // This expression loads buffer->base or a field from buffer->dims.
 class load_buffer_meta : public expr_node<load_buffer_meta> {
 public:
@@ -644,6 +658,7 @@ public:
   virtual void visit(const logical_or*) = 0;
   virtual void visit(const shift_left*) = 0;
   virtual void visit(const shift_right*) = 0;
+  virtual void visit(const select*) = 0;
   virtual void visit(const load_buffer_meta*) = 0;
 
   virtual void visit(const let_stmt*) = 0;
@@ -680,6 +695,7 @@ inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
 inline void shift_left::accept(node_visitor* v) const { v->visit(this); }
 inline void shift_right::accept(node_visitor* v) const { v->visit(this); }
+inline void select::accept(node_visitor* v) const { v->visit(this); }
 inline void load_buffer_meta::accept(node_visitor* v) const { v->visit(this); }
 
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
@@ -703,6 +719,20 @@ inline const index_t* as_constant(const expr& x) {
 inline const symbol_id* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->name : nullptr;
+}
+
+inline bool is_zero(const expr& x) {
+  const constant* cx = x.as<constant>();
+  return cx ? cx->value == 0 : false;
+}
+
+inline bool is_true(const expr& x) {
+  const constant* cx = x.as<constant>();
+  return cx ? cx->value != 0 : false;
+}
+
+inline bool is_false(const expr& x) {
+  return is_zero(x);
 }
 
 }  // namespace slinky

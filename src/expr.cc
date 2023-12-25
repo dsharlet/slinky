@@ -163,6 +163,14 @@ box operator&(box a, const box& b) {
   return a;
 }
 
+expr select::make(expr condition, expr true_value, expr false_value) { 
+  auto n = std::make_shared<select>(); 
+  n->condition = std::move(condition);
+  n->true_value = std::move(true_value);
+  n->false_value = std::move(false_value);
+  return n.get();
+}
+
 expr load_buffer_meta::make(expr buffer, buffer_meta meta, expr dim) {
   auto n = std::make_shared<load_buffer_meta>();
   n->buffer = std::move(buffer);

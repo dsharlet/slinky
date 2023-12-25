@@ -52,6 +52,19 @@ TEST(simplify) {
   test_simplify(0 / x, 0 / x);  // Not simplified due to possible division by zero.
 
   test_simplify(((x + 1) - (y - 1)) + 1, x - y + 3);
+
+  test_simplify(select::make(x, y, y), y);
+  test_simplify(select::make(x == x, y, z), y);
+  test_simplify(select::make(x != x, y, z), z);
+
+  test_simplify(x && true, x);
+  test_simplify(x && false, false);
+  test_simplify(x || true, true);
+  test_simplify(x || false, x);
+  test_simplify(true && x, x);
+  test_simplify(false && x, false);
+  test_simplify(true || x, true);
+  test_simplify(false || x, x);
 }
 
 TEST(simplify_let) {
@@ -91,6 +104,21 @@ buffer_meta random_buffer_meta() {
   }
 }
 
+expr make_random_expr(int depth);
+
+expr make_random_condition(int depth) {
+  expr a = make_random_expr(depth - 1);
+  expr b = make_random_expr(depth - 1);
+  switch (rand() % 8) {
+  default: return a == b;
+  case 1: return a < b;
+  case 2: return a <= b;
+  case 3: return a != b;
+  case 4: return make_random_condition(depth - 1) && make_random_condition(depth - 1);
+  case 5: return make_random_condition(depth - 1) || make_random_condition(depth - 1);
+  }
+}
+
 expr make_random_expr(int depth) {
   if (depth <= 0) {
     switch (rand() % 4) {
@@ -109,6 +137,7 @@ expr make_random_expr(int depth) {
     case 4: return a % b;
     case 5: return min(a, b);
     case 6: return max(a, b);
+    case 7: return select::make(make_random_condition(depth - 1), a, b);
     }
   }
 }

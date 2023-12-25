@@ -1,9 +1,9 @@
 #include "simplify.h"
 
-#include <cassert>
-#include <limits>
-#include <iostream>
 #include "print.h"
+#include <cassert>
+#include <iostream>
+#include <limits>
 
 #include "evaluate.h"
 #include "node_mutator.h"
@@ -282,11 +282,10 @@ public:
         e = a < b;
       }
     } else if (cb) {
-      e = -*cb < mutate(-a);
+      e = mutate(-*cb < -a);
     } else {
-      e = 0 < mutate(b - a);
+      e = mutate(0 < b - a);
     }
-
 
     static std::vector<rule> rules = {
         {c0 < c1 + x, c0 - c1 < x},
@@ -296,8 +295,8 @@ public:
         {c0 < -buffer_extent(x, y), false, 0 < c0},
     };
     e = apply_rules(rules, e);
-
   }
+
   void visit(const less_equal* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
@@ -315,9 +314,9 @@ public:
         e = a <= b;
       }
     } else if (cb) {
-      e = -*cb <= mutate(-a);
+      e = mutate(-*cb <= -a);
     } else {
-      e = 0 <= mutate(b - a);
+      e = mutate(0 <= b - a);
     }
 
     static std::vector<rule> rules = {
@@ -328,6 +327,154 @@ public:
         {c0 <= -buffer_extent(x, y), false, 0 <= c0},
     };
     e = apply_rules(rules, e);
+  }
+
+  void visit(const equal* op) override {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      e = *ca == *cb;
+      return;
+    }
+    // Canonicalize to constant == other
+    if (ca) {
+      if (a.same_as(op->a) && b.same_as(op->b)) {
+        e = op;
+      } else {
+        e = a == b;
+      }
+    } else if (cb) {
+      e = b == a;
+    } else {
+      e = mutate(0 == b - a);
+    }
+
+    static std::vector<rule> rules = {
+        {c0 == c1 + x, c0 - c1 == x},
+        {c0 == c1 - x, c0 - c1 == -x, c1 != 0},
+        {c0 == x + c1, c0 - c1 == x},
+    };
+    e = apply_rules(rules, e);
+  }
+
+  void visit(const not_equal* op) override {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      e = *ca != *cb;
+      return;
+    }
+    // Canonicalize to constant == other
+    if (ca) {
+      if (a.same_as(op->a) && b.same_as(op->b)) {
+        e = op;
+      } else {
+        e = a != b;
+      }
+    } else if (cb) {
+      e = b != a;
+    } else {
+      e = mutate(0 != b - a);
+    }
+
+    static std::vector<rule> rules = {
+        {c0 != c1 + x, c0 - c1 != x},
+        {c0 != c1 - x, c0 - c1 != -x, c1 != 0},
+        {c0 != x + c1, c0 - c1 != x},
+    };
+    e = apply_rules(rules, e);
+  }
+
+  void visit(const select* op) override {
+    expr c = mutate(op->condition);
+    if (is_true(c)) {
+      e = mutate(op->true_value);
+      return;
+    } else if (is_false(c)) {
+      e = mutate(op->false_value);
+      return;
+    }
+
+    expr t = mutate(op->true_value);
+    expr f = mutate(op->false_value);
+    if (match(t, f)) {
+      e = t;
+      return;
+    }
+
+    if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+      e = op;
+    } else {
+      e = select::make(std::move(c), std::move(t), std::move(f));
+    }
+  }
+
+  void visit(const logical_and* op) override {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+
+    // Canonicalize to constant && other
+    if (cb && !ca) {
+      std::swap(a, b);
+      std::swap(ca, cb);
+    }
+
+    if (ca && cb) {
+      e = *ca != 0 && *cb != 0;
+      return;
+    } else if (ca) {
+      if (*ca) {
+        e = b;
+        return;
+      } else {
+        e = std::move(a);
+        return;
+      }
+    }
+
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      e = op;
+    } else {
+      e = a && b;
+    }
+  }
+
+  void visit(const logical_or* op) override {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+
+    // Canonicalize to constant && other
+    if (cb && !ca) { 
+      std::swap(a, b);
+      std::swap(ca, cb);
+    }
+
+    if (ca && cb) {
+      e = *ca != 0 || *cb != 0;
+      return;
+    } else if (ca) {
+      if (*ca) {
+        e = std::move(a);
+        return;
+      } else {
+        e = std::move(b);
+        return;
+      }
+    }
+
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      e = op;
+    } else {
+      e = a || b;
+    }
   }
 
   template <typename T>
@@ -432,7 +579,7 @@ public:
     expr extent = mutate(op->extent);
 
     std::optional<box> bounds = buffer_bounds[op->name];
-    if (bounds && bounds->size() > op->dim) { 
+    if (bounds && bounds->size() > op->dim) {
       interval& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);
       if (match(min, dim.min) && match(max, dim.max)) {

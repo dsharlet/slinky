@@ -119,6 +119,16 @@ public:
     os << ")";
   }
 
+  void visit(const select* op) override {
+    os << "(";
+    print(op->condition);
+    os << " ? ";
+    print(op->true_value);
+    os << " : ";
+    print(op->false_value);
+    os << ")";
+  }
+
   void visit(const load_buffer_meta* x) override {
     print(x->buffer);
     os << "->";

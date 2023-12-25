@@ -73,6 +73,17 @@ public:
   virtual void visit(const shift_left* x) { e = mutate_binary(x); }
   virtual void visit(const shift_right* x) { e = mutate_binary(x); }
 
+  virtual void visit(const select* x) {
+    expr c = mutate(x->condition);
+    expr t = mutate(x->true_value);
+    expr f = mutate(x->false_value);
+    if (c.same_as(x->condition) && t.same_as(x->true_value) && f.same_as(x->false_value)) {
+      e = x;
+    } else {
+      e = select::make(std::move(c), std::move(t), std::move(f));
+    }
+  }
+
   virtual void visit(const load_buffer_meta* x) {
     expr buffer = mutate(x->buffer);
     expr dim = mutate(x->dim);

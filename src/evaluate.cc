@@ -75,6 +75,14 @@ public:
   void visit(const shift_left* x) override { result = eval_expr(x->a) << eval_expr(x->b); }
   void visit(const shift_right* x) override { result = eval_expr(x->a) >> eval_expr(x->b); }
 
+  void visit(const select* x) override {
+    if (eval_expr(x->condition)) {
+      result = eval_expr(x->true_value);
+    } else {
+      result = eval_expr(x->false_value);
+    }
+  }
+
   void visit(const load_buffer_meta* x) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(eval_expr(x->buffer));
     assert(buffer);
