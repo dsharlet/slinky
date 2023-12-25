@@ -54,6 +54,12 @@ public:
     old_value = std::move(ctx_value);
     ctx_value = std::move(value);
   }
+  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id name, std::optional<T> value)
+      : context(&context), name(name) {
+    std::optional<T>& ctx_value = context[name];
+    old_value = std::move(ctx_value);
+    ctx_value = std::move(value);
+  }
 
   scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
       : context(other.context), name(other.name), old_value(std::move(other.old_value)) {
@@ -77,6 +83,10 @@ public:
 
 template <typename T>
 scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id name, T value) {
+  return scoped_value_in_symbol_map<T>(context, name, value);
+}
+template <typename T>
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id name, std::optional<T> value) {
   return scoped_value_in_symbol_map<T>(context, name, value);
 }
 

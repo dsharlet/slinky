@@ -229,8 +229,9 @@ public:
       old_bounds[d * 2 + 0] = dim.min;
       old_bounds[d * 2 + 1] = dim.extent;
 
-      index_t min = eval_expr(n->bounds[d].min);
-      index_t max = eval_expr(n->bounds[d].max);
+      // Allow these expressions to be undefined, and if so, they default to their existing values.
+      index_t min = eval_expr(n->bounds[d].min, dim.min);
+      index_t max = eval_expr(n->bounds[d].max, dim.max());
       offset += dim.flat_offset_bytes(min);
       
       dim.min = min;

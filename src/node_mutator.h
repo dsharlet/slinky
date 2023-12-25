@@ -11,12 +11,20 @@ public:
   stmt s;
 
   expr mutate(const expr& x) {
-    x.accept(this);
-    return e;
+    if (x.defined()) {
+      x.accept(this);
+      return e;
+    } else {
+      return expr();
+    }
   }
   stmt mutate(const stmt& x) {
-    x.accept(this);
-    return s;
+    if (x.defined()) {
+      x.accept(this);
+      return s;
+    } else {
+      return stmt();
+    }
   }
 
   template <typename T>
