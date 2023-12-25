@@ -103,14 +103,15 @@ public:
   void visit(const loop* l) override {
     index_t begin = eval_expr(l->begin, 0);
     index_t end = eval_expr(l->end);
-    std::optional<index_t>& value = context[l->name];
-    std::optional<index_t> old_value;
-    old_value = value;
+    // TODO: We don't get a reference to context[l->name] here because the context could grow and invalidate
+    // the reference. This could be fixed by having evaluate fully traverse the expression to find the max
+    // symbol_id, and pre-allocate the context up front. It's not clear this optimization is necessary yet.
+    std::optional<index_t> old_value = context[l->name];
     for (index_t i = begin; i < end; ++i) {
-      value = i;
+      context[l->name] = i;
       l->body.accept(this);
     }
-    value = old_value;
+    context[l->name] = old_value;
   }
 
   void visit(const if_then_else* n) override {
@@ -219,11 +220,11 @@ public:
   void visit(const crop_buffer* n) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
 
-    void* old_base = buffer->base;
-    index_t* old_bounds = reinterpret_cast<index_t*>(alloca(sizeof(index_t) * 2 * buffer->rank));
+    std::size_t crop_rank = n->bounds.size();
+    index_t* old_bounds = reinterpret_cast<index_t*>(alloca(sizeof(index_t) * 2 * crop_rank));
 
     index_t offset = 0;
-    for (std::size_t d = 0; d < buffer->rank; ++d) {
+    for (std::size_t d = 0; d < crop_rank; ++d) {
       buffer_base::dim& dim = buffer->dims[d];
       old_bounds[d * 2 + 0] = dim.min;
       old_bounds[d * 2 + 1] = dim.extent;
@@ -236,12 +237,13 @@ public:
       dim.extent = max - min + 1;
     }
 
+    void* old_base = buffer->base;
     buffer->base = offset_bytes(buffer->base, offset);
 
     n->body.accept(this);
 
     buffer->base = old_base;
-    for (std::size_t d = 0; d < buffer->rank; ++d) {
+    for (std::size_t d = 0; d < crop_rank; ++d) {
       buffer_base::dim& dim = buffer->dims[d];
       dim.min = old_bounds[d * 2 + 0];
       dim.extent = old_bounds[d * 2 + 1];
