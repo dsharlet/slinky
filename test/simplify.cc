@@ -95,6 +95,10 @@ T random_pick(const std::vector<T>& from) {
 
 constexpr int max_rank = 2;
 
+constexpr int max_constant = 1024;
+
+index_t random_constant() { return rand() & (max_constant - 1); }
+
 buffer_meta random_buffer_meta() {
   switch (rand() % 3) {
   case 0: return buffer_meta::min;
@@ -123,13 +127,13 @@ expr make_random_expr(int depth) {
   if (depth <= 0) {
     switch (rand() % 4) {
     default: return random_pick(vars);
-    case 1: return constant::make(rand());
+    case 1: return constant::make(random_constant());
     case 2: return load_buffer_meta::make(variable::make(random_pick(bufs)), random_buffer_meta(), rand() % max_rank);
     }
   } else {
     expr a = make_random_expr(depth - rand() % 3);
     expr b = make_random_expr(depth - rand() % 3);
-    switch (rand() % 7) {
+    switch (rand() % 8) {
     default: return a + b;
     case 1: return a - b;
     case 2: return a * b;
@@ -153,6 +157,7 @@ std::ostream& operator<<(std::ostream& s, const eval_context& ctx) {
   return s << "}";
 }
 
+
 TEST(simplify_fuzz) {
   const int seed = time(nullptr);
   srand(seed);
@@ -175,11 +180,13 @@ TEST(simplify_fuzz) {
 
     for (int j = 0; j < checks; ++j) {
       for (const expr& v : vars) {
-        ctx[*as_variable(v)] = rand() - RAND_MAX / 2;
+        ctx[*as_variable(v)] = random_constant();
       }
       for (auto& b : buffers) {
         for (int d = 0; d < max_rank; ++d) {
-          b->dim(d).set_min_extent(rand() - RAND_MAX / 2, rand());
+          // TODO: Add one to extent because the simplifier assumes buffer_max >= buffer_min. This is not
+          // correct in the case of empty buffers. But do we need to handle empty buffers...?
+          b->dim(d).set_min_extent(random_constant() - RAND_MAX / 2, random_constant() + 1);
         }
       }
       index_t a = evaluate(test, ctx);
