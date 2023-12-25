@@ -135,7 +135,40 @@ public:
 
   bool complete() const { return produced.size() == to_produce.size(); }
 
-  stmt make_loop(stmt body, const func* f, const expr& loop, const interval& bounds) {
+  stmt add_crops(stmt result, const func* f) {
+    for (const auto& s : crops) {
+      for (const func::output& o : f->outputs()) {
+        // Find the crops for this buffer in this scope level s.
+        auto b = s.find(o.buffer->name());
+        if (b == s.end()) continue;
+        
+        // Add all the crops for this buffer.
+        for (const crop_info& c : b->second) {
+          result = crop_dim::make(b->first, c.dim, c.min, c.extent, result);
+        }
+      }
+    }
+    return result;
+  }
+
+  stmt make_loop(stmt body, const func* f, const expr& loop) {
+    // Find the bounds of this loop.
+    interval bounds = interval::union_identity;
+    // Crop all the outputs of this buffer for this loop.
+    crops.emplace_back();
+    scope_crops& to_crop = crops.back();
+    for (const func::output& o : f->outputs()) {
+      for (int d = 0; d < o.dims.size(); ++d) {
+        if (*as_variable(o.dims[d]) == *as_variable(loop)) {
+          to_crop[o.buffer->name()].emplace_back(d, loop, 1);
+          // This output uses this loop. Add it to the bounds.
+          bounds |= interval(o.buffer->dim(d).min, o.buffer->dim(d).max());
+        }
+      }
+    }
+
+    body = add_crops(body, f);
+
     // Before making this loop, see if there are any producers we need to insert here.
     for (const buffer_expr_ptr& i : to_produce) {
       if (!i->producer()) {
@@ -159,15 +192,8 @@ public:
       to_allocate.erase(i);
     }
 
-    return loop::make(*as_variable(loop), bounds.min, bounds.max + 1, body);
-  }
-
-  stmt add_crops(stmt result, const scope_crops& buffer_crops) {
-    for (const auto& b : buffer_crops) {
-      for (const auto& c : b.second) {
-        result = crop::make(b.first, c.dim, c.min, c.extent, result);
-      }
-    }
+    stmt result = loop::make(*as_variable(loop), bounds.min, bounds.max + 1, body);
+    crops.pop_back();
     return result;
   }
 
@@ -194,21 +220,7 @@ public:
 
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
-      interval bounds = interval::union_identity;
-      scope_crops to_crop;
-      for (const auto& o : f->outputs()) {
-        for (int d = 0; d < o.dims.size(); ++d) {
-          if (*as_variable(o.dims[d]) == *as_variable(loop)) {
-            to_crop[o.buffer->name()].emplace_back(d, loop, 1);
-            // This output uses this loop. Add it to the bounds.
-            bounds |= interval(o.buffer->dim(d).min, o.buffer->dim(d).max());
-          }
-        }
-      }
-
-      call_f = add_crops(call_f, to_crop);
-
-      call_f = make_loop(call_f, f, loop, bounds);
+      call_f = make_loop(call_f, f, loop);
     }
     result = result.defined() ? block::make(call_f, result) : call_f;
     if (root) {

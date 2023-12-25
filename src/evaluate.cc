@@ -194,7 +194,7 @@ public:
     n->body.accept(this);
   }
 
-  void visit(const crop* n) override {
+  void visit(const crop_dim* n) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
     buffer_base::dim& dim = buffer->dims[n->dim];
 
@@ -214,6 +214,38 @@ public:
     buffer->base = old_base;
     dim.min = old_min;
     dim.extent = old_extent;
+  }
+
+  void visit(const crop_buffer* n) override {
+    buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
+
+    void* old_base = buffer->base;
+    index_t* old_bounds = reinterpret_cast<index_t*>(alloca(sizeof(index_t) * 2 * buffer->rank));
+
+    index_t offset = 0;
+    for (std::size_t d = 0; d < buffer->rank; ++d) {
+      buffer_base::dim& dim = buffer->dims[d];
+      old_bounds[d * 2 + 0] = dim.min;
+      old_bounds[d * 2 + 1] = dim.extent;
+
+      index_t min = eval_expr(n->bounds[d].min);
+      index_t max = eval_expr(n->bounds[d].max);
+      offset += dim.flat_offset_bytes(min);
+      
+      dim.min = min;
+      dim.extent = max - min + 1;
+    }
+
+    buffer->base = offset_bytes(buffer->base, offset);
+
+    n->body.accept(this);
+
+    buffer->base = old_base;
+    for (std::size_t d = 0; d < buffer->rank; ++d) {
+      buffer_base::dim& dim = buffer->dims[d];
+      dim.min = old_bounds[d * 2 + 0];
+      dim.extent = old_bounds[d * 2 + 1];
+    }
   }
 
   void visit(const check* n) override {

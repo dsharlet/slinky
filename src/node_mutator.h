@@ -138,14 +138,23 @@ public:
     stmt body = mutate(x->body);
     s = make_buffer::make(x->name, std::move(base), x->elem_size, std::move(dims), std::move(body));
   }
-  virtual void visit(const crop* x) {
+  virtual void visit(const crop_buffer* x) {
+    std::vector<interval> bounds;
+    bounds.reserve(x->bounds.size());
+    for (const interval& i : x->bounds) {
+      bounds.emplace_back(mutate(i.min), mutate(i.max));
+    }
+    stmt body = mutate(x->body);
+    s = crop_buffer::make(x->name, std::move(bounds), std::move(body));
+  }
+  virtual void visit(const crop_dim* x) {
     expr min = mutate(x->min);
     expr extent = mutate(x->extent);
     stmt body = mutate(x->body);
     if (min.same_as(x->min) && extent.same_as(x->extent) && body.same_as(x->body)) {
       s = x;
     } else {
-      s = crop::make(x->name, x->dim, std::move(min), std::move(extent), std::move(body));
+      s = crop_dim::make(x->name, x->dim, std::move(min), std::move(extent), std::move(body));
     }
   }
   virtual void visit(const check* x) {

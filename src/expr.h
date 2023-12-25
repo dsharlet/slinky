@@ -64,7 +64,8 @@ enum class node_type {
   if_then_else,
   allocate,
   make_buffer,
-  crop,
+  crop_buffer,
+  crop_dim,
   check,
 };
 
@@ -220,6 +221,115 @@ public:
   }
 };
 
+expr operator==(expr a, expr b);
+expr operator!=(expr a, expr b);
+expr operator<(expr a, expr b);
+expr operator<=(expr a, expr b);
+expr operator>(expr a, expr b);
+expr operator>=(expr a, expr b);
+expr operator&&(expr a, expr b);
+expr operator||(expr a, expr b);
+expr min(expr a, expr b);
+expr max(expr a, expr b);
+
+struct interval {
+  expr min, max;
+
+  interval() {}
+  explicit interval(const expr& point) : min(point), max(point) {}
+  interval(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
+
+  static interval union_identity;
+  static interval intersection_identity;
+
+  expr extent() const { return max - min + 1; }
+  void set_extent(expr extent) { max = min + extent - 1; }
+
+  interval& operator*=(expr scale) {
+    min *= scale;
+    max *= scale;
+    return *this;
+  }
+
+  interval& operator/=(expr scale) {
+    min /= scale;
+    max /= scale;
+    return *this;
+  }
+
+  interval& operator+=(expr offset) {
+    min += offset;
+    max += offset;
+    return *this;
+  }
+
+  interval& operator-=(expr offset) {
+    min -= offset;
+    max -= offset;
+    return *this;
+  }
+
+  // This is the union operator. I don't really like this, but
+  // I also don't like that I can't name a function `union`.
+  // It does kinda make sense...
+  interval& operator|=(const interval& r) {
+    min = slinky::min(min, r.min);
+    max = slinky::max(max, r.max);
+    return *this;
+  }
+
+  // This is intersection, just to be consistent with union.
+  interval& operator&=(const interval& r) {
+    min = slinky::min(min, r.min);
+    max = slinky::max(max, r.max);
+    return *this;
+  }
+
+  interval operator*(expr scale) const {
+    interval result(*this);
+    result *= scale;
+    return result;
+  }
+
+  interval operator/(expr scale) const {
+    interval result(*this);
+    result /= scale;
+    return result;
+  }
+
+  interval operator+(expr offset) const {
+    interval result(*this);
+    result += offset;
+    return result;
+  }
+
+  interval operator-(expr offset) const {
+    interval result(*this);
+    result -= offset;
+    return result;
+  }
+
+  interval operator|(const interval& r) const {
+    interval result(*this);
+    result |= r;
+    return result;
+  }
+
+  interval operator&(const interval& r) const {
+    interval result(*this);
+    result &= r;
+    return result;
+  }
+};
+
+inline interval operator*(const expr& a, const interval& b) { return b * a; }
+inline interval operator+(const expr& a, const interval& b) { return b + a; }
+
+using box = std::vector<interval>;
+
+box operator|(box a, const box& b);
+box operator&(box a, const box& b);
+
 class stmt {
 public:
   std::shared_ptr<const base_stmt_node> s;
@@ -304,7 +414,7 @@ public:
 };
 
 #define DECLARE_BINARY_OP(op)                                                                                          \
-  class op : public expr_node<op> {                                                                                    \
+  class op : public expr_node<class op> {                                                                              \
   public:                                                                                                              \
     expr a, b;                                                                                                         \
     void accept(node_visitor* v) const;                                                                                \
@@ -445,7 +555,7 @@ public:
   static constexpr node_type static_type = node_type::allocate;
 };
 
-// Rewrite an existing buffer. Undefined fields in dims are left alone.
+// Make a new buffer from raw fields.
 class make_buffer : public stmt_node<make_buffer> {
 public:
   symbol_id name;
@@ -462,10 +572,27 @@ public:
 };
 
 // This node is equivalent to the following:
+// 1. Crop `name` to the interval `min, max` in-place in each dimension.
+// 2. Evaluate `body`
+// 3. Restore the original buffer
+class crop_buffer : public stmt_node<make_buffer> {
+public:
+  symbol_id name;
+  std::vector<interval> bounds;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, std::vector<interval> bounds, stmt body);
+
+  static constexpr node_type static_type = node_type::crop_buffer;
+};
+
+// This node is equivalent to the following:
 // 1. Crop `name` to the interval `min, max` in-place
 // 2. Evaluate `body`
 // 3. Restore the original buffer
-class crop : public stmt_node<crop> {
+class crop_dim : public stmt_node<crop_dim> {
 public:
   symbol_id name;
   int dim;
@@ -477,7 +604,7 @@ public:
 
   static stmt make(symbol_id name, int dim, expr min, expr extent, stmt body);
 
-  static constexpr node_type static_type = node_type::crop;
+  static constexpr node_type static_type = node_type::crop_dim;
 };
 
 class check : public stmt_node<check> {
@@ -504,8 +631,8 @@ public:
   virtual void visit(const mul*) = 0;
   virtual void visit(const div*) = 0;
   virtual void visit(const mod*) = 0;
-  virtual void visit(const min*) = 0;
-  virtual void visit(const max*) = 0;
+  virtual void visit(const class min*) = 0;
+  virtual void visit(const class max*) = 0;
   virtual void visit(const equal*) = 0;
   virtual void visit(const not_equal*) = 0;
   virtual void visit(const less*) = 0;
@@ -526,7 +653,8 @@ public:
   virtual void visit(const call*) = 0;
   virtual void visit(const allocate*) = 0;
   virtual void visit(const make_buffer*) = 0;
-  virtual void visit(const crop*) = 0;
+  virtual void visit(const crop_buffer*) = 0;
+  virtual void visit(const crop_dim*) = 0;
   virtual void visit(const check*) = 0;
 };
 
@@ -561,21 +689,11 @@ inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
 inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
-inline void crop::accept(node_visitor* v) const { v->visit(this); }
+inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }
+inline void crop_dim::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 expr make_variable(node_context& ctx, const std::string& name);
-
-expr operator==(expr a, expr b);
-expr operator!=(expr a, expr b);
-expr operator<(expr a, expr b);
-expr operator<=(expr a, expr b);
-expr operator>(expr a, expr b);
-expr operator>=(expr a, expr b);
-expr operator&&(expr a, expr b);
-expr operator||(expr a, expr b);
-expr min(expr a, expr b);
-expr max(expr a, expr b);
 
 inline const index_t* as_constant(const expr& x) {
   const constant* cx = x.as<constant>();

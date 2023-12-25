@@ -236,9 +236,32 @@ public:
     os << indent() << "}" << std::endl;
   }
 
-  void visit(const crop* n) override {
+  void visit(const crop_buffer* n) override {
     os << indent();
-    os << "crop(";
+    os << "crop_buffer(";
+    print_symbol_id(n->name);
+    os << ", {" << std::endl;
+    ++depth;
+    for (const interval& d : n->bounds) {
+      os << indent() << "{";
+      print(d.min);
+      os << ", ";
+      print(d.max);
+      os << "}";
+      if (&d != &n->bounds.back()) { os << ", "; }
+      os << std::endl;
+    }
+    --depth;
+    os << indent() << "}) {" << std::endl;
+    ++depth;
+    print(n->body);
+    --depth;
+    os << indent() << "}" << std::endl;
+  }
+
+  void visit(const crop_dim* n) override {
+    os << indent();
+    os << "crop_dim(";
     print_symbol_id(n->name);
     os << ", " << n->dim << ", ";
     print(n->min);

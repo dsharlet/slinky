@@ -86,7 +86,7 @@ public:
     node_mutator::visit(c);
   }
 
-  void visit(const crop* c) override {
+  void visit(const crop_dim* c) override {
     // TODO: This is pretty messy, a better way to implement this would be nice.
     std::optional<box> cropped_bounds = crops[c->name];
     if (!cropped_bounds) {

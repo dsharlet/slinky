@@ -1,5 +1,7 @@
 #include "expr.h"
 
+#include <limits>
+
 namespace slinky {
 
 std::string node_context::name(symbol_id i) const {
@@ -142,6 +144,25 @@ expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::mov
 expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
 expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
+interval interval::union_identity(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
+interval interval::intersection_identity(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
+
+box operator|(box a, const box& b) {
+  assert(a.size() == b.size());
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    a[i] |= b[i];
+  }
+  return a;
+}
+
+box operator&(box a, const box& b) {
+  assert(a.size() == b.size());
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    a[i] &= b[i];
+  }
+  return a;
+}
+
 expr load_buffer_meta::make(expr buffer, buffer_meta meta, expr dim) {
   auto n = std::make_shared<load_buffer_meta>();
   n->buffer = std::move(buffer);
@@ -184,16 +205,6 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n.get();
 }
 
-stmt make_buffer::make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
-  auto n = std::make_shared<make_buffer>();
-  n->name = name;
-  n->base = std::move(base);
-  n->elem_size = elem_size;
-  n->dims = std::move(dims);
-  n->body = std::move(body);
-  return n.get();
-}
-
 stmt allocate::make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = std::make_shared<allocate>();
   n->type = type;
@@ -204,8 +215,26 @@ stmt allocate::make(memory_type type, symbol_id name, std::size_t elem_size, std
   return n.get();
 }
 
-stmt crop::make(symbol_id name, int dim, expr min, expr extent, stmt body) {
-  auto n = std::make_shared<crop>();
+stmt make_buffer::make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+  auto n = std::make_shared<make_buffer>();
+  n->name = name;
+  n->base = std::move(base);
+  n->elem_size = elem_size;
+  n->dims = std::move(dims);
+  n->body = std::move(body);
+  return n.get();
+}
+
+stmt crop_buffer::make(symbol_id name, std::vector<interval> bounds, stmt body) {
+  auto n = std::make_shared<crop_buffer>();
+  n->name = name;
+  n->bounds = std::move(bounds);
+  n->body = std::move(body);
+  return n.get();
+}
+
+stmt crop_dim::make(symbol_id name, int dim, expr min, expr extent, stmt body) {
+  auto n = std::make_shared<crop_dim>();
   n->name = name;
   n->dim = dim;
   n->min = std::move(min);

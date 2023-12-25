@@ -1,7 +1,7 @@
 #ifndef SLINKY_PIPELINE_H
 #define SLINKY_PIPELINE_H
 
-#include "interval.h"
+#include "expr.h"
 
 namespace slinky {
 
