@@ -20,8 +20,18 @@ index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
 
 template <typename T>
 index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
-  for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
-    out(i) = in(i) + 1;
+  assert(in.rank == out.rank);
+  if (out.rank == 1) {
+    for (index_t i = out.dims[0].begin(); i < out.dims[0].end(); ++i) {
+      out(i) = in(i) + 1;
+    }
+  } else {
+    assert(out.rank == 2);
+    for (index_t y = out.dims[1].begin(); y < out.dims[1].end(); ++y) {
+      for (index_t x = out.dims[0].begin(); x < out.dims[0].end(); ++x) {
+        out(x, y) = in(x, y) + 1;
+      }
+    }
   }
   return 0;
 }
@@ -323,12 +333,12 @@ TEST(pipeline_stencil) {
   pipeline p(ctx, {in}, {out});
 
   // Run the pipeline.
-  const int M = 10;
-  const int N = 10;
-  buffer<short, 2> in_buf({M + 2, N + 2});
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 2, H + 2});
   in_buf.dims[0].min = -1;
   in_buf.dims[1].min = -1;
-  buffer<short, 2> out_buf({M, N});
+  buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
   out_buf.allocate();
@@ -337,6 +347,18 @@ TEST(pipeline_stencil) {
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          correct += in_buf(x + dx, y + dy) + 1;
+        }
+      }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+    }
+  }
 }
 
 TEST(pipeline_flip_y) {
