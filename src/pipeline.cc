@@ -62,6 +62,17 @@ class pipeline_builder {
   std::set<buffer_expr_ptr> to_allocate;
   std::set<buffer_expr_ptr> produced;
   std::set<buffer_expr_ptr> allocated;
+
+  struct crop_info {
+    int dim;
+    expr min;
+    expr extent;
+  };
+
+  using scope_crops = std::map<symbol_id, std::vector<crop_info>>;
+
+  std::vector<scope_crops> crops;
+
   stmt result;
 
 public:
@@ -151,6 +162,15 @@ public:
     return loop::make(*as_variable(loop), bounds.min, bounds.max + 1, body);
   }
 
+  stmt add_crops(stmt result, const scope_crops& buffer_crops) {
+    for (const auto& b : buffer_crops) {
+      for (const auto& c : b.second) {
+        result = crop::make(b.first, c.dim, c.min, c.extent, result);
+      }
+    }
+    return result;
+  }
+
   void produce(stmt& result, const func* f, bool root = false) {
     // TODO: We shouldn't need this wrapper, it might add measureable overhead.
     // All it does is split a span of buffers into two spans of buffers.
@@ -175,20 +195,18 @@ public:
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       interval bounds = interval::union_identity;
-      std::vector<std::pair<int, buffer_expr_ptr>> to_crop;
+      scope_crops to_crop;
       for (const auto& o : f->outputs()) {
         for (int d = 0; d < o.dims.size(); ++d) {
           if (*as_variable(o.dims[d]) == *as_variable(loop)) {
-            to_crop.emplace_back(d, o.buffer);
+            to_crop[o.buffer->name()].emplace_back(d, loop, 1);
             // This output uses this loop. Add it to the bounds.
             bounds |= interval(o.buffer->dim(d).min, o.buffer->dim(d).max());
           }
         }
       }
 
-      for (const auto& i : to_crop) {
-        call_f = crop::make(i.second->name(), i.first, loop, 1, call_f);
-      }
+      call_f = add_crops(call_f, to_crop);
 
       call_f = make_loop(call_f, f, loop, bounds);
     }
@@ -227,7 +245,11 @@ stmt build_pipeline(
     builder.produce(result, f, /*root=*/true);
   }
 
+  print(std::cerr, result, &ctx);
   result = infer_allocate_bounds(result, ctx);
+  print(std::cerr, result, &ctx);
+
+  result = sliding_window(result, ctx);
 
   result = simplify(result);
   print(std::cerr, result, &ctx);

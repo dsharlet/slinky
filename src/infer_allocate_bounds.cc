@@ -10,6 +10,8 @@
 
 namespace slinky {
 
+namespace {
+
 class allocate_bounds_inferrer : public node_mutator {
 public:
   node_context& ctx;
@@ -120,6 +122,42 @@ public:
   }
 };
 
+// The idea behind this pass is:
+// - Find allocations
+// - Track the loops between allocations and producers
+// - At the producer, for each loop:
+//   - Compute the bounds produced by iteration i and i + 1
+//   - Subtract the bounds
+class slider : public node_mutator {
+public:
+  node_context& ctx;
+  std::vector<symbol_id> loops;
+  symbol_map<std::size_t> loop_begin;
+
+  slider(node_context& ctx) : ctx(ctx) {}
+
+  void visit(const call* c) override {
+    assert(c->fn);
+
+    node_mutator::visit(c);
+  }
+
+  void visit(const allocate* op) override { 
+    scoped_value<std::size_t> set_loop_begin(loop_begin, op->name, loops.size());
+    node_mutator::visit(op);
+  }
+
+  void visit(const loop* l) override { 
+    loops.push_back(l->name);
+    node_mutator::visit(l);
+    loops.pop_back();
+  }
+};
+
+}  // namespace
+
 stmt infer_allocate_bounds(const stmt& s, node_context& ctx) { return allocate_bounds_inferrer(ctx).mutate(s); }
+
+stmt sliding_window(const stmt& s, node_context& ctx) { return slider(ctx).mutate(s); }
 
 }  // namespace slinky
