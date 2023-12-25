@@ -175,8 +175,12 @@ public:
     allocation = nullptr;
     rank = DimsSize;
     elem_size = sizeof(T);
-    dims = DimsSize > 0 ? &dims_storage[0] : nullptr;
-    memset(dims_storage, 0, sizeof(dims_storage));
+    if (DimsSize > 0) {
+      dims = &dims_storage[0];
+      memset(dims_storage, 0, sizeof(dims_storage));
+    } else {
+      dims = nullptr;
+    }
   }
 
   // Construct a buffer with extents, and strides computed such that the stride of dimension
