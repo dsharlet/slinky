@@ -43,36 +43,42 @@ public:
 
 // Set a value in an eval_context upon construction, and restore the old value upon destruction.
 template <typename T>
-class scoped_value {
+class scoped_value_in_symbol_map {
   symbol_map<T>* context;
   symbol_id name;
   std::optional<T> old_value;
 
 public:
-  scoped_value(symbol_map<T>& context, symbol_id name, T value) : context(&context), name(name) {
+  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id name, T value) : context(&context), name(name) {
     std::optional<T>& ctx_value = context[name];
     old_value = std::move(ctx_value);
     ctx_value = std::move(value);
   }
 
-  scoped_value(scoped_value&& other) : context(other.context), name(other.name), old_value(std::move(other.old_value)) {
+  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
+      : context(other.context), name(other.name), old_value(std::move(other.old_value)) {
     // Don't let other.~scoped_value() unset this value.
     other.context = nullptr;
   }
-  scoped_value(const scoped_value&) = delete;
-  scoped_value& operator=(const scoped_value&) = delete;
-  scoped_value& operator=(scoped_value&& other) {
+  scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
+  scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
+  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
     context = other.context;
     name = other.name;
     old_value = std::move(other.old_value);
-    // Don't let other.~scoped_value() unset this value.
+    // Don't let other.~scoped_value_in_symbol_map() unset this value.
     other.context = nullptr;
   }
 
-  ~scoped_value() {
+  ~scoped_value_in_symbol_map() {
     if (context) { (*context)[name] = std::move(old_value); }
   }
 };
+
+template <typename T>
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id name, T value) {
+  return scoped_value_in_symbol_map<T>(context, name, value);
+}
 
 }  // namespace slinky
 

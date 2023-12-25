@@ -49,7 +49,7 @@ public:
 
   template <typename T>
   void visit_let(const T* l) {
-    scoped_value<index_t> set_value(context, l->name, eval_expr(l->value));
+    auto set_value = set_value_in_scope(context, l->name, eval_expr(l->value));
     l->body.accept(this);
   }
 
@@ -166,7 +166,7 @@ public:
       buffer->base = malloc(size);
     }
 
-    scoped_value<index_t> set_buffer(context, n->name, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
     if (n->type == memory_type::heap) { free(buffer->base); }

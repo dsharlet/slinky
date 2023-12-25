@@ -269,7 +269,7 @@ public:
   auto visit_let(const T* op) {
     expr value = mutate(op->value);
 
-    scoped_value<int> ref_count(references, op->name, 0);
+    auto ref_count = set_value_in_scope(references, op->name, 0);
     auto body = mutate(op->body);
 
     int refs = *references[op->name];

@@ -97,7 +97,7 @@ public:
     (*cropped_bounds)[c->dim].min = c->min;
     (*cropped_bounds)[c->dim].max = c->min + c->extent - 1;
 
-    scoped_value<box> new_crop(crops, c->name, *cropped_bounds);
+    auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
     node_mutator::visit(c);
   }
 
@@ -143,7 +143,7 @@ public:
   }
 
   void visit(const allocate* op) override { 
-    scoped_value<std::size_t> set_loop_begin(loop_begin, op->name, loops.size());
+    auto set_loop_begin = set_value_in_scope(loop_begin, op->name, loops.size());
     node_mutator::visit(op);
   }
 
