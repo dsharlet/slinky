@@ -185,7 +185,7 @@ public:
   void visit(const allocate* n) override {
     os << indent();
     print_symbol_id(n->name);
-    os << " = allocate({" << std::endl;
+    os << " = allocate(" << n->elem_size << ", {" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
       os << indent() << "{";
@@ -202,6 +202,34 @@ public:
     }
     --depth;
     os << indent() << "} on " << n->type << ") {" << std::endl;
+    ++depth;
+    print(n->body);
+    --depth;
+    os << indent() << "}" << std::endl;
+  }
+
+  void visit(const make_buffer* n) override {
+    os << indent();
+    print_symbol_id(n->name);
+    os << " = make_buffer(";
+    print(n->base);
+    os << ", " << n->elem_size << ", {" << std::endl;
+    ++depth;
+    for (const dim_expr& d : n->dims) {
+      os << indent() << "{";
+      print(d.min);
+      os << ", ";
+      print(d.extent);
+      os << ", ";
+      print(d.stride_bytes);
+      os << ", ";
+      print(d.fold_factor);
+      os << "}";
+      if (&d != &n->dims.back()) { os << ", "; }
+      os << std::endl;
+    }
+    --depth;
+    os << indent() << "}) {" << std::endl;
     ++depth;
     print(n->body);
     --depth;

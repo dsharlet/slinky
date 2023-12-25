@@ -128,6 +128,16 @@ public:
     stmt body = mutate(x->body);
     s = allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body));
   }
+  virtual void visit(const make_buffer* x) {
+    expr base = mutate(x->base);
+    std::vector<dim_expr> dims;
+    dims.reserve(x->dims.size());
+    for (const dim_expr& i : x->dims) {
+      dims.emplace_back(mutate(i.min), mutate(i.extent), mutate(i.stride_bytes), mutate(i.fold_factor));
+    }
+    stmt body = mutate(x->body);
+    s = make_buffer::make(x->name, std::move(base), x->elem_size, std::move(dims), std::move(body));
+  }
   virtual void visit(const crop* x) {
     expr min = mutate(x->min);
     expr extent = mutate(x->extent);

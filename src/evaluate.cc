@@ -172,6 +172,28 @@ public:
     if (n->type == memory_type::heap) { free(buffer->base); }
   }
 
+  void visit(const make_buffer* n) override {
+    std::size_t rank = n->dims.size();
+    // Allocate a buffer with space for its dims on the stack.
+    char* storage = reinterpret_cast<char*>(alloca(sizeof(buffer_base) + sizeof(dim) * rank));
+    buffer_base* buffer = reinterpret_cast<buffer_base*>(&storage[0]);
+    buffer->elem_size = n->elem_size;
+    buffer->base = reinterpret_cast<void*>(eval_expr(n->base));
+    buffer->rank = rank;
+    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
+
+    for (std::size_t i = 0; i < rank; ++i) {
+      buffer->dims[i].min = eval_expr(n->dims[i].min);
+      buffer->dims[i].extent = eval_expr(n->dims[i].extent);
+      buffer->dims[i].stride_bytes = eval_expr(n->dims[i].stride_bytes);
+      buffer->dims[i].fold_factor = eval_expr(n->dims[i].fold_factor);
+    }
+
+
+    auto set_buffer = set_value_in_scope(context, n->name, reinterpret_cast<index_t>(buffer));
+    n->body.accept(this);
+  }
+
   void visit(const crop* n) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
     buffer_base::dim& dim = buffer->dims[n->dim];

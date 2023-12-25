@@ -184,6 +184,16 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n.get();
 }
 
+stmt make_buffer::make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+  auto n = std::make_shared<make_buffer>();
+  n->name = name;
+  n->base = std::move(base);
+  n->elem_size = elem_size;
+  n->dims = std::move(dims);
+  n->body = std::move(body);
+  return n.get();
+}
+
 stmt allocate::make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = std::make_shared<allocate>();
   n->type = type;

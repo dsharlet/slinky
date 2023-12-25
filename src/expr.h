@@ -63,6 +63,7 @@ enum class node_type {
   loop,
   if_then_else,
   allocate,
+  make_buffer,
   crop,
   check,
 };
@@ -444,6 +445,22 @@ public:
   static constexpr node_type static_type = node_type::allocate;
 };
 
+// Rewrite an existing buffer. Undefined fields in dims are left alone.
+class make_buffer : public stmt_node<make_buffer> {
+public:
+  symbol_id name;
+  expr base;
+  std::size_t elem_size;
+  std::vector<dim_expr> dims;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
+
+  static constexpr node_type static_type = node_type::make_buffer;
+};
+
 // This node is equivalent to the following:
 // 1. Crop `name` to the interval `min, max` in-place
 // 2. Evaluate `body`
@@ -508,6 +525,7 @@ public:
   virtual void visit(const if_then_else*) = 0;
   virtual void visit(const call*) = 0;
   virtual void visit(const allocate*) = 0;
+  virtual void visit(const make_buffer*) = 0;
   virtual void visit(const crop*) = 0;
   virtual void visit(const check*) = 0;
 };
@@ -542,6 +560,7 @@ inline void loop::accept(node_visitor* v) const { v->visit(this); }
 inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
+inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 

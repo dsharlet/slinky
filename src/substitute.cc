@@ -148,6 +148,7 @@ public:
   virtual void visit(const if_then_else* x) { std::abort(); }
   virtual void visit(const call* x) { std::abort(); }
   virtual void visit(const allocate* x) { std::abort(); }
+  virtual void visit(const make_buffer* x) { std::abort(); }
   virtual void visit(const crop* x) { std::abort(); }
   virtual void visit(const check* x) { std::abort(); }
 };
