@@ -218,7 +218,7 @@ TEST(pipeline_matmuls) {
   auto a = buffer_expr::make(ctx, "a", sizeof(int), 2);
   auto b = buffer_expr::make(ctx, "b", sizeof(int), 2);
   auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
-  auto d = buffer_expr::make(ctx, "d", sizeof(int), 2);
+  auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
 
   auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
@@ -229,15 +229,15 @@ TEST(pipeline_matmuls) {
   // The bounds required of the dimensions consumed by the reduction depend on the size of the
   // buffers passed in. Note that we haven't used any constants yet.
   interval K_ab(a->dim(1).min, a->dim(1).max());
-  interval K_d(c->dim(0).min, c->dim(0).max());
+  interval K_abc(c->dim(0).min, c->dim(0).max());
 
   // We use int for this pipeline so we can test for correctness exactly.
   func matmul_ab =
       func::make<const int, const int, int>(matmul<int>, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
   func matmul_abc =
-      func::make<const int, const int, int>(matmul<int>, {ab, {interval(i), K_d}}, {c, {K_d, interval(j)}}, {d, {i, j}});
+      func::make<const int, const int, int>(matmul<int>, {ab, {interval(i), K_abc}}, {c, {K_abc, interval(j)}}, {abc, {i, j}});
 
-  pipeline p(ctx, {a, b, c}, {d});
+  pipeline p(ctx, {a, b, c}, {abc});
 
   // Run the pipeline.
   const int M = 10;
@@ -245,17 +245,29 @@ TEST(pipeline_matmuls) {
   buffer<int, 2> a_buf({M, N});
   buffer<int, 2> b_buf({M, N});
   buffer<int, 2> c_buf({M, N});
-  buffer<int, 2> d_buf({M, N});
+  buffer<int, 2> abc_buf({M, N});
 
   init_random(a_buf);
   init_random(b_buf);
   init_random(c_buf);
-  d_buf.allocate();
+  abc_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
-  const buffer_base* outputs[] = {&d_buf};
+  const buffer_base* outputs[] = {&abc_buf};
   p.evaluate(inputs, outputs);
+
+  buffer<int, 2> ref_ab({M, N});
+  buffer<int, 2> ref_abc({M, N});
+  ref_ab.allocate();
+  ref_abc.allocate();
+  matmul<int>(a_buf.cast<const int>(), b_buf.cast<const int>(), ref_ab.cast<int>());
+  matmul<int>(ref_ab.cast<const int>(), c_buf.cast<const int>(), ref_abc.cast<int>());
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < N; ++j) {
+      ASSERT_EQ(ref_abc(j, i), abc_buf(j, i));
+    }
+  }
 }
 
 index_t upsample2x(const buffer<const int>& in, const buffer<int>& out) {
