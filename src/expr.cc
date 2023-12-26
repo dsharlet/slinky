@@ -93,18 +93,6 @@ expr::expr(index_t value) : expr(make_constant(value).get()) {}
 
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
-stmt::stmt(std::initializer_list<stmt> stmts) {
-  stmt result;
-  for (const stmt& i : stmts) {
-    if (result.defined()) {
-      result = block::make(std::move(result), std::move(i));
-    } else {
-      result = std::move(i);
-    }
-  }
-  s = result.s;
-}
-
 expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)).get(); }
 expr sub::make(expr a, expr b) { return make_bin_op<sub>(std::move(a), std::move(b)).get(); }
 expr mul::make(expr a, expr b) { return make_bin_op<mul>(std::move(a), std::move(b)).get(); }
@@ -147,10 +135,10 @@ expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::mov
 expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
 expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
-interval interval::all(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
-interval interval::none(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
-interval interval::union_identity = interval::none;
-interval interval::intersection_identity = interval::all;
+interval interval::all() { return {std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max()}; }
+interval interval::none() { return {std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min()}; }
+interval interval::union_identity() { return none(); }
+interval interval::intersection_identity() { return all(); }
 
 box operator|(box a, const box& b) {
   assert(a.size() == b.size());

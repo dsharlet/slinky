@@ -76,7 +76,9 @@ enum class memory_type {
 };
 
 enum class buffer_meta {
+  rank,
   base,
+  elem_size,
   min,
   max,
   extent,
@@ -243,10 +245,10 @@ struct interval {
 
   bool same_as(const interval& r) { return min.same_as(r.min) && max.same_as(r.max); }
 
-  static interval all;
-  static interval none;
-  static interval union_identity;
-  static interval intersection_identity;
+  static interval all();
+  static interval none();
+  static interval union_identity();
+  static interval intersection_identity();
 
   expr extent() const { return max - min + 1; }
   void set_extent(expr extent) { max = min + extent - 1; }
@@ -344,8 +346,7 @@ public:
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
   stmt(const base_stmt_node* s) : s(s->shared_from_this()) {}
-  stmt(std::initializer_list<stmt> stmts);
-
+  
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
 
@@ -475,7 +476,7 @@ public:
 
   void accept(node_visitor* v) const;
 
-  static expr make(expr buffer, buffer_meta meta, expr dim);
+  static expr make(expr buffer, buffer_meta meta, expr dim = expr());
 
   static constexpr node_type static_type = node_type::load_buffer_meta;
 };
@@ -519,6 +520,20 @@ public:
   void accept(node_visitor* v) const;
 
   static stmt make(stmt a, stmt b);
+  static stmt make(std::span<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
+  static stmt make(std::initializer_list<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
+  template <typename It>
+  static stmt make(It begin, It end) {
+    stmt result;
+    for (It i = begin; i != end; ++i) {
+      if (result.defined()) {
+        result = block::make(result, *i);
+      } else {
+        result = *i;
+      }
+    }
+    return result;
+  }
 
   static constexpr node_type static_type = node_type::block;
 };

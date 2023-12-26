@@ -153,7 +153,7 @@ public:
 
   stmt make_loop(stmt body, const func* f, const expr& loop) {
     // Find the bounds of this loop.
-    interval bounds = interval::union_identity;
+    interval bounds = interval::union_identity();
     // Crop all the outputs of this buffer for this loop.
     crops.emplace_back();
     scope_crops& to_crop = crops.back();
@@ -258,7 +258,27 @@ stmt build_pipeline(
     builder.produce(result, f, /*root=*/true);
   }
 
-  result = infer_bounds(result, ctx);
+  std::vector<symbol_id> input_names;
+  input_names.reserve(inputs.size());
+  for (const buffer_expr_ptr& i : inputs) {
+    input_names.push_back(i->name());
+  }
+  result = infer_bounds(result, ctx, input_names);
+
+  // Add checks that the buffer constraints the user set are satisfied.
+  std::vector<stmt> checks;
+  for (const buffer_expr_ptr& i : inputs) {
+    expr buf_var = variable::make(i->name());
+    for (int d = 0; d < static_cast<int>(i->rank()); ++d) {
+      checks.push_back(check::make(i->dim(d).min == load_buffer_meta::make(buf_var, buffer_meta::min, d)));
+      checks.push_back(check::make(i->dim(d).extent == load_buffer_meta::make(buf_var, buffer_meta::extent, d)));
+      checks.push_back(
+          check::make(i->dim(d).stride_bytes == load_buffer_meta::make(buf_var, buffer_meta::stride_bytes, d)));
+      checks.push_back(
+          check::make(i->dim(d).fold_factor == load_buffer_meta::make(buf_var, buffer_meta::fold_factor, d)));
+    }
+  }
+  result = block::make(block::make(checks), result);
 
   result = sliding_window(result, ctx);
 
@@ -275,36 +295,16 @@ pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::
   body = build_pipeline(ctx, inputs_, outputs_);
 }
 
-namespace {
-
-void set_buffer(eval_context& ctx, const buffer_expr_ptr& buf_expr, const buffer_base* buf) {
-  assert(buf_expr->rank() == buf->rank);
-
-  ctx[buf_expr->name()] = reinterpret_cast<index_t>(buf);
-
-  for (std::size_t i = 0; i < buf->rank; ++i) {
-    // If these asserts fail, it's because the user has added constraints to the buffer_expr,
-    // e.g. buf.dim[0].stride_bytes = 4, and the buffer passed in does not satisfy that
-    // constraint.
-    assert(evaluate(buf_expr->dim(i).min, ctx) == buf->dim(i).min());
-    assert(evaluate(buf_expr->dim(i).extent, ctx) == buf->dim(i).extent());
-    assert(evaluate(buf_expr->dim(i).stride_bytes, ctx) == buf->dim(i).stride_bytes());
-    assert(evaluate(buf_expr->dim(i).fold_factor, ctx) == buf->dim(i).fold_factor());
-  }
-}
-
-}  // namespace
-
 index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const {
   assert(inputs.size() == inputs_.size());
   assert(outputs.size() == outputs_.size());
 
   eval_context ctx;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    set_buffer(ctx, inputs_[i], inputs[i]);
+    ctx[inputs_[i]->name()] = reinterpret_cast<index_t>(inputs[i]);
   }
   for (std::size_t i = 0; i < outputs.size(); ++i) {
-    set_buffer(ctx, outputs_[i], outputs[i]);
+    ctx[outputs_[i]->name()] = reinterpret_cast<index_t>(outputs[i]);
   }
 
   return slinky::evaluate(body, ctx);

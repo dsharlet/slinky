@@ -14,7 +14,9 @@ std::ostream& operator<<(std::ostream& os, memory_type type) {
 
 std::ostream& operator<<(std::ostream& os, buffer_meta meta) {
   switch (meta) {
+  case buffer_meta::rank: return os << "rank";
   case buffer_meta::base: return os << "base";
+  case buffer_meta::elem_size: return os << "elem_size";
   case buffer_meta::min: return os << "min";
   case buffer_meta::max: return os << "max";
   case buffer_meta::extent: return os << "extent";
@@ -132,8 +134,12 @@ public:
   void visit(const load_buffer_meta* x) override {
     print(x->buffer);
     os << "->";
-    if (x->meta == buffer_meta::base) {
+    if (x->meta == buffer_meta::rank) { 
+      os << "rank"; 
+    } else if (x->meta == buffer_meta::base) {
       os << "base";
+    } else if (x->meta == buffer_meta::elem_size) {
+      os << "elem_size";
     } else {
       os << "dims[";
       print(x->dim);
@@ -286,7 +292,7 @@ public:
     os << indent();
     os << "check(";
     print(n->condition);
-    os << ")";
+    os << ")" << std::endl;
   }
 };
 

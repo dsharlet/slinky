@@ -26,7 +26,7 @@ public:
   void visit(const allocate* alloc) override {
     std::optional<box>& bounds = inferring[alloc->name];
     assert(!bounds);
-    bounds = box(alloc->dims.size(), interval::union_identity);
+    bounds = box();
     
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
@@ -65,9 +65,6 @@ public:
   void visit(const call* c) override {
     assert(c->fn);
     for (const func::input& input : c->fn->inputs()) {
-      std::optional<box>& bounds = inferring[input.buffer->name()];
-      if (!bounds) continue;
-
       std::map<symbol_id, expr> mins, maxs;
       // TODO(https://github.com/dsharlet/slinky/issues/7): We need a better way to map
       // inputs/outputs between func and call. Here, we are assuming that c->buffer_args
@@ -88,13 +85,18 @@ public:
         }
       }
 
+      box& bounds = *inferring[input.buffer->name()];
+      bounds.reserve(input.bounds.size());
+      while (bounds.size() < input.bounds.size()) { 
+        bounds.push_back(interval::union_identity());
+      }
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
         expr max = substitute(input.bounds[d].max, maxs);
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        (*bounds)[d] |= interval(min, max) | interval(max, min);
+        bounds[d] |= interval(min, max) | interval(max, min);
       }
     }
 
@@ -240,7 +242,35 @@ public:
 
 }  // namespace
 
-stmt infer_bounds(const stmt& s, node_context& ctx) { return bounds_inferrer(ctx).mutate(s); }
+stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
+  bounds_inferrer b(ctx);
+
+  // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
+  for (symbol_id i : inputs) {
+    b.inferring[i] = box();
+  }
+
+  // Run it.
+  stmt result = b.mutate(s);
+
+  // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
+  std::vector<stmt> checks;
+  for (symbol_id i : inputs) {
+    expr buf_var = variable::make(i);
+    const box& bounds = *b.inferring[i];
+    index_t rank = static_cast<index_t>(bounds.size());
+    checks.push_back(check::make(buf_var != 0));
+    checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::rank) == rank));
+    checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::base) != 0));
+    for (int d = 0; d < rank; ++d) {
+      expr min = load_buffer_meta::make(buf_var, buffer_meta::min, d);
+      expr max = load_buffer_meta::make(buf_var, buffer_meta::max, d);
+      checks.push_back(check::make(min <= bounds[d].min));
+      checks.push_back(check::make(max >= bounds[d].max));
+    }
+  }
+  return block::make(block::make(checks), result);
+}
 
 stmt sliding_window(const stmt& s, node_context& ctx) { return slider(ctx).mutate(s); }
 

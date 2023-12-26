@@ -5,7 +5,7 @@
 
 namespace slinky {
 
-stmt infer_bounds(const stmt& s, node_context& ctx);
+stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs);
 
 stmt sliding_window(const stmt& s, node_context& ctx);
 

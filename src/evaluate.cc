@@ -87,8 +87,12 @@ public:
   void visit(const load_buffer_meta* x) override {
     buffer_base* buffer = reinterpret_cast<buffer_base*>(eval_expr(x->buffer));
     assert(buffer);
-    if (x->meta == buffer_meta::base) {
+    if (x->meta == buffer_meta::rank) {
+      result = buffer->rank;
+    } else if (x->meta == buffer_meta::base) {
       result = reinterpret_cast<index_t>(buffer->base);
+    } else if (x->meta == buffer_meta::elem_size) {
+      result = buffer->elem_size;
     } else {
       index_t d = eval_expr(x->dim);
       assert(d < buffer->rank);
@@ -99,7 +103,7 @@ public:
       case buffer_meta::extent: result = dim.extent(); return;
       case buffer_meta::stride_bytes: result = dim.stride_bytes(); return;
       case buffer_meta::fold_factor: result = dim.fold_factor(); return;
-      case buffer_meta::base: std::abort();  // Handled above.
+      default: std::abort();  // Should be handled above.
       }
     }
   }
