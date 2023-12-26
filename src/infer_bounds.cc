@@ -178,8 +178,7 @@ public:
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
-    std::map<symbol_id, expr> mins = {{l->name, loop_min}};
-    std::map<symbol_id, expr> maxs = {{l->name, l->end - 1}};
+    expr loop_max = l->end - 1;
     for (std::optional<box>& i : inferring) {
       if (!i) continue;
 
@@ -187,8 +186,8 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        j.min = min(substitute(j.min, mins), substitute(j.min, maxs));
-        j.max = max(substitute(j.max, mins), substitute(j.max, maxs));
+        j.min = min(substitute(j.min, l->name, loop_min), substitute(j.min, l->name, loop_max));
+        j.max = max(substitute(j.max, l->name, loop_max), substitute(j.max, l->name, loop_max));
       }
     }
   }
