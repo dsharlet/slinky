@@ -8,36 +8,6 @@
 
 using namespace slinky;
 
-// These functions use buffer<>::operator(), which is not designed to be fast.
-// TODO: Maybe eliminate this helper entirely and move it to be only for tests.
-template <typename T>
-index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
-  assert(out.rank == 1);
-  for (index_t i = out.dim(0).begin(); i < out.dim(0).end(); ++i) {
-    out(i) = in(i)*2;
-  }
-  return 0;
-}
-
-template <typename T>
-index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
-  if (out.rank == 1) {
-    for (index_t i = out.dim(0).begin(); i < out.dim(0).end(); ++i) {
-      out(i) = in(i) + 1;
-    }
-  } else {
-    assert(out.rank == 2);
-    for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
-      for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
-        out(x, y) = in(x, y) + 1;
-      }
-    }
-  }
-  return 0;
-}
-
 // A trivial pipeline with one stage.
 TEST(pipeline_trivial) {
   // Make the pipeline
@@ -201,16 +171,6 @@ TEST(pipeline_elementwise_1d_explicit) {
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
-  }
-}
-
-template <typename T>
-void init_random(buffer<T, 2>& x) {
-  x.allocate();
-  for (int i = x.dim(1).begin(); i < x.dim(1).end(); ++i) {
-    for (int j = x.dim(0).begin(); j < x.dim(0).end(); ++j) {
-      x(j, i) = rand() % 10;
-    }
   }
 }
 

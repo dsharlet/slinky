@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <span>
 
 #include "euclidean_division.h"
 
@@ -118,14 +119,24 @@ public:
   const slinky::dim& dim(std::size_t i) const { return dims[i]; }
 
   template <typename... Indices>
-  std::ptrdiff_t flat_offset_bytes(Indices... indices) const {
-    return flat_offset_bytes_impl(dims, indices...);
+  std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
+    return flat_offset_bytes_impl(dims, i0, indices...);
+  }
+  
+  template <typename... Indices>
+  void* address_at(index_t i0, Indices... indices) const {
+    return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
 
-  template <typename... Indices>
-  void* address_at(Indices... indices) const {
-    return offset_bytes(base, flat_offset_bytes(indices...));
+  std::ptrdiff_t flat_offset_bytes(std::span<index_t> indices) const {
+    assert(indices.size() == rank);
+    index_t offset = 0;
+    for (std::size_t i = 0; i < indices.size(); ++i) {
+      offset += dims[i].flat_offset_bytes(indices[i]);
+    }
+    return offset;
   }
+  void* address_at(std::span<index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
 
   std::size_t size_bytes() const {
     index_t flat_min = 0;
@@ -226,13 +237,16 @@ public:
   // These accessors are not designed to be fast. They exist to facilitate testing,
   // and maybe they are useful to compute addresses.
   template <typename... Indices>
-  auto& at(Indices... indices) const {
-    return *offset_bytes(base(), flat_offset_bytes(indices...));
+  auto& at(index_t i0, Indices... indices) const {
+    return *offset_bytes(base(), flat_offset_bytes(i0, indices...));
   }
   template <typename... Indices>
-  auto& operator()(Indices... indices) const {
-    return at(indices...);
+  auto& operator()(index_t i0, Indices... indices) const {
+    return at(i0, indices...);
   }
+
+  auto& at(std::span<index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
+  auto& operator()(std::span<index_t> indices) const { return at(indices); }
 };
 
 template <typename NewT>

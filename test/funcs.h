@@ -5,6 +5,32 @@
 
 namespace slinky {
 
+template <typename F>
+void for_each_index(std::span<dim> dims, int d, std::span<index_t> is, F&& f) {
+  if (d == 0) {
+    for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
+      is[0] = i;
+      f(is);
+    }
+  } else {
+    for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
+      is[d] = i;
+      for_each_index(dims, d - 1, is, f);
+    }
+  }
+}
+
+template <typename F>
+void for_each_index(std::span<dim> dims, F&& f) {
+  std::vector<index_t> i(dims.size());
+  for_each_index(dims, dims.size() - 1, i, f);
+}
+
+template <typename F>
+void for_each_index(const buffer_base& b, F&& f) {
+  for_each_index(std::span<dim>(b.dims, b.rank), f);
+}
+
 // This file provides a number of toy funcs for test pipelines.
 
 // Copy from input to output.
@@ -34,6 +60,26 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
     std::copy(src, src + size, dst);
   }
   return 0;
+}
+
+template <typename T>
+index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  for_each_index(out, [&](std::span<index_t> i) { out(i) = in(i)*2; });
+  return 0;
+}
+
+template <typename T>
+index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  for_each_index(out, [&](std::span<index_t> i) { out(i) = in(i) + 1; });
+  return 0;
+}
+
+template <typename T>
+void init_random(buffer<T, 2>& x) {
+  x.allocate();
+  for_each_index(x, [&](std::span<index_t> i) { x(i) = rand() % 10; });
 }
 
 // Matrix multiplication (not fast!)
