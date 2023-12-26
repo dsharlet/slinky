@@ -22,6 +22,11 @@ public:
   void fail() { match = false; }
 
   bool try_match(const expr& self, const expr& x) {
+    if (!self.defined() && !x.defined()) { return true; }
+    if (!self.defined() || !x.defined()) {
+      match = false;
+      return false;
+    }
     e = self;
     x.accept(this);
     return match;
