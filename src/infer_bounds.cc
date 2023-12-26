@@ -18,6 +18,8 @@ public:
   node_context& ctx;
   symbol_map<box> inferring;
   symbol_map<box> crops;
+  std::vector<std::pair<symbol_id, expr>> loop_mins;
+  symbol_map<std::size_t> loops_since_allocate;
 
   bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
@@ -27,7 +29,8 @@ public:
     std::optional<box>& bounds = inferring[alloc->name];
     assert(!bounds);
     bounds = box(alloc->dims.size(), interval::union_identity);
-
+    
+    auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
 
     assert(!!bounds);
@@ -89,6 +92,24 @@ public:
       std::optional<box>& bounds = inferring[output.buffer->name()];
       if (!bounds) continue;
 
+      std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->name());
+
+      bool slid = false;
+      for (std::size_t l = first_loop ? *first_loop : 0; !slid && l < loop_mins.size(); ++l) {
+        symbol_id loop_name = loop_mins[l].first;
+        box prev_bounds(bounds->size());
+        std::map<symbol_id, expr> prev_iter = {{loop_name, variable::make(loop_name) - 1}};
+        for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+          prev_bounds[d].min = simplify(substitute((*bounds)[d].min, prev_iter));
+          prev_bounds[d].max = simplify(substitute((*bounds)[d].max, prev_iter));
+          if (can_prove(prev_bounds[d].min < (*bounds)[d].min) && can_prove(prev_bounds[d].max < (*bounds)[d].max)) {
+            expr& old_min = (*bounds)[d].min;
+            expr new_min = prev_bounds[d].max + 1;
+            old_min = select::make(variable::make(loop_name) == loop_mins[l].second, old_min, new_min);
+          }
+        }
+      }
+
       s = crop_buffer::make(output.buffer->name(), *bounds, s);
     }
   }
@@ -114,11 +135,21 @@ public:
   }
 
   void visit(const loop* l) override {
-    node_mutator::visit(l);
+    loop_mins.emplace_back(l->name, l->begin);
+    stmt body = mutate(l->body);
+    expr loop_min = loop_mins.back().second;
+    loop_mins.pop_back();
+
+    if (loop_min.same_as(l->begin) && body.same_as(l->body)) {
+      s = l;
+    } else {
+      // We rewrote the loop min.
+      s = loop::make(l->name, loop_min, l->end, std::move(body));
+    }
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
-    std::map<symbol_id, expr> mins = {{l->name, l->begin}};
+    std::map<symbol_id, expr> mins = {{l->name, loop_min}};
     std::map<symbol_id, expr> maxs = {{l->name, l->end - 1}};
     for (std::optional<box>& i : inferring) {
       if (!i) continue;
@@ -161,6 +192,8 @@ public:
 
   void visit(const call* c) override {
     assert(c->fn);
+
+
 
     node_mutator::visit(c);
   }
