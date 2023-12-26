@@ -636,6 +636,20 @@ public:
       s = crop_dim::make(op->name, op->dim, std::move(min), std::move(extent), std::move(body));
     }
   }
+
+  void visit(const check* op) override { 
+    expr c = mutate(op->condition);
+    if (is_true(c)) { 
+      s = stmt();
+    } else if (is_false(c)) {
+      std::cerr << op->condition << " is statically false." << std::endl;
+      std::abort();
+    } else if (c.same_as(op->condition)) {
+      s = op;
+    } else {
+      s = check::make(std::move(c));
+    }
+  }
 };
 
 }  // namespace
