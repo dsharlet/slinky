@@ -189,7 +189,7 @@ public:
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
         j.min = min(substitute(j.min, l->name, loop_min), substitute(j.min, l->name, loop_max));
-        j.max = max(substitute(j.max, l->name, loop_max), substitute(j.max, l->name, loop_max));
+        j.max = max(substitute(j.max, l->name, loop_min), substitute(j.max, l->name, loop_max));
       }
     }
   }

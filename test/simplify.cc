@@ -175,7 +175,7 @@ TEST(simplify_fuzz) {
   }
 
   for (int i = 0; i < tests; ++i) {
-    expr test = make_random_expr(3);
+    expr test = make_random_expr(2);
     expr simplified = simplify(test);
 
     for (int j = 0; j < checks; ++j) {

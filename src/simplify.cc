@@ -264,7 +264,8 @@ public:
     }
 
     static std::vector<rule> rules = {
-        {x % 1, 0},
+        {x % 1, 0}, 
+        {x % x, 0},  // We define x % 0 to be 0.
     };
     e = apply_rules(rules, e);
   }
@@ -278,24 +279,24 @@ public:
       e = *ca < *cb;
       return;
     }
-    if (ca) {
+    if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
         e = op;
       } else {
         e = a < b;
       }
-    } else if (cb) {
-      e = mutate(-*cb < -a);
+    } else if (ca) {
+      e = mutate(-b < -*ca);
     } else {
-      e = mutate(0 < b - a);
+      e = mutate(a - b < 0);
     }
 
     static std::vector<rule> rules = {
-        {c0 < c1 + x, c0 - c1 < x},
-        {c0 < c1 - x, c0 - c1 < -x, c1 != 0},
-        {c0 < x + c1, c0 - c1 < x},
-        {c0 < buffer_extent(x, y), true, c0 < 0},
-        {c0 < -buffer_extent(x, y), false, 0 < c0},
+        {c0 + x < c1, x < c1 - c0},
+        {c0 - x < c1, -x < c1 - c0, c0 != 0},
+        {x + c0 < c1, x < c1 - c0},
+        {buffer_extent(x, y) < c0, false, c0 < 0},
+        {-buffer_extent(x, y) < c0, true, -c0 < 0},
     };
     e = apply_rules(rules, e);
   }
@@ -309,25 +310,24 @@ public:
       e = *ca <= *cb;
       return;
     }
-    // Canonicalize to constant <= other
-    if (ca) {
+    if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
         e = op;
       } else {
         e = a <= b;
       }
-    } else if (cb) {
-      e = mutate(-*cb <= -a);
+    } else if (ca) {
+      e = mutate(-b <= -*ca);
     } else {
-      e = mutate(0 <= b - a);
+      e = mutate(a - b <= 0);
     }
 
     static std::vector<rule> rules = {
-        {c0 <= c1 + x, c0 - c1 <= x},
-        {c0 <= c1 - x, c0 - c1 <= -x, c1 != 0},
-        {c0 <= x + c1, c0 - c1 <= x},
-        {c0 <= buffer_extent(x, y), true, c0 <= 0},
-        {c0 <= -buffer_extent(x, y), false, 0 <= c0},
+        {c0 + x <= c1, x < c1 - c0},
+        {c0 - x <= c1, -x < c1 - c0, c0 != 0},
+        {x + c0 <= c1, x < c1 - c0},
+        {buffer_extent(x, y) <= c0, false, c0 <= 0},
+        {-buffer_extent(x, y) <= c0, true, -c0 <= 0},
     };
     e = apply_rules(rules, e);
   }
@@ -341,23 +341,23 @@ public:
       e = *ca == *cb;
       return;
     }
-    // Canonicalize to constant == other
-    if (ca) {
+    // Canonicalize to other == constant
+    if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
         e = op;
       } else {
         e = a == b;
       }
-    } else if (cb) {
+    } else if (ca) {
       e = b == a;
     } else {
-      e = mutate(0 == b - a);
+      e = mutate(a - b == 0);
     }
 
     static std::vector<rule> rules = {
-        {c0 == c1 + x, c0 - c1 == x},
-        {c0 == c1 - x, c0 - c1 == -x, c1 != 0},
-        {c0 == x + c1, c0 - c1 == x},
+        {c0 + x == c1, x == c1 - c0},
+        {c0 - x == c1, -x == c1 - c0, c0 != 0},
+        {x + c0 == c1, x == c1 - c0},
     };
     e = apply_rules(rules, e);
   }
@@ -371,23 +371,23 @@ public:
       e = *ca != *cb;
       return;
     }
-    // Canonicalize to constant == other
-    if (ca) {
+    // Canonicalize to other == constant
+    if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
         e = op;
       } else {
         e = a != b;
       }
-    } else if (cb) {
+    } else if (ca) {
       e = b != a;
     } else {
-      e = mutate(0 != b - a);
+      e = mutate(a - b != 0);
     }
 
     static std::vector<rule> rules = {
-        {c0 != c1 + x, c0 - c1 != x},
-        {c0 != c1 - x, c0 - c1 != -x, c1 != 0},
-        {c0 != x + c1, c0 - c1 != x},
+        {c0 + x != c1, x != c1 - c0},
+        {c0 - x != c1, -x != c1 - c0, c0 != 0},
+        {x + c0 != c1, x != c1 - c0},
     };
     e = apply_rules(rules, e);
   }
