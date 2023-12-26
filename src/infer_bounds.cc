@@ -24,8 +24,6 @@ public:
   bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* alloc) override {
-    assert(!inferring.contains(alloc->name));
-
     std::optional<box>& bounds = inferring[alloc->name];
     assert(!bounds);
     bounds = box(alloc->dims.size(), interval::union_identity);
@@ -33,12 +31,12 @@ public:
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
 
-    assert(!!bounds);
+    const box& inferred = *inferring[alloc->name];
     std::vector<dim_expr> dims;
-    dims.reserve(bounds->size());
+    dims.reserve(inferred.size());
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
-    for (const interval& i : *bounds) {
+    for (const interval& i : inferred) {
       symbol_id extent_name = ctx.insert();
       lets.emplace_back(extent_name, simplify(i.extent()));
       expr extent = variable::make(extent_name);
