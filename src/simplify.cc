@@ -504,7 +504,7 @@ public:
     expr begin = mutate(op->begin);
     expr end = mutate(op->end);
 
-    // TODO: We can't actually simplify anything using this yet.
+    // TODO(https://github.com/dsharlet/slinky/issues/9): We can't actually simplify anything using this yet.
     auto set_bounds = set_value_in_scope(expr_bounds, op->name, interval(begin, end - 1));
     stmt body = mutate(op->body);
 
@@ -578,9 +578,10 @@ public:
       expr min = mutate(op->bounds[i].min);
       expr max = mutate(op->bounds[i].max);
       if (prev_bounds && i < prev_bounds->size()) {
-        // TODO: If we switch to min/max everywhere (instead of min/extent in some places),
-        // then we could check and default these individually.
-        // TODO: This doesn't work very well right now because it doesn't handle lets.
+        // TODO(https://github.com/dsharlet/slinky/issues/10): If we switch to min/max everywhere
+        // (instead of min/extent in some places), then we could check and default these individually.
+        // TODO(https://github.com/dsharlet/slinky/issues/10): This doesn't work very well right
+        // now because it doesn't handle lets.
         if (match(min, (*prev_bounds)[i].min) && match(max, (*prev_bounds)[i].max)) {
           min = expr();
           max = expr();

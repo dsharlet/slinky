@@ -71,10 +71,10 @@ public:
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
 
-  // TODO: There should be a separate descriptor of a callable and the bounds/dims of
-  // inputs/outputs, which is constant over all the instantiations of that descriptor.
-  // Then, that descriptor can be used for multiple stages/pipelines, without redundantly
-  // indicating the bounds/dims.
+  // TODO(https://github.com/dsharlet/slinky/issues/7): There should be a separate descriptor
+  // of a callable and the bounds/dims of inputs/outputs, which is constant over all the
+  // instantiations of that descriptor. Then, that descriptor can be used for multiple
+  // stages/pipelines, without redundantly indicating the bounds/dims.
   struct input {
     buffer_expr_ptr buffer;
 
@@ -86,7 +86,7 @@ public:
     buffer_expr_ptr buffer;
 
     // dims must be be variable nodes. It would be nice to enforce this via the type system.
-    // TODO: Maybe they don't need to be variables?
+    // TODO(https://github.com/dsharlet/slinky/issues/7): Maybe they don't need to be variables?
     std::vector<expr> dims;
 
     // If this exists for a dimension, specifies the alignment required in that dimension.
@@ -124,7 +124,7 @@ public:
   }
   const loop_id& compute_at() const { return compute_at_; }
 
-  // TODO: Try to do this with a variadic template implementation.
+  // TODO(https://github.com/dsharlet/slinky/issues/8): Try to do this with a variadic template implementation.
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output arg) {
     return func(

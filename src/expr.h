@@ -155,7 +155,8 @@ public:
   // std::shared_ptr<T> shared(n);
   // Instead, we have to use shared_from_this().
   // This also means all the initializations in expr.cc are a mess.
-  // TODO: Maybe we should just roll our own smart pointer, this sucks.
+  // TODO(https://github.com/dsharlet/slinky/issues/5): Maybe we should just roll our own
+  // smart pointer, this sucks.
   expr(const base_expr_node* e) : e(e->shared_from_this()) {}
 
   expr& operator=(const expr&) = default;
@@ -392,8 +393,9 @@ public:
 
 // Similar to a variable, designed for use in pattern matching. A match with x is only
 // accepted if matches(x) returns true.
-// TODO: This is pretty ugly. We should be able to contain this kind of logic to pattern
-// matching only, it shouldn't be polluting the expression mechanism.
+// TODO(https://github.com/dsharlet/slinky/issues/6): This is pretty ugly. We should be
+// able to contain this kind of logic to pattern matching only, it shouldn't be polluting
+// the expression mechanism.
 class wildcard : public expr_node<wildcard> {
 public:
   symbol_id name;
@@ -464,12 +466,11 @@ public:
 // This expression loads buffer->base or a field from buffer->dims.
 class load_buffer_meta : public expr_node<load_buffer_meta> {
 public:
-  // TODO: These should not be exprs, they are only because the simplifier wants to put wildcards
-  // here. A better pattern matching engine or just not using patterns to simplify these would
-  // eliminate this requirement.
+  // TODO(https://github.com/dsharlet/slinky/issues/6): These should not be exprs, they are only
+  // because the simplifier wants to put wildcards here. A better pattern matching engine or just
+  // not using patterns to simplify these would eliminate this requirement.
   expr buffer;
   buffer_meta meta;
-  // This is an index and not an expr, which means we can't read expr-dependent dims.
   expr dim;
 
   void accept(node_visitor* v) const;

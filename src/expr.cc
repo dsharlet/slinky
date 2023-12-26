@@ -63,9 +63,9 @@ stmt let_stmt::make(symbol_id name, expr value, stmt body) {
   return make_let<let_stmt>(name, std::move(value), std::move(body)).get();
 }
 
-// TODO: At this time, the top CPU user of simplify_fuzz is malloc/free. Perhaps
-// caching common values of variables (yes we can cache variables!) would be worth
-// doing.
+// TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user
+// of simplify_fuzz is malloc/free. Perhaps caching common values of variables (yes
+// we can cache variables!) would be worth doing.
 std::shared_ptr<const variable> make_variable(symbol_id name) {
   auto n = std::make_shared<variable>();
   n->name = name;

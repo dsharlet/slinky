@@ -23,8 +23,8 @@ const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
   return reinterpret_cast<const T*>(reinterpret_cast<const char*>(x) + bytes);
 }
 
-// TODO: This and buffer_expr in pipeline.h should have the same API (except for expr instead of
-// index_t).
+// TODO(https://github.com/dsharlet/slinky/issues/1): This and buffer_expr in pipeline.h should have the same API
+// (except for expr instead of index_t).
 class dim {
   index_t min_;
   index_t extent_;

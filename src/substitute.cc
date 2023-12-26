@@ -194,7 +194,7 @@ public:
     if (!cs) return fail();
 
     match = cs->fn != x->fn && try_match(cs->scalar_args, x->scalar_args) && try_match(cs->buffer_args, x->buffer_args);
-    // TODO: How to compare callable?
+    // TODO(https://github.com/dsharlet/slinky/issues/11): How to compare callable?
   }
 
   virtual void visit(const allocate* x) {

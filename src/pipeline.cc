@@ -198,8 +198,9 @@ public:
   }
 
   void produce(stmt& result, const func* f, bool root = false) {
-    // TODO: We shouldn't need this wrapper, it might add measureable overhead.
-    // All it does is split a span of buffers into two spans of buffers.
+    // TODO(https://github.com/dsharlet/slinky/issues/7): We shouldn't need this wrapper,
+    // it might add measureable overhead. All it does is split a span of buffers into two
+    // spans of buffers.
     std::size_t input_count = f->inputs().size();
     std::size_t output_count = f->outputs().size();
     auto wrapper = [impl = f->impl(), input_count, output_count](

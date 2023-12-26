@@ -56,9 +56,9 @@ public:
       if (!bounds) continue;
 
       std::map<symbol_id, expr> mins, maxs;
-      // TODO: We need a better way to map inputs/outputs between func and call.
-      // Here, we are assuming that c->buffer_args is the inputs concatenated with the outputs,
-      // in that order.
+      // TODO(https://github.com/dsharlet/slinky/issues/7): We need a better way to map
+      // inputs/outputs between func and call. Here, we are assuming that c->buffer_args
+      // is the inputs concatenated with the outputs, in that order.
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
       for (const func::output& output : c->fn->outputs()) {
         const std::optional<box>& cropped_bounds = crops[*arg_i];

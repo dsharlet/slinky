@@ -7,8 +7,9 @@
 
 namespace slinky {
 
-// TODO: I think the T::accept/node_visitor::visit overhead (two virtual function calls per node)
-// might be significant. This could be implemented as a switch statement instead.
+// TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/node_visitor::visit
+// overhead (two virtual function calls per node) might be significant. This could be implemented
+// as a switch statement instead.
 class evaluator : public node_visitor {
 public:
   index_t result = 0;
@@ -111,9 +112,10 @@ public:
   void visit(const loop* l) override {
     index_t begin = eval_expr(l->begin, 0);
     index_t end = eval_expr(l->end);
-    // TODO: We don't get a reference to context[l->name] here because the context could grow and invalidate
-    // the reference. This could be fixed by having evaluate fully traverse the expression to find the max
-    // symbol_id, and pre-allocate the context up front. It's not clear this optimization is necessary yet.
+    // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[l->name] here
+    // because the context could grow and invalidate the reference. This could be fixed by having evaluate
+    // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's 
+    // not clear this optimization is necessary yet.
     std::optional<index_t> old_value = context[l->name];
     for (index_t i = begin; i < end; ++i) {
       context[l->name] = i;
