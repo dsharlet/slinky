@@ -11,52 +11,63 @@ namespace slinky {
 class matcher : public node_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
   expr e;
+  stmt s;
   std::map<symbol_id, expr>* matches;
 
 public:
   bool match = true;
 
-  matcher(const expr& e, std::map<symbol_id, expr>* matches = nullptr) : e(e), matches(matches) {}
+  matcher(const expr& e, const stmt& s, std::map<symbol_id, expr>* matches = nullptr) : e(e), s(s), matches(matches) {}
 
   void fail() { match = false; }
 
+  bool try_match(const expr& self, const expr& x) {
+    e = self;
+    x.accept(this);
+    return match;
+  }
+
+  bool try_match(symbol_id self, symbol_id x) {
+    match = self == x;
+    return match;
+  }
+
+  bool try_match(const dim_expr& self, const dim_expr& x) {
+    return try_match(self.min, x.min) && try_match(self.extent, x.extent) &&
+           try_match(self.stride_bytes, x.stride_bytes) && try_match(self.fold_factor, x.fold_factor);
+  }
+
+  bool try_match(const interval& self, const interval& x) {
+    return try_match(self.min, x.min) && try_match(self.max, x.max);
+  }
+
   template <typename T>
-  void match_let(const T* x) {
-    if (!match) return;
-    const T* el = e.as<T>();
-    if (!el) {
+  bool try_match(const std::vector<T>& self, const std::vector<T>& x) {
+    if (self.size() != x.size()) {
       match = false;
-      return;
+      return false;
     }
 
-    if (el->name != x->name) {
-      match = false;
-      return;
+    for (std::size_t i = 0; i < self.size(); ++i) {
+      if (!try_match(self[i], x[i])) return false;
     }
 
-    e = el->value;
-    x->value.accept(this);
-    if (!match) return;
+    return true;
+  }
 
-    e = el->body;
-    x->body.accept(this);
+  bool try_match(const stmt& self, const stmt& x) {
+    s = self;
+    x.accept(this);
+    return match;
   }
 
   template <typename T>
   void match_binary(const T* x) {
     if (!match) return;
     const T* ex = e.as<T>();
-    if (!ex) {
-      match = false;
-      return;
-    }
+    if (!ex) return fail();
 
-    e = ex->a;
-    x->a.accept(this);
-    if (!match) return;
-
-    e = ex->b;
-    x->b.accept(this);
+    match = try_match(ex->a, x->a) && try_match(ex->b, x->b);
   }
 
   void match_wildcard(symbol_id name, std::function<bool(const expr&)> predicate) {
@@ -97,15 +108,21 @@ public:
     if (!match) return;
 
     const constant* ec = e.as<constant>();
-    if (!ec) {
-      match = false;
-      return;
-    }
+    if (!ec) return fail();
 
     match = ec->value == x->value;
   }
 
-  virtual void visit(const let* x) { match_let(x); }
+  template <typename T>
+  void visit_let(const T* x) {
+    if (!match) return;
+    const T* el = e.as<T>();
+    if (!el) return fail();
+
+    match = el->name == x->name && try_match(el->value, x->value) && try_match(el->body, x->body);
+  }
+
+  virtual void visit(const let* x) { visit_let(x); }
   virtual void visit(const add* x) { match_binary(x); }
   virtual void visit(const sub* x) { match_binary(x); }
   virtual void visit(const mul* x) { match_binary(x); }
@@ -124,64 +141,120 @@ public:
   virtual void visit(const logical_or* x) { match_binary(x); }
   virtual void visit(const shift_left* x) { match_binary(x); }
   virtual void visit(const shift_right* x) { match_binary(x); }
-  
+
   virtual void visit(const select* x) {
     if (!match) return;
     const select* se = e.as<select>();
-    if (!se) {
-      match = false;
-      return;
-    }
+    if (!se) return fail();
 
-    e = se->condition;
-    x->condition.accept(this);
-    if (!match) return;
-
-    e = se->true_value;
-    x->true_value.accept(this);
-    if (!match) return;
-
-    e = se->false_value;
-    x->false_value.accept(this);
+    match = try_match(se->condition, x->condition) && try_match(se->true_value, x->true_value) &&
+            try_match(se->false_value, x->false_value);
   }
 
   virtual void visit(const load_buffer_meta* x) {
     if (!match) return;
 
     const load_buffer_meta* lbme = e.as<load_buffer_meta>();
-    if (!lbme || x->meta != lbme->meta) {
-      match = false;
-      return;
-    }
+    if (!lbme) return fail();
 
-    e = lbme->buffer;
-    x->buffer.accept(this);
-    if (!match) return;
-
-    e = lbme->dim;
-    x->dim.accept(this);
+    match = x->meta == lbme->meta && try_match(lbme->buffer, x->buffer) && try_match(lbme->dim, x->dim);
   }
 
-  virtual void visit(const let_stmt* x) { std::abort(); }
-  virtual void visit(const block* x) { std::abort(); }
-  virtual void visit(const loop* x) { std::abort(); }
-  virtual void visit(const if_then_else* x) { std::abort(); }
-  virtual void visit(const call* x) { std::abort(); }
-  virtual void visit(const allocate* x) { std::abort(); }
-  virtual void visit(const make_buffer* x) { std::abort(); }
-  virtual void visit(const crop_buffer* x) { std::abort(); }
-  virtual void visit(const crop_dim* x) { std::abort(); }
-  virtual void visit(const check* x) { std::abort(); }
+  virtual void visit(const let_stmt* x) { visit_let(x); }
+
+  virtual void visit(const block* x) {
+    if (!match) return;
+    const block* bs = s.as<block>();
+    if (!bs) return fail();
+
+    match = try_match(bs->a, x->a) && try_match(bs->b, x->b);
+  }
+
+  virtual void visit(const loop* x) {
+    if (!match) return;
+    const loop* ls = s.as<loop>();
+    if (!ls) return fail();
+
+    match = ls->name == x->name && try_match(ls->begin, x->begin) && try_match(ls->end, x->end) &&
+            try_match(ls->body, x->body);
+  }
+
+  virtual void visit(const if_then_else* x) {
+    if (!match) return;
+    const if_then_else* is = s.as<if_then_else>();
+    if (!is) return fail();
+
+    match = try_match(is->condition, x->condition) && try_match(is->true_body, x->true_body) &&
+            try_match(is->false_body, x->false_body);
+  }
+
+  virtual void visit(const call* x) {
+    if (!match) return;
+    const call* cs = s.as<call>();
+    if (!cs) return fail();
+
+    match = cs->fn != x->fn && try_match(cs->scalar_args, x->scalar_args) && try_match(cs->buffer_args, x->buffer_args);
+    // TODO: How to compare callable?
+  }
+
+  virtual void visit(const allocate* x) {
+    if (!match) return;
+    const allocate* as = s.as<allocate>();
+    if (!as) return fail();
+
+    match = as->name == x->name && as->elem_size == x->elem_size && try_match(as->dims, x->dims) &&
+            try_match(as->body, x->body);
+  }
+
+  virtual void visit(const make_buffer* x) {
+    if (!match) return;
+    const make_buffer* mbs = s.as<make_buffer>();
+    if (!mbs) return fail();
+
+    match = mbs->name == x->name && mbs->elem_size == x->elem_size && try_match(mbs->base, x->base) &&
+            try_match(mbs->dims, x->dims) && try_match(mbs->body, x->body);
+  }
+
+  virtual void visit(const crop_buffer* x) {
+    if (!match) return;
+    const crop_buffer* cbs = s.as<crop_buffer>();
+    if (!cbs) return fail();
+
+    match = cbs->name == x->name && try_match(cbs->bounds, x->bounds) && try_match(cbs->body, x->body);
+  }
+
+  virtual void visit(const crop_dim* x) {
+    if (!match) return;
+    const crop_dim* cds = s.as<crop_dim>();
+    if (!cds) return fail();
+
+    match = cds->name == x->name && cds->dim == x->dim && try_match(cds->min, x->min) &&
+            try_match(cds->extent, x->extent) && try_match(cds->body, x->body);
+  }
+
+  virtual void visit(const check* x) {
+    if (!match) return;
+    const check* cs = s.as<check>();
+    if (!cs) return fail();
+
+    match = try_match(cs->condition, x->condition);
+  }
 };
 
 bool match(const expr& p, const expr& e, std::map<symbol_id, expr>& matches) {
-  matcher m(e, &matches);
+  matcher m(e, stmt(), &matches);
   p.accept(&m);
   return m.match;
 }
 
 bool match(const expr& a, const expr& b) {
-  matcher m(a);
+  matcher m(a, stmt());
+  b.accept(&m);
+  return m.match;
+}
+
+bool match(const stmt& a, const stmt& b) {
+  matcher m(expr(), a);
   b.accept(&m);
   return m.match;
 }

@@ -147,8 +147,10 @@ expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::mov
 expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
 expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
-interval interval::union_identity(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
-interval interval::intersection_identity(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
+interval interval::all(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
+interval interval::none(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
+interval interval::union_identity = interval::none;
+interval interval::intersection_identity = interval::all;
 
 box operator|(box a, const box& b) {
   assert(a.size() == b.size());

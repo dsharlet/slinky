@@ -35,6 +35,7 @@ expr buffer_extent(expr buf, expr dim) {
 class simplifier : public node_mutator {
   symbol_map<int> references;
   symbol_map<box> buffer_bounds;
+  symbol_map<interval> expr_bounds;
 
 public:
   simplifier() {}
@@ -290,7 +291,7 @@ public:
 
     static std::vector<rule> rules = {
         {c0 < c1 + x, c0 - c1 < x},
-        {c0 <= c1 - x, c0 - c1 < -x, c1 != 0},
+        {c0 < c1 - x, c0 - c1 < -x, c1 != 0},
         {c0 < x + c1, c0 - c1 < x},
         {c0 < buffer_extent(x, y), true, c0 < 0},
         {c0 < -buffer_extent(x, y), false, 0 < c0},
@@ -404,10 +405,7 @@ public:
     expr f = mutate(op->false_value);
     if (match(t, f)) {
       e = t;
-      return;
-    }
-
-    if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
       e = op;
     } else {
       e = select::make(std::move(c), std::move(t), std::move(f));
@@ -501,6 +499,42 @@ public:
   void visit(const let* op) override { e = visit_let(op); }
   void visit(const let_stmt* op) override { s = visit_let(op); }
 
+  void visit(const loop* op) override { 
+    expr begin = mutate(op->begin);
+    expr end = mutate(op->end);
+
+    // TODO: We can't actually simplify anything using this yet.
+    auto set_bounds = set_value_in_scope(expr_bounds, op->name, interval(begin, end - 1));
+    stmt body = mutate(op->body);
+
+    if (begin.same_as(op->begin) && end.same_as(op->end) && body.same_as(op->body)) {
+      s = op;
+    } else {
+      s = loop::make(op->name, std::move(begin), std::move(end), std::move(body));
+    }
+  }
+
+  void visit(const if_then_else* op) override { 
+    expr c = mutate(op->condition); 
+    if (is_true(c)) {
+      s = mutate(op->true_body);
+      return;
+    } else if (is_false(c)) {
+      s = op->false_body.defined() ? mutate(op->false_body) : stmt();
+      return;
+    }
+
+    stmt t = mutate(op->true_body);
+    stmt f = mutate(op->false_body);
+    if (f.defined() && match(t, f)) { 
+      s = t;
+    } else if (c.same_as(op->condition) && t.same_as(op->true_body) && f.same_as(op->false_body)) {
+      s = op;
+    } else {
+      s = if_then_else::make(std::move(c), std::move(t), std::move(f));
+    }
+  }
+
   void visit(const allocate* op) override {
     std::vector<dim_expr> dims;
     box bounds;
@@ -515,6 +549,7 @@ public:
     stmt body = mutate(op->body);
     s = allocate::make(op->type, op->name, op->elem_size, std::move(dims), std::move(body));
   }
+
   virtual void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     std::vector<dim_expr> dims;

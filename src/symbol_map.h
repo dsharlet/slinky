@@ -23,6 +23,11 @@ public:
     return std::nullopt;
   }
 
+  const T& lookup(symbol_id name, const T& def) const {
+    if (name < values.size()) { return values[name]; }
+    return def;
+  }
+
   std::optional<T> operator[](symbol_id name) const { return lookup(name); }
   std::optional<T>& operator[](symbol_id name) {
     grow(name);

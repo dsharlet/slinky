@@ -240,6 +240,8 @@ struct interval {
   explicit interval(const expr& point) : min(point), max(point) {}
   interval(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
+  static interval all;
+  static interval none;
   static interval union_identity;
   static interval intersection_identity;
 

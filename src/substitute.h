@@ -12,6 +12,7 @@ namespace slinky {
 // {y, z} }`.
 bool match(const expr& p, const expr& e, std::map<symbol_id, expr>& matches);
 bool match(const expr& a, const expr& b);
+bool match(const stmt& a, const stmt& b);
 
 expr substitute(const expr& e, const std::map<symbol_id, expr>& replacements);
 stmt substitute(const stmt& s, const std::map<symbol_id, expr>& replacements);
