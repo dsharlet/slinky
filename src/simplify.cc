@@ -165,6 +165,7 @@ public:
         {x + x, x * 2},
         {x + (0 - y), x - y},
         {(0 - x) + y, y - x},
+        {x + (y + c0), (x + y) + c0},
         {(x + c0) + c1, x + (c0 + c1)},
         {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
         {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
@@ -579,6 +580,7 @@ public:
       if (prev_bounds && i < prev_bounds->size()) {
         // TODO: If we switch to min/max everywhere (instead of min/extent in some places),
         // then we could check and default these individually.
+        // TODO: This doesn't work very well right now because it doesn't handle lets.
         if (match(min, (*prev_bounds)[i].min) && match(max, (*prev_bounds)[i].max)) {
           min = expr();
           max = expr();
