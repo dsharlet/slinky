@@ -71,6 +71,10 @@ public:
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
 
+  // TODO: There should be a separate descriptor of a callable and the bounds/dims of
+  // inputs/outputs, which is constant over all the instantiations of that descriptor.
+  // Then, that descriptor can be used for multiple stages/pipelines, without redundantly
+  // indicating the bounds/dims.
   struct input {
     buffer_expr_ptr buffer;
 

@@ -240,6 +240,8 @@ struct interval {
   explicit interval(const expr& point) : min(point), max(point) {}
   interval(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
+  bool same_as(const interval& r) { return min.same_as(r.min) && max.same_as(r.max); }
+
   static interval all;
   static interval none;
   static interval union_identity;
@@ -554,6 +556,11 @@ struct dim_expr {
   expr fold_factor;
 
   expr max() const { return min + extent - 1; }
+
+  bool same_as(const dim_expr& r) {
+    return min.same_as(r.min) && extent.same_as(r.extent) && stride_bytes.same_as(r.stride_bytes) &&
+           fold_factor.same_as(r.fold_factor);
+  }
 };
 
 class allocate : public stmt_node<allocate> {

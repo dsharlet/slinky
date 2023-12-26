@@ -5,8 +5,10 @@
 
 namespace slinky {
 
+// This file provides a number of toy funcs for test pipelines.
+
 template <typename F>
-void for_each_index(std::span<dim> dims, int d, std::span<index_t> is, F&& f) {
+void for_each_index(std::span<const dim> dims, int d, std::span<index_t> is, F&& f) {
   if (d == 0) {
     for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
       is[0] = i;
@@ -20,18 +22,18 @@ void for_each_index(std::span<dim> dims, int d, std::span<index_t> is, F&& f) {
   }
 }
 
+// Call `f(std::span<index_t>)` for each index in the range of `dims`.
 template <typename F>
-void for_each_index(std::span<dim> dims, F&& f) {
+void for_each_index(std::span<const dim> dims, F&& f) {
   std::vector<index_t> i(dims.size());
   for_each_index(dims, dims.size() - 1, i, f);
 }
 
+// Call `f(std::span<index_t>)` for each index in the range of the dims of `b`.
 template <typename F>
 void for_each_index(const buffer_base& b, F&& f) {
-  for_each_index(std::span<dim>(b.dims, b.rank), f);
+  for_each_index({b.dims, b.rank}, f);
 }
-
-// This file provides a number of toy funcs for test pipelines.
 
 // Copy from input to output.
 // TODO: We should be able to just do this with buffer_base and not make it a template.

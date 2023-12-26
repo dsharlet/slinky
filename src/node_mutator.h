@@ -133,38 +133,62 @@ public:
   virtual void visit(const call* x) {
     std::vector<expr> scalar_args;
     scalar_args.reserve(x->scalar_args.size());
+    bool changed = false;
     for (const expr& i : x->scalar_args) {
       scalar_args.push_back(mutate(i));
+      changed = changed || !scalar_args.back().same_as(i);
     }
-    s = call::make(x->target, std::move(scalar_args), x->buffer_args, x->fn);
+    if (!changed) {
+      s = x;
+    } else {
+      s = call::make(x->target, std::move(scalar_args), x->buffer_args, x->fn);
+    }
   }
   virtual void visit(const allocate* x) {
     std::vector<dim_expr> dims;
     dims.reserve(x->dims.size());
+    bool changed = false;
     for (const dim_expr& i : x->dims) {
       dims.emplace_back(mutate(i.min), mutate(i.extent), mutate(i.stride_bytes), mutate(i.fold_factor));
+      changed = changed || !dims.back().same_as(i);
     }
     stmt body = mutate(x->body);
-    s = allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body));
+    if (!changed && body.same_as(x->body)) {
+      s = x;
+    } else {
+      s = allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body));
+    }
   }
   virtual void visit(const make_buffer* x) {
     expr base = mutate(x->base);
     std::vector<dim_expr> dims;
     dims.reserve(x->dims.size());
+    bool changed = false;
     for (const dim_expr& i : x->dims) {
       dims.emplace_back(mutate(i.min), mutate(i.extent), mutate(i.stride_bytes), mutate(i.fold_factor));
+      changed = changed || dims.back().same_as(i);
     }
     stmt body = mutate(x->body);
-    s = make_buffer::make(x->name, std::move(base), x->elem_size, std::move(dims), std::move(body));
+    if (!changed && base.same_as(x->base) && body.same_as(x->body)) {
+      s = x;
+    } else {
+      s = make_buffer::make(x->name, std::move(base), x->elem_size, std::move(dims), std::move(body));
+    }
   }
   virtual void visit(const crop_buffer* x) {
     std::vector<interval> bounds;
     bounds.reserve(x->bounds.size());
+    bool changed = false;
     for (const interval& i : x->bounds) {
       bounds.emplace_back(mutate(i.min), mutate(i.max));
+      changed = changed || bounds.back().same_as(i);
     }
     stmt body = mutate(x->body);
-    s = crop_buffer::make(x->name, std::move(bounds), std::move(body));
+    if (!changed && body.same_as(x->body)) {
+      s = x;
+    } else {
+      s = crop_buffer::make(x->name, std::move(bounds), std::move(body));
+    }
   }
   virtual void visit(const crop_dim* x) {
     expr min = mutate(x->min);
