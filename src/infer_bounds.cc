@@ -88,14 +88,14 @@ public:
     }
 
     s = c;
+
     for (const func::output& output : c->fn->outputs()) {
       std::optional<box>& bounds = inferring[output.buffer->name()];
       if (!bounds) continue;
 
       std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->name());
 
-      bool slid = false;
-      for (std::size_t l = first_loop ? *first_loop : 0; !slid && l < loop_mins.size(); ++l) {
+      for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
         symbol_id loop_name = loop_mins[l].first;
         box prev_bounds(bounds->size());
         std::map<symbol_id, expr> prev_iter = {{loop_name, variable::make(loop_name) - 1}};
@@ -105,12 +105,22 @@ public:
           if (can_prove(prev_bounds[d].min < (*bounds)[d].min) && can_prove(prev_bounds[d].max < (*bounds)[d].max)) {
             expr& old_min = (*bounds)[d].min;
             expr new_min = prev_bounds[d].max + 1;
-            old_min = select::make(variable::make(loop_name) == loop_mins[l].second, old_min, new_min);
+            loop_mins[l].second -= simplify(new_min - old_min);
+            old_min = new_min;
           }
         }
       }
 
       s = crop_buffer::make(output.buffer->name(), *bounds, s);
+    }
+
+    // Insert ifs around these calls, in case the loop min shifts later.
+    // TODO: If there was already a crop_dim here, this if goes inside it, which
+    // modifies the buffer meta, which the condition (probably) depends on.
+    // To fix this, we hackily move the if out below, but this is a serious hack
+    // that needs to be fixed.
+    for (const auto& l : loop_mins) {
+      s = if_then_else::make(variable::make(l.first) >= l.second, s, stmt());
     }
   }
 
@@ -132,6 +142,14 @@ public:
 
     auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
     node_mutator::visit(c);
+    c = s.as<crop_dim>();
+    if (const if_then_else* body = c->body.as<if_then_else>()) {
+      // TODO: HORRIBLE HACK: crop_dim modifies the buffer meta, which this if we inserted
+      // above assumes didn't happen. The if should be outside the crop anyways, it's just
+      // not clear how to do that yet.
+      s = if_then_else::make(
+          body->condition, crop_dim::make(c->name, c->dim, c->min, c->extent, body->true_body), stmt());
+    }
   }
 
   void visit(const loop* l) override {

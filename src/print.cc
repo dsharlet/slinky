@@ -167,15 +167,13 @@ public:
     ++depth;
     print(n->true_body);
     --depth;
-    os << indent() << "} else {";
     if (n->false_body.defined()) {
-      os << std::endl;
+      os << indent() << "} else {" << std::endl;
       ++depth;
       print(n->false_body);
       --depth;
-      os << indent();
-    }
-    os << "}" << std::endl;
+    } 
+    os << indent() << "}" << std::endl;
   }
 
   void visit(const call* n) override {
