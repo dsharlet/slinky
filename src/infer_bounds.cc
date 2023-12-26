@@ -160,6 +160,10 @@ public:
       // TODO: HORRIBLE HACK: crop_dim modifies the buffer meta, which this if we inserted
       // above assumes didn't happen. The if should be outside the crop anyways, it's just
       // not clear how to do that yet.
+      // One fix for the issue mentioned below regarding ignoring ifs in loop bodies would
+      // be to substitute a clamp on the loop variable for when the if is true. It should
+      // simplify away later anyways, and make it easier to track bounds. This isn't easily
+      // doable due to this hack.
       s = if_then_else::make(
           body->condition, crop_dim::make(c->name, c->dim, c->min, c->extent, body->true_body), stmt());
     }
@@ -180,6 +184,10 @@ public:
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
+    // TODO: This ignores ifs inserted around parts of the body of this loop, which limit the
+    // range of the loop. I was debugging a failure regarding this when I made an unrelated
+    // change, and it magically started working. It *shouldn't* work, I expect this bug will
+    // appear again. See the TODO: HORRIBLE HACK: above for more.
     expr loop_max = l->end - 1;
     for (std::optional<box>& i : inferring) {
       if (!i) continue;
