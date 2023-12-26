@@ -49,6 +49,19 @@ public:
     }
   }
 
+  expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) { 
+    std::optional<box>& bounds = inferring[buffer];
+    if (bounds) {
+      switch (meta) {
+      case buffer_meta::min: return (*bounds)[d].min;
+      case buffer_meta::max: return (*bounds)[d].max;
+      case buffer_meta::extent: return (*bounds)[d].extent();
+      default: break;
+      }
+    }
+    return load_buffer_meta::make(variable::make(buffer), meta, d);
+  }
+
   void visit(const call* c) override {
     assert(c->fn);
     for (const func::input& input : c->fn->inputs()) {
@@ -69,8 +82,8 @@ public:
             mins[dim] = (*cropped_bounds)[d].min;
             maxs[dim] = (*cropped_bounds)[d].max;
           } else {
-            mins[dim] = load_buffer_meta::make(arg, buffer_meta::min, d);
-            maxs[dim] = load_buffer_meta::make(arg, buffer_meta::max, d);
+            mins[dim] = get_buffer_meta(*as_variable(arg), buffer_meta::min, d);
+            maxs[dim] = get_buffer_meta(*as_variable(arg), buffer_meta::max, d);
           }
         }
       }
