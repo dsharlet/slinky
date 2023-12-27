@@ -135,6 +135,26 @@ expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::mov
 expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
 expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
+expr min(std::span<expr> x) { 
+  if (x.empty()) {
+    return expr();
+  } else if (x.size() == 1) {
+    return x[0];
+  } else {
+    return min(x[0], min(x.subspan(1)));
+  }
+}
+
+expr max(std::span<expr> x) {
+  if (x.empty()) {
+    return expr();
+  } else if (x.size() == 1) {
+    return x[0];
+  } else {
+    return max(x[0], max(x.subspan(1)));
+  }
+}
+
 interval interval::all() { return {std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max()}; }
 interval interval::none() { return {std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min()}; }
 interval interval::union_identity() { return none(); }

@@ -235,6 +235,8 @@ expr operator&&(expr a, expr b);
 expr operator||(expr a, expr b);
 expr min(expr a, expr b);
 expr max(expr a, expr b);
+expr min(std::span<expr> x);
+expr max(std::span<expr> x);
 
 struct interval {
   expr min, max;
