@@ -73,7 +73,9 @@ public:
       e = std::min(*ca, *cb);
       return;
     }
-    if (ca && !cb) { std::swap(a, b); }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -115,7 +117,9 @@ public:
       e = std::max(*ca, *cb);
       return;
     }
-    if (ca && !cb) { std::swap(a, b); }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -157,7 +161,9 @@ public:
       e = *ca + *cb;
       return;
     }
-    if (ca && !cb) { std::swap(a, b); }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -220,7 +226,9 @@ public:
       e = *ca * *cb;
       return;
     }
-    if (ca && !cb) { std::swap(a, b); }
+    if (ca && !cb) {
+      std::swap(a, b);
+    }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
     } else {
@@ -271,8 +279,7 @@ public:
     }
 
     static std::vector<rule> rules = {
-        {x % 1, 0}, 
-        {x % x, 0},  // We define x % 0 to be 0.
+        {x % 1, 0}, {x % x, 0},  // We define x % 0 to be 0.
     };
     e = apply_rules(rules, e);
   }
@@ -286,17 +293,30 @@ public:
       e = *ca < *cb;
       return;
     }
+
+    expr result;
     if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
-        e = op;
+        result = op;
       } else {
-        e = a < b;
+        result = a < b;
       }
     } else if (ca) {
-      e = mutate(-b < -*ca);
+      result = mutate(-b < -*ca);
     } else {
-      e = mutate(a - b < 0);
+      result = mutate(a - b < 0);
     }
+
+    // Super scary, seems prone to infinite recursion...
+    interval bounds = bounds_of(result, expr_bounds);
+    if (!result.same_as(bounds.min) && is_true(mutate(bounds.min))) {
+      e = true;
+      return;
+    } else if (!result.same_as(bounds.max) && is_false(mutate(bounds.max))) {
+      e = false;
+      return;
+    }
+    e = result;
 
     static std::vector<rule> rules = {
         {c0 + x < c1, x < c1 - c0},
@@ -317,17 +337,30 @@ public:
       e = *ca <= *cb;
       return;
     }
+
+    expr result;
     if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
-        e = op;
+        result = op;
       } else {
-        e = a <= b;
+        result = a <= b;
       }
     } else if (ca) {
-      e = mutate(-b <= -*ca);
+      result = mutate(-b <= -*ca);
     } else {
-      e = mutate(a - b <= 0);
+      result = mutate(a - b <= 0);
     }
+
+    // Super scary, seems prone to infinite recursion...
+    interval bounds = bounds_of(result, expr_bounds);
+    if (!result.same_as(bounds.min) && is_true(mutate(bounds.min))) {
+      e = true;
+      return;
+    } else if (!result.same_as(bounds.max) && is_false(mutate(bounds.max))) {
+      e = false;
+      return;
+    }
+    e = result;
 
     static std::vector<rule> rules = {
         {c0 + x <= c1, x < c1 - c0},
@@ -459,7 +492,7 @@ public:
     const index_t* cb = as_constant(b);
 
     // Canonicalize to constant && other
-    if (cb && !ca) { 
+    if (cb && !ca) {
       std::swap(a, b);
       std::swap(ca, cb);
     }
@@ -507,7 +540,7 @@ public:
   void visit(const let* op) override { e = visit_let(op); }
   void visit(const let_stmt* op) override { s = visit_let(op); }
 
-  void visit(const loop* op) override { 
+  void visit(const loop* op) override {
     expr begin = mutate(op->begin);
     expr end = mutate(op->end);
 
@@ -534,7 +567,7 @@ public:
 
     stmt t = mutate(op->true_body);
     stmt f = mutate(op->false_body);
-    if (f.defined() && match(t, f)) { 
+    if (f.defined() && match(t, f)) {
       s = t;
     } else if (c.same_as(op->condition) && t.same_as(op->true_body) && f.same_as(op->false_body)) {
       s = op;
@@ -543,7 +576,7 @@ public:
     }
   }
 
-  void visit(const block* op) override { 
+  void visit(const block* op) override {
     stmt a = mutate(op->a);
     stmt b = mutate(op->b);
 
@@ -668,9 +701,9 @@ public:
     }
   }
 
-  void visit(const check* op) override { 
+  void visit(const check* op) override {
     expr c = mutate(op->condition);
-    if (is_true(c)) { 
+    if (is_true(c)) {
       s = stmt();
     } else if (is_false(c)) {
       std::cerr << op->condition << " is statically false." << std::endl;
@@ -683,6 +716,129 @@ public:
   }
 };
 
+class find_bounds : public node_visitor {
+  symbol_map<interval> bounds;
+
+public:
+  find_bounds(const symbol_map<interval>& bounds) : bounds(bounds) {}
+
+  interval result;
+
+  template <typename T>
+  void visit_variable(const T* x) {
+    if (bounds.contains(x->name)) {
+      result = *bounds.lookup(x->name);
+    } else {
+      result = {x, x};
+    }
+  }
+
+  virtual void visit(const variable* x) { visit_variable(x); }
+  virtual void visit(const wildcard* x) { visit_variable(x); }
+  virtual void visit(const constant* x) { result = interval(x); }
+
+  virtual void visit(const let* x) {
+    x->value.accept(this);
+    auto s = set_value_in_scope(bounds, x->name, result);
+    x->body.accept(this);
+  }
+
+  struct binary_result {
+    interval a;
+    interval b;
+  };
+  template <typename T>
+  binary_result binary_bounds(const T* x) {
+    x->a.accept(this);
+    interval ba = result;
+    x->b.accept(this);
+    return {ba, result};
+  }
+
+  template <typename T>
+  static expr make(const T* x, const expr& a, const expr& b) {
+    if (a.same_as(x->a) && b.same_as(x->b)) {
+      return x;
+    } else {
+      return T::make(a, b);
+    }
+  }
+
+  virtual void visit(const add* x) {
+    binary_result r = binary_bounds(x);
+    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
+  }
+  virtual void visit(const sub* x) {
+    binary_result r = binary_bounds(x);
+    result = {make(x, r.a.min, r.b.max), make(x, r.a.max, r.b.min)};
+  }
+
+  virtual void visit(const mul* x) {
+    binary_result r = binary_bounds(x);
+    expr corners[] = {
+        make(x, r.a.min, r.b.min),
+        make(x, r.a.min, r.b.max),
+        make(x, r.a.max, r.b.min),
+        make(x, r.a.max, r.b.max),
+    };
+    result = {min(corners), max(corners)};
+  }
+
+  virtual void visit(const div* x) { result = interval::all(); }
+  virtual void visit(const mod* x) { result = interval::all(); }
+
+  virtual void visit(const class min* x) {
+    binary_result r = binary_bounds(x);
+    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
+  }
+  virtual void visit(const class max* x) {
+    binary_result r = binary_bounds(x);
+    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
+  }
+  template <typename T>
+  void visit_less(const T* x) {
+    binary_result r = binary_bounds(x);
+    // This bit of genius comes from 
+    // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
+    result = {make(x, r.a.max, r.b.min), make(x, r.a.min, r.b.max)};
+  }
+  virtual void visit(const less* x) { visit_less(x); }
+  virtual void visit(const less_equal* x) { visit_less(x); }
+
+  virtual void visit(const equal* x) { result = interval(0, 1); }
+  virtual void visit(const not_equal* x) { result = interval(0, 1); }
+  virtual void visit(const logical_and* x) { result = interval(0, 1); }
+  virtual void visit(const logical_or* x) { result = interval(0, 1); }
+
+  virtual void visit(const bitwise_and* x) { result = interval::all(); }
+  virtual void visit(const bitwise_or* x) { result = interval::all(); }
+  virtual void visit(const bitwise_xor* x) { result = interval::all(); }
+  virtual void visit(const shift_left* x) { result = interval::all(); }
+  virtual void visit(const shift_right* x) { result = interval::all(); }
+
+  virtual void visit(const select* x) {
+    x->true_value.accept(this);
+    interval tb = result;
+    x->false_value.accept(this);
+    interval fb = result;
+
+    result = {min(tb.min, fb.min), max(tb.max, fb.max)};
+  }
+
+  virtual void visit(const load_buffer_meta* x) { result = {x, x}; }
+
+  virtual void visit(const let_stmt* x) { std::abort(); }
+  virtual void visit(const block* x) { std::abort(); }
+  virtual void visit(const loop* x) { std::abort(); }
+  virtual void visit(const if_then_else* x) { std::abort(); }
+  virtual void visit(const call* x) { std::abort(); }
+  virtual void visit(const allocate* x) { std::abort(); }
+  virtual void visit(const make_buffer* x) { std::abort(); }
+  virtual void visit(const crop_buffer* x) { std::abort(); }
+  virtual void visit(const crop_dim* x) { std::abort(); }
+  virtual void visit(const check* x) { std::abort(); }
+};
+
 }  // namespace
 
 expr simplify(const expr& e) { return simplifier().mutate(e); }
@@ -690,8 +846,16 @@ stmt simplify(const stmt& s) { return simplifier().mutate(s); }
 
 bool can_prove(const expr& e) {
   expr simplified = simplify(e);
-  if (const index_t* c = as_constant(simplified)) { return *c != 0; }
+  if (const index_t* c = as_constant(simplified)) {
+    return *c != 0;
+  }
   return false;
+}
+
+interval bounds_of(const expr& e, const symbol_map<interval>& bounds) {
+  find_bounds fb(bounds);
+  e.accept(&fb);
+  return fb.result;
 }
 
 }  // namespace slinky

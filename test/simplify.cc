@@ -113,9 +113,9 @@ T random_pick(const std::vector<T>& from) {
 
 constexpr int max_rank = 2;
 
-constexpr int max_constant = 1024;
+constexpr int max_abs_constant = 1024;
 
-index_t random_constant() { return rand() & (max_constant - 1); }
+index_t random_constant() { return (rand() & (2 * max_abs_constant - 1)) - max_abs_constant; }
 
 buffer_meta random_buffer_meta() {
   switch (rand() % 3) {
@@ -204,7 +204,9 @@ TEST(simplify_fuzz) {
         for (int d = 0; d < max_rank; ++d) {
           // TODO: Add one to extent because the simplifier assumes buffer_max >= buffer_min. This is not
           // correct in the case of empty buffers. But do we need to handle empty buffers...?
-          b->dim(d).set_min_extent(random_constant() - RAND_MAX / 2, random_constant() + 1);
+          index_t min = random_constant();
+          index_t max = std::max(min + 1, random_constant());
+          b->dim(d).set_bounds(min, max);
         }
       }
       index_t a = evaluate(test, ctx);
