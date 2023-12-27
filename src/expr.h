@@ -159,7 +159,7 @@ public:
   // This also means all the initializations in expr.cc are a mess.
   // TODO(https://github.com/dsharlet/slinky/issues/5): Maybe we should just roll our own
   // smart pointer, this sucks.
-  expr(const base_expr_node* e) : e(e->shared_from_this()) {}
+  expr(const base_expr_node* e) : e(e ? e->shared_from_this() : nullptr) {}
 
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
@@ -174,7 +174,7 @@ public:
 
   template <typename T>
   const T* as() const {
-    if (e->type == T::static_type) {
+    if (e && e->type == T::static_type) {
       return reinterpret_cast<const T*>(e.get());
     } else {
       return nullptr;
@@ -362,7 +362,7 @@ public:
 
   template <typename T>
   const T* as() const {
-    if (s->type == T::static_type) {
+    if (s && s->type == T::static_type) {
       return reinterpret_cast<const T*>(s.get());
     } else {
       return nullptr;
