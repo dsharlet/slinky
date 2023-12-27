@@ -24,9 +24,11 @@ public:
   bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* alloc) override {
-    std::optional<box>& bounds = inferring[alloc->name];
-    assert(!bounds);
-    bounds = box();
+    {
+      std::optional<box>& bounds = inferring[alloc->name];
+      assert(!bounds);
+      bounds = box();
+    }
     
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
@@ -51,7 +53,7 @@ public:
 
   expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) { 
     std::optional<box>& bounds = inferring[buffer];
-    if (bounds) {
+    if (bounds && d < bounds->size()) {
       switch (meta) {
       case buffer_meta::min: return (*bounds)[d].min;
       case buffer_meta::max: return (*bounds)[d].max;
@@ -85,10 +87,11 @@ public:
         }
       }
 
-      box& bounds = *inferring[input.buffer->name()];
-      bounds.reserve(input.bounds.size());
-      while (bounds.size() < input.bounds.size()) { 
-        bounds.push_back(interval::union_identity());
+      std::optional<box>& bounds = inferring[input.buffer->name()];
+      assert(bounds);
+      bounds->reserve(input.bounds.size());
+      while (bounds->size() < input.bounds.size()) { 
+        bounds->push_back(interval::union_identity());
       }
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
@@ -96,7 +99,7 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        bounds[d] |= interval(min, max) | interval(max, min);
+        (*bounds)[d] |= interval(min, max) | interval(max, min);
       }
     }
 
