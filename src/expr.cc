@@ -73,9 +73,19 @@ std::shared_ptr<const variable> make_variable(symbol_id name) {
 }
 
 std::shared_ptr<const constant> make_constant(index_t value) {
-  auto n = std::make_shared<constant>();
-  n->value = value;
-  return n;
+  if (value == std::numeric_limits<index_t>::min()) {
+    static auto n = std::make_shared<constant>();
+    n->value = value;
+    return n;
+  } else if (value == std::numeric_limits<index_t>::max()) {
+    static auto n = std::make_shared<constant>();
+    n->value = value;
+    return n;
+  } else {
+    auto n = std::make_shared<constant>();
+    n->value = value;
+    return n;
+  }
 }
 
 expr variable::make(symbol_id name) { return make_variable(name).get(); }

@@ -58,6 +58,64 @@ inline T align_down(T x, T n) {
   return floor_div(x, n) * n;
 }
 
+template <typename T>
+inline T saturate_add(T a, T b) {
+  T result;
+  if (!__builtin_add_overflow(a, b, &result)) {
+    return result;
+  } else {
+    return (a >> 1) + (b >> 1) > 0 ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+  }
+}
+
+template <typename T>
+inline T saturate_sub(T a, T b) {
+  T result;
+  if (!__builtin_sub_overflow(a, b, &result)) {
+    return result;
+  } else {
+    return (a >> 1) - (b >> 1) > 0 ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+  }
+}
+template <typename T>
+inline T saturate_negate(T x) {
+  if (x == std::numeric_limits<T>::min()) {
+    return std::numeric_limits<T>::max();
+  } else {
+    return -x;
+  }
+}
+
+template <typename T>
+inline int sign(T x) { return x >= 0 ? 1 : -1; }
+
+template <typename T>
+inline T saturate_mul(T a, T b) {
+  T result;
+  if (!__builtin_mul_overflow(a, b, &result)) {
+    return result;
+  } else {
+    return sign(a) * sign(b) > 0 ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+  }
+}
+
+template <typename T>
+inline T saturate_div(T a, T b) {
+  // This is safe from overflow unless a is +inf and b is -1.
+  if (a == std::numeric_limits<T>::max() && b == -1) {
+    return std::numeric_limits<T>::min();
+  } else {
+    return euclidean_div(a, b);
+  }
+}
+
+template <typename T>
+inline T saturate_mod(T a, T b) {
+  // Can this overflow...?
+  return euclidean_mod(a, b);
+}
+
+
 }  // namespace slinky
 
 #endif  // SLINKY_EUCLIDEAN_DIVISION_H

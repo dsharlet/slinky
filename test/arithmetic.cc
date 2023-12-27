@@ -1,4 +1,4 @@
-#include "euclidean_division.h"
+#include "arithmetic.h"
 
 #include "test.h"
 

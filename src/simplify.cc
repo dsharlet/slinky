@@ -309,10 +309,10 @@ public:
 
     // Super scary, seems prone to infinite recursion...
     interval bounds = bounds_of(result, expr_bounds);
-    if (!result.same_as(bounds.min) && is_true(mutate(bounds.min))) {
+    if (!result.same_as(bounds.min) && is_true(simplify(bounds.min))) {
       e = true;
       return;
-    } else if (!result.same_as(bounds.max) && is_false(mutate(bounds.max))) {
+    } else if (!result.same_as(bounds.max) && is_false(simplify(bounds.max))) {
       e = false;
       return;
     }
@@ -353,10 +353,10 @@ public:
 
     // Super scary, seems prone to infinite recursion...
     interval bounds = bounds_of(result, expr_bounds);
-    if (!result.same_as(bounds.min) && is_true(mutate(bounds.min))) {
+    if (!result.same_as(bounds.min) && is_true(simplify(bounds.min))) {
       e = true;
       return;
-    } else if (!result.same_as(bounds.max) && is_false(mutate(bounds.max))) {
+    } else if (!result.same_as(bounds.max) && is_false(simplify(bounds.max))) {
       e = false;
       return;
     }
@@ -555,8 +555,8 @@ public:
     }
   }
 
-  void visit(const if_then_else* op) override { 
-    expr c = mutate(op->condition); 
+  void visit(const if_then_else* op) override {
+    expr c = mutate(op->condition);
     if (is_true(c)) {
       s = mutate(op->true_body);
       return;
@@ -766,26 +766,83 @@ public:
 
   virtual void visit(const add* x) {
     binary_result r = binary_bounds(x);
-    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
+    expr min = std::numeric_limits<index_t>::min();
+    if (is_infinity(r.a.min) || is_infinity(r.b.min)) {
+      min = slinky::min(r.a.min, r.b.min);
+    } else {
+      min = make(x, r.a.min, r.b.min);
+    }
+    expr max = std::numeric_limits<index_t>::max();
+    if (is_infinity(r.a.max) || is_infinity(r.b.max)) {
+      max = slinky::max(r.a.max, r.b.max);
+    } else {
+      max = make(x, r.a.max, r.b.max);
+    }
+    result = {min, max};
   }
   virtual void visit(const sub* x) {
     binary_result r = binary_bounds(x);
-    result = {make(x, r.a.min, r.b.max), make(x, r.a.max, r.b.min)};
+    expr min = std::numeric_limits<index_t>::min();
+    if (is_infinity(r.a.min) || is_infinity(r.b.max)) {
+      min = slinky::min(r.a.min, r.b.max);
+    } else {
+      min = make(x, r.a.min, r.b.max);
+    }
+    expr max = std::numeric_limits<index_t>::max();
+    if (is_infinity(r.a.max) || is_infinity(r.b.min)) {
+      max = slinky::max(r.a.max, r.b.min);
+    } else {
+      max = make(x, r.a.max, r.b.min);
+    }
+    result = {min, max};
   }
 
   virtual void visit(const mul* x) {
     binary_result r = binary_bounds(x);
-    expr corners[] = {
-        make(x, r.a.min, r.b.min),
-        make(x, r.a.min, r.b.max),
-        make(x, r.a.max, r.b.min),
-        make(x, r.a.max, r.b.max),
-    };
-    result = {min(corners), max(corners)};
+    if (r.a.is_single_point() && r.b.is_single_point()) {
+      result = interval(make(x, r.a.min, r.b.min));
+    } else if (r.b.is_single_point()) {
+      expr corners[] = {
+          make(x, r.a.min, r.b.min),
+          make(x, r.a.max, r.b.min),
+      };
+      result = {min(corners), max(corners)};
+    } else if (r.a.is_single_point()) {
+      expr corners[] = {
+          make(x, r.a.min, r.b.min),
+          make(x, r.a.min, r.b.max),
+      };
+      result = {min(corners), max(corners)};
+    } else {
+      expr corners[] = {
+          make(x, r.a.min, r.b.min),
+          make(x, r.a.min, r.b.max),
+          make(x, r.a.max, r.b.min),
+          make(x, r.a.max, r.b.max),
+      };
+      result = {min(corners), max(corners)};
+    }
   }
 
-  virtual void visit(const div* x) { result = interval::all(); }
-  virtual void visit(const mod* x) { result = interval::all(); }
+  virtual void visit(const div* x) {
+    binary_result r = binary_bounds(x);
+    if (r.a.is_single_point() && r.b.is_single_point()) {
+      result = interval(make(x, r.a.min, r.b.min));
+    } else if (r.b.is_single_point()) {
+      expr corners[] = {
+          make(x, r.a.min, r.b.min),
+          make(x, r.a.max, r.b.min),
+      };
+      result = {min(corners), max(corners)};
+    } else {
+      // TODO: Tighten these bounds.
+      result = r.a | -r.a;
+    }
+  }
+  virtual void visit(const mod* x) {
+    expr proxy = select::make(x->b < 0, -x->b, x->b);
+    proxy.accept(this);
+  }
 
   virtual void visit(const class min* x) {
     binary_result r = binary_bounds(x);
@@ -798,7 +855,7 @@ public:
   template <typename T>
   void visit_less(const T* x) {
     binary_result r = binary_bounds(x);
-    // This bit of genius comes from 
+    // This bit of genius comes from
     // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
     result = {make(x, r.a.max, r.b.min), make(x, r.a.min, r.b.max)};
   }

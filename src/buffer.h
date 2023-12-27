@@ -9,7 +9,7 @@
 #include <memory>
 #include <span>
 
-#include "euclidean_division.h"
+#include "arithmetic.h"
 
 namespace slinky {
 

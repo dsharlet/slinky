@@ -192,9 +192,19 @@ TEST(simplify_fuzz) {
     ctx[bufs[i]] = reinterpret_cast<index_t>(buffers[i].get());
   }
 
+  symbol_map<interval> var_bounds;
+  for (const expr& v : vars) {
+    var_bounds[*as_variable(v)] = {-max_abs_constant, max_abs_constant};
+  }
+
   for (int i = 0; i < tests; ++i) {
     expr test = make_random_expr(2);
     expr simplified = simplify(test);
+
+    // Also test bounds_of.
+    interval bounds = bounds_of(test, var_bounds);
+    bounds.min = simplify(bounds.min);
+    bounds.max = simplify(bounds.max);
 
     for (int j = 0; j < checks; ++j) {
       for (const expr& v : vars) {
@@ -212,13 +222,34 @@ TEST(simplify_fuzz) {
       index_t a = evaluate(test, ctx);
       index_t b = evaluate(simplified, ctx);
       if (a != b) {
-        std::cerr << "Failure (seed = " << seed << "): " << std::endl;
+        std::cerr << "simplify failure (seed = " << seed << "): " << std::endl;
         print(std::cerr, test, &symbols);
         std::cerr << std::endl;
         print(std::cerr, simplified, &symbols);
         std::cerr << std::endl;
         std::cerr << ctx << std::endl;
         ASSERT_EQ(a, b);
+      } else {
+        index_t min = evaluate(bounds.min, ctx);
+        index_t max = evaluate(bounds.max, ctx);
+        if (a < min) {
+          std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << std::endl;
+          print(std::cerr, bounds.min, &symbols);
+          std::cerr << std::endl;
+          std::cerr << ctx << std::endl;
+          ASSERT_LE(min, a);
+        }
+        if (a > max) {
+          std::cerr << "bounds_of upper bound failure (seed = " << seed << "): " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << std::endl;
+          print(std::cerr, bounds.max, &symbols);
+          std::cerr << std::endl;
+          std::cerr << ctx << std::endl;
+          ASSERT_LE(a, max);
+        }
       }
     }
   }

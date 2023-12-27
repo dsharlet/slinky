@@ -247,6 +247,8 @@ struct interval {
 
   bool same_as(const interval& r) { return min.same_as(r.min) && max.same_as(r.max); }
 
+  bool is_single_point() const { return min.same_as(max); }
+
   static interval all();
   static interval none();
   // An interval x such that x | y == y
@@ -332,6 +334,10 @@ struct interval {
     result &= r;
     return result;
   }
+
+  interval operator-() const { 
+    return {-max, -min};
+  }
 };
 
 inline interval operator*(const expr& a, const interval& b) { return b * a; }
@@ -350,7 +356,7 @@ public:
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
   stmt(const base_stmt_node* s) : s(s->shared_from_this()) {}
-  
+
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
 
@@ -750,19 +756,22 @@ inline const symbol_id* as_variable(const expr& x) {
   return vx ? &vx->name : nullptr;
 }
 
-inline bool is_zero(const expr& x) {
+inline bool is_constant(const expr& x, index_t value) {
   const constant* cx = x.as<constant>();
-  return cx ? cx->value == 0 : false;
+  return cx ? cx->value == value : false;
 }
 
+inline bool is_zero(const expr& x) { return is_constant(x, 0); }
 inline bool is_true(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value != 0 : false;
 }
 
-inline bool is_false(const expr& x) {
-  return is_zero(x);
-}
+inline bool is_false(const expr& x) { return is_zero(x); }
+
+inline bool is_positive_infinity(const expr& x) { return is_constant(x, std::numeric_limits<index_t>::max()); }
+inline bool is_negative_infinity(const expr& x) { return is_constant(x, std::numeric_limits<index_t>::min()); }
+inline bool is_infinity(const expr& x) { return is_positive_infinity(x) || is_negative_infinity(x); }
 
 }  // namespace slinky
 
