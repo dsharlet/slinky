@@ -11,7 +11,7 @@ class buffer_expr;
 using buffer_expr_ptr = std::shared_ptr<buffer_expr>;
 
 struct loop_id {
-  const func* f;
+  const func* f = nullptr;
   expr loop;
 };
 
