@@ -277,9 +277,6 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
     expr buf_var = variable::make(i);
     const box& bounds = *b.inferring[i];
     index_t rank = static_cast<index_t>(bounds.size());
-    checks.push_back(check::make(buf_var != 0));
-    checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::rank) == rank));
-    checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::base) != 0));
     for (int d = 0; d < rank; ++d) {
       expr min = load_buffer_meta::make(buf_var, buffer_meta::min, d);
       expr max = load_buffer_meta::make(buf_var, buffer_meta::max, d);

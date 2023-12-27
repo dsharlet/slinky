@@ -263,6 +263,22 @@ public:
   }
 };
 
+void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
+  int rank = static_cast<int>(b->rank());
+  expr buf_var = variable::make(b->name());
+  checks.push_back(check::make(buf_var != 0));
+  checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::rank) == rank));
+  checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::base) != 0));
+  for (int d = 0; d < rank; ++d) {
+    checks.push_back(check::make(b->dim(d).min == load_buffer_meta::make(buf_var, buffer_meta::min, d)));
+    checks.push_back(check::make(b->dim(d).extent == load_buffer_meta::make(buf_var, buffer_meta::extent, d)));
+    checks.push_back(
+        check::make(b->dim(d).stride_bytes == load_buffer_meta::make(buf_var, buffer_meta::stride_bytes, d)));
+    checks.push_back(
+        check::make(b->dim(d).fold_factor == load_buffer_meta::make(buf_var, buffer_meta::fold_factor, d)));
+  }
+}
+
 stmt build_pipeline(
     node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
   pipeline_builder builder(inputs, outputs);
@@ -283,8 +299,6 @@ stmt build_pipeline(
     builder.produce(result, f, /*root=*/true);
   }
 
-  print(std::cerr, result, &ctx);
-
   std::vector<symbol_id> input_names;
   input_names.reserve(inputs.size());
   for (const buffer_expr_ptr& i : inputs) {
@@ -295,15 +309,10 @@ stmt build_pipeline(
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
-    expr buf_var = variable::make(i->name());
-    for (int d = 0; d < static_cast<int>(i->rank()); ++d) {
-      checks.push_back(check::make(i->dim(d).min == load_buffer_meta::make(buf_var, buffer_meta::min, d)));
-      checks.push_back(check::make(i->dim(d).extent == load_buffer_meta::make(buf_var, buffer_meta::extent, d)));
-      checks.push_back(
-          check::make(i->dim(d).stride_bytes == load_buffer_meta::make(buf_var, buffer_meta::stride_bytes, d)));
-      checks.push_back(
-          check::make(i->dim(d).fold_factor == load_buffer_meta::make(buf_var, buffer_meta::fold_factor, d)));
-    }
+    add_buffer_checks(i, checks);
+  }
+  for (const buffer_expr_ptr& i : outputs) {
+    add_buffer_checks(i, checks);
   }
   result = block::make(block::make(checks), result);
 
