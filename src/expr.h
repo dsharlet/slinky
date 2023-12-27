@@ -247,7 +247,9 @@ struct interval {
 
   static interval all();
   static interval none();
+  // An interval x such that x | y == y
   static interval union_identity();
+  // An interval x such that x & y == y
   static interval intersection_identity();
 
   expr extent() const { return max - min + 1; }

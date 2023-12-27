@@ -1,10 +1,9 @@
 #include "substitute.h"
 
 #include <cassert>
-#include <iostream>
 
 #include "node_mutator.h"
-#include "print.h"
+#include "symbol_map.h"
 
 namespace slinky {
 
@@ -271,26 +270,21 @@ std::map<symbol_id, expr> empty_replacements;
 class substitutor : public node_mutator {
   const std::map<symbol_id, expr>& replacements = empty_replacements;
   symbol_id target_var = -1;
-  expr target;
   expr replacement;
+
+  // Track newly declared variables that might shadow the variables we want to replace.
+  symbol_map<bool> shadowed;
 
 public:
   substitutor(const std::map<symbol_id, expr>& replacements) : replacements(replacements) {}
   substitutor(symbol_id target, const expr& replacement) : target_var(target), replacement(replacement) {}
-  substitutor(const expr& target, const expr& replacement) : target(target), replacement(replacement) {}
-
-  expr mutate(const expr& x) {
-    if (target.defined() && match(target, x)) { 
-      return replacement;
-    } else {
-      return node_mutator::mutate(x);
-    }
-  }
-  using node_mutator::mutate;
 
   template <typename T>
   void visit_variable(const T* v) {
-    if (v->name == target_var) {
+    if (shadowed.contains(v->name)) { 
+      // This variable has been shadowed, don't substitute it.
+      e = v;
+    } else if (v->name == target_var) {
       e = replacement;
     } else {
       auto i = replacements.find(v->name);
@@ -304,6 +298,18 @@ public:
 
   void visit(const variable* v) override { visit_variable(v); }
   void visit(const wildcard* v) override { visit_variable(v); }
+
+  template <typename T>
+  void visit_decl(const T* x, symbol_id name) {
+    auto s = set_value_in_scope(shadowed, name, true);
+    node_mutator::visit(x);
+  }
+
+  void visit(const loop* x) override { visit_decl(x, x->name); }
+  void visit(const let* x) override { visit_decl(x, x->name); }
+  void visit(const let_stmt* x) override { visit_decl(x, x->name); }
+  void visit(const allocate* x) override { visit_decl(x, x->name); }
+  void visit(const make_buffer* x) override { visit_decl(x, x->name); }
 };
 
 }  // namespace
@@ -319,13 +325,6 @@ expr substitute(const expr& e, symbol_id target, const expr& replacement) {
   return substitutor(target, replacement).mutate(e);
 }
 stmt substitute(const stmt& s, symbol_id target, const expr& replacement) {
-  return substitutor(target, replacement).mutate(s);
-}
-
-expr substitute(const expr& e, const expr& target, const expr& replacement) {
-  return substitutor(target, replacement).mutate(e);
-}
-stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
   return substitutor(target, replacement).mutate(s);
 }
 
