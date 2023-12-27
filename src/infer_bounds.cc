@@ -66,6 +66,7 @@ public:
 
   void visit(const call* c) override {
     assert(c->fn);
+    // Expand the bounds required of the inputs.
     for (const func::input& input : c->fn->inputs()) {
       std::map<symbol_id, expr> mins, maxs;
       // TODO(https://github.com/dsharlet/slinky/issues/7): We need a better way to map
@@ -103,23 +104,27 @@ public:
       }
     }
 
+    // Add any crops necessary.
     s = c;
-
     for (const func::output& output : c->fn->outputs()) {
       std::optional<box>& bounds = inferring[output.buffer->name()];
       if (!bounds) continue;
+
+      // Maybe a hack? Keep the original bounds for inference purposes, but compute new bounds
+      // (sliding window) for the crop.
+      box crop_bounds = *bounds;
 
       std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->name());
 
       for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
         symbol_id loop_name = loop_mins[l].first;
-        box prev_bounds(bounds->size());
+        box prev_bounds(crop_bounds.size());
         std::map<symbol_id, expr> prev_iter = {{loop_name, variable::make(loop_name) - 1}};
-        for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-          prev_bounds[d].min = simplify(substitute((*bounds)[d].min, prev_iter));
-          prev_bounds[d].max = simplify(substitute((*bounds)[d].max, prev_iter));
-          if (can_prove(prev_bounds[d].min < (*bounds)[d].min) && can_prove(prev_bounds[d].max < (*bounds)[d].max)) {
-            expr& old_min = (*bounds)[d].min;
+        for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
+          prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, prev_iter));
+          prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, prev_iter));
+          if (can_prove(prev_bounds[d].min < crop_bounds[d].min) && can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
+            expr& old_min = crop_bounds[d].min;
             expr new_min = prev_bounds[d].max + 1;
             loop_mins[l].second -= simplify(new_min - old_min);
             old_min = new_min;
@@ -127,7 +132,7 @@ public:
         }
       }
 
-      s = crop_buffer::make(output.buffer->name(), *bounds, s);
+      s = crop_buffer::make(output.buffer->name(), crop_bounds, s);
     }
 
     // Insert ifs around these calls, in case the loop min shifts later.
@@ -191,6 +196,8 @@ public:
     // range of the loop. I was debugging a failure regarding this when I made an unrelated
     // change, and it magically started working. It *shouldn't* work, I expect this bug will
     // appear again. See the TODO: HORRIBLE HACK: above for more.
+    // Use the original loop min. Hack?
+    loop_min = l->begin;
     expr loop_max = l->end - 1;
     for (std::optional<box>& i : inferring) {
       if (!i) continue;

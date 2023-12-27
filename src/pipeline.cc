@@ -96,39 +96,69 @@ public:
         }
 
         for (const func::input& j : i->producer()->inputs()) {
-          if (!to_produce.count(j.buffer)) { produce_next.insert(j.buffer); }
+          if (!to_produce.count(j.buffer)) {
+            produce_next.insert(j.buffer);
+          }
         }
       }
-      if (produce_next.empty()) { break; }
+      if (produce_next.empty()) break;
+
       to_produce.insert(produce_next.begin(), produce_next.end());
     }
   }
 
-  // Find the func f to run next. This is the func that produces a buffer we need that we have not
-  // yet produced, and all the buffers produced by f are ready to be consumed.
-  const func* find_next_producer() const {
-    const func* f;
-    for (const buffer_expr_ptr& i : to_produce) {
-      if (produced.count(i)) {
-        // Already produced.
+  // f can be called if it doesn't have an output that is consumed by a not yet produced buffer's producer.
+  bool can_produce(const func* f) const {
+    for (const buffer_expr_ptr& p : to_produce) {
+      if (produced.count(p)) {
+        // This buffer is already produced.
         continue;
       }
-      f = i->producer();
-
-      for (const func* j : i->consumers()) {
-        for (const func::output& k : j->outputs()) {
-          if (k.buffer == i) {
-            // This is the buffer we are proposing to produce now.
-            continue;
-          }
-          if (!produced.count(k.buffer)) {
-            // f produces a buffer that is needed by another func that has not yet run.
-            f = nullptr;
-            break;
+      if (!p->producer()) {
+        // Must be an input.
+        continue;
+      }
+      if (p->producer() == f) {
+        // This is the producer we are considering now.
+        continue;
+      }
+      for (const func::output& o : f->outputs()) {
+        for (const func::input& i : p->producer()->inputs()) {
+          if (i.buffer == o.buffer) {
+            // f produces a buffer that one of the other yet to be produced buffers needs as an
+            // input.
+            return false;
           }
         }
       }
-      if (f) { return f; }
+    }
+    return true;
+  }
+
+  // Find the func f to run next. This is the func that produces a buffer we need that we have not
+  // yet produced, and all the buffers produced by f are ready to be consumed.
+  const func* find_next_producer(const func* in = nullptr, const expr& loop = expr()) const {
+    for (const buffer_expr_ptr& i : to_produce) {
+      if (produced.count(i)) continue;
+
+      if (!i->producer()) {
+        // This is probably an input.
+        continue;
+      }
+
+      if (!can_produce(i->producer())) {
+        // This isn't ready to be produced yet.
+        continue;
+      }
+
+      if (!in) {
+        assert(i->producer()->compute_at().f == nullptr);
+        return i->producer();
+      }
+
+      assert(loop.defined());
+      const loop_id& at = i->producer()->compute_at();
+      if (at.f == in && *as_variable(at.loop) == *as_variable(loop)) return i->producer();
     }
     return nullptr;
   }
@@ -141,7 +171,7 @@ public:
         // Find the crops for this buffer in this scope level s.
         auto b = s.find(o.buffer->name());
         if (b == s.end()) continue;
-        
+
         // Add all the crops for this buffer.
         for (const crop_info& c : b->second) {
           result = crop_dim::make(b->first, c.dim, c.min, c.extent, result);
@@ -170,15 +200,8 @@ public:
     body = add_crops(body, f);
 
     // Before making this loop, see if there are any producers we need to insert here.
-    for (const buffer_expr_ptr& i : to_produce) {
-      if (!i->producer()) {
-        // Must be an input.
-        continue;
-      }
-      const loop_id& at = i->producer()->compute_at();
-      if (at.f == f && *as_variable(at.loop) == *as_variable(loop)) { 
-        produce(body, i->producer()); 
-      }
+    while (const func* next = find_next_producer(f, loop)) {
+      produce(body, next);
     }
 
     for (const buffer_expr_ptr& i : to_allocate) {
@@ -215,25 +238,27 @@ public:
     }
     for (const func::output& i : f->outputs()) {
       buffer_args.push_back(i.buffer->name());
-      if (!allocated.count(i.buffer)) { to_allocate.insert(i.buffer); }
+      if (!allocated.count(i.buffer)) {
+        to_allocate.insert(i.buffer);
+      }
     }
     stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
+
+    for (const func::output& i : f->outputs()) {
+      produced.insert(i.buffer);
+    }
 
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       call_f = make_loop(call_f, f, loop);
     }
-    result = result.defined() ? block::make(call_f, result) : call_f;
+    result = block::make({call_f, result});
     if (root) {
       for (const auto& i : to_allocate) {
         result = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), result);
         allocated.insert(i);
       }
       to_allocate.clear();
-    }
-
-    for (const func::output& i : f->outputs()) {
-      produced.insert(i.buffer);
     }
   }
 };
@@ -257,6 +282,8 @@ stmt build_pipeline(
 
     builder.produce(result, f, /*root=*/true);
   }
+
+  print(std::cerr, result, &ctx);
 
   std::vector<symbol_id> input_names;
   input_names.reserve(inputs.size());
