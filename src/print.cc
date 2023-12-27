@@ -148,8 +148,8 @@ public:
   }
 
   void visit(const block* b) override {
-    print(b->a);
-    print(b->b);
+    if (b->a.defined()) { print(b->a); }
+    if (b->b.defined()) { print(b->b); }
   }
 
   void visit(const loop* l) override {

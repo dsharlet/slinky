@@ -536,6 +536,30 @@ public:
     }
   }
 
+  void visit(const block* op) override { 
+    stmt a = mutate(op->a);
+    stmt b = mutate(op->b);
+
+    const if_then_else* a_if = a.as<if_then_else>();
+    const if_then_else* b_if = b.as<if_then_else>();
+
+    if (a_if && b_if && match(a_if->condition, b_if->condition)) {
+      stmt true_body = mutate(block::make({a_if->true_body, b_if->true_body}));
+      stmt false_body = mutate(block::make({a_if->false_body, b_if->false_body}));
+      s = if_then_else::make(a_if->condition, true_body, false_body);
+    } else if (!a.defined() && !b.defined()) {
+      s = stmt();
+    } else if (!a.defined()) {
+      s = b;
+    } else if (!b.defined()) {
+      s = a;
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      s = op;
+    } else {
+      s = block::make(a, b);
+    }
+  }
+
   void visit(const allocate* op) override {
     std::vector<dim_expr> dims;
     box bounds;

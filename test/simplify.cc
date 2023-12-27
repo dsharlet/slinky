@@ -24,6 +24,14 @@ void test_simplify(const expr& test, const expr& expected) {
   }
 }
 
+void test_simplify(const stmt& test, const stmt& expected) {
+  stmt result = simplify(test);
+  if (!match(result, expected)) {
+    std::cout << "simplify(" << test << ") -> " << result << " != " << expected << std::endl;
+    ASSERT(false);
+  }
+}
+
 TEST(simplify) {
   test_simplify(expr(1) + 2, 3);
   test_simplify(expr(1) - 2, -1);
@@ -83,6 +91,13 @@ TEST(simplify_load_buffer_meta) {
   test_simplify(
       max(load_buffer_meta::make(x, buffer_meta::max, y) + 1, load_buffer_meta::make(x, buffer_meta::min, y) - 1),
       load_buffer_meta::make(x, buffer_meta::max, y) + 1);
+}
+
+TEST(simplify_if_then_else) { 
+  test_simplify(if_then_else::make(x == x, check::make(y), check::make(z)), check::make(y));
+  test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
+  test_simplify(block::make(if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))),
+      if_then_else::make(x, block::make(check::make(y), check::make(z))));
 }
 
 std::vector<expr> vars = {x, y, z};
