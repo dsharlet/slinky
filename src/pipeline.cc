@@ -331,11 +331,10 @@ pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::
   body = build_pipeline(ctx, inputs_, outputs_);
 }
 
-index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const {
+index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const {
   assert(inputs.size() == inputs_.size());
   assert(outputs.size() == outputs_.size());
 
-  eval_context ctx;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
     ctx[inputs_[i]->name()] = reinterpret_cast<index_t>(inputs[i]);
   }
@@ -344,6 +343,11 @@ index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const
   }
 
   return slinky::evaluate(body, ctx);
+}
+
+index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const {
+  eval_context ctx;
+  return evaluate(inputs, outputs, ctx);
 }
 
 }  // namespace slinky

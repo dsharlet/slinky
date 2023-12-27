@@ -118,7 +118,7 @@ public:
     index_t end = eval_expr(l->end);
     // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[l->name] here
     // because the context could grow and invalidate the reference. This could be fixed by having evaluate
-    // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's 
+    // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
     // not clear this optimization is necessary yet.
     std::optional<index_t> old_value = context[l->name];
     for (index_t i = begin; i < end; ++i) {
@@ -174,17 +174,22 @@ public:
 
     std::size_t size = buffer->size_bytes();
 
+    eval_context::memory_info::alloc_tracker tracker;
     if (n->type == memory_type::stack) {
       buffer->base = alloca(size);
+      tracker = context.stack.track_allocate(size);
     } else {
       assert(n->type == memory_type::heap);
       buffer->base = malloc(size);
+      tracker = context.heap.track_allocate(size);
     }
 
     auto set_buffer = set_value_in_scope(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
-    if (n->type == memory_type::heap) { free(buffer->base); }
+    if (n->type == memory_type::heap) {
+      free(buffer->base);
+    }
   }
 
   void visit(const make_buffer* n) override {
@@ -203,7 +208,6 @@ public:
       dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
-
 
     auto set_buffer = set_value_in_scope(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
@@ -250,7 +254,7 @@ public:
       index_t min = eval_expr(n->bounds[d].min, dim.min());
       index_t max = eval_expr(n->bounds[d].max, dim.max());
       offset += dim.flat_offset_bytes(min);
-      
+
       dim.set_bounds(min, max);
     }
 

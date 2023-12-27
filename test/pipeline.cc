@@ -37,7 +37,10 @@ TEST(pipeline_trivial) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.peak_size, 0);
+  ASSERT_EQ(eval_ctx.stack.peak_size, 0);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i);
@@ -86,7 +89,11 @@ TEST(pipeline_trivial_explicit) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, 0);
+  ASSERT_EQ(eval_ctx.stack.total_size, 0);
+
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i);
@@ -124,7 +131,10 @@ TEST(pipeline_elementwise_1d) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
@@ -149,6 +159,7 @@ TEST(pipeline_elementwise_1d_explicit) {
   mul.compute_at({&add, x});
 
   intm->store_at({&add, x});
+  intm->store_in(memory_type::stack);
 
   pipeline p(ctx, {in}, {out});
 
@@ -167,7 +178,14 @@ TEST(pipeline_elementwise_1d_explicit) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.stack.peak_size, sizeof(int));
+  ASSERT_EQ(eval_ctx.stack.peak_count, 1);
+  ASSERT_EQ(eval_ctx.stack.total_size, N * sizeof(int));
+  ASSERT_EQ(eval_ctx.stack.total_count, N);
+  ASSERT_EQ(eval_ctx.heap.total_size, 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
@@ -219,7 +237,12 @@ TEST(pipeline_matmuls) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
   const buffer_base* outputs[] = {&abc_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, M * N * sizeof(int));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(eval_ctx.stack.total_size, 0);
+  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
   buffer<int, 2> ref_ab({M, N});
   buffer<int, 2> ref_abc({M, N});
@@ -273,10 +296,10 @@ TEST(pipeline_pyramid) {
   pipeline p(ctx, {in}, {out});
 
   // Run the pipeline.
-  const int M = 10;
-  const int N = 10;
-  buffer<int, 2> in_buf({M, N});
-  buffer<int, 2> out_buf({M, N});
+  const int W = 10;
+  const int H = 10;
+  buffer<int, 2> in_buf({W, H});
+  buffer<int, 2> out_buf({W, H});
 
   init_random(in_buf);
   out_buf.allocate();
@@ -284,7 +307,12 @@ TEST(pipeline_pyramid) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(int) / 4);
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(eval_ctx.stack.total_size, 0);
+  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 }
 
 TEST(pipeline_stencil) {
@@ -322,7 +350,12 @@ TEST(pipeline_stencil) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(eval_ctx.stack.total_size, 0);
+  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -364,7 +397,12 @@ TEST(pipeline_flip_y) {
   out_buf.allocate();
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  p.evaluate(inputs, outputs);
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(eval_ctx.stack.total_size, 0);
+  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {

@@ -2,6 +2,7 @@
 #define SLINKY_PIPELINE_H
 
 #include "expr.h"
+#include "evaluate.h"
 
 namespace slinky {
 
@@ -178,6 +179,7 @@ class pipeline {
 public:
   pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs);
 
+  index_t evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const;
   index_t evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const;
 };
 
