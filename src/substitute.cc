@@ -60,6 +60,11 @@ public:
   }
 
   bool try_match(const stmt& self, const stmt& x) {
+    if (!self.defined() && !x.defined()) { return true; }
+    if (!self.defined() || !x.defined()) {
+      match = false;
+      return false;
+    }
     s = self;
     x.accept(this);
     return match;
