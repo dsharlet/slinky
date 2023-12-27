@@ -7,7 +7,7 @@ AlignAfterOpenBracket: DontAlign
 AlwaysBreakTemplateDeclarations: Yes
 AllowShortFunctionsOnASingleLine: All
 AllowShortCaseLabelsOnASingleLine: true
-AllowShortBlocksOnASingleLine: Always
+AllowShortBlocksOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Always
 AllowShortLoopsOnASingleLine: false
 ColumnLimit: 120
