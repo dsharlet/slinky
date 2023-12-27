@@ -73,6 +73,9 @@ TEST(simplify) {
   test_simplify(false && x, false);
   test_simplify(true || x, true);
   test_simplify(false || x, x);
+
+  test_simplify(x < x + 1, true);
+  test_simplify(x - 1 < x + 1, true);
 }
 
 TEST(simplify_let) {

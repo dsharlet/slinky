@@ -198,6 +198,7 @@ public:
         {x - 0, x},
         {x - (0 - y), x + y},
         {(x + y) - x, y},
+        {x - (x + y), -y},
         {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
         {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
     };
