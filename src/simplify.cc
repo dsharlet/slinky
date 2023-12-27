@@ -596,7 +596,7 @@ public:
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       s = op;
     } else {
-      s = block::make(a, b);
+      s = block::make(std::move(a), std::move(b));
     }
   }
 
@@ -666,7 +666,7 @@ public:
     stmt body = mutate(op->body);
     if (one_dim >= 0) {
       interval& dim = bounds[one_dim];
-      s = crop_dim::make(op->name, one_dim, dim.min, dim.extent(), std::move(body));
+      s = crop_dim::make(op->name, one_dim, dim.min, mutate(dim.extent()), std::move(body));
     } else {
       // Remove trailing undefined bounds.
       while (bounds.size() > 0 && !bounds.back().min.defined() && !bounds.back().max.defined()) {
@@ -681,7 +681,7 @@ public:
     expr extent = mutate(op->extent);
 
     std::optional<box> bounds = buffer_bounds[op->name];
-    if (bounds && bounds->size() > op->dim) {
+    if (bounds && op->dim < bounds->size()) {
       interval& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);
       if (match(min, dim.min) && match(max, dim.max)) {
