@@ -147,4 +147,4 @@ index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
 
 }  // namespace slinky
 
-#endif  // SLINKY_TEST_TEST_H
+#endif  // SLINKY_TEST_FUNCS_H
