@@ -126,13 +126,12 @@ public:
     }
   }
   virtual void visit(const loop* x) override {
-    expr begin = mutate(x->begin);
-    expr end = mutate(x->end);
+    interval_expr bounds = {mutate(x->bounds.min), mutate(x->bounds.max)};
     stmt body = mutate(x->body);
-    if (begin.same_as(x->begin) && end.same_as(x->end) && body.same_as(x->body)) {
+    if (bounds.same_as(x->bounds) && body.same_as(x->body)) {
       s = x;
     } else {
-      s = loop::make(x->name, std::move(begin), std::move(end), std::move(body));
+      s = loop::make(x->name, std::move(bounds), std::move(body));
     }
   }
   virtual void visit(const if_then_else* x) override {

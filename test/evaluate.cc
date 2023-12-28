@@ -68,7 +68,7 @@ TEST(evaluate_loop) {
       },
       {x}, {}, nullptr);
 
-  stmt l = loop::make(ctx.lookup("x"), 2, 12, c);
+  stmt l = loop::make(ctx.lookup("x"), range(2, 12), c);
 
   int result = evaluate(l);
   ASSERT_EQ(result, 0);

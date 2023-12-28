@@ -521,13 +521,12 @@ public:
 class loop : public stmt_node<loop> {
 public:
   symbol_id name;
-  expr begin;
-  expr end;
+  interval_expr bounds;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, expr begin, expr end, stmt body);
+  static stmt make(symbol_id name, interval_expr bounds, stmt body);
 
   static constexpr node_type static_type = node_type::loop;
 };
@@ -740,8 +739,8 @@ public:
     if (x->b.defined()) x->b.accept(this);
   }
   virtual void visit(const loop* x) override {
-    x->begin.accept(this);
-    x->end.accept(this);
+    x->bounds.min.accept(this);
+    x->bounds.max.accept(this);
     x->body.accept(this);
   }
   virtual void visit(const if_then_else* x) override {

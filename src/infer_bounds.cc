@@ -231,16 +231,16 @@ public:
   }
 
   void visit(const loop* l) override {
-    loop_mins.emplace_back(l->name, l->begin);
+    loop_mins.emplace_back(l->name, l->bounds.min);
     stmt body = mutate(l->body);
     expr loop_min = loop_mins.back().second;
     loop_mins.pop_back();
 
-    if (loop_min.same_as(l->begin) && body.same_as(l->body)) {
+    if (loop_min.same_as(l->bounds.min) && body.same_as(l->body)) {
       s = l;
     } else {
       // We rewrote the loop min.
-      s = loop::make(l->name, loop_min, l->end, std::move(body));
+      s = loop::make(l->name, {loop_min, l->bounds.max}, std::move(body));
     }
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
@@ -250,8 +250,8 @@ public:
     // change, and it magically started working. It *shouldn't* work, I expect this bug will
     // appear again. See the TODO: HORRIBLE HACK: above for more.
     // Use the original loop min. Hack?
-    loop_min = l->begin;
-    expr loop_max = l->end - 1;
+    loop_min = l->bounds.min;
+    expr loop_max = l->bounds.max;
     for (std::optional<box>& i : inferring) {
       if (!i) continue;
 

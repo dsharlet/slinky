@@ -216,7 +216,10 @@ public:
       to_allocate.erase(i);
     }
 
-    stmt result = loop::make(*as_variable(loop), simplify(bounds.min), simplify(bounds.max + 1), body);
+    bounds.min = simplify(bounds.min);
+    bounds.max = simplify(bounds.max);
+
+    stmt result = loop::make(*as_variable(loop), bounds, body);
     crops.pop_back();
     return result;
   }

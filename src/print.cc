@@ -177,11 +177,7 @@ public:
   void visit(const loop* l) override {
     os << indent() << "loop(";
     print_symbol_id(l->name);
-    os << " in [";
-    print(l->begin);
-    os << ", ";
-    print(l->end);
-    os << ")) {" << std::endl;
+    os << " in " << l->bounds << ") {" << std::endl;
     ++depth;
     print(l->body);
     --depth;

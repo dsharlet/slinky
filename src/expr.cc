@@ -178,7 +178,7 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
   } else {
     min *= scale;
     max *= scale;
-    *this |= interval_expr(max, min);
+    *this |= bounds(max, min);
   }
   return *this;
 }
@@ -194,7 +194,7 @@ interval_expr& interval_expr::operator/=(const expr& scale) {
   } else {
     min /= scale;
     max /= scale;
-    *this |= interval_expr(max, min);
+    *this |= bounds(max, min);
   }
   return *this;
 }
@@ -317,11 +317,10 @@ stmt block::make(stmt a, stmt b) {
   return n.get();
 }
 
-stmt loop::make(symbol_id name, expr begin, expr end, stmt body) {
+stmt loop::make(symbol_id name, interval_expr bounds, stmt body) {
   auto l = std::make_shared<loop>();
   l->name = name;
-  l->begin = std::move(begin);
-  l->end = std::move(end);
+  l->bounds = std::move(bounds);
   l->body = std::move(body);
   return l.get();
 }

@@ -195,8 +195,7 @@ public:
     const loop* ls = s.as<loop>();
     if (!ls) return fail();
 
-    match = ls->name == x->name && try_match(ls->begin, x->begin) && try_match(ls->end, x->end) &&
-            try_match(ls->body, x->body);
+    match = ls->name == x->name && try_match(ls->bounds, x->bounds) && try_match(ls->body, x->body);
   }
 
   void visit(const if_then_else* x) override {

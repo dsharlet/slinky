@@ -126,14 +126,14 @@ public:
   }
 
   void visit(const loop* l) override {
-    index_t begin = eval_expr(l->begin, 0);
-    index_t end = eval_expr(l->end);
+    index_t min = eval_expr(l->bounds.min);
+    index_t max = eval_expr(l->bounds.max);
     // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[l->name] here
     // because the context could grow and invalidate the reference. This could be fixed by having evaluate
     // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
     // not clear this optimization is necessary yet.
     std::optional<index_t> old_value = context[l->name];
-    for (index_t i = begin; i < end; ++i) {
+    for (index_t i = min; i <= max; ++i) {
       context[l->name] = i;
       l->body.accept(this);
     }

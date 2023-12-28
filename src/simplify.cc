@@ -696,17 +696,16 @@ public:
   void visit(const let_stmt* op) override { s = visit_let(op); }
 
   void visit(const loop* op) override {
-    expr begin = mutate(op->begin);
-    expr end = mutate(op->end);
+    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
 
     // TODO(https://github.com/dsharlet/slinky/issues/9): We can't actually simplify anything using this yet.
-    auto set_bounds = set_value_in_scope(expr_bounds, op->name, range(begin, end));
+    auto set_bounds = set_value_in_scope(expr_bounds, op->name, bounds);
     stmt body = mutate(op->body);
 
-    if (begin.same_as(op->begin) && end.same_as(op->end) && body.same_as(op->body)) {
+    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       s = op;
     } else {
-      s = loop::make(op->name, std::move(begin), std::move(end), std::move(body));
+      s = loop::make(op->name, std::move(bounds), std::move(body));
     }
   }
 
