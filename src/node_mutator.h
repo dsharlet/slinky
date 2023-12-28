@@ -94,6 +94,21 @@ public:
     }
   }
 
+  virtual void visit(const call* x) { 
+    std::vector<expr> args;
+    args.reserve(x->args.size());
+    bool changed = false;
+    for (const expr& i : x->args) {
+      args.emplace_back(mutate(i));
+      changed = changed || !args.back().same_as(i);
+    }
+    if (!changed) {
+      e = x;
+    } else {
+      e = call::make(x->intrinsic, std::move(args));
+    }
+  }
+
   virtual void visit(const let_stmt* x) { s = mutate_let(x); }
   virtual void visit(const block* x) {
     stmt a = mutate(x->a);
@@ -130,7 +145,7 @@ public:
       s = if_then_else::make(std::move(cond), std::move(true_body), std::move(false_body));
     }
   }
-  virtual void visit(const call* x) {
+  virtual void visit(const call_func* x) {
     std::vector<expr> scalar_args;
     scalar_args.reserve(x->scalar_args.size());
     bool changed = false;
@@ -141,7 +156,7 @@ public:
     if (!changed) {
       s = x;
     } else {
-      s = call::make(x->target, std::move(scalar_args), x->buffer_args, x->fn);
+      s = call_func::make(x->target, std::move(scalar_args), x->buffer_args, x->fn);
     }
   }
   virtual void visit(const allocate* x) {

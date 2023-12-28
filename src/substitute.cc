@@ -169,6 +169,13 @@ public:
     match = x->meta == lbme->meta && try_match(lbme->buffer, x->buffer) && try_match(lbme->dim, x->dim);
   }
 
+  virtual void visit(const call* x) {
+    if (!match) return;
+    const call* c = e.as<call>();
+    if (!c) return fail();
+    match = c->intrinsic == x->intrinsic && try_match(c->args, x->args);
+  }
+
   virtual void visit(const let_stmt* x) { visit_let(x); }
 
   virtual void visit(const block* x) {
@@ -197,9 +204,9 @@ public:
             try_match(is->false_body, x->false_body);
   }
 
-  virtual void visit(const call* x) {
+  virtual void visit(const call_func* x) {
     if (!match) return;
-    const call* cs = s.as<call>();
+    const call_func* cs = s.as<call_func>();
     if (!cs) return fail();
 
     match = cs->fn != x->fn && try_match(cs->scalar_args, x->scalar_args) && try_match(cs->buffer_args, x->buffer_args);

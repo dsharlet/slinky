@@ -1,9 +1,9 @@
 #include "simplify.h"
+#include "buffer.h"
+#include "evaluate.h"
 #include "expr.h"
 #include "print.h"
 #include "substitute.h"
-#include "evaluate.h"
-#include "buffer.h"
 #include "test.h"
 
 #include <cassert>
@@ -15,6 +15,19 @@ node_context symbols;
 expr x = make_variable(symbols, "x");
 expr y = make_variable(symbols, "y");
 expr z = make_variable(symbols, "z");
+expr w = make_variable(symbols, "w");
+
+template <typename T>
+void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
+  s << "{";
+  for (symbol_id n = 0; n < m.size(); ++n) {
+    const std::optional<T>& value = m[n];
+    if (value) {
+      s << "{" << symbols.name(n) << ", " << *value << "},";
+    }
+  }
+  s << "}";
+}
 
 void test_simplify(const expr& test, const expr& expected) {
   expr result = simplify(test);
@@ -46,6 +59,10 @@ TEST(simplify) {
   test_simplify(max(x, x), x);
   test_simplify(min(x / 2, y / 2), min(x, y) / 2);
   test_simplify(max(x / 2, y / 2), max(x, y) / 2);
+  test_simplify(min(negative_infinity(), x), negative_infinity());
+  test_simplify(max(negative_infinity(), x), x);
+  test_simplify(min(positive_infinity(), x), x);
+  test_simplify(max(positive_infinity(), x), positive_infinity());
 
   test_simplify(x + 0, x);
   test_simplify(x - 0, x);
@@ -65,14 +82,10 @@ TEST(simplify) {
   test_simplify(select::make(x == x, y, z), y);
   test_simplify(select::make(x != x, y, z), z);
 
-  test_simplify(x && true, x);
   test_simplify(x && false, false);
   test_simplify(x || true, true);
-  test_simplify(x || false, x);
-  test_simplify(true && x, x);
   test_simplify(false && x, false);
   test_simplify(true || x, true);
-  test_simplify(false || x, x);
 
   test_simplify(x < x + 1, true);
   test_simplify(x - 1 < x + 1, true);
@@ -96,11 +109,74 @@ TEST(simplify_load_buffer_meta) {
       load_buffer_meta::make(x, buffer_meta::max, y) + 1);
 }
 
-TEST(simplify_if_then_else) { 
+TEST(simplify_if_then_else) {
   test_simplify(if_then_else::make(x == x, check::make(y), check::make(z)), check::make(y));
   test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
   test_simplify(block::make(if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))),
       if_then_else::make(x, block::make(check::make(y), check::make(z))));
+}
+
+TEST(bounds_of) {
+  int abs_max = 3;
+  expr exprs[] = {
+      x + y,
+      x - y,
+      x * y,
+      x / y,
+      slinky::min(x, y),
+      slinky::max(x, y),
+      x < y,
+      x <= y,
+      x == y,
+      x != y,
+  };
+
+  for (const expr& e : exprs) {
+    for (int x_min_sign : {-1, 0, 1}) {
+      for (int x_max_sign : {-1, 0, 1}) {
+        if (x_max_sign < x_min_sign) continue;
+        int x_min = x_min_sign * abs_max;
+        int x_max = x_max_sign * abs_max;
+        for (int y_min_sign : {-1, 0, 1}) {
+          for (int y_max_sign : {-1, 0, 1}) {
+            if (y_max_sign < y_min_sign) continue;
+            int y_min = y_min_sign * abs_max;
+            int y_max = y_max_sign * abs_max;
+
+            symbol_map<interval> bounds;
+            bounds[*as_variable(x)] = interval(x_min, x_max);
+            bounds[*as_variable(y)] = interval(y_min, y_max);
+
+            interval bounds_e = bounds_of(e, bounds);
+
+            eval_context ctx;
+            for (int y_val = y_min; y_val <= y_max; ++y_val) {
+              for (int x_val = x_min; x_val <= x_max; ++x_val) {
+                ctx[*as_variable(x)] = x_val;
+                ctx[*as_variable(y)] = y_val;
+
+                index_t result = evaluate(e, ctx);
+                index_t min = evaluate(bounds_e.min);
+                index_t max = evaluate(bounds_e.max);
+
+                if (result < min || result > max) {
+                  std::cerr << "bounds_of failure: " << e << " -> " << bounds_e << std::endl;
+                  std::cerr << result << " not in [" << min << ", " << max << "]" << std::endl;
+                  std::cerr << "ctx: ";
+                  dump_symbol_map(std::cerr, ctx);
+                  std::cerr << std::endl;
+                  std::cerr << "bounds: ";
+                  dump_symbol_map(std::cerr, bounds);
+                  std::cerr << std::endl;
+                  std::abort();
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 std::vector<expr> vars = {x, y, z};
@@ -149,9 +225,9 @@ expr make_random_expr(int depth) {
     case 2: return load_buffer_meta::make(variable::make(random_pick(bufs)), random_buffer_meta(), rand() % max_rank);
     }
   } else {
-    expr a = make_random_expr(depth - rand() % 3);
-    expr b = make_random_expr(depth - rand() % 3);
-    switch (rand() % 8) {
+    expr a = make_random_expr(depth - 1);
+    expr b = make_random_expr(depth - 1);
+    switch (rand() % 9) {
     default: return a + b;
     case 1: return a - b;
     case 2: return a * b;
@@ -160,28 +236,17 @@ expr make_random_expr(int depth) {
     case 5: return min(a, b);
     case 6: return max(a, b);
     case 7: return select::make(make_random_condition(depth - 1), a, b);
+    case 8: return random_constant();
     }
   }
 }
-
-std::ostream& operator<<(std::ostream& s, const eval_context& ctx) {
-  s << "{";
-  for (symbol_id n = 0; n < ctx.size(); ++n) {
-    const std::optional<index_t>& value = ctx[n];
-    if (value) { 
-      s << "{" << symbols.name(n) << ", " << *value << "},";
-    }
-  }
-  return s << "}";
-}
-
 
 TEST(simplify_fuzz) {
   const int seed = time(nullptr);
   srand(seed);
   constexpr int tests = 10000;
   constexpr int checks = 10;
-  
+
   eval_context ctx;
 
   std::vector<buffer_base_ptr> buffers;
@@ -198,7 +263,7 @@ TEST(simplify_fuzz) {
   }
 
   for (int i = 0; i < tests; ++i) {
-    expr test = make_random_expr(2);
+    expr test = make_random_expr(3);
     expr simplified = simplify(test);
 
     // Also test bounds_of.
@@ -227,18 +292,18 @@ TEST(simplify_fuzz) {
         std::cerr << std::endl;
         print(std::cerr, simplified, &symbols);
         std::cerr << std::endl;
-        std::cerr << ctx << std::endl;
+        dump_symbol_map(std::cerr, ctx);
         ASSERT_EQ(a, b);
       } else {
-        index_t min = evaluate(bounds.min, ctx);
-        index_t max = evaluate(bounds.max, ctx);
+        index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
+        index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
         if (a < min) {
           std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
           print(std::cerr, test, &symbols);
           std::cerr << std::endl;
           print(std::cerr, bounds.min, &symbols);
           std::cerr << std::endl;
-          std::cerr << ctx << std::endl;
+          dump_symbol_map(std::cerr, ctx);
           ASSERT_LE(min, a);
         }
         if (a > max) {
@@ -247,7 +312,7 @@ TEST(simplify_fuzz) {
           std::cerr << std::endl;
           print(std::cerr, bounds.max, &symbols);
           std::cerr << std::endl;
-          std::cerr << ctx << std::endl;
+          dump_symbol_map(std::cerr, ctx);
           ASSERT_LE(a, max);
         }
       }

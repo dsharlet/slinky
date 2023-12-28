@@ -25,6 +25,14 @@ std::ostream& operator<<(std::ostream& os, buffer_meta meta) {
   }
 }
 
+std::ostream& operator<<(std::ostream& os, intrinsic i) {
+  switch (i) {
+  case intrinsic::positive_infinity: return os << "oo";
+  case intrinsic::negative_infinity: return os << "-oo";
+  case intrinsic::indeterminate: return os << "indeterminate";
+  }
+}
+
 class printer : public node_visitor {
 public:
   int depth = 0;
@@ -147,6 +155,17 @@ public:
     }
   }
 
+  void visit(const call* x) override { 
+    os << x->intrinsic << "(";
+    for (const expr& i : x->args) {
+      print(i);
+      if (!i.same_as(x->args.back())) {
+        os << ", ";
+      }
+    }
+    os << ")";
+  }
+
   void visit(const block* b) override {
     if (b->a.defined()) { print(b->a); }
     if (b->b.defined()) { print(b->b); }
@@ -182,7 +201,7 @@ public:
     os << indent() << "}" << std::endl;
   }
 
-  void visit(const call* n) override {
+  void visit(const call_func* n) override {
     os << indent() << "call(<fn>, {";
     for (const expr& e : n->scalar_args) {
       print(e);
@@ -315,5 +334,7 @@ std::ostream& operator<<(std::ostream& os, const stmt& s) {
   print(os, s);
   return os;
 }
+
+std::ostream& operator<<(std::ostream& os, const interval& i) { return os << "[" << i.min << ", " << i.max << "]"; }
 
 }  // namespace slinky

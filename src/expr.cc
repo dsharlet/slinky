@@ -73,19 +73,9 @@ std::shared_ptr<const variable> make_variable(symbol_id name) {
 }
 
 std::shared_ptr<const constant> make_constant(index_t value) {
-  if (value == std::numeric_limits<index_t>::min()) {
-    static auto n = std::make_shared<constant>();
-    n->value = value;
-    return n;
-  } else if (value == std::numeric_limits<index_t>::max()) {
-    static auto n = std::make_shared<constant>();
-    n->value = value;
-    return n;
-  } else {
-    auto n = std::make_shared<constant>();
-    n->value = value;
-    return n;
-  }
+  auto n = std::make_shared<constant>();
+  n->value = value;
+  return n;
 }
 
 expr variable::make(symbol_id name) { return make_variable(name).get(); }
@@ -165,10 +155,108 @@ expr max(std::span<expr> x) {
   }
 }
 
-interval interval::all() { return {std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max()}; }
-interval interval::none() { return {std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min()}; }
-interval interval::union_identity() { return none(); }
-interval interval::intersection_identity() { return all(); }
+const interval& interval::all() { 
+  static interval x = {negative_infinity(), positive_infinity()};
+  return x;
+}
+const interval& interval::none() {
+  static interval x = {positive_infinity(), negative_infinity()};
+  return x;
+}
+const interval& interval::union_identity() { return none(); }
+const interval& interval::intersection_identity() { return all(); }
+
+interval& interval::operator*=(const expr& scale) {
+  if (is_non_negative(scale)) {
+    min *= scale;
+    max *= scale;
+  } else if (is_negative(scale)) {
+    std::swap(min, max);
+    min *= scale;
+    max *= scale;
+  } else {
+    min *= scale;
+    max *= scale;
+    *this |= interval(max, min);
+  }
+  return *this;
+}
+
+interval& interval::operator/=(const expr& scale) {
+  if (is_non_negative(scale)) {
+    min /= scale;
+    max /= scale;
+  } else if (is_negative(scale)) {
+    std::swap(min, max);
+    min /= scale;
+    max /= scale;
+  } else {
+    min /= scale;
+    max /= scale;
+    *this |= interval(max, min);
+  }
+  return *this;
+}
+
+interval& interval::operator+=(const expr& offset) {
+  min += offset;
+  max += offset;
+  return *this;
+}
+
+interval& interval::operator-=(const expr& offset) {
+  min -= offset;
+  max -= offset;
+  return *this;
+}
+
+interval interval::operator*(const expr& scale) const {
+  interval result(*this);
+  result *= scale;
+  return result;
+}
+
+interval interval::operator/(const expr& scale) const {
+  interval result(*this);
+  result /= scale;
+  return result;
+}
+
+interval interval::operator+(const expr& offset) const {
+  interval result(*this);
+  result += offset;
+  return result;
+}
+
+interval interval::operator-(const expr& offset) const {
+  interval result(*this);
+  result -= offset;
+  return result;
+}
+
+interval& interval::operator|=(const interval& r) {
+  min = slinky::min(min, r.min);
+  max = slinky::max(max, r.max);
+  return *this;
+}
+
+interval& interval::operator&=(const interval& r) {
+  min = slinky::min(min, r.min);
+  max = slinky::max(max, r.max);
+  return *this;
+}
+
+interval interval::operator|(const interval& r) const {
+  interval result(*this);
+  result |= r;
+  return result;
+}
+
+interval interval::operator&(const interval& r) const {
+  interval result(*this);
+  result &= r;
+  return result;
+}
 
 box operator|(box a, const box& b) {
   assert(a.size() == b.size());
@@ -202,9 +290,16 @@ expr load_buffer_meta::make(expr buffer, buffer_meta meta, expr dim) {
   return n.get();
 }
 
-stmt call::make(
-    call::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
+expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   auto n = std::make_shared<call>();
+  n->intrinsic = i;
+  n->args = std::move(args);
+  return n.get();
+}
+
+stmt call_func::make(
+    call_func::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
+  auto n = std::make_shared<call_func>();
   n->target = std::move(target);
   n->scalar_args = std::move(scalar_args);
   n->buffer_args = std::move(buffer_args);
@@ -278,6 +373,21 @@ stmt check::make(expr condition) {
   auto n = std::make_shared<check>();
   n->condition = std::move(condition);
   return n.get();
+}
+
+const expr& positive_infinity() {
+  static expr e = call::make(intrinsic::positive_infinity, {}); 
+  return e;
+}
+
+const expr& negative_infinity() {
+  static expr e = call::make(intrinsic::negative_infinity, {});
+  return e;
+}
+
+const expr& indeterminate() {
+  static expr e = call::make(intrinsic::indeterminate, {});
+  return e;
 }
 
 }  // namespace slinky

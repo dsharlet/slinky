@@ -20,10 +20,66 @@ expr z = variable::make(2);
 expr c0 = wildcard::make(10, as_constant);
 expr c1 = wildcard::make(11, as_constant);
 
+// Check if a and b are out of (canonical) order.
+bool should_commute(const expr& a, const expr& b) {
+  auto order = [](node_type t) {
+    switch (t) {
+    case node_type::call: return 200;
+    case node_type::constant: return 100;
+    case node_type::wildcard: return 99;
+    case node_type::variable: return 0;
+    default: return 1;
+    }
+  };
+  int ra = order(a.e->type);
+  int rb = order(b.e->type);
+  if (ra > rb) return true;
+
+  const call* ca = a.as<call>();
+  const call* cb = b.as<call>();
+  if (ca && cb) {
+    if (ca->intrinsic > cb->intrinsic) return true;
+  }
+
+  return false;
+}
+
+// Rules that are not in canonical order are unnecessary or may cause infinite recursion.
+// This visitor checks that all commutable operations are in canonical order.
+class assert_canonical : public recursive_node_visitor {
+public:
+  template <typename T>
+  void check(const T* x) {
+    if (should_commute(x->a, x->b)) {
+      std::cerr << "Non-canonical operands: " << expr(x) << std::endl;
+      std::abort();
+    }
+    x->a.accept(this);
+    x->b.accept(this);
+  }
+
+  void visit(const add* op) { check(op); };
+  void visit(const mul* op) { check(op); };
+  void visit(const class min* op) { check(op); };
+  void visit(const class max* op) { check(op); };
+  void visit(const equal* op) { check(op); };
+  void visit(const not_equal* op) { check(op); };
+  void visit(const logical_and* op) { check(op); };
+  void visit(const logical_or* op) { check(op); };
+  void visit(const bitwise_and* op) { check(op); };
+  void visit(const bitwise_or* op) { check(op); };
+};
+
 struct rule {
   expr pattern;
   expr replacement;
   expr predicate;
+
+  rule(expr p, expr r, expr pr = expr()) : pattern(std::move(p)), replacement(std::move(r)), predicate(std::move(pr)) {
+    assert_canonical v;
+    pattern.accept(&v);
+    replacement.accept(&v);
+  }
 };
 
 expr buffer_min(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim)); }
@@ -67,14 +123,14 @@ public:
   void visit(const class min* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = std::min(*ca, *cb);
       return;
-    }
-    if (ca && !cb) {
-      std::swap(a, b);
     }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
@@ -83,23 +139,30 @@ public:
     }
 
     static std::vector<rule> rules = {
+        // Constant simplifications
+        {min(x, indeterminate()), indeterminate()},
         {min(x, std::numeric_limits<index_t>::max()), x},
+        {min(x, positive_infinity()), x},
         {min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()},
-        {min(c0, min(x, c1)), min(x, min(c0, c1))},
+        {min(x, negative_infinity()), negative_infinity()},
         {min(min(x, c0), c1), min(x, min(c0, c1))},
         {min(x, x + c0), x, c0 > 0},
         {min(x, x + c0), x + c0, c0 < 0},
         {min(x + c0, y + c1), min(x, y + c1 - c0) + c0},
         {min(x + c0, c1), min(x, c1 - c0) + c0},
-        {min(x + c0, y), min(y, x + c0)},
+
+        // Algebraic simplifications
         {min(x, x), x},
+        {min(x, min(x, y)), min(x, y)},
         {min(x / z, y / z), min(x, y) / z, z > 0},
-        {min(x + z, y + z), min(x, y) + z},
-        {min(x + z, z + y), min(x, y) + z},
+        {min(x + z, y + z), z + min(x, y)},
+        {min(x + z, z + y), z + min(x, y)},
         {min(z + x, z + y), z + min(x, y)},
         {min(z + x, y + z), z + min(x, y)},
         {min(x - z, y - z), min(x, y) - z},
         {min(z - x, z - y), z - max(x, y)},
+
+        // Buffer meta simplifications
         {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
         {min(buffer_min(x, y), buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
         {min(buffer_max(x, y), buffer_min(x, y)), buffer_min(x, y)},
@@ -111,14 +174,14 @@ public:
   void visit(const class max* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = std::max(*ca, *cb);
       return;
-    }
-    if (ca && !cb) {
-      std::swap(a, b);
     }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
@@ -127,23 +190,30 @@ public:
     }
 
     static std::vector<rule> rules = {
+        // Constant simplifications
+        {max(x, indeterminate()), indeterminate()},
         {max(x, std::numeric_limits<index_t>::min()), x},
+        {max(x, negative_infinity()), x},
         {max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()},
-        {max(c0, max(x, c1)), max(x, max(c0, c1))},
+        {max(x, positive_infinity()), positive_infinity()},
         {max(max(x, c0), c1), max(x, max(c0, c1))},
         {max(x, x + c0), x + c0, c0 > 0},
         {max(x, x + c0), x, c0 < 0},
         {max(x + c0, y + c1), max(x, y + c1 - c0) + c0},
         {max(x + c0, c1), max(x, c1 - c0) + c0},
-        {max(x + c0, y), max(y, x + c0)},
+
+        // Algebraic simplifications
         {max(x, x), x},
+        {max(x, max(x, y)), max(x, y)},
         {max(x / z, y / z), max(x, y) / z, z > 0},
-        {max(x + z, y + z), max(x, y) + z},
-        {max(x + z, z + y), max(x, y) + z},
+        {max(x + z, y + z), z + max(x, y)},
+        {max(x + z, z + y), z + max(x, y)},
         {max(z + x, z + y), z + max(x, y)},
         {max(z + x, y + z), z + max(x, y)},
         {max(x - z, y - z), max(x, y) - z},
         {max(z - x, z - y), z - min(x, y)},
+
+        // Buffer meta simplifications
         {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
         {max(buffer_min(x, y), buffer_max(x, y) + c0), buffer_max(x, y) + c0, c0 > 0},
         {max(buffer_max(x, y), buffer_min(x, y)), buffer_max(x, y)},
@@ -155,14 +225,14 @@ public:
   void visit(const add* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = *ca + *cb;
       return;
-    }
-    if (ca && !cb) {
-      std::swap(a, b);
     }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
@@ -171,10 +241,14 @@ public:
     }
 
     static std::vector<rule> rules = {
+        {x + indeterminate(), indeterminate()},
+        {positive_infinity() + indeterminate(), indeterminate()},
+        {negative_infinity() + positive_infinity(), indeterminate()},
+        {c0 + positive_infinity(), positive_infinity()},
+        {c0 + negative_infinity(), negative_infinity()},
         {x + 0, x},
         {x + x, x * 2},
         {x + (0 - y), x - y},
-        {(0 - x) + y, y - x},
         {x + (y + c0), (x + y) + c0},
         {(x + c0) + c1, x + (c0 + c1)},
         {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
@@ -204,6 +278,14 @@ public:
     }
 
     static std::vector<rule> rules = {
+        {x - indeterminate(), indeterminate()},
+        {indeterminate() - x, indeterminate()},
+        {positive_infinity() - positive_infinity(), indeterminate()},
+        {positive_infinity() - negative_infinity(), positive_infinity()},
+        {negative_infinity() - negative_infinity(), indeterminate()},
+        {negative_infinity() - positive_infinity(), negative_infinity()},
+        {c0 - positive_infinity(), negative_infinity()},
+        {c0 - negative_infinity(), positive_infinity()},
         {x - x, 0},
         {x - 0, x},
         {x - (0 - y), x + y},
@@ -220,14 +302,14 @@ public:
   void visit(const mul* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
       e = *ca * *cb;
       return;
-    }
-    if (ca && !cb) {
-      std::swap(a, b);
     }
     if (a.same_as(op->a) && b.same_as(op->b)) {
       e = op;
@@ -236,7 +318,18 @@ public:
     }
 
     static std::vector<rule> rules = {
+        {x * indeterminate(), indeterminate()},
+        {positive_infinity() * positive_infinity(), positive_infinity()},
+        {negative_infinity() * positive_infinity(), negative_infinity()},
+        {negative_infinity() * negative_infinity(), positive_infinity()},
+        {c0 * positive_infinity(), positive_infinity(), c0 > 0},
+        {c0 * negative_infinity(), negative_infinity(), c0 > 0},
+        {c0 * positive_infinity(), negative_infinity(), c0 < 0},
+        {c0 * negative_infinity(), positive_infinity(), c0 < 0},
         {x * 0, 0},
+        {(x * c0) * c1, x * (c0 * c1)},
+        {(x + c0) * c1, x * c1 + c0 * c1},
+        {(c0 - x) * c1, c0 * c1 - x * c1},
         {x * 1, x},
     };
     e = apply_rules(rules, e);
@@ -258,6 +351,18 @@ public:
     }
 
     static std::vector<rule> rules = {
+        {x / indeterminate(), indeterminate()},
+        {indeterminate() / x, indeterminate()},
+        {positive_infinity() / positive_infinity(), indeterminate()},
+        {positive_infinity() / negative_infinity(), indeterminate()},
+        {negative_infinity() / positive_infinity(), indeterminate()},
+        {negative_infinity() / negative_infinity(), indeterminate()},
+        {c0 / positive_infinity(), 0},
+        {c0 / negative_infinity(), 0},
+        {positive_infinity() / c0, positive_infinity(), c0 > 0},
+        {negative_infinity() / c0, negative_infinity(), c0 > 0},
+        {positive_infinity() / c0, negative_infinity(), c0 < 0},
+        {negative_infinity() / c0, positive_infinity(), c0 < 0},
         {x / 1, x},
     };
     e = apply_rules(rules, e);
@@ -294,34 +399,23 @@ public:
       return;
     }
 
-    expr result;
     if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
-        result = op;
+        e = op;
       } else {
-        result = a < b;
+        e = a < b;
       }
     } else if (ca) {
-      result = mutate(-b < -*ca);
+      e = mutate(-b < -*ca);
     } else {
-      result = mutate(a - b < 0);
+      e = mutate(a - b < 0);
     }
-
-    // Super scary, seems prone to infinite recursion...
-    interval bounds = bounds_of(result, expr_bounds);
-    if (!result.same_as(bounds.min) && is_true(simplify(bounds.min))) {
-      e = true;
-      return;
-    } else if (!result.same_as(bounds.max) && is_false(simplify(bounds.max))) {
-      e = false;
-      return;
-    }
-    e = result;
 
     static std::vector<rule> rules = {
-        {c0 + x < c1, x < c1 - c0},
-        {c0 - x < c1, -x < c1 - c0, c0 != 0},
+        {positive_infinity() < c0, false},
+        {negative_infinity() < c0, true},
         {x + c0 < c1, x < c1 - c0},
+        {c0 - x < c1, -x < c1 - c0, c0 != 0},
         {buffer_extent(x, y) < c0, false, c0 < 0},
         {-buffer_extent(x, y) < c0, true, -c0 < 0},
     };
@@ -338,34 +432,23 @@ public:
       return;
     }
 
-    expr result;
     if (cb) {
       if (a.same_as(op->a) && b.same_as(op->b)) {
-        result = op;
+        e = op;
       } else {
-        result = a <= b;
+        e = a <= b;
       }
     } else if (ca) {
-      result = mutate(-b <= -*ca);
+      e = mutate(-b <= -*ca);
     } else {
-      result = mutate(a - b <= 0);
+      e = mutate(a - b <= 0);
     }
-
-    // Super scary, seems prone to infinite recursion...
-    interval bounds = bounds_of(result, expr_bounds);
-    if (!result.same_as(bounds.min) && is_true(simplify(bounds.min))) {
-      e = true;
-      return;
-    } else if (!result.same_as(bounds.max) && is_false(simplify(bounds.max))) {
-      e = false;
-      return;
-    }
-    e = result;
 
     static std::vector<rule> rules = {
-        {c0 + x <= c1, x < c1 - c0},
-        {c0 - x <= c1, -x < c1 - c0, c0 != 0},
+        {positive_infinity() <= c0, false},
+        {negative_infinity() <= c0, true},
         {x + c0 <= c1, x < c1 - c0},
+        {c0 - x <= c1, -x < c1 - c0, c0 != 0},
         {buffer_extent(x, y) <= c0, false, c0 <= 0},
         {-buffer_extent(x, y) <= c0, true, -c0 <= 0},
     };
@@ -375,6 +458,9 @@ public:
   void visit(const equal* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
@@ -388,16 +474,13 @@ public:
       } else {
         e = a == b;
       }
-    } else if (ca) {
-      e = b == a;
     } else {
       e = mutate(a - b == 0);
     }
 
     static std::vector<rule> rules = {
-        {c0 + x == c1, x == c1 - c0},
-        {c0 - x == c1, -x == c1 - c0, c0 != 0},
         {x + c0 == c1, x == c1 - c0},
+        {c0 - x == c1, -x == c1 - c0, c0 != 0},
     };
     e = apply_rules(rules, e);
   }
@@ -405,6 +488,9 @@ public:
   void visit(const not_equal* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
@@ -418,16 +504,13 @@ public:
       } else {
         e = a != b;
       }
-    } else if (ca) {
-      e = b != a;
     } else {
       e = mutate(a - b != 0);
     }
 
     static std::vector<rule> rules = {
-        {c0 + x != c1, x != c1 - c0},
-        {c0 - x != c1, -x != c1 - c0, c0 != 0},
         {x + c0 != c1, x != c1 - c0},
+        {c0 - x != c1, -x != c1 - c0, c0 != 0},
     };
     e = apply_rules(rules, e);
   }
@@ -438,6 +521,15 @@ public:
       e = mutate(op->true_value);
       return;
     } else if (is_false(c)) {
+      e = mutate(op->false_value);
+      return;
+    }
+
+    interval bounds = bounds_of(c, expr_bounds);
+    if (!c.same_as(bounds.min) && is_true(mutate(bounds.min))) {
+      e = mutate(op->true_value);
+      return;
+    } else if (!c.same_as(bounds.max) && is_false(mutate(bounds.max))) {
       e = mutate(op->false_value);
       return;
     }
@@ -456,26 +548,18 @@ public:
   void visit(const logical_and* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
-
-    // Canonicalize to constant && other
-    if (cb && !ca) {
-      std::swap(a, b);
-      std::swap(ca, cb);
-    }
 
     if (ca && cb) {
       e = *ca != 0 && *cb != 0;
       return;
-    } else if (ca) {
-      if (*ca) {
-        e = b;
-        return;
-      } else {
-        e = std::move(a);
-        return;
-      }
+    } else if (cb && *cb == 0) {
+      e = b;
+      return;
     }
 
     if (a.same_as(op->a) && b.same_as(op->b)) {
@@ -488,26 +572,18 @@ public:
   void visit(const logical_or* op) override {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
+    if (should_commute(a, b)) {
+      std::swap(a, b);
+    }
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
-
-    // Canonicalize to constant && other
-    if (cb && !ca) {
-      std::swap(a, b);
-      std::swap(ca, cb);
-    }
 
     if (ca && cb) {
       e = *ca != 0 || *cb != 0;
       return;
-    } else if (ca) {
-      if (*ca) {
-        e = std::move(a);
-        return;
-      } else {
-        e = std::move(b);
-        return;
-      }
+    } else if (cb && *cb == 1) {
+      e = b;
+      return;
     }
 
     if (a.same_as(op->a) && b.same_as(op->b)) {
@@ -562,6 +638,15 @@ public:
       return;
     } else if (is_false(c)) {
       s = op->false_body.defined() ? mutate(op->false_body) : stmt();
+      return;
+    }
+
+    interval bounds = bounds_of(c, expr_bounds);
+    if (!c.same_as(bounds.min) && is_true(mutate(bounds.min))) {
+      s = mutate(op->true_body);
+      return;
+    } else if (!c.same_as(bounds.max) && is_false(mutate(bounds.max))) {
+      s = mutate(op->false_body);
       return;
     }
 
@@ -766,54 +851,52 @@ public:
 
   virtual void visit(const add* x) {
     binary_result r = binary_bounds(x);
-    expr min = std::numeric_limits<index_t>::min();
-    if (is_infinity(r.a.min) || is_infinity(r.b.min)) {
-      min = slinky::min(r.a.min, r.b.min);
-    } else {
-      min = make(x, r.a.min, r.b.min);
-    }
-    expr max = std::numeric_limits<index_t>::max();
-    if (is_infinity(r.a.max) || is_infinity(r.b.max)) {
-      max = slinky::max(r.a.max, r.b.max);
-    } else {
-      max = make(x, r.a.max, r.b.max);
-    }
-    result = {min, max};
+    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
   }
   virtual void visit(const sub* x) {
     binary_result r = binary_bounds(x);
-    expr min = std::numeric_limits<index_t>::min();
-    if (is_infinity(r.a.min) || is_infinity(r.b.max)) {
-      min = slinky::min(r.a.min, r.b.max);
-    } else {
-      min = make(x, r.a.min, r.b.max);
-    }
-    expr max = std::numeric_limits<index_t>::max();
-    if (is_infinity(r.a.max) || is_infinity(r.b.min)) {
-      max = slinky::max(r.a.max, r.b.min);
-    } else {
-      max = make(x, r.a.max, r.b.min);
-    }
-    result = {min, max};
+    result = {make(x, r.a.min, r.b.max), make(x, r.a.max, r.b.min)};
   }
 
   virtual void visit(const mul* x) {
     binary_result r = binary_bounds(x);
-    if (r.a.is_single_point() && r.b.is_single_point()) {
-      result = interval(make(x, r.a.min, r.b.min));
+
+    if (is_non_negative(r.a.min) && is_non_negative(r.b.min)) {
+      // Both are >= 0, neither intervals flip.
+      result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
+    } else if (is_non_positive(r.a.max) && is_non_positive(r.b.max)) {
+      // Both are <= 0, both intervals flip.
+      result = {make(x, r.a.max, r.b.max), make(x, r.a.min, r.b.min)};
     } else if (r.b.is_single_point()) {
-      expr corners[] = {
-          make(x, r.a.min, r.b.min),
-          make(x, r.a.max, r.b.min),
-      };
-      result = {min(corners), max(corners)};
+      if (is_non_negative(r.b.min)) {
+        // b is a positive single point.
+        result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.min)};
+      } else if (is_non_positive(r.b.min)) {
+        // b is a negative single point.
+        result = {make(x, r.a.max, r.b.min), make(x, r.a.min, r.b.min)};
+      } else {
+        expr corners[] = {
+            make(x, r.a.min, r.b.min),
+            make(x, r.a.max, r.b.min),
+        };
+        result = {min(corners), max(corners)};
+      }
     } else if (r.a.is_single_point()) {
-      expr corners[] = {
-          make(x, r.a.min, r.b.min),
-          make(x, r.a.min, r.b.max),
-      };
-      result = {min(corners), max(corners)};
+      if (is_non_negative(r.a.min)) {
+        // a is a positive single point.
+        result = {make(x, r.a.min, r.b.min), make(x, r.a.min, r.b.max)};
+      } else if (is_non_positive(r.a.min)) {
+        // a is a negative single point.
+        result = {make(x, r.a.min, r.b.max), make(x, r.a.min, r.b.min)};
+      } else {
+        expr corners[] = {
+            make(x, r.a.min, r.b.min),
+            make(x, r.a.min, r.b.max),
+        };
+        result = {min(corners), max(corners)};
+      }
     } else {
+      // We don't know anything. The results is the union of all 4 possible intervals.
       expr corners[] = {
           make(x, r.a.min, r.b.min),
           make(x, r.a.min, r.b.max),
@@ -823,25 +906,16 @@ public:
       result = {min(corners), max(corners)};
     }
   }
-
   virtual void visit(const div* x) {
     binary_result r = binary_bounds(x);
-    if (r.a.is_single_point() && r.b.is_single_point()) {
-      result = interval(make(x, r.a.min, r.b.min));
-    } else if (r.b.is_single_point()) {
-      expr corners[] = {
-          make(x, r.a.min, r.b.min),
-          make(x, r.a.max, r.b.min),
-      };
-      result = {min(corners), max(corners)};
-    } else {
-      // TODO: Tighten these bounds.
-      result = r.a | -r.a;
-    }
+    // TODO: Tighten these bounds.
+    result.min = min(r.a.min, -r.a.max);
+    result.max = max(r.a.max, -r.a.min);
   }
   virtual void visit(const mod* x) {
-    expr proxy = select::make(x->b < 0, -x->b, x->b);
-    proxy.accept(this);
+    x->b.accept(this);
+    result.max = max(abs(result.min), abs(result.max));
+    result.min = 0;
   }
 
   virtual void visit(const class min* x) {
@@ -884,11 +958,19 @@ public:
 
   virtual void visit(const load_buffer_meta* x) { result = {x, x}; }
 
+  void visit(const call* x) {
+    switch (x->intrinsic) {
+    case intrinsic::positive_infinity: result = {x, x};
+    case intrinsic::negative_infinity: result = {x, x};
+    case intrinsic::indeterminate: result = {x, x};
+    }
+  }
+
   virtual void visit(const let_stmt* x) { std::abort(); }
   virtual void visit(const block* x) { std::abort(); }
   virtual void visit(const loop* x) { std::abort(); }
   virtual void visit(const if_then_else* x) { std::abort(); }
-  virtual void visit(const call* x) { std::abort(); }
+  virtual void visit(const call_func* x) { std::abort(); }
   virtual void visit(const allocate* x) { std::abort(); }
   virtual void visit(const make_buffer* x) { std::abort(); }
   virtual void visit(const crop_buffer* x) { std::abort(); }

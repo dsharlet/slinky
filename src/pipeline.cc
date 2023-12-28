@@ -242,7 +242,7 @@ public:
         to_allocate.insert(i.buffer);
       }
     }
-    stmt call_f = call::make(std::move(wrapper), {}, std::move(buffer_args), f);
+    stmt call_f = call_func::make(std::move(wrapper), {}, std::move(buffer_args), f);
 
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);

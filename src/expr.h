@@ -57,8 +57,9 @@ enum class node_type {
   shift_right,
   select,
   load_buffer_meta,
-
   call,
+
+  call_func,
   let_stmt,
   block,
   loop,
@@ -84,6 +85,12 @@ enum class buffer_meta {
   extent,
   stride_bytes,
   fold_factor,
+};
+
+enum class intrinsic {
+  negative_infinity,
+  positive_infinity,
+  indeterminate,
 };
 
 class node_visitor;
@@ -249,100 +256,37 @@ struct interval {
 
   bool is_single_point() const { return min.same_as(max); }
 
-  static interval all();
-  static interval none();
+  static const interval& all();
+  static const interval& none();
   // An interval x such that x | y == y
-  static interval union_identity();
+  static const interval& union_identity();
   // An interval x such that x & y == y
-  static interval intersection_identity();
+  static const interval& intersection_identity();
 
   expr extent() const { return max - min + 1; }
   void set_extent(expr extent) { max = min + extent - 1; }
 
-  interval& operator*=(expr scale) {
-    min *= scale;
-    max *= scale;
-    return *this;
-  }
-
-  interval& operator/=(expr scale) {
-    min /= scale;
-    max /= scale;
-    return *this;
-  }
-
-  interval& operator+=(expr offset) {
-    min += offset;
-    max += offset;
-    return *this;
-  }
-
-  interval& operator-=(expr offset) {
-    min -= offset;
-    max -= offset;
-    return *this;
-  }
+  interval& operator*=(const expr& scale);
+  interval& operator/=(const expr& scale);
+  interval& operator+=(const expr& offset);
+  interval& operator-=(const expr& offset);
+  interval operator*(const expr& scale) const;
+  interval operator/(const expr& scale) const;
+  interval operator+(const expr& offset) const;
+  interval operator-(const expr& offset) const;
 
   // This is the union operator. I don't really like this, but
   // I also don't like that I can't name a function `union`.
   // It does kinda make sense...
-  interval& operator|=(const interval& r) {
-    min = slinky::min(min, r.min);
-    max = slinky::max(max, r.max);
-    return *this;
-  }
-
+  interval& operator|=(const interval& r);
   // This is intersection, just to be consistent with union.
-  interval& operator&=(const interval& r) {
-    min = slinky::min(min, r.min);
-    max = slinky::max(max, r.max);
-    return *this;
-  }
-
-  interval operator*(expr scale) const {
-    interval result(*this);
-    result *= scale;
-    return result;
-  }
-
-  interval operator/(expr scale) const {
-    interval result(*this);
-    result /= scale;
-    return result;
-  }
-
-  interval operator+(expr offset) const {
-    interval result(*this);
-    result += offset;
-    return result;
-  }
-
-  interval operator-(expr offset) const {
-    interval result(*this);
-    result -= offset;
-    return result;
-  }
-
-  interval operator|(const interval& r) const {
-    interval result(*this);
-    result |= r;
-    return result;
-  }
-
-  interval operator&(const interval& r) const {
-    interval result(*this);
-    result &= r;
-    return result;
-  }
-
-  interval operator-() const { 
-    return {-max, -min};
-  }
+  interval& operator&=(const interval& r);
+  interval operator|(const interval& r) const;
+  interval operator&(const interval& r) const;
 };
 
 inline interval operator*(const expr& a, const interval& b) { return b * a; }
 inline interval operator+(const expr& a, const interval& b) { return b + a; }
-
 using box = std::vector<interval>;
 
 box operator|(box a, const box& b);
@@ -491,9 +435,22 @@ public:
   static constexpr node_type static_type = node_type::load_buffer_meta;
 };
 
+// This expression loads buffer->base or a field from buffer->dims.
+class call : public expr_node<call> {
+public:
+  slinky::intrinsic intrinsic;
+  std::vector<expr> args;
+
+  void accept(node_visitor* v) const;
+
+  static expr make(slinky::intrinsic i, std::vector<expr> args);
+
+  static constexpr node_type static_type = node_type::call;
+};
+
 class func;
 
-class call : public stmt_node<call> {
+class call_func : public stmt_node<call_func> {
 public:
   typedef index_t (*callable_t)(std::span<const index_t>, std::span<buffer_base*>);
   using callable = std::function<index_t(std::span<const index_t>, std::span<buffer_base*>)>;
@@ -507,7 +464,7 @@ public:
 
   static stmt make(callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn);
 
-  static constexpr node_type static_type = node_type::call;
+  static constexpr node_type static_type = node_type::call_func;
 };
 
 class let_stmt : public stmt_node<let_stmt> {
@@ -695,17 +652,123 @@ public:
   virtual void visit(const shift_right*) = 0;
   virtual void visit(const select*) = 0;
   virtual void visit(const load_buffer_meta*) = 0;
+  virtual void visit(const call*) = 0;
 
   virtual void visit(const let_stmt*) = 0;
   virtual void visit(const block*) = 0;
   virtual void visit(const loop*) = 0;
   virtual void visit(const if_then_else*) = 0;
-  virtual void visit(const call*) = 0;
+  virtual void visit(const call_func*) = 0;
   virtual void visit(const allocate*) = 0;
   virtual void visit(const make_buffer*) = 0;
   virtual void visit(const crop_buffer*) = 0;
   virtual void visit(const crop_dim*) = 0;
   virtual void visit(const check*) = 0;
+};
+
+class recursive_node_visitor : public node_visitor {
+public:
+  virtual void visit(const variable*) {}
+  virtual void visit(const wildcard*) {}
+  virtual void visit(const constant*) {}
+  virtual void visit(const let* x) { 
+    x->value.accept(this);
+    x->body.accept(this);
+  }
+
+  template <typename T>
+  void visit_binary(const T* x) {
+    x->a.accept(this);
+    x->b.accept(this);
+  }
+
+  virtual void visit(const add* x) { visit_binary(x); }
+  virtual void visit(const sub* x) { visit_binary(x); }
+  virtual void visit(const mul* x) { visit_binary(x); }
+  virtual void visit(const div* x) { visit_binary(x); }
+  virtual void visit(const mod* x) { visit_binary(x); }
+  virtual void visit(const class min* x) { visit_binary(x); }
+  virtual void visit(const class max* x) { visit_binary(x); }
+  virtual void visit(const equal* x) { visit_binary(x); }
+  virtual void visit(const not_equal* x) { visit_binary(x); }
+  virtual void visit(const less* x) { visit_binary(x); }
+  virtual void visit(const less_equal* x) { visit_binary(x); }
+  virtual void visit(const bitwise_and* x) { visit_binary(x); }
+  virtual void visit(const bitwise_or* x) { visit_binary(x); }
+  virtual void visit(const bitwise_xor* x) { visit_binary(x); }
+  virtual void visit(const logical_and* x) { visit_binary(x); }
+  virtual void visit(const logical_or* x) { visit_binary(x); }
+  virtual void visit(const shift_left* x) { visit_binary(x); }
+  virtual void visit(const shift_right* x) { visit_binary(x); }
+  virtual void visit(const select* x) {
+    x->condition.accept(this);
+    x->true_value.accept(this);
+    x->false_value.accept(this);
+  }
+  virtual void visit(const load_buffer_meta* x) { 
+    x->buffer.accept(this);
+    x->dim.accept(this);
+  }
+  virtual void visit(const call* x) {
+    for (const expr& i : x->args) {
+      i.accept(this);
+    }
+  }
+
+  virtual void visit(const let_stmt* x) {
+    x->value.accept(this);
+    x->body.accept(this);
+  }
+  virtual void visit(const block* x) { 
+    if (x->a.defined()) x->a.accept(this);
+    if (x->b.defined()) x->b.accept(this);
+  }
+  virtual void visit(const loop* x) { 
+    x->begin.accept(this);
+    x->end.accept(this);
+    x->body.accept(this);
+  }
+  virtual void visit(const if_then_else* x) {
+    x->condition.accept(this);
+    x->true_body.accept(this);
+    x->false_body.accept(this);
+  }
+  virtual void visit(const call_func* x) {
+    for (const expr& i : x->scalar_args) {
+      i.accept(this);
+    }
+  }
+  virtual void visit(const allocate* x) {
+    for (const dim_expr& i : x->dims) {
+      i.min.accept(this);
+      i.extent.accept(this);
+      i.stride_bytes.accept(this);
+      i.fold_factor.accept(this);
+    }
+    x->body.accept(this);
+  }
+  virtual void visit(const make_buffer* x) {
+    for (const dim_expr& i : x->dims) {
+      i.min.accept(this);
+      i.extent.accept(this);
+      i.stride_bytes.accept(this);
+      i.fold_factor.accept(this);
+    }
+    x->body.accept(this);
+  }
+  virtual void visit(const crop_buffer* x) {
+    for (const interval& i : x->bounds) {
+      i.min.accept(this);
+      i.max.accept(this);
+    }
+    x->body.accept(this);
+  }
+  virtual void visit(const crop_dim* x) {
+    x->min.accept(this);
+    x->extent.accept(this);
+    x->body.accept(this);
+  }
+  virtual void visit(const check* x) { x->condition.accept(this); }
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }
@@ -732,12 +795,13 @@ inline void shift_left::accept(node_visitor* v) const { v->visit(this); }
 inline void shift_right::accept(node_visitor* v) const { v->visit(this); }
 inline void select::accept(node_visitor* v) const { v->visit(this); }
 inline void load_buffer_meta::accept(node_visitor* v) const { v->visit(this); }
+inline void call::accept(node_visitor* v) const { v->visit(this); }
 
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void block::accept(node_visitor* v) const { v->visit(this); }
 inline void loop::accept(node_visitor* v) const { v->visit(this); }
 inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
-inline void call::accept(node_visitor* v) const { v->visit(this); }
+inline void call_func::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
 inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }
@@ -769,9 +833,46 @@ inline bool is_true(const expr& x) {
 
 inline bool is_false(const expr& x) { return is_zero(x); }
 
-inline bool is_positive_infinity(const expr& x) { return is_constant(x, std::numeric_limits<index_t>::max()); }
-inline bool is_negative_infinity(const expr& x) { return is_constant(x, std::numeric_limits<index_t>::min()); }
+inline bool is_intrinsic(const expr& x, intrinsic i) {
+  const call* c = x.as<call>();
+  return c ? c->intrinsic == i : false;
+}
+
+inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
+inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
+inline bool is_indeterminate(const expr& x) { return is_intrinsic(x, intrinsic::indeterminate); }
 inline bool is_infinity(const expr& x) { return is_positive_infinity(x) || is_negative_infinity(x); }
+inline bool is_finite(const expr& x) { return !is_infinity(x) && !is_indeterminate(x); }
+
+const expr& positive_infinity();
+const expr& negative_infinity();
+const expr& indeterminate();
+
+inline bool is_positive(const expr& x) {
+  if (is_positive_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c > 0 : false;
+}
+
+inline bool is_non_negative(const expr& x) {
+  if (is_positive_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c >= 0 : false;
+}
+
+inline bool is_negative(const expr& x) {
+  if (is_negative_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c < 0 : false;
+}
+
+inline bool is_non_positive(const expr& x) {
+  if (is_negative_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c <= 0 : false;
+}
+
+inline expr abs(const expr& x) { return select::make(x < 0, -x, x); }
 
 }  // namespace slinky
 

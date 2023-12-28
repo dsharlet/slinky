@@ -108,6 +108,14 @@ public:
     }
   }
 
+  void visit(const call* x) override {
+    switch (x->intrinsic) {
+    case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
+    case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
+    case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
+    }
+  }
+
   void visit(const block* b) override {
     b->a.accept(this);
     b->b.accept(this);
@@ -136,7 +144,7 @@ public:
     }
   }
 
-  void visit(const call* n) override {
+  void visit(const call_func* n) override {
     index_t* scalars = reinterpret_cast<index_t*>(alloca(n->scalar_args.size() * sizeof(index_t)));
     for (std::size_t i = 0; i < n->scalar_args.size(); ++i) {
       scalars[i] = eval_expr(n->scalar_args[i]);
@@ -151,7 +159,7 @@ public:
     std::span<buffer_base*> buffers_span(buffers, n->buffer_args.size());
     result = n->target(scalars_span, buffers_span);
     if (result) {
-      std::cerr << "call failed: " << stmt(n) << "->" << result << std::endl;
+      std::cerr << "call_func failed: " << stmt(n) << "->" << result << std::endl;
       std::abort();
     }
   }

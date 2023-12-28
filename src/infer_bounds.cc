@@ -64,13 +64,13 @@ public:
     return load_buffer_meta::make(variable::make(buffer), meta, d);
   }
 
-  void visit(const call* c) override {
+  void visit(const call_func* c) override {
     assert(c->fn);
     // Expand the bounds required of the inputs.
     for (const func::input& input : c->fn->inputs()) {
       std::map<symbol_id, expr> mins, maxs;
       // TODO(https://github.com/dsharlet/slinky/issues/7): We need a better way to map
-      // inputs/outputs between func and call. Here, we are assuming that c->buffer_args
+      // inputs/outputs between func and call_func. Here, we are assuming that c->buffer_args
       // is the inputs concatenated with the outputs, in that order.
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
       for (const func::output& output : c->fn->outputs()) {
@@ -238,7 +238,7 @@ public:
 
   slider(node_context& ctx) : ctx(ctx) {}
 
-  void visit(const call* c) override {
+  void visit(const call_func* c) override {
     assert(c->fn);
 
 

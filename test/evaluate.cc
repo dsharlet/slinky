@@ -41,7 +41,7 @@ TEST(evaluate_call) {
   node_context ctx;
   expr x = make_variable(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call::make(
+  stmt c = call_func::make(
       [&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
         calls.push_back(scalars[0]);
         return 0;
@@ -61,7 +61,7 @@ TEST(evaluate_loop) {
   node_context ctx;
   expr x = make_variable(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call::make(
+  stmt c = call_func::make(
       [&](std::span<const index_t> scalars, std::span<buffer_base*> buffers) -> index_t {
         calls.push_back(scalars[0]);
         return 0;
