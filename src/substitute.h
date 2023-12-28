@@ -18,6 +18,9 @@ expr substitute(const expr& e, const std::map<symbol_id, expr>& replacements);
 stmt substitute(const stmt& s, const std::map<symbol_id, expr>& replacements);
 expr substitute(const expr& e, symbol_id target, const expr& replacement);
 stmt substitute(const stmt& s, symbol_id target, const expr& replacement);
+expr substitute(const expr& e, const expr& target, const expr& replacement);
+stmt substitute(const stmt& s, const expr& target, const expr& replacement);
+
 }  // namespace slinky
 
 #endif  // SLINKY_SUBSTITUTE_H
