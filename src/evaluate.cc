@@ -196,6 +196,7 @@ public:
       assert(n->type == memory_type::heap);
       buffer->allocation = nullptr;
       if (context.allocate) {
+        assert(context.free);
         context.allocate(buffer);
       } else {
         buffer->allocate();
@@ -207,6 +208,7 @@ public:
 
     if (n->type == memory_type::heap) {
       if (context.free) {
+        assert(context.allocate);
         context.free(buffer);
       } else {
         buffer->free();
