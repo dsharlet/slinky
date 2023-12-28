@@ -224,40 +224,6 @@ public:
   }
 };
 
-// The idea behind this pass is:
-// - Find allocations
-// - Track the loops between allocations and producers
-// - At the producer, for each loop:
-//   - Compute the bounds produced by iteration i and i + 1
-//   - Subtract the bounds
-class slider : public node_mutator {
-public:
-  node_context& ctx;
-  std::vector<symbol_id> loops;
-  symbol_map<std::size_t> loop_begin;
-
-  slider(node_context& ctx) : ctx(ctx) {}
-
-  void visit(const call_func* c) override {
-    assert(c->fn);
-
-
-
-    node_mutator::visit(c);
-  }
-
-  void visit(const allocate* op) override { 
-    auto set_loop_begin = set_value_in_scope(loop_begin, op->name, loops.size());
-    node_mutator::visit(op);
-  }
-
-  void visit(const loop* l) override { 
-    loops.push_back(l->name);
-    node_mutator::visit(l);
-    loops.pop_back();
-  }
-};
-
 }  // namespace
 
 stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
@@ -286,7 +252,5 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   }
   return block::make(block::make(checks), result);
 }
-
-stmt sliding_window(const stmt& s, node_context& ctx) { return slider(ctx).mutate(s); }
 
 }  // namespace slinky

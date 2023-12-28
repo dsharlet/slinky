@@ -316,8 +316,6 @@ stmt build_pipeline(
   }
   result = block::make(block::make(checks), result);
 
-  result = sliding_window(result, ctx);
-
   result = simplify(result);
   print(std::cerr, result, &ctx);
 
