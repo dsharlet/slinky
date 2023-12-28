@@ -4,7 +4,7 @@
 
 using namespace slinky;
 
-TEST(interval_euclidean_div_mod) {
+TEST(arithmetic_euclidean_div_mod) {
   for (int i = 0; i < 1000; ++i) {
     int a = rand();
     int b = rand();
