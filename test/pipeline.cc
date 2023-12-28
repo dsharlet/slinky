@@ -8,6 +8,45 @@
 
 using namespace slinky;
 
+struct memory_info {
+  std::ptrdiff_t live_count = 0;
+  std::ptrdiff_t live_size = 0;
+  std::ptrdiff_t total_count = 0;
+  std::ptrdiff_t total_size = 0;
+  std::ptrdiff_t peak_count = 0;
+  std::ptrdiff_t peak_size = 0;
+
+  void track_allocate(std::size_t size) {
+    live_count += 1;
+    live_size += size;
+    total_count += 1;
+    total_size += size;
+    peak_count = std::max(peak_count, live_count);
+    peak_size = std::max(peak_size, live_size);
+  }
+
+  void track_free(std::size_t size) {
+    live_count -= 1;
+    live_size -= size;
+  }
+};
+
+class debug_context : public eval_context {
+public:
+  memory_info heap;
+
+  debug_context() {
+    allocate = [this](buffer_base* b) {
+      b->allocate();
+      heap.track_allocate(b->size_bytes());
+    };
+    free = [this](buffer_base* b) {
+      b->free();
+      heap.track_free(b->size_bytes());
+    };
+  }
+};
+
 // A trivial pipeline with one stage.
 TEST(pipeline_trivial) {
   // Make the pipeline
@@ -37,10 +76,9 @@ TEST(pipeline_trivial) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.peak_size, 0);
-  ASSERT_EQ(eval_ctx.stack.peak_size, 0);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i);
@@ -89,10 +127,9 @@ TEST(pipeline_trivial_explicit) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, 0);
-  ASSERT_EQ(eval_ctx.stack.total_size, 0);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i);
@@ -130,7 +167,7 @@ TEST(pipeline_elementwise_1d) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
@@ -177,12 +214,8 @@ TEST(pipeline_elementwise_1d_explicit) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.stack.peak_size, sizeof(int));
-  ASSERT_EQ(eval_ctx.stack.peak_count, 1);
-  ASSERT_EQ(eval_ctx.stack.total_size, N * sizeof(int));
-  ASSERT_EQ(eval_ctx.stack.total_count, N);
   ASSERT_EQ(eval_ctx.heap.total_size, 0);
   ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
@@ -252,12 +285,10 @@ TEST(pipeline_matmuls) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
   const buffer_base* outputs[] = {&abc_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, M * N * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  ASSERT_EQ(eval_ctx.stack.total_size, 0);
-  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
   buffer<int, 2> ref_ab({N, M});
   buffer<int, 2> ref_abc({N, M});
@@ -324,12 +355,10 @@ TEST(pipeline_pyramid) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(int) / 4);
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  ASSERT_EQ(eval_ctx.stack.total_size, 0);
-  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 }
 
 TEST(pipeline_stencil) {
@@ -367,12 +396,10 @@ TEST(pipeline_stencil) {
   // Not having std::span(std::initializer_list<T>) is unfortunate.
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  ASSERT_EQ(eval_ctx.stack.total_size, 0);
-  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -414,12 +441,10 @@ TEST(pipeline_flip_y) {
   out_buf.allocate();
   const buffer_base* inputs[] = {&in_buf};
   const buffer_base* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  ASSERT_EQ(eval_ctx.stack.total_size, 0);
-  ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {

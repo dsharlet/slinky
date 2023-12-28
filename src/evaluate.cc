@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "print.h"
+#include "simplify.h"
 
 namespace slinky {
 
@@ -20,14 +21,15 @@ public:
   // Assume `e` is defined, evaluate it and return the result.
   index_t eval_expr(const expr& e) {
     e.accept(this);
-    return result;
+    index_t r = result;
+    result = 0;
+    return r;
   }
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
   index_t eval_expr(const expr& e, index_t def) {
     if (e.defined()) {
-      e.accept(this);
-      return result;
+      return eval_expr(e);
     } else {
       return def;
     }
@@ -121,8 +123,8 @@ public:
   }
 
   void visit(const block* b) override {
-    b->a.accept(this);
-    b->b.accept(this);
+    if (result == 0) b->a.accept(this);
+    if (result == 0) b->b.accept(this);
   }
 
   void visit(const loop* l) override {
@@ -133,7 +135,7 @@ public:
     // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
     // not clear this optimization is necessary yet.
     std::optional<index_t> old_value = context[l->name];
-    for (index_t i = min; i <= max; ++i) {
+    for (index_t i = min; result == 0 && i <= max; ++i) {
       context[l->name] = i;
       l->body.accept(this);
     }
@@ -163,8 +165,12 @@ public:
     std::span<buffer_base*> buffers_span(buffers, n->buffer_args.size());
     result = n->target(scalars_span, buffers_span);
     if (result) {
-      std::cerr << "call_func failed: " << stmt(n) << "->" << result << std::endl;
-      std::abort();
+      if (context.call_failed) {
+        context.call_failed(n);
+      } else {
+        std::cerr << "call_func failed: " << stmt(n) << "->" << result << std::endl;
+        std::abort();
+      }
     }
   }
 
@@ -184,23 +190,27 @@ public:
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
 
-    std::size_t size = buffer->size_bytes();
-
-    eval_context::memory_info::alloc_tracker tracker;
     if (n->type == memory_type::stack) {
-      buffer->base = alloca(size);
-      tracker = context.stack.track_allocate(size);
+      buffer->base = alloca(buffer->size_bytes());
     } else {
       assert(n->type == memory_type::heap);
-      buffer->base = malloc(size);
-      tracker = context.heap.track_allocate(size);
+      buffer->allocation = nullptr;
+      if (context.allocate) {
+        context.allocate(buffer);
+      } else {
+        buffer->allocate();
+      }
     }
 
     auto set_buffer = set_value_in_scope(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
     if (n->type == memory_type::heap) {
-      free(buffer->base);
+      if (context.free) {
+        context.free(buffer);
+      } else {
+        buffer->free();
+      }
     }
   }
 
@@ -283,10 +293,24 @@ public:
   }
 
   void visit(const check* n) override {
-    result = eval_expr(n->condition);
-    if (!result) {
-      std::cerr << "check failed: " << n->condition << std::endl;
-      std::abort();
+    result = eval_expr(n->condition) != 0 ? 0 : 1;
+    if (result) {
+      if (context.check_failed) {
+        context.check_failed(n->condition);
+      } else {
+        std::cerr << "Check failed: " << n->condition << std::endl;
+        std::cerr << "Context: " << std::endl;
+        for (symbol_id i = 0; i < context.size(); ++i) {
+          if (depends_on(n->condition, i)) {
+            if (context.contains(i)) {
+              std::cerr << "  <" << i << "> = " << *context.lookup(i) << std::endl;
+            } else {
+              std::cerr << "  <" << i << "> = <>" << std::endl;
+            }
+          }
+        }
+        std::abort();
+      }
     }
   }
 };

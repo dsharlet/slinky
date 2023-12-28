@@ -100,9 +100,8 @@ protected:
     delete[] (char*)buf;
   }
 
-  char* allocation_;
-
 public:
+  char* allocation;
   void* base;
   std::size_t elem_size;
   std::size_t rank;
@@ -150,16 +149,15 @@ public:
 
   // Does not call constructor or destructor of T!
   void allocate() {
-    assert(base == nullptr);
-    assert(allocation_ == nullptr);
+    assert(allocation == nullptr);
 
-    allocation_ = new char[size_bytes()];
-    base = allocation_;
+    allocation = new char[size_bytes()];
+    base = allocation;
   }
 
   void free() {
-    delete[] allocation_;
-    allocation_ = nullptr;
+    delete[] allocation;
+    allocation = nullptr;
     base = nullptr;
   }
 
@@ -172,7 +170,7 @@ public:
     char* buf_and_dims = new char[sizeof(buffer_base) + sizeof(slinky::dim) * rank];
     buffer_base* buf = new (buf_and_dims) buffer_base();
     buf->base = nullptr;
-    buf->allocation_ = nullptr;
+    buf->allocation = nullptr;
     buf->rank = rank;
     buf->elem_size = elem_size;
     buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(buffer_base));
@@ -200,7 +198,7 @@ public:
 
   buffer() {
     buffer_base::base = nullptr;
-    allocation_ = nullptr;
+    allocation = nullptr;
     rank = DimsSize;
     elem_size = sizeof(T);
     if (DimsSize > 0) {
