@@ -95,7 +95,7 @@ public:
     }
   }
 
-  virtual void visit(const variable* x) {
+  void visit(const variable* x) override {
     if (matches) {
       match_wildcard(x->name, nullptr);
     } else {
@@ -104,7 +104,7 @@ public:
     }
   }
 
-  virtual void visit(const wildcard* x) {
+  void visit(const wildcard* x) override {
     if (matches) {
       match_wildcard(x->name, x->matches);
     } else {
@@ -113,7 +113,7 @@ public:
     }
   }
 
-  virtual void visit(const constant* x) {
+  void visit(const constant* x) override {
     if (!match) return;
 
     const constant* ec = e.as<constant>();
@@ -131,27 +131,27 @@ public:
     match = el->name == x->name && try_match(el->value, x->value) && try_match(el->body, x->body);
   }
 
-  virtual void visit(const let* x) { visit_let(x); }
-  virtual void visit(const add* x) { match_binary(x); }
-  virtual void visit(const sub* x) { match_binary(x); }
-  virtual void visit(const mul* x) { match_binary(x); }
-  virtual void visit(const div* x) { match_binary(x); }
-  virtual void visit(const mod* x) { match_binary(x); }
-  virtual void visit(const class min* x) { match_binary(x); }
-  virtual void visit(const class max* x) { match_binary(x); }
-  virtual void visit(const equal* x) { match_binary(x); }
-  virtual void visit(const not_equal* x) { match_binary(x); }
-  virtual void visit(const less* x) { match_binary(x); }
-  virtual void visit(const less_equal* x) { match_binary(x); }
-  virtual void visit(const bitwise_and* x) { match_binary(x); }
-  virtual void visit(const bitwise_or* x) { match_binary(x); }
-  virtual void visit(const bitwise_xor* x) { match_binary(x); }
-  virtual void visit(const logical_and* x) { match_binary(x); }
-  virtual void visit(const logical_or* x) { match_binary(x); }
-  virtual void visit(const shift_left* x) { match_binary(x); }
-  virtual void visit(const shift_right* x) { match_binary(x); }
+  void visit(const let* x) override { visit_let(x); }
+  void visit(const add* x) override { match_binary(x); }
+  void visit(const sub* x) override { match_binary(x); }
+  void visit(const mul* x) override { match_binary(x); }
+  void visit(const div* x) override { match_binary(x); }
+  void visit(const mod* x) override { match_binary(x); }
+  void visit(const class min* x) override { match_binary(x); }
+  void visit(const class max* x) override { match_binary(x); }
+  void visit(const equal* x) override { match_binary(x); }
+  void visit(const not_equal* x) override { match_binary(x); }
+  void visit(const less* x) override { match_binary(x); }
+  void visit(const less_equal* x) override { match_binary(x); }
+  void visit(const bitwise_and* x) override { match_binary(x); }
+  void visit(const bitwise_or* x) override { match_binary(x); }
+  void visit(const bitwise_xor* x) override { match_binary(x); }
+  void visit(const logical_and* x) override { match_binary(x); }
+  void visit(const logical_or* x) override { match_binary(x); }
+  void visit(const shift_left* x) override { match_binary(x); }
+  void visit(const shift_right* x) override { match_binary(x); }
 
-  virtual void visit(const class select* x) {
+  void visit(const class select* x) override {
     if (!match) return;
     const class select* se = e.as<class select>();
     if (!se) return fail();
@@ -160,7 +160,7 @@ public:
             try_match(se->false_value, x->false_value);
   }
 
-  virtual void visit(const load_buffer_meta* x) {
+  void visit(const load_buffer_meta* x) override {
     if (!match) return;
 
     const load_buffer_meta* lbme = e.as<load_buffer_meta>();
@@ -169,16 +169,16 @@ public:
     match = x->meta == lbme->meta && try_match(lbme->buffer, x->buffer) && try_match(lbme->dim, x->dim);
   }
 
-  virtual void visit(const call* x) {
+  void visit(const call* x) override {
     if (!match) return;
     const call* c = e.as<call>();
     if (!c) return fail();
     match = c->intrinsic == x->intrinsic && try_match(c->args, x->args);
   }
 
-  virtual void visit(const let_stmt* x) { visit_let(x); }
+  void visit(const let_stmt* x) override { visit_let(x); }
 
-  virtual void visit(const block* x) {
+  void visit(const block* x) override {
     if (!match) return;
     const block* bs = s.as<block>();
     if (!bs) return fail();
@@ -186,7 +186,7 @@ public:
     match = try_match(bs->a, x->a) && try_match(bs->b, x->b);
   }
 
-  virtual void visit(const loop* x) {
+  void visit(const loop* x) override {
     if (!match) return;
     const loop* ls = s.as<loop>();
     if (!ls) return fail();
@@ -195,7 +195,7 @@ public:
             try_match(ls->body, x->body);
   }
 
-  virtual void visit(const if_then_else* x) {
+  void visit(const if_then_else* x) override {
     if (!match) return;
     const if_then_else* is = s.as<if_then_else>();
     if (!is) return fail();
@@ -204,7 +204,7 @@ public:
             try_match(is->false_body, x->false_body);
   }
 
-  virtual void visit(const call_func* x) {
+  void visit(const call_func* x) override {
     if (!match) return;
     const call_func* cs = s.as<call_func>();
     if (!cs) return fail();
@@ -213,7 +213,7 @@ public:
     // TODO(https://github.com/dsharlet/slinky/issues/11): How to compare callable?
   }
 
-  virtual void visit(const allocate* x) {
+  void visit(const allocate* x) override {
     if (!match) return;
     const allocate* as = s.as<allocate>();
     if (!as) return fail();
@@ -222,7 +222,7 @@ public:
             try_match(as->body, x->body);
   }
 
-  virtual void visit(const make_buffer* x) {
+  void visit(const make_buffer* x) override {
     if (!match) return;
     const make_buffer* mbs = s.as<make_buffer>();
     if (!mbs) return fail();
@@ -231,7 +231,7 @@ public:
             try_match(mbs->dims, x->dims) && try_match(mbs->body, x->body);
   }
 
-  virtual void visit(const crop_buffer* x) {
+  void visit(const crop_buffer* x) override {
     if (!match) return;
     const crop_buffer* cbs = s.as<crop_buffer>();
     if (!cbs) return fail();
@@ -239,7 +239,7 @@ public:
     match = cbs->name == x->name && try_match(cbs->bounds, x->bounds) && try_match(cbs->body, x->body);
   }
 
-  virtual void visit(const crop_dim* x) {
+  void visit(const crop_dim* x) override {
     if (!match) return;
     const crop_dim* cds = s.as<crop_dim>();
     if (!cds) return fail();
@@ -248,7 +248,7 @@ public:
             try_match(cds->extent, x->extent) && try_match(cds->body, x->body);
   }
 
-  virtual void visit(const check* x) {
+  void visit(const check* x) override {
     if (!match) return;
     const check* cs = s.as<check>();
     if (!cs) return fail();
