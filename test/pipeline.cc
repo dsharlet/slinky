@@ -36,11 +36,11 @@ public:
   memory_info heap;
 
   debug_context() {
-    allocate = [this](symbol_id, buffer_base* b) {
+    allocate = [this](symbol_id, raw_buffer* b) {
       b->allocate();
       heap.track_allocate(b->size_bytes());
     };
-    free = [this](symbol_id, buffer_base* b) {
+    free = [this](symbol_id, raw_buffer* b) {
       b->free();
       heap.track_free(b->size_bytes());
     };
@@ -74,8 +74,8 @@ TEST(pipeline_trivial) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.peak_size, 0);
@@ -125,8 +125,8 @@ TEST(pipeline_trivial_explicit) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, 0);
@@ -165,8 +165,8 @@ TEST(pipeline_elementwise_1d) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int));
@@ -212,8 +212,8 @@ TEST(pipeline_elementwise_1d_explicit) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, 0);
@@ -283,8 +283,8 @@ TEST(pipeline_matmuls) {
   abc_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
-  const buffer_base* outputs[] = {&abc_buf};
+  const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+  const raw_buffer* outputs[] = {&abc_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, M * N * sizeof(int));
@@ -353,8 +353,8 @@ TEST(pipeline_pyramid) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(int) / 4);
@@ -394,8 +394,8 @@ TEST(pipeline_stencil) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
@@ -439,8 +439,8 @@ TEST(pipeline_flip_y) {
   buffer<char, 2> out_buf({W, H});
   out_buf.dim(1).translate(-H + 1);
   out_buf.allocate();
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));

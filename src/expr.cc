@@ -392,4 +392,24 @@ const expr& indeterminate() {
   return e;
 }
 
+expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
+
+expr buffer_rank(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::rank); }
+expr buffer_base(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::base); }
+expr buffer_elem_size(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::elem_size); }
+expr buffer_min(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim)); }
+expr buffer_max(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim)); }
+interval_expr buffer_bounds(const expr& buf, const expr& dim) {
+  return { buffer_min(buf, dim), buffer_max(buf, dim) };
+}
+expr buffer_extent(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
+}
+expr buffer_stride_bytes(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::stride_bytes, std::move(dim));
+}
+expr buffer_fold_factor(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::fold_factor, std::move(dim));
+}
+
 }  // namespace slinky

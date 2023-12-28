@@ -105,10 +105,8 @@ TEST(simplify_let) {
 }
 
 TEST(simplify_load_buffer_meta) {
-  test_simplify(load_buffer_meta::make(x, buffer_meta::extent, y) >= 0, true);
-  test_simplify(
-      max(load_buffer_meta::make(x, buffer_meta::max, y) + 1, load_buffer_meta::make(x, buffer_meta::min, y) - 1),
-      load_buffer_meta::make(x, buffer_meta::max, y) + 1);
+  test_simplify(buffer_extent(x, y) >= 0, true);
+  test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
 }
 
 TEST(simplify_if_then_else) {
@@ -257,9 +255,9 @@ TEST(simplify_fuzz) {
 
   eval_context ctx;
 
-  std::vector<buffer_base_ptr> buffers;
+  std::vector<raw_buffer_ptr> buffers;
   for (int i = 0; i < bufs.size(); ++i) {
-    buffers.emplace_back(buffer_base::make(max_rank, 4));
+    buffers.emplace_back(raw_buffer::make(max_rank, 4));
   }
   for (int i = 0; i < bufs.size(); ++i) {
     ctx[bufs[i]] = reinterpret_cast<index_t>(buffers[i].get());

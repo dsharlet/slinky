@@ -465,8 +465,8 @@ class func;
 
 class call_func : public stmt_node<call_func> {
 public:
-  typedef index_t (*callable_t)(std::span<const index_t>, std::span<buffer_base*>);
-  using callable = std::function<index_t(std::span<const index_t>, std::span<buffer_base*>)>;
+  typedef index_t (*callable_t)(std::span<const index_t>, std::span<raw_buffer*>);
+  using callable = std::function<index_t(std::span<const index_t>, std::span<raw_buffer*>)>;
 
   callable target;
   std::vector<expr> scalar_args;
@@ -887,7 +887,17 @@ inline bool is_non_positive(const expr& x) {
   return c ? *c <= 0 : false;
 }
 
-inline expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
+expr abs(expr x);
+
+expr buffer_rank(expr buf);
+expr buffer_base(expr buf);
+expr buffer_elem_size(expr buf);
+expr buffer_min(expr buf, expr dim);
+expr buffer_max(expr buf, expr dim);
+interval_expr buffer_bounds(const expr& buf, const expr& dim);
+expr buffer_extent(expr buf, expr dim);
+expr buffer_stride_bytes(expr buf, expr dim);
+expr buffer_fold_factor(expr buf, expr dim);
 
 }  // namespace slinky
 

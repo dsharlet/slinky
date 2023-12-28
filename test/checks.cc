@@ -36,8 +36,8 @@ TEST(pipeline_checks) {
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});
 
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   index_t result = p.evaluate(inputs, outputs, eval_ctx);
   ASSERT(result != 0) << " null inputs should have failed";
 
@@ -53,7 +53,7 @@ TEST(pipeline_checks) {
   ASSERT_EQ(checks_failed, 1);
 
   buffer<int, 1> too_small_buf({N - 1});
-  const buffer_base* too_small[] = {&too_small_buf};
+  const raw_buffer* too_small[] = {&too_small_buf};
   result = p.evaluate(too_small, outputs, eval_ctx);
   ASSERT(result != 0) << " too small should have failed";
 

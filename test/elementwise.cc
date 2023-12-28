@@ -44,8 +44,8 @@ void test_elementwise(const int W, const int H) {
   out_buf.allocate();
 
   // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const buffer_base* inputs[] = {&a_buf, &b_buf, &c_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   p.evaluate(inputs, outputs);
 
   for_each_index(

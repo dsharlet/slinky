@@ -12,9 +12,9 @@ public:
   // These two functions implement allocation. `allocate` is called before
   // running the body, and `free` is called after.
   // If these functions are not defined, the default handler will call
-  // buffer_base::allocate and buffer_base::free.
-  std::function<void(symbol_id, buffer_base*)> allocate;
-  std::function<void(symbol_id, buffer_base*)> free;
+  // raw_buffer::allocate and raw_buffer::free.
+  std::function<void(symbol_id, raw_buffer*)> allocate;
+  std::function<void(symbol_id, raw_buffer*)> free;
 
   // Functions called when there is a failure in the pipeline.
   // If these functions are not defined, the default handler will write a

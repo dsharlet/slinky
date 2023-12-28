@@ -31,12 +31,12 @@ void for_each_index(std::span<const dim> dims, F&& f) {
 
 // Call `f(std::span<index_t>)` for each index in the range of the dims of `b`.
 template <typename F>
-void for_each_index(const buffer_base& b, F&& f) {
+void for_each_index(const raw_buffer& b, F&& f) {
   for_each_index({b.dims, b.rank}, f);
 }
 
 // Copy from input to output.
-// TODO: We should be able to just do this with buffer_base and not make it a template.
+// TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
 index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   const T* src = &in(out.dim(0).min(), out.dim(1).min());

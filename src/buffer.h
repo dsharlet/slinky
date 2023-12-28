@@ -67,9 +67,9 @@ public:
 template <typename T, std::size_t DimsSize = 0>
 class buffer;
 
-class buffer_base;
+class raw_buffer;
 
-using buffer_base_ptr = std::unique_ptr<buffer_base, void (*)(buffer_base*)>;
+using raw_buffer_ptr = std::unique_ptr<raw_buffer, void (*)(raw_buffer*)>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -77,14 +77,14 @@ using buffer_base_ptr = std::unique_ptr<buffer_base, void (*)(buffer_base*)>;
 //   a. No extra storage for unused dimensions.
 //   b. In the same allocation as the buffer object itself if needed.
 //
-// To this end, we have a class (struct) buffer_base:
+// To this end, we have a class (struct) raw_buffer:
 // - Type erased.
-// - Does not provide storage for dims (unless you use buffer_base::make).
+// - Does not provide storage for dims (unless you use raw_buffer::make).
 //
 // And a class buffer<T, DimsSize>:
 // - Has a type, can be accessed via operator() and at.
 // - Provides storage for DimsSize dims (default is 0).
-class buffer_base : public std::enable_shared_from_this<buffer_base> {
+class raw_buffer : public std::enable_shared_from_this<raw_buffer> {
 protected:
   static constexpr std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
     return dims->flat_offset_bytes(i0);
@@ -95,8 +95,8 @@ protected:
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
   }
 
-  static void destroy(buffer_base* buf) {
-    buf->~buffer_base();
+  static void destroy(raw_buffer* buf) {
+    buf->~raw_buffer();
     delete[] (char*)buf;
   }
 
@@ -107,12 +107,12 @@ public:
   std::size_t rank;
   slinky::dim* dims;
 
-  buffer_base() = default;
-  buffer_base(const buffer_base&) = delete;
-  buffer_base(buffer_base&&) = delete;
-  void operator=(const buffer_base&) = delete;
-  void operator=(buffer_base&&) = delete;
-  ~buffer_base() { free(); }
+  raw_buffer() = default;
+  raw_buffer(const raw_buffer&) = delete;
+  raw_buffer(raw_buffer&&) = delete;
+  void operator=(const raw_buffer&) = delete;
+  void operator=(raw_buffer&&) = delete;
+  ~raw_buffer() { free(); }
 
   slinky::dim& dim(std::size_t i) { return dims[i]; }
   const slinky::dim& dim(std::size_t i) const { return dims[i]; }
@@ -170,38 +170,38 @@ public:
 
   // Make a buffer and space for dims in the same object. Returns a unique_ptr, with the
   // understanding that unique_ptr can be converted to shared_ptr if needed.
-  static buffer_base_ptr make(std::size_t rank, std::size_t elem_size) {
-    char* buf_and_dims = new char[sizeof(buffer_base) + sizeof(slinky::dim) * rank];
-    buffer_base* buf = new (buf_and_dims) buffer_base();
+  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size) {
+    char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
+    raw_buffer* buf = new (buf_and_dims) raw_buffer();
     buf->base = nullptr;
     buf->allocation = nullptr;
     buf->rank = rank;
     buf->elem_size = elem_size;
-    buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(buffer_base));
+    buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
     memset(&buf->dims[0], 0, sizeof(slinky::dim) * rank);
     return {buf, destroy};
   }
 };
 
 template <typename T, std::size_t DimsSize>
-class buffer : public buffer_base {
+class buffer : public raw_buffer {
 private:
-  // TODO: When DimsSize is 0, this still makes sizeof(buffer) bigger than sizeof(buffer_base).
-  // This might be a problem because we can cast buffer_base to buffer<T>. When DimsSize is 0,
+  // TODO: When DimsSize is 0, this still makes sizeof(buffer) bigger than sizeof(raw_buffer).
+  // This might be a problem because we can cast raw_buffer to buffer<T>. When DimsSize is 0,
   // we shouldn't actually access this, so it might be harmless, but it still seems ugly.
   slinky::dim dims_storage[DimsSize];
 
 public:
-  using buffer_base::allocate;
-  using buffer_base::cast;
-  using buffer_base::dim;
-  using buffer_base::elem_size;
-  using buffer_base::flat_offset_bytes;
-  using buffer_base::free;
-  using buffer_base::rank;
+  using raw_buffer::allocate;
+  using raw_buffer::cast;
+  using raw_buffer::dim;
+  using raw_buffer::elem_size;
+  using raw_buffer::flat_offset_bytes;
+  using raw_buffer::free;
+  using raw_buffer::rank;
 
   buffer() {
-    buffer_base::base = nullptr;
+    raw_buffer::base = nullptr;
     allocation = nullptr;
     rank = DimsSize;
     elem_size = sizeof(T);
@@ -228,12 +228,12 @@ public:
     }
   }
 
-  T* base() const { return reinterpret_cast<T*>(buffer_base::base); }
+  T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
 
   // Make a buffer and space for dims in the same allocation.
   static std::unique_ptr<buffer<T>, void (*)(buffer<T>*)> make(std::size_t rank) {
-    auto buf = buffer_base::make(rank, sizeof(T));
-    return {static_cast<buffer<T>*>(buf.release()), (void (*)(buffer<T>*))buffer_base::destroy};
+    auto buf = raw_buffer::make(rank, sizeof(T));
+    return {static_cast<buffer<T>*>(buf.release()), (void (*)(buffer<T>*))raw_buffer::destroy};
   }
 
   // These accessors are not designed to be fast. They exist to facilitate testing,
@@ -252,7 +252,7 @@ public:
 };
 
 template <typename NewT>
-const buffer<NewT>& buffer_base::cast() const {
+const buffer<NewT>& raw_buffer::cast() const {
   assert(elem_size == sizeof(NewT));
   return *reinterpret_cast<const buffer<NewT>*>(this);
 }

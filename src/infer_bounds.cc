@@ -53,17 +53,17 @@ public:
       i.max = simplify(i.max);
 
       expr alloc_var = variable::make(alloc->name);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::min, d), i.min);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), i.max);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::stride_bytes, d), stride_bytes);
+      replacements.emplace_back(buffer_min(alloc_var, d), i.min);
+      replacements.emplace_back(buffer_max(alloc_var, d), i.max);
+      replacements.emplace_back(buffer_stride_bytes(alloc_var, d), stride_bytes);
       if (fold_factor && fold_factor->first == d) {
-        replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), fold_factor->second);
+        replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_factor->second);
       } else {
-        replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), -1);
+        replacements.emplace_back(buffer_fold_factor(alloc_var, d), -1);
       }
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), i.extent());
+      replacements.emplace_back(buffer_extent(alloc_var, d), i.extent());
       stride_bytes *= i.extent();
     }
 
@@ -307,8 +307,8 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
     const box& bounds = *b.inferring[i];
     index_t rank = static_cast<index_t>(bounds.size());
     for (int d = 0; d < rank; ++d) {
-      expr min = load_buffer_meta::make(buf_var, buffer_meta::min, d);
-      expr max = load_buffer_meta::make(buf_var, buffer_meta::max, d);
+      expr min = buffer_min(buf_var, d);
+      expr max = buffer_max(buf_var, d);
       checks.push_back(check::make(min <= bounds[d].min));
       checks.push_back(check::make(max >= bounds[d].max));
     }

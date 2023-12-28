@@ -87,7 +87,7 @@ public:
   }
 
   void visit(const load_buffer_meta* x) override {
-    buffer_base* buffer = reinterpret_cast<buffer_base*>(eval_expr(x->buffer));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(eval_expr(x->buffer));
     assert(buffer);
     if (x->meta == buffer_meta::rank) {
       result = buffer->rank;
@@ -156,13 +156,13 @@ public:
       scalars[i] = eval_expr(n->scalar_args[i]);
     }
 
-    buffer_base** buffers = reinterpret_cast<buffer_base**>(alloca(n->buffer_args.size() * sizeof(buffer_base*)));
+    raw_buffer** buffers = reinterpret_cast<raw_buffer**>(alloca(n->buffer_args.size() * sizeof(raw_buffer*)));
     for (std::size_t i = 0; i < n->buffer_args.size(); ++i) {
-      buffers[i] = reinterpret_cast<buffer_base*>(*context.lookup(n->buffer_args[i]));
+      buffers[i] = reinterpret_cast<raw_buffer*>(*context.lookup(n->buffer_args[i]));
     }
 
     std::span<const index_t> scalars_span(scalars, n->scalar_args.size());
-    std::span<buffer_base*> buffers_span(buffers, n->buffer_args.size());
+    std::span<raw_buffer*> buffers_span(buffers, n->buffer_args.size());
     result = n->target(scalars_span, buffers_span);
     if (result) {
       if (context.call_failed) {
@@ -177,11 +177,11 @@ public:
   void visit(const allocate* n) override {
     std::size_t rank = n->dims.size();
     // Allocate a buffer with space for its dims on the stack.
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(buffer_base) + sizeof(dim) * rank));
-    buffer_base* buffer = reinterpret_cast<buffer_base*>(&storage[0]);
+    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
     buffer->elem_size = n->elem_size;
     buffer->rank = rank;
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
+    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
 
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
@@ -219,12 +219,12 @@ public:
   void visit(const make_buffer* n) override {
     std::size_t rank = n->dims.size();
     // Allocate a buffer with space for its dims on the stack.
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(buffer_base) + sizeof(dim) * rank));
-    buffer_base* buffer = reinterpret_cast<buffer_base*>(&storage[0]);
+    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
     buffer->elem_size = n->elem_size;
     buffer->base = reinterpret_cast<void*>(eval_expr(n->base));
     buffer->rank = rank;
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(buffer_base)]);
+    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
 
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
@@ -238,7 +238,7 @@ public:
   }
 
   void visit(const crop_dim* n) override {
-    buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
     slinky::dim& dim = buffer->dims[n->dim];
 
     void* old_base = buffer->base;
@@ -258,7 +258,7 @@ public:
   }
 
   void visit(const crop_buffer* n) override {
-    buffer_base* buffer = reinterpret_cast<buffer_base*>(*context.lookup(n->name));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
 
     struct range {
       index_t min;

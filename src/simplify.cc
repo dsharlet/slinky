@@ -82,12 +82,6 @@ struct rule {
   }
 };
 
-expr buffer_min(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim)); }
-expr buffer_max(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim)); }
-expr buffer_extent(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
-}
-
 class simplifier : public node_mutator {
   symbol_map<int> references;
   symbol_map<box> buffer_bounds;

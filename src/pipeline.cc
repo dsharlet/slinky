@@ -18,10 +18,9 @@ buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank)
   dims_.reserve(rank);
   auto var = variable::make(name);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
-    interval_expr bounds = {
-        load_buffer_meta::make(var, buffer_meta::min, i), load_buffer_meta::make(var, buffer_meta::max, i)};
-    expr stride_bytes = load_buffer_meta::make(var, buffer_meta::stride_bytes, i);
-    expr fold_factor = load_buffer_meta::make(var, buffer_meta::fold_factor, i);
+    interval_expr bounds = buffer_bounds(var, i);
+    expr stride_bytes = buffer_stride_bytes(var, i);
+    expr fold_factor = buffer_fold_factor(var, i);
     dims_.emplace_back(bounds, stride_bytes, fold_factor);
   }
 }
@@ -231,7 +230,7 @@ public:
     std::size_t input_count = f->inputs().size();
     std::size_t output_count = f->outputs().size();
     auto wrapper = [impl = f->impl(), input_count, output_count](
-                       std::span<const index_t>, std::span<buffer_base*> buffers) -> index_t {
+                       std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
       assert(buffers.size() == input_count + output_count);
       return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
     };
@@ -271,15 +270,13 @@ void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
   expr buf_var = variable::make(b->name());
   checks.push_back(check::make(buf_var != 0));
-  checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::rank) == rank));
-  checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::base) != 0));
+  checks.push_back(check::make(buffer_rank(buf_var) == rank));
+  checks.push_back(check::make(buffer_base(buf_var) != 0));
   for (int d = 0; d < rank; ++d) {
-    checks.push_back(check::make(b->dim(d).min() == load_buffer_meta::make(buf_var, buffer_meta::min, d)));
-    checks.push_back(check::make(b->dim(d).max() == load_buffer_meta::make(buf_var, buffer_meta::max, d)));
-    checks.push_back(
-        check::make(b->dim(d).stride_bytes == load_buffer_meta::make(buf_var, buffer_meta::stride_bytes, d)));
-    checks.push_back(
-        check::make(b->dim(d).fold_factor == load_buffer_meta::make(buf_var, buffer_meta::fold_factor, d)));
+    checks.push_back(check::make(b->dim(d).min() == buffer_min(buf_var, d)));
+    checks.push_back(check::make(b->dim(d).max() == buffer_max(buf_var, d)));
+    checks.push_back(check::make(b->dim(d).stride_bytes == buffer_stride_bytes(buf_var, d)));
+    checks.push_back(check::make(b->dim(d).fold_factor == buffer_fold_factor(buf_var, d)));
   }
 }
 
@@ -345,7 +342,7 @@ pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::
 }
 
 index_t pipeline::evaluate(
-    std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const {
+    std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs, eval_context& ctx) const {
   assert(inputs.size() == inputs_.size());
   assert(outputs.size() == outputs_.size());
 
@@ -359,7 +356,7 @@ index_t pipeline::evaluate(
   return slinky::evaluate(body, ctx);
 }
 
-index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const {
+index_t pipeline::evaluate(std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs) const {
   eval_context ctx;
   return evaluate(inputs, outputs, ctx);
 }

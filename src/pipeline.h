@@ -70,7 +70,7 @@ public:
 // Represents a node of computation in a pipeline.
 class func {
 public:
-  using callable = std::function<index_t(std::span<buffer_base*>, std::span<buffer_base*>)>;
+  using callable = std::function<index_t(std::span<raw_buffer*>, std::span<raw_buffer*>)>;
 
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
@@ -132,7 +132,7 @@ public:
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output arg) {
     return func(
-        [impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
+        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
           assert(inputs.size() == 0);
           assert(outputs.size() == 1);
           assert(outputs[0] != nullptr);
@@ -144,7 +144,7 @@ public:
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
     return func(
-        [impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
+        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
           assert(inputs.size() == 1);
           assert(outputs.size() == 1);
           assert(inputs[0] != nullptr);
@@ -157,7 +157,7 @@ public:
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
     return func(
-        [impl = std::move(impl)](std::span<buffer_base*> inputs, std::span<buffer_base*> outputs) -> index_t {
+        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
           assert(inputs.size() == 2);
           assert(outputs.size() == 1);
           assert(inputs[0] != nullptr);
@@ -190,8 +190,8 @@ public:
       const build_options& options = build_options());
 
   index_t evaluate(
-      std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const;
-  index_t evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const;
+      std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs, eval_context& ctx) const;
+  index_t evaluate(std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs) const;
 };
 
 }  // namespace slinky

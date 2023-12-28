@@ -3,8 +3,8 @@
 
 using namespace slinky;
 
-TEST(buffer_base_make) {
-  auto buf = buffer_base::make(2, 4);
+TEST(raw_buffer_make) {
+  auto buf = raw_buffer::make(2, 4);
   buf->dim(0).set_min_extent(0, 10);
   buf->dim(0).set_stride_bytes(4);
   buf->dim(1).set_min_extent(0, 20);

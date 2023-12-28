@@ -18,8 +18,8 @@ double benchmark_pipeline(const pipeline& p, index_t total_size, index_t copy_si
   buffer<char, 2> out_buf({copy_size, total_size / copy_size});
   out_buf.allocate();
   memset(out_buf.base(), 0, total_size);
-  const buffer_base* inputs[] = {&in_buf};
-  const buffer_base* outputs[] = {&out_buf};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
   double t = benchmark([&]() { p.evaluate(inputs, outputs); });
 
   for (size_t i = 0; i < total_size; ++i) {
@@ -58,4 +58,3 @@ void benchmark_pipelines(bool explicit_y) {
 // Benchmark copying a 2D buffer, where the loop over y is explicit.
 TEST(performance_copy_explicit_y) { benchmark_pipelines(true); }
 TEST(performance_copy_implicit_y) { benchmark_pipelines(false); }
-
