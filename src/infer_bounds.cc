@@ -173,11 +173,17 @@ public:
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
           prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, prev_iter));
           prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, prev_iter));
-          if (can_prove(prev_bounds[d].min < crop_bounds[d].min) && can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
+          if (can_prove(prev_bounds[d].min <= crop_bounds[d].min) && can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
+            // The bounds for each loop iteration are monotonically increasing,
+            // so we can incrementally compute only the newly required bounds.
             expr& old_min = crop_bounds[d].min;
             expr new_min = prev_bounds[d].max + 1;
             loop_mins[l].second -= simplify(new_min - old_min);
             old_min = new_min;
+            break;
+          } else if (can_prove(prev_bounds[d].min > crop_bounds[d].min) && can_prove(prev_bounds[d].max >= crop_bounds[d].max)) {
+            // TODO: We could also try to slide when the bounds are monotonically
+            // decreasing, but this is an unusual case.
           }
         }
       }
