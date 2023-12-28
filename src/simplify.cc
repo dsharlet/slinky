@@ -772,7 +772,7 @@ public:
     s = allocate::make(op->type, op->name, op->elem_size, std::move(dims), std::move(body));
   }
 
-  virtual void visit(const make_buffer* op) override {
+  void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     std::vector<dim_expr> dims;
     box bounds;
@@ -893,11 +893,11 @@ public:
     }
   }
 
-  virtual void visit(const variable* x) { visit_variable(x); }
-  virtual void visit(const wildcard* x) { visit_variable(x); }
-  virtual void visit(const constant* x) { result = interval(x); }
+  void visit(const variable* x) override { visit_variable(x); }
+  void visit(const wildcard* x) override { visit_variable(x); }
+  void visit(const constant* x) override { result = interval(x); }
 
-  virtual void visit(const let* x) {
+  void visit(const let* x) override {
     x->value.accept(this);
     auto s = set_value_in_scope(bounds, x->name, result);
     x->body.accept(this);
@@ -930,13 +930,13 @@ public:
     result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
   }
 
-  virtual void visit(const add* x) { visit_linear(x); }
-  virtual void visit(const sub* x) {
+  void visit(const add* x) override { visit_linear(x); }
+  void visit(const sub* x) override {
     binary_result r = binary_bounds(x);
     result = {make(x, r.a.min, r.b.max), make(x, r.a.max, r.b.min)};
   }
 
-  virtual void visit(const mul* x) {
+  void visit(const mul* x) override {
     binary_result r = binary_bounds(x);
 
     // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
@@ -981,19 +981,19 @@ public:
       result = {min(corners), max(corners)};
     }
   }
-  virtual void visit(const div* x) {
+  void visit(const div* x) override {
     binary_result r = binary_bounds(x);
     // TODO: Tighten these bounds.
     result = r.a | -r.a;
   }
-  virtual void visit(const mod* x) {
+  void visit(const mod* x) override {
     binary_result r = binary_bounds(x);
     result = {0, max(abs(r.b.min), abs(r.b.max))};
     result &= r.a;
   }
 
-  virtual void visit(const class min* x) { visit_linear(x); }
-  virtual void visit(const class max* x) { visit_linear(x); }
+  void visit(const class min* x) override { visit_linear(x); }
+  void visit(const class max* x) override { visit_linear(x); }
   template <typename T>
   void visit_less(const T* x) {
     binary_result r = binary_bounds(x);
@@ -1001,29 +1001,29 @@ public:
     // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
     result = {make(x, r.a.max, r.b.min), make(x, r.a.min, r.b.max)};
   }
-  virtual void visit(const less* x) { visit_less(x); }
-  virtual void visit(const less_equal* x) { visit_less(x); }
+  void visit(const less* x) override { visit_less(x); }
+  void visit(const less_equal* x) override { visit_less(x); }
 
-  virtual void visit(const equal* x) {
+  void visit(const equal* x) override {
     binary_result r = binary_bounds(x);
     result.min = 0;
     result.max = r.a.min <= r.b.max && r.b.min <= r.a.max;
   }
-  virtual void visit(const not_equal* x) {
+  void visit(const not_equal* x) override {
     binary_result r = binary_bounds(x);
     result.min = r.a.max < r.b.min || r.b.max < r.a.min;
     result.max = 1;
   }
-  virtual void visit(const logical_and* x) { visit_linear(x); }
-  virtual void visit(const logical_or* x) { visit_linear(x); }
+  void visit(const logical_and* x) override { visit_linear(x); }
+  void visit(const logical_or* x) override { visit_linear(x); }
 
-  virtual void visit(const bitwise_and* x) { result = interval::all(); }
-  virtual void visit(const bitwise_or* x) { result = interval::all(); }
-  virtual void visit(const bitwise_xor* x) { result = interval::all(); }
-  virtual void visit(const shift_left* x) { result = interval::all(); }
-  virtual void visit(const shift_right* x) { result = interval::all(); }
+  void visit(const bitwise_and* x) override { result = interval::all(); }
+  void visit(const bitwise_or* x) override { result = interval::all(); }
+  void visit(const bitwise_xor* x) override { result = interval::all(); }
+  void visit(const shift_left* x) override { result = interval::all(); }
+  void visit(const shift_right* x) override { result = interval::all(); }
 
-  virtual void visit(const class select* x) {
+  void visit(const class select* x) override {
     x->condition.accept(this);
     interval cb = result;
     x->true_value.accept(this);
@@ -1040,9 +1040,9 @@ public:
     }
   }
 
-  virtual void visit(const load_buffer_meta* x) { result = {x, x}; }
+  void visit(const load_buffer_meta* x) override { result = {x, x}; }
 
-  void visit(const call* x) {
+  void visit(const call* x) override {
     switch (x->intrinsic) {
     case intrinsic::abs: result = {0, x}; return;
 
@@ -1054,16 +1054,16 @@ public:
     }
   }
 
-  virtual void visit(const let_stmt* x) { std::abort(); }
-  virtual void visit(const block* x) { std::abort(); }
-  virtual void visit(const loop* x) { std::abort(); }
-  virtual void visit(const if_then_else* x) { std::abort(); }
-  virtual void visit(const call_func* x) { std::abort(); }
-  virtual void visit(const allocate* x) { std::abort(); }
-  virtual void visit(const make_buffer* x) { std::abort(); }
-  virtual void visit(const crop_buffer* x) { std::abort(); }
-  virtual void visit(const crop_dim* x) { std::abort(); }
-  virtual void visit(const check* x) { std::abort(); }
+  void visit(const let_stmt* x) override { std::abort(); }
+  void visit(const block* x) override { std::abort(); }
+  void visit(const loop* x) override { std::abort(); }
+  void visit(const if_then_else* x) override { std::abort(); }
+  void visit(const call_func* x) override { std::abort(); }
+  void visit(const allocate* x) override { std::abort(); }
+  void visit(const make_buffer* x) override { std::abort(); }
+  void visit(const crop_buffer* x) override { std::abort(); }
+  void visit(const crop_dim* x) override { std::abort(); }
+  void visit(const check* x) override { std::abort(); }
 };
 
 }  // namespace
