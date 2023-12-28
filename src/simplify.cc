@@ -101,6 +101,7 @@ public:
       std::map<symbol_id, expr> matches;
       if (match(r.pattern, x, matches)) {
         if (!r.predicate.defined() || can_prove(substitute(r.predicate, matches))) {
+          //std::cout << x << " " << r.pattern << " -> " << r.replacement << std::endl;
           x = substitute(r.replacement, matches);
           x = mutate(x);
           return x;
@@ -164,8 +165,10 @@ public:
 
         // Buffer meta simplifications
         {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
-        {min(buffer_min(x, y), buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
         {min(buffer_max(x, y), buffer_min(x, y)), buffer_min(x, y)},
+        {min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), c0 > 0},
+        {min(buffer_min(x, y) , buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
+        {min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, c0 < 0},
         {min(buffer_max(x, y), buffer_min(x, y) + c0), buffer_min(x, y) + c0, c0 < 0},
     };
     e = apply_rules(rules, e);
@@ -215,8 +218,10 @@ public:
 
         // Buffer meta simplifications
         {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
-        {max(buffer_min(x, y), buffer_max(x, y) + c0), buffer_max(x, y) + c0, c0 > 0},
         {max(buffer_max(x, y), buffer_min(x, y)), buffer_max(x, y)},
+        {max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, c0 > 0},
+        {max(buffer_min(x, y), buffer_max(x, y) + c0), buffer_max(x, y) + c0, c0 > 0},
+        {max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), c0 < 0},
         {max(buffer_max(x, y), buffer_min(x, y) + c0), buffer_max(x, y), c0 < 0},
     };
     e = apply_rules(rules, e);
@@ -248,12 +253,17 @@ public:
         {c0 + negative_infinity(), negative_infinity()},
         {x + 0, x},
         {x + x, x * 2},
-        {x + (0 - y), x - y},
+        {(x + c0) + c1, x + (c0 + c1)},
+        {(c0 - x) + c1, (c0 + c1) - x},
+        {x + (c0 - y), (x - y) + c0},
         {x + (y + c0), (x + y) + c0},
+        {(x + c0) - y, (x - y) + c0},
         {(x + c0) + c1, x + (c0 + c1)},
         {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
         {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
         {buffer_extent(x, y) + buffer_min(x, y), buffer_max(x, y) + 1},
+        {(z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1},
+        {buffer_min(x, y) + (z - buffer_max(x, y)), (z - buffer_extent(x, y)) + 1},
     };
     e = apply_rules(rules, e);
   }
@@ -288,13 +298,19 @@ public:
         {c0 - negative_infinity(), positive_infinity()},
         {x - x, 0},
         {x - 0, x},
-        {x - (0 - y), x + y},
+        {x - (c0 - y), (x + y) - c0},
+        {c0 - (x - y), (y - x) + c0},
+        {x - (y + c0), (x - y) - c0},
+        {(c0 - x) - y, c0 - (x + y)},
+        {(x + c0) - y, (x - y) + c0},
         {(x + y) - x, y},
         {(y + x) - x, y},
         {x - (x + y), -y},
         {x - (y + x), -y},
+        {(c0 - x) - (y - z), ((z - x) - y) + c0},
         {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
         {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
+        {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
     };
     e = apply_rules(rules, e);
   }
