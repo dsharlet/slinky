@@ -30,6 +30,7 @@ std::ostream& operator<<(std::ostream& os, intrinsic i) {
   case intrinsic::positive_infinity: return os << "oo";
   case intrinsic::negative_infinity: return os << "-oo";
   case intrinsic::indeterminate: return os << "indeterminate";
+  case intrinsic::abs: return os << "abs";
   }
 }
 

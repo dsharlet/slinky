@@ -113,6 +113,10 @@ public:
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
     case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
     case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
+    case intrinsic::abs: 
+      assert(x->args.size() == 1);
+      result = std::abs(eval_expr(x->args[0]));
+      return;
     }
   }
 

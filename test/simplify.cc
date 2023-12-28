@@ -89,6 +89,8 @@ TEST(simplify) {
 
   test_simplify(x < x + 1, true);
   test_simplify(x - 1 < x + 1, true);
+
+  test_simplify(abs(abs(x)), abs(x));
 }
 
 TEST(simplify_let) {

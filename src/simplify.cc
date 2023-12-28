@@ -603,6 +603,44 @@ public:
     e = apply_rules(rules, e);
   }
 
+  static bool can_evaluate(intrinsic fn) {
+    switch (fn) {
+    case intrinsic::abs: return true;
+    default: return false;
+    }
+  }
+
+  void visit(const call* op) override {
+    std::vector<expr> args;
+    args.reserve(op->args.size());
+    bool changed = false;
+    bool constant = true;
+    for (const expr& i : op->args) {
+      expr new_i = mutate(i);
+      constant = constant && as_constant(new_i);
+      changed = changed || !new_i.same_as(i);
+      args.push_back(new_i);
+    }
+
+    if (changed) {
+      e = call::make(op->intrinsic, std::move(args));
+    } else {
+      e = op;
+    }
+
+    if (can_evaluate(op->intrinsic) && constant) {
+      e = evaluate(e);
+      return;
+    }
+
+    static std::vector<rule> rules = { 
+        {abs(negative_infinity()), positive_infinity()},
+        {abs(-x), abs(x)},
+        {abs(abs(x)), abs(x)},
+    };
+    e = apply_rules(rules, e);
+  }
+
   template <typename T>
   auto visit_let(const T* op) {
     expr value = mutate(op->value);
@@ -979,9 +1017,13 @@ public:
 
   void visit(const call* x) {
     switch (x->intrinsic) {
-    case intrinsic::positive_infinity: result = {x, x};
-    case intrinsic::negative_infinity: result = {x, x};
-    case intrinsic::indeterminate: result = {x, x};
+    case intrinsic::abs: result = {0, x}; return;
+
+    case intrinsic::positive_infinity:
+    case intrinsic::negative_infinity:
+    case intrinsic::indeterminate: 
+      result = {x, x}; 
+      return;
     }
   }
 

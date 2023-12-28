@@ -91,6 +91,7 @@ enum class intrinsic {
   negative_infinity,
   positive_infinity,
   indeterminate,
+  abs,
 };
 
 class node_visitor;
@@ -873,7 +874,7 @@ inline bool is_non_positive(const expr& x) {
   return c ? *c <= 0 : false;
 }
 
-inline expr abs(const expr& x) { return select::make(x < 0, -x, x); }
+inline expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 
 }  // namespace slinky
 
