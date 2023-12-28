@@ -96,11 +96,29 @@ class simplifier : public node_mutator {
 public:
   simplifier() {}
 
+  std::optional<bool> can_prove(expr c) {
+    c = mutate(c);
+
+    interval bounds = bounds_of(c, expr_bounds);
+    if (is_true(mutate(bounds.min))) {
+      return true;
+    } else if (is_false(mutate(bounds.max))) {
+      return false;
+    } else {
+      return std::optional<bool>();
+    }
+  }
+
+  bool can_prove_true(const expr& c) { 
+    std::optional<bool> p = can_prove(c);
+    return p && *p;
+  }
+
   expr apply_rules(const std::vector<rule>& rules, expr x) {
     for (const rule& r : rules) {
       std::map<symbol_id, expr> matches;
       if (match(r.pattern, x, matches)) {
-        if (!r.predicate.defined() || can_prove(substitute(r.predicate, matches))) {
+        if (!r.predicate.defined() || can_prove_true(substitute(r.predicate, matches))) {
           //std::cout << x << " " << r.pattern << " -> " << r.replacement << std::endl;
           x = substitute(r.replacement, matches);
           x = mutate(x);
@@ -533,20 +551,13 @@ public:
 
   void visit(const select* op) override {
     expr c = mutate(op->condition);
-    if (is_true(c)) {
-      e = mutate(op->true_value);
-      return;
-    } else if (is_false(c)) {
-      e = mutate(op->false_value);
-      return;
-    }
-
-    interval bounds = bounds_of(c, expr_bounds);
-    if (!c.same_as(bounds.min) && is_true(mutate(bounds.min))) {
-      e = mutate(op->true_value);
-      return;
-    } else if (!c.same_as(bounds.max) && is_false(mutate(bounds.max))) {
-      e = mutate(op->false_value);
+    std::optional<bool> const_c = can_prove(c);
+    if (const_c) {
+      if (*const_c) {
+        e = mutate(op->true_value);
+      } else {
+        e = mutate(op->false_value);
+      }
       return;
     }
 
@@ -660,6 +671,7 @@ public:
   template <typename T>
   auto visit_let(const T* op) {
     expr value = mutate(op->value);
+    auto set_bounds = set_value_in_scope(expr_bounds, op->name, bounds_of(value, expr_bounds));
 
     auto ref_count = set_value_in_scope(references, op->name, 0);
     auto body = mutate(op->body);
@@ -697,20 +709,13 @@ public:
 
   void visit(const if_then_else* op) override {
     expr c = mutate(op->condition);
-    if (is_true(c)) {
-      s = mutate(op->true_body);
-      return;
-    } else if (is_false(c)) {
-      s = op->false_body.defined() ? mutate(op->false_body) : stmt();
-      return;
-    }
-
-    interval bounds = bounds_of(c, expr_bounds);
-    if (!c.same_as(bounds.min) && is_true(mutate(bounds.min))) {
-      s = mutate(op->true_body);
-      return;
-    } else if (!c.same_as(bounds.max) && is_false(mutate(bounds.max))) {
-      s = mutate(op->false_body);
+    std::optional<bool> const_c = can_prove(c);
+    if (const_c) {
+      if (*const_c) {
+        s = mutate(op->true_body);
+      } else {
+        s = op->false_body.defined() ? mutate(op->false_body) : stmt();
+      }
       return;
     }
 
@@ -795,7 +800,7 @@ public:
         // (instead of min/extent in some places), then we could check and default these individually.
         // TODO(https://github.com/dsharlet/slinky/issues/10): This doesn't work very well right
         // now because it doesn't handle lets.
-        if (match(min, (*prev_bounds)[i].min) && match(max, (*prev_bounds)[i].max)) {
+        if (can_prove_true(min == (*prev_bounds)[i].min) && can_prove_true(max == (*prev_bounds)[i].max)) {
           min = expr();
           max = expr();
         }
@@ -852,11 +857,14 @@ public:
 
   void visit(const check* op) override {
     expr c = mutate(op->condition);
-    if (is_true(c)) {
-      s = stmt();
-    } else if (is_false(c)) {
-      std::cerr << op->condition << " is statically false." << std::endl;
-      std::abort();
+    std::optional<bool> const_c = can_prove(c);
+    if (const_c) {
+      if (*const_c) {
+        s = stmt();
+      } else {
+        std::cerr << op->condition << " is statically false." << std::endl;
+        std::abort();
+      }
     } else if (c.same_as(op->condition)) {
       s = op;
     } else {
