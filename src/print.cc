@@ -276,7 +276,7 @@ public:
     print_symbol_id(n->name);
     os << ", {" << std::endl;
     ++depth;
-    for (const interval& d : n->bounds) {
+    for (const interval_expr& d : n->bounds) {
       os << indent() << "{";
       print(d.min);
       os << ", ";
@@ -336,6 +336,6 @@ std::ostream& operator<<(std::ostream& os, const stmt& s) {
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const interval& i) { return os << "[" << i.min << ", " << i.max << "]"; }
+std::ostream& operator<<(std::ostream& os, const interval_expr& i) { return os << "[" << i.min << ", " << i.max << "]"; }
 
 }  // namespace slinky

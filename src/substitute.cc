@@ -41,7 +41,7 @@ public:
            try_match(self.stride_bytes, x.stride_bytes) && try_match(self.fold_factor, x.fold_factor);
   }
 
-  bool try_match(const interval& self, const interval& x) {
+  bool try_match(const interval_expr& self, const interval_expr& x) {
     return try_match(self.min, x.min) && try_match(self.max, x.max);
   }
 

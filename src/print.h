@@ -11,7 +11,7 @@ void print(std::ostream& os, const stmt& s, const node_context* ctx = nullptr);
 std::ostream& operator<<(std::ostream& os, const expr& e);
 std::ostream& operator<<(std::ostream& os, const stmt& s);
 
-std::ostream& operator<<(std::ostream& os, const interval& i);
+std::ostream& operator<<(std::ostream& os, const interval_expr& i);
 
 }  // namespace slinky
 

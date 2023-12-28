@@ -151,11 +151,11 @@ TEST(bounds_of) {
             int y_min = y_min_sign * scale;
             int y_max = y_max_sign * scale;
 
-            symbol_map<interval> bounds;
-            bounds[*as_variable(x)] = interval(x_min, x_max);
-            bounds[*as_variable(y)] = interval(y_min, y_max);
+            symbol_map<interval_expr> bounds;
+            bounds[*as_variable(x)] = slinky::bounds(x_min, x_max);
+            bounds[*as_variable(y)] = slinky::bounds(y_min, y_max);
 
-            interval bounds_e = bounds_of(e, bounds);
+            interval_expr bounds_e = bounds_of(e, bounds);
 
             eval_context ctx;
             for (int y_val = y_min; y_val <= y_max; ++y_val) {
@@ -265,7 +265,7 @@ TEST(simplify_fuzz) {
     ctx[bufs[i]] = reinterpret_cast<index_t>(buffers[i].get());
   }
 
-  symbol_map<interval> var_bounds;
+  symbol_map<interval_expr> var_bounds;
   for (const expr& v : vars) {
     var_bounds[*as_variable(v)] = {-max_abs_constant, max_abs_constant};
   }
@@ -275,7 +275,7 @@ TEST(simplify_fuzz) {
     expr simplified = simplify(test);
 
     // Also test bounds_of.
-    interval bounds = bounds_of(test, var_bounds);
+    interval_expr bounds = bounds_of(test, var_bounds);
     bounds.min = simplify(bounds.min);
     bounds.max = simplify(bounds.max);
 

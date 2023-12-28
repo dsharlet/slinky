@@ -18,7 +18,7 @@ TEST(pipeline_trivial) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, {in, {interval(x)}}, {out, {x}});
+  func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
 
   pipeline p(ctx, {in}, {out});
 
@@ -69,7 +69,7 @@ TEST(pipeline_trivial_explicit) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2_assert_1_element, {in, {interval(x)}}, {out, {x}});
+  func mul = func::make<const int, int>(multiply_2_assert_1_element, {in, {point(x)}}, {out, {x}});
   mul.loops({x});
 
   pipeline p(ctx, {in}, {out});
@@ -110,8 +110,8 @@ TEST(pipeline_elementwise_1d) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, {in, {interval(x)}}, {intm, {x}});
-  func add = func::make<const int, int>(add_1<int>, {intm, {interval(x)}}, {out, {x}});
+  func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
+  func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
 
   pipeline p(ctx, {in}, {out});
 
@@ -151,8 +151,8 @@ TEST(pipeline_elementwise_1d_explicit) {
 
   expr x = make_variable(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, {in, {interval(x)}}, {intm, {x}});
-  func add = func::make<const int, int>(add_1<int>, {intm, {interval(x)}}, {out, {x}});
+  func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
+  func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
 
   add.loops({x});
   mul.compute_at({&add, x});
@@ -214,14 +214,13 @@ TEST(pipeline_matmuls) {
 
   // The bounds required of the dimensions consumed by the reduction depend on the size of the
   // buffers passed in. Note that we haven't used any constants yet.
-  interval K_ab(a->dim(1).min, a->dim(1).max());
-  interval K_abc(c->dim(0).min, c->dim(0).max());
+  interval_expr K_ab(a->dim(1).min, a->dim(1).max());
+  interval_expr K_abc(c->dim(0).min, c->dim(0).max());
 
   // We use int for this pipeline so we can test for correctness exactly.
-  func matmul_ab = func::make<const int, const int, int>(
-      matmul<int>, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
+  func matmul_ab = func::make<const int, const int, int>(matmul<int>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
   func matmul_abc = func::make<const int, const int, int>(
-      matmul<int>, {ab, {interval(i), K_abc}}, {c, {K_abc, interval(j)}}, {abc, {i, j}});
+      matmul<int>, {ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}, {abc, {i, j}});
 
   // TODO: There should be a more user friendly way to control the strides.
   ab->dim(1).stride_bytes = static_cast<index_t>(sizeof(int));
@@ -308,8 +307,8 @@ TEST(pipeline_pyramid) {
   expr y = make_variable(ctx, "y");
 
   func downsample =
-      func::make<const int, int>(downsample2x, {in, {2 * x + interval(0, 1), 2 * y + interval(0, 1)}}, {intm, {x, y}});
-  func upsample = func::make<const int, int>(upsample2x, {intm, {interval(x) / 2, interval(y) / 2}}, {out, {x, y}});
+      func::make<const int, int>(downsample2x, {in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}, {intm, {x, y}});
+  func upsample = func::make<const int, int>(upsample2x, {intm, {point(x) / 2, point(y) / 2}}, {out, {x, y}});
 
   pipeline p(ctx, {in}, {out});
 
@@ -345,9 +344,9 @@ TEST(pipeline_stencil) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func add = func::make<const short, short>(add_1<short>, {in, {interval(x), interval(y)}}, {intm, {x, y}});
+  func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
   func stencil =
-      func::make<const short, short>(sum3x3<short>, {intm, {interval(-1, 1) + x, interval(-1, 1) + y}}, {out, {x, y}});
+      func::make<const short, short>(sum3x3<short>, {intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
 
   stencil.loops({y});
   add.compute_at({&stencil, y});
@@ -399,8 +398,8 @@ TEST(pipeline_flip_y) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func copy = func::make<const char, char>(::copy<char>, {in, {interval(x), interval(y)}}, {intm, {x, y}});
-  func flip = func::make<const char, char>(flip_y<char>, {intm, {interval(x), interval(-y)}}, {out, {x, y}});
+  func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  func flip = func::make<const char, char>(flip_y<char>, {intm, {point(x), point(-y)}}, {out, {x, y}});
 
   pipeline p(ctx, {in}, {out});
 

@@ -191,10 +191,10 @@ public:
     }
   }
   virtual void visit(const crop_buffer* x) override {
-    std::vector<interval> bounds;
+    std::vector<interval_expr> bounds;
     bounds.reserve(x->bounds.size());
     bool changed = false;
-    for (const interval& i : x->bounds) {
+    for (const interval_expr& i : x->bounds) {
       bounds.emplace_back(mutate(i.min), mutate(i.max));
       changed = changed || bounds.back().same_as(i);
     }

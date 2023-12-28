@@ -156,18 +156,18 @@ expr max(std::span<expr> x) {
   }
 }
 
-const interval& interval::all() {
-  static interval x = {negative_infinity(), positive_infinity()};
+const interval_expr& interval_expr::all() {
+  static interval_expr x = {negative_infinity(), positive_infinity()};
   return x;
 }
-const interval& interval::none() {
-  static interval x = {positive_infinity(), negative_infinity()};
+const interval_expr& interval_expr::none() {
+  static interval_expr x = {positive_infinity(), negative_infinity()};
   return x;
 }
-const interval& interval::union_identity() { return none(); }
-const interval& interval::intersection_identity() { return all(); }
+const interval_expr& interval_expr::union_identity() { return none(); }
+const interval_expr& interval_expr::intersection_identity() { return all(); }
 
-interval& interval::operator*=(const expr& scale) {
+interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_non_negative(scale)) {
     min *= scale;
     max *= scale;
@@ -178,12 +178,12 @@ interval& interval::operator*=(const expr& scale) {
   } else {
     min *= scale;
     max *= scale;
-    *this |= interval(max, min);
+    *this |= interval_expr(max, min);
   }
   return *this;
 }
 
-interval& interval::operator/=(const expr& scale) {
+interval_expr& interval_expr::operator/=(const expr& scale) {
   if (is_non_negative(scale)) {
     min /= scale;
     max /= scale;
@@ -194,69 +194,69 @@ interval& interval::operator/=(const expr& scale) {
   } else {
     min /= scale;
     max /= scale;
-    *this |= interval(max, min);
+    *this |= interval_expr(max, min);
   }
   return *this;
 }
 
-interval& interval::operator+=(const expr& offset) {
+interval_expr& interval_expr::operator+=(const expr& offset) {
   min += offset;
   max += offset;
   return *this;
 }
 
-interval& interval::operator-=(const expr& offset) {
+interval_expr& interval_expr::operator-=(const expr& offset) {
   min -= offset;
   max -= offset;
   return *this;
 }
 
-interval interval::operator*(const expr& scale) const {
-  interval result(*this);
+interval_expr interval_expr::operator*(const expr& scale) const {
+  interval_expr result(*this);
   result *= scale;
   return result;
 }
 
-interval interval::operator/(const expr& scale) const {
-  interval result(*this);
+interval_expr interval_expr::operator/(const expr& scale) const {
+  interval_expr result(*this);
   result /= scale;
   return result;
 }
 
-interval interval::operator+(const expr& offset) const {
-  interval result(*this);
+interval_expr interval_expr::operator+(const expr& offset) const {
+  interval_expr result(*this);
   result += offset;
   return result;
 }
 
-interval interval::operator-(const expr& offset) const {
-  interval result(*this);
+interval_expr interval_expr::operator-(const expr& offset) const {
+  interval_expr result(*this);
   result -= offset;
   return result;
 }
 
-interval interval::operator-() const { return {-max, -min}; }
+interval_expr interval_expr::operator-() const { return {-max, -min}; }
 
-interval& interval::operator|=(const interval& r) {
+interval_expr& interval_expr::operator|=(const interval_expr& r) {
   min = slinky::min(min, r.min);
   max = slinky::max(max, r.max);
   return *this;
 }
 
-interval& interval::operator&=(const interval& r) {
+interval_expr& interval_expr::operator&=(const interval_expr& r) {
   min = slinky::min(min, r.min);
   max = slinky::max(max, r.max);
   return *this;
 }
 
-interval interval::operator|(const interval& r) const {
-  interval result(*this);
+interval_expr interval_expr::operator|(const interval_expr& r) const {
+  interval_expr result(*this);
   result |= r;
   return result;
 }
 
-interval interval::operator&(const interval& r) const {
-  interval result(*this);
+interval_expr interval_expr::operator&(const interval_expr& r) const {
+  interval_expr result(*this);
   result &= r;
   return result;
 }
@@ -354,7 +354,7 @@ stmt make_buffer::make(symbol_id name, expr base, std::size_t elem_size, std::ve
   return n.get();
 }
 
-stmt crop_buffer::make(symbol_id name, std::vector<interval> bounds, stmt body) {
+stmt crop_buffer::make(symbol_id name, std::vector<interval_expr> bounds, stmt body) {
   auto n = std::make_shared<crop_buffer>();
   n->name = name;
   n->bounds = std::move(bounds);

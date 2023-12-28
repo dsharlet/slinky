@@ -25,10 +25,10 @@ void test_elementwise(const int W, const int H) {
   expr y = make_variable(ctx, "y");
 
   func f_ab = func::make<const int, const int, int>(
-      add<int>, {a, {interval(x), interval(y)}}, {b, {interval(x), interval(y)}}, {ab, {x, y}});
-  func f_maxab0 = func::make<const int, int>(max_0<int>, {ab, {interval(x), interval(y)}}, {maxab0, {x, y}});
+      add<int>, {a, {point(x), point(y)}}, {b, {point(x), point(y)}}, {ab, {x, y}});
+  func f_maxab0 = func::make<const int, int>(max_0<int>, {ab, {point(x), point(y)}}, {maxab0, {x, y}});
   func f_maxab0c = func::make<const int, const int, int>(
-      multiply<int>, {maxab0, {interval(x), interval(y)}}, {c, {interval(x), interval(y)}}, {out, {x, y}});
+      multiply<int>, {maxab0, {point(x), point(y)}}, {c, {point(x), point(y)}}, {out, {x, y}});
 
   pipeline p(ctx, {a, b, c}, {out});
 

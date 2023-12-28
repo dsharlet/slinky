@@ -247,50 +247,60 @@ expr select(expr c, expr t, expr f);
 expr min(std::span<expr> x);
 expr max(std::span<expr> x);
 
-struct interval {
+struct interval_expr {
   expr min, max;
 
-  interval() {}
-  explicit interval(const expr& point) : min(point), max(point) {}
-  interval(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
+  interval_expr() {}
+  explicit interval_expr(const expr& point) : min(point), max(point) {}
+  interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
-  bool same_as(const interval& r) { return min.same_as(r.min) && max.same_as(r.max); }
+  bool same_as(const interval_expr& r) { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_single_point() const { return min.same_as(max); }
 
-  static const interval& all();
-  static const interval& none();
-  // An interval x such that x | y == y
-  static const interval& union_identity();
-  // An interval x such that x & y == y
-  static const interval& intersection_identity();
+  static const interval_expr& all();
+  static const interval_expr& none();
+  // An interval_expr x such that x | y == y
+  static const interval_expr& union_identity();
+  // An interval_expr x such that x & y == y
+  static const interval_expr& intersection_identity();
 
+  const expr& begin() const { return min; }
+  expr end() const { return max + 1; }
   expr extent() const { return max - min + 1; }
-  void set_extent(expr extent) { max = min + extent - 1; }
 
-  interval& operator*=(const expr& scale);
-  interval& operator/=(const expr& scale);
-  interval& operator+=(const expr& offset);
-  interval& operator-=(const expr& offset);
-  interval operator*(const expr& scale) const;
-  interval operator/(const expr& scale) const;
-  interval operator+(const expr& offset) const;
-  interval operator-(const expr& offset) const;
-  interval operator-() const;
+  interval_expr& operator*=(const expr& scale);
+  interval_expr& operator/=(const expr& scale);
+  interval_expr& operator+=(const expr& offset);
+  interval_expr& operator-=(const expr& offset);
+  interval_expr operator*(const expr& scale) const;
+  interval_expr operator/(const expr& scale) const;
+  interval_expr operator+(const expr& offset) const;
+  interval_expr operator-(const expr& offset) const;
+  interval_expr operator-() const;
 
   // This is the union operator. I don't really like this, but
   // I also don't like that I can't name a function `union`.
   // It does kinda make sense...
-  interval& operator|=(const interval& r);
+  interval_expr& operator|=(const interval_expr& r);
   // This is intersection, just to be consistent with union.
-  interval& operator&=(const interval& r);
-  interval operator|(const interval& r) const;
-  interval operator&(const interval& r) const;
+  interval_expr& operator&=(const interval_expr& r);
+  interval_expr operator|(const interval_expr& r) const;
+  interval_expr operator&(const interval_expr& r) const;
 };
 
-inline interval operator*(const expr& a, const interval& b) { return b * a; }
-inline interval operator+(const expr& a, const interval& b) { return b + a; }
-using box = std::vector<interval>;
+// Make an interval of the region [begin, end) (like python's range).
+inline interval_expr range(expr begin, const expr& end) { return {std::move(begin), end - 1}; }
+// Make an interval of the region [min, max].
+inline interval_expr bounds(expr min, expr max) { return {std::move(min), std::move(max)}; }
+// Make an interval of the region [min, min + extent).
+inline interval_expr min_extent(const expr& min, const expr& extent) { return {min, min + extent - 1}; }
+// Make a interval of the region [x, x].
+inline interval_expr point(const expr& x) { return {x, x}; }
+
+inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
+inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
+using box = std::vector<interval_expr>;
 
 box operator|(box a, const box& b);
 box operator&(box a, const box& b);
@@ -581,24 +591,24 @@ public:
 };
 
 // This node is equivalent to the following:
-// 1. Crop `name` to the interval `min, max` in-place in each dimension.
+// 1. Crop `name` to the interval_expr `min, max` in-place in each dimension.
 // 2. Evaluate `body`
 // 3. Restore the original buffer
 class crop_buffer : public stmt_node<make_buffer> {
 public:
   symbol_id name;
-  std::vector<interval> bounds;
+  std::vector<interval_expr> bounds;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, std::vector<interval> bounds, stmt body);
+  static stmt make(symbol_id name, std::vector<interval_expr> bounds, stmt body);
 
   static constexpr node_type static_type = node_type::crop_buffer;
 };
 
 // This node is equivalent to the following:
-// 1. Crop `name` to the interval `min, max` in-place
+// 1. Crop `name` to the interval_expr `min, max` in-place
 // 2. Evaluate `body`
 // 3. Restore the original buffer
 class crop_dim : public stmt_node<crop_dim> {
@@ -760,7 +770,7 @@ public:
     x->body.accept(this);
   }
   virtual void visit(const crop_buffer* x) override {
-    for (const interval& i : x->bounds) {
+    for (const interval_expr& i : x->bounds) {
       i.min.accept(this);
       i.max.accept(this);
     }

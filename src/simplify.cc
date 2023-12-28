@@ -91,7 +91,7 @@ expr buffer_extent(expr buf, expr dim) {
 class simplifier : public node_mutator {
   symbol_map<int> references;
   symbol_map<box> buffer_bounds;
-  symbol_map<interval> expr_bounds;
+  symbol_map<interval_expr> expr_bounds;
 
 public:
   simplifier() {}
@@ -99,7 +99,7 @@ public:
   std::optional<bool> can_prove(expr c) {
     c = mutate(c);
 
-    interval bounds = bounds_of(c, expr_bounds);
+    interval_expr bounds = bounds_of(c, expr_bounds);
     if (is_true(mutate(bounds.min))) {
       return true;
     } else if (is_false(mutate(bounds.max))) {
@@ -700,7 +700,7 @@ public:
     expr end = mutate(op->end);
 
     // TODO(https://github.com/dsharlet/slinky/issues/9): We can't actually simplify anything using this yet.
-    auto set_bounds = set_value_in_scope(expr_bounds, op->name, interval(begin, end - 1));
+    auto set_bounds = set_value_in_scope(expr_bounds, op->name, range(begin, end));
     stmt body = mutate(op->body);
 
     if (begin.same_as(op->begin) && end.same_as(op->end) && body.same_as(op->body)) {
@@ -822,7 +822,7 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
     stmt body = mutate(op->body);
     if (one_dim >= 0) {
-      interval& dim = bounds[one_dim];
+      interval_expr& dim = bounds[one_dim];
       s = crop_dim::make(op->name, one_dim, dim.min, mutate(dim.extent()), std::move(body));
     } else {
       // Remove trailing undefined bounds.
@@ -839,7 +839,7 @@ public:
 
     std::optional<box> bounds = buffer_bounds[op->name];
     if (bounds && op->dim < bounds->size()) {
-      interval& dim = (*bounds)[op->dim];
+      interval_expr& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);
       if (match(min, dim.min) && match(max, dim.max)) {
         // This crop is a no-op.
@@ -877,12 +877,12 @@ public:
 };
 
 class find_bounds : public node_visitor {
-  symbol_map<interval> bounds;
+  symbol_map<interval_expr> bounds;
 
 public:
-  find_bounds(const symbol_map<interval>& bounds) : bounds(bounds) {}
+  find_bounds(const symbol_map<interval_expr>& bounds) : bounds(bounds) {}
 
-  interval result;
+  interval_expr result;
 
   template <typename T>
   void visit_variable(const T* x) {
@@ -895,7 +895,7 @@ public:
 
   void visit(const variable* x) override { visit_variable(x); }
   void visit(const wildcard* x) override { visit_variable(x); }
-  void visit(const constant* x) override { result = interval(x); }
+  void visit(const constant* x) override { result = point(x); }
 
   void visit(const let* x) override {
     x->value.accept(this);
@@ -904,13 +904,13 @@ public:
   }
 
   struct binary_result {
-    interval a;
-    interval b;
+    interval_expr a;
+    interval_expr b;
   };
   template <typename T>
   binary_result binary_bounds(const T* x) {
     x->a.accept(this);
-    interval ba = result;
+    interval_expr ba = result;
     x->b.accept(this);
     return {ba, result};
   }
@@ -1017,19 +1017,19 @@ public:
   void visit(const logical_and* x) override { visit_linear(x); }
   void visit(const logical_or* x) override { visit_linear(x); }
 
-  void visit(const bitwise_and* x) override { result = interval::all(); }
-  void visit(const bitwise_or* x) override { result = interval::all(); }
-  void visit(const bitwise_xor* x) override { result = interval::all(); }
-  void visit(const shift_left* x) override { result = interval::all(); }
-  void visit(const shift_right* x) override { result = interval::all(); }
+  void visit(const bitwise_and* x) override { result = interval_expr::all(); }
+  void visit(const bitwise_or* x) override { result = interval_expr::all(); }
+  void visit(const bitwise_xor* x) override { result = interval_expr::all(); }
+  void visit(const shift_left* x) override { result = interval_expr::all(); }
+  void visit(const shift_right* x) override { result = interval_expr::all(); }
 
   void visit(const class select* x) override {
     x->condition.accept(this);
-    interval cb = result;
+    interval_expr cb = result;
     x->true_value.accept(this);
-    interval tb = result;
+    interval_expr tb = result;
     x->false_value.accept(this);
-    interval fb = result;
+    interval_expr fb = result;
 
     if (is_true(cb.min)) {
       result = tb;
@@ -1079,7 +1079,7 @@ bool can_prove(const expr& e) {
   return false;
 }
 
-interval bounds_of(const expr& e, const symbol_map<interval>& bounds) {
+interval_expr bounds_of(const expr& e, const symbol_map<interval_expr>& bounds) {
   find_bounds fb(bounds);
   e.accept(&fb);
   return fb.result;

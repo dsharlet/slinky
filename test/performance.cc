@@ -39,7 +39,7 @@ void benchmark_pipelines(bool explicit_y) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  func copy = func::make<const char, char>(::copy<char>, {in, {interval(x), interval(y)}}, {out, {x, y}});
+  func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {out, {x, y}});
 
   if (explicit_y) {
     copy.loops({y});

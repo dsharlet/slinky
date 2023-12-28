@@ -11,7 +11,7 @@ stmt simplify(const stmt& s);
 
 bool can_prove(const expr& e);
 
-interval bounds_of(const expr& e, const symbol_map<interval>& bounds = symbol_map<interval>());
+interval_expr bounds_of(const expr& e, const symbol_map<interval_expr>& bounds = symbol_map<interval_expr>());
 
 }  // namespace slinky
 

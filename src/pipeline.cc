@@ -184,7 +184,7 @@ public:
 
   stmt make_loop(stmt body, const func* f, const expr& loop) {
     // Find the bounds of this loop.
-    interval bounds = interval::union_identity();
+    interval_expr bounds = interval_expr::union_identity();
     // Crop all the outputs of this buffer for this loop.
     crops.emplace_back();
     scope_crops& to_crop = crops.back();
@@ -193,7 +193,7 @@ public:
         if (*as_variable(o.dims[d]) == *as_variable(loop)) {
           to_crop[o.buffer->name()].emplace_back(d, loop, 1);
           // This output uses this loop. Add it to the bounds.
-          bounds |= interval(o.buffer->dim(d).min, o.buffer->dim(d).max());
+          bounds |= interval_expr(o.buffer->dim(d).min, o.buffer->dim(d).max());
         }
       }
     }

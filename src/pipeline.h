@@ -83,7 +83,7 @@ public:
     buffer_expr_ptr buffer;
 
     // These intervals should be a function of the expressions found in the output dims.
-    std::vector<interval> bounds;
+    std::vector<interval_expr> bounds;
   };
 
   struct output {

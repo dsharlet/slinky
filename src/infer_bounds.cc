@@ -45,7 +45,7 @@ public:
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
     for (int d = 0; d < static_cast<int>(inferred.size()); ++d) {
-      const interval& i = inferred[d];
+      const interval_expr& i = inferred[d];
 
       expr min = simplify(i.min);
 
@@ -142,7 +142,7 @@ public:
       assert(bounds);
       bounds->reserve(input.bounds.size());
       while (bounds->size() < input.bounds.size()) { 
-        bounds->push_back(interval::union_identity());
+        bounds->push_back(interval_expr::union_identity());
       }
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
@@ -150,7 +150,7 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        (*bounds)[d] |= interval(min, max) | interval(max, min);
+        (*bounds)[d] |= interval_expr(min, max) | interval_expr(max, min);
       }
     }
 
@@ -258,7 +258,7 @@ public:
     for (std::optional<box>& i : inferring) {
       if (!i) continue;
 
-      for (interval& j : *i) {
+      for (interval_expr& j : *i) {
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
