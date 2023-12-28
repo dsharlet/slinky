@@ -567,6 +567,11 @@ public:
     } else {
       e = a && b;
     }
+
+    static std::vector<rule> rules = {
+        {x && x, x},
+    };
+    e = apply_rules(rules, e);
   }
 
   void visit(const logical_or* op) override {
@@ -591,6 +596,11 @@ public:
     } else {
       e = a || b;
     }
+
+    static std::vector<rule> rules = {
+        {x || x, x},
+    };
+    e = apply_rules(rules, e);
   }
 
   template <typename T>
@@ -849,10 +859,13 @@ public:
     }
   }
 
-  virtual void visit(const add* x) {
+  template <typename T>
+  void visit_linear(const T* x) {
     binary_result r = binary_bounds(x);
     result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
   }
+
+  virtual void visit(const add* x) { visit_linear(x); }
   virtual void visit(const sub* x) {
     binary_result r = binary_bounds(x);
     result = {make(x, r.a.min, r.b.max), make(x, r.a.max, r.b.min)};
@@ -918,14 +931,8 @@ public:
     result.min = 0;
   }
 
-  virtual void visit(const class min* x) {
-    binary_result r = binary_bounds(x);
-    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
-  }
-  virtual void visit(const class max* x) {
-    binary_result r = binary_bounds(x);
-    result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
-  }
+  virtual void visit(const class min* x) { visit_linear(x); }
+  virtual void visit(const class max* x) { visit_linear(x); }
   template <typename T>
   void visit_less(const T* x) {
     binary_result r = binary_bounds(x);
@@ -936,10 +943,18 @@ public:
   virtual void visit(const less* x) { visit_less(x); }
   virtual void visit(const less_equal* x) { visit_less(x); }
 
-  virtual void visit(const equal* x) { result = interval(0, 1); }
-  virtual void visit(const not_equal* x) { result = interval(0, 1); }
-  virtual void visit(const logical_and* x) { result = interval(0, 1); }
-  virtual void visit(const logical_or* x) { result = interval(0, 1); }
+  virtual void visit(const equal* x) {
+    binary_result r = binary_bounds(x);
+    result.min = 0;
+    result.max = r.a.min <= r.b.max && r.b.min <= r.a.max;
+  }
+  virtual void visit(const not_equal* x) {
+    binary_result r = binary_bounds(x);
+    result.min = r.a.max < r.b.min || r.b.max < r.a.min;
+    result.max = 1;
+  }
+  virtual void visit(const logical_and* x) { visit_linear(x); }
+  virtual void visit(const logical_or* x) { visit_linear(x); }
 
   virtual void visit(const bitwise_and* x) { result = interval::all(); }
   virtual void visit(const bitwise_or* x) { result = interval::all(); }

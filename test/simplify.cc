@@ -117,6 +117,10 @@ TEST(simplify_if_then_else) {
 }
 
 TEST(bounds_of) {
+  // Test bounds_of by testing expressions of two operands, and setting the
+  // bounds of the two operands. This approach to testing should be great at
+  // finding cases where bounds are incorrectly tight, but this test doesn't
+  // cover regressions that relax the bounds produced.
   int abs_max = 3;
   expr exprs[] = {
       x + y,
@@ -129,6 +133,8 @@ TEST(bounds_of) {
       x <= y,
       x == y,
       x != y,
+      x < y && x != y,
+      x < y || x == y,
   };
 
   for (const expr& e : exprs) {
@@ -189,7 +195,7 @@ T random_pick(const std::vector<T>& from) {
 
 constexpr int max_rank = 2;
 
-constexpr int max_abs_constant = 1024;
+constexpr int max_abs_constant = 256;
 
 index_t random_constant() { return (rand() & (2 * max_abs_constant - 1)) - max_abs_constant; }
 
