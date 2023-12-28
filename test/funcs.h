@@ -42,7 +42,7 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   const T* src = &in(out.dim(0).min(), out.dim(1).min());
   T* dst = &out(out.dim(0).min(), out.dim(1).min());
   std::size_t size = out.dim(0).extent() * out.elem_size;
-  for (int y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     std::copy(src, src + size, dst);
     dst += out.dim(1).stride_bytes();
     src += in.dim(1).stride_bytes();
@@ -56,7 +56,7 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == 2);
   assert(out.rank == 2);
   std::size_t size = out.dim(0).extent() * out.elem_size;
-  for (int y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     const T* src = &in(out.dim(0).min(), -y);
     T* dst = &out(out.dim(0).min(), y);
     std::copy(src, src + size, dst);
