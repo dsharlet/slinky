@@ -787,47 +787,53 @@ public:
   }
 
   void visit(const crop_buffer* op) override {
+    // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box bounds(op->bounds.size());
+    // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
+    box new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    int one_dim = -1;
-    bool any_defined = false;
     std::optional<box> prev_bounds = buffer_bounds[op->name];
+    int dims_count = 0;
+    bool changed = false;
     for (int i = 0; i < static_cast<int>(op->bounds.size()); ++i) {
       expr min = mutate(op->bounds[i].min);
       expr max = mutate(op->bounds[i].max);
+      bounds[i] = {min, max};
+      changed = changed || !bounds[i].same_as(op->bounds[i]);
+
+      // If the new bounds are the same as the existing bounds, set the crop in this dimension to
+      // be undefined.
       if (prev_bounds && i < prev_bounds->size()) {
-        // TODO(https://github.com/dsharlet/slinky/issues/10): If we switch to min/max everywhere
-        // (instead of min/extent in some places), then we could check and default these individually.
-        // TODO(https://github.com/dsharlet/slinky/issues/10): This doesn't work very well right
-        // now because it doesn't handle lets.
         if (can_prove_true(min == (*prev_bounds)[i].min) && can_prove_true(max == (*prev_bounds)[i].max)) {
           min = expr();
           max = expr();
         }
       }
-      if (min.defined() || max.defined()) {
-        if (!any_defined) {
-          one_dim = i;
-        } else {
-          one_dim = -1;
-        }
-        any_defined = true;
-      }
-      bounds[i] = {min, max};
+      new_bounds[i] = {min, max};
+      dims_count += min.defined() && max.defined() ? 1 : 0;
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
     stmt body = mutate(op->body);
-    if (one_dim >= 0) {
-      interval_expr& dim = bounds[one_dim];
-      s = crop_dim::make(op->name, one_dim, dim.min, mutate(dim.extent()), std::move(body));
+
+    // Remove trailing undefined bounds.
+    while (new_bounds.size() > 0 && !new_bounds.back().min.defined() && !new_bounds.back().max.defined()) {
+      new_bounds.pop_back();
+    }
+    if (new_bounds.empty()) {
+      // This crop was a no-op.
+      s = std::move(body);
+    } else if (dims_count == 1) {
+      // This crop is of one dimension, replace it with crop_dim.
+      // We removed undefined trailing bounds, so this must be the dim we want.
+      int d = new_bounds.size() - 1;
+      interval_expr& bounds_d = new_bounds[d];
+      s = crop_dim::make(op->name, d, bounds_d.min, mutate(bounds_d.extent()), std::move(body));
+    } else if (changed || !body.same_as(op->body)) {
+      s = crop_buffer::make(op->name, std::move(new_bounds), std::move(body));
     } else {
-      // Remove trailing undefined bounds.
-      while (bounds.size() > 0 && !bounds.back().min.defined() && !bounds.back().max.defined()) {
-        bounds.pop_back();
-      }
-      s = crop_buffer::make(op->name, std::move(bounds), std::move(body));
+      s = op;
     }
   }
 

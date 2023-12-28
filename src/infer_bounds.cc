@@ -48,21 +48,18 @@ public:
       const interval_expr& i = inferred[d];
 
       expr min = simplify(i.min);
-
-      symbol_id extent_name = ctx.insert();
-      lets.emplace_back(extent_name, simplify(i.extent()));
-      expr extent = variable::make(extent_name);
-
+      expr max = simplify(i.max);
+      expr extent = (max - min) + 1;
       expr fold_factor = -1;
 
       expr alloc_var = variable::make(alloc->name);
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::min, d), min);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), extent);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), max);
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::stride_bytes, d), stride_bytes);
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), fold_factor);
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), min + extent - 1);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), max - min + 1);
       stride_bytes *= extent;
     }
 

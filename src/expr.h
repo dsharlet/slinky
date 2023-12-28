@@ -608,13 +608,16 @@ public:
 };
 
 // This node is equivalent to the following:
-// 1. Crop `name` to the interval_expr `min, max` in-place
+// 1. Crop `name` to the interval [min, min + extent) in-place
 // 2. Evaluate `body`
 // 3. Restore the original buffer
 class crop_dim : public stmt_node<crop_dim> {
 public:
   symbol_id name;
   int dim;
+  // This uses [min, extent) and not interval_expr because crops to a small fixed size are so common,
+  // and need to be efficient. evaluating the max expression when the extent is a constant can add
+  // significant overhead for fine-grained crops.
   expr min;
   expr extent;
   stmt body;
