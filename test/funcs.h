@@ -115,6 +115,9 @@ index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<
   assert(c.rank == 2);
   assert(a.dim(1).begin() == b.dim(0).begin());
   assert(a.dim(1).end() == b.dim(0).end());
+  assert(a.dim(1).stride_bytes() == sizeof(T));
+  assert(b.dim(1).stride_bytes() == sizeof(T));
+  assert(c.dim(1).stride_bytes() == sizeof(T));
   for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
     for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
       c(i, j) = 0;

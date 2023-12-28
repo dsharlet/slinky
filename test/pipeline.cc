@@ -1,8 +1,8 @@
 #include "pipeline.h"
 #include "expr.h"
+#include "funcs.h"
 #include "print.h"
 #include "test.h"
-#include "funcs.h"
 
 #include <cassert>
 
@@ -93,7 +93,6 @@ TEST(pipeline_trivial_explicit) {
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, 0);
   ASSERT_EQ(eval_ctx.stack.total_size, 0);
-
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i);
@@ -202,6 +201,11 @@ TEST(pipeline_matmuls) {
   auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
   auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
 
+  a->dim(1).stride_bytes = a->elem_size();
+  b->dim(1).stride_bytes = b->elem_size();
+  c->dim(1).stride_bytes = c->elem_size();
+  abc->dim(1).stride_bytes = abc->elem_size();
+
   auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
   expr i = make_variable(ctx, "i");
@@ -214,20 +218,29 @@ TEST(pipeline_matmuls) {
   interval K_abc(c->dim(0).min, c->dim(0).max());
 
   // We use int for this pipeline so we can test for correctness exactly.
-  func matmul_ab =
-      func::make<const int, const int, int>(matmul<int>, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
-  func matmul_abc =
-      func::make<const int, const int, int>(matmul<int>, {ab, {interval(i), K_abc}}, {c, {K_abc, interval(j)}}, {abc, {i, j}});
+  func matmul_ab = func::make<const int, const int, int>(
+      matmul<int>, {a, {interval(i), K_ab}}, {b, {K_ab, interval(j)}}, {ab, {i, j}});
+  func matmul_abc = func::make<const int, const int, int>(
+      matmul<int>, {ab, {interval(i), K_abc}}, {c, {K_abc, interval(j)}}, {abc, {i, j}});
+
+  // TODO: There should be a more user friendly way to control the strides.
+  ab->dim(1).stride_bytes = static_cast<index_t>(sizeof(int));
+  ab->dim(0).stride_bytes = ab->dim(1).extent * ab->dim(1).stride_bytes;
 
   pipeline p(ctx, {a, b, c}, {abc});
 
   // Run the pipeline.
   const int M = 10;
   const int N = 10;
-  buffer<int, 2> a_buf({M, N});
-  buffer<int, 2> b_buf({M, N});
-  buffer<int, 2> c_buf({M, N});
-  buffer<int, 2> abc_buf({M, N});
+  buffer<int, 2> a_buf({N, M});
+  buffer<int, 2> b_buf({N, M});
+  buffer<int, 2> c_buf({N, M});
+  buffer<int, 2> abc_buf({N, M});
+  // TODO: There should be a more user friendly way to initialize a buffer with strides other than the default order.
+  std::swap(a_buf.dim(1), a_buf.dim(0));
+  std::swap(b_buf.dim(1), b_buf.dim(0));
+  std::swap(c_buf.dim(1), c_buf.dim(0));
+  std::swap(abc_buf.dim(1), abc_buf.dim(0));
 
   init_random(a_buf);
   init_random(b_buf);
@@ -244,8 +257,10 @@ TEST(pipeline_matmuls) {
   ASSERT_EQ(eval_ctx.stack.total_size, 0);
   ASSERT_EQ(eval_ctx.stack.total_count, 0);
 
-  buffer<int, 2> ref_ab({M, N});
-  buffer<int, 2> ref_abc({M, N});
+  buffer<int, 2> ref_ab({N, M});
+  buffer<int, 2> ref_abc({N, M});
+  std::swap(ref_ab.dim(1), ref_ab.dim(0));
+  std::swap(ref_abc.dim(1), ref_abc.dim(0));
   ref_ab.allocate();
   ref_abc.allocate();
   matmul<int>(a_buf.cast<const int>(), b_buf.cast<const int>(), ref_ab.cast<int>());
@@ -269,9 +284,9 @@ index_t upsample2x(const buffer<const int>& in, const buffer<int>& out) {
 index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
-      out(x, y) = (
-        in(2*x + 0, 2*y + 0) + in(2*x + 1, 2*y + 0) + 
-        in(2*x + 0, 2*y + 1) + in(2*x + 1, 2*y + 1) + 2) / 4;
+      out(x, y) = (in(2 * x + 0, 2 * y + 0) + in(2 * x + 1, 2 * y + 0) + in(2 * x + 0, 2 * y + 1) +
+                      in(2 * x + 1, 2 * y + 1) + 2) /
+                  4;
     }
   }
   return 0;

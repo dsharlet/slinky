@@ -33,19 +33,69 @@ public:
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
 
+    // When we constructed the pipeline, the buffer dimensions were set to load_buffer_meta expressions.
+    // (This is a little janky because the buffers they are loading from don't exist where they are used.)
+    // Here, we are building a list of replacements for those expressions. This way, if the user did something
+    // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
+    // inferred value.
+    // TODO: Is this actually a good design...?
+    std::vector<std::pair<expr, expr>> replacements;
+
     const box& inferred = *inferring[alloc->name];
-    std::vector<dim_expr> dims;
-    dims.reserve(inferred.size());
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
-    for (const interval& i : inferred) {
+    for (int d = 0; d < static_cast<int>(inferred.size()); ++d) {
+      const interval& i = inferred[d];
+
+      expr min = simplify(i.min);
+
       symbol_id extent_name = ctx.insert();
       lets.emplace_back(extent_name, simplify(i.extent()));
       expr extent = variable::make(extent_name);
-      dims.emplace_back(simplify(i.min), extent, stride_bytes, -1);
+
+      expr fold_factor = -1;
+
+      expr alloc_var = variable::make(alloc->name);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::min, d), min);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), extent);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::stride_bytes, d), stride_bytes);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), fold_factor);
+
+      // We didn't initially set up the buffer with a max, but the user might have used it.
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), min + extent - 1);
       stride_bytes *= extent;
     }
-    s = allocate::make(alloc->type, alloc->name, alloc->elem_size, dims, body);
+
+    // We need to keep replacing until nothing happens :(
+    std::vector<dim_expr> dims(alloc->dims);
+    while (true) {
+      bool changed = false;
+      for (int d = 0; d < dims.size(); ++d) {
+        dim_expr& dim = dims[d];
+        dim_expr new_dim = dim;
+        for (auto& j : replacements) {
+          new_dim.min = substitute(new_dim.min, j.first, j.second);
+          new_dim.extent = substitute(new_dim.extent, j.first, j.second);
+          new_dim.stride_bytes = substitute(new_dim.stride_bytes, j.first, j.second);
+          new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
+        }
+        if (!new_dim.same_as(dim)) {
+          changed = true;
+          dim = new_dim;
+        }
+      }
+      if (!changed) break;
+    }
+
+    // Check that the actual bounds we generated are bigger than the inferred bounds.
+    std::vector<stmt> checks;
+    for (int d = 0; d < dims.size(); ++d) {
+      checks.push_back(check::make(dims[d].min <= inferred[d].min));
+      checks.push_back(check::make(dims[d].max() >= inferred[d].max));
+    }
+
+    s = allocate::make(alloc->type, alloc->name, alloc->elem_size, std::move(dims), body);
+    s = block::make(block::make(checks), s);
     for (const auto& i : lets) {
       s = let_stmt::make(i.first, i.second, s);
     }
