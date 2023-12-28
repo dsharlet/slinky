@@ -41,26 +41,24 @@ public:
     // TODO: Is this actually a good design...?
     std::vector<std::pair<expr, expr>> replacements;
 
-    const box& inferred = *inferring[alloc->name];
+    box& inferred = *inferring[alloc->name];
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
     for (int d = 0; d < static_cast<int>(inferred.size()); ++d) {
-      const interval_expr& i = inferred[d];
+      interval_expr& i = inferred[d];
 
-      expr min = simplify(i.min);
-      expr max = simplify(i.max);
-      expr extent = (max - min) + 1;
-      expr fold_factor = -1;
+      i.min = simplify(i.min);
+      i.max = simplify(i.max);
 
       expr alloc_var = variable::make(alloc->name);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::min, d), min);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), max);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::min, d), i.min);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), i.max);
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::stride_bytes, d), stride_bytes);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), fold_factor);
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), -1);
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), max - min + 1);
-      stride_bytes *= extent;
+      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), i.extent());
+      stride_bytes *= i.extent();
     }
 
     // We need to keep replacing until nothing happens :(
