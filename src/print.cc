@@ -60,6 +60,24 @@ public:
     }
   }
 
+  void print(const interval_expr& e) { 
+    os << "[";
+    print(e.min);
+    os << ", ";
+    print(e.max);
+    os << "]";
+  }
+
+  void print(const dim_expr& d) {
+    os << "{";
+    print(d.bounds);
+    os << ", ";
+    print(d.stride_bytes);
+    os << ", ";
+    print(d.fold_factor);
+    os << "}";
+  }
+
   void print(const stmt& s) { s.accept(this); }
 
   std::string indent() const { return std::string(depth, ' '); }
@@ -177,7 +195,9 @@ public:
   void visit(const loop* l) override {
     os << indent() << "loop(";
     print_symbol_id(l->name);
-    os << " in " << l->bounds << ") {" << std::endl;
+    os << " in ";
+    print(l->bounds);
+    os << ") {" << std::endl;
     ++depth;
     print(l->body);
     --depth;
@@ -220,11 +240,8 @@ public:
     os << " = allocate<" << n->elem_size << ">({" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
-      os << indent() << "{" << d.bounds << ", ";
-      print(d.stride_bytes);
-      os << ", ";
-      print(d.fold_factor);
-      os << "}";
+      os << indent();
+      print(d);
       if (&d != &n->dims.back()) { os << ", "; }
       os << std::endl;
     }
@@ -244,11 +261,8 @@ public:
     os << ", {" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
-      os << indent() << "{" << d.bounds << ", ";
-      print(d.stride_bytes);
-      os << ", ";
-      print(d.fold_factor);
-      os << "}";
+      os << indent();
+      print(d);
       if (&d != &n->dims.back()) { os << ", "; }
       os << std::endl;
     }
@@ -267,7 +281,8 @@ public:
     os << ", {" << std::endl;
     ++depth;
     for (const interval_expr& d : n->bounds) {
-      os << indent() << d;
+      os << indent();
+      print(d);
       if (&d != &n->bounds.back()) { os << ", "; }
       os << std::endl;
     }
