@@ -274,6 +274,7 @@ struct interval {
   interval operator/(const expr& scale) const;
   interval operator+(const expr& offset) const;
   interval operator-(const expr& offset) const;
+  interval operator-() const;
 
   // This is the union operator. I don't really like this, but
   // I also don't like that I can't name a function `union`.

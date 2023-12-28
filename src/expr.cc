@@ -234,6 +234,8 @@ interval interval::operator-(const expr& offset) const {
   return result;
 }
 
+interval interval::operator-() const { return {-max, -min}; }
+
 interval& interval::operator|=(const interval& r) {
   min = slinky::min(min, r.min);
   max = slinky::max(max, r.max);

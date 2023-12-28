@@ -874,6 +874,7 @@ public:
   virtual void visit(const mul* x) {
     binary_result r = binary_bounds(x);
 
+    // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
     if (is_non_negative(r.a.min) && is_non_negative(r.b.min)) {
       // Both are >= 0, neither intervals flip.
       result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.max)};
@@ -882,10 +883,8 @@ public:
       result = {make(x, r.a.max, r.b.max), make(x, r.a.min, r.b.min)};
     } else if (r.b.is_single_point()) {
       if (is_non_negative(r.b.min)) {
-        // b is a positive single point.
         result = {make(x, r.a.min, r.b.min), make(x, r.a.max, r.b.min)};
       } else if (is_non_positive(r.b.min)) {
-        // b is a negative single point.
         result = {make(x, r.a.max, r.b.min), make(x, r.a.min, r.b.min)};
       } else {
         expr corners[] = {
@@ -896,10 +895,8 @@ public:
       }
     } else if (r.a.is_single_point()) {
       if (is_non_negative(r.a.min)) {
-        // a is a positive single point.
         result = {make(x, r.a.min, r.b.min), make(x, r.a.min, r.b.max)};
       } else if (is_non_positive(r.a.min)) {
-        // a is a negative single point.
         result = {make(x, r.a.min, r.b.max), make(x, r.a.min, r.b.min)};
       } else {
         expr corners[] = {
@@ -922,13 +919,12 @@ public:
   virtual void visit(const div* x) {
     binary_result r = binary_bounds(x);
     // TODO: Tighten these bounds.
-    result.min = min(r.a.min, -r.a.max);
-    result.max = max(r.a.max, -r.a.min);
+    result = r.a | -r.a;
   }
   virtual void visit(const mod* x) {
-    x->b.accept(this);
-    result.max = max(abs(result.min), abs(result.max));
-    result.min = 0;
+    binary_result r = binary_bounds(x);
+    result = {0, max(abs(r.b.min), abs(r.b.max))};
+    result &= r.a;
   }
 
   virtual void visit(const class min* x) { visit_linear(x); }
@@ -963,12 +959,20 @@ public:
   virtual void visit(const shift_right* x) { result = interval::all(); }
 
   virtual void visit(const select* x) {
+    x->condition.accept(this);
+    interval cb = result;
     x->true_value.accept(this);
     interval tb = result;
     x->false_value.accept(this);
     interval fb = result;
 
-    result = {min(tb.min, fb.min), max(tb.max, fb.max)};
+    if (is_true(cb.min)) {
+      result = tb;
+    } else if (is_false(cb.max)) {
+      result = fb;
+    } else {
+      result = fb | tb;
+    }
   }
 
   virtual void visit(const load_buffer_meta* x) { result = {x, x}; }
