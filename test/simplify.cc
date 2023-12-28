@@ -118,10 +118,10 @@ TEST(simplify_if_then_else) {
 
 TEST(bounds_of) {
   // Test bounds_of by testing expressions of two operands, and setting the
-  // bounds of the two operands. This approach to testing should be great at
-  // finding cases where bounds are incorrectly tight, but this test doesn't
-  // cover regressions that relax the bounds produced.
-  int abs_max = 3;
+  // bounds of the two operands to all possible cases of overlap. This approach
+  // to testing should be great at finding cases where bounds are incorrectly tight,
+  // but this test doesn't cover regressions that relax the bounds produced.
+  int scale = 3;
   expr exprs[] = {
       x + y,
       x - y,
@@ -138,16 +138,16 @@ TEST(bounds_of) {
   };
 
   for (const expr& e : exprs) {
-    for (int x_min_sign : {-1, 0, 1}) {
-      for (int x_max_sign : {-1, 0, 1}) {
+    for (int x_min_sign : {-2, -1, 0, 1, 2}) {
+      for (int x_max_sign : {-2, -1, 0, 1, 2}) {
         if (x_max_sign < x_min_sign) continue;
-        int x_min = x_min_sign * abs_max;
-        int x_max = x_max_sign * abs_max;
-        for (int y_min_sign : {-1, 0, 1}) {
-          for (int y_max_sign : {-1, 0, 1}) {
+        int x_min = x_min_sign * scale;
+        int x_max = x_max_sign * scale;
+        for (int y_min_sign : {-2, -1, 0, 1, 2}) {
+          for (int y_max_sign : {-2, -1, 0, 1, 2}) {
             if (y_max_sign < y_min_sign) continue;
-            int y_min = y_min_sign * abs_max;
-            int y_max = y_max_sign * abs_max;
+            int y_min = y_min_sign * scale;
+            int y_max = y_max_sign * scale;
 
             symbol_map<interval> bounds;
             bounds[*as_variable(x)] = interval(x_min, x_max);
