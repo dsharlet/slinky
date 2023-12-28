@@ -6,6 +6,7 @@
 
 #include "evaluate.h"
 #include "infer_bounds.h"
+#include "node_mutator.h"
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
@@ -279,8 +280,8 @@ void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   }
 }
 
-stmt build_pipeline(
-    node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+    const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
   pipeline_builder builder(inputs, outputs);
 
   stmt result;
@@ -317,6 +318,16 @@ stmt build_pipeline(
   result = block::make(block::make(checks), result);
 
   result = simplify(result);
+
+  if (options.no_checks) {
+    class remove_checks : public node_mutator {
+    public:
+      void visit(const check* op) override { s = stmt(); }
+    };
+
+    result = remove_checks().mutate(result);
+  }
+
   print(std::cerr, result, &ctx);
 
   return result;
@@ -324,12 +335,14 @@ stmt build_pipeline(
 
 }  // namespace
 
-pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs)
+pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
+    const build_options& options)
     : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
-  body = build_pipeline(ctx, inputs_, outputs_);
+  body = build_pipeline(ctx, inputs_, outputs_, options);
 }
 
-index_t pipeline::evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const {
+index_t pipeline::evaluate(
+    std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const {
   assert(inputs.size() == inputs_.size());
   assert(outputs.size() == outputs_.size());
 

@@ -1,8 +1,8 @@
 #ifndef SLINKY_PIPELINE_H
 #define SLINKY_PIPELINE_H
 
-#include "expr.h"
 #include "evaluate.h"
+#include "expr.h"
 
 namespace slinky {
 
@@ -56,7 +56,10 @@ public:
   }
   memory_type storage() const { return storage_; }
 
-  buffer_expr& store_at(loop_id at) { store_at_ = at; return *this; }
+  buffer_expr& store_at(loop_id at) {
+    store_at_ = at;
+    return *this;
+  }
   const loop_id& store_at() const { return store_at_; }
 
   // buffer_exprs can have many consumers, but only one producer.
@@ -170,6 +173,12 @@ public:
   const std::vector<output>& outputs() const { return outputs_; }
 };
 
+// TODO: I wanted this to be pipeline::build_options, but I hit some tricky compiler error
+struct build_options {
+  // If true, removes bounds checks
+  bool no_checks = false;
+};
+
 class pipeline {
   std::vector<buffer_expr_ptr> inputs_;
   std::vector<buffer_expr_ptr> outputs_;
@@ -177,9 +186,11 @@ class pipeline {
   stmt body;
 
 public:
-  pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs);
+  pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
+      const build_options& options = build_options());
 
-  index_t evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const;
+  index_t evaluate(
+      std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs, eval_context& ctx) const;
   index_t evaluate(std::span<const buffer_base*> inputs, std::span<const buffer_base*> outputs) const;
 };
 

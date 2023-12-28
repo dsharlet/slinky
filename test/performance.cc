@@ -45,7 +45,7 @@ void benchmark_pipelines(bool explicit_y) {
     copy.loops({y});
   }
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p(ctx, {in}, {out}, build_options{.no_checks = true});
 
   for (int total_size : {128 * 1024, 8 * 1024 * 1024}) {
     for (int copy_size : {4096}) {
