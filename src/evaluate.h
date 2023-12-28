@@ -9,14 +9,17 @@ namespace slinky {
 // TODO: Probably shouldn't inherit here.
 class eval_context : public symbol_map<index_t> {
 public:
-  // These two functions implement allocate nodes.
-  std::function<void(buffer_base*)> allocate;
-  std::function<void(buffer_base*)> free;
+  // These two functions implement allocation. `allocate` is called before
+  // running the body, and `free` is called after.
+  // If these functions are not defined, the default handler will call
+  // buffer_base::allocate and buffer_base::free.
+  std::function<void(symbol_id, buffer_base*)> allocate;
+  std::function<void(symbol_id, buffer_base*)> free;
 
-  // If a check fails, this function is called.
+  // Functions called when there is a failure in the pipeline.
+  // If these functions are not defined, the default handler will write a
+  // message to cerr and abort.
   std::function<void(const expr&)> check_failed;
-  
-  // If a call to a func fails, this function is called.
   std::function<void(const call_func*)> call_failed;
 };
 

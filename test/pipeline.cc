@@ -36,11 +36,11 @@ public:
   memory_info heap;
 
   debug_context() {
-    allocate = [this](buffer_base* b) {
+    allocate = [this](symbol_id, buffer_base* b) {
       b->allocate();
       heap.track_allocate(b->size_bytes());
     };
-    free = [this](buffer_base* b) {
+    free = [this](symbol_id, buffer_base* b) {
       b->free();
       heap.track_free(b->size_bytes());
     };
