@@ -5,9 +5,9 @@
 
 #include "node_mutator.h"
 #include "pipeline.h"
-#include "substitute.h"
 #include "print.h"
 #include "simplify.h"
+#include "substitute.h"
 
 namespace slinky {
 
@@ -17,6 +17,7 @@ class bounds_inferrer : public node_mutator {
 public:
   node_context& ctx;
   symbol_map<box> inferring;
+  symbol_map<std::pair<int, expr>> fold_factors;
   symbol_map<box> crops;
   std::vector<std::pair<symbol_id, expr>> loop_mins;
   symbol_map<std::size_t> loops_since_allocate;
@@ -29,7 +30,7 @@ public:
       assert(!bounds);
       bounds = box();
     }
-    
+
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
 
@@ -44,6 +45,7 @@ public:
     box& inferred = *inferring[alloc->name];
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
+    auto& fold_factor = fold_factors[alloc->name];
     for (int d = 0; d < static_cast<int>(inferred.size()); ++d) {
       interval_expr& i = inferred[d];
 
@@ -54,7 +56,11 @@ public:
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::min, d), i.min);
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::max, d), i.max);
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::stride_bytes, d), stride_bytes);
-      replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), -1);
+      if (fold_factor && fold_factor->first == d) {
+        replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), fold_factor->second);
+      } else {
+        replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::fold_factor, d), -1);
+      }
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
       replacements.emplace_back(load_buffer_meta::make(alloc_var, buffer_meta::extent, d), i.extent());
@@ -96,7 +102,7 @@ public:
     }
   }
 
-  expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) { 
+  expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) {
     std::optional<box>& bounds = inferring[buffer];
     if (bounds && d < bounds->size()) {
       switch (meta) {
@@ -136,7 +142,7 @@ public:
       std::optional<box>& bounds = inferring[input.buffer->name()];
       assert(bounds);
       bounds->reserve(input.bounds.size());
-      while (bounds->size() < input.bounds.size()) { 
+      while (bounds->size() < input.bounds.size()) {
         bounds->push_back(interval_expr::union_identity());
       }
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
@@ -168,15 +174,21 @@ public:
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
           prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, prev_iter));
           prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, prev_iter));
-          if (can_prove(prev_bounds[d].min <= crop_bounds[d].min) && can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
+          if (can_prove(prev_bounds[d].min <= crop_bounds[d].min) &&
+              can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
             // The bounds for each loop iteration are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
             expr& old_min = crop_bounds[d].min;
             expr new_min = prev_bounds[d].max + 1;
             loop_mins[l].second -= simplify(new_min - old_min);
+
+            expr fold_factor = simplify(bounds_of(crop_bounds[d].extent()).max);
+            fold_factors[output.buffer->name()] = {d, fold_factor};
+
             old_min = new_min;
             break;
-          } else if (can_prove(prev_bounds[d].min > crop_bounds[d].min) && can_prove(prev_bounds[d].max >= crop_bounds[d].max)) {
+          } else if (can_prove(prev_bounds[d].min > crop_bounds[d].min) &&
+                     can_prove(prev_bounds[d].max >= crop_bounds[d].max)) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
           }
@@ -267,7 +279,7 @@ public:
     // Visit blocks in reverse order. TODO: Is this really sufficient?
     stmt b = mutate(x->b);
     stmt a = mutate(x->a);
-    if (a.same_as(x->a) && b.same_as(x->b)) { 
+    if (a.same_as(x->a) && b.same_as(x->b)) {
       s = x;
     } else {
       s = block::make(a, b);

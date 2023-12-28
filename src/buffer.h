@@ -141,8 +141,12 @@ public:
     index_t flat_min = 0;
     index_t flat_max = 0;
     for (std::size_t i = 0; i < rank; ++i) {
-      flat_min += (dims[i].extent() - 1) * std::min<index_t>(0, dims[i].stride_bytes());
-      flat_max += (dims[i].extent() - 1) * std::max<index_t>(0, dims[i].stride_bytes());
+      index_t extent = dims[i].extent();
+      if (dims[i].fold_factor() > 0) {
+        extent = std::min(extent, dims[i].fold_factor());
+      }
+      flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride_bytes());
+      flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride_bytes());
     }
     return flat_max - flat_min + elem_size;
   }

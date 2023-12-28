@@ -398,7 +398,7 @@ TEST(pipeline_stencil) {
   const buffer_base* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {
