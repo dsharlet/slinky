@@ -151,9 +151,9 @@ public:
   virtual void visit(const shift_left* x) { match_binary(x); }
   virtual void visit(const shift_right* x) { match_binary(x); }
 
-  virtual void visit(const select* x) {
+  virtual void visit(const class select* x) {
     if (!match) return;
-    const select* se = e.as<select>();
+    const class select* se = e.as<class select>();
     if (!se) return fail();
 
     match = try_match(se->condition, x->condition) && try_match(se->true_value, x->true_value) &&

@@ -552,7 +552,7 @@ public:
     e = apply_rules(rules, e);
   }
 
-  void visit(const select* op) override {
+  void visit(const class select* op) override {
     expr c = mutate(op->condition);
     std::optional<bool> const_c = can_prove(c);
     if (const_c) {
@@ -1023,7 +1023,7 @@ public:
   virtual void visit(const shift_left* x) { result = interval::all(); }
   virtual void visit(const shift_right* x) { result = interval::all(); }
 
-  virtual void visit(const select* x) {
+  virtual void visit(const class select* x) {
     x->condition.accept(this);
     interval cb = result;
     x->true_value.accept(this);

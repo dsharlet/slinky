@@ -78,9 +78,9 @@ TEST(simplify) {
 
   test_simplify(((x + 1) - (y - 1)) + 1, x - y + 3);
 
-  test_simplify(select::make(x, y, y), y);
-  test_simplify(select::make(x == x, y, z), y);
-  test_simplify(select::make(x != x, y, z), z);
+  test_simplify(select(x, y, y), y);
+  test_simplify(select(x == x, y, z), y);
+  test_simplify(select(x != x, y, z), z);
 
   test_simplify(x && false, false);
   test_simplify(x || true, true);
@@ -243,7 +243,7 @@ expr make_random_expr(int depth) {
     case 4: return a % b;
     case 5: return min(a, b);
     case 6: return max(a, b);
-    case 7: return select::make(make_random_condition(depth - 1), a, b);
+    case 7: return select(make_random_condition(depth - 1), a, b);
     case 8: return random_constant();
     }
   }

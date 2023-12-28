@@ -227,6 +227,9 @@ TEST(pipeline_matmuls) {
   ab->dim(1).stride_bytes = static_cast<index_t>(sizeof(int));
   ab->dim(0).stride_bytes = ab->dim(1).extent * ab->dim(1).stride_bytes;
 
+  //matmul_abc.loops({i});
+  //matmul_ab.compute_at({&matmul_abc, i});
+
   pipeline p(ctx, {a, b, c}, {abc});
 
   // Run the pipeline.

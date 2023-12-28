@@ -243,6 +243,7 @@ expr operator&&(expr a, expr b);
 expr operator||(expr a, expr b);
 expr min(expr a, expr b);
 expr max(expr a, expr b);
+expr select(expr c, expr t, expr f);
 expr min(std::span<expr> x);
 expr max(std::span<expr> x);
 
@@ -407,7 +408,7 @@ DECLARE_BINARY_OP(shift_right)
 
 #undef DECLARE_BINARY_OP
 
-class select : public expr_node<select> {
+class select : public expr_node<class select> {
 public:
   expr condition;
   expr true_value;
@@ -652,7 +653,7 @@ public:
   virtual void visit(const logical_or*) = 0;
   virtual void visit(const shift_left*) = 0;
   virtual void visit(const shift_right*) = 0;
-  virtual void visit(const select*) = 0;
+  virtual void visit(const class select*) = 0;
   virtual void visit(const load_buffer_meta*) = 0;
   virtual void visit(const call*) = 0;
 
@@ -702,7 +703,7 @@ public:
   virtual void visit(const logical_or* x) { visit_binary(x); }
   virtual void visit(const shift_left* x) { visit_binary(x); }
   virtual void visit(const shift_right* x) { visit_binary(x); }
-  virtual void visit(const select* x) {
+  virtual void visit(const class select* x) {
     x->condition.accept(this);
     x->true_value.accept(this);
     x->false_value.accept(this);

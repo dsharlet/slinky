@@ -76,7 +76,7 @@ public:
   void visit(const shift_left* x) override { result = eval_expr(x->a) << eval_expr(x->b); }
   void visit(const shift_right* x) override { result = eval_expr(x->a) >> eval_expr(x->b); }
 
-  void visit(const select* x) override {
+  void visit(const class select* x) override {
     if (eval_expr(x->condition)) {
       result = eval_expr(x->true_value);
     } else {

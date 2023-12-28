@@ -73,7 +73,7 @@ public:
   virtual void visit(const shift_left* x) { e = mutate_binary(x); }
   virtual void visit(const shift_right* x) { e = mutate_binary(x); }
 
-  virtual void visit(const select* x) {
+  virtual void visit(const class select* x) {
     expr c = mutate(x->condition);
     expr t = mutate(x->true_value);
     expr f = mutate(x->false_value);

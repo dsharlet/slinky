@@ -130,7 +130,7 @@ public:
     os << ")";
   }
 
-  void visit(const select* op) override {
+  void visit(const class select* op) override {
     os << "(";
     print(op->condition);
     os << " ? ";

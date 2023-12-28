@@ -121,6 +121,7 @@ expr operator/(expr a, expr b) { return div::make(std::move(a), std::move(b)); }
 expr operator%(expr a, expr b) { return mod::make(std::move(a), std::move(b)); }
 expr min(expr a, expr b) { return min::make(std::move(a), std::move(b)); }
 expr max(expr a, expr b) { return max::make(std::move(a), std::move(b)); }
+expr select(expr c, expr t, expr f) { return select::make(std::move(c), std::move(t), std::move(f)); }
 expr operator==(expr a, expr b) { return equal::make(std::move(a), std::move(b)); }
 expr operator!=(expr a, expr b) { return not_equal::make(std::move(a), std::move(b)); }
 expr operator<(expr a, expr b) { return less::make(std::move(a), std::move(b)); }
@@ -135,7 +136,7 @@ expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::mov
 expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
 expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
-expr min(std::span<expr> x) { 
+expr min(std::span<expr> x) {
   if (x.empty()) {
     return expr();
   } else if (x.size() == 1) {
@@ -155,7 +156,7 @@ expr max(std::span<expr> x) {
   }
 }
 
-const interval& interval::all() { 
+const interval& interval::all() {
   static interval x = {negative_infinity(), positive_infinity()};
   return x;
 }
@@ -276,8 +277,8 @@ box operator&(box a, const box& b) {
   return a;
 }
 
-expr select::make(expr condition, expr true_value, expr false_value) { 
-  auto n = std::make_shared<select>(); 
+expr select::make(expr condition, expr true_value, expr false_value) {
+  auto n = std::make_shared<select>();
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
   n->false_value = std::move(false_value);
@@ -378,7 +379,7 @@ stmt check::make(expr condition) {
 }
 
 const expr& positive_infinity() {
-  static expr e = call::make(intrinsic::positive_infinity, {}); 
+  static expr e = call::make(intrinsic::positive_infinity, {});
   return e;
 }
 
