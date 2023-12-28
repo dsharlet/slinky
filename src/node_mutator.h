@@ -164,7 +164,8 @@ public:
     dims.reserve(x->dims.size());
     bool changed = false;
     for (const dim_expr& i : x->dims) {
-      dims.emplace_back(mutate(i.min), mutate(i.extent), mutate(i.stride_bytes), mutate(i.fold_factor));
+      interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
+      dims.emplace_back(std::move(bounds), mutate(i.stride_bytes), mutate(i.fold_factor));
       changed = changed || !dims.back().same_as(i);
     }
     stmt body = mutate(x->body);
@@ -180,7 +181,8 @@ public:
     dims.reserve(x->dims.size());
     bool changed = false;
     for (const dim_expr& i : x->dims) {
-      dims.emplace_back(mutate(i.min), mutate(i.extent), mutate(i.stride_bytes), mutate(i.fold_factor));
+      interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
+      dims.emplace_back(std::move(bounds), mutate(i.stride_bytes), mutate(i.fold_factor));
       changed = changed || dims.back().same_as(i);
     }
     stmt body = mutate(x->body);

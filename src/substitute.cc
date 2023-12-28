@@ -21,7 +21,9 @@ public:
   void fail() { match = false; }
 
   bool try_match(const expr& self, const expr& x) {
-    if (!self.defined() && !x.defined()) { return true; }
+    if (!self.defined() && !x.defined()) {
+      return true;
+    }
     if (!self.defined() || !x.defined()) {
       match = false;
       return false;
@@ -36,13 +38,13 @@ public:
     return match;
   }
 
-  bool try_match(const dim_expr& self, const dim_expr& x) {
-    return try_match(self.min, x.min) && try_match(self.extent, x.extent) &&
-           try_match(self.stride_bytes, x.stride_bytes) && try_match(self.fold_factor, x.fold_factor);
-  }
-
   bool try_match(const interval_expr& self, const interval_expr& x) {
     return try_match(self.min, x.min) && try_match(self.max, x.max);
+  }
+
+  bool try_match(const dim_expr& self, const dim_expr& x) {
+    return try_match(self.bounds, x.bounds) && try_match(self.stride_bytes, x.stride_bytes) &&
+           try_match(self.fold_factor, x.fold_factor);
   }
 
   template <typename T>
@@ -60,7 +62,9 @@ public:
   }
 
   bool try_match(const stmt& self, const stmt& x) {
-    if (!self.defined() && !x.defined()) { return true; }
+    if (!self.defined() && !x.defined()) {
+      return true;
+    }
     if (!self.defined() || !x.defined()) {
       match = false;
       return false;
@@ -298,13 +302,13 @@ public:
       return replacement;
     } else {
       return node_mutator::mutate(x);
-    }      
+    }
   }
   using node_mutator::mutate;
 
   template <typename T>
   void visit_variable(const T* v) {
-    if (shadowed.contains(v->name)) { 
+    if (shadowed.contains(v->name)) {
       // This variable has been shadowed, don't substitute it.
       e = v;
     } else if (v->name == target_var) {

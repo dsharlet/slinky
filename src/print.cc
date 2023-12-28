@@ -1,4 +1,4 @@
-#include "evaluate.h"
+#include "print.h"
 
 #include <cassert>
 #include <iostream>
@@ -33,6 +33,8 @@ std::ostream& operator<<(std::ostream& os, intrinsic i) {
   case intrinsic::abs: return os << "abs";
   }
 }
+
+std::ostream& operator<<(std::ostream& os, const interval_expr& i) { return os << "[" << i.min << ", " << i.max << "]"; }
 
 class printer : public node_visitor {
 public:
@@ -222,11 +224,7 @@ public:
     os << " = allocate<" << n->elem_size << ">({" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
-      os << indent() << "{";
-      print(d.min);
-      os << ", ";
-      print(d.extent);
-      os << ", ";
+      os << indent() << "{" << d.bounds << ", ";
       print(d.stride_bytes);
       os << ", ";
       print(d.fold_factor);
@@ -250,11 +248,7 @@ public:
     os << ", {" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {
-      os << indent() << "{";
-      print(d.min);
-      os << ", ";
-      print(d.extent);
-      os << ", ";
+      os << indent() << "{" << d.bounds << ", ";
       print(d.stride_bytes);
       os << ", ";
       print(d.fold_factor);
@@ -277,11 +271,7 @@ public:
     os << ", {" << std::endl;
     ++depth;
     for (const interval_expr& d : n->bounds) {
-      os << indent() << "{";
-      print(d.min);
-      os << ", ";
-      print(d.max);
-      os << "}";
+      os << indent() << d;
       if (&d != &n->bounds.back()) { os << ", "; }
       os << std::endl;
     }
@@ -316,12 +306,12 @@ public:
   }
 };
 
-void print(std::ostream& os, const expr& e, const node_context* ctx = nullptr) {
+void print(std::ostream& os, const expr& e, const node_context* ctx) {
   printer p(os, ctx);
   e.accept(&p);
 }
 
-void print(std::ostream& os, const stmt& s, const node_context* ctx = nullptr) {
+void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   printer p(os, ctx);
   s.accept(&p);
 }
@@ -335,7 +325,5 @@ std::ostream& operator<<(std::ostream& os, const stmt& s) {
   print(os, s);
   return os;
 }
-
-std::ostream& operator<<(std::ostream& os, const interval_expr& i) { return os << "[" << i.min << ", " << i.max << "]"; }
 
 }  // namespace slinky

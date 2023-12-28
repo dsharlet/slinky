@@ -546,16 +546,16 @@ public:
 };
 
 struct dim_expr {
-  expr min;
-  expr extent;
+  interval_expr bounds;
   expr stride_bytes;
   expr fold_factor;
 
-  expr max() const { return min + extent - 1; }
+  const expr& min() const { return bounds.min; }
+  const expr& max() const { return bounds.max; }
+  expr extent() const { return bounds.extent(); }
 
   bool same_as(const dim_expr& r) {
-    return min.same_as(r.min) && extent.same_as(r.extent) && stride_bytes.same_as(r.stride_bytes) &&
-           fold_factor.same_as(r.fold_factor);
+    return bounds.same_as(r.bounds) && stride_bytes.same_as(r.stride_bytes) && fold_factor.same_as(r.fold_factor);
   }
 };
 
@@ -684,7 +684,7 @@ public:
   virtual void visit(const variable*) override {}
   virtual void visit(const wildcard*) override {}
   virtual void visit(const constant*) override {}
-  virtual void visit(const let* x) override { 
+  virtual void visit(const let* x) override {
     x->value.accept(this);
     x->body.accept(this);
   }
@@ -718,7 +718,7 @@ public:
     x->true_value.accept(this);
     x->false_value.accept(this);
   }
-  virtual void visit(const load_buffer_meta* x) override { 
+  virtual void visit(const load_buffer_meta* x) override {
     x->buffer.accept(this);
     x->dim.accept(this);
   }
@@ -732,11 +732,11 @@ public:
     x->value.accept(this);
     x->body.accept(this);
   }
-  virtual void visit(const block* x) override { 
+  virtual void visit(const block* x) override {
     if (x->a.defined()) x->a.accept(this);
     if (x->b.defined()) x->b.accept(this);
   }
-  virtual void visit(const loop* x) override { 
+  virtual void visit(const loop* x) override {
     x->begin.accept(this);
     x->end.accept(this);
     x->body.accept(this);
@@ -753,8 +753,8 @@ public:
   }
   virtual void visit(const allocate* x) override {
     for (const dim_expr& i : x->dims) {
-      i.min.accept(this);
-      i.extent.accept(this);
+      i.bounds.min.accept(this);
+      i.bounds.max.accept(this);
       i.stride_bytes.accept(this);
       i.fold_factor.accept(this);
     }
@@ -762,8 +762,8 @@ public:
   }
   virtual void visit(const make_buffer* x) override {
     for (const dim_expr& i : x->dims) {
-      i.min.accept(this);
-      i.extent.accept(this);
+      i.bounds.min.accept(this);
+      i.bounds.max.accept(this);
       i.stride_bytes.accept(this);
       i.fold_factor.accept(this);
     }

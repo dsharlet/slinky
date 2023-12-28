@@ -74,8 +74,8 @@ public:
         dim_expr& dim = dims[d];
         dim_expr new_dim = dim;
         for (auto& j : replacements) {
-          new_dim.min = substitute(new_dim.min, j.first, j.second);
-          new_dim.extent = substitute(new_dim.extent, j.first, j.second);
+          new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
+          new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
           new_dim.stride_bytes = substitute(new_dim.stride_bytes, j.first, j.second);
           new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
         }
@@ -90,7 +90,7 @@ public:
     // Check that the actual bounds we generated are bigger than the inferred bounds.
     std::vector<stmt> checks;
     for (int d = 0; d < dims.size(); ++d) {
-      checks.push_back(check::make(dims[d].min <= inferred[d].min));
+      checks.push_back(check::make(dims[d].min() <= inferred[d].min));
       checks.push_back(check::make(dims[d].max() >= inferred[d].max));
     }
 
@@ -150,7 +150,7 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        (*bounds)[d] |= interval_expr(min, max) | interval_expr(max, min);
+        (*bounds)[d] |= slinky::bounds(min, max) | slinky::bounds(max, min);
       }
     }
 

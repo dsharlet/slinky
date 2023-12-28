@@ -18,11 +18,11 @@ buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank)
   dims_.reserve(rank);
   auto var = variable::make(name);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
-    expr min = load_buffer_meta::make(var, buffer_meta::min, i);
-    expr extent = load_buffer_meta::make(var, buffer_meta::extent, i);
+    interval_expr bounds = {
+        load_buffer_meta::make(var, buffer_meta::min, i), load_buffer_meta::make(var, buffer_meta::max, i)};
     expr stride_bytes = load_buffer_meta::make(var, buffer_meta::stride_bytes, i);
     expr fold_factor = load_buffer_meta::make(var, buffer_meta::fold_factor, i);
-    dims_.emplace_back(min, extent, stride_bytes, fold_factor);
+    dims_.emplace_back(bounds, stride_bytes, fold_factor);
   }
 }
 
@@ -193,7 +193,7 @@ public:
         if (*as_variable(o.dims[d]) == *as_variable(loop)) {
           to_crop[o.buffer->name()].emplace_back(d, loop, 1);
           // This output uses this loop. Add it to the bounds.
-          bounds |= interval_expr(o.buffer->dim(d).min, o.buffer->dim(d).max());
+          bounds |= o.buffer->dim(d).bounds;
         }
       }
     }
@@ -271,8 +271,8 @@ void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::rank) == rank));
   checks.push_back(check::make(load_buffer_meta::make(buf_var, buffer_meta::base) != 0));
   for (int d = 0; d < rank; ++d) {
-    checks.push_back(check::make(b->dim(d).min == load_buffer_meta::make(buf_var, buffer_meta::min, d)));
-    checks.push_back(check::make(b->dim(d).extent == load_buffer_meta::make(buf_var, buffer_meta::extent, d)));
+    checks.push_back(check::make(b->dim(d).min() == load_buffer_meta::make(buf_var, buffer_meta::min, d)));
+    checks.push_back(check::make(b->dim(d).max() == load_buffer_meta::make(buf_var, buffer_meta::max, d)));
     checks.push_back(
         check::make(b->dim(d).stride_bytes == load_buffer_meta::make(buf_var, buffer_meta::stride_bytes, d)));
     checks.push_back(

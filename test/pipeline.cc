@@ -214,8 +214,8 @@ TEST(pipeline_matmuls) {
 
   // The bounds required of the dimensions consumed by the reduction depend on the size of the
   // buffers passed in. Note that we haven't used any constants yet.
-  interval_expr K_ab(a->dim(1).min, a->dim(1).max());
-  interval_expr K_abc(c->dim(0).min, c->dim(0).max());
+  auto K_ab = a->dim(1).bounds;
+  auto K_abc = c->dim(0).bounds;
 
   // We use int for this pipeline so we can test for correctness exactly.
   func matmul_ab = func::make<const int, const int, int>(matmul<int>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
@@ -224,7 +224,7 @@ TEST(pipeline_matmuls) {
 
   // TODO: There should be a more user friendly way to control the strides.
   ab->dim(1).stride_bytes = static_cast<index_t>(sizeof(int));
-  ab->dim(0).stride_bytes = ab->dim(1).extent * ab->dim(1).stride_bytes;
+  ab->dim(0).stride_bytes = ab->dim(1).extent() * ab->dim(1).stride_bytes;
 
   //matmul_abc.loops({i});
   //matmul_ab.compute_at({&matmul_abc, i});

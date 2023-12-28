@@ -179,7 +179,7 @@ public:
 
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
-      dim.set_min_extent(eval_expr(n->dims[i].min), eval_expr(n->dims[i].extent));
+      dim.set_bounds(eval_expr(n->dims[i].min()), eval_expr(n->dims[i].max()));
       dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
@@ -216,7 +216,7 @@ public:
 
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
-      dim.set_min_extent(eval_expr(n->dims[i].min), eval_expr(n->dims[i].extent));
+      dim.set_bounds(eval_expr(n->dims[i].min()), eval_expr(n->dims[i].max()));
       dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
