@@ -282,6 +282,8 @@ public:
         {buffer_extent(x, y) + buffer_min(x, y), buffer_max(x, y) + 1},
         {(z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1},
         {buffer_min(x, y) + (z - buffer_max(x, y)), (z - buffer_extent(x, y)) + 1},
+        {(z - buffer_min(x, y)) + buffer_max(x, y), (z + buffer_extent(x, y)) - 1},
+        {buffer_max(x, y) + (z - buffer_min(x, y)), (z + buffer_extent(x, y)) - 1},
     };
     e = apply_rules(rules, e);
   }
@@ -329,6 +331,7 @@ public:
         {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
         {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
         {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
+        {(z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) - 1},
     };
     e = apply_rules(rules, e);
   }
