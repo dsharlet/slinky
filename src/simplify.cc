@@ -447,8 +447,8 @@ public:
     static std::vector<rule> rules = {
         {positive_infinity() <= c0, false},
         {negative_infinity() <= c0, true},
-        {x + c0 <= c1, x < c1 - c0},
-        {c0 - x <= c1, -x < c1 - c0, c0 != 0},
+        {x + c0 <= c1, x <= c1 - c0},
+        {c0 - x <= c1, -x <= c1 - c0, c0 != 0},
         {buffer_extent(x, y) <= c0, false, c0 <= 0},
         {-buffer_extent(x, y) <= c0, true, -c0 <= 0},
     };

@@ -10,7 +10,7 @@ public:
   expr e;
   stmt s;
 
-  expr mutate(const expr& x) {
+  virtual expr mutate(const expr& x) {
     if (x.defined()) {
       x.accept(this);
       return e;
@@ -18,7 +18,7 @@ public:
       return expr();
     }
   }
-  stmt mutate(const stmt& x) {
+  virtual stmt mutate(const stmt& x) {
     if (x.defined()) {
       x.accept(this);
       return s;
