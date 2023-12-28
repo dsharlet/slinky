@@ -671,10 +671,10 @@ public:
 
 class recursive_node_visitor : public node_visitor {
 public:
-  virtual void visit(const variable*) {}
-  virtual void visit(const wildcard*) {}
-  virtual void visit(const constant*) {}
-  virtual void visit(const let* x) { 
+  virtual void visit(const variable*) override {}
+  virtual void visit(const wildcard*) override {}
+  virtual void visit(const constant*) override {}
+  virtual void visit(const let* x) override { 
     x->value.accept(this);
     x->body.accept(this);
   }
@@ -685,63 +685,63 @@ public:
     x->b.accept(this);
   }
 
-  virtual void visit(const add* x) { visit_binary(x); }
-  virtual void visit(const sub* x) { visit_binary(x); }
-  virtual void visit(const mul* x) { visit_binary(x); }
-  virtual void visit(const div* x) { visit_binary(x); }
-  virtual void visit(const mod* x) { visit_binary(x); }
-  virtual void visit(const class min* x) { visit_binary(x); }
-  virtual void visit(const class max* x) { visit_binary(x); }
-  virtual void visit(const equal* x) { visit_binary(x); }
-  virtual void visit(const not_equal* x) { visit_binary(x); }
-  virtual void visit(const less* x) { visit_binary(x); }
-  virtual void visit(const less_equal* x) { visit_binary(x); }
-  virtual void visit(const bitwise_and* x) { visit_binary(x); }
-  virtual void visit(const bitwise_or* x) { visit_binary(x); }
-  virtual void visit(const bitwise_xor* x) { visit_binary(x); }
-  virtual void visit(const logical_and* x) { visit_binary(x); }
-  virtual void visit(const logical_or* x) { visit_binary(x); }
-  virtual void visit(const shift_left* x) { visit_binary(x); }
-  virtual void visit(const shift_right* x) { visit_binary(x); }
-  virtual void visit(const class select* x) {
+  virtual void visit(const add* x) override { visit_binary(x); }
+  virtual void visit(const sub* x) override { visit_binary(x); }
+  virtual void visit(const mul* x) override { visit_binary(x); }
+  virtual void visit(const div* x) override { visit_binary(x); }
+  virtual void visit(const mod* x) override { visit_binary(x); }
+  virtual void visit(const class min* x) override { visit_binary(x); }
+  virtual void visit(const class max* x) override { visit_binary(x); }
+  virtual void visit(const equal* x) override { visit_binary(x); }
+  virtual void visit(const not_equal* x) override { visit_binary(x); }
+  virtual void visit(const less* x) override { visit_binary(x); }
+  virtual void visit(const less_equal* x) override { visit_binary(x); }
+  virtual void visit(const bitwise_and* x) override { visit_binary(x); }
+  virtual void visit(const bitwise_or* x) override { visit_binary(x); }
+  virtual void visit(const bitwise_xor* x) override { visit_binary(x); }
+  virtual void visit(const logical_and* x) override { visit_binary(x); }
+  virtual void visit(const logical_or* x) override { visit_binary(x); }
+  virtual void visit(const shift_left* x) override { visit_binary(x); }
+  virtual void visit(const shift_right* x) override { visit_binary(x); }
+  virtual void visit(const class select* x) override {
     x->condition.accept(this);
     x->true_value.accept(this);
     x->false_value.accept(this);
   }
-  virtual void visit(const load_buffer_meta* x) { 
+  virtual void visit(const load_buffer_meta* x) override { 
     x->buffer.accept(this);
     x->dim.accept(this);
   }
-  virtual void visit(const call* x) {
+  virtual void visit(const call* x) override {
     for (const expr& i : x->args) {
       i.accept(this);
     }
   }
 
-  virtual void visit(const let_stmt* x) {
+  virtual void visit(const let_stmt* x) override {
     x->value.accept(this);
     x->body.accept(this);
   }
-  virtual void visit(const block* x) { 
+  virtual void visit(const block* x) override { 
     if (x->a.defined()) x->a.accept(this);
     if (x->b.defined()) x->b.accept(this);
   }
-  virtual void visit(const loop* x) { 
+  virtual void visit(const loop* x) override { 
     x->begin.accept(this);
     x->end.accept(this);
     x->body.accept(this);
   }
-  virtual void visit(const if_then_else* x) {
+  virtual void visit(const if_then_else* x) override {
     x->condition.accept(this);
     x->true_body.accept(this);
     x->false_body.accept(this);
   }
-  virtual void visit(const call_func* x) {
+  virtual void visit(const call_func* x) override {
     for (const expr& i : x->scalar_args) {
       i.accept(this);
     }
   }
-  virtual void visit(const allocate* x) {
+  virtual void visit(const allocate* x) override {
     for (const dim_expr& i : x->dims) {
       i.min.accept(this);
       i.extent.accept(this);
@@ -750,7 +750,7 @@ public:
     }
     x->body.accept(this);
   }
-  virtual void visit(const make_buffer* x) {
+  virtual void visit(const make_buffer* x) override {
     for (const dim_expr& i : x->dims) {
       i.min.accept(this);
       i.extent.accept(this);
@@ -759,19 +759,19 @@ public:
     }
     x->body.accept(this);
   }
-  virtual void visit(const crop_buffer* x) {
+  virtual void visit(const crop_buffer* x) override {
     for (const interval& i : x->bounds) {
       i.min.accept(this);
       i.max.accept(this);
     }
     x->body.accept(this);
   }
-  virtual void visit(const crop_dim* x) {
+  virtual void visit(const crop_dim* x) override {
     x->min.accept(this);
     x->extent.accept(this);
     x->body.accept(this);
   }
-  virtual void visit(const check* x) { x->condition.accept(this); }
+  virtual void visit(const check* x) override { x->condition.accept(this); }
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }

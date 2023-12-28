@@ -49,31 +49,31 @@ public:
     }
   }
 
-  virtual void visit(const variable* x) { e = x; }
-  virtual void visit(const wildcard* x) { e = x; }
-  virtual void visit(const constant* x) { e = x; }
+  virtual void visit(const variable* x) override { e = x; }
+  virtual void visit(const wildcard* x) override { e = x; }
+  virtual void visit(const constant* x) override { e = x; }
 
-  virtual void visit(const let* x) { e = mutate_let(x); }
-  virtual void visit(const add* x) { e = mutate_binary(x); }
-  virtual void visit(const sub* x) { e = mutate_binary(x); }
-  virtual void visit(const mul* x) { e = mutate_binary(x); }
-  virtual void visit(const div* x) { e = mutate_binary(x); }
-  virtual void visit(const mod* x) { e = mutate_binary(x); }
-  virtual void visit(const class min* x) { e = mutate_binary(x); }
-  virtual void visit(const class max* x) { e = mutate_binary(x); }
-  virtual void visit(const equal* x) { e = mutate_binary(x); }
-  virtual void visit(const not_equal* x) { e = mutate_binary(x); }
-  virtual void visit(const less* x) { e = mutate_binary(x); }
-  virtual void visit(const less_equal* x) { e = mutate_binary(x); }
-  virtual void visit(const bitwise_and* x) { e = mutate_binary(x); }
-  virtual void visit(const bitwise_or* x) { e = mutate_binary(x); }
-  virtual void visit(const bitwise_xor* x) { e = mutate_binary(x); }
-  virtual void visit(const logical_and* x) { e = mutate_binary(x); }
-  virtual void visit(const logical_or* x) { e = mutate_binary(x); }
-  virtual void visit(const shift_left* x) { e = mutate_binary(x); }
-  virtual void visit(const shift_right* x) { e = mutate_binary(x); }
+  virtual void visit(const let* x) override { e = mutate_let(x); }
+  virtual void visit(const add* x) override { e = mutate_binary(x); }
+  virtual void visit(const sub* x) override { e = mutate_binary(x); }
+  virtual void visit(const mul* x) override { e = mutate_binary(x); }
+  virtual void visit(const div* x) override { e = mutate_binary(x); }
+  virtual void visit(const mod* x) override { e = mutate_binary(x); }
+  virtual void visit(const class min* x) override { e = mutate_binary(x); }
+  virtual void visit(const class max* x) override { e = mutate_binary(x); }
+  virtual void visit(const equal* x) override { e = mutate_binary(x); }
+  virtual void visit(const not_equal* x) override { e = mutate_binary(x); }
+  virtual void visit(const less* x) override { e = mutate_binary(x); }
+  virtual void visit(const less_equal* x) override { e = mutate_binary(x); }
+  virtual void visit(const bitwise_and* x) override { e = mutate_binary(x); }
+  virtual void visit(const bitwise_or* x) override { e = mutate_binary(x); }
+  virtual void visit(const bitwise_xor* x) override { e = mutate_binary(x); }
+  virtual void visit(const logical_and* x) override { e = mutate_binary(x); }
+  virtual void visit(const logical_or* x) override { e = mutate_binary(x); }
+  virtual void visit(const shift_left* x) override { e = mutate_binary(x); }
+  virtual void visit(const shift_right* x) override { e = mutate_binary(x); }
 
-  virtual void visit(const class select* x) {
+  virtual void visit(const class select* x) override {
     expr c = mutate(x->condition);
     expr t = mutate(x->true_value);
     expr f = mutate(x->false_value);
@@ -84,7 +84,7 @@ public:
     }
   }
 
-  virtual void visit(const load_buffer_meta* x) {
+  virtual void visit(const load_buffer_meta* x) override {
     expr buffer = mutate(x->buffer);
     expr dim = mutate(x->dim);
     if (buffer.same_as(x->buffer) && dim.same_as(x->dim)) {
@@ -94,7 +94,7 @@ public:
     }
   }
 
-  virtual void visit(const call* x) { 
+  virtual void visit(const call* x) override { 
     std::vector<expr> args;
     args.reserve(x->args.size());
     bool changed = false;
@@ -109,8 +109,8 @@ public:
     }
   }
 
-  virtual void visit(const let_stmt* x) { s = mutate_let(x); }
-  virtual void visit(const block* x) {
+  virtual void visit(const let_stmt* x) override { s = mutate_let(x); }
+  virtual void visit(const block* x) override {
     stmt a = mutate(x->a);
     stmt b = mutate(x->b);
     if (a.defined() && b.defined()) {
@@ -125,7 +125,7 @@ public:
       s = b;
     }
   }
-  virtual void visit(const loop* x) {
+  virtual void visit(const loop* x) override {
     expr begin = mutate(x->begin);
     expr end = mutate(x->end);
     stmt body = mutate(x->body);
@@ -135,7 +135,7 @@ public:
       s = loop::make(x->name, std::move(begin), std::move(end), std::move(body));
     }
   }
-  virtual void visit(const if_then_else* x) {
+  virtual void visit(const if_then_else* x) override {
     expr cond = mutate(x->condition);
     stmt true_body = mutate(x->true_body);
     stmt false_body = mutate(x->false_body);
@@ -145,7 +145,7 @@ public:
       s = if_then_else::make(std::move(cond), std::move(true_body), std::move(false_body));
     }
   }
-  virtual void visit(const call_func* x) {
+  virtual void visit(const call_func* x) override {
     std::vector<expr> scalar_args;
     scalar_args.reserve(x->scalar_args.size());
     bool changed = false;
@@ -159,7 +159,7 @@ public:
       s = call_func::make(x->target, std::move(scalar_args), x->buffer_args, x->fn);
     }
   }
-  virtual void visit(const allocate* x) {
+  virtual void visit(const allocate* x) override {
     std::vector<dim_expr> dims;
     dims.reserve(x->dims.size());
     bool changed = false;
@@ -174,7 +174,7 @@ public:
       s = allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body));
     }
   }
-  virtual void visit(const make_buffer* x) {
+  virtual void visit(const make_buffer* x) override {
     expr base = mutate(x->base);
     std::vector<dim_expr> dims;
     dims.reserve(x->dims.size());
@@ -190,7 +190,7 @@ public:
       s = make_buffer::make(x->name, std::move(base), x->elem_size, std::move(dims), std::move(body));
     }
   }
-  virtual void visit(const crop_buffer* x) {
+  virtual void visit(const crop_buffer* x) override {
     std::vector<interval> bounds;
     bounds.reserve(x->bounds.size());
     bool changed = false;
@@ -205,7 +205,7 @@ public:
       s = crop_buffer::make(x->name, std::move(bounds), std::move(body));
     }
   }
-  virtual void visit(const crop_dim* x) {
+  virtual void visit(const crop_dim* x) override {
     expr min = mutate(x->min);
     expr extent = mutate(x->extent);
     stmt body = mutate(x->body);
@@ -215,7 +215,7 @@ public:
       s = crop_dim::make(x->name, x->dim, std::move(min), std::move(extent), std::move(body));
     }
   }
-  virtual void visit(const check* x) {
+  virtual void visit(const check* x) override {
     expr condition = mutate(x->condition);
     if (condition.same_as(x->condition)) {
       s = x;
