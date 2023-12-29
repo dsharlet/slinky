@@ -1,0 +1,24 @@
+name: ci
+on:
+  pull_request:
+  push:
+    tags:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup Cpp
+        uses: aminya/setup-cpp@v1
+        with:
+          gcc: '11'
+
+      - name: Build and test
+        run: make test
