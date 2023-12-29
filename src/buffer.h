@@ -51,7 +51,7 @@ public:
 
   void translate(index_t offset) { min_ += offset; }
 
-  constexpr std::ptrdiff_t flat_offset_bytes(index_t i) const {
+  std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(i >= min_);
     assert(i <= max());
     // If we use a mask instead of a fold factor, we can just make the mask -1 by default, and
@@ -86,12 +86,12 @@ using raw_buffer_ptr = std::unique_ptr<raw_buffer, void (*)(raw_buffer*)>;
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer : public std::enable_shared_from_this<raw_buffer> {
 protected:
-  static constexpr std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
     return dims->flat_offset_bytes(i0);
   }
 
   template <typename... Indices>
-  static constexpr std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
   }
 
@@ -178,7 +178,7 @@ public:
     buf->rank = rank;
     buf->elem_size = elem_size;
     buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
-    memset(&buf->dims[0], 0, sizeof(slinky::dim) * rank);
+    new (buf->dims) slinky::dim[rank];
     return {buf, destroy};
   }
 };
@@ -207,7 +207,7 @@ public:
     elem_size = sizeof(T);
     if (DimsSize > 0) {
       dims = &dims_storage[0];
-      memset(dims_storage, 0, sizeof(dims_storage));
+      new (dims) slinky::dim[rank];
     } else {
       dims = nullptr;
     }
