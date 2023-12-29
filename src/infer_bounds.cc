@@ -57,7 +57,7 @@ public:
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
     auto& fold_factor = fold_factors[alloc->name];
-    for (int d = 0; d < static_cast<int>(inferred.size()); ++d) {
+    for (index_t d = 0; d < static_cast<index_t>(inferred.size()); ++d) {
       interval_expr& i = inferred[d];
 
       i.min = simplify(i.min);
@@ -82,7 +82,7 @@ public:
     std::vector<dim_expr> dims(alloc->dims);
     while (true) {
       bool changed = false;
-      for (int d = 0; d < dims.size(); ++d) {
+      for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
         dim_expr& dim = dims[d];
         dim_expr new_dim = dim;
         for (auto& j : replacements) {
@@ -101,7 +101,7 @@ public:
 
     // Check that the actual bounds we generated are bigger than the inferred bounds.
     std::vector<stmt> checks;
-    for (int d = 0; d < dims.size(); ++d) {
+    for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
       checks.push_back(check::make(dims[d].min() <= inferred[d].min));
       checks.push_back(check::make(dims[d].max() >= inferred[d].max));
     }
@@ -115,7 +115,7 @@ public:
 
   expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) {
     std::optional<box_expr>& bounds = inferring[buffer];
-    if (bounds && d < bounds->size()) {
+    if (bounds && d < static_cast<index_t>(bounds->size())) {
       switch (meta) {
       case buffer_meta::min: return (*bounds)[d].min;
       case buffer_meta::max: return (*bounds)[d].max;
@@ -138,9 +138,9 @@ public:
       for (const func::output& output : c->fn->outputs()) {
         const std::optional<box_expr>& crops_i = crops[*arg_i];
         expr arg = variable::make(*arg_i++);
-        for (index_t d = 0; d < output.dims.size(); ++d) {
+        for (index_t d = 0; d < static_cast<index_t>(output.dims.size()); ++d) {
           symbol_id dim = *as_variable(output.dims[d]);
-          if (crops_i && d < static_cast<int>(crops_i->size()) && (*crops_i)[d].min.defined() &&
+          if (crops_i && d < static_cast<index_t>(crops_i->size()) && (*crops_i)[d].min.defined() &&
               (*crops_i)[d].max.defined()) {
             mins[dim] = (*crops_i)[d].min;
             maxs[dim] = (*crops_i)[d].max;

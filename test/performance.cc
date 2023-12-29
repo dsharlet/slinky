@@ -22,7 +22,7 @@ double benchmark_pipeline(const pipeline& p, index_t total_size, index_t copy_si
   const raw_buffer* outputs[] = {&out_buf};
   double t = benchmark([&]() { p.evaluate(inputs, outputs); });
 
-  for (size_t i = 0; i < total_size; ++i) {
+  for (index_t i = 0; i < total_size; ++i) {
     ASSERT_EQ(out_buf.base()[i], in_buf.base()[i]);
   }
 

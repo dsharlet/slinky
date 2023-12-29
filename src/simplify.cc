@@ -787,9 +787,9 @@ public:
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
     std::optional<box_expr> prev_bounds = buffer_bounds[op->name];
-    int dims_count = 0;
+    index_t dims_count = 0;
     bool changed = false;
-    for (int i = 0; i < static_cast<int>(op->bounds.size()); ++i) {
+    for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
       expr min = mutate(op->bounds[i].min);
       expr max = mutate(op->bounds[i].max);
       bounds[i] = {min, max};
@@ -820,7 +820,7 @@ public:
     } else if (dims_count == 1) {
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
-      int d = new_bounds.size() - 1;
+      int d = static_cast<int>(new_bounds.size()) - 1;
       interval_expr& bounds_d = new_bounds[d];
       s = crop_dim::make(op->name, d, bounds_d.min, mutate(bounds_d.extent()), std::move(body));
     } else if (changed || !body.same_as(op->body)) {
@@ -835,7 +835,7 @@ public:
     expr extent = mutate(op->extent);
 
     std::optional<box_expr> bounds = buffer_bounds[op->name];
-    if (bounds && op->dim < bounds->size()) {
+    if (bounds && op->dim < static_cast<index_t>(bounds->size())) {
       interval_expr& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);
       if (can_prove_true(min == dim.min) && can_prove_true(max == dim.max)) {

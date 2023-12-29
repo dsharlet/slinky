@@ -97,7 +97,7 @@ public:
       result = buffer->elem_size;
     } else {
       index_t d = eval_expr(x->dim);
-      assert(d < buffer->rank);
+      assert(d < static_cast<index_t>(buffer->rank));
       const slinky::dim& dim = buffer->dim(d);
       switch (x->meta) {
       case buffer_meta::min: result = dim.min(); return;

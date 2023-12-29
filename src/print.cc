@@ -9,6 +9,7 @@ std::ostream& operator<<(std::ostream& os, memory_type type) {
   switch (type) {
   case memory_type::stack: return os << "stack";
   case memory_type::heap: return os << "heap";
+  default: return os << "<invalid memory_type>";
   }
 }
 
@@ -22,6 +23,7 @@ std::ostream& operator<<(std::ostream& os, buffer_meta meta) {
   case buffer_meta::extent: return os << "extent";
   case buffer_meta::stride_bytes: return os << "stride_bytes";
   case buffer_meta::fold_factor: return os << "fold_factor";
+  default: return os << "<invalid buffer_meta>";
   }
 }
 
@@ -31,6 +33,7 @@ std::ostream& operator<<(std::ostream& os, intrinsic i) {
   case intrinsic::negative_infinity: return os << "-oo";
   case intrinsic::indeterminate: return os << "indeterminate";
   case intrinsic::abs: return os << "abs";
+  default: return os << "<invalid intrinsic>";
   }
 }
 

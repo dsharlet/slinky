@@ -188,7 +188,7 @@ public:
     crops.emplace_back();
     scope_crops& to_crop = crops.back();
     for (const func::output& o : f->outputs()) {
-      for (int d = 0; d < o.dims.size(); ++d) {
+      for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (*as_variable(o.dims[d]) == *as_variable(loop)) {
           to_crop[o.buffer->name()].emplace_back(d, loop, 1);
           // This output uses this loop. Add it to the bounds.

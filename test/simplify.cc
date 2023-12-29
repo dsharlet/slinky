@@ -256,10 +256,10 @@ TEST(simplify_fuzz) {
   eval_context ctx;
 
   std::vector<raw_buffer_ptr> buffers;
-  for (int i = 0; i < bufs.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
     buffers.emplace_back(raw_buffer::make(max_rank, 4));
   }
-  for (int i = 0; i < bufs.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
     ctx[bufs[i]] = reinterpret_cast<index_t>(buffers[i].get());
   }
 
