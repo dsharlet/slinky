@@ -1,7 +1,5 @@
 #include "expr.h"
 
-#include <limits>
-
 namespace slinky {
 
 std::string node_context::name(symbol_id i) const {
@@ -39,16 +37,16 @@ symbol_id node_context::lookup(const std::string& name) const {
 }
 
 template <typename T>
-std::shared_ptr<const T> make_bin_op(expr a, expr b) {
-  auto n = std::make_shared<T>();
+const T* make_bin_op(expr a, expr b) {
+  auto n = new T();
   n->a = std::move(a);
   n->b = std::move(b);
   return n;
 }
 
 template <typename T, typename Body>
-std::shared_ptr<const T> make_let(symbol_id name, expr value, Body body) {
-  auto n = std::make_shared<T>();
+const T* make_let(symbol_id name, expr value, Body body) {
+  auto n = new T();
   n->name = name;
   n->value = std::move(value);
   n->body = std::move(body);
@@ -56,61 +54,61 @@ std::shared_ptr<const T> make_let(symbol_id name, expr value, Body body) {
 }
 
 expr let::make(symbol_id name, expr value, expr body) {
-  return make_let<let>(name, std::move(value), std::move(body)).get();
+  return make_let<let>(name, std::move(value), std::move(body));
 }
 
 stmt let_stmt::make(symbol_id name, expr value, stmt body) {
-  return make_let<let_stmt>(name, std::move(value), std::move(body)).get();
+  return make_let<let_stmt>(name, std::move(value), std::move(body));
 }
 
 // TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user
 // of simplify_fuzz is malloc/free. Perhaps caching common values of variables (yes
 // we can cache variables!) would be worth doing.
-std::shared_ptr<const variable> make_variable(symbol_id name) {
-  auto n = std::make_shared<variable>();
+const variable* make_variable(symbol_id name) {
+  auto n = new variable();
   n->name = name;
   return n;
 }
 
-std::shared_ptr<const constant> make_constant(index_t value) {
-  auto n = std::make_shared<constant>();
+const constant* make_constant(index_t value) {
+  auto n = new constant();
   n->value = value;
   return n;
 }
 
-expr variable::make(symbol_id name) { return make_variable(name).get(); }
+expr variable::make(symbol_id name) { return make_variable(name); }
 
 expr wildcard::make(symbol_id name, std::function<bool(const expr&)> matches) {
-  auto n = std::make_shared<wildcard>();
+  auto n = new wildcard();
   n->name = name;
   n->matches = std::move(matches);
-  return n.get();
+  return n;
 }
 
-expr constant::make(index_t value) { return make_constant(value).get(); }
+expr constant::make(index_t value) { return make_constant(value); }
 
-expr::expr(index_t value) : expr(make_constant(value).get()) {}
+expr::expr(index_t value) : expr(make_constant(value)) {}
 
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
-expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)).get(); }
-expr sub::make(expr a, expr b) { return make_bin_op<sub>(std::move(a), std::move(b)).get(); }
-expr mul::make(expr a, expr b) { return make_bin_op<mul>(std::move(a), std::move(b)).get(); }
-expr div::make(expr a, expr b) { return make_bin_op<div>(std::move(a), std::move(b)).get(); }
-expr mod::make(expr a, expr b) { return make_bin_op<mod>(std::move(a), std::move(b)).get(); }
-expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)).get(); }
-expr max::make(expr a, expr b) { return make_bin_op<max>(std::move(a), std::move(b)).get(); }
-expr equal::make(expr a, expr b) { return make_bin_op<equal>(std::move(a), std::move(b)).get(); }
-expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a), std::move(b)).get(); }
-expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)).get(); }
-expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)).get(); }
-expr bitwise_and::make(expr a, expr b) { return make_bin_op<bitwise_and>(std::move(a), std::move(b)).get(); }
-expr bitwise_or::make(expr a, expr b) { return make_bin_op<bitwise_or>(std::move(a), std::move(b)).get(); }
-expr bitwise_xor::make(expr a, expr b) { return make_bin_op<bitwise_xor>(std::move(a), std::move(b)).get(); }
-expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)).get(); }
-expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)).get(); }
-expr shift_left::make(expr a, expr b) { return make_bin_op<shift_left>(std::move(a), std::move(b)).get(); }
-expr shift_right::make(expr a, expr b) { return make_bin_op<shift_right>(std::move(a), std::move(b)).get(); }
+expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
+expr sub::make(expr a, expr b) { return make_bin_op<sub>(std::move(a), std::move(b)); }
+expr mul::make(expr a, expr b) { return make_bin_op<mul>(std::move(a), std::move(b)); }
+expr div::make(expr a, expr b) { return make_bin_op<div>(std::move(a), std::move(b)); }
+expr mod::make(expr a, expr b) { return make_bin_op<mod>(std::move(a), std::move(b)); }
+expr min::make(expr a, expr b) { return make_bin_op<min>(std::move(a), std::move(b)); }
+expr max::make(expr a, expr b) { return make_bin_op<max>(std::move(a), std::move(b)); }
+expr equal::make(expr a, expr b) { return make_bin_op<equal>(std::move(a), std::move(b)); }
+expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a), std::move(b)); }
+expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
+expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
+expr bitwise_and::make(expr a, expr b) { return make_bin_op<bitwise_and>(std::move(a), std::move(b)); }
+expr bitwise_or::make(expr a, expr b) { return make_bin_op<bitwise_or>(std::move(a), std::move(b)); }
+expr bitwise_xor::make(expr a, expr b) { return make_bin_op<bitwise_xor>(std::move(a), std::move(b)); }
+expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)); }
+expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)); }
+expr shift_left::make(expr a, expr b) { return make_bin_op<shift_left>(std::move(a), std::move(b)); }
+expr shift_right::make(expr a, expr b) { return make_bin_op<shift_right>(std::move(a), std::move(b)); }
 
 expr make_variable(node_context& ctx, const std::string& name) { return variable::make(ctx.insert(name)); }
 
@@ -278,103 +276,103 @@ box_expr operator&(box_expr a, const box_expr& b) {
 }
 
 expr select::make(expr condition, expr true_value, expr false_value) {
-  auto n = std::make_shared<select>();
+  auto n = new select();
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
   n->false_value = std::move(false_value);
-  return n.get();
+  return n;
 }
 
 expr load_buffer_meta::make(expr buffer, buffer_meta meta, expr dim) {
-  auto n = std::make_shared<load_buffer_meta>();
+  auto n = new load_buffer_meta();
   n->buffer = std::move(buffer);
   n->meta = meta;
   n->dim = std::move(dim);
-  return n.get();
+  return n;
 }
 
 expr call::make(slinky::intrinsic i, std::vector<expr> args) {
-  auto n = std::make_shared<call>();
+  auto n = new call();
   n->intrinsic = i;
   n->args = std::move(args);
-  return n.get();
+  return n;
 }
 
 stmt call_func::make(
     call_func::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
-  auto n = std::make_shared<call_func>();
+  auto n = new call_func();
   n->target = std::move(target);
   n->scalar_args = std::move(scalar_args);
   n->buffer_args = std::move(buffer_args);
   n->fn = fn;
-  return n.get();
+  return n;
 }
 
 stmt block::make(stmt a, stmt b) {
-  auto n = std::make_shared<block>();
+  auto n = new block();
   n->a = std::move(a);
   n->b = std::move(b);
-  return n.get();
+  return n;
 }
 
 stmt loop::make(symbol_id name, interval_expr bounds, stmt body) {
-  auto l = std::make_shared<loop>();
+  auto l = new loop();
   l->name = name;
   l->bounds = std::move(bounds);
   l->body = std::move(body);
-  return l.get();
+  return l;
 }
 
 stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
-  auto n = std::make_shared<if_then_else>();
+  auto n = new if_then_else();
   n->condition = std::move(condition);
   n->true_body = std::move(true_body);
   n->false_body = std::move(false_body);
-  return n.get();
+  return n;
 }
 
 stmt allocate::make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
-  auto n = std::make_shared<allocate>();
+  auto n = new allocate();
   n->type = type;
   n->name = name;
   n->elem_size = elem_size;
   n->dims = std::move(dims);
   n->body = std::move(body);
-  return n.get();
+  return n;
 }
 
 stmt make_buffer::make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
-  auto n = std::make_shared<make_buffer>();
+  auto n = new make_buffer();
   n->name = name;
   n->base = std::move(base);
   n->elem_size = elem_size;
   n->dims = std::move(dims);
   n->body = std::move(body);
-  return n.get();
+  return n;
 }
 
 stmt crop_buffer::make(symbol_id name, std::vector<interval_expr> bounds, stmt body) {
-  auto n = std::make_shared<crop_buffer>();
+  auto n = new crop_buffer();
   n->name = name;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
-  return n.get();
+  return n;
 }
 
 stmt crop_dim::make(symbol_id name, int dim, expr min, expr extent, stmt body) {
-  auto n = std::make_shared<crop_dim>();
+  auto n = new crop_dim();
   n->name = name;
   n->dim = dim;
   n->min = std::move(min);
   n->extent = std::move(extent);
   n->body = std::move(body);
-  return n.get();
+  return n;
 }
 
 stmt check::make(expr condition) {
-  auto n = std::make_shared<check>();
+  auto n = new check();
   n->condition = std::move(condition);
-  return n.get();
+  return n;
 }
 
 const expr& positive_infinity() {

@@ -2,6 +2,7 @@
 #define SLINKY_EXPR_H
 
 #include "buffer.h"
+#include "ref_count.h"
 
 #include <cstdlib>
 #include <functional>
@@ -96,10 +97,9 @@ enum class intrinsic {
 
 class node_visitor;
 
-class base_node {
+class base_node : public ref_counted {
 public:
   base_node(node_type type) : type(type) {}
-  virtual ~base_node() {}
 
   virtual void accept(node_visitor* v) const = 0;
 
@@ -115,12 +115,12 @@ public:
   }
 };
 
-class base_expr_node : public base_node, public std::enable_shared_from_this<base_expr_node> {
+class base_expr_node : public base_node {
 public:
   base_expr_node(node_type type) : base_node(type) {}
 };
 
-class base_stmt_node : public base_node, public std::enable_shared_from_this<base_stmt_node> {
+class base_stmt_node : public base_node {
 public:
   base_stmt_node(node_type type) : base_node(type) {}
 };
@@ -152,7 +152,7 @@ expr operator>>(expr a, expr b);
 
 class expr {
 public:
-  std::shared_ptr<const base_expr_node> e;
+  ref_count<const base_expr_node> e;
 
   expr() = default;
   expr(const expr&) = default;
@@ -167,7 +167,7 @@ public:
   // This also means all the initializations in expr.cc are a mess.
   // TODO(https://github.com/dsharlet/slinky/issues/5): Maybe we should just roll our own
   // smart pointer, this sucks.
-  expr(const base_expr_node* e) : e(e ? e->shared_from_this() : nullptr) {}
+  expr(const base_expr_node* e) : e(e) {}
 
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
@@ -183,7 +183,7 @@ public:
   template <typename T>
   const T* as() const {
     if (e && e->type == T::static_type) {
-      return reinterpret_cast<const T*>(e.get());
+      return reinterpret_cast<const T*>(&*e);
     } else {
       return nullptr;
     }
@@ -307,12 +307,12 @@ box_expr operator&(box_expr a, const box_expr& b);
 
 class stmt {
 public:
-  std::shared_ptr<const base_stmt_node> s;
+  ref_count<const base_stmt_node> s;
 
   stmt() = default;
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
-  stmt(const base_stmt_node* s) : s(s->shared_from_this()) {}
+  stmt(const base_stmt_node* s) : s(s) {}
 
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
@@ -328,7 +328,7 @@ public:
   template <typename T>
   const T* as() const {
     if (s && s->type == T::static_type) {
-      return reinterpret_cast<const T*>(s.get());
+      return reinterpret_cast<const T*>(&*s);
     } else {
       return nullptr;
     }
