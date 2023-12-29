@@ -838,12 +838,12 @@ public:
     if (bounds && op->dim < bounds->size()) {
       interval_expr& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);
-      if (match(min, dim.min) && match(max, dim.max)) {
+      if (can_prove_true(min == dim.min) && can_prove_true(max == dim.max)) {
         // This crop is a no-op.
         s = mutate(op->body);
         return;
       }
-      bounds->at(op->dim) = {min, max};
+      (*bounds)[op->dim] = {min, max};
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
