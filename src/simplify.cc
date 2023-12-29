@@ -1094,21 +1094,4 @@ interval_expr bounds_of(const expr& e, const symbol_map<interval_expr>& bounds) 
   return fb.result;
 }
 
-bool depends_on(const expr& e, symbol_id var) {
-  class visitor : public recursive_node_visitor {
-  public:
-    symbol_id var;
-    bool result = false;
-
-    visitor(symbol_id var) : var(var) {}
-
-    void visit(const variable* x) override { result = result || x->name == var; }
-    void visit(const wildcard* x) override { result = result || x->name == var; }
-  };
-
-  visitor v(var);
-  e.accept(&v);
-  return v.result;
-}
-
 }  // namespace slinky

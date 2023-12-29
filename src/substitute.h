@@ -21,6 +21,9 @@ stmt substitute(const stmt& s, symbol_id target, const expr& replacement);
 expr substitute(const expr& e, const expr& target, const expr& replacement);
 stmt substitute(const stmt& s, const expr& target, const expr& replacement);
 
+// Check if `e` depends on a symbol `var`.
+bool depends_on(const expr& e, symbol_id var);
+
 }  // namespace slinky
 
 #endif  // SLINKY_SUBSTITUTE_H
