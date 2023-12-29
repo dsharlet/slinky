@@ -9,6 +9,13 @@
 
 namespace slinky {
 
+bool can_evaluate(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::abs: return true;
+  default: return false;
+  }
+}
+
 // TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/node_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.

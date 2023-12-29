@@ -28,6 +28,9 @@ index_t evaluate(const stmt& s, eval_context& context);
 index_t evaluate(const expr& e);
 index_t evaluate(const stmt& s);
 
+// Returns true if `fn` can be evaluated.
+bool can_evaluate(intrinsic fn);
+
 }  // namespace slinky
 
 #endif  // SLINKY_EVALUATE_H

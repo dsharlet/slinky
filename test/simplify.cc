@@ -32,7 +32,12 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
 void test_simplify(const expr& test, const expr& expected) {
   expr result = simplify(test);
   if (!match(result, expected)) {
-    std::cout << "simplify(" << test << ") -> " << result << " != " << expected << std::endl;
+    std::cout << "simplify failed" << std::endl;
+    std::cout << test << std::endl;
+    std::cout << "got: " << std::endl;
+    std::cout << result << std::endl;
+    std::cout << "expected: " << std::endl;
+    std::cout << expected << std::endl;
     ASSERT(false);
   }
 }
@@ -40,7 +45,12 @@ void test_simplify(const expr& test, const expr& expected) {
 void test_simplify(const stmt& test, const stmt& expected) {
   stmt result = simplify(test);
   if (!match(result, expected)) {
-    std::cout << "simplify(" << test << ") -> " << result << " != " << expected << std::endl;
+    std::cout << "simplify failed" << std::endl;
+    std::cout << test << std::endl;
+    std::cout << "got: " << std::endl;
+    std::cout << result << std::endl;
+    std::cout << "expected: " << std::endl;
+    std::cout << expected << std::endl;
     ASSERT(false);
   }
 }
@@ -114,6 +124,15 @@ TEST(simplify_if_then_else) {
   test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
   test_simplify(block::make(if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))),
       if_then_else::make(x, block::make(check::make(y), check::make(z))));
+}
+
+TEST(simplify_bounds) {
+  test_simplify(
+      loop::make(*as_variable(x), bounds(y - 2, z),
+          if_then_else::make(y - 2 <= x, check::make(z))),
+      loop::make(*as_variable(x), bounds(y + -2, z),
+          check::make(z)))
+          ;
 }
 
 TEST(bounds_of) {
@@ -310,6 +329,7 @@ TEST(simplify_fuzz) {
           print(std::cerr, bounds.min, &symbols);
           std::cerr << std::endl;
           dump_symbol_map(std::cerr, ctx);
+          std::cerr << std::endl;
           ASSERT_LE(min, a);
         }
         if (a > max) {
@@ -319,6 +339,7 @@ TEST(simplify_fuzz) {
           print(std::cerr, bounds.max, &symbols);
           std::cerr << std::endl;
           dump_symbol_map(std::cerr, ctx);
+          std::cerr << std::endl;
           ASSERT_LE(a, max);
         }
       }

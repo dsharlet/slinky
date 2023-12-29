@@ -1,5 +1,7 @@
 #include "expr.h"
 
+#include "simplify.h"
+
 namespace slinky {
 
 std::string node_context::name(symbol_id i) const {
@@ -167,15 +169,15 @@ const interval_expr& interval_expr::intersection_identity() { return all(); }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_non_negative(scale)) {
-    min *= scale;
-    max *= scale;
+    min = simplify(static_cast<mul*>(nullptr), min, scale);
+    max = simplify(static_cast<mul*>(nullptr), max, scale);
   } else if (is_negative(scale)) {
     std::swap(min, max);
-    min *= scale;
-    max *= scale;
+    min = simplify(static_cast<mul*>(nullptr), min, scale);
+    max = simplify(static_cast<mul*>(nullptr), max, scale);
   } else {
-    min *= scale;
-    max *= scale;
+    min = simplify(static_cast<mul*>(nullptr), min, scale);
+    max = simplify(static_cast<mul*>(nullptr), max, scale);
     *this |= bounds(max, min);
   }
   return *this;
@@ -183,29 +185,29 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
 
 interval_expr& interval_expr::operator/=(const expr& scale) {
   if (is_non_negative(scale)) {
-    min /= scale;
-    max /= scale;
+    min = simplify(static_cast<div*>(nullptr), min, scale);
+    max = simplify(static_cast<div*>(nullptr), max, scale);
   } else if (is_negative(scale)) {
     std::swap(min, max);
-    min /= scale;
-    max /= scale;
+    min = simplify(static_cast<div*>(nullptr), min, scale);
+    max = simplify(static_cast<div*>(nullptr), max, scale);
   } else {
-    min /= scale;
-    max /= scale;
+    min = simplify(static_cast<div*>(nullptr), min, scale);
+    max = simplify(static_cast<div*>(nullptr), max, scale);
     *this |= bounds(max, min);
   }
   return *this;
 }
 
 interval_expr& interval_expr::operator+=(const expr& offset) {
-  min += offset;
-  max += offset;
+  min = simplify(static_cast<add*>(nullptr), min, offset);
+  max = simplify(static_cast<add*>(nullptr), max, offset);
   return *this;
 }
 
 interval_expr& interval_expr::operator-=(const expr& offset) {
-  min -= offset;
-  max -= offset;
+  min = simplify(static_cast<sub*>(nullptr), min, offset);
+  max = simplify(static_cast<sub*>(nullptr), max, offset);
   return *this;
 }
 
@@ -236,14 +238,14 @@ interval_expr interval_expr::operator-(const expr& offset) const {
 interval_expr interval_expr::operator-() const { return {-max, -min}; }
 
 interval_expr& interval_expr::operator|=(const interval_expr& r) {
-  min = slinky::min(min, r.min);
-  max = slinky::max(max, r.max);
+  min = simplify(static_cast<class min*>(nullptr), min, r.min);
+  max = simplify(static_cast<class max*>(nullptr), max, r.max);
   return *this;
 }
 
 interval_expr& interval_expr::operator&=(const interval_expr& r) {
-  min = slinky::min(min, r.min);
-  max = slinky::max(max, r.max);
+  min = simplify(static_cast<class max*>(nullptr), min, r.min);
+  max = simplify(static_cast<class min*>(nullptr), max, r.max);
   return *this;
 }
 
