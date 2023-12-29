@@ -797,7 +797,7 @@ public:
 
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
-      if (prev_bounds && i < prev_bounds->size()) {
+      if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
         if (can_prove_true(min == (*prev_bounds)[i].min) && can_prove_true(max == (*prev_bounds)[i].max)) {
           min = expr();
           max = expr();
