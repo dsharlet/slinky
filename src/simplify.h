@@ -13,8 +13,6 @@ bool can_prove(const expr& e);
 
 interval_expr bounds_of(const expr& e, const symbol_map<interval_expr>& bounds = symbol_map<interval_expr>());
 
-bool depends_on(const expr& e, symbol_id var);
-
 }  // namespace slinky
 
 #endif  // SLINKY_SIMPLIFY_H

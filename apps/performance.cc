@@ -55,9 +55,10 @@ int main(int argc, const char** argv) {
     std::cout << "total size (KB): " << total_size << std::endl;
     total_size *= 1024;
 
-    std::cout << "copy size (KB), loop (GB/s), no loop (GB/s), ratio" << std::endl;
+    std::cout << "| copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |" << std::endl;
+    std::cout << "|----------------|-------------|----------------|-------|" << std::endl;
     for (int copy_size : copy_sizes) {
-      std::cout << copy_size << ", ";
+      std::cout << "| " << copy_size << " | ";
       copy_size *= 1024;
 
       if (total_size < copy_size) continue;
@@ -76,14 +77,14 @@ int main(int argc, const char** argv) {
       memset(out_buf.base(), 0, total_size);
       double loop_t = benchmark([&]() { loop.evaluate(inputs, outputs); });
       assert(memcmp(out_buf.base(), in_buf.base(), total_size) == 0);
-      std::cout << total_size / (loop_t * 1e9) << ", ";
+      std::cout << total_size / (loop_t * 1e9) << " | ";
 
       memset(out_buf.base(), 0, total_size);
       double no_loop_t = benchmark([&]() { no_loop.evaluate(inputs, outputs); });
       assert(memcmp(out_buf.base(), in_buf.base(), total_size) == 0);
-      std::cout << total_size / (no_loop_t * 1e9) << ", ";
+      std::cout << total_size / (no_loop_t * 1e9) << " | ";
 
-      std::cout << no_loop_t / loop_t << std::endl;
+      std::cout << no_loop_t / loop_t << " | " << std::endl;
     }
     std::cout << std::endl;
   }
