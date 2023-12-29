@@ -980,8 +980,20 @@ public:
   }
   void visit(const div* x) override {
     binary_result r = binary_bounds(x);
-    // TODO: Tighten these bounds.
-    result = r.a | -r.a;
+    // Because b is an integer, the bounds of a will only be shrunk
+    // (we define division by 0 to be 0). The absolute value of the
+    // bounds are maximized when b is 1 or -1.
+    if (r.b.is_single_point() && is_zero(r.b.min)) {
+      result = {0, 0};
+    } else if (is_positive(r.b.min)) {
+      // b > 0 => the biggest result in absolute value occurs at the min of b.
+      result = (r.a | -r.a) / r.b.min;
+    } else if (is_negative(r.b.max)) {
+      // b < 0 => the biggest result in absolute value occurs at the max of b.
+      result = (r.a | -r.a) / r.b.max;
+    } else {
+      result = r.a | -r.a;
+    }
   }
   void visit(const mod* x) override {
     binary_result r = binary_bounds(x);
