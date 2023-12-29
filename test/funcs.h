@@ -50,7 +50,7 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   return 0;
 }
 
-// Like copy, but flips in the y dimension.
+// Copy rows, where the output y is -y in the input.
 template <typename T>
 index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == 2);

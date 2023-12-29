@@ -328,8 +328,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = remove_checks().mutate(result);
   }
 
-  print(std::cerr, result, &ctx);
-
   return result;
 }
 

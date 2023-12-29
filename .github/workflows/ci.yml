@@ -22,3 +22,6 @@ jobs:
 
       - name: Build and test
         run: make test -j8
+        
+      - name: Build and run performance app
+        run: make bin/performance && bin/performance
