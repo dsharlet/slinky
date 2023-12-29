@@ -181,11 +181,11 @@ public:
 
       for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
         symbol_id loop_name = loop_mins[l].first;
+        expr loop_var = variable::make(loop_name);
         box_expr prev_bounds(crop_bounds.size());
-        std::map<symbol_id, expr> prev_iter = {{loop_name, variable::make(loop_name) - 1}};
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
-          prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, prev_iter));
-          prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, prev_iter));
+          prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, loop_name, loop_var - 1));
+          prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, loop_name, loop_var - 1));
           if (can_prove(prev_bounds[d].min <= crop_bounds[d].min) &&
               can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
             // The bounds for each loop iteration are monotonically increasing,
