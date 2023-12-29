@@ -21,4 +21,4 @@ jobs:
           gcc: '11'
 
       - name: Build and test
-        run: make test
+        run: make test -j8
