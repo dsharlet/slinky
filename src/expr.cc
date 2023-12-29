@@ -261,7 +261,7 @@ interval_expr interval_expr::operator&(const interval_expr& r) const {
   return result;
 }
 
-box operator|(box a, const box& b) {
+box_expr operator|(box_expr a, const box_expr& b) {
   assert(a.size() == b.size());
   for (std::size_t i = 0; i < a.size(); ++i) {
     a[i] |= b[i];
@@ -269,7 +269,7 @@ box operator|(box a, const box& b) {
   return a;
 }
 
-box operator&(box a, const box& b) {
+box_expr operator&(box_expr a, const box_expr& b) {
   assert(a.size() == b.size());
   for (std::size_t i = 0; i < a.size(); ++i) {
     a[i] &= b[i];

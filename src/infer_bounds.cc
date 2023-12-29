@@ -27,9 +27,9 @@ T& vector_at(std::optional<std::vector<T>>& v, std::size_t n) {
 class bounds_inferrer : public node_mutator {
 public:
   node_context& ctx;
-  symbol_map<box> inferring;
+  symbol_map<box_expr> inferring;
   symbol_map<std::pair<int, expr>> fold_factors;
-  symbol_map<box> crops;
+  symbol_map<box_expr> crops;
   std::vector<std::pair<symbol_id, expr>> loop_mins;
   symbol_map<std::size_t> loops_since_allocate;
 
@@ -37,9 +37,9 @@ public:
 
   void visit(const allocate* alloc) override {
     {
-      std::optional<box>& bounds = inferring[alloc->name];
+      std::optional<box_expr>& bounds = inferring[alloc->name];
       assert(!bounds);
-      bounds = box();
+      bounds = box_expr();
     }
 
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
@@ -53,7 +53,7 @@ public:
     // TODO: Is this actually a good design...?
     std::vector<std::pair<expr, expr>> replacements;
 
-    box& inferred = *inferring[alloc->name];
+    box_expr& inferred = *inferring[alloc->name];
     expr stride_bytes = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
     auto& fold_factor = fold_factors[alloc->name];
@@ -114,7 +114,7 @@ public:
   }
 
   expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) {
-    std::optional<box>& bounds = inferring[buffer];
+    std::optional<box_expr>& bounds = inferring[buffer];
     if (bounds && d < bounds->size()) {
       switch (meta) {
       case buffer_meta::min: return (*bounds)[d].min;
@@ -136,7 +136,7 @@ public:
       // is the inputs concatenated with the outputs, in that order.
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
       for (const func::output& output : c->fn->outputs()) {
-        const std::optional<box>& crops_i = crops[*arg_i];
+        const std::optional<box_expr>& crops_i = crops[*arg_i];
         expr arg = variable::make(*arg_i++);
         for (index_t d = 0; d < output.dims.size(); ++d) {
           symbol_id dim = *as_variable(output.dims[d]);
@@ -151,7 +151,7 @@ public:
         }
       }
 
-      std::optional<box>& bounds = inferring[input.buffer->name()];
+      std::optional<box_expr>& bounds = inferring[input.buffer->name()];
       assert(bounds);
       bounds->reserve(input.bounds.size());
       while (bounds->size() < input.bounds.size()) {
@@ -170,18 +170,18 @@ public:
     // Add any crops necessary.
     s = c;
     for (const func::output& output : c->fn->outputs()) {
-      std::optional<box>& bounds = inferring[output.buffer->name()];
+      std::optional<box_expr>& bounds = inferring[output.buffer->name()];
       if (!bounds) continue;
 
       // Maybe a hack? Keep the original bounds for inference purposes, but compute new bounds
       // (sliding window) for the crop.
-      box crop_bounds = *bounds;
+      box_expr crop_bounds = *bounds;
 
       std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->name());
 
       for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
         symbol_id loop_name = loop_mins[l].first;
-        box prev_bounds(crop_bounds.size());
+        box_expr prev_bounds(crop_bounds.size());
         std::map<symbol_id, expr> prev_iter = {{loop_name, variable::make(loop_name) - 1}};
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
           prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, prev_iter));
@@ -226,7 +226,7 @@ public:
   }
 
   void visit(const crop_dim* c) override {
-    std::optional<box> cropped_bounds = crops[c->name];
+    std::optional<box_expr> cropped_bounds = crops[c->name];
     vector_at(cropped_bounds, c->dim) = min_extent(c->min, c->extent);
 
     auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
@@ -267,7 +267,7 @@ public:
     // Use the original loop min. Hack?
     loop_min = l->bounds.min;
     expr loop_max = l->bounds.max;
-    for (std::optional<box>& i : inferring) {
+    for (std::optional<box_expr>& i : inferring) {
       if (!i) continue;
 
       for (interval_expr& j : *i) {
@@ -299,7 +299,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
 
   // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
   for (symbol_id i : inputs) {
-    b.inferring[i] = box();
+    b.inferring[i] = box_expr();
   }
 
   // Run it.
@@ -309,7 +309,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   std::vector<stmt> checks;
   for (symbol_id i : inputs) {
     expr buf_var = variable::make(i);
-    const box& bounds = *b.inferring[i];
+    const box_expr& bounds = *b.inferring[i];
     for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
       checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
       checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));

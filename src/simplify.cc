@@ -84,7 +84,7 @@ struct rule {
 
 class simplifier : public node_mutator {
   symbol_map<int> references;
-  symbol_map<box> buffer_bounds;
+  symbol_map<box_expr> buffer_bounds;
   symbol_map<interval_expr> expr_bounds;
 
 public:
@@ -752,7 +752,7 @@ public:
 
   void visit(const allocate* op) override {
     std::vector<dim_expr> dims;
-    box bounds;
+    box_expr bounds;
     dims.reserve(op->dims.size());
     for (const dim_expr& i : op->dims) {
       interval_expr bounds_i = {mutate(i.bounds.min), mutate(i.bounds.max)};
@@ -767,7 +767,7 @@ public:
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     std::vector<dim_expr> dims;
-    box bounds;
+    box_expr bounds;
     dims.reserve(op->dims.size());
     for (const dim_expr& i : op->dims) {
       interval_expr bounds_i = {mutate(i.bounds.min), mutate(i.bounds.max)};
@@ -781,12 +781,12 @@ public:
 
   void visit(const crop_buffer* op) override {
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
-    box bounds(op->bounds.size());
+    box_expr bounds(op->bounds.size());
     // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
-    box new_bounds(op->bounds.size());
+    box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    std::optional<box> prev_bounds = buffer_bounds[op->name];
+    std::optional<box_expr> prev_bounds = buffer_bounds[op->name];
     int dims_count = 0;
     bool changed = false;
     for (int i = 0; i < static_cast<int>(op->bounds.size()); ++i) {
@@ -834,7 +834,7 @@ public:
     expr min = mutate(op->min);
     expr extent = mutate(op->extent);
 
-    std::optional<box> bounds = buffer_bounds[op->name];
+    std::optional<box_expr> bounds = buffer_bounds[op->name];
     if (bounds && op->dim < bounds->size()) {
       interval_expr& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);

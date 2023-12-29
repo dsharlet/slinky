@@ -300,10 +300,10 @@ inline interval_expr point(const expr& x) { return {x, x}; }
 
 inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
 inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
-using box = std::vector<interval_expr>;
 
-box operator|(box a, const box& b);
-box operator&(box a, const box& b);
+using box_expr = std::vector<interval_expr>;
+box_expr operator|(box_expr a, const box_expr& b);
+box_expr operator&(box_expr a, const box_expr& b);
 
 class stmt {
 public:
