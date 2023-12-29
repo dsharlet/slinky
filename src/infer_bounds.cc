@@ -13,6 +13,17 @@ namespace slinky {
 
 namespace {
 
+// Get a reference to `n`th vector element of v, resizing the vector if necessary.
+template <typename T>
+T& vector_at(std::optional<std::vector<T>>& v, std::size_t n) {
+  if (!v) {
+    v = std::vector<T>(n + 1);
+  } else if (n >= v->size()) {
+    v->resize(n + 1);
+  }
+  return v->at(n);
+}
+
 class bounds_inferrer : public node_mutator {
 public:
   node_context& ctx;
@@ -215,15 +226,8 @@ public:
   }
 
   void visit(const crop_dim* c) override {
-    // TODO: This is pretty messy, a better way to implement this would be nice.
     std::optional<box> cropped_bounds = crops[c->name];
-    if (!cropped_bounds) {
-      cropped_bounds = box(c->dim + 1);
-    } else if (c->dim >= cropped_bounds->size()) {
-      cropped_bounds->resize(c->dim + 1);
-    }
-    (*cropped_bounds)[c->dim].min = c->min;
-    (*cropped_bounds)[c->dim].max = c->min + c->extent - 1;
+    vector_at(cropped_bounds, c->dim) = min_extent(c->min, c->extent);
 
     auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
     node_mutator::visit(c);
@@ -306,12 +310,9 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   for (symbol_id i : inputs) {
     expr buf_var = variable::make(i);
     const box& bounds = *b.inferring[i];
-    index_t rank = static_cast<index_t>(bounds.size());
-    for (int d = 0; d < rank; ++d) {
-      expr min = buffer_min(buf_var, d);
-      expr max = buffer_max(buf_var, d);
-      checks.push_back(check::make(min <= bounds[d].min));
-      checks.push_back(check::make(max >= bounds[d].max));
+    for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
+      checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
+      checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));
     }
   }
   return block::make(block::make(checks), result);
