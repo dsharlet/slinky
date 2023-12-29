@@ -452,3 +452,69 @@ TEST(pipeline_flip_y) {
     }
   }
 }
+
+TEST(pipeline_multiple_outputs) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
+  auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(int), 2);
+  auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(int), 1);
+
+  expr x = make_variable(ctx, "x");
+  expr y = make_variable(ctx, "y");
+  expr z = make_variable(ctx, "z");
+
+  auto X = in->dim(0).bounds;
+  auto Y = in->dim(1).bounds;
+
+  // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
+  auto sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x, const buffer<int>& sum_xy) -> index_t { 
+    assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
+    for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
+      sum_xy(z) = 0;
+      for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
+        sum_x(y, z) = 0;
+        for (index_t x = in.dim(0).min(); x <= in.dim(0).max(); ++x) {
+          sum_x(y, z) += in(x, y, z);
+          sum_xy(z) += in(x, y, z);
+        }
+      }
+    }
+    return 0;
+  };
+  func sums = func::make<const int, int, int>(sum_x_xy, {in, {X, Y, point(z)}}, {sum_x, {y, z}}, {sum_xy, {z}});
+
+  sums.loops({z});
+
+  pipeline p(ctx, {in}, {sum_x, sum_xy});
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  const int D = 5;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  buffer<int, 2> sum_x_buf({H, D});
+  buffer<int, 1> sum_xy_buf({D});
+  sum_x_buf.allocate();
+  sum_xy_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    int expected_xy = 0;
+    for (int y = 0; y < H; ++y) {
+      int expected_x = 0;
+      for (int x = 0; x < W; ++x) {
+        expected_x += in_buf(x, y, z);
+        expected_xy += in_buf(x, y, z);
+      }
+      ASSERT_EQ(sum_x_buf(y, z), expected_x);
+    }
+    ASSERT_EQ(sum_xy_buf(z), expected_xy);
+  }
+}

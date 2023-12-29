@@ -168,6 +168,20 @@ public:
         {std::move(in1), std::move(in2)}, {std::move(out1)});
   }
 
+  template <typename In1, typename Out1, typename Out2>
+  static func make(callable_wrapper<const In1, Out1, Out2> impl, input in1, output out1, output out2) {
+    return func(
+        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
+          assert(inputs.size() == 1);
+          assert(outputs.size() == 2);
+          assert(inputs[0] != nullptr);
+          assert(outputs[0] != nullptr);
+          assert(outputs[1] != nullptr);
+          return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>(), outputs[1]->cast<Out2>());
+        },
+        {std::move(in1)}, {std::move(out1), std::move(out2)});
+  }
+
   const callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
