@@ -1,7 +1,6 @@
 #ifndef SLINKY_TEST_TEST_H
 #define SLINKY_TEST_TEST_H
 
-#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <functional>

@@ -100,7 +100,7 @@ This is not limited to sequences of elementwise operations, frameworks often hav
 As a less contrived example: [FlashAttention](https://arxiv.org/abs/2205.14135) is largely just applying locality optimizations to transformers (used in large language models) in much the same way Slinky proposes to do more generally (and automatically).
 
 ## Data we have so far
-This [performance test](test/performance.cc) attempts to measure the overhead of interpreting pipelines at runtime.
+This [performance app](apps/performance.cc) attempts to measure the overhead of interpreting pipelines at runtime.
 The test performs a copy between two 2D buffers of "total size" bytes, and the inner dimension is "copy size" bytes
 The inner dimension is copied with `memcpy`, the outer dimension is a loop implemented in one of two ways:
 1. An "explicit loop" version, which has a loop in the pipeline for the outer dimension (interpreted by Slinky).

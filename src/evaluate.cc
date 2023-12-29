@@ -5,6 +5,7 @@
 
 #include "print.h"
 #include "simplify.h"
+#include "substitute.h"
 
 namespace slinky {
 
