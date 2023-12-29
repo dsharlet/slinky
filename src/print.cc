@@ -322,12 +322,12 @@ public:
 
 void print(std::ostream& os, const expr& e, const node_context* ctx) {
   printer p(os, ctx);
-  e.accept(&p);
+  p.print(e);
 }
 
 void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   printer p(os, ctx);
-  s.accept(&p);
+  p.print(s);
 }
 
 std::ostream& operator<<(std::ostream& os, const expr& e) {
