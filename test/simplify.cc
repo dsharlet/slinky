@@ -111,13 +111,14 @@ TEST(simplify) {
 
 TEST(simplify_let) {
   // lets that should be removed
-  test_simplify(let::make(0, y, z), z);          // Dead let
-  test_simplify(let::make(0, y * 2, x), y * 2);  // Single use, substitute
+  test_simplify(let::make(0, y, z), z);                      // Dead let
+  test_simplify(let::make(0, y * 2, x), y * 2);              // Single use, substitute
   test_simplify(let::make(0, y, (x + 1) / x), (y + 1) / y);  // Trivial value, substitute
-  test_simplify(let::make(0, 10, x / x), 1);     // Trivial value, substitute
+  test_simplify(let::make(0, 10, x / x), 1);                 // Trivial value, substitute
 
   // lets that should be kept
-  test_simplify(let::make(0, y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+  test_simplify(
+      let::make(0, y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 }
 
 TEST(simplify_load_buffer_meta) {

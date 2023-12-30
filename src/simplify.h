@@ -8,17 +8,12 @@ namespace slinky {
 
 using bounds_map = symbol_map<interval_expr>;
 
+// Try to simplify an expr or stmt.
 expr simplify(const expr& e, const bounds_map& bounds = bounds_map());
 stmt simplify(const stmt& s, const bounds_map& bounds = bounds_map());
 
-std::optional<bool> attempt_prove(const expr& e, const bounds_map& bounds = bounds_map());
-bool can_prove(const expr& e, const bounds_map& bounds = bounds_map());
-bool can_disprove(const expr& e, const bounds_map& bounds = bounds_map());
-
-interval_expr bounds_of(const expr& e, const bounds_map& bounds = bounds_map());
-
 // Helpers for producing simplified versions of ops. These do not recursively simplify their
-// operands. `op` is an existing node that may be returned if op is equivalent. It may be null.
+// operands. `op` is an existing node that may be returned if op is equivalent. `op` may be null.
 expr simplify(const class min* op, expr a, expr b);
 expr simplify(const class max* op, expr a, expr b);
 expr simplify(const add* op, expr a, expr b);
@@ -29,6 +24,14 @@ expr simplify(const mod* op, expr a, expr b);
 expr simplify(const logical_and* op, expr a, expr b);
 expr simplify(const logical_or* op, expr a, expr b);
 expr simplify(const call* op, std::vector<expr> args);
+
+// Determine an interval such that e is always inside the interval.
+interval_expr bounds_of(const expr& e, const bounds_map& bounds = bounds_map());
+
+// Attempts to determine if e can be proven to be always true or false.
+std::optional<bool> attempt_to_prove(const expr& e, const bounds_map& bounds = bounds_map());
+bool prove_true(const expr& e, const bounds_map& bounds = bounds_map());
+bool prove_false(const expr& e, const bounds_map& bounds = bounds_map());
 
 }  // namespace slinky
 

@@ -85,22 +85,22 @@ struct rule {
 };
 
 expr apply_rules(const std::vector<rule>& rules, expr x) {
-  //std::cerr << "apply_rules: " << x << std::endl;
+  // std::cerr << "apply_rules: " << x << std::endl;
   for (const rule& r : rules) {
     std::map<symbol_id, expr> matches;
     if (match(r.pattern, x, matches)) {
-      if (!r.predicate.defined() || can_prove(substitute(r.predicate, matches))) {
-        //std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
-        //for (const auto& i : matches) {
-        //  std::cerr << "  " << i.first << ": " << i.second << std::endl;
-        //}
+      if (!r.predicate.defined() || prove_true(substitute(r.predicate, matches))) {
+        // std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
+        // for (const auto& i : matches) {
+        //   std::cerr << "  " << i.first << ": " << i.second << std::endl;
+        // }
         x = substitute(r.replacement, matches);
-        //std::cerr << "  Result: " << x << std::endl;
+        // std::cerr << "  Result: " << x << std::endl;
         return x;
       }
     }
   }
-  //std::cerr << "  Failed" << std::endl;
+  // std::cerr << "  Failed" << std::endl;
   return x;
 }
 
@@ -401,7 +401,7 @@ expr simplify(const mod* op, expr a, expr b) {
   }
 
   static std::vector<rule> rules = {
-      {x % 1, 0}, 
+      {x % 1, 0},
       {x % 0, 0},
       {x % x, 0},
   };
@@ -438,7 +438,7 @@ expr simplify(const less* op, expr a, expr b) {
       {y + x < x + z, y < z},
       {x + y < z + x, y < z},
       {y + x < z + x, y < z},
-      
+
       {buffer_extent(x, y) < c0, false, c0 < 0},
       {c0 < buffer_extent(x, y), true, c0 < 0},
   };
@@ -535,7 +535,7 @@ expr simplify(const not_equal* op, expr a, expr b) {
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  std::optional<bool> const_c = attempt_prove(c);
+  std::optional<bool> const_c = attempt_to_prove(c);
   if (const_c) {
     if (*const_c) {
       return op->true_value;
@@ -711,7 +711,7 @@ public:
 
   void visit(const class select* op) override {
     expr c = mutate(op->condition);
-    std::optional<bool> const_c = attempt_prove(c, expr_bounds);
+    std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
     if (const_c) {
       if (*const_c) {
         set_result(mutate(op->true_value));
@@ -787,7 +787,7 @@ public:
 
   void visit(const if_then_else* op) override {
     expr c = mutate(op->condition);
-    std::optional<bool> const_c = attempt_prove(c, expr_bounds);
+    std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
     if (const_c) {
       if (*const_c) {
         set_result(mutate(op->true_body));
@@ -880,7 +880,7 @@ public:
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
       if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
-        if (can_prove(min == (*prev_bounds)[i].min) && can_prove(max == (*prev_bounds)[i].max)) {
+        if (prove_true(min == (*prev_bounds)[i].min) && prove_true(max == (*prev_bounds)[i].max)) {
           min = expr();
           max = expr();
         }
@@ -920,7 +920,7 @@ public:
     if (bounds && op->dim < static_cast<index_t>(bounds->size())) {
       interval_expr& dim = (*bounds)[op->dim];
       expr max = simplify(min + extent - 1);
-      if (can_prove(min == dim.min) && can_prove(max == dim.max)) {
+      if (prove_true(min == dim.min) && prove_true(max == dim.max)) {
         // This crop is a no-op.
         set_result(mutate(op->body));
         return;
@@ -939,7 +939,7 @@ public:
 
   void visit(const check* op) override {
     expr c = mutate(op->condition);
-    std::optional<bool> const_c = attempt_prove(c, expr_bounds);
+    std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
     if (const_c) {
       if (*const_c) {
         set_result(stmt());
@@ -954,6 +954,13 @@ public:
     }
   }
 };
+
+}  // namespace
+
+expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e); }
+stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
+
+namespace {
 
 class find_bounds : public node_visitor {
   bounds_map bounds;
@@ -1147,12 +1154,13 @@ public:
 
 }  // namespace
 
-expr simplify(const expr& e, const bounds_map& bounds) {
-  return simplifier(bounds).mutate(e);
+interval_expr bounds_of(const expr& e, const bounds_map& bounds) {
+  find_bounds fb(bounds);
+  e.accept(&fb);
+  return fb.result;
 }
-stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
 
-std::optional<bool> attempt_prove(const expr& e, const bounds_map& expr_bounds) {
+std::optional<bool> attempt_to_prove(const expr& e, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
 
   expr se = s.mutate(e);
@@ -1167,20 +1175,14 @@ std::optional<bool> attempt_prove(const expr& e, const bounds_map& expr_bounds) 
   }
 }
 
-bool can_prove(const expr& e, const bounds_map& bounds) {
-  std::optional<bool> r = attempt_prove(e, bounds);
+bool prove_true(const expr& e, const bounds_map& bounds) {
+  std::optional<bool> r = attempt_to_prove(e, bounds);
   return r && *r;
 }
 
-bool can_disprove(const expr& e, const bounds_map& bounds) {
-  std::optional<bool> r = attempt_prove(e, bounds);
+bool prove_false(const expr& e, const bounds_map& bounds) {
+  std::optional<bool> r = attempt_to_prove(e, bounds);
   return r && !*r;
-}
-
-interval_expr bounds_of(const expr& e, const bounds_map& bounds) {
-  find_bounds fb(bounds);
-  e.accept(&fb);
-  return fb.result;
 }
 
 }  // namespace slinky

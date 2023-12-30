@@ -183,25 +183,32 @@ public:
       for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
         symbol_id loop_name = loop_mins[l].first;
         expr loop_var = variable::make(loop_name);
+        expr loop_min = loop_mins[l].second;
+
         box_expr prev_bounds(crop_bounds.size());
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
           prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, loop_name, loop_var - 1));
           prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, loop_name, loop_var - 1));
-          if (can_prove(prev_bounds[d].min <= crop_bounds[d].min) &&
-              can_prove(prev_bounds[d].max < crop_bounds[d].max)) {
+          if (prove_true(prev_bounds[d].min <= crop_bounds[d].min) &&
+              prove_true(prev_bounds[d].max < crop_bounds[d].max)) {
             // The bounds for each loop iteration are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
             expr& old_min = crop_bounds[d].min;
             expr new_min = prev_bounds[d].max + 1;
-            loop_mins[l].second -= simplify(new_min - old_min);
 
             expr fold_factor = simplify(bounds_of(crop_bounds[d].extent()).max);
             fold_factors[output.buffer->name()] = {d, fold_factor};
 
+            // Now that we're only computing the newly required parts of the domain, we need
+            // to move the loop min back so we compute the whole required region. We'll insert
+            // ifs around the other parts of the loop to avoid expanding the bounds that those
+            // run on.
+            loop_mins[l].second = simplify(loop_min - (new_min - old_min));
+
             old_min = new_min;
             break;
-          } else if (can_prove(prev_bounds[d].min > crop_bounds[d].min) &&
-                     can_prove(prev_bounds[d].max >= crop_bounds[d].max)) {
+          } else if (prove_true(prev_bounds[d].min > crop_bounds[d].min) &&
+                     prove_true(prev_bounds[d].max >= crop_bounds[d].max)) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
           }
