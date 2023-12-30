@@ -51,6 +51,8 @@ public:
 
   void translate(index_t offset) { min_ += offset; }
 
+  bool contains(index_t x) const { return min() <= x && x <= max(); }
+
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(i >= min_);
     assert(i <= max());
@@ -95,6 +97,11 @@ protected:
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
   }
 
+  template <typename... Indices>
+  static bool contains_impl(const dim* dims, index_t i0, Indices... indices) {
+    return dims->contains(i0) && contains_impl(dims + 1, indices...);
+  }
+
   static void destroy(raw_buffer* buf) {
     buf->~raw_buffer();
     delete[] (char*)buf;
@@ -121,10 +128,13 @@ public:
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
     return flat_offset_bytes_impl(dims, i0, indices...);
   }
-  
   template <typename... Indices>
   void* address_at(index_t i0, Indices... indices) const {
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
+  }
+  template <typename... Indices>
+  bool contains(index_t i0, Indices... indices) const {
+    return contains_impl(dims, i0, indices...);
   }
 
   std::ptrdiff_t flat_offset_bytes(std::span<index_t> indices) const {
@@ -136,6 +146,14 @@ public:
     return offset;
   }
   void* address_at(std::span<index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
+  bool contains(std::span<index_t> indices) const {
+    assert(indices.size() == rank);
+    bool result = true;
+    for (std::size_t i = 0; i < indices.size(); ++i) {
+      result = result && dims[i].contains(indices[i]);
+    }
+    return result;
+  }
 
   std::size_t size_bytes() const {
     index_t flat_min = 0;
