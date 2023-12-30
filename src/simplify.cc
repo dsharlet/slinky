@@ -274,6 +274,8 @@ expr simplify(const class min* op, expr a, expr b) {
       // Algebraic simplifications
       {min(x, x), x},
       {min(x, min(x, y)), min(x, y)},
+      {min(max(x, y), min(x, z)), min(x, z)},
+      {min(min(x, y), min(x, z)), min(x, min(y, z))},
       {min(x / z, y / z), min(x, y) / z, z > 0},
       {min(x / z, y / z), max(x, y) / z, z < 0},
       {min(x * z, y * z), z * min(x, y), z > 0},
@@ -281,8 +283,6 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(x + z, y + z), z + min(x, y)},
       {min(x - z, y - z), min(x, y) - z},
       {min(z - x, z - y), z - max(x, y)},
-      {min(max(x, y), min(x, z)), min(x, z)},
-      {min(min(x, y), min(x, z)), min(x, min(y, z))},
 
       // Buffer meta simplifications
       // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
@@ -326,12 +326,15 @@ expr simplify(const class max* op, expr a, expr b) {
       // Algebraic simplifications
       {max(x, x), x},
       {max(x, max(x, y)), max(x, y)},
+      {max(min(x, y), max(x, z)), max(x, z)},
+      {max(max(x, y), max(x, z)), max(x, max(y, z))},
       {max(x / z, y / z), max(x, y) / z, z > 0},
+      {max(x / z, y / z), min(x, y) / z, z < 0},
+      {max(x * z, y * z), z * max(x, y), z > 0},
+      {max(x * z, y * z), z * min(x, y), z < 0},
       {max(x + z, y + z), z + max(x, y)},
       {max(x - z, y - z), max(x, y) - z},
       {max(z - x, z - y), z - min(x, y)},
-      {max(min(x, y), max(x, z)), max(x, z)},
-      {max(max(x, y), max(x, z)), max(x, max(y, z))},
 
       // Buffer meta simplifications
       {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
