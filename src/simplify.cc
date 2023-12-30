@@ -44,7 +44,7 @@ bool should_commute(const expr& a, const expr& b) {
   return false;
 }
 
-// Rules that are not in canonical order are unnecessary or may cause infinite recursion.
+// Rules that are not in canonical order are unnecessary or may cause infinite loops.
 // This visitor checks that all commutable operations are in canonical order.
 class assert_canonical : public recursive_node_visitor {
 public:
@@ -254,12 +254,9 @@ expr simplify(const sub* op, expr a, expr b) {
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return *ca - *cb;
-  }
-  if (cb) {
+  } else if (cb) {
     // Canonicalize to addition with constants.
-    b = -*cb;
-    expr add_op = add::make(a, b);
-    return simplify(add_op.as<add>(), a, b);
+    return simplify(static_cast<add*>(nullptr), a, -*cb);
   }
 
   expr e;
@@ -324,10 +321,10 @@ expr simplify(const mul* op, expr a, expr b) {
       {c0 * positive_infinity(), negative_infinity(), c0 < 0},
       {c0 * negative_infinity(), positive_infinity(), c0 < 0},
       {x * 0, 0},
+      {x * 1, x},
       {(x * c0) * c1, x * (c0 * c1)},
       {(x + c0) * c1, x * c1 + c0 * c1},
       {(c0 - x) * c1, c0 * c1 - x * c1},
-      {x * 1, x},
   };
   return apply_rules(rules, e);
 }
@@ -358,7 +355,10 @@ expr simplify(const div* op, expr a, expr b) {
       {negative_infinity() / c0, negative_infinity(), c0 > 0},
       {positive_infinity() / c0, negative_infinity(), c0 < 0},
       {negative_infinity() / c0, positive_infinity(), c0 < 0},
+      {x / 0, 0},
+      {0 / x, 0},
       {x / 1, x},
+      {x / x, x != 0},
   };
   return apply_rules(rules, e);
 }
@@ -377,7 +377,9 @@ expr simplify(const mod* op, expr a, expr b) {
   }
 
   static std::vector<rule> rules = {
-      {x % 1, 0}, {x % x, 0},  // We define x % 0 to be 0.
+      {x % 1, 0}, 
+      {x % 0, 0},
+      {x % x, 0},
   };
   return apply_rules(rules, e);
 }
@@ -467,7 +469,6 @@ expr simplify(const equal* op, expr a, expr b) {
     return *ca == *cb;
   }
 
-  // Canonicalize to other == constant
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -493,7 +494,6 @@ expr simplify(const not_equal* op, expr a, expr b) {
     return *ca != *cb;
   }
 
-  // Canonicalize to other == constant
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -553,6 +553,10 @@ expr simplify(const logical_and* op, expr a, expr b) {
 
   static std::vector<rule> rules = {
       {x && x, x},
+      {x && (x && y), x && y},
+      {x && (y && x), y && x},
+      {x && (x || y), x},
+      {x && (y || x), x},
   };
   return apply_rules(rules, e);
 }
@@ -579,6 +583,10 @@ expr simplify(const logical_or* op, expr a, expr b) {
 
   static std::vector<rule> rules = {
       {x || x, x},
+      {x || (x && y), x},
+      {x || (y && x), x},
+      {x || (x || y), x || y},
+      {x || (y || x), y || x},
   };
   return apply_rules(rules, e);
 }
