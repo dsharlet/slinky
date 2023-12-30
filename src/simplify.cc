@@ -109,10 +109,8 @@ public:
         if (match(i, j)) {
           results.push_back(T::make(i, j));
         } else {
-          if (!commutative || !should_commute(i, j)) {
-            results.push_back(T::make(i, j));
-          }
-          if (commutative && !should_commute(j, i)) {
+          results.push_back(T::make(i, j));
+          if (commutative) {
             results.push_back(T::make(j, i));
           }
         }
@@ -217,22 +215,27 @@ public:
   }
 
   expr apply(expr x) {
-    // std::cerr << "apply_rules: " << x << std::endl;
+    //std::cerr << "apply_rules: " << x << std::endl;
     for (const rule& r : rules_) {
       std::map<symbol_id, expr> matches;
+      //std::cerr << "  Considering " << r.pattern << std::endl;
       if (match(r.pattern, x, matches)) {
+        //std::cerr << "  Matched:" << std::endl;
+        //for (const auto& i : matches) {
+        //  std::cerr << "    " << i.first << ": " << i.second << std::endl;
+        //}
+
         if (!r.predicate.defined() || prove_true(substitute(r.predicate, matches))) {
-          // std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
-          // for (const auto& i : matches) {
-          //   std::cerr << "  " << i.first << ": " << i.second << std::endl;
-          // }
+          //std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
           x = substitute(r.replacement, matches);
-          // std::cerr << "  Result: " << x << std::endl;
+          //std::cerr << "  Result: " << x << std::endl;
           return x;
+        } else {
+          //std::cerr << "  Failed predicate: " << r.predicate << std::endl;
         }
       }
     }
-    // std::cerr << "  Failed" << std::endl;
+    //std::cerr << "  Failed" << std::endl;
     return x;
   }
 };
@@ -278,8 +281,12 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(x + z, y + z), z + min(x, y)},
       {min(x - z, y - z), min(x, y) - z},
       {min(z - x, z - y), z - max(x, y)},
+      {min(max(x, y), min(x, z)), min(x, z)},
+      {min(min(x, y), min(x, z)), min(x, min(y, z))},
 
       // Buffer meta simplifications
+      // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
+      // is true if we disallow empty buffers...
       {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
       {min(buffer_min(x, y), buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
       {min(buffer_max(x, y), buffer_min(x, y) + c0), buffer_min(x, y) + c0, c0 < 0},
@@ -323,6 +330,8 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(x + z, y + z), z + max(x, y)},
       {max(x - z, y - z), max(x, y) - z},
       {max(z - x, z - y), z - min(x, y)},
+      {max(min(x, y), max(x, z)), max(x, z)},
+      {max(max(x, y), max(x, z)), max(x, max(y, z))},
 
       // Buffer meta simplifications
       {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
@@ -440,6 +449,7 @@ expr simplify(const sub* op, expr a, expr b) {
       {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
       {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
       {(z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) - 1},
+      {min(buffer_max(x, y), z) - max(buffer_min(x, y), w), min(buffer_extent(x, y), (z - w) + 1) - 1},
   };
   return rules.apply(e);
 }
