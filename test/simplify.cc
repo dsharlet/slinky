@@ -101,6 +101,12 @@ TEST(simplify) {
   test_simplify(x - 1 < x + 1, true);
 
   test_simplify(abs(abs(x)), abs(x));
+
+  test_simplify(select(z == z, x, y), x);
+  test_simplify(select(z != z, x, y), y);
+
+  test_simplify(select(x, y + 1, y + 2), y + select(x, 1, 2));
+  test_simplify(select(x, 1, 2) + 1, select(x, 2, 3));
 }
 
 TEST(simplify_let) {

@@ -16,9 +16,11 @@ namespace {
 expr x = variable::make(0);
 expr y = variable::make(1);
 expr z = variable::make(2);
+expr w = variable::make(3);
 
 expr c0 = wildcard::make(10, as_constant);
 expr c1 = wildcard::make(11, as_constant);
+expr c2 = wildcard::make(12, as_constant);
 
 // Check if a and b are out of (canonical) order.
 bool should_commute(const expr& a, const expr& b) {
@@ -237,6 +239,17 @@ expr simplify(const add* op, expr a, expr b) {
       {(x + c0) - y, (x - y) + c0},
       {(x + c0) + c1, x + (c0 + c1)},
       {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
+
+      {select(x, c0, c1) + c2, select(x, c0 + c2, c1 + c2)},
+      {select(x, y + c0, c1) + c2, select(x, y + (c0 + c2), c1 + c2)},
+      {select(x, c0 - y, c1) + c2, select(x, (c0 + c2) - y, c1 + c2)},
+      {select(x, c0, y + c1) + c2, select(x, c0 + c2, y + (c1 + c2))},
+      {select(x, c0, c1 - y) + c2, select(x, c0 + c2, (c1 + c2) - y)},
+      {select(x, y + c0, z + c1) + c2, select(x, y + (c0 + c2), z + (c1 + c2))},
+      {select(x, c0 - y, z + c1) + c2, select(x, (c0 + c2) - y, z + (c1 + c2))},
+      {select(x, y + c0, c1 - z) + c2, select(x, y + (c0 + c2), (c1 + c2) - z)},
+      {select(x, c0 - y, c1 - z) + c2, select(x, (c0 + c2) - y, (c1 + c2) - z)},
+
       {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
       {buffer_extent(x, y) + buffer_min(x, y), buffer_max(x, y) + 1},
       {(z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1},
@@ -288,6 +301,17 @@ expr simplify(const sub* op, expr a, expr b) {
       {x - (y + x), -y},
       {(c0 - x) - (y - z), ((z - x) - y) + c0},
       {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
+
+      {c2 - select(x, c0, c1), select(x, c2 - c0, c2 - c1)},
+      {c2 - select(x, y + c0, c1), select(x, (c2 - c0) - y, c2 - c1)},
+      {c2 - select(x, c0 - y, c1), select(x, y + (c2 - c0), c2 - c1)},
+      {c2 - select(x, c0, y + c1), select(x, c2 - c0, (c2 - c1) - y)},
+      {c2 - select(x, c0, c1 - y), select(x, c2 - c0, y + (c2 - c1))},
+      {c2 - select(x, y + c0, z + c1), select(x, (c2 - c0) - y, (c2 - c1) - z)},
+      {c2 - select(x, c0 - y, z + c1), select(x, y + (c2 - c0), (c2 - c1) - z)},
+      {c2 - select(x, y + c0, c1 - z), select(x, (c2 - c0) - y, z + (c2 - c1))},
+      {c2 - select(x, c0 - y, c1 - z), select(x, y + (c2 - c0), z + (c2 - c1))},
+
       {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
       {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
       {(z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) - 1},
@@ -445,8 +469,9 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {x + y <= x, y <= 0},
       {x - y <= x, 0 <= y},
       {0 - x <= c0, -c0 <= x},
-      {c0 - x <= c1, c0 - c1 <= x},
-      {c0 <= c1 - x, x <= c1 - c0},
+      {c0 - x <= y, c0 <= y + x},
+      {x <= c1 - y, x + y <= c1},
+      {x + c0 <= y + c1, x - y <= c1 - c0},
 
       {x + y <= x + z, y <= z},
       {y + x <= x + z, y <= z},
@@ -508,28 +533,34 @@ expr simplify(const not_equal* op, expr a, expr b) {
   };
   return apply_rules(rules, e);
 }
-/*
+
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  std::optional<bool> const_c = attempt_prove(c, expr_bounds);
+  std::optional<bool> const_c = attempt_prove(c);
   if (const_c) {
     if (*const_c) {
-      e = mutate(op->true_value);
+      return op->true_value;
     } else {
-      e = mutate(op->false_value);
+      return op->false_value;
     }
-    return;
   }
 
-  expr t = mutate(op->true_value);
-  expr f = mutate(op->false_value);
+  expr e;
   if (match(t, f)) {
-    e = t;
+    return t;
   } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
     e = op;
   } else {
     e = select::make(std::move(c), std::move(t), std::move(f));
   }
-}*/
+  static std::vector<rule> rules = {
+      // Pull common expressions out
+      {select(x, y, y + z), y + select(x, 0, z)},
+      {select(x, y + z, y), y + select(x, z, 0)},
+      {select(x, y + z, y + w), y + select(x, z, w)},
+      {select(x, z - y, w - y), select(x, z, w) - y},
+  };
+  return apply_rules(rules, e);
+}
 
 expr simplify(const logical_and* op, expr a, expr b) {
   if (should_commute(a, b)) {
@@ -692,13 +723,12 @@ public:
 
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
-    if (match(t, f)) {
-      set_result(t);
-    } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-      set_result(op);
-    } else {
-      set_result(select::make(std::move(c), std::move(t), std::move(f)));
+
+    expr e = simplify(op, std::move(c), std::move(t), std::move(f));
+    if (!e.same_as(op)) {
+      e = mutate(e);
     }
+    set_result(e);
   }
 
   void visit(const logical_and* op) override { visit_binary(op); }
