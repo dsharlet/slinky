@@ -452,7 +452,6 @@ expr simplify(const sub* op, expr a, expr b) {
       {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
       {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
       {(z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) - 1},
-      {min(buffer_max(x, y), z) - max(buffer_min(x, y), w), min(buffer_extent(x, y), (z - w) + 1) - 1},
   };
   return rules.apply(e);
 }
@@ -486,6 +485,7 @@ expr simplify(const mul* op, expr a, expr b) {
       {x * 1, x},
       {(x * c0) * c1, x * (c0 * c1)},
       {(x + c0) * c1, x * c1 + c0 * c1},
+      {(0 - x) * c1, x * (-c1)},
       {(c0 - x) * c1, c0 * c1 - x * c1},
   };
   return rules.apply(e);
@@ -521,6 +521,8 @@ expr simplify(const div* op, expr a, expr b) {
       {0 / x, 0},
       {x / 1, x},
       {x / x, x != 0},
+      {(x / c0) / c1, x / (c0 * c1)}, 
+      {(0 - x) / c0, x / (-c0)},
   };
   return rules.apply(e);
 }
