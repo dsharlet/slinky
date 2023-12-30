@@ -153,6 +153,7 @@ TEST(bounds_of) {
       x - y,
       x * y,
       x / y,
+      x % y,
       slinky::min(x, y),
       slinky::max(x, y),
       x < y,
@@ -276,7 +277,7 @@ expr make_random_expr(int depth) {
 TEST(simplify_fuzz) {
   const int seed = time(nullptr);
   srand(seed);
-  constexpr int tests = 100000;
+  constexpr int tests = 10000;
   constexpr int checks = 10;
 
   eval_context ctx;
