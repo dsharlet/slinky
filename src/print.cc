@@ -37,7 +37,9 @@ std::ostream& operator<<(std::ostream& os, intrinsic i) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, const interval_expr& i) { return os << "[" << i.min << ", " << i.max << "]"; }
+std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
+  return os << "[" << i.min << ", " << i.max << "]";
+}
 
 class printer : public node_visitor {
 public:
@@ -63,7 +65,7 @@ public:
     }
   }
 
-  void print(const interval_expr& e) { 
+  void print(const interval_expr& e) {
     os << "[";
     print(e.min);
     os << ", ";
@@ -166,8 +168,8 @@ public:
   void visit(const load_buffer_meta* x) override {
     print(x->buffer);
     os << "->";
-    if (x->meta == buffer_meta::rank) { 
-      os << "rank"; 
+    if (x->meta == buffer_meta::rank) {
+      os << "rank";
     } else if (x->meta == buffer_meta::base) {
       os << "base";
     } else if (x->meta == buffer_meta::elem_size) {
@@ -179,7 +181,7 @@ public:
     }
   }
 
-  void visit(const call* x) override { 
+  void visit(const call* x) override {
     os << x->intrinsic << "(";
     for (const expr& i : x->args) {
       print(i);
@@ -191,8 +193,12 @@ public:
   }
 
   void visit(const block* b) override {
-    if (b->a.defined()) { print(b->a); }
-    if (b->b.defined()) { print(b->b); }
+    if (b->a.defined()) {
+      print(b->a);
+    }
+    if (b->b.defined()) {
+      print(b->b);
+    }
   }
 
   void visit(const loop* l) override {
@@ -219,7 +225,7 @@ public:
       ++depth;
       print(n->false_body);
       --depth;
-    } 
+    }
     os << indent() << "}" << std::endl;
   }
 
@@ -227,12 +233,16 @@ public:
     os << indent() << "call(<fn>, {";
     for (const expr& e : n->scalar_args) {
       print(e);
-      if (&e != &n->scalar_args.back()) { os << ", "; }
+      if (&e != &n->scalar_args.back()) {
+        os << ", ";
+      }
     }
     os << "}, {";
     for (symbol_id id : n->buffer_args) {
       print_symbol_id(id);
-      if (id != n->buffer_args.back()) { os << ", "; }
+      if (id != n->buffer_args.back()) {
+        os << ", ";
+      }
     }
     os << "})" << std::endl;
   }
@@ -245,7 +255,9 @@ public:
     for (const dim_expr& d : n->dims) {
       os << indent();
       print(d);
-      if (&d != &n->dims.back()) { os << ", "; }
+      if (&d != &n->dims.back()) {
+        os << ", ";
+      }
       os << std::endl;
     }
     --depth;
@@ -266,7 +278,9 @@ public:
     for (const dim_expr& d : n->dims) {
       os << indent();
       print(d);
-      if (&d != &n->dims.back()) { os << ", "; }
+      if (&d != &n->dims.back()) {
+        os << ", ";
+      }
       os << std::endl;
     }
     --depth;
@@ -286,7 +300,9 @@ public:
     for (const interval_expr& d : n->bounds) {
       os << indent();
       print(d);
-      if (&d != &n->bounds.back()) { os << ", "; }
+      if (&d != &n->bounds.back()) {
+        os << ", ";
+      }
       os << std::endl;
     }
     --depth;
@@ -337,6 +353,16 @@ std::ostream& operator<<(std::ostream& os, const expr& e) {
 
 std::ostream& operator<<(std::ostream& os, const stmt& s) {
   print(os, s);
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const std::tuple<const expr&, const node_context&>& e) {
+  print(os, std::get<0>(e), &std::get<1>(e));
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const std::tuple<const stmt&, const node_context&>& s) {
+  print(os, std::get<0>(s), &std::get<1>(s));
   return os;
 }
 
