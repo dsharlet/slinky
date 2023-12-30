@@ -156,29 +156,28 @@ public:
   }
 
   void visit(const class select* op) override {
-    os << "(";
+    os << "select(";
     print(op->condition);
-    os << " ? ";
+    os << ", ";
     print(op->true_value);
-    os << " : ";
+    os << ", ";
     print(op->false_value);
     os << ")";
   }
 
   void visit(const load_buffer_meta* x) override {
+    os << "buffer_" << x->meta << "(";
     print(x->buffer);
-    os << "->";
-    if (x->meta == buffer_meta::rank) {
-      os << "rank";
-    } else if (x->meta == buffer_meta::base) {
-      os << "base";
-    } else if (x->meta == buffer_meta::elem_size) {
-      os << "elem_size";
-    } else {
-      os << "dims[";
+    switch (x->meta) {
+    case buffer_meta::base:
+    case buffer_meta::rank:
+    case buffer_meta::elem_size: break;
+    default:
+      os << ", ";
       print(x->dim);
-      os << "]." << x->meta;
+      break;
     }
+    os << ")";
   }
 
   void visit(const call* x) override {
