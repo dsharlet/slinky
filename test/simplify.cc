@@ -19,14 +19,12 @@ expr w = make_variable(symbols, "w");
 
 template <typename T>
 void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
-  s << "{";
   for (symbol_id n = 0; n < m.size(); ++n) {
     const std::optional<T>& value = m[n];
     if (value) {
-      s << "{" << symbols.name(n) << ", " << *value << "},";
+      s << "  " << symbols.name(n) << " = " << *value << std::endl;
     }
   }
-  s << "}";
 }
 
 void test_simplify(const expr& test, const expr& expected) {
@@ -213,7 +211,9 @@ TEST(bounds_of) {
 }
 
 std::vector<expr> vars = {x, y, z};
-std::vector<symbol_id> bufs = {symbols.insert("buf0"), symbols.insert("buf1")};
+std::vector<symbol_id> bufs = {symbols.insert("b0"), symbols.insert("b1")};
+expr b0 = variable::make(bufs[0]);
+expr b1 = variable::make(bufs[1]);
 
 template <typename T>
 T random_pick(const std::vector<T>& from) {
@@ -297,6 +297,7 @@ TEST(simplify_fuzz) {
 
   for (int i = 0; i < tests; ++i) {
     expr test = make_random_expr(3);
+    test = min(max(x, buffer_max(b0, 1)), min(y, buffer_min(b0, 1)));
     expr simplified = simplify(test);
 
     // Also test bounds_of.
@@ -317,38 +318,38 @@ TEST(simplify_fuzz) {
           b->dim(d).set_bounds(min, max);
         }
       }
-      index_t a = evaluate(test, ctx);
-      index_t b = evaluate(simplified, ctx);
-      if (a != b) {
+      index_t eval_test = evaluate(test, ctx);
+      index_t eval_simplified = evaluate(simplified, ctx);
+      if (eval_test != eval_simplified) {
         std::cerr << "simplify failure (seed = " << seed << "): " << std::endl;
         print(std::cerr, test, &symbols);
-        std::cerr << std::endl;
+        std::cerr << " -> " << eval_test << std::endl;
         print(std::cerr, simplified, &symbols);
-        std::cerr << std::endl;
+        std::cerr << " -> " << eval_simplified << std::endl;
         dump_symbol_map(std::cerr, ctx);
-        ASSERT_EQ(a, b);
+        ASSERT_EQ(eval_test, eval_simplified);
       } else {
         index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
         index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
-        if (a < min) {
+        if (eval_test < min) {
           std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
           print(std::cerr, test, &symbols);
-          std::cerr << std::endl;
+          std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.min, &symbols);
-          std::cerr << std::endl;
+          std::cerr << " -> " << min << std::endl;
           dump_symbol_map(std::cerr, ctx);
           std::cerr << std::endl;
-          ASSERT_LE(min, a);
+          ASSERT_LE(min, eval_test);
         }
-        if (a > max) {
+        if (eval_test > max) {
           std::cerr << "bounds_of upper bound failure (seed = " << seed << "): " << std::endl;
           print(std::cerr, test, &symbols);
-          std::cerr << std::endl;
+          std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.max, &symbols);
-          std::cerr << std::endl;
+          std::cerr << " -> " << max << std::endl;
           dump_symbol_map(std::cerr, ctx);
           std::cerr << std::endl;
-          ASSERT_LE(a, max);
+          ASSERT_LE(eval_test, max);
         }
       }
     }
