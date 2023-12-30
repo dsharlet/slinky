@@ -72,25 +72,147 @@ public:
   void visit(const bitwise_or* op) { check(op); };
 };
 
-struct rule {
-  expr pattern;
-  expr replacement;
-  expr predicate;
+// We need to generate a lot of rules that are equivalent except for commutation.
+// To avoid repetitive error-prone code, we can generate all the valid commutative
+// equivalents of an expression.
+class commute_variants : public node_visitor {
+public:
+  std::vector<expr> results;
 
-  rule(expr p, expr r, expr pr = expr()) : pattern(std::move(p)), replacement(std::move(r)), predicate(std::move(pr)) {
-    assert_canonical v;
-    pattern.accept(&v);
-    replacement.accept(&v);
+  void visit(const variable* x) override { results = {x}; }
+  void visit(const wildcard* x) override { results = {x}; }
+  void visit(const constant* x) override { results = {x}; }
+  void visit(const let* x) override { std::abort(); }
+
+  static bool is_same_pattern(const expr& a, const expr& b) {
+    std::map<symbol_id, expr> ma, mb;
+    return match(a, b, ma) && match(b, a, mb);
   }
+
+  template <typename T>
+  void visit_binary(bool commutative, const T* x) {
+    if (is_same_pattern(x->a, x->b)) {
+      // If a and b are the same pattern (but with possibly different variables,
+      // e.g. x * y + x * z), we don't want to generate two versions of it.
+      commutative = false;
+    }
+
+    x->a.accept(this);
+    std::vector<expr> a = std::move(results);
+    x->b.accept(this);
+    std::vector<expr> b = std::move(results);
+
+    results.clear();
+    results.reserve(a.size() * b.size());
+    for (const expr& i : a) {
+      for (const expr& j : b) {
+        if (match(i, j)) {
+          results.push_back(T::make(i, j));
+        } else {
+          if (!commutative || !should_commute(i, j)) {
+            results.push_back(T::make(i, j));
+          }
+          if (commutative && !should_commute(j, i)) {
+            results.push_back(T::make(j, i));
+          }
+        }
+      }
+    }
+  }
+
+  void visit(const add* x) override { visit_binary(true, x); }
+  void visit(const sub* x) override { visit_binary(false, x); }
+  void visit(const mul* x) override { visit_binary(true, x); }
+  void visit(const div* x) override { visit_binary(false, x); }
+  void visit(const mod* x) override { visit_binary(false, x); }
+  void visit(const class min* x) override { visit_binary(true, x); }
+  void visit(const class max* x) override { visit_binary(true, x); }
+  void visit(const equal* x) override { visit_binary(true, x); }
+  void visit(const not_equal* x) override { visit_binary(true, x); }
+  void visit(const less* x) override { visit_binary(false, x); }
+  void visit(const less_equal* x) override { visit_binary(false, x); }
+  void visit(const bitwise_and* x) override { visit_binary(true, x); }
+  void visit(const bitwise_or* x) override { visit_binary(true, x); }
+  void visit(const bitwise_xor* x) override { visit_binary(true, x); }
+  void visit(const logical_and* x) override { visit_binary(true, x); }
+  void visit(const logical_or* x) override { visit_binary(true, x); }
+  void visit(const shift_left* x) override { visit_binary(false, x); }
+  void visit(const shift_right* x) override { visit_binary(false, x); }
+  void visit(const class select* x) override {
+    x->condition.accept(this);
+    std::vector<expr> c = std::move(results);
+    x->true_value.accept(this);
+    std::vector<expr> t = std::move(results);
+    x->false_value.accept(this);
+    std::vector<expr> f = std::move(results);
+
+    results.clear();
+    results.reserve(c.size() * t.size() * f.size());
+    for (const expr& i : c) {
+      for (const expr& j : t) {
+        for (const expr& k : f) {
+          results.push_back(select::make(i, j, k));
+        }
+      }
+    }
+  }
+
+  void visit(const load_buffer_meta* x) override { 
+    assert(x->buffer.as<variable>());
+    assert(x->dim.as<variable>());
+    results = {x}; 
+  }
+  void visit(const call* x) override {
+    if (x->args.size() == 0) {
+      results = {x};
+    } else if (x->args.size() == 1) {
+      x->args.front().accept(this);
+      for (expr& i : results) {
+        i = call::make(x->intrinsic, {i});
+      }
+    } else {
+      std::abort();
+    }
+  }
+
+  void visit(const let_stmt* x) override { std::abort(); }
+  void visit(const block* x) override { std::abort(); }
+  void visit(const loop* x) override { std::abort(); }
+  void visit(const if_then_else* x) override { std::abort(); }
+  void visit(const call_func* x) override { std::abort(); }
+  void visit(const allocate* x) override { std::abort(); }
+  void visit(const make_buffer* x) override { std::abort(); }
+  void visit(const crop_buffer* x) override { std::abort(); }
+  void visit(const crop_dim* x) override { std::abort(); }
+  void visit(const check* x) override { std::abort(); }
 };
 
 class rule_set {
+public:
+  struct rule {
+    expr pattern;
+    expr replacement;
+    expr predicate;
+
+    rule(expr p, expr r, expr pr = expr())
+        : pattern(std::move(p)), replacement(std::move(r)), predicate(std::move(pr)) {
+      assert_canonical v;
+      replacement.accept(&v);
+    }
+  };
+
+private:
   std::vector<rule> rules_;
 
 public:
   rule_set(std::initializer_list<rule> rules) {
     for (const rule& i : rules) {
-      rules_.push_back(i);
+      commute_variants v;
+      i.pattern.accept(&v);
+
+      for (expr& p : v.results) {
+        rules_.emplace_back(std::move(p), i.replacement, i.predicate);
+      }
     }
   }
 
@@ -150,19 +272,16 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(x, x), x},
       {min(x, min(x, y)), min(x, y)},
       {min(x / z, y / z), min(x, y) / z, z > 0},
+      {min(x / z, y / z), max(x, y) / z, z < 0},
+      {min(x * z, y * z), z * min(x, y), z > 0},
+      {min(x * z, y * z), z * max(x, y), z < 0},
       {min(x + z, y + z), z + min(x, y)},
-      {min(x + z, z + y), z + min(x, y)},
-      {min(z + x, z + y), z + min(x, y)},
-      {min(z + x, y + z), z + min(x, y)},
       {min(x - z, y - z), min(x, y) - z},
       {min(z - x, z - y), z - max(x, y)},
 
       // Buffer meta simplifications
       {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
-      {min(buffer_max(x, y), buffer_min(x, y)), buffer_min(x, y)},
-      {min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), c0 > 0},
       {min(buffer_min(x, y), buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
-      {min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, c0 < 0},
       {min(buffer_max(x, y), buffer_min(x, y) + c0), buffer_min(x, y) + c0, c0 < 0},
   };
   return rules.apply(e);
@@ -202,18 +321,12 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(x, max(x, y)), max(x, y)},
       {max(x / z, y / z), max(x, y) / z, z > 0},
       {max(x + z, y + z), z + max(x, y)},
-      {max(x + z, z + y), z + max(x, y)},
-      {max(z + x, z + y), z + max(x, y)},
-      {max(z + x, y + z), z + max(x, y)},
       {max(x - z, y - z), max(x, y) - z},
       {max(z - x, z - y), z - min(x, y)},
 
       // Buffer meta simplifications
       {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
-      {max(buffer_max(x, y), buffer_min(x, y)), buffer_max(x, y)},
-      {max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, c0 > 0},
       {max(buffer_min(x, y), buffer_max(x, y) + c0), buffer_max(x, y) + c0, c0 > 0},
-      {max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), c0 < 0},
       {max(buffer_max(x, y), buffer_min(x, y) + c0), buffer_max(x, y), c0 < 0},
   };
   return rules.apply(e);
@@ -244,15 +357,10 @@ expr simplify(const add* op, expr a, expr b) {
       {x + 0, x},
       {x + x, x * 2},
       {x + (x + y), y + x * 2},
-      {x + (y + x), y + x * 2},
       {x + (x - y), x * 2 - y},
       {x + (y - x), y},
       {x + x * y, x * (y + 1)},
-      {x + y * x, x * (y + 1)},
       {x * y + x * z, x * (y + z)},
-      {y * x + x * z, x * (y + z)},
-      {x * y + z * x, x * (y + z)},
-      {y * x + z * x, x * (y + z)},
 
       {(x + c0) + c1, x + (c0 + c1)},
       {(c0 - x) + c1, (c0 + c1) - x},
@@ -273,10 +381,7 @@ expr simplify(const add* op, expr a, expr b) {
       {select(x, c0 - y, c1 - z) + c2, select(x, (c0 + c2) - y, (c1 + c2) - z)},
 
       {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
-      {buffer_extent(x, y) + buffer_min(x, y), buffer_max(x, y) + 1},
-      {(z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1},
       {buffer_min(x, y) + (z - buffer_max(x, y)), (z - buffer_extent(x, y)) + 1},
-      {(z - buffer_min(x, y)) + buffer_max(x, y), (z + buffer_extent(x, y)) - 1},
       {buffer_max(x, y) + (z - buffer_min(x, y)), (z + buffer_extent(x, y)) - 1},
   };
   return rules.apply(e);
@@ -318,9 +423,7 @@ expr simplify(const sub* op, expr a, expr b) {
       {(c0 - x) - y, c0 - (x + y)},
       {(x + c0) - y, (x - y) + c0},
       {(x + y) - x, y},
-      {(y + x) - x, y},
       {x - (x + y), -y},
-      {x - (y + x), -y},
       {(c0 - x) - (y - z), ((z - x) - y) + c0},
       {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
 
@@ -457,9 +560,6 @@ expr simplify(const less* op, expr a, expr b) {
       {c0 < c1 - x, x < c1 - c0},
 
       {x + y < x + z, y < z},
-      {y + x < x + z, y < z},
-      {x + y < z + x, y < z},
-      {y + x < z + x, y < z},
 
       {buffer_extent(x, y) < c0, false, c0 < 0},
       {c0 < buffer_extent(x, y), true, c0 < 0},
@@ -496,9 +596,6 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {x + c0 <= y + c1, x - y <= c1 - c0},
 
       {x + y <= x + z, y <= z},
-      {y + x <= x + z, y <= z},
-      {x + y <= z + x, y <= z},
-      {y + x <= z + x, y <= z},
 
       {buffer_extent(x, y) <= c0, false, c0 <= 0},
       {c0 <= buffer_extent(x, y), true, c0 <= 0},
@@ -579,9 +676,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
   static rule_set rules = {
       {x && x, x},
       {x && (x && y), x && y},
-      {x && (y && x), y && x},
       {x && (x || y), x},
-      {x && (y || x), x},
   };
   return rules.apply(e);
 }
@@ -609,9 +704,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
   static rule_set rules = {
       {x || x, x},
       {x || (x && y), x},
-      {x || (y && x), x},
       {x || (x || y), x || y},
-      {x || (y || x), y || x},
   };
   return rules.apply(e);
 }
