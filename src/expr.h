@@ -715,11 +715,11 @@ public:
   }
   virtual void visit(const load_buffer_meta* x) override {
     x->buffer.accept(this);
-    x->dim.accept(this);
+    if (x->dim.defined()) x->dim.accept(this);
   }
   virtual void visit(const call* x) override {
     for (const expr& i : x->args) {
-      i.accept(this);
+      if (i.defined()) i.accept(this);
     }
   }
 
@@ -738,8 +738,8 @@ public:
   }
   virtual void visit(const if_then_else* x) override {
     x->condition.accept(this);
-    x->true_body.accept(this);
-    x->false_body.accept(this);
+    if (x->true_body.defined()) x->true_body.accept(this);
+    if (x->false_body.defined()) x->false_body.accept(this);
   }
   virtual void visit(const call_func* x) override {
     for (const expr& i : x->scalar_args) {
@@ -756,6 +756,7 @@ public:
     x->body.accept(this);
   }
   virtual void visit(const make_buffer* x) override {
+    x->base.accept(this);
     for (const dim_expr& i : x->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
@@ -766,8 +767,8 @@ public:
   }
   virtual void visit(const crop_buffer* x) override {
     for (const interval_expr& i : x->bounds) {
-      i.min.accept(this);
-      i.max.accept(this);
+      if (i.min.defined()) i.min.accept(this);
+      if (i.max.defined()) i.max.accept(this);
     }
     x->body.accept(this);
   }

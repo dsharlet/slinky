@@ -921,14 +921,16 @@ public:
       if (*const_c) {
         set_result(mutate(op->true_body));
       } else {
-        set_result(op->false_body.defined() ? mutate(op->false_body) : stmt());
+        set_result(mutate(op->false_body));
       }
       return;
     }
 
     stmt t = mutate(op->true_body);
     stmt f = mutate(op->false_body);
-    if (f.defined() && match(t, f)) {
+    if (!t.defined() && !f.defined()) {
+      set_result(t);
+    } else if (t.defined() && f.defined() && match(t, f)) {
       set_result(t);
     } else if (c.same_as(op->condition) && t.same_as(op->true_body) && f.same_as(op->false_body)) {
       set_result(op);
