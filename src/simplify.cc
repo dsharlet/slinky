@@ -534,34 +534,6 @@ expr simplify(const not_equal* op, expr a, expr b) {
   return apply_rules(rules, e);
 }
 
-expr simplify(const class select* op, expr c, expr t, expr f) {
-  std::optional<bool> const_c = attempt_to_prove(c);
-  if (const_c) {
-    if (*const_c) {
-      return op->true_value;
-    } else {
-      return op->false_value;
-    }
-  }
-
-  expr e;
-  if (match(t, f)) {
-    return t;
-  } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-    e = op;
-  } else {
-    e = select::make(std::move(c), std::move(t), std::move(f));
-  }
-  static std::vector<rule> rules = {
-      // Pull common expressions out
-      {select(x, y, y + z), y + select(x, 0, z)},
-      {select(x, y + z, y), y + select(x, z, 0)},
-      {select(x, y + z, y + w), y + select(x, z, w)},
-      {select(x, z - y, w - y), select(x, z, w) - y},
-  };
-  return apply_rules(rules, e);
-}
-
 expr simplify(const logical_and* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
@@ -618,6 +590,34 @@ expr simplify(const logical_or* op, expr a, expr b) {
       {x || (y && x), x},
       {x || (x || y), x || y},
       {x || (y || x), y || x},
+  };
+  return apply_rules(rules, e);
+}
+
+expr simplify(const class select* op, expr c, expr t, expr f) {
+  std::optional<bool> const_c = attempt_to_prove(c);
+  if (const_c) {
+    if (*const_c) {
+      return op->true_value;
+    } else {
+      return op->false_value;
+    }
+  }
+
+  expr e;
+  if (match(t, f)) {
+    return t;
+  } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    e = op;
+  } else {
+    e = select::make(std::move(c), std::move(t), std::move(f));
+  }
+  static std::vector<rule> rules = {
+      // Pull common expressions out
+      {select(x, y, y + z), y + select(x, 0, z)},
+      {select(x, y + z, y), y + select(x, z, 0)},
+      {select(x, y + z, y + w), y + select(x, z, w)},
+      {select(x, z - y, w - y), select(x, z, w) - y},
   };
   return apply_rules(rules, e);
 }
@@ -708,6 +708,8 @@ public:
   void visit(const less_equal* op) override { visit_binary(op); }
   void visit(const equal* op) override { visit_binary(op); }
   void visit(const not_equal* op) override { visit_binary(op); }
+  void visit(const logical_and* op) override { visit_binary(op); }
+  void visit(const logical_or* op) override { visit_binary(op); }
 
   void visit(const class select* op) override {
     expr c = mutate(op->condition);
@@ -730,9 +732,6 @@ public:
     }
     set_result(e);
   }
-
-  void visit(const logical_and* op) override { visit_binary(op); }
-  void visit(const logical_or* op) override { visit_binary(op); }
 
   void visit(const call* op) override {
     std::vector<expr> args;

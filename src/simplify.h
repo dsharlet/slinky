@@ -21,8 +21,13 @@ expr simplify(const sub* op, expr a, expr b);
 expr simplify(const mul* op, expr a, expr b);
 expr simplify(const div* op, expr a, expr b);
 expr simplify(const mod* op, expr a, expr b);
+expr simplify(const less* op, expr a, expr b);
+expr simplify(const less_equal* op, expr a, expr b);
+expr simplify(const equal* op, expr a, expr b);
+expr simplify(const not_equal* op, expr a, expr b);
 expr simplify(const logical_and* op, expr a, expr b);
 expr simplify(const logical_or* op, expr a, expr b);
+expr simplify(const class select* op, expr c, expr t, expr f);
 expr simplify(const call* op, std::vector<expr> args);
 
 // Determine an interval such that e is always inside the interval.
