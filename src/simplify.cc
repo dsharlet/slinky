@@ -540,8 +540,8 @@ expr simplify(const logical_and* op, expr a, expr b) {
 
   if (ca && cb) {
     return *ca != 0 && *cb != 0;
-  } else if (cb && *cb == 0) {
-    return b;
+  } else if (cb) {
+    return *cb ? a : b;
   }
 
   expr e;
@@ -570,8 +570,8 @@ expr simplify(const logical_or* op, expr a, expr b) {
 
   if (ca && cb) {
     return *ca != 0 || *cb != 0;
-  } else if (cb && *cb == 1) {
-    return b;
+  } else if (cb) {
+    return *cb ? b : a;
   }
 
   expr e;
