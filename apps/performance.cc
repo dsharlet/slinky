@@ -47,8 +47,8 @@ int main(int argc, const char** argv) {
   pipeline loop = make_pipeline(true);
   pipeline no_loop = make_pipeline(false);
 
-  const int total_sizes[] = {32, 128, 1024, 4096};
-  const int copy_sizes[] = {2, 4, 16, 64};
+  const int total_sizes[] = {32, 128, 512, 2048, 4096, 8192};
+  const int copy_sizes[] = {1, 2, 4, 8, 16, 32};
 
   std::cout << std::endl;
   for (int total_size : total_sizes) {
