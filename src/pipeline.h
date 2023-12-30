@@ -1,15 +1,16 @@
 #ifndef SLINKY_PIPELINE_H
 #define SLINKY_PIPELINE_H
 
-#include "evaluate.h"
+#include "ref_count.h"
 #include "expr.h"
+#include "evaluate.h"
 
 namespace slinky {
 
 class func;
 class buffer_expr;
 
-using buffer_expr_ptr = std::shared_ptr<buffer_expr>;
+using buffer_expr_ptr = ref_count<buffer_expr>;
 
 struct loop_id {
   const func* f = nullptr;
@@ -17,7 +18,7 @@ struct loop_id {
 };
 
 // Represents a symbolic buffer in a pipeline.
-class buffer_expr : public std::enable_shared_from_this<buffer_expr> {
+class buffer_expr : public ref_counted {
   symbol_id name_;
   index_t elem_size_;
   std::vector<dim_expr> dims_;

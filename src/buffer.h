@@ -84,7 +84,7 @@ using raw_buffer_ptr = std::unique_ptr<raw_buffer, void (*)(raw_buffer*)>;
 // And a class buffer<T, DimsSize>:
 // - Has a type, can be accessed via operator() and at.
 // - Provides storage for DimsSize dims (default is 0).
-class raw_buffer : public std::enable_shared_from_this<raw_buffer> {
+class raw_buffer {
 protected:
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
     return dims->flat_offset_bytes(i0);
@@ -168,8 +168,7 @@ public:
   template <typename NewT>
   const buffer<NewT>& cast() const;
 
-  // Make a buffer and space for dims in the same object. Returns a unique_ptr, with the
-  // understanding that unique_ptr can be converted to shared_ptr if needed.
+  // Make a buffer and space for dims in the same object.
   static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size) {
     char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
     raw_buffer* buf = new (buf_and_dims) raw_buffer();
