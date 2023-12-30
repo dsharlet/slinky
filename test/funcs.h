@@ -50,6 +50,15 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   return 0;
 }
 
+template <typename T>
+index_t zero_padded_copy(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  for_each_index(out, [&](std::span<index_t> i) { 
+    out(i) = in.contains(i) ? in(i) : 0; 
+  });
+  return 0;
+}
+
 // Copy rows, where the output y is -y in the input.
 template <typename T>
 index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {

@@ -453,6 +453,56 @@ TEST(pipeline_flip_y) {
   }
 }
 
+TEST(pipeline_padded_copy) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
+
+  expr x = make_variable(ctx, "x");
+  expr y = make_variable(ctx, "y");
+
+  const int W = 8;
+  const int H = 5;
+
+  // Copy the input so we can measure the size of the buffer we think we need internally.
+  func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  // This is elementwise, but with a clamp to limit the bounds required of the input. 
+  func crop = func::make<const char, char>(::zero_padded_copy<char>,
+      {intm, {bounds(max(x, 0), min(x, W - 1)), bounds(max(y, 0), min(y, H - 1))}}, {out, {x, y}});
+
+  pipeline p(ctx, {in}, {out});
+
+  // Run the pipeline.
+  buffer<char, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  // Ask for an output padded in every direction.
+  buffer<char, 2> out_buf({W * 3, H * 3});
+  out_buf.dim(0).translate(-W);
+  out_buf.dim(1).translate(-H);
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  debug_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+
+  for (int y = -H; y < 2 * H; ++y) {
+    for (int x = -W; x < 2 * W; ++x) {
+      if (0 <= x && x < W && 0 <= y && y < H) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+      } else {
+        ASSERT_EQ(out_buf(x, y), 0);
+      }
+    }
+  }
+}
+
 TEST(pipeline_multiple_outputs) {
   // Make the pipeline
   node_context ctx;

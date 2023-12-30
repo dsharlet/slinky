@@ -120,6 +120,7 @@ expr operator/(expr a, expr b) { return div::make(std::move(a), std::move(b)); }
 expr operator%(expr a, expr b) { return mod::make(std::move(a), std::move(b)); }
 expr min(expr a, expr b) { return min::make(std::move(a), std::move(b)); }
 expr max(expr a, expr b) { return max::make(std::move(a), std::move(b)); }
+expr clamp(expr x, expr a, expr b) { return min::make(max::make(std::move(x), std::move(a)), std::move(b)); }
 expr select(expr c, expr t, expr f) { return select::make(std::move(c), std::move(t), std::move(f)); }
 expr operator==(expr a, expr b) { return equal::make(std::move(a), std::move(b)); }
 expr operator!=(expr a, expr b) { return not_equal::make(std::move(a), std::move(b)); }

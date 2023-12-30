@@ -235,6 +235,7 @@ expr operator&&(expr a, expr b);
 expr operator||(expr a, expr b);
 expr min(expr a, expr b);
 expr max(expr a, expr b);
+expr clamp(expr x, expr a, expr b);
 expr select(expr c, expr t, expr f);
 expr min(std::span<expr> x);
 expr max(std::span<expr> x);
