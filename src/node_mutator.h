@@ -78,13 +78,8 @@ public:
   virtual void visit(const not_equal* x) override { set_result(mutate_binary(x)); }
   virtual void visit(const less* x) override { set_result(mutate_binary(x)); }
   virtual void visit(const less_equal* x) override { set_result(mutate_binary(x)); }
-  virtual void visit(const bitwise_and* x) override { set_result(mutate_binary(x)); }
-  virtual void visit(const bitwise_or* x) override { set_result(mutate_binary(x)); }
-  virtual void visit(const bitwise_xor* x) override { set_result(mutate_binary(x)); }
   virtual void visit(const logical_and* x) override { set_result(mutate_binary(x)); }
   virtual void visit(const logical_or* x) override { set_result(mutate_binary(x)); }
-  virtual void visit(const shift_left* x) override { set_result(mutate_binary(x)); }
-  virtual void visit(const shift_right* x) override { set_result(mutate_binary(x)); }
 
   virtual void visit(const class select* x) override {
     expr c = mutate(x->condition);

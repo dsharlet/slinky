@@ -103,13 +103,8 @@ expr equal::make(expr a, expr b) { return make_bin_op<equal>(std::move(a), std::
 expr not_equal::make(expr a, expr b) { return make_bin_op<not_equal>(std::move(a), std::move(b)); }
 expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::move(b)); }
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
-expr bitwise_and::make(expr a, expr b) { return make_bin_op<bitwise_and>(std::move(a), std::move(b)); }
-expr bitwise_or::make(expr a, expr b) { return make_bin_op<bitwise_or>(std::move(a), std::move(b)); }
-expr bitwise_xor::make(expr a, expr b) { return make_bin_op<bitwise_xor>(std::move(a), std::move(b)); }
 expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)); }
 expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)); }
-expr shift_left::make(expr a, expr b) { return make_bin_op<shift_left>(std::move(a), std::move(b)); }
-expr shift_right::make(expr a, expr b) { return make_bin_op<shift_right>(std::move(a), std::move(b)); }
 
 expr make_variable(node_context& ctx, const std::string& name) { return variable::make(ctx.insert(name)); }
 
@@ -128,13 +123,8 @@ expr operator<(expr a, expr b) { return less::make(std::move(a), std::move(b)); 
 expr operator<=(expr a, expr b) { return less_equal::make(std::move(a), std::move(b)); }
 expr operator>(expr a, expr b) { return less::make(std::move(b), std::move(a)); }
 expr operator>=(expr a, expr b) { return less_equal::make(std::move(b), std::move(a)); }
-expr operator&(expr a, expr b) { return bitwise_and::make(std::move(a), std::move(b)); }
-expr operator|(expr a, expr b) { return bitwise_or::make(std::move(a), std::move(b)); }
-expr operator^(expr a, expr b) { return bitwise_xor::make(std::move(a), std::move(b)); }
 expr operator&&(expr a, expr b) { return logical_and::make(std::move(a), std::move(b)); }
 expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::move(b)); }
-expr operator<<(expr a, expr b) { return shift_left::make(std::move(a), std::move(b)); }
-expr operator>>(expr a, expr b) { return shift_right::make(std::move(a), std::move(b)); }
 
 expr min(std::span<expr> x) {
   if (x.empty()) {

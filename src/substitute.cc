@@ -147,13 +147,8 @@ public:
   void visit(const not_equal* x) override { match_binary(x); }
   void visit(const less* x) override { match_binary(x); }
   void visit(const less_equal* x) override { match_binary(x); }
-  void visit(const bitwise_and* x) override { match_binary(x); }
-  void visit(const bitwise_or* x) override { match_binary(x); }
-  void visit(const bitwise_xor* x) override { match_binary(x); }
   void visit(const logical_and* x) override { match_binary(x); }
   void visit(const logical_or* x) override { match_binary(x); }
-  void visit(const shift_left* x) override { match_binary(x); }
-  void visit(const shift_right* x) override { match_binary(x); }
 
   void visit(const class select* x) override {
     if (!match) return;

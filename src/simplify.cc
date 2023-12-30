@@ -68,8 +68,6 @@ public:
   void visit(const not_equal* op) { check(op); };
   void visit(const logical_and* op) { check(op); };
   void visit(const logical_or* op) { check(op); };
-  void visit(const bitwise_and* op) { check(op); };
-  void visit(const bitwise_or* op) { check(op); };
 };
 
 // We need to generate a lot of rules that are equivalent except for commutation.
@@ -129,13 +127,8 @@ public:
   void visit(const not_equal* x) override { visit_binary(true, x); }
   void visit(const less* x) override { visit_binary(false, x); }
   void visit(const less_equal* x) override { visit_binary(false, x); }
-  void visit(const bitwise_and* x) override { visit_binary(true, x); }
-  void visit(const bitwise_or* x) override { visit_binary(true, x); }
-  void visit(const bitwise_xor* x) override { visit_binary(true, x); }
   void visit(const logical_and* x) override { visit_binary(true, x); }
   void visit(const logical_or* x) override { visit_binary(true, x); }
-  void visit(const shift_left* x) override { visit_binary(false, x); }
-  void visit(const shift_right* x) override { visit_binary(false, x); }
   void visit(const class select* x) override {
     x->condition.accept(this);
     std::vector<expr> c = std::move(results);
@@ -1235,12 +1228,6 @@ public:
   }
   void visit(const logical_and* x) override { visit_linear(x); }
   void visit(const logical_or* x) override { visit_linear(x); }
-
-  void visit(const bitwise_and* x) override { result = interval_expr::all(); }
-  void visit(const bitwise_or* x) override { result = interval_expr::all(); }
-  void visit(const bitwise_xor* x) override { result = interval_expr::all(); }
-  void visit(const shift_left* x) override { result = interval_expr::all(); }
-  void visit(const shift_right* x) override { result = interval_expr::all(); }
 
   void visit(const class select* x) override {
     x->condition.accept(this);

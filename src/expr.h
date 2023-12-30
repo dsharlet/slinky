@@ -49,13 +49,8 @@ enum class node_type {
   not_equal,
   less,
   less_equal,
-  bitwise_and,
-  bitwise_or,
-  bitwise_xor,
   logical_and,
   logical_or,
-  shift_left,
-  shift_right,
   select,
   load_buffer_meta,
   call,
@@ -144,11 +139,6 @@ expr operator-(expr a, expr b);
 expr operator*(expr a, expr b);
 expr operator/(expr a, expr b);
 expr operator%(expr a, expr b);
-expr operator&(expr a, expr b);
-expr operator|(expr a, expr b);
-expr operator^(expr a, expr b);
-expr operator<<(expr a, expr b);
-expr operator>>(expr a, expr b);
 
 class expr {
 public:
@@ -201,26 +191,6 @@ public:
   }
   expr& operator%=(const expr& r) {
     *this = *this % r;
-    return *this;
-  }
-  expr& operator&=(const expr& r) {
-    *this = *this & r;
-    return *this;
-  }
-  expr& operator^=(const expr& r) {
-    *this = *this ^ r;
-    return *this;
-  }
-  expr& operator|=(const expr& r) {
-    *this = *this | r;
-    return *this;
-  }
-  expr& operator<<=(const expr& r) {
-    *this = *this << r;
-    return *this;
-  }
-  expr& operator>>=(const expr& r) {
-    *this = *this >> r;
     return *this;
   }
 };
@@ -401,13 +371,8 @@ DECLARE_BINARY_OP(equal)
 DECLARE_BINARY_OP(not_equal)
 DECLARE_BINARY_OP(less)
 DECLARE_BINARY_OP(less_equal)
-DECLARE_BINARY_OP(bitwise_and)
-DECLARE_BINARY_OP(bitwise_or)
-DECLARE_BINARY_OP(bitwise_xor)
 DECLARE_BINARY_OP(logical_and)
 DECLARE_BINARY_OP(logical_or)
-DECLARE_BINARY_OP(shift_left)
-DECLARE_BINARY_OP(shift_right)
 
 #undef DECLARE_BINARY_OP
 
@@ -651,13 +616,8 @@ public:
   virtual void visit(const not_equal*) = 0;
   virtual void visit(const less*) = 0;
   virtual void visit(const less_equal*) = 0;
-  virtual void visit(const bitwise_and*) = 0;
-  virtual void visit(const bitwise_or*) = 0;
-  virtual void visit(const bitwise_xor*) = 0;
   virtual void visit(const logical_and*) = 0;
   virtual void visit(const logical_or*) = 0;
-  virtual void visit(const shift_left*) = 0;
-  virtual void visit(const shift_right*) = 0;
   virtual void visit(const class select*) = 0;
   virtual void visit(const load_buffer_meta*) = 0;
   virtual void visit(const call*) = 0;
@@ -701,13 +661,8 @@ public:
   virtual void visit(const not_equal* x) override { visit_binary(x); }
   virtual void visit(const less* x) override { visit_binary(x); }
   virtual void visit(const less_equal* x) override { visit_binary(x); }
-  virtual void visit(const bitwise_and* x) override { visit_binary(x); }
-  virtual void visit(const bitwise_or* x) override { visit_binary(x); }
-  virtual void visit(const bitwise_xor* x) override { visit_binary(x); }
   virtual void visit(const logical_and* x) override { visit_binary(x); }
   virtual void visit(const logical_or* x) override { visit_binary(x); }
-  virtual void visit(const shift_left* x) override { visit_binary(x); }
-  virtual void visit(const shift_right* x) override { visit_binary(x); }
   virtual void visit(const class select* x) override {
     x->condition.accept(this);
     x->true_value.accept(this);
@@ -795,13 +750,8 @@ inline void equal::accept(node_visitor* v) const { v->visit(this); }
 inline void not_equal::accept(node_visitor* v) const { v->visit(this); }
 inline void less::accept(node_visitor* v) const { v->visit(this); }
 inline void less_equal::accept(node_visitor* v) const { v->visit(this); }
-inline void bitwise_and::accept(node_visitor* v) const { v->visit(this); }
-inline void bitwise_or::accept(node_visitor* v) const { v->visit(this); }
-inline void bitwise_xor::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
-inline void shift_left::accept(node_visitor* v) const { v->visit(this); }
-inline void shift_right::accept(node_visitor* v) const { v->visit(this); }
 inline void select::accept(node_visitor* v) const { v->visit(this); }
 inline void load_buffer_meta::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
