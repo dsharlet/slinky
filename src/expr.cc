@@ -78,6 +78,8 @@ const constant* make_constant(index_t value) {
   return n;
 }
 
+expr::expr(index_t value) : expr(make_constant(value)) {}
+
 expr variable::make(symbol_id name) { return make_variable(name); }
 
 expr wildcard::make(symbol_id name, std::function<bool(const expr&)> matches) {
@@ -88,9 +90,6 @@ expr wildcard::make(symbol_id name, std::function<bool(const expr&)> matches) {
 }
 
 expr constant::make(index_t value) { return make_constant(value); }
-
-expr::expr(index_t value) : expr(make_constant(value)) {}
-
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
 expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }

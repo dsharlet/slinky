@@ -309,15 +309,15 @@ public:
   void visit_variable(const T* v) {
     if (shadowed.contains(v->name)) {
       // This variable has been shadowed, don't substitute it.
-      e = v;
+      set_result(v);
     } else if (v->name == target_var) {
-      e = replacement;
+      set_result(replacement);
     } else {
       auto i = replacements.find(v->name);
       if (i != replacements.end()) {
-        e = i->second;
+        set_result(i->second);
       } else {
-        e = v;
+        set_result(v);
       }
     }
   }

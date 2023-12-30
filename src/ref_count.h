@@ -7,12 +7,13 @@ namespace slinky {
 
 // Base class for reference counted objects.
 class ref_counted {
-  mutable std::atomic<int> ref_count{0};
+  mutable std::atomic<int> ref_count_{0};
 
 public:
-  void add_ref() const { ++ref_count; }
+  int ref_count() const { return ref_count_; }
+  void add_ref() const { ++ref_count_; }
   void release() const {
-    if (--ref_count == 0) delete this;
+    if (--ref_count_ == 0) delete this;
   }
 
   virtual ~ref_counted() {}
@@ -28,7 +29,7 @@ public:
     if (value) value->add_ref();
   }
   ref_count(const ref_count& other) : ref_count(other.value) {}
-  ref_count(ref_count&& other) : ref_count(other.value) { other.value = nullptr; }
+  ref_count(ref_count&& other) : value(other.value) { other.value = nullptr; }
   ~ref_count() {
     if (value) value->release();
   }
@@ -43,22 +44,12 @@ public:
   }
 
   ref_count& operator=(const ref_count& other) {
-    if (value != other.value) {
-      if (value) value->release();
-      value = other.value;
-      if (value) value->add_ref();
-    }
-    return *this;
+    return operator=(other.value);
   }
 
   ref_count& operator=(ref_count&& other) {
-    if (value == other.value) {
-      other = nullptr;
-    } else {
-      if (value) value->release();
-      value = other.value;
-      other.value = nullptr;
-    }
+    std::swap(value, other.value);
+    other = nullptr;
     return *this;
   }
 

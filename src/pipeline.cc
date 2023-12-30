@@ -322,7 +322,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   if (options.no_checks) {
     class remove_checks : public node_mutator {
     public:
-      void visit(const check* op) override { s = stmt(); }
+      void visit(const check* op) override { set_result(stmt()); }
     };
 
     result = remove_checks().mutate(result);

@@ -159,14 +159,6 @@ public:
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
-
-  // Unfortunately, std::enable_shared_from_this doesn't mean we can just do this:
-  // T* n = new T();
-  // std::shared_ptr<T> shared(n);
-  // Instead, we have to use shared_from_this().
-  // This also means all the initializations in expr.cc are a mess.
-  // TODO(https://github.com/dsharlet/slinky/issues/5): Maybe we should just roll our own
-  // smart pointer, this sucks.
   expr(const base_expr_node* e) : e(e) {}
 
   expr& operator=(const expr&) = default;

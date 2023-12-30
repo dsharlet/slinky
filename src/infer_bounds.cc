@@ -106,11 +106,12 @@ public:
       checks.push_back(check::make(dims[d].max() >= inferred[d].max));
     }
 
-    s = allocate::make(alloc->type, alloc->name, alloc->elem_size, std::move(dims), body);
+    stmt s = allocate::make(alloc->type, alloc->name, alloc->elem_size, std::move(dims), body);
     s = block::make(block::make(checks), s);
     for (const auto& i : lets) {
       s = let_stmt::make(i.first, i.second, s);
     }
+    set_result(s);
   }
 
   expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) {
@@ -168,7 +169,7 @@ public:
     }
 
     // Add any crops necessary.
-    s = c;
+    stmt result = c;
     for (const func::output& output : c->fn->outputs()) {
       std::optional<box_expr>& bounds = inferring[output.buffer->name()];
       if (!bounds) continue;
@@ -207,7 +208,7 @@ public:
         }
       }
 
-      s = crop_buffer::make(output.buffer->name(), crop_bounds, s);
+      result = crop_buffer::make(output.buffer->name(), crop_bounds, result);
     }
 
     // Insert ifs around these calls, in case the loop min shifts later.
@@ -216,8 +217,9 @@ public:
     // To fix this, we hackily move the if out below, but this is a serious hack
     // that needs to be fixed.
     for (const auto& l : loop_mins) {
-      s = if_then_else::make(variable::make(l.first) >= l.second, s, stmt());
+      result = if_then_else::make(variable::make(l.first) >= l.second, result, stmt());
     }
+    set_result(result);
   }
 
   void visit(const crop_buffer* c) override {
@@ -230,9 +232,8 @@ public:
     vector_at(cropped_bounds, c->dim) = min_extent(c->min, c->extent);
 
     auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
-    node_mutator::visit(c);
-    c = s.as<crop_dim>();
-    if (const if_then_else* body = c->body.as<if_then_else>()) {
+    stmt body = mutate(c->body);
+    if (const if_then_else* body_if = body.as<if_then_else>()) {
       // TODO: HORRIBLE HACK: crop_dim modifies the buffer meta, which this if we inserted
       // above assumes didn't happen. The if should be outside the crop anyways, it's just
       // not clear how to do that yet.
@@ -240,8 +241,12 @@ public:
       // be to substitute a clamp on the loop variable for when the if is true. It should
       // simplify away later anyways, and make it easier to track bounds. This isn't easily
       // doable due to this hack.
-      s = if_then_else::make(
-          body->condition, crop_dim::make(c->name, c->dim, c->min, c->extent, body->true_body), stmt());
+      set_result(if_then_else::make(
+          body_if->condition, crop_dim::make(c->name, c->dim, c->min, c->extent, body_if->true_body), stmt()));
+    } else if (body.same_as(c->body)) {
+      set_result(c);
+    } else {
+      set_result(crop_dim::make(c->name, c->dim, c->min, c->extent, std::move(body)));
     }
   }
 
@@ -251,11 +256,12 @@ public:
     expr loop_min = loop_mins.back().second;
     loop_mins.pop_back();
 
+    stmt result;
     if (loop_min.same_as(l->bounds.min) && body.same_as(l->body)) {
-      s = l;
+      result = l;
     } else {
       // We rewrote the loop min.
-      s = loop::make(l->name, {loop_min, l->bounds.max}, std::move(body));
+      result = loop::make(l->name, {loop_min, l->bounds.max}, std::move(body));
     }
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
@@ -278,6 +284,7 @@ public:
         j.max = max(substitute(j.max, l->name, loop_min), substitute(j.max, l->name, loop_max));
       }
     }
+    set_result(result);
   }
 
   void visit(const block* x) override {
@@ -285,9 +292,9 @@ public:
     stmt b = mutate(x->b);
     stmt a = mutate(x->a);
     if (a.same_as(x->a) && b.same_as(x->b)) {
-      s = x;
+      set_result(x);
     } else {
-      s = block::make(a, b);
+      set_result(block::make(a, b));
     }
   }
 };

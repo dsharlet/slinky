@@ -628,17 +628,18 @@ public:
     } else {
       *ref_count += 1;
     }
-    e = op;
+    set_result(op);
   }
 
   template <typename T>
   void visit_binary(const T* op) {
     expr a = mutate(op->a);
     expr b = mutate(op->b);
-    e = simplify(op, std::move(a), std::move(b));
+    expr e = simplify(op, std::move(a), std::move(b));
     if (!e.same_as(op)) {
       e = mutate(e);
     }
+    set_result(e);
   }
 
   void visit(const class min* op) override { visit_binary(op); }
@@ -651,12 +652,13 @@ public:
     const index_t* cb = as_constant(b);
     if (cb && *cb < 0) {
       // Canonicalize to addition with constants.
-      e = mutate(a + -*cb);
+      set_result(mutate(a + -*cb));
     } else {
-      e = simplify(op, std::move(a), std::move(b));
+      expr e = simplify(op, std::move(a), std::move(b));
       if (!e.same_as(op)) {
         e = mutate(e);
       }
+      set_result(e);
     }
   }
 
@@ -673,9 +675,9 @@ public:
     std::optional<bool> const_c = attempt_prove(c, expr_bounds);
     if (const_c) {
       if (*const_c) {
-        e = mutate(op->true_value);
+        set_result(mutate(op->true_value));
       } else {
-        e = mutate(op->false_value);
+        set_result(mutate(op->false_value));
       }
       return;
     }
@@ -683,11 +685,11 @@ public:
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
     if (match(t, f)) {
-      e = t;
+      set_result(t);
     } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-      e = op;
+      set_result(op);
     } else {
-      e = select::make(std::move(c), std::move(t), std::move(f));
+      set_result(select::make(std::move(c), std::move(t), std::move(f)));
     }
   }
 
@@ -701,10 +703,11 @@ public:
       args.push_back(mutate(i));
     }
 
-    e = simplify(op, std::move(args));
+    expr e = simplify(op, std::move(args));
     if (!e.same_as(op)) {
       e = mutate(e);
     }
+    set_result(e);
   }
 
   template <typename T>
@@ -728,8 +731,8 @@ public:
     }
   }
 
-  void visit(const let* op) override { e = visit_let(op); }
-  void visit(const let_stmt* op) override { s = visit_let(op); }
+  void visit(const let* op) override { set_result(visit_let(op)); }
+  void visit(const let_stmt* op) override { set_result(visit_let(op)); }
 
   void visit(const loop* op) override {
     interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
@@ -738,9 +741,9 @@ public:
     stmt body = mutate(op->body);
 
     if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
-      s = op;
+      set_result(op);
     } else {
-      s = loop::make(op->name, std::move(bounds), std::move(body));
+      set_result(loop::make(op->name, std::move(bounds), std::move(body)));
     }
   }
 
@@ -749,9 +752,9 @@ public:
     std::optional<bool> const_c = attempt_prove(c, expr_bounds);
     if (const_c) {
       if (*const_c) {
-        s = mutate(op->true_body);
+        set_result(mutate(op->true_body));
       } else {
-        s = op->false_body.defined() ? mutate(op->false_body) : stmt();
+        set_result(op->false_body.defined() ? mutate(op->false_body) : stmt());
       }
       return;
     }
@@ -759,11 +762,11 @@ public:
     stmt t = mutate(op->true_body);
     stmt f = mutate(op->false_body);
     if (f.defined() && match(t, f)) {
-      s = t;
+      set_result(t);
     } else if (c.same_as(op->condition) && t.same_as(op->true_body) && f.same_as(op->false_body)) {
-      s = op;
+      set_result(op);
     } else {
-      s = if_then_else::make(std::move(c), std::move(t), std::move(f));
+      set_result(if_then_else::make(std::move(c), std::move(t), std::move(f)));
     }
   }
 
@@ -777,17 +780,17 @@ public:
     if (a_if && b_if && match(a_if->condition, b_if->condition)) {
       stmt true_body = mutate(block::make({a_if->true_body, b_if->true_body}));
       stmt false_body = mutate(block::make({a_if->false_body, b_if->false_body}));
-      s = if_then_else::make(a_if->condition, true_body, false_body);
+      set_result(if_then_else::make(a_if->condition, true_body, false_body));
     } else if (!a.defined() && !b.defined()) {
-      s = stmt();
+      set_result(stmt());
     } else if (!a.defined()) {
-      s = b;
+      set_result(b);
     } else if (!b.defined()) {
-      s = a;
+      set_result(a);
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
-      s = op;
+      set_result(op);
     } else {
-      s = block::make(std::move(a), std::move(b));
+      set_result(block::make(std::move(a), std::move(b)));
     }
   }
 
@@ -802,7 +805,7 @@ public:
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
     stmt body = mutate(op->body);
-    s = allocate::make(op->type, op->name, op->elem_size, std::move(dims), std::move(body));
+    set_result(allocate::make(op->type, op->name, op->elem_size, std::move(dims), std::move(body)));
   }
 
   void visit(const make_buffer* op) override {
@@ -817,7 +820,7 @@ public:
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
     stmt body = mutate(op->body);
-    s = make_buffer::make(op->name, std::move(base), op->elem_size, std::move(dims), std::move(body));
+    set_result(make_buffer::make(op->name, std::move(base), op->elem_size, std::move(dims), std::move(body)));
   }
 
   void visit(const crop_buffer* op) override {
@@ -857,17 +860,17 @@ public:
     }
     if (new_bounds.empty()) {
       // This crop was a no-op.
-      s = std::move(body);
+      set_result(std::move(body));
     } else if (dims_count == 1) {
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(new_bounds.size()) - 1;
       interval_expr& bounds_d = new_bounds[d];
-      s = crop_dim::make(op->name, d, bounds_d.min, mutate(bounds_d.extent()), std::move(body));
+      set_result(crop_dim::make(op->name, d, bounds_d.min, mutate(bounds_d.extent()), std::move(body)));
     } else if (changed || !body.same_as(op->body)) {
-      s = crop_buffer::make(op->name, std::move(new_bounds), std::move(body));
+      set_result(crop_buffer::make(op->name, std::move(new_bounds), std::move(body)));
     } else {
-      s = op;
+      set_result(op);
     }
   }
 
@@ -881,7 +884,7 @@ public:
       expr max = simplify(min + extent - 1);
       if (can_prove(min == dim.min) && can_prove(max == dim.max)) {
         // This crop is a no-op.
-        s = mutate(op->body);
+        set_result(mutate(op->body));
         return;
       }
       (*bounds)[op->dim] = {min, max};
@@ -890,9 +893,9 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
     stmt body = mutate(op->body);
     if (min.same_as(op->min) && extent.same_as(op->extent) && body.same_as(op->body)) {
-      s = op;
+      set_result(op);
     } else {
-      s = crop_dim::make(op->name, op->dim, std::move(min), std::move(extent), std::move(body));
+      set_result(crop_dim::make(op->name, op->dim, std::move(min), std::move(extent), std::move(body)));
     }
   }
 
@@ -901,15 +904,15 @@ public:
     std::optional<bool> const_c = attempt_prove(c, expr_bounds);
     if (const_c) {
       if (*const_c) {
-        s = stmt();
+        set_result(stmt());
       } else {
         std::cerr << op->condition << " is statically false." << std::endl;
         std::abort();
       }
     } else if (c.same_as(op->condition)) {
-      s = op;
+      set_result(op);
     } else {
-      s = check::make(std::move(c));
+      set_result(check::make(std::move(c)));
     }
   }
 };
