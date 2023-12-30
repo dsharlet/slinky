@@ -19,9 +19,9 @@ buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank)
   auto var = variable::make(name);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
     interval_expr bounds = buffer_bounds(var, i);
-    expr stride_bytes = buffer_stride_bytes(var, i);
+    expr stride = buffer_stride(var, i);
     expr fold_factor = buffer_fold_factor(var, i);
-    dims_.emplace_back(bounds, stride_bytes, fold_factor);
+    dims_.emplace_back(bounds, stride, fold_factor);
   }
 }
 
@@ -275,7 +275,7 @@ void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   for (int d = 0; d < rank; ++d) {
     checks.push_back(check::make(b->dim(d).min() == buffer_min(buf_var, d)));
     checks.push_back(check::make(b->dim(d).max() == buffer_max(buf_var, d)));
-    checks.push_back(check::make(b->dim(d).stride_bytes == buffer_stride_bytes(buf_var, d)));
+    checks.push_back(check::make(b->dim(d).stride == buffer_stride(buf_var, d)));
     checks.push_back(check::make(b->dim(d).fold_factor == buffer_fold_factor(buf_var, d)));
   }
 }

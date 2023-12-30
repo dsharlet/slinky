@@ -44,8 +44,8 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   std::size_t size = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     std::copy(src, src + size, dst);
-    dst += out.dim(1).stride_bytes();
-    src += in.dim(1).stride_bytes();
+    dst += out.dim(1).stride();
+    src += in.dim(1).stride();
   }
   return 0;
 }
@@ -124,9 +124,9 @@ index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<
   assert(c.rank == 2);
   assert(a.dim(1).begin() == b.dim(0).begin());
   assert(a.dim(1).end() == b.dim(0).end());
-  assert(a.dim(1).stride_bytes() == sizeof(T));
-  assert(b.dim(1).stride_bytes() == sizeof(T));
-  assert(c.dim(1).stride_bytes() == sizeof(T));
+  assert(a.dim(1).stride() == sizeof(T));
+  assert(b.dim(1).stride() == sizeof(T));
+  assert(c.dim(1).stride() == sizeof(T));
   for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
     for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
       c(i, j) = 0;

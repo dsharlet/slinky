@@ -967,7 +967,7 @@ public:
     dims.reserve(op->dims.size());
     for (const dim_expr& i : op->dims) {
       interval_expr bounds_i = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.emplace_back(bounds_i, mutate(i.stride_bytes), mutate(i.fold_factor));
+      dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
       bounds.push_back(bounds_i);
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
@@ -982,7 +982,7 @@ public:
     dims.reserve(op->dims.size());
     for (const dim_expr& i : op->dims) {
       interval_expr bounds_i = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.emplace_back(bounds_i, mutate(i.stride_bytes), mutate(i.fold_factor));
+      dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
       bounds.push_back(bounds_i);
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));

@@ -234,10 +234,10 @@ TEST(pipeline_matmuls) {
   auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
   auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
 
-  a->dim(1).stride_bytes = a->elem_size();
-  b->dim(1).stride_bytes = b->elem_size();
-  c->dim(1).stride_bytes = c->elem_size();
-  abc->dim(1).stride_bytes = abc->elem_size();
+  a->dim(1).stride = a->elem_size();
+  b->dim(1).stride = b->elem_size();
+  c->dim(1).stride = c->elem_size();
+  abc->dim(1).stride = abc->elem_size();
 
   auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
@@ -251,13 +251,14 @@ TEST(pipeline_matmuls) {
   auto K_abc = c->dim(0).bounds;
 
   // We use int for this pipeline so we can test for correctness exactly.
-  func matmul_ab = func::make<const int, const int, int>(matmul<int>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
+  func matmul_ab =
+      func::make<const int, const int, int>(matmul<int>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
   func matmul_abc = func::make<const int, const int, int>(
       matmul<int>, {ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}, {abc, {i, j}});
 
   // TODO: There should be a more user friendly way to control the strides.
-  ab->dim(1).stride_bytes = static_cast<index_t>(sizeof(int));
-  ab->dim(0).stride_bytes = ab->dim(1).extent() * ab->dim(1).stride_bytes;
+  ab->dim(1).stride = static_cast<index_t>(sizeof(int));
+  ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
 
   matmul_abc.loops({i});
   matmul_ab.compute_at({&matmul_abc, i});
@@ -469,7 +470,7 @@ TEST(pipeline_padded_copy) {
 
   // Copy the input so we can measure the size of the buffer we think we need internally.
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
-  // This is elementwise, but with a clamp to limit the bounds required of the input. 
+  // This is elementwise, but with a clamp to limit the bounds required of the input.
   func crop = func::make<const char, char>(::zero_padded_copy<char>,
       {intm, {bounds(max(x, 0), min(x, W - 1)), bounds(max(y, 0), min(y, H - 1))}}, {out, {x, y}});
 
@@ -519,7 +520,7 @@ TEST(pipeline_multiple_outputs) {
   auto Y = in->dim(1).bounds;
 
   // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
-  auto sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x, const buffer<int>& sum_xy) -> index_t { 
+  auto sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x, const buffer<int>& sum_xy) -> index_t {
     assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
     for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
       sum_xy(z) = 0;

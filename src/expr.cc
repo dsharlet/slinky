@@ -405,8 +405,8 @@ interval_expr buffer_bounds(const expr& buf, const expr& dim) {
 expr buffer_extent(expr buf, expr dim) {
   return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
 }
-expr buffer_stride_bytes(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::stride_bytes, std::move(dim));
+expr buffer_stride(expr buf, expr dim) {
+  return load_buffer_meta::make(std::move(buf), buffer_meta::stride, std::move(dim));
 }
 expr buffer_fold_factor(expr buf, expr dim) {
   return load_buffer_meta::make(std::move(buf), buffer_meta::fold_factor, std::move(dim));

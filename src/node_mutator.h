@@ -177,7 +177,7 @@ public:
     bool changed = false;
     for (const dim_expr& i : x->dims) {
       interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.emplace_back(std::move(bounds), mutate(i.stride_bytes), mutate(i.fold_factor));
+      dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
       changed = changed || !dims.back().same_as(i);
     }
     stmt body = mutate(x->body);
@@ -194,7 +194,7 @@ public:
     bool changed = false;
     for (const dim_expr& i : x->dims) {
       interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.emplace_back(std::move(bounds), mutate(i.stride_bytes), mutate(i.fold_factor));
+      dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
       changed = changed || dims.back().same_as(i);
     }
     stmt body = mutate(x->body);

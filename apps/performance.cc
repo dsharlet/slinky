@@ -16,8 +16,8 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   std::size_t size = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     std::copy(src, src + size, dst);
-    dst += out.dim(1).stride_bytes();
-    src += in.dim(1).stride_bytes();
+    dst += out.dim(1).stride();
+    src += in.dim(1).stride();
   }
   return 0;
 }

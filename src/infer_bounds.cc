@@ -54,7 +54,7 @@ public:
     std::vector<std::pair<expr, expr>> replacements;
 
     box_expr& inferred = *inferring[alloc->name];
-    expr stride_bytes = static_cast<index_t>(alloc->elem_size);
+    expr stride = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
     auto& fold_factor = fold_factors[alloc->name];
     for (index_t d = 0; d < static_cast<index_t>(inferred.size()); ++d) {
@@ -66,7 +66,7 @@ public:
       expr alloc_var = variable::make(alloc->name);
       replacements.emplace_back(buffer_min(alloc_var, d), i.min);
       replacements.emplace_back(buffer_max(alloc_var, d), i.max);
-      replacements.emplace_back(buffer_stride_bytes(alloc_var, d), stride_bytes);
+      replacements.emplace_back(buffer_stride(alloc_var, d), stride);
       if (fold_factor && fold_factor->first == d) {
         replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_factor->second);
       } else {
@@ -75,7 +75,7 @@ public:
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
       replacements.emplace_back(buffer_extent(alloc_var, d), i.extent());
-      stride_bytes *= i.extent();
+      stride *= i.extent();
     }
 
     // We need to keep replacing until nothing happens :(
@@ -88,7 +88,7 @@ public:
         for (auto& j : replacements) {
           new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
           new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
-          new_dim.stride_bytes = substitute(new_dim.stride_bytes, j.first, j.second);
+          new_dim.stride = substitute(new_dim.stride, j.first, j.second);
           new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
         }
         if (!new_dim.same_as(dim)) {

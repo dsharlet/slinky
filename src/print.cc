@@ -21,7 +21,7 @@ std::ostream& operator<<(std::ostream& os, buffer_meta meta) {
   case buffer_meta::min: return os << "min";
   case buffer_meta::max: return os << "max";
   case buffer_meta::extent: return os << "extent";
-  case buffer_meta::stride_bytes: return os << "stride_bytes";
+  case buffer_meta::stride: return os << "stride";
   case buffer_meta::fold_factor: return os << "fold_factor";
   default: return os << "<invalid buffer_meta>";
   }
@@ -77,7 +77,7 @@ public:
     os << "{";
     print(d.bounds);
     os << ", ";
-    print(d.stride_bytes);
+    print(d.stride);
     os << ", ";
     print(d.fold_factor);
     os << "}";

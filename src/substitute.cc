@@ -43,7 +43,7 @@ public:
   }
 
   bool try_match(const dim_expr& self, const dim_expr& x) {
-    return try_match(self.bounds, x.bounds) && try_match(self.stride_bytes, x.stride_bytes) &&
+    return try_match(self.bounds, x.bounds) && try_match(self.stride, x.stride) &&
            try_match(self.fold_factor, x.fold_factor);
   }
 

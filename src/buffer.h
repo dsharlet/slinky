@@ -28,25 +28,25 @@ const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
 class dim {
   index_t min_;
   index_t extent_;
-  index_t stride_bytes_;
+  index_t stride_;
   index_t fold_factor_;
 
 public:
-  dim() : min_(0), extent_(0), stride_bytes_(0), fold_factor_(0) {}
+  dim() : min_(0), extent_(0), stride_(0), fold_factor_(0) {}
 
   index_t min() const { return min_; }
   index_t max() const { return min_ + extent_ - 1; }
   index_t begin() const { return min_; }
   index_t end() const { return min_ + extent_; }
   index_t extent() const { return extent_; }
-  index_t stride_bytes() const { return stride_bytes_; }
+  index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
 
   void set_extent(index_t extent) { extent_ = extent; }
   void set_bounds(index_t min, index_t max) { min_ = min; extent_ = max - min + 1; }
   void set_range(index_t begin, index_t end) {  min_ = begin; extent_ = end - begin; }
   void set_min_extent(index_t min, index_t extent) { min_ = min; extent_ = extent; }
-  void set_stride_bytes(index_t stride_bytes) { stride_bytes_ = stride_bytes; }
+  void set_stride(index_t stride) { stride_ = stride; }
   void set_fold_factor(index_t fold_factor) { fold_factor_ = fold_factor; }
 
   void translate(index_t offset) { min_ += offset; }
@@ -59,9 +59,9 @@ public:
     // If we use a mask instead of a fold factor, we can just make the mask -1 by default, and
     // always bitwise and to implement the fold factor.
     if (fold_factor_ <= 0) {
-      return (i - min_) * stride_bytes_;
+      return (i - min_) * stride_;
     } else {
-      return euclidean_mod(i - min_, fold_factor_) * stride_bytes_;
+      return euclidean_mod(i - min_, fold_factor_) * stride_;
     }
   }
 };
@@ -163,8 +163,8 @@ public:
       if (dims[i].fold_factor() > 0) {
         extent = std::min(extent, dims[i].fold_factor());
       }
-      flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride_bytes());
-      flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride_bytes());
+      flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
+      flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
     }
     return flat_max - flat_min + elem_size;
   }
@@ -235,12 +235,12 @@ public:
   // dimension is "innermost".
   buffer(std::initializer_list<index_t> extents) : buffer() {
     assert(extents.size() <= rank);
-    index_t stride_bytes = elem_size;
+    index_t stride = elem_size;
     slinky::dim* d = dims;
     for (index_t extent : extents) {
       d->set_min_extent(0, extent);
-      d->set_stride_bytes(stride_bytes);
-      stride_bytes *= extent;
+      d->set_stride(stride);
+      stride *= extent;
       ++d;
     }
   }

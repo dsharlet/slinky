@@ -111,7 +111,7 @@ public:
       case buffer_meta::min: result = dim.min(); return;
       case buffer_meta::max: result = dim.max(); return;
       case buffer_meta::extent: result = dim.extent(); return;
-      case buffer_meta::stride_bytes: result = dim.stride_bytes(); return;
+      case buffer_meta::stride: result = dim.stride(); return;
       case buffer_meta::fold_factor: result = dim.fold_factor(); return;
       default: std::abort();  // Should be handled above.
       }
@@ -194,7 +194,7 @@ public:
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
       dim.set_bounds(eval_expr(n->dims[i].min()), eval_expr(n->dims[i].max()));
-      dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
+      dim.set_stride(eval_expr(n->dims[i].stride));
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
 
@@ -237,7 +237,7 @@ public:
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
       dim.set_bounds(eval_expr(n->dims[i].min()), eval_expr(n->dims[i].max()));
-      dim.set_stride_bytes(eval_expr(n->dims[i].stride_bytes));
+      dim.set_stride(eval_expr(n->dims[i].stride));
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
 

@@ -84,7 +84,7 @@ enum class buffer_meta {
   min,
   max,
   extent,
-  stride_bytes,
+  stride,
   fold_factor,
 };
 
@@ -539,7 +539,7 @@ public:
 
 struct dim_expr {
   interval_expr bounds;
-  expr stride_bytes;
+  expr stride;
   expr fold_factor;
 
   const expr& min() const { return bounds.min; }
@@ -547,7 +547,7 @@ struct dim_expr {
   expr extent() const { return bounds.extent(); }
 
   bool same_as(const dim_expr& r) {
-    return bounds.same_as(r.bounds) && stride_bytes.same_as(r.stride_bytes) && fold_factor.same_as(r.fold_factor);
+    return bounds.same_as(r.bounds) && stride.same_as(r.stride) && fold_factor.same_as(r.fold_factor);
   }
 };
 
@@ -750,7 +750,7 @@ public:
     for (const dim_expr& i : x->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
-      i.stride_bytes.accept(this);
+      i.stride.accept(this);
       i.fold_factor.accept(this);
     }
     x->body.accept(this);
@@ -759,7 +759,7 @@ public:
     for (const dim_expr& i : x->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
-      i.stride_bytes.accept(this);
+      i.stride.accept(this);
       i.fold_factor.accept(this);
     }
     x->body.accept(this);
@@ -889,7 +889,7 @@ expr buffer_min(expr buf, expr dim);
 expr buffer_max(expr buf, expr dim);
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 expr buffer_extent(expr buf, expr dim);
-expr buffer_stride_bytes(expr buf, expr dim);
+expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 
 }  // namespace slinky
