@@ -4,15 +4,13 @@
 #include <chrono>
 #include <cmath>
 
-namespace slinky {
-
 // Benchmark a call.
 template <class F>
 double benchmark(F op) {
   op();
 
   const int max_trials = 10;
-  const double min_time_s = 0.5;
+  const double min_time_s = 0.1;
   double time_per_iteration_s = 0;
   long iterations = 1;
   for (int trials = 0; trials < max_trials; trials++) {
@@ -41,7 +39,5 @@ template <class T>
 __attribute__((noinline)) T not_constant(T x) {
   return x;
 }
-
-}  // namespace slinky
 
 #endif  // SLINKY_APPS_BENCHMARK_H

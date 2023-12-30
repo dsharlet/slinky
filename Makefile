@@ -32,6 +32,10 @@ bin/performance: obj/apps/performance.o bin/libslinky.a
 	mkdir -p $(@D)
 	$(CXX) -o $@ $^ $(LDFLAGS) -lstdc++ -lm
 
+bin/memcpy: obj/apps/memcpy.o
+	mkdir -p $(@D)
+	$(CXX) -o $@ $^ $(LDFLAGS) -lstdc++ -lm
+
 .PHONY: all clean test
 
 clean:
