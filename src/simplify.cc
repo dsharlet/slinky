@@ -589,7 +589,7 @@ expr simplify(const call* op, std::vector<expr> args) {
   assert(op->args.size() == args.size());
   for (std::size_t i = 0; i < args.size(); ++i) {
     constant = constant && as_constant(args[i]);
-    changed = changed && !args[i].same_as(op->args[i]);
+    changed = changed || !args[i].same_as(op->args[i]);
   }
 
   expr e;
