@@ -84,25 +84,36 @@ struct rule {
   }
 };
 
-expr apply_rules(const std::vector<rule>& rules, expr x) {
-  // std::cerr << "apply_rules: " << x << std::endl;
-  for (const rule& r : rules) {
-    std::map<symbol_id, expr> matches;
-    if (match(r.pattern, x, matches)) {
-      if (!r.predicate.defined() || prove_true(substitute(r.predicate, matches))) {
-        // std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
-        // for (const auto& i : matches) {
-        //   std::cerr << "  " << i.first << ": " << i.second << std::endl;
-        // }
-        x = substitute(r.replacement, matches);
-        // std::cerr << "  Result: " << x << std::endl;
-        return x;
-      }
+class rule_set {
+  std::vector<rule> rules_;
+
+public:
+  rule_set(std::initializer_list<rule> rules) {
+    for (const rule& i : rules) {
+      rules_.push_back(i);
     }
   }
-  // std::cerr << "  Failed" << std::endl;
-  return x;
-}
+
+  expr apply(expr x) {
+    // std::cerr << "apply_rules: " << x << std::endl;
+    for (const rule& r : rules_) {
+      std::map<symbol_id, expr> matches;
+      if (match(r.pattern, x, matches)) {
+        if (!r.predicate.defined() || prove_true(substitute(r.predicate, matches))) {
+          // std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
+          // for (const auto& i : matches) {
+          //   std::cerr << "  " << i.first << ": " << i.second << std::endl;
+          // }
+          x = substitute(r.replacement, matches);
+          // std::cerr << "  Result: " << x << std::endl;
+          return x;
+        }
+      }
+    }
+    // std::cerr << "  Failed" << std::endl;
+    return x;
+  }
+};
 
 }  // namespace
 
@@ -122,7 +133,7 @@ expr simplify(const class min* op, expr a, expr b) {
     e = min::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       // Constant simplifications
       {min(x, indeterminate()), indeterminate()},
       {min(x, std::numeric_limits<index_t>::max()), x},
@@ -154,7 +165,7 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, c0 < 0},
       {min(buffer_max(x, y), buffer_min(x, y) + c0), buffer_min(x, y) + c0, c0 < 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const class max* op, expr a, expr b) {
@@ -173,7 +184,7 @@ expr simplify(const class max* op, expr a, expr b) {
     e = max::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       // Constant simplifications
       {max(x, indeterminate()), indeterminate()},
       {max(x, std::numeric_limits<index_t>::min()), x},
@@ -205,7 +216,7 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), c0 < 0},
       {max(buffer_max(x, y), buffer_min(x, y) + c0), buffer_max(x, y), c0 < 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const add* op, expr a, expr b) {
@@ -224,7 +235,7 @@ expr simplify(const add* op, expr a, expr b) {
     e = add::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x + indeterminate(), indeterminate()},
       {positive_infinity() + indeterminate(), indeterminate()},
       {negative_infinity() + positive_infinity(), indeterminate()},
@@ -232,6 +243,17 @@ expr simplify(const add* op, expr a, expr b) {
       {c0 + negative_infinity(), negative_infinity()},
       {x + 0, x},
       {x + x, x * 2},
+      {x + (x + y), y + x * 2},
+      {x + (y + x), y + x * 2},
+      {x + (x - y), x * 2 - y},
+      {x + (y - x), y},
+      {x + x * y, x * (y + 1)},
+      {x + y * x, x * (y + 1)},
+      {x * y + x * z, x * (y + z)},
+      {y * x + x * z, x * (y + z)},
+      {x * y + z * x, x * (y + z)},
+      {y * x + z * x, x * (y + z)},
+
       {(x + c0) + c1, x + (c0 + c1)},
       {(c0 - x) + c1, (c0 + c1) - x},
       {x + (c0 - y), (x - y) + c0},
@@ -257,7 +279,7 @@ expr simplify(const add* op, expr a, expr b) {
       {(z - buffer_min(x, y)) + buffer_max(x, y), (z + buffer_extent(x, y)) - 1},
       {buffer_max(x, y) + (z - buffer_min(x, y)), (z + buffer_extent(x, y)) - 1},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const sub* op, expr a, expr b) {
@@ -279,7 +301,7 @@ expr simplify(const sub* op, expr a, expr b) {
     e = sub::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x - indeterminate(), indeterminate()},
       {indeterminate() - x, indeterminate()},
       {positive_infinity() - positive_infinity(), indeterminate()},
@@ -316,7 +338,7 @@ expr simplify(const sub* op, expr a, expr b) {
       {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
       {(z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) - 1},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const mul* op, expr a, expr b) {
@@ -335,7 +357,7 @@ expr simplify(const mul* op, expr a, expr b) {
     e = mul::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x * indeterminate(), indeterminate()},
       {positive_infinity() * positive_infinity(), positive_infinity()},
       {negative_infinity() * positive_infinity(), negative_infinity()},
@@ -350,7 +372,7 @@ expr simplify(const mul* op, expr a, expr b) {
       {(x + c0) * c1, x * c1 + c0 * c1},
       {(c0 - x) * c1, c0 * c1 - x * c1},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const div* op, expr a, expr b) {
@@ -366,7 +388,7 @@ expr simplify(const div* op, expr a, expr b) {
     e = div::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x / indeterminate(), indeterminate()},
       {indeterminate() / x, indeterminate()},
       {positive_infinity() / positive_infinity(), indeterminate()},
@@ -384,7 +406,7 @@ expr simplify(const div* op, expr a, expr b) {
       {x / 1, x},
       {x / x, x != 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const mod* op, expr a, expr b) {
@@ -400,12 +422,12 @@ expr simplify(const mod* op, expr a, expr b) {
     e = mod::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x % 1, 0},
       {x % 0, 0},
       {x % x, 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const less* op, expr a, expr b) {
@@ -422,7 +444,7 @@ expr simplify(const less* op, expr a, expr b) {
     e = less::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {positive_infinity() < c0, false},
       {negative_infinity() < c0, true},
       {x < x, false},
@@ -442,7 +464,7 @@ expr simplify(const less* op, expr a, expr b) {
       {buffer_extent(x, y) < c0, false, c0 < 0},
       {c0 < buffer_extent(x, y), true, c0 < 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const less_equal* op, expr a, expr b) {
@@ -459,7 +481,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
     e = less_equal::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {positive_infinity() <= c0, false},
       {negative_infinity() <= c0, true},
       {c0 <= positive_infinity(), true},
@@ -481,7 +503,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {buffer_extent(x, y) <= c0, false, c0 <= 0},
       {c0 <= buffer_extent(x, y), true, c0 <= 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const equal* op, expr a, expr b) {
@@ -501,12 +523,12 @@ expr simplify(const equal* op, expr a, expr b) {
     e = equal::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x == x, true},
       {x + c0 == c1, x == c1 - c0},
       {c0 - x == c1, -x == c1 - c0, c0 != 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const not_equal* op, expr a, expr b) {
@@ -526,12 +548,12 @@ expr simplify(const not_equal* op, expr a, expr b) {
     e = not_equal::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x != x, false},
       {x + c0 != c1, x != c1 - c0},
       {c0 - x != c1, -x != c1 - c0, c0 != 0},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const logical_and* op, expr a, expr b) {
@@ -554,14 +576,14 @@ expr simplify(const logical_and* op, expr a, expr b) {
     e = logical_and::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x && x, x},
       {x && (x && y), x && y},
       {x && (y && x), y && x},
       {x && (x || y), x},
       {x && (y || x), x},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const logical_or* op, expr a, expr b) {
@@ -584,14 +606,14 @@ expr simplify(const logical_or* op, expr a, expr b) {
     e = logical_or::make(std::move(a), std::move(b));
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {x || x, x},
       {x || (x && y), x},
       {x || (y && x), x},
       {x || (x || y), x || y},
       {x || (y || x), y || x},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
@@ -612,14 +634,14 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   } else {
     e = select::make(std::move(c), std::move(t), std::move(f));
   }
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       // Pull common expressions out
       {select(x, y, y + z), y + select(x, 0, z)},
       {select(x, y + z, y), y + select(x, z, 0)},
       {select(x, y + z, y + w), y + select(x, z, w)},
       {select(x, z - y, w - y), select(x, z, w) - y},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 expr simplify(const call* op, std::vector<expr> args) {
@@ -642,12 +664,12 @@ expr simplify(const call* op, std::vector<expr> args) {
     return evaluate(e);
   }
 
-  static std::vector<rule> rules = {
+  static rule_set rules = {
       {abs(negative_infinity()), positive_infinity()},
       {abs(-x), abs(x)},
       {abs(abs(x)), abs(x)},
   };
-  return apply_rules(rules, e);
+  return rules.apply(e);
 }
 
 namespace {
