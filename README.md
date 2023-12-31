@@ -115,42 +115,42 @@ On my machine, here are some data points from this pipeline:
 ### 32 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 13.3405 | 23.0632 | 0.578431 | 
-| 2 | 18.6263 | 24.0145 | 0.775629 | 
-| 4 | 21.8341 | 25.8811 | 0.843628 | 
-| 8 | 23.8436 | 26.7931 | 0.889916 | 
-| 16 | 22.5901 | 24.7348 | 0.91329 | 
-| 32 | 23.5623 | 24.9668 | 0.943747 | 
+| 1 | 10.5384 | 14.6134 | 0.721144 | 
+| 2 | 12.7695 | 15.2579 | 0.836907 | 
+| 4 | 13.8164 | 15.6756 | 0.881392 | 
+| 8 | 15.2483 | 15.6591 | 0.973769 | 
+| 16 | 11.3288 | 11.9727 | 0.946221 | 
+| 32 | 11.6623 | 11.4421 | 1.01924 | 
 
 ### 128 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 15.1761 | 25.659 | 0.591453 | 
-| 2 | 23.3823 | 31.4851 | 0.742646 | 
-| 4 | 27.6433 | 32.8681 | 0.841038 | 
-| 8 | 31.1231 | 35.6455 | 0.873128 | 
-| 16 | 28.5093 | 31.386 | 0.908344 | 
-| 32 | 30.1001 | 31.7576 | 0.947807 | 
+| 1 | 8.44042 | 12.705 | 0.664338 | 
+| 2 | 11.1834 | 12.6324 | 0.885292 | 
+| 4 | 11.4383 | 13.4383 | 0.851172 | 
+| 8 | 13.004 | 14.0874 | 0.923095 | 
+| 16 | 12.3004 | 11.9901 | 1.02588 | 
+| 32 | 13.1013 | 13.5748 | 0.965116 | 
 
 ### 512 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 12.3849 | 17.9595 | 0.689603 | 
-| 2 | 16.3354 | 19.0096 | 0.859325 | 
-| 4 | 18.438 | 19.9599 | 0.923752 | 
-| 8 | 19.8749 | 20.7525 | 0.957709 | 
-| 16 | 22.0629 | 26.2728 | 0.839761 | 
-| 32 | 23.1226 | 25.8285 | 0.895234 | 
+| 1 | 7.26796 | 9.60147 | 0.756964 | 
+| 2 | 8.11451 | 9.62579 | 0.842996 | 
+| 4 | 9.04102 | 9.87818 | 0.915251 | 
+| 8 | 10.0044 | 10.5638 | 0.947051 | 
+| 16 | 10.3087 | 10.2799 | 1.0028 | 
+| 32 | 9.83799 | 11.2182 | 0.876967 | 
 
 ### 2 MB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 10.5978 | 12.1581 | 0.87166 | 
-| 2 | 11.203 | 12.1425 | 0.922626 | 
-| 4 | 11.8087 | 12.4684 | 0.947091 | 
-| 8 | 12.2173 | 12.5663 | 0.972227 | 
-| 16 | 12.4224 | 12.6501 | 0.982004 | 
-| 32 | 12.7057 | 12.8038 | 0.992335 | 
+| 1 | 7.27991 | 9.51897 | 0.764779 | 
+| 2 | 8.19928 | 9.9 | 0.82821 | 
+| 4 | 8.49202 | 10.7115 | 0.792797 | 
+| 8 | 9.71235 | 10.6595 | 0.911147 | 
+| 16 | 9.62439 | 10.4745 | 0.918841 | 
+| 32 | 10.439 | 11.0442 | 0.945199 | 
 
 (TODO: "My machine" is actually the GitHub Actions runner, because my machine is Windows Subsystem for Linux, which has nonsense performance I haven't figured out.)
 
@@ -158,10 +158,11 @@ On my machine, here are some data points from this pipeline:
 As we might expect, the observations vary depending on the total size of the copy.
 
 When the total size is small enough to fit in L1 or L2 cache, the cost of the `memcpy` will be small, and the overhead will be relatively more expensive.
-This cost is as much as 40% when copying 1 KB at a time, according to the data above.
+This cost is as much as 30% when copying 1 KB at a time, according to the data above.
 However, this is at an extreme case, included to understand where overhead becomes significant.
 A more realistic use case would be to take the L2 cache size of 256KB, and divide it into a few buffers.
-16KB implies at least 10 buffers fitting in L2 cache, which is likely excessive.
-Even at 16KB, the overhead is around 10%, and this is only for a `memcpy`.
+8KB implies 20-30 buffers fitting in L2 cache, which is likely excessive.
+However, even at 8KB, the overhead is around 5%, and this is only for a `memcpy`.
+A more realistic workload will amortize the overhead much more than this.
 
 For larger buffers and larger copies, the overhead very quickly becems negligible.
