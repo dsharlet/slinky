@@ -112,40 +112,45 @@ In other words, this is an upper bound on the overhead that could be expected fo
 
 On my machine, here are some data points from this pipeline:
 
-### total size 32 KB
-
+### 32 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 2 | 23.0346 | 32.126 | 0.717009 | 
-| 4 | 27.7171 | 35.0731 | 0.790268 | 
-| 16 | 28.3272 | 29.1618 | 0.971382 | 
+| 1 | 13.3405 | 23.0632 | 0.578431 | 
+| 2 | 18.6263 | 24.0145 | 0.775629 | 
+| 4 | 21.8341 | 25.8811 | 0.843628 | 
+| 8 | 23.8436 | 26.7931 | 0.889916 | 
+| 16 | 22.5901 | 24.7348 | 0.91329 | 
+| 32 | 23.5623 | 24.9668 | 0.943747 | 
 
 ### 128 KB
-
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 2 | 22.0174 | 31.3655 | 0.701964 | 
-| 4 | 30.3281 | 38.3848 | 0.790106 | 
-| 16 | 29.9954 | 33.8854 | 0.885202 | 
-| 64 | 33.6287 | 34.5012 | 0.974711 | 
+| 1 | 15.1761 | 25.659 | 0.591453 | 
+| 2 | 23.3823 | 31.4851 | 0.742646 | 
+| 4 | 27.6433 | 32.8681 | 0.841038 | 
+| 8 | 31.1231 | 35.6455 | 0.873128 | 
+| 16 | 28.5093 | 31.386 | 0.908344 | 
+| 32 | 30.1001 | 31.7576 | 0.947807 | 
 
-### 1 MB
-
+### 512 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 2 | 10.4982 | 11.8022 | 0.889509 | 
-| 4 | 11.7377 | 12.8402 | 0.914135 | 
-| 16 | 15.5263 | 16.5826 | 0.936301 | 
-| 64 | 16.5145 | 16.9188 | 0.976106 | 
+| 1 | 12.3849 | 17.9595 | 0.689603 | 
+| 2 | 16.3354 | 19.0096 | 0.859325 | 
+| 4 | 18.438 | 19.9599 | 0.923752 | 
+| 8 | 19.8749 | 20.7525 | 0.957709 | 
+| 16 | 22.0629 | 26.2728 | 0.839761 | 
+| 32 | 23.1226 | 25.8285 | 0.895234 | 
 
-### 4MB
-
+### 2 MB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 2 | 10.6622 | 11.8208 | 0.901985 | 
-| 4 | 11.7244 | 12.7666 | 0.918364 | 
-| 16 | 9.54157 | 9.78857 | 0.974766 | 
-| 64 | 9.83175 | 9.90469 | 0.992636 | 
+| 1 | 10.5978 | 12.1581 | 0.87166 | 
+| 2 | 11.203 | 12.1425 | 0.922626 | 
+| 4 | 11.8087 | 12.4684 | 0.947091 | 
+| 8 | 12.2173 | 12.5663 | 0.972227 | 
+| 16 | 12.4224 | 12.6501 | 0.982004 | 
+| 32 | 12.7057 | 12.8038 | 0.992335 | 
 
 (TODO: "My machine" is actually the GitHub Actions runner, because my machine is Windows Subsystem for Linux, which has nonsense performance I haven't figured out.)
 
@@ -153,7 +158,7 @@ On my machine, here are some data points from this pipeline:
 As we might expect, the observations vary depending on the total size of the copy.
 
 When the total size is small enough to fit in L1 or L2 cache, the cost of the `memcpy` will be small, and the overhead will be relatively more expensive.
-This cost is as much as 30% according to the data above.
+This cost is as much as 40% when copying 1 KB at a time, according to the data above.
 However, this is at an extreme case, included to understand where overhead becomes significant.
 A more realistic use case would be to take the L2 cache size of 256KB, and divide it into a few buffers.
 16KB implies at least 10 buffers fitting in L2 cache, which is likely excessive.
