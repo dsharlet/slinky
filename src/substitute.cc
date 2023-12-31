@@ -93,7 +93,7 @@ public:
     const T* result = n.template as<T>();
     if (result) {
       match = 0;
-    } else if (!n.defined() || n.n->type < x->type) {
+    } else if (!n.defined() || n.type() < x->type) {
       match = -1;
     } else {
       match = 1;
@@ -117,7 +117,10 @@ public:
     expr& matched = (*matches)[name];
     if (matched.defined()) {
       // We already matched this variable. The expression must match.
-      match = slinky::match(matched, e) ? 0 : 1;
+      std::map<symbol_id, expr>* old_matches = matches;
+      matches = nullptr;
+      matched.accept(this);
+      matches = old_matches;
     } else if (!predicate || predicate(e)) {
       // This is a new match.
       matched = e;

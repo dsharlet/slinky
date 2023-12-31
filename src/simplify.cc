@@ -33,8 +33,8 @@ bool should_commute(const expr& a, const expr& b) {
     default: return 1;
     }
   };
-  int ra = order(a.n->type);
-  int rb = order(b.n->type);
+  int ra = order(a.type());
+  int rb = order(b.type());
   if (ra > rb) return true;
 
   const call* ca = a.as<call>();

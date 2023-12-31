@@ -34,6 +34,8 @@ public:
 };
 
 enum class node_type {
+  none,
+
   variable,
   wildcard,
   constant,
@@ -142,31 +144,35 @@ expr operator/(expr a, expr b);
 expr operator%(expr a, expr b);
 
 class expr {
+  ref_count<const base_expr_node> n_;
+  node_type type_ = node_type::none;
+
 public:
-  ref_count<const base_expr_node> n;
 
   expr() = default;
   expr(const expr&) = default;
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
-  expr(const base_expr_node* n) : n(n) {}
+  expr(const base_expr_node* n) : n_(n), type_(n ? n->type : node_type::none) {}
 
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
 
   void accept(node_visitor* v) const {
     assert(defined());
-    n->accept(v);
+    n_->accept(v);
   }
 
-  bool defined() const { return n != nullptr; }
-  bool same_as(const expr& other) const { return n == other.n; }
+  bool defined() const { return n_ != nullptr; }
+  bool same_as(const expr& other) const { return n_ == other.n_; }
+  node_type type() const { return type_; }
+  const base_expr_node* get() const { return n_; }
 
   template <typename T>
   const T* as() const {
-    if (n && n->type == T::static_type) {
-      return reinterpret_cast<const T*>(&*n);
+    if (n_ && type_ == T::static_type) {
+      return reinterpret_cast<const T*>(&*n_);
     } else {
       return nullptr;
     }
@@ -271,29 +277,32 @@ box_expr operator|(box_expr a, const box_expr& b);
 box_expr operator&(box_expr a, const box_expr& b);
 
 class stmt {
-public:
-  ref_count<const base_stmt_node> n;
+  ref_count<const base_stmt_node> n_;
+  node_type type_ = node_type::none;
 
+public:
   stmt() = default;
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
-  stmt(const base_stmt_node* n) : n(n) {}
+  stmt(const base_stmt_node* n) : n_(n), type_(n ? n->type : node_type::none) {}
 
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
 
   void accept(node_visitor* v) const {
     assert(defined());
-    n->accept(v);
+    n_->accept(v);
   }
 
-  bool defined() const { return n != nullptr; }
-  bool same_as(const stmt& other) const { return n == other.n; }
+  bool defined() const { return n_ != nullptr; }
+  bool same_as(const stmt& other) const { return n_ == other.n_; }
+  node_type type() const { return type_; }
+  const base_stmt_node* get() const { return n_; }
 
   template <typename T>
   const T* as() const {
-    if (n && n->type == T::static_type) {
-      return reinterpret_cast<const T*>(&*n);
+    if (type_ == T::static_type) {
+      return reinterpret_cast<const T*>(&*n_);
     } else {
       return nullptr;
     }
