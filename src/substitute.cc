@@ -9,14 +9,23 @@ namespace slinky {
 
 class matcher : public node_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
-  expr e;
-  stmt s;
+  const base_node* self;
   std::map<symbol_id, expr>* matches;
+
+  template <typename T>
+  const T* self_as() const {
+    if (self && self->type == T::static_type) {
+      return static_cast<const T*>(self);
+    } else {
+      return nullptr;
+    }
+  }
 
 public:
   int match = 0;
 
-  matcher(const expr& e, const stmt& s, std::map<symbol_id, expr>* matches = nullptr) : e(e), s(s), matches(matches) {}
+  matcher(const expr& e, std::map<symbol_id, expr>* matches = nullptr) : self(e.get()), matches(matches) {}
+  matcher(const stmt& s, std::map<symbol_id, expr>* matches = nullptr) : self(s.get()), matches(matches) {}
 
   template <typename T>
   bool try_match(T self, T x) {
@@ -30,29 +39,29 @@ public:
     return match == 0;
   }
 
-  bool try_match(const expr& self, const expr& x) {
-    if (!self.defined() && !x.defined()) {
+  bool try_match(const expr& e, const expr& x) {
+    if (!e.defined() && !x.defined()) {
       match = 0;
-    } else if (!self.defined()) {
+    } else if (!e.defined()) {
       match = -1;
     } else if (!x.defined()) {
       match = 1;
     } else {
-      e = self;
+      self = e.get();
       x.accept(this);
     }
     return match == 0;
   }
 
-  bool try_match(const stmt& self, const stmt& x) {
-    if (!self.defined() && !x.defined()) {
+  bool try_match(const stmt& s, const stmt& x) {
+    if (!s.defined() && !x.defined()) {
       match = 0;
-    } else if (!self.defined()) {
+    } else if (!s.defined()) {
       match = -1;
     } else if (!x.defined()) {
       match = 1;
     } else {
-      s = self;
+      self = s.get();
       x.accept(this);
     }
     return match == 0;
@@ -88,12 +97,12 @@ public:
     return true;
   }
 
-  template <typename T, typename N>
-  const T* try_match_node_type(const N& n, const T* x) {
-    const T* result = n.template as<T>();
+  template <typename T>
+  const T* match_self_as(const T* x) {
+    const T* result = self_as<T>();
     if (result) {
       match = 0;
-    } else if (!n.defined() || n.type() < x->type) {
+    } else if (!self || self->type < x->type) {
       match = -1;
     } else {
       match = 1;
@@ -104,7 +113,7 @@ public:
   template <typename T>
   void match_binary(const T* x) {
     if (match) return;
-    const T* ex = try_match_node_type(e, x);
+    const T* ex = match_self_as(x);
     if (!ex) return;
 
     if (!try_match(ex->a, x->a)) return;
@@ -121,9 +130,9 @@ public:
       matches = nullptr;
       matched.accept(this);
       matches = old_matches;
-    } else if (!predicate || predicate(e)) {
+    } else if (!predicate || predicate(static_cast<const base_expr_node*>(self))) {
       // This is a new match.
-      matched = e;
+      matched = static_cast<const base_expr_node*>(self);
       match = 0;
     } else {
       // The predicate failed, we can't match this.
@@ -135,7 +144,7 @@ public:
     if (matches) {
       match_wildcard(x->name, nullptr);
     } else {
-      const variable* ev = try_match_node_type(e, x);
+      const variable* ev = match_self_as(x);
       if (ev) {
         try_match(ev->name, x->name);
       }
@@ -146,7 +155,7 @@ public:
     if (matches) {
       match_wildcard(x->name, x->matches);
     } else {
-      const wildcard* ew = try_match_node_type(e, x);
+      const wildcard* ew = match_self_as(x);
       if (ew) {
         try_match(ew->name, x->name);
       }
@@ -156,7 +165,7 @@ public:
   void visit(const constant* x) override {
     if (match) return;
 
-    const constant* ec = try_match_node_type(e, x);
+    const constant* ec = match_self_as(x);
     if (ec) {
       try_match(ec->value, x->value);
     }
@@ -165,7 +174,7 @@ public:
   template <typename T>
   void visit_let(const T* x) {
     if (match) return;
-    const T* el = try_match_node_type(e, x);
+    const T* el = match_self_as(x);
     if (!el) return;
 
     if (!try_match(el->name, x->name)) return;
@@ -189,7 +198,7 @@ public:
   void visit(const logical_or* x) override { match_binary(x); }
   void visit(const logical_not* x) override {
     if (match) return;
-    const class logical_not* ne = try_match_node_type(e, x);
+    const class logical_not* ne = match_self_as(x);
     if (!ne) return;
 
     try_match(ne->x, x->x);
@@ -197,7 +206,7 @@ public:
 
   void visit(const class select* x) override {
     if (match) return;
-    const class select* se = try_match_node_type(e, x);
+    const class select* se = match_self_as(x);
     if (!se) return;
 
     if (!try_match(se->condition, x->condition)) return;
@@ -208,7 +217,7 @@ public:
   void visit(const load_buffer_meta* x) override {
     if (match) return;
 
-    const load_buffer_meta* lbme = try_match_node_type(e, x);
+    const load_buffer_meta* lbme = match_self_as(x);
     if (!lbme) return;
 
     if (!try_match(x->meta, lbme->meta)) return;
@@ -218,7 +227,7 @@ public:
 
   void visit(const call* x) override {
     if (match) return;
-    const call* c = try_match_node_type(e, x);
+    const call* c = match_self_as(x);
     if (!c) return;
 
     if (!try_match(c->intrinsic, x->intrinsic)) return;
@@ -229,7 +238,7 @@ public:
 
   void visit(const block* x) override {
     if (match) return;
-    const block* bs = try_match_node_type(s, x);
+    const block* bs = match_self_as(x);
     if (!bs) return;
 
     if (!try_match(bs->a, x->a)) return;
@@ -238,7 +247,7 @@ public:
 
   void visit(const loop* x) override {
     if (match) return;
-    const loop* ls = try_match_node_type(s, x);
+    const loop* ls = match_self_as(x);
     if (!ls) return;
 
     if (!try_match(ls->name, x->name)) return;
@@ -248,7 +257,7 @@ public:
 
   void visit(const if_then_else* x) override {
     if (match) return;
-    const if_then_else* is = try_match_node_type(s, x);
+    const if_then_else* is = match_self_as(x);
     if (!is) return;
 
     if (!try_match(is->condition, x->condition)) return;
@@ -258,7 +267,7 @@ public:
 
   void visit(const call_func* x) override {
     if (match) return;
-    const call_func* cs = try_match_node_type(s, x);
+    const call_func* cs = match_self_as(x);
     if (!cs) return;
 
     if (!try_match(cs->fn, x->fn)) return;
@@ -269,7 +278,7 @@ public:
 
   void visit(const allocate* x) override {
     if (match) return;
-    const allocate* as = try_match_node_type(s, x);
+    const allocate* as = match_self_as(x);
     if (!as) return;
 
     if (!try_match(as->name, x->name)) return;
@@ -280,7 +289,7 @@ public:
 
   void visit(const make_buffer* x) override {
     if (match) return;
-    const make_buffer* mbs = try_match_node_type(s, x);
+    const make_buffer* mbs = match_self_as(x);
     if (!mbs) return;
 
     if (!try_match(mbs->name, x->name)) return;
@@ -292,7 +301,7 @@ public:
 
   void visit(const crop_buffer* x) override {
     if (match) return;
-    const crop_buffer* cbs = try_match_node_type(s, x);
+    const crop_buffer* cbs = match_self_as(x);
     if (!cbs) return;
 
     if (!try_match(cbs->name, x->name)) return;
@@ -302,7 +311,7 @@ public:
 
   void visit(const crop_dim* x) override {
     if (match) return;
-    const crop_dim* cds = try_match_node_type(s, x);
+    const crop_dim* cds = match_self_as(x);
     if (!cds) return;
 
     if (!try_match(cds->name, x->name)) return;
@@ -313,7 +322,7 @@ public:
 
   void visit(const check* x) override {
     if (match) return;
-    const check* cs = try_match_node_type(s, x);
+    const check* cs = match_self_as(x);
     if (!cs) return;
 
     try_match(cs->condition, x->condition);
@@ -321,7 +330,7 @@ public:
 };
 
 bool match(const expr& p, const expr& e, std::map<symbol_id, expr>& matches) {
-  matcher m(e, stmt(), &matches);
+  matcher m(e, &matches);
   p.accept(&m);
   return m.match == 0;
 }
@@ -330,13 +339,13 @@ bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
 
 int compare(const expr& a, const expr& b) {
-  matcher m(a, stmt());
+  matcher m(a);
   b.accept(&m);
   return m.match;
 }
 
 int compare(const stmt& a, const stmt& b) {
-  matcher m(expr(), a);
+  matcher m(a);
   b.accept(&m);
   return m.match;
 }
@@ -442,7 +451,7 @@ public:
     x->buffer.accept(this);
     found_buf = found_buf || found_var;
     found_var = old_found_var;
-    
+
     if (x->dim.defined()) x->dim.accept(this);
   }
 };
