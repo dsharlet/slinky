@@ -33,8 +33,8 @@ bool should_commute(const expr& a, const expr& b) {
     default: return 1;
     }
   };
-  int ra = order(a.e->type);
-  int rb = order(b.e->type);
+  int ra = order(a.n->type);
+  int rb = order(b.n->type);
   if (ra > rb) return true;
 
   const call* ca = a.as<call>();
@@ -129,6 +129,12 @@ public:
   void visit(const less_equal* x) override { visit_binary(false, x); }
   void visit(const logical_and* x) override { visit_binary(true, x); }
   void visit(const logical_or* x) override { visit_binary(true, x); }
+  void visit(const logical_not* x) override {
+    x->x.accept(this);
+    for (expr& i : results) {
+      i = !i;
+    }
+  }
   void visit(const class select* x) override {
     x->condition.accept(this);
     std::vector<expr> c = std::move(results);
@@ -148,10 +154,10 @@ public:
     }
   }
 
-  void visit(const load_buffer_meta* x) override { 
+  void visit(const load_buffer_meta* x) override {
     assert(x->buffer.as<variable>());
     assert(x->dim.as<variable>());
-    results = {x}; 
+    results = {x};
   }
   void visit(const call* x) override {
     if (x->args.size() == 0) {
@@ -208,27 +214,27 @@ public:
   }
 
   expr apply(expr x) {
-    //std::cerr << "apply_rules: " << x << std::endl;
+    // std::cerr << "apply_rules: " << x << std::endl;
     for (const rule& r : rules_) {
       std::map<symbol_id, expr> matches;
-      //std::cerr << "  Considering " << r.pattern << std::endl;
+      // std::cerr << "  Considering " << r.pattern << std::endl;
       if (match(r.pattern, x, matches)) {
-        //std::cerr << "  Matched:" << std::endl;
-        //for (const auto& i : matches) {
-        //  std::cerr << "    " << i.first << ": " << i.second << std::endl;
-        //}
+        // std::cerr << "  Matched:" << std::endl;
+        // for (const auto& i : matches) {
+        //   std::cerr << "    " << i.first << ": " << i.second << std::endl;
+        // }
 
         if (!r.predicate.defined() || prove_true(substitute(r.predicate, matches))) {
-          //std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
+          // std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
           x = substitute(r.replacement, matches);
-          //std::cerr << "  Result: " << x << std::endl;
+          // std::cerr << "  Result: " << x << std::endl;
           return x;
         } else {
-          //std::cerr << "  Failed predicate: " << r.predicate << std::endl;
+          // std::cerr << "  Failed predicate: " << r.predicate << std::endl;
         }
       }
     }
-    //std::cerr << "  Failed" << std::endl;
+    // std::cerr << "  Failed" << std::endl;
     return x;
   }
 };
@@ -364,7 +370,7 @@ expr simplify(const add* op, expr a, expr b) {
       {x + (x + y), y + x * 2},
       {x + (x - y), x * 2 - y},
       {x + (y - x), y},
-      {x + x * y, x * (y + 1)},
+      //{x + x * y, x * (y + 1)},  // Needs x to be non-constant or it loops with c0 * (x + c1) -> c0 * x + c0 * c1... how?
       {x * y + x * z, x * (y + z)},
 
       {(x + c0) + c1, x + (c0 + c1)},
@@ -514,8 +520,6 @@ expr simplify(const div* op, expr a, expr b) {
       {0 / x, 0},
       {x / 1, x},
       {x / x, x != 0},
-      {(x / c0) / c1, x / (c0 * c1)}, 
-      {(0 - x) / c0, x / (-c0)},
   };
   return rules.apply(e);
 }
@@ -683,6 +687,8 @@ expr simplify(const logical_and* op, expr a, expr b) {
 
   static rule_set rules = {
       {x && x, x},
+      {x && !x, false},
+      {!x && !y, !(x || y)},
       {x && (x && y), x && y},
       {x && (x || y), x},
   };
@@ -711,8 +717,33 @@ expr simplify(const logical_or* op, expr a, expr b) {
 
   static rule_set rules = {
       {x || x, x},
+      {x || !x, true},
+      {!x || !y, !(x && y)},
       {x || (x && y), x},
       {x || (x || y), x || y},
+  };
+  return rules.apply(e);
+}
+
+expr simplify(const logical_not* op, expr value) {
+  const index_t* cv = as_constant(value);
+  if (cv) {
+    return *cv == 0;
+  }
+
+  expr e;
+  if (op && value.same_as(op->x)) {
+    e = op;
+  } else {
+    e = logical_not::make(std::move(value));
+  }
+
+  static rule_set rules = {
+      {!!x, x},
+      {!(x == y), x != y},
+      {!(x != y), x == y},
+      {!(x < y), y <= x},
+      {!(x <= y), y < x},
   };
   return rules.apply(e);
 }
@@ -730,12 +761,14 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   expr e;
   if (match(t, f)) {
     return t;
-  } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+  } else if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
     e = op;
   } else {
     e = select::make(std::move(c), std::move(t), std::move(f));
   }
   static rule_set rules = {
+      {select(!x, y, z), select(x, z, y)},
+
       // Pull common expressions out
       {select(x, y, y + z), y + select(x, 0, z)},
       {select(x, y + z, y), y + select(x, z, 0)},
@@ -755,10 +788,10 @@ expr simplify(const call* op, std::vector<expr> args) {
   }
 
   expr e;
-  if (changed) {
-    e = call::make(op->intrinsic, std::move(args));
-  } else {
+  if (op && !changed) {
     e = op;
+  } else {
+    e = call::make(op->intrinsic, std::move(args));
   }
 
   if (can_evaluate(op->intrinsic) && constant) {
@@ -833,6 +866,14 @@ public:
   void visit(const not_equal* op) override { visit_binary(op); }
   void visit(const logical_and* op) override { visit_binary(op); }
   void visit(const logical_or* op) override { visit_binary(op); }
+  void visit(const logical_not* op) override {
+    expr x = mutate(op->x);
+    expr e = simplify(op, std::move(x));
+    if (!e.same_as(op)) {
+      e = mutate(e);
+    }
+    set_result(e);
+  }
 
   void visit(const class select* op) override {
     expr c = mutate(op->condition);
@@ -921,6 +962,12 @@ public:
 
     stmt t = mutate(op->true_body);
     stmt f = mutate(op->false_body);
+
+    if (const logical_not* n = c.as<logical_not>()) {
+      c = n->x;
+      std::swap(t, f);
+    }
+
     if (!t.defined() && !f.defined()) {
       set_result(t);
     } else if (t.defined() && f.defined() && match(t, f)) {
@@ -967,7 +1014,7 @@ public:
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
     stmt body = mutate(op->body);
-    set_result(allocate::make(op->type, op->name, op->elem_size, std::move(dims), std::move(body)));
+    set_result(allocate::make(op->storage, op->name, op->elem_size, std::move(dims), std::move(body)));
   }
 
   void visit(const make_buffer* op) override {
@@ -1062,6 +1109,11 @@ public:
   }
 
   void visit(const check* op) override {
+    if (!op->condition.defined()) {
+      set_result(op);
+      return;
+    }
+
     expr c = mutate(op->condition);
     std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
     if (const_c) {
@@ -1228,6 +1280,10 @@ public:
   }
   void visit(const logical_and* x) override { visit_linear(x); }
   void visit(const logical_or* x) override { visit_linear(x); }
+  void visit(const logical_not* x) override {
+    x->x.accept(this);
+    result = {simplify(x, result.max), simplify(x, result.min)};
+  }
 
   void visit(const class select* x) override {
     x->condition.accept(this);

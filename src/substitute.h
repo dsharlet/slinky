@@ -24,6 +24,16 @@ stmt substitute(const stmt& s, const expr& target, const expr& replacement);
 // Check if `e` depends on a symbol `var`.
 bool depends_on(const expr& e, symbol_id var);
 
+// Compute a sort ordering of two nodes based on their structure (not their values).
+int compare(const expr& a, const expr& b);
+int compare(const stmt& a, const stmt& b);
+
+// A comparator suitable for using expr/stmt as keys in an std::map/std::set.
+struct node_less {
+  bool operator()(const expr& a, const expr& b) const { return compare(a, b) < 0; }
+  bool operator()(const stmt& a, const stmt& b) const { return compare(a, b) < 0; }
+};
+
 }  // namespace slinky
 
 #endif  // SLINKY_SUBSTITUTE_H

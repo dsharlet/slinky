@@ -80,6 +80,14 @@ public:
   virtual void visit(const less_equal* x) override { set_result(mutate_binary(x)); }
   virtual void visit(const logical_and* x) override { set_result(mutate_binary(x)); }
   virtual void visit(const logical_or* x) override { set_result(mutate_binary(x)); }
+  virtual void visit(const logical_not* x) override { 
+    expr new_x = mutate(x->x);
+    if (new_x.same_as(x->x)) {
+      set_result(x);
+    } else {
+      set_result(logical_not::make(std::move(new_x)));
+    }
+  }
 
   virtual void visit(const class select* x) override {
     expr c = mutate(x->condition);
@@ -179,7 +187,7 @@ public:
     if (!changed && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(allocate::make(x->type, x->name, x->elem_size, std::move(dims), std::move(body)));
+      set_result(allocate::make(x->storage, x->name, x->elem_size, std::move(dims), std::move(body)));
     }
   }
   virtual void visit(const make_buffer* x) override {

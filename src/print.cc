@@ -133,6 +133,10 @@ public:
   void visit(const less_equal* x) override { visit_bin_op(x, " <= "); }
   void visit(const logical_and* x) override { visit_bin_op(x, " && "); }
   void visit(const logical_or* x) override { visit_bin_op(x, " || "); }
+  void visit(const logical_not* x) override {
+    os << "!";
+    print(x->x);
+  }
 
   void visit(const class min* op) override {
     os << "min(";
@@ -255,7 +259,7 @@ public:
       os << std::endl;
     }
     --depth;
-    os << indent() << "} on " << n->type << ") {" << std::endl;
+    os << indent() << "} on " << n->storage << ") {" << std::endl;
     ++depth;
     print(n->body);
     --depth;

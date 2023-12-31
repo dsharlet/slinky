@@ -106,7 +106,7 @@ public:
       checks.push_back(check::make(dims[d].max() >= inferred[d].max));
     }
 
-    stmt s = allocate::make(alloc->type, alloc->name, alloc->elem_size, std::move(dims), body);
+    stmt s = allocate::make(alloc->storage, alloc->name, alloc->elem_size, std::move(dims), body);
     s = block::make(block::make(checks), s);
     for (const auto& i : lets) {
       s = let_stmt::make(i.first, i.second, s);

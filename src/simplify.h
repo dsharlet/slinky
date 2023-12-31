@@ -27,6 +27,7 @@ expr simplify(const equal* op, expr a, expr b);
 expr simplify(const not_equal* op, expr a, expr b);
 expr simplify(const logical_and* op, expr a, expr b);
 expr simplify(const logical_or* op, expr a, expr b);
+expr simplify(const logical_not* op, expr x);
 expr simplify(const class select* op, expr c, expr t, expr f);
 expr simplify(const call* op, std::vector<expr> args);
 

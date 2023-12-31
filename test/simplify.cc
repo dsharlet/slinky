@@ -158,6 +158,7 @@ TEST(bounds_of) {
       x <= y,
       x == y,
       x != y,
+      !(x < y),
       x < y && x != y,
       x < y || x == y,
   };
@@ -247,6 +248,7 @@ expr make_random_condition(int depth) {
   case 3: return a != b;
   case 4: return make_random_condition(depth - 1) && make_random_condition(depth - 1);
   case 5: return make_random_condition(depth - 1) || make_random_condition(depth - 1);
+  case 6: return !make_random_condition(depth - 1);
   }
 }
 
@@ -297,7 +299,6 @@ TEST(simplify_fuzz) {
 
   for (int i = 0; i < tests; ++i) {
     expr test = make_random_expr(3);
-    test = min(max(x, buffer_max(b0, 1)), min(y, buffer_min(b0, 1)));
     expr simplified = simplify(test);
 
     // Also test bounds_of.

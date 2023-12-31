@@ -80,6 +80,7 @@ public:
   void visit(const less_equal* x) override { result = eval_expr(x->a) <= eval_expr(x->b); }
   void visit(const logical_and* x) override { result = eval_expr(x->a) != 0 && eval_expr(x->b) != 0; }
   void visit(const logical_or* x) override { result = eval_expr(x->a) != 0 || eval_expr(x->b) != 0; }
+  void visit(const logical_not* x) override { result = eval_expr(x->x) == 0; }
 
   void visit(const class select* x) override {
     if (eval_expr(x->condition)) {
@@ -193,10 +194,10 @@ public:
       dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
     }
 
-    if (n->type == memory_type::stack) {
+    if (n->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
     } else {
-      assert(n->type == memory_type::heap);
+      assert(n->storage == memory_type::heap);
       buffer->allocation = nullptr;
       if (context.allocate) {
         assert(context.free);
@@ -209,7 +210,7 @@ public:
     auto set_buffer = set_value_in_scope(context, n->name, reinterpret_cast<index_t>(buffer));
     n->body.accept(this);
 
-    if (n->type == memory_type::heap) {
+    if (n->storage == memory_type::heap) {
       if (context.free) {
         assert(context.allocate);
         context.free(n->name, buffer);
@@ -298,7 +299,7 @@ public:
   }
 
   void visit(const check* n) override {
-    result = eval_expr(n->condition) != 0 ? 0 : 1;
+    result = eval_expr(n->condition, 0) != 0 ? 0 : 1;
     if (result) {
       if (context.check_failed) {
         context.check_failed(n->condition);

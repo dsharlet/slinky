@@ -55,9 +55,7 @@ const T* make_let(symbol_id name, expr value, Body body) {
   return n;
 }
 
-expr let::make(symbol_id name, expr value, expr body) {
-  return make_let<let>(name, std::move(value), std::move(body));
-}
+expr let::make(symbol_id name, expr value, expr body) { return make_let<let>(name, std::move(value), std::move(body)); }
 
 stmt let_stmt::make(symbol_id name, expr value, stmt body) {
   return make_let<let_stmt>(name, std::move(value), std::move(body));
@@ -105,6 +103,11 @@ expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::mo
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
 expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)); }
 expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)); }
+expr logical_not::make(expr x) {
+  logical_not* n = new logical_not();
+  n->x = std::move(x);
+  return n;
+}
 
 expr make_variable(node_context& ctx, const std::string& name) { return variable::make(ctx.insert(name)); }
 
@@ -125,6 +128,7 @@ expr operator>(expr a, expr b) { return less::make(std::move(b), std::move(a)); 
 expr operator>=(expr a, expr b) { return less_equal::make(std::move(b), std::move(a)); }
 expr operator&&(expr a, expr b) { return logical_and::make(std::move(a), std::move(b)); }
 expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::move(b)); }
+expr operator!(expr x) { return logical_not::make(std::move(x)); }
 
 expr min(std::span<expr> x) {
   if (x.empty()) {
@@ -323,9 +327,9 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n;
 }
 
-stmt allocate::make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(memory_type storage, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
-  n->type = type;
+  n->storage = storage;
   n->name = name;
   n->elem_size = elem_size;
   n->dims = std::move(dims);
@@ -389,9 +393,7 @@ expr buffer_base(expr buf) { return load_buffer_meta::make(std::move(buf), buffe
 expr buffer_elem_size(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::elem_size); }
 expr buffer_min(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim)); }
 expr buffer_max(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim)); }
-interval_expr buffer_bounds(const expr& buf, const expr& dim) {
-  return { buffer_min(buf, dim), buffer_max(buf, dim) };
-}
+interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
 expr buffer_extent(expr buf, expr dim) {
   return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
 }

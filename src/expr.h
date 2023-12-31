@@ -51,6 +51,7 @@ enum class node_type {
   less_equal,
   logical_and,
   logical_or,
+  logical_not,
   select,
   load_buffer_meta,
   call,
@@ -142,30 +143,30 @@ expr operator%(expr a, expr b);
 
 class expr {
 public:
-  ref_count<const base_expr_node> e;
+  ref_count<const base_expr_node> n;
 
   expr() = default;
   expr(const expr&) = default;
   expr(expr&&) = default;
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
-  expr(const base_expr_node* e) : e(e) {}
+  expr(const base_expr_node* n) : n(n) {}
 
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
 
   void accept(node_visitor* v) const {
     assert(defined());
-    e->accept(v);
+    n->accept(v);
   }
 
-  bool defined() const { return e != nullptr; }
-  bool same_as(const expr& other) const { return e == other.e; }
+  bool defined() const { return n != nullptr; }
+  bool same_as(const expr& other) const { return n == other.n; }
 
   template <typename T>
   const T* as() const {
-    if (e && e->type == T::static_type) {
-      return reinterpret_cast<const T*>(&*e);
+    if (n && n->type == T::static_type) {
+      return reinterpret_cast<const T*>(&*n);
     } else {
       return nullptr;
     }
@@ -203,6 +204,7 @@ expr operator>(expr a, expr b);
 expr operator>=(expr a, expr b);
 expr operator&&(expr a, expr b);
 expr operator||(expr a, expr b);
+expr operator!(expr x);
 expr min(expr a, expr b);
 expr max(expr a, expr b);
 expr clamp(expr x, expr a, expr b);
@@ -270,28 +272,28 @@ box_expr operator&(box_expr a, const box_expr& b);
 
 class stmt {
 public:
-  ref_count<const base_stmt_node> s;
+  ref_count<const base_stmt_node> n;
 
   stmt() = default;
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
-  stmt(const base_stmt_node* s) : s(s) {}
+  stmt(const base_stmt_node* n) : n(n) {}
 
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
 
   void accept(node_visitor* v) const {
     assert(defined());
-    s->accept(v);
+    n->accept(v);
   }
 
-  bool defined() const { return s != nullptr; }
-  bool same_as(const stmt& other) const { return s == other.s; }
+  bool defined() const { return n != nullptr; }
+  bool same_as(const stmt& other) const { return n == other.n; }
 
   template <typename T>
   const T* as() const {
-    if (s && s->type == T::static_type) {
-      return reinterpret_cast<const T*>(&*s);
+    if (n && n->type == T::static_type) {
+      return reinterpret_cast<const T*>(&*n);
     } else {
       return nullptr;
     }
@@ -375,6 +377,17 @@ DECLARE_BINARY_OP(logical_and)
 DECLARE_BINARY_OP(logical_or)
 
 #undef DECLARE_BINARY_OP
+
+class logical_not : public expr_node<logical_not> {
+public:
+  expr x;
+
+  void accept(node_visitor* v) const;
+
+  static expr make(expr x);
+
+  static constexpr node_type static_type = node_type::logical_not;
+};
 
 class select : public expr_node<class select> {
 public:
@@ -518,7 +531,7 @@ struct dim_expr {
 
 class allocate : public stmt_node<allocate> {
 public:
-  memory_type type;
+  memory_type storage;
   symbol_id name;
   std::size_t elem_size;
   std::vector<dim_expr> dims;
@@ -618,6 +631,7 @@ public:
   virtual void visit(const less_equal*) = 0;
   virtual void visit(const logical_and*) = 0;
   virtual void visit(const logical_or*) = 0;
+  virtual void visit(const logical_not*) = 0;
   virtual void visit(const class select*) = 0;
   virtual void visit(const load_buffer_meta*) = 0;
   virtual void visit(const call*) = 0;
@@ -663,6 +677,7 @@ public:
   virtual void visit(const less_equal* x) override { visit_binary(x); }
   virtual void visit(const logical_and* x) override { visit_binary(x); }
   virtual void visit(const logical_or* x) override { visit_binary(x); }
+  virtual void visit(const logical_not* x) override { x->x.accept(this); }
   virtual void visit(const class select* x) override {
     x->condition.accept(this);
     x->true_value.accept(this);
@@ -752,6 +767,7 @@ inline void less::accept(node_visitor* v) const { v->visit(this); }
 inline void less_equal::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
+inline void logical_not::accept(node_visitor* v) const { v->visit(this); }
 inline void select::accept(node_visitor* v) const { v->visit(this); }
 inline void load_buffer_meta::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
