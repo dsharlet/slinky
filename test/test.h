@@ -46,12 +46,12 @@ public:
 
 #define ASSERT(condition) assert_stream(condition, #condition)
 
-#define ASSERT_EQ(a, b) ASSERT(a == b) << "\n" << #a << "=" << a << "\n" << #b << "=" << b << " "
+#define ASSERT_EQ(a, b) ASSERT((a) == (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
 
-#define ASSERT_LT(a, b) ASSERT(a < b) << "\n" << #a << "=" << a << "\n" << #b << "=" << b << " "
-#define ASSERT_GT(a, b) ASSERT(a > b) << "\n" << #a << "=" << a << "\n" << #b << "=" << b << " "
-#define ASSERT_LE(a, b) ASSERT(a <= b) << "\n" << #a << "=" << a << "\n" << #b << "=" << b << " "
-#define ASSERT_GE(a, b) ASSERT(a >= b) << "\n" << #a << "=" << a << "\n" << #b << "=" << b << " "
+#define ASSERT_LT(a, b) ASSERT((a) < (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
+#define ASSERT_GT(a, b) ASSERT((a) > (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
+#define ASSERT_LE(a, b) ASSERT((a) <= (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
+#define ASSERT_GE(a, b) ASSERT((a) >= (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
 
 // This type generates compiler errors if it is copied.
 struct move_only {
