@@ -78,6 +78,10 @@ TEST(simplify) {
   test_simplify(max(negative_infinity(), x), x);
   test_simplify(min(positive_infinity(), x), x);
   test_simplify(max(positive_infinity(), x), positive_infinity());
+  test_simplify(min(min(x, 7), min(y, 7)), min(min(x, y), 7));
+  test_simplify(min(min(x, 7), min(7, y)), min(min(x, y), 7));
+  test_simplify(min(min(7, x), min(y, 7)), min(min(x, y), 7));
+  test_simplify(min(min(7, x), min(7, y)), min(min(x, y), 7));
 
   test_simplify(x + 0, x);
   test_simplify(x - 0, x);

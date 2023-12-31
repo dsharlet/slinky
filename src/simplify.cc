@@ -82,18 +82,9 @@ public:
   void visit(const constant* x) override { results = {x}; }
   void visit(const let* x) override { std::abort(); }
 
-  static bool is_same_pattern(const expr& a, const expr& b) {
-    std::map<symbol_id, expr> ma, mb;
-    return match(a, b, ma) && match(b, a, mb);
-  }
-
   template <typename T>
   void visit_binary(bool commutative, const T* x) {
-    if (is_same_pattern(x->a, x->b)) {
-      // If a and b are the same pattern (but with possibly different variables,
-      // e.g. x * y + x * z), we don't want to generate two versions of it.
-      commutative = false;
-    }
+    // TODO: I think some of these patterns are redundant, but finding them is tricky.
 
     x->a.accept(this);
     std::vector<expr> a = std::move(results);
