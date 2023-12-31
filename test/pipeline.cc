@@ -466,7 +466,7 @@ TEST(pipeline_padded_copy) {
   expr y = make_variable(ctx, "y");
 
   // We could just clamp using the bounds directly below, but that would hardcode the bounds we clamp
-  // in the pipeline. This way, the bounds can vary at runtime.
+  // in the pipeline. This way, the bounds can vary at eval-time.
   expr w = make_variable(ctx, "w");
   expr h = make_variable(ctx, "h");
 
