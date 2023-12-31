@@ -39,6 +39,16 @@ public:
     return match == 0;
   }
 
+  // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
+  void visit(const expr& x) {
+    switch (x.type()) {
+    case node_type::add: visit(reinterpret_cast<const add*>(x.get())); return;
+    case node_type::min: visit(reinterpret_cast<const class min*>(x.get())); return;
+    case node_type::max: visit(reinterpret_cast<const class max*>(x.get())); return;
+    default: x.accept(this);
+    }
+  }
+
   bool try_match(const expr& e, const expr& x) {
     if (!e.defined() && !x.defined()) {
       match = 0;
@@ -48,7 +58,7 @@ public:
       match = 1;
     } else {
       self = e.get();
-      x.accept(this);
+      visit(x);
     }
     return match == 0;
   }
@@ -408,12 +418,8 @@ public:
 
 }  // namespace
 
-expr substitute(const expr& e, const symbol_map<expr>& replacements) {
-  return substitutor(replacements).mutate(e);
-}
-stmt substitute(const stmt& s, const symbol_map<expr>& replacements) {
-  return substitutor(replacements).mutate(s);
-}
+expr substitute(const expr& e, const symbol_map<expr>& replacements) { return substitutor(replacements).mutate(e); }
+stmt substitute(const stmt& s, const symbol_map<expr>& replacements) { return substitutor(replacements).mutate(s); }
 
 expr substitute(const expr& e, symbol_id target, const expr& replacement) {
   return substitutor(target, replacement).mutate(e);

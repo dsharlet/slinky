@@ -29,8 +29,8 @@ pipeline make_pipeline(bool explicit_y) {
   auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
+  var x(ctx, "x");
+  var y(ctx, "y");
 
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {out, {x, y}});
 

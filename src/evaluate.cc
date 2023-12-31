@@ -58,9 +58,18 @@ public:
 
   evaluator(eval_context& context) : context(context) {}
 
+  // Skip the visitor pattern (two virtual function calls) for some frequently used node types.
+  void visit(const expr& x) {
+    switch (x.type()) {
+    case node_type::variable: visit(reinterpret_cast<const variable*>(x.get())); return;
+    case node_type::constant: visit(reinterpret_cast<const constant*>(x.get())); return;
+    default: x.accept(this);
+    }
+  }
+
   // Assume `e` is defined, evaluate it and return the result.
   index_t eval_expr(const expr& e) {
-    e.accept(this);
+    visit(e);
     index_t r = result;
     result = 0;
     return r;
