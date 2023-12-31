@@ -24,7 +24,7 @@ auto in = buffer_expr::make(ctx, "in", 1);
 auto out = buffer_expr::make(ctx, "out", 1);
 auto intm = buffer_expr::make(ctx, "intm", 1);
 
-expr x = make_variable(ctx, "x");
+var x(ctx, "x");
 
 func mul = func::make<const int, int>(multiply_2, { in, {point(x)} }, { intm, {x} });
 func add = func::make<const int, int>(add_1, { intm, {point(x)} }, { out, {x} });
@@ -56,8 +56,8 @@ auto d = buffer_expr::make(ctx, "d", 2);
 
 auto ab = buffer_expr::make(ctx, "ab", 2);
 
-expr i = make_variable(ctx, "i");
-expr j = make_variable(ctx, "j");
+var i(ctx, "i");
+var j(ctx, "j");
 
 auto K_ab = a->dim(1).bounds;
 auto K_d = c->dim(0).bounds;
