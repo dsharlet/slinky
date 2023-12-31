@@ -10,7 +10,7 @@ double benchmark(F op) {
   op();
 
   const int max_trials = 10;
-  const double min_time_s = 0.1;
+  const double min_time_s = 0.5;
   double time_per_iteration_s = 0;
   long iterations = 1;
   for (int trials = 0; trials < max_trials; trials++) {

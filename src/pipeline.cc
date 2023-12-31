@@ -344,7 +344,7 @@ pipeline::pipeline(node_context& ctx, std::vector<var> args, std::vector<buffer_
 
 pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
     const build_options& options)
-    : pipeline(ctx, {}, std::move(inputs), std::move(outputs)) {}
+    : pipeline(ctx, {}, std::move(inputs), std::move(outputs), options) {}
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
   assert(args.size() == args_.size());
