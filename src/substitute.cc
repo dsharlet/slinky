@@ -422,21 +422,47 @@ stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
   return substitutor(target, replacement).mutate(s);
 }
 
+namespace {
+
+class dependencies : public recursive_node_visitor {
+public:
+  symbol_id var;
+  bool found_var = false;
+  bool found_buf = false;
+
+  dependencies(symbol_id var) : var(var) {}
+
+  void visit(const variable* x) override { found_var = found_var || x->name == var; }
+  void visit(const wildcard* x) override { found_var = found_var || x->name == var; }
+  void visit(const load_buffer_meta* x) override {
+    bool old_found_var = found_var;
+    found_var = false;
+    x->buffer.accept(this);
+    found_buf = found_buf || found_var;
+    found_var = old_found_var;
+    
+    if (x->dim.defined()) x->dim.accept(this);
+  }
+};
+
+}  // namespace
+
 bool depends_on(const expr& e, symbol_id var) {
-  class visitor : public recursive_node_visitor {
-  public:
-    symbol_id var;
-    bool result = false;
-
-    visitor(symbol_id var) : var(var) {}
-
-    void visit(const variable* x) override { result = result || x->name == var; }
-    void visit(const wildcard* x) override { result = result || x->name == var; }
-  };
-
-  visitor v(var);
+  dependencies v(var);
   e.accept(&v);
-  return v.result;
+  return v.found_var || v.found_buf;
+}
+
+bool depends_on_variable(const expr& e, symbol_id var) {
+  dependencies v(var);
+  e.accept(&v);
+  return v.found_var;
+}
+
+bool depends_on_buffer(const expr& e, symbol_id buf) {
+  dependencies v(buf);
+  e.accept(&v);
+  return v.found_buf;
 }
 
 }  // namespace slinky

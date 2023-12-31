@@ -21,8 +21,10 @@ stmt substitute(const stmt& s, symbol_id target, const expr& replacement);
 expr substitute(const expr& e, const expr& target, const expr& replacement);
 stmt substitute(const stmt& s, const expr& target, const expr& replacement);
 
-// Check if `e` depends on a symbol `var`.
+// Check if `e` depends on a variable `var` or buffer `buf`.
 bool depends_on(const expr& e, symbol_id var);
+bool depends_on_variable(const expr& e, symbol_id var);
+bool depends_on_buffer(const expr& e, symbol_id buf);
 
 // Compute a sort ordering of two nodes based on their structure (not their values).
 int compare(const expr& a, const expr& b);

@@ -8,6 +8,13 @@
 
 #include <cassert>
 
+namespace slinky {
+
+// Hackily get at this function in evaluate.cc that we don't want to put in the public API.
+void dump_context_for_expr(std::ostream&, const symbol_map<index_t>&, const expr& = expr(), const node_context* symbols = nullptr);
+
+}
+
 using namespace slinky;
 
 node_context symbols;
@@ -195,7 +202,7 @@ TEST(bounds_of) {
                   std::cerr << "bounds_of failure: " << e << " -> " << bounds_e << std::endl;
                   std::cerr << result << " not in [" << min << ", " << max << "]" << std::endl;
                   std::cerr << "ctx: " << std::endl;
-                  dump_symbol_map(std::cerr, ctx);
+                  dump_context_for_expr(std::cerr, ctx, e, &symbols);
                   std::cerr << std::endl;
                   std::cerr << "bounds: " << std::endl;
                   dump_symbol_map(std::cerr, bounds);
@@ -327,7 +334,7 @@ TEST(simplify_fuzz) {
         std::cerr << " -> " << eval_test << std::endl;
         print(std::cerr, simplified, &symbols);
         std::cerr << " -> " << eval_simplified << std::endl;
-        dump_symbol_map(std::cerr, ctx);
+        dump_context_for_expr(std::cerr, ctx, test, &symbols);
         ASSERT_EQ(eval_test, eval_simplified);
       } else {
         index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
@@ -338,7 +345,7 @@ TEST(simplify_fuzz) {
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.min, &symbols);
           std::cerr << " -> " << min << std::endl;
-          dump_symbol_map(std::cerr, ctx);
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(min, eval_test);
         }
@@ -348,7 +355,7 @@ TEST(simplify_fuzz) {
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.max, &symbols);
           std::cerr << " -> " << max << std::endl;
-          dump_symbol_map(std::cerr, ctx);
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(eval_test, max);
         }

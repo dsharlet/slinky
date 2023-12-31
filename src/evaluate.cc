@@ -16,6 +16,38 @@ bool can_evaluate(intrinsic fn) {
   }
 }
 
+void dump_context_for_expr(
+    std::ostream& s, const symbol_map<index_t>& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
+  for (symbol_id i = 0; i < ctx.size(); ++i) {
+    std::string name = symbols ? symbols->name(i) : "<" + std::to_string(i) + ">";
+    if (!deps_of.defined() || depends_on_variable(deps_of, i)) {
+      if (ctx.contains(i)) {
+        s << "  " << name << " = " << *ctx.lookup(i) << std::endl;
+      } else {
+        s << "  " << name << " = <>" << std::endl;
+      }
+    } else if (!deps_of.defined() || depends_on_buffer(deps_of, i)) {
+      if (ctx.contains(i)) {
+        const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx.lookup(i));
+        s << "  " << name << " = {base=" << buf->base << ", elem_size=" << buf->elem_size << ", dims={";
+        for (std::size_t d = 0; d < buf->rank; ++d) {
+          const dim& dim = buf->dims[d];
+          s << "{min=" << dim.min() << ", max=" << dim.max() << ", extent=" << dim.extent()
+            << ", stride=" << dim.stride();
+          if (dim.fold_factor() > 0) {
+            s << ", fold_factor=" << dim.fold_factor();
+          }
+          s << "}";
+          if (d + 1 < buf->rank) {
+            s << ",";
+          }
+        }
+        s << "}" << std::endl;
+      }
+    }
+  }
+}
+
 // TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/node_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.
@@ -119,7 +151,7 @@ public:
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
     case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
     case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
-    case intrinsic::abs: 
+    case intrinsic::abs:
       assert(x->args.size() == 1);
       result = std::abs(eval_expr(x->args[0]));
       return;
@@ -306,15 +338,7 @@ public:
       } else {
         std::cerr << "Check failed: " << n->condition << std::endl;
         std::cerr << "Context: " << std::endl;
-        for (symbol_id i = 0; i < context.size(); ++i) {
-          if (depends_on(n->condition, i)) {
-            if (context.contains(i)) {
-              std::cerr << "  <" << i << "> = " << *context.lookup(i) << std::endl;
-            } else {
-              std::cerr << "  <" << i << "> = <>" << std::endl;
-            }
-          }
-        }
+        dump_context_for_expr(std::cerr, context, n->condition);
         std::abort();
       }
     }
