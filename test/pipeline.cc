@@ -471,8 +471,10 @@ TEST(pipeline_padded_copy) {
   // Copy the input so we can measure the size of the buffer we think we need internally.
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
   // This is elementwise, but with a clamp to limit the bounds required of the input.
-  func crop = func::make<const char, char>(::zero_padded_copy<char>,
-      {intm, {bounds(max(x, 0), min(x, W - 1)), bounds(max(y, 0), min(y, H - 1))}}, {out, {x, y}});
+  func crop = func::make<const char, char>(
+      ::zero_padded_copy<char>, {intm, {point(clamp(x, 0, W - 1)), point(clamp(y, 0, H - 1))}}, {out, {x, y}});
+
+  crop.loops({y});
 
   pipeline p(ctx, {in}, {out});
 
