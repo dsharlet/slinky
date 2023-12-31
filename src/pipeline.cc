@@ -136,7 +136,7 @@ public:
 
   // Find the func f to run next. This is the func that produces a buffer we need that we have not
   // yet produced, and all the buffers produced by f are ready to be consumed.
-  const func* find_next_producer(const func* in = nullptr, const expr& loop = expr()) const {
+  const func* find_next_producer(const func* in = nullptr, const var& loop = var()) const {
     for (const buffer_expr_ptr& i : to_produce) {
       if (produced.count(i)) continue;
 
@@ -155,9 +155,8 @@ public:
         return i->producer();
       }
 
-      assert(loop.defined());
       const loop_id& at = i->producer()->compute_at();
-      if (at.f == in && *as_variable(at.loop) == *as_variable(loop)) return i->producer();
+      if (at.f == in && at.loop.name() == loop.name()) return i->producer();
     }
     return nullptr;
   }
@@ -180,7 +179,7 @@ public:
     return result;
   }
 
-  stmt make_loop(stmt body, const func* f, const expr& loop) {
+  stmt make_loop(stmt body, const func* f, const var& loop) {
     // Find the bounds of this loop.
     interval_expr bounds = interval_expr::union_identity();
     // Crop all the outputs of this buffer for this loop.
@@ -188,7 +187,7 @@ public:
     scope_crops& to_crop = crops.back();
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (*as_variable(o.dims[d]) == *as_variable(loop)) {
+        if (o.dims[d].name() == loop.name()) {
           to_crop[o.buffer->name()].emplace_back(d, point(loop));
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
@@ -205,7 +204,7 @@ public:
 
     for (const buffer_expr_ptr& i : to_allocate) {
       const loop_id& at = i->store_at();
-      if (at.f == f && *as_variable(at.loop) == *as_variable(loop)) {
+      if (at.f == f && at.loop.name() == loop.name()) {
         body = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), body);
         allocated.insert(i);
       }
@@ -217,7 +216,7 @@ public:
     bounds.min = simplify(bounds.min);
     bounds.max = simplify(bounds.max);
 
-    stmt result = loop::make(*as_variable(loop), bounds, body);
+    stmt result = loop::make(loop.name(), bounds, body);
     crops.pop_back();
     return result;
   }
@@ -333,11 +332,11 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
 }  // namespace
 
-pipeline::pipeline(node_context& ctx, std::vector<expr> args, std::vector<buffer_expr_ptr> inputs,
+pipeline::pipeline(node_context& ctx, std::vector<var> args, std::vector<buffer_expr_ptr> inputs,
     std::vector<buffer_expr_ptr> outputs, const build_options& options)
     : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
-  for (const expr& i : args) {
-    args_.push_back(*as_variable(i));
+  for (const var& i : args) {
+    args_.push_back(i.name());
   }
   body = build_pipeline(ctx, inputs_, outputs_, options);
 }

@@ -403,4 +403,9 @@ expr buffer_fold_factor(expr buf, expr dim) {
   return load_buffer_meta::make(std::move(buf), buffer_meta::fold_factor, std::move(dim));
 }
 
+var::var() {}
+var::var(symbol_id name) : e_(variable::make(name)) {}
+var::var(node_context& ctx, const std::string& name) : e_(make_variable(ctx, name)) {}
+
+
 }  // namespace slinky

@@ -855,6 +855,25 @@ expr buffer_extent(expr buf, expr dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 
+// This is an expr-like wrapper for use where only a `variable` expr is allowed.
+class var {
+  expr e_;
+
+public:
+  var();
+  var(symbol_id name);
+  var(node_context& ctx, const std::string& name);
+
+  symbol_id name() const { 
+    assert(e_.defined());
+    return *as_variable(e_); 
+  }
+
+  operator const expr&() const { return e_; }
+
+  expr operator-() const { return -e_; }
+};
+
 }  // namespace slinky
 
 #endif  // SLINKY_EXPR_H

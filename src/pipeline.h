@@ -14,7 +14,7 @@ using buffer_expr_ptr = ref_count<buffer_expr>;
 
 struct loop_id {
   const func* f = nullptr;
-  expr loop;
+  var loop;
 };
 
 // Represents a symbolic buffer in a pipeline.
@@ -90,9 +90,7 @@ public:
   struct output {
     buffer_expr_ptr buffer;
 
-    // dims must be be variable nodes. It would be nice to enforce this via the type system.
-    // TODO(https://github.com/dsharlet/slinky/issues/7): Maybe they don't need to be variables?
-    std::vector<expr> dims;
+    std::vector<var> dims;
 
     // If this exists for a dimension, specifies the alignment required in that dimension.
     std::vector<index_t> alignment;
@@ -103,7 +101,7 @@ private:
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
-  std::vector<expr> loops_;
+  std::vector<var> loops_;
   loop_id compute_at_;
 
 public:
@@ -117,11 +115,11 @@ public:
   bool defined() const { return impl_ != nullptr; }
 
   // Describes which loops should be explicit for this func.
-  func& loops(std::vector<expr> l) {
+  func& loops(std::vector<var> l) {
     loops_ = std::move(l);
     return *this;
   }
-  const std::vector<expr>& loops() const { return loops_; }
+  const std::vector<var>& loops() const { return loops_; }
 
   func& compute_at(const loop_id& at) {
     compute_at_ = at;
@@ -185,7 +183,7 @@ class pipeline {
 public:
   // TODO: The `args` should be limited to variables only, not arbitrary exprs (when we get type safe variable exprs
   // from https://github.com/dsharlet/slinky/issues/7, that could be used here).
-  pipeline(node_context& ctx, std::vector<expr> args, std::vector<buffer_expr_ptr> inputs,
+  pipeline(node_context& ctx, std::vector<var> args, std::vector<buffer_expr_ptr> inputs,
       std::vector<buffer_expr_ptr> outputs, const build_options& options = build_options());
   pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
       const build_options& options = build_options());

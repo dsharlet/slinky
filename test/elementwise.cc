@@ -21,8 +21,8 @@ void test_elementwise(const int W, const int H) {
   auto maxab0 = buffer_expr::make(ctx, "maxab0", sizeof(int), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
+  var x(ctx, "x");
+  var y(ctx, "y");
 
   func f_ab = func::make<const int, const int, int>(
       add<int>, {a, {point(x), point(y)}}, {b, {point(x), point(y)}}, {ab, {x, y}});

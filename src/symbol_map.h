@@ -22,22 +22,29 @@ public:
     if (name < values.size()) { return values[name]; }
     return std::nullopt;
   }
+  std::optional<T> lookup(const var& v) const { return lookup(v.name()); }
 
   const T& lookup(symbol_id name, const T& def) const {
     if (name < values.size()) { return values[name]; }
     return def;
   }
+  const T& lookup(const var& v, const T& def) const { return lookup(v.name(), def); }
 
-  std::optional<T> operator[](symbol_id name) const { return lookup(name); }
+  std::optional<T> operator[](symbol_id name) const {return lookup(name); } 
+  std::optional<T> operator[](const var& v) const { return lookup(v.name()); }
   std::optional<T>& operator[](symbol_id name) {
     grow(name);
     return values[name];
+  }
+  std::optional<T>& operator[](const var& v) {
+    return operator[](v.name());
   }
 
   bool contains(symbol_id name) const {
     if (name >= values.size()) { return false; }
     return !!values[name];
   }
+  bool contains(const var& v) const { return contains(v.name()); }
 
   std::size_t size() const { return values.size(); }
   auto begin() { return values.begin(); }

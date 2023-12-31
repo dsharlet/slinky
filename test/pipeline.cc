@@ -55,7 +55,7 @@ TEST(pipeline_trivial) {
   auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
 
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
 
   func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
 
@@ -105,7 +105,7 @@ TEST(pipeline_trivial_explicit) {
   auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
 
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
 
   func mul = func::make<const int, int>(multiply_2_assert_1_element, {in, {point(x)}}, {out, {x}});
   mul.loops({x});
@@ -145,7 +145,7 @@ TEST(pipeline_elementwise_1d) {
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
   auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
 
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
 
   func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
   func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
@@ -186,7 +186,7 @@ TEST(pipeline_elementwise_1d_explicit) {
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
   auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
 
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
 
   func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
   func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
@@ -241,9 +241,9 @@ TEST(pipeline_matmuls) {
 
   auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
-  expr i = make_variable(ctx, "i");
-  expr j = make_variable(ctx, "j");
-  expr k = make_variable(ctx, "k");
+  var i(ctx, "i");
+  var j(ctx, "j");
+  var k(ctx, "k");
 
   // The bounds required of the dimensions consumed by the reduction depend on the size of the
   // buffers passed in. Note that we haven't used any constants yet.
@@ -335,8 +335,8 @@ TEST(pipeline_pyramid) {
 
   auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
+  var x(ctx, "x");
+  var y(ctx, "y");
 
   func downsample =
       func::make<const int, int>(downsample2x, {in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}, {intm, {x, y}});
@@ -371,8 +371,8 @@ TEST(pipeline_stencil) {
 
   auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
+  var x(ctx, "x");
+  var y(ctx, "y");
 
   func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
   func stencil =
@@ -423,8 +423,8 @@ TEST(pipeline_flip_y) {
   auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
   auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
+  var x(ctx, "x");
+  var y(ctx, "y");
 
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
   func flip = func::make<const char, char>(flip_y<char>, {intm, {point(x), point(-y)}}, {out, {x, y}});
@@ -462,13 +462,13 @@ TEST(pipeline_padded_copy) {
   auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
   auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
+  var x(ctx, "x");
+  var y(ctx, "y");
 
   // We could just clamp using the bounds directly below, but that would hardcode the bounds we clamp
   // in the pipeline. This way, the bounds can vary at eval-time.
-  expr w = make_variable(ctx, "w");
-  expr h = make_variable(ctx, "h");
+  var w(ctx, "w");
+  var h(ctx, "h");
 
   // Copy the input so we can measure the size of the buffer we think we need internally.
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
@@ -520,9 +520,9 @@ TEST(pipeline_multiple_outputs) {
   auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(int), 2);
   auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(int), 1);
 
-  expr x = make_variable(ctx, "x");
-  expr y = make_variable(ctx, "y");
-  expr z = make_variable(ctx, "z");
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
 
   auto X = in->dim(0).bounds;
   auto Y = in->dim(1).bounds;

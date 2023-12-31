@@ -11,18 +11,19 @@
 namespace slinky {
 
 // Hackily get at this function in evaluate.cc that we don't want to put in the public API.
-void dump_context_for_expr(std::ostream&, const symbol_map<index_t>&, const expr& = expr(), const node_context* symbols = nullptr);
+void dump_context_for_expr(
+    std::ostream&, const symbol_map<index_t>&, const expr& = expr(), const node_context* symbols = nullptr);
 
-}
+}  // namespace slinky
 
 using namespace slinky;
 
 node_context symbols;
 
-expr x = make_variable(symbols, "x");
-expr y = make_variable(symbols, "y");
-expr z = make_variable(symbols, "z");
-expr w = make_variable(symbols, "w");
+var x(symbols, "x");
+var y(symbols, "y");
+var z(symbols, "z");
+var w(symbols, "w");
 
 template <typename T>
 void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
@@ -143,12 +144,8 @@ TEST(simplify_if_then_else) {
 }
 
 TEST(simplify_bounds) {
-  test_simplify(
-      loop::make(*as_variable(x), bounds(y - 2, z),
-          if_then_else::make(y - 2 <= x, check::make(z))),
-      loop::make(*as_variable(x), bounds(y + -2, z),
-          check::make(z)))
-          ;
+  test_simplify(loop::make(x.name(), bounds(y - 2, z), if_then_else::make(y - 2 <= x, check::make(z))),
+      loop::make(x.name(), bounds(y + -2, z), check::make(z)));
 }
 
 TEST(bounds_of) {
@@ -187,16 +184,16 @@ TEST(bounds_of) {
             int y_max = y_max_sign * scale;
 
             symbol_map<interval_expr> bounds;
-            bounds[*as_variable(x)] = slinky::bounds(x_min, x_max);
-            bounds[*as_variable(y)] = slinky::bounds(y_min, y_max);
+            bounds[x] = slinky::bounds(x_min, x_max);
+            bounds[y] = slinky::bounds(y_min, y_max);
 
             interval_expr bounds_e = bounds_of(e, bounds);
 
             eval_context ctx;
             for (int y_val = y_min; y_val <= y_max; ++y_val) {
               for (int x_val = x_min; x_val <= x_max; ++x_val) {
-                ctx[*as_variable(x)] = x_val;
-                ctx[*as_variable(y)] = y_val;
+                ctx[x] = x_val;
+                ctx[y] = y_val;
 
                 index_t result = evaluate(e, ctx);
                 index_t min = evaluate(bounds_e.min);
@@ -222,10 +219,10 @@ TEST(bounds_of) {
   }
 }
 
-std::vector<expr> vars = {x, y, z};
-std::vector<symbol_id> bufs = {symbols.insert("b0"), symbols.insert("b1")};
-expr b0 = variable::make(bufs[0]);
-expr b1 = variable::make(bufs[1]);
+std::vector<var> vars = {x, y, z};
+var b0(symbols, "b0");
+var b1(symbols, "b1");
+std::vector<var> bufs = {b0, b1};
 
 template <typename T>
 T random_pick(const std::vector<T>& from) {
@@ -268,7 +265,7 @@ expr make_random_expr(int depth) {
     switch (rand() % 4) {
     default: return random_pick(vars);
     case 1: return constant::make(random_constant());
-    case 2: return load_buffer_meta::make(variable::make(random_pick(bufs)), random_buffer_meta(), rand() % max_rank);
+    case 2: return load_buffer_meta::make(random_pick(bufs), random_buffer_meta(), rand() % max_rank);
     }
   } else {
     expr a = make_random_expr(depth - 1);
@@ -304,8 +301,8 @@ TEST(simplify_fuzz) {
   }
 
   symbol_map<interval_expr> var_bounds;
-  for (const expr& v : vars) {
-    var_bounds[*as_variable(v)] = {-max_abs_constant, max_abs_constant};
+  for (const var& v : vars) {
+    var_bounds[v] = {-max_abs_constant, max_abs_constant};
   }
 
   for (int i = 0; i < tests; ++i) {
@@ -318,8 +315,8 @@ TEST(simplify_fuzz) {
     bounds.max = simplify(bounds.max);
 
     for (int j = 0; j < checks; ++j) {
-      for (const expr& v : vars) {
-        ctx[*as_variable(v)] = random_constant();
+      for (const var& v : vars) {
+        ctx[v] = random_constant();
       }
       for (auto& b : buffers) {
         for (int d = 0; d < max_rank; ++d) {

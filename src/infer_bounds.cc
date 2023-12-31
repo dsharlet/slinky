@@ -138,16 +138,16 @@ public:
       auto arg_i = c->buffer_args.begin() + c->fn->inputs().size();
       for (const func::output& output : c->fn->outputs()) {
         const std::optional<box_expr>& crops_i = crops[*arg_i];
-        expr arg = variable::make(*arg_i++);
+        var arg(*arg_i++);
         for (index_t d = 0; d < static_cast<index_t>(output.dims.size()); ++d) {
-          symbol_id dim = *as_variable(output.dims[d]);
+          symbol_id dim = output.dims[d].name();
           if (crops_i && d < static_cast<index_t>(crops_i->size()) && (*crops_i)[d].min.defined() &&
               (*crops_i)[d].max.defined()) {
             mins[dim] = (*crops_i)[d].min;
             maxs[dim] = (*crops_i)[d].max;
           } else {
-            mins[dim] = get_buffer_meta(*as_variable(arg), buffer_meta::min, d);
-            maxs[dim] = get_buffer_meta(*as_variable(arg), buffer_meta::max, d);
+            mins[dim] = get_buffer_meta(arg.name(), buffer_meta::min, d);
+            maxs[dim] = get_buffer_meta(arg.name(), buffer_meta::max, d);
           }
         }
       }

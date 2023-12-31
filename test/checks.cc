@@ -17,7 +17,7 @@ TEST(pipeline_checks) {
   auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
 
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
 
   func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
 
