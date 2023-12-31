@@ -465,18 +465,23 @@ TEST(pipeline_padded_copy) {
   expr x = make_variable(ctx, "x");
   expr y = make_variable(ctx, "y");
 
-  const int W = 8;
-  const int H = 5;
+  // We could just clamp using the bounds directly below, but that would hardcode the bounds we clamp
+  // in the pipeline. This way, the bounds can vary at runtime.
+  expr w = make_variable(ctx, "w");
+  expr h = make_variable(ctx, "h");
 
   // Copy the input so we can measure the size of the buffer we think we need internally.
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
   // This is elementwise, but with a clamp to limit the bounds required of the input.
   func crop = func::make<const char, char>(
-      ::zero_padded_copy<char>, {intm, {point(clamp(x, 0, W - 1)), point(clamp(y, 0, H - 1))}}, {out, {x, y}});
+      ::zero_padded_copy<char>, {intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {out, {x, y}});
 
   crop.loops({y});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p(ctx, {w, h}, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
 
   // Run the pipeline.
   buffer<char, 2> in_buf({W, H});
@@ -488,10 +493,11 @@ TEST(pipeline_padded_copy) {
   out_buf.dim(1).translate(-H);
   out_buf.allocate();
 
+  index_t args[] = {W, H};
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+  p.evaluate(args, inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 

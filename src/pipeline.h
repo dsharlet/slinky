@@ -1,9 +1,9 @@
 #ifndef SLINKY_PIPELINE_H
 #define SLINKY_PIPELINE_H
 
-#include "ref_count.h"
-#include "expr.h"
 #include "evaluate.h"
+#include "expr.h"
+#include "ref_count.h"
 
 namespace slinky {
 
@@ -132,10 +132,8 @@ public:
   // TODO(https://github.com/dsharlet/slinky/issues/8): Try to do this with a variadic template implementation.
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output arg) {
-    return func(
-        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
-          return impl(outputs[0]->cast<Out1>());
-        },
+    return func([impl = std::move(impl)](std::span<raw_buffer*> inputs,
+                    std::span<raw_buffer*> outputs) -> index_t { return impl(outputs[0]->cast<Out1>()); },
         {}, {std::move(arg)});
   }
 
@@ -178,18 +176,27 @@ struct build_options {
 };
 
 class pipeline {
+  std::vector<symbol_id> args_;
   std::vector<buffer_expr_ptr> inputs_;
   std::vector<buffer_expr_ptr> outputs_;
 
   stmt body;
 
 public:
+  // TODO: The `args` should be limited to variables only, not arbitrary exprs (when we get type safe variable exprs
+  // from https://github.com/dsharlet/slinky/issues/7, that could be used here).
+  pipeline(node_context& ctx, std::vector<expr> args, std::vector<buffer_expr_ptr> inputs,
+      std::vector<buffer_expr_ptr> outputs, const build_options& options = build_options());
   pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
       const build_options& options = build_options());
 
-  index_t evaluate(
-      std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs, eval_context& ctx) const;
-  index_t evaluate(std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs) const;
+  using scalars = std::span<index_t>;
+  using buffers = std::span<const raw_buffer*>;
+
+  index_t evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const;
+  index_t evaluate(buffers inputs, buffers outputs, eval_context& ctx) const;
+  index_t evaluate(scalars args, buffers inputs, buffers outputs) const;
+  index_t evaluate(buffers inputs, buffers outputs) const;
 };
 
 }  // namespace slinky

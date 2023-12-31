@@ -333,17 +333,27 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
 }  // namespace
 
-pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
-    const build_options& options)
+pipeline::pipeline(node_context& ctx, std::vector<expr> args, std::vector<buffer_expr_ptr> inputs,
+    std::vector<buffer_expr_ptr> outputs, const build_options& options)
     : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+  for (const expr& i : args) {
+    args_.push_back(*as_variable(i));
+  }
   body = build_pipeline(ctx, inputs_, outputs_, options);
 }
 
-index_t pipeline::evaluate(
-    std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs, eval_context& ctx) const {
+pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
+    const build_options& options)
+    : pipeline(ctx, {}, std::move(inputs), std::move(outputs)) {}
+
+index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
+  assert(args.size() == args_.size());
   assert(inputs.size() == inputs_.size());
   assert(outputs.size() == outputs_.size());
 
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    ctx[args_[i]] = args[i];
+  }
   for (std::size_t i = 0; i < inputs.size(); ++i) {
     ctx[inputs_[i]->name()] = reinterpret_cast<index_t>(inputs[i]);
   }
@@ -354,9 +364,18 @@ index_t pipeline::evaluate(
   return slinky::evaluate(body, ctx);
 }
 
-index_t pipeline::evaluate(std::span<const raw_buffer*> inputs, std::span<const raw_buffer*> outputs) const {
+index_t pipeline::evaluate(buffers inputs, buffers outputs, eval_context& ctx) const {
+  return evaluate({}, inputs, outputs, ctx);
+}
+
+index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs) const {
   eval_context ctx;
-  return evaluate(inputs, outputs, ctx);
+  return evaluate(args, inputs, outputs, ctx);
+}
+
+index_t pipeline::evaluate(buffers inputs, buffers outputs) const {
+  eval_context ctx;
+  return evaluate(scalars(), inputs, outputs, ctx);
 }
 
 }  // namespace slinky
