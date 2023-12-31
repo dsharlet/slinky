@@ -2,6 +2,7 @@
 #define SLINKY_TEST_FUNCS_H
 
 #include "buffer.h"
+#include "copy.h"
 
 namespace slinky {
 
@@ -39,23 +40,15 @@ void for_each_index(const raw_buffer& b, F&& f) {
 // TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
 index_t copy(const buffer<const T>& in, const buffer<T>& out) {
-  const T* src = &in(out.dim(0).min(), out.dim(1).min());
-  T* dst = &out(out.dim(0).min(), out.dim(1).min());
-  std::size_t size = out.dim(0).extent() * out.elem_size;
-  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
-    std::copy(src, src + size, dst);
-    dst += out.dim(1).stride();
-    src += in.dim(1).stride();
-  }
+  copy(in, out, nullptr);
   return 0;
 }
 
 template <typename T>
 index_t zero_padded_copy(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](std::span<index_t> i) { 
-    out(i) = in.contains(i) ? in(i) : 0; 
-  });
+  T zero = 0;
+  slinky::copy(in, out, &zero);
   return 0;
 }
 

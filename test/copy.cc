@@ -29,12 +29,15 @@ struct big {
 };
 
 template <typename T, std::size_t N>
-void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr) {
-  index_t stride = buf.elem_size;
+void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr, bool broadcast = false) {
+  index_t stride = broadcast ? 0 : buf.elem_size;
   for (int i = 0; i < N; ++i) {
     dim& d = buf.dim(permutation ? permutation[i] : i);
     d.set_stride(stride);
     stride *= d.extent() + (padding ? padding[i] : 0);
+    if (stride == 0) {
+      stride = buf.elem_size;
+    }
   }
 }
 
@@ -44,45 +47,47 @@ void test_copy() {
   int dst_permutation[Rank];
   index_t src_padding[Rank] = {0};
   index_t dst_padding[Rank] = {0};
-  for (bool reverse_src : {false, true}) {
-    for (bool reverse_dst : {false, true}) {
-      for (index_t pad_src : {0, 1}) {
-        for (index_t pad_dst : {0, 1}) {
-          for (std::size_t i = 0; i < Rank; ++i) {
-            src_permutation[i] = reverse_src ? Rank - 1 - i : i;
-            dst_permutation[i] = reverse_dst ? Rank - 1 - i : i;
-            src_padding[i] = pad_src;
-            dst_padding[i] = pad_dst;
-          }
+  for (bool broadcast : {false, true}) {
+    for (bool reverse_src : {false, true}) {
+      for (bool reverse_dst : {false, true}) {
+        for (index_t pad_src : {0, 1}) {
+          for (index_t pad_dst : {0, 1}) {
+            for (std::size_t i = 0; i < Rank; ++i) {
+              src_permutation[i] = reverse_src ? Rank - 1 - i : i;
+              dst_permutation[i] = reverse_dst ? Rank - 1 - i : i;
+              src_padding[i] = pad_src;
+              dst_padding[i] = pad_dst;
+            }
 
-          T padding = 7;
+            T padding = 7;
 
-          buffer<T, Rank> src;
-          for (std::size_t d = 0; d < src.rank; ++d) {
-            src.dim(d).set_min_extent(d - Rank / 2, d + 10);
-          }
-          set_strides(src, src_permutation, src_padding);
-          src.allocate();
-          for_each_index(src, [&](auto i) { src(i) = rand(); });
+            buffer<T, Rank> src;
+            for (std::size_t d = 0; d < src.rank; ++d) {
+              src.dim(d).set_min_extent(d - Rank / 2, d + 10);
+            }
+            set_strides(src, src_permutation, src_padding, broadcast);
+            src.allocate();
+            for_each_index(src, [&](auto i) { src(i) = rand(); });
 
-          for (int dmin : {-1, 0, 1}) {
-            for (int dmax : {-1, 0, 1}) {
-              buffer<T, Rank> dst;
-              for (std::size_t d = 0; d < dst.rank; ++d) {
-                dst.dim(d).set_bounds(src.dim(d).min() + dmin, src.dim(d).max() + dmax);
-              }
-              set_strides(dst, dst_permutation, dst_padding);
-              dst.allocate();
-
-              copy(src, dst, &padding);
-
-              for_each_index(dst, [&](auto i) {
-                if (src.contains(i)) {
-                  ASSERT_EQ(dst(i), src(i));
-                } else {
-                  ASSERT_EQ(dst(i), padding);
+            for (int dmin : {-1, 0, 1}) {
+              for (int dmax : {-1, 0, 1}) {
+                buffer<T, Rank> dst;
+                for (std::size_t d = 0; d < dst.rank; ++d) {
+                  dst.dim(d).set_bounds(src.dim(d).min() + dmin, src.dim(d).max() + dmax);
                 }
-              });
+                set_strides(dst, dst_permutation, dst_padding);
+                dst.allocate();
+
+                copy(src, dst, &padding);
+
+                for_each_index(dst, [&](auto i) {
+                  if (src.contains(i)) {
+                    ASSERT_EQ(dst(i), src(i));
+                  } else {
+                    ASSERT_EQ(dst(i), padding);
+                  }
+                });
+              }
             }
           }
         }
