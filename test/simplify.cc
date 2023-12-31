@@ -194,10 +194,10 @@ TEST(bounds_of) {
                 if (result < min || result > max) {
                   std::cerr << "bounds_of failure: " << e << " -> " << bounds_e << std::endl;
                   std::cerr << result << " not in [" << min << ", " << max << "]" << std::endl;
-                  std::cerr << "ctx: ";
+                  std::cerr << "ctx: " << std::endl;
                   dump_symbol_map(std::cerr, ctx);
                   std::cerr << std::endl;
-                  std::cerr << "bounds: ";
+                  std::cerr << "bounds: " << std::endl;
                   dump_symbol_map(std::cerr, bounds);
                   std::cerr << std::endl;
                   std::abort();
