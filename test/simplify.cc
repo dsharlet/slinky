@@ -219,6 +219,30 @@ TEST(bounds_of) {
   }
 }
 
+void test_where(const expr& test, symbol_id var, const interval_expr& expected) {
+  interval_expr result = where_true(test, var);
+  if (!match(result.min, expected.min) || !match(result.max, expected.max)) {
+    std::cout << "where_true failed " << std::endl;
+    std::cout << test << std::endl;
+    std::cout << "got: " << std::endl;
+    std::cout << result << std::endl;
+    std::cout << "expected: " << std::endl;
+    std::cout << expected << std::endl;
+    ASSERT(false);
+  }
+}
+
+void test_where_true(const expr& test, symbol_id var, const interval_expr& expected) {
+  test_where(test, var, expected);
+}
+
+TEST(where_true) {
+  test_where_true(x < 5, 0, bounds(negative_infinity(), 4));
+  test_where_true(x / 2 < 7, 0, bounds(negative_infinity(), 13));
+  test_where_true(min(x, 6) < 7, 0, bounds(negative_infinity(), positive_infinity()));
+  test_where_true(-10 <= x && x < 5, 0, bounds(-10, 4));
+}
+
 std::vector<var> vars = {x, y, z};
 var b0(symbols, "b0");
 var b1(symbols, "b1");

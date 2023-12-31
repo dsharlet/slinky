@@ -1324,12 +1324,12 @@ interval_expr bounds_of(const expr& e, const bounds_map& bounds) {
   return fb.result;
 }
 
-std::optional<bool> attempt_to_prove(const expr& e, const bounds_map& expr_bounds) {
+std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
 
-  expr se = s.mutate(e);
+  expr c = s.mutate(condition);
 
-  interval_expr bounds = bounds_of(se, expr_bounds);
+  interval_expr bounds = bounds_of(c, expr_bounds);
   if (is_true(s.mutate(bounds.min))) {
     return true;
   } else if (is_false(s.mutate(bounds.max))) {
@@ -1339,14 +1339,61 @@ std::optional<bool> attempt_to_prove(const expr& e, const bounds_map& expr_bound
   }
 }
 
-bool prove_true(const expr& e, const bounds_map& bounds) {
-  std::optional<bool> r = attempt_to_prove(e, bounds);
+bool prove_true(const expr& condition, const bounds_map& bounds) {
+  std::optional<bool> r = attempt_to_prove(condition, bounds);
   return r && *r;
 }
 
-bool prove_false(const expr& e, const bounds_map& bounds) {
-  std::optional<bool> r = attempt_to_prove(e, bounds);
+bool prove_false(const expr& condition, const bounds_map& bounds) {
+  std::optional<bool> r = attempt_to_prove(condition, bounds);
   return r && !*r;
+}
+
+interval_expr where_true(const expr& condition, symbol_id var) {
+  // TODO: This needs a proper implementation. For now, a ridiculous hack: trial and error.
+  // We use the leaves of the expression as guesses around which to search.
+  // We could use every node in the expression...
+  class initial_guesses : public recursive_node_visitor {
+  public:
+    std::vector<expr> leaves;
+
+    void visit(const variable* x) { leaves.push_back(x); }
+    void visit(const constant* x) { leaves.push_back(x); }
+  };
+
+  initial_guesses v;
+  condition.accept(&v);
+
+  std::vector<expr> offsets;
+  offsets.push_back(negative_infinity());
+  for (index_t i = -10; i <= 10; ++i) {
+    offsets.push_back(i);
+  }
+  offsets.push_back(positive_infinity());
+
+  interval_expr result = interval_expr::none();
+  for (const expr& i : v.leaves) {
+    interval_expr result_i;
+    for (const expr& j : offsets) {
+      if (!result_i.min.defined()) {
+        // Find the first offset where the expression is true.
+        if (prove_true(substitute(condition, var, i + j))) {
+          result_i.min = i + j;
+          result_i.max = result_i.min;
+        }
+      } else if (prove_true(substitute(condition, var, i + j))) {
+        // Find the last offset where the expression is true.
+        result_i.max = i + j;
+      }
+    }
+    if (result_i.min.defined()) {
+      result.min = simplify(min(result.min, result_i.min));
+    }
+    if (result_i.max.defined()) {
+      result.max = simplify(max(result.max, result_i.max));
+    }
+  }
+  return result;
 }
 
 }  // namespace slinky

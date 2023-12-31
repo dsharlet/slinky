@@ -32,12 +32,15 @@ expr simplify(const class select* op, expr c, expr t, expr f);
 expr simplify(const call* op, std::vector<expr> args);
 
 // Determine an interval such that e is always inside the interval.
-interval_expr bounds_of(const expr& e, const bounds_map& bounds = bounds_map());
+interval_expr bounds_of(const expr& x, const bounds_map& bounds = bounds_map());
 
 // Attempts to determine if e can be proven to be always true or false.
-std::optional<bool> attempt_to_prove(const expr& e, const bounds_map& bounds = bounds_map());
-bool prove_true(const expr& e, const bounds_map& bounds = bounds_map());
-bool prove_false(const expr& e, const bounds_map& bounds = bounds_map());
+std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& bounds = bounds_map());
+bool prove_true(const expr& condition, const bounds_map& bounds = bounds_map());
+bool prove_false(const expr& condition, const bounds_map& bounds = bounds_map());
+
+// Find the interval for `var` that makes `e` true.
+interval_expr where_true(const expr& condition, symbol_id var);
 
 }  // namespace slinky
 

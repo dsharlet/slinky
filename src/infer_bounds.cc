@@ -203,9 +203,19 @@ public:
             // to move the loop min back so we compute the whole required region. We'll insert
             // ifs around the other parts of the loop to avoid expanding the bounds that those
             // run on.
-            loop_mins[l].second = simplify(loop_min - (new_min - old_min));
+            symbol_id new_loop_min_name = ctx.insert();
+            expr new_loop_min_var = variable::make(new_loop_min_name);
+            expr new_min_at_new_loop_min = substitute(new_min, loop_name, new_loop_min_var);
+            expr old_min_at_loop_min = substitute(old_min, loop_name, loop_min);
+            expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_name).max;
+            if (new_loop_min.defined()) {
+              loop_mins[l].second = simplify(loop_min - (new_min - old_min));
 
-            old_min = new_min;
+              old_min = new_min;
+            } else {
+              // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
+              old_min = select(loop_var == loop_min, old_min, new_min);
+            }
             break;
           } else if (prove_true(prev_bounds[d].min > crop_bounds[d].min) &&
                      prove_true(prev_bounds[d].max >= crop_bounds[d].max)) {
