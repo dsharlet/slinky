@@ -539,7 +539,7 @@ public:
 
   void accept(node_visitor* v) const;
 
-  static stmt make(memory_type type, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(memory_type storage, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
 };
@@ -578,23 +578,19 @@ public:
 };
 
 // This node is equivalent to the following:
-// 1. Crop `name` to the interval [min, min + extent) in-place
+// 1. Crop the `dim`th dimension of `name` to `bounds` in-place
 // 2. Evaluate `body`
 // 3. Restore the original buffer
 class crop_dim : public stmt_node<crop_dim> {
 public:
   symbol_id name;
   int dim;
-  // This uses [min, extent) and not interval_expr because crops to a small fixed size are so common,
-  // and need to be efficient. evaluating the max expression when the extent is a constant can add
-  // significant overhead for fine-grained crops.
-  expr min;
-  expr extent;
+  interval_expr bounds;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, int dim, expr min, expr extent, stmt body);
+  static stmt make(symbol_id name, int dim, interval_expr bounds, stmt body);
 
   static constexpr node_type static_type = node_type::crop_dim;
 };
@@ -743,8 +739,8 @@ public:
     x->body.accept(this);
   }
   virtual void visit(const crop_dim* x) override {
-    x->min.accept(this);
-    x->extent.accept(this);
+    x->bounds.min.accept(this);
+    x->bounds.max.accept(this);
     x->body.accept(this);
   }
   virtual void visit(const check* x) override { x->condition.accept(this); }

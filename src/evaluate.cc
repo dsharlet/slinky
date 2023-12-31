@@ -281,11 +281,11 @@ public:
     index_t old_min = dim.min();
     index_t old_extent = dim.extent();
 
-    index_t min = eval_expr(n->min);
-    index_t extent = eval_expr(n->extent);
+    index_t min = eval_expr(n->bounds.min);
+    index_t max = eval_expr(n->bounds.max);
 
     buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-    dim.set_min_extent(min, extent);
+    dim.set_bounds(min, max);
 
     n->body.accept(this);
 

@@ -355,12 +355,11 @@ stmt crop_buffer::make(symbol_id name, std::vector<interval_expr> bounds, stmt b
   return n;
 }
 
-stmt crop_dim::make(symbol_id name, int dim, expr min, expr extent, stmt body) {
+stmt crop_dim::make(symbol_id name, int dim, interval_expr bounds, stmt body) {
   auto n = new crop_dim();
   n->name = name;
   n->dim = dim;
-  n->min = std::move(min);
-  n->extent = std::move(extent);
+  n->bounds = std::move(bounds);
   n->body = std::move(body);
   return n;
 }

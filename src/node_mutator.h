@@ -223,13 +223,12 @@ public:
     }
   }
   virtual void visit(const crop_dim* x) override {
-    expr min = mutate(x->min);
-    expr extent = mutate(x->extent);
+    interval_expr bounds = {mutate(x->bounds.min), mutate(x->bounds.max)};
     stmt body = mutate(x->body);
-    if (min.same_as(x->min) && extent.same_as(x->extent) && body.same_as(x->body)) {
+    if (bounds.same_as(x->bounds) && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(crop_dim::make(x->name, x->dim, std::move(min), std::move(extent), std::move(body)));
+      set_result(crop_dim::make(x->name, x->dim, std::move(bounds), std::move(body)));
     }
   }
   virtual void visit(const check* x) override {

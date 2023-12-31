@@ -1074,8 +1074,7 @@ public:
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(new_bounds.size()) - 1;
-      interval_expr& bounds_d = new_bounds[d];
-      set_result(crop_dim::make(op->name, d, bounds_d.min, mutate(bounds_d.extent()), std::move(body)));
+      set_result(crop_dim::make(op->name, d, std::move(new_bounds[d]), std::move(body)));
     } else if (changed || !body.same_as(op->body)) {
       set_result(crop_buffer::make(op->name, std::move(new_bounds), std::move(body)));
     } else {
@@ -1084,27 +1083,25 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    expr min = mutate(op->min);
-    expr extent = mutate(op->extent);
-
-    std::optional<box_expr> bounds = buffer_bounds[op->name];
-    if (bounds && op->dim < static_cast<index_t>(bounds->size())) {
-      interval_expr& dim = (*bounds)[op->dim];
-      expr max = simplify(min + extent - 1);
-      if (prove_true(min == dim.min) && prove_true(max == dim.max)) {
+    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
+    
+    std::optional<box_expr> buf_bounds = buffer_bounds[op->name];
+    if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
+      interval_expr& dim = (*buf_bounds)[op->dim];
+      if (prove_true(bounds.min == dim.min) && prove_true(bounds.max == dim.max)) {
         // This crop is a no-op.
         set_result(mutate(op->body));
         return;
       }
-      (*bounds)[op->dim] = {min, max};
+      (*buf_bounds)[op->dim] = bounds;
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, buf_bounds);
     stmt body = mutate(op->body);
-    if (min.same_as(op->min) && extent.same_as(op->extent) && body.same_as(op->body)) {
+    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(crop_dim::make(op->name, op->dim, std::move(min), std::move(extent), std::move(body)));
+      set_result(crop_dim::make(op->name, op->dim, std::move(bounds), std::move(body)));
     }
   }
 

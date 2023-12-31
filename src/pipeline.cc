@@ -65,8 +65,7 @@ class pipeline_builder {
 
   struct crop_info {
     int dim;
-    expr min;
-    expr extent;
+    interval_expr bounds;
   };
 
   using scope_crops = std::map<symbol_id, std::vector<crop_info>>;
@@ -174,7 +173,7 @@ public:
 
         // Add all the crops for this buffer.
         for (const crop_info& c : b->second) {
-          result = crop_dim::make(b->first, c.dim, c.min, c.extent, result);
+          result = crop_dim::make(b->first, c.dim, c.bounds, result);
         }
       }
     }
@@ -190,7 +189,7 @@ public:
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (*as_variable(o.dims[d]) == *as_variable(loop)) {
-          to_crop[o.buffer->name()].emplace_back(d, loop, 1);
+          to_crop[o.buffer->name()].emplace_back(d, point(loop));
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
@@ -327,6 +326,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
     result = remove_checks().mutate(result);
   }
+  print(std::cout, result, &ctx);
 
   return result;
 }

@@ -316,9 +316,7 @@ public:
     os << "crop_dim<" << n->dim << ">(";
     print_symbol_id(n->name);
     os << ", ";
-    print(n->min);
-    os << ", ";
-    print(n->extent);
+    print(n->bounds);
     os << ") {" << std::endl;
     ++depth;
     print(n->body);

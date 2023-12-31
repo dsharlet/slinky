@@ -236,7 +236,7 @@ public:
 
   void visit(const crop_dim* c) override {
     std::optional<box_expr> cropped_bounds = crops[c->name];
-    vector_at(cropped_bounds, c->dim) = min_extent(c->min, c->extent);
+    vector_at(cropped_bounds, c->dim) = c->bounds;
 
     auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
     stmt body = mutate(c->body);
@@ -249,11 +249,11 @@ public:
       // simplify away later anyways, and make it easier to track bounds. This isn't easily
       // doable due to this hack.
       set_result(if_then_else::make(
-          body_if->condition, crop_dim::make(c->name, c->dim, c->min, c->extent, body_if->true_body), stmt()));
+          body_if->condition, crop_dim::make(c->name, c->dim, c->bounds, body_if->true_body), stmt()));
     } else if (body.same_as(c->body)) {
       set_result(c);
     } else {
-      set_result(crop_dim::make(c->name, c->dim, c->min, c->extent, std::move(body)));
+      set_result(crop_dim::make(c->name, c->dim, c->bounds, std::move(body)));
     }
   }
 

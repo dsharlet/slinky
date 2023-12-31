@@ -304,8 +304,7 @@ public:
 
     if (!try_match(cds->name, x->name)) return;
     if (!try_match(cds->dim, x->dim)) return;
-    if (!try_match(cds->min, x->min)) return;
-    if (!try_match(cds->extent, x->extent)) return;
+    if (!try_match(cds->bounds, x->bounds)) return;
     if (!try_match(cds->body, x->body)) return;
   }
 
