@@ -2,7 +2,6 @@
 #define SLINKY_TEST_FUNCS_H
 
 #include "buffer.h"
-#include "copy.h"
 
 namespace slinky {
 

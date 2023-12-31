@@ -1,8 +1,6 @@
-#include "copy.h"
+#include "buffer.h"
 
 #include <cstdint>
-
-#include "buffer.h"
 
 namespace slinky {
 
@@ -179,7 +177,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
       dims[i].pad_before = std::max<index_t>(0, copy_begin - dst.dim(i).begin());
       dims[i].pad_after = std::max<index_t>(0, dst.dim(i).end() - copy_end);
 
-    // If the src min is before the dst min, adjust the base.
+      // If the src min is before the dst min, adjust the base.
       if (dst.dim(i).begin() > src.dim(i).begin()) {
         src_base += dims[i].src_stride * (dst.dim(i).begin() - src.dim(i).begin());
       }

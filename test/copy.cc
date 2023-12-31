@@ -1,4 +1,3 @@
-#include "copy.h"
 #include "buffer.h"
 #include "test.h"
 #include "funcs.h"
