@@ -131,7 +131,7 @@ public:
     assert(c->fn);
     // Expand the bounds required of the inputs.
     for (const func::input& input : c->fn->inputs()) {
-      std::map<symbol_id, expr> mins, maxs;
+      symbol_map<expr> mins, maxs;
       // TODO(https://github.com/dsharlet/slinky/issues/7): We need a better way to map
       // inputs/outputs between func and call_func. Here, we are assuming that c->buffer_args
       // is the inputs concatenated with the outputs, in that order.
@@ -203,7 +203,7 @@ public:
             // to move the loop min back so we compute the whole required region. We'll insert
             // ifs around the other parts of the loop to avoid expanding the bounds that those
             // run on.
-            symbol_id new_loop_min_name = ctx.insert();
+            symbol_id new_loop_min_name = ctx.insert_unique();
             expr new_loop_min_var = variable::make(new_loop_min_name);
             expr new_min_at_new_loop_min = substitute(new_min, loop_name, new_loop_min_var);
             expr old_min_at_loop_min = substitute(old_min, loop_name, loop_min);

@@ -51,6 +51,7 @@ public:
   auto end() { return values.end(); }
   auto begin() const { return values.begin(); }
   auto end() const { return values.end(); }
+  void clear() { values.clear(); }
 };
 
 // Set a value in an eval_context upon construction, and restore the old value upon destruction.

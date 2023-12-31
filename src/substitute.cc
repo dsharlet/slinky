@@ -10,7 +10,7 @@ namespace slinky {
 class matcher : public node_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
   const base_node* self;
-  std::map<symbol_id, expr>* matches;
+  symbol_map<expr>* matches;
 
   template <typename T>
   const T* self_as() const {
@@ -24,8 +24,8 @@ class matcher : public node_visitor {
 public:
   int match = 0;
 
-  matcher(const expr& e, std::map<symbol_id, expr>* matches = nullptr) : self(e.get()), matches(matches) {}
-  matcher(const stmt& s, std::map<symbol_id, expr>* matches = nullptr) : self(s.get()), matches(matches) {}
+  matcher(const expr& e, symbol_map<expr>* matches = nullptr) : self(e.get()), matches(matches) {}
+  matcher(const stmt& s, symbol_map<expr>* matches = nullptr) : self(s.get()), matches(matches) {}
 
   template <typename T>
   bool try_match(T self, T x) {
@@ -123,12 +123,12 @@ public:
   void match_wildcard(symbol_id name, std::function<bool(const expr&)> predicate) {
     if (match) return;
 
-    expr& matched = (*matches)[name];
-    if (matched.defined()) {
+    std::optional<expr>& matched = (*matches)[name];
+    if (matched) {
       // We already matched this variable. The expression must match.
-      std::map<symbol_id, expr>* old_matches = matches;
+      symbol_map<expr>* old_matches = matches;
       matches = nullptr;
-      matched.accept(this);
+      matched->accept(this);
       matches = old_matches;
     } else if (!predicate || predicate(static_cast<const base_expr_node*>(self))) {
       // This is a new match.
@@ -329,7 +329,7 @@ public:
   }
 };
 
-bool match(const expr& p, const expr& e, std::map<symbol_id, expr>& matches) {
+bool match(const expr& p, const expr& e, symbol_map<expr>& matches) {
   matcher m(e, &matches);
   p.accept(&m);
   return m.match == 0;
@@ -352,10 +352,10 @@ int compare(const stmt& a, const stmt& b) {
 
 namespace {
 
-std::map<symbol_id, expr> empty_replacements;
+symbol_map<expr> empty_replacements;
 
 class substitutor : public node_mutator {
-  const std::map<symbol_id, expr>& replacements = empty_replacements;
+  const symbol_map<expr>& replacements = empty_replacements;
   symbol_id target_var = -1;
   expr target;
   expr replacement;
@@ -364,7 +364,7 @@ class substitutor : public node_mutator {
   symbol_map<bool> shadowed;
 
 public:
-  substitutor(const std::map<symbol_id, expr>& replacements) : replacements(replacements) {}
+  substitutor(const symbol_map<expr>& replacements) : replacements(replacements) {}
   substitutor(symbol_id target, const expr& replacement) : target_var(target), replacement(replacement) {}
   substitutor(const expr& target, const expr& replacement) : target(target), replacement(replacement) {}
 
@@ -385,12 +385,8 @@ public:
     } else if (v->name == target_var) {
       set_result(replacement);
     } else {
-      auto i = replacements.find(v->name);
-      if (i != replacements.end()) {
-        set_result(i->second);
-      } else {
-        set_result(v);
-      }
+      std::optional<expr> r = replacements.lookup(v->name);
+      set_result(r ? *r : v);
     }
   }
 
@@ -412,10 +408,10 @@ public:
 
 }  // namespace
 
-expr substitute(const expr& e, const std::map<symbol_id, expr>& replacements) {
+expr substitute(const expr& e, const symbol_map<expr>& replacements) {
   return substitutor(replacements).mutate(e);
 }
-stmt substitute(const stmt& s, const std::map<symbol_id, expr>& replacements) {
+stmt substitute(const stmt& s, const symbol_map<expr>& replacements) {
   return substitutor(replacements).mutate(s);
 }
 

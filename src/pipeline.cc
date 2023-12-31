@@ -3,6 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <set>
+#include <map>
 
 #include "evaluate.h"
 #include "infer_bounds.h"

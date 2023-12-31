@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
-#include <map>
 #include <memory>
 #include <span>
 #include <string>
@@ -20,7 +19,6 @@ using symbol_id = std::size_t;
 // We don't want to be doing string lookups in the inner loops. A node_context
 // uniquely maps strings to symbol_id.
 class node_context {
-  std::map<std::string, symbol_id> name_to_id;
   std::vector<std::string> id_to_name;
 
 public:
@@ -29,7 +27,7 @@ public:
 
   // Get or insert a new symbol_id for a name.
   symbol_id insert(const std::string& name);
-  symbol_id insert();
+  symbol_id insert_unique(const std::string& prefix = "_");
   symbol_id lookup(const std::string& name) const;
 };
 

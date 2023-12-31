@@ -206,8 +206,9 @@ public:
 
   expr apply(expr x) {
     // std::cerr << "apply_rules: " << x << std::endl;
+    symbol_map<expr> matches;
     for (const rule& r : rules_) {
-      std::map<symbol_id, expr> matches;
+      matches.clear();
       // std::cerr << "  Considering " << r.pattern << std::endl;
       if (match(r.pattern, x, matches)) {
         // std::cerr << "  Matched:" << std::endl;
@@ -917,7 +918,7 @@ public:
       // This let is dead
       return body;
     } else if (refs == 1 || value.as<constant>() || value.as<variable>()) {
-      return mutate(substitute(body, {{op->name, value}}));
+      return mutate(substitute(body, op->name, value));
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
       return decltype(body){op};
     } else {

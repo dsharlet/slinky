@@ -13,29 +13,26 @@ std::string node_context::name(symbol_id i) const {
 }
 
 symbol_id node_context::insert(const std::string& name) {
-  auto i = name_to_id.find(name);
-  if (i == name_to_id.end()) {
-    symbol_id id = id_to_name.size();
+  symbol_id id = lookup(name);
+  if (id == -1) {
+    id = id_to_name.size();
     id_to_name.push_back(name);
-    name_to_id[name] = id;
-    return id;
   }
-  return i->second;
+  return id;
 }
-symbol_id node_context::insert() {
+symbol_id node_context::insert_unique(const std::string& prefix) {
   symbol_id id = id_to_name.size();
-  std::string name = "t" + std::to_string(id);
-  id_to_name.push_back(name);
-  name_to_id[name] = id;
+  id_to_name.push_back(prefix + std::to_string(id));
   return id;
 }
 symbol_id node_context::lookup(const std::string& name) const {
-  auto i = name_to_id.find(name);
-  if (i != name_to_id.end()) {
-    return i->second;
-  } else {
-    return -1;
+  // TODO: At some point we might need a better data structure than doing this linear search.
+  for (symbol_id i = 0; i < id_to_name.size(); ++i) {
+    if (id_to_name[i] == name) {
+      return i;
+    }
   }
+  return -1;
 }
 
 template <typename T>
