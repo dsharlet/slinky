@@ -282,6 +282,39 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding = nu
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
 
+namespace internal {
+
+template <typename F>
+void for_each_index(std::span<const dim> dims, int d, std::span<index_t> is, F&& f) {
+  if (d == 0) {
+    for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
+      is[0] = i;
+      f(is);
+    }
+  } else {
+    for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
+      is[d] = i;
+      for_each_index(dims, d - 1, is, f);
+    }
+  }
+}
+
+}  // namespace internal
+
+// Call `f(std::span<index_t>)` for each index in the range of `dims`, or the dims of `buf`.
+// This function is not fast, use it for non-performance critical code. It is useful for
+// making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
+template <typename F>
+void for_each_index(std::span<const dim> dims, F&& f) {
+  // Not using alloca for performance, but to avoid including <vector>
+  index_t* i = reinterpret_cast<index_t*>(alloca(dims.size() * sizeof(index_t)));
+  internal::for_each_index(dims, dims.size() - 1, {i, dims.size()}, f);
+}
+template <typename F>
+void for_each_index(const raw_buffer& buf, F&& f) {
+  for_each_index({buf.dims, buf.rank}, f);
+}
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUFFER_H
