@@ -1104,14 +1104,13 @@ public:
   void visit(const slice_buffer* op) override {
     // Update the bounds for the slice. Sliced dimensions are removed from the bounds.
     std::optional<box_expr> bounds = buffer_bounds[op->name];
-    std::vector<expr> at;
-    at.reserve(op->at.size());
+    std::vector<expr> at(op->at.size());
     std::size_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->at.size()); ++i) {
       if (op->at[i].defined()) {
-        at.push_back(mutate(op->at[i]));
-        changed = changed || !at.back().same_as(op->at[i]);
+        at[i] = mutate(op->at[i]);
+        changed = changed || !at[i].same_as(op->at[i]);
 
         // We sliced this dimension. Remove it from the bounds.
         if (bounds && i < static_cast<index_t>(bounds->size())) {
