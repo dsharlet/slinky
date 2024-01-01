@@ -122,9 +122,23 @@ void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, c
   }
 }
 
+// For sorting tiny arrays of dimension metadata, this is faster than std::sort.
+template <class It>
+void bubble_sort(It begin, It end) {
+  for (It i = begin; i != end; ++i) {
+    for (It j = i; j != end; ++j) {
+      if (*j < *i) {
+        std::swap(*i, *j);
+      }
+    }
+  }
+}
+
 std::size_t optimize_copy_dims(copy_dim* dims, std::size_t rank) {
+  if (rank == 1) return 1;
+
   // Sort the dims by (dst) stride.
-  std::sort(dims, dims + rank);
+  bubble_sort(dims, dims + rank);
 
   // Find dimensions we can fuse.
   for (std::size_t d = 0; d + 1 < rank;) {
@@ -135,7 +149,7 @@ std::size_t optimize_copy_dims(copy_dim* dims, std::size_t rank) {
       dims[d].size = dims[d].size * dims[d + 1].size;
       dims[d].total_size = dims[d].size;
 
-      // Remove the now-fused dst dimension.
+      // Remove the now-fused dimension.
       for (std::size_t i = d + 1; i + 1 < rank; ++i) {
         dims[i] = dims[i + 1];
       }
@@ -155,6 +169,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
 
   std::size_t rank = dst.rank;
   if (rank == 0) {
+    // The buffers are scalar.
     memcpy(dst.base, src.base, dst.elem_size);
     return;
   }
@@ -199,6 +214,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
 void fill(const raw_buffer& dst, const void* value) {
   std::size_t rank = dst.rank;
   if (rank == 0) {
+    // The buffer is scalar.
     memcpy(dst.base, value, dst.elem_size);
     return;
   }
