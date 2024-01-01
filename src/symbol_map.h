@@ -17,6 +17,11 @@ class symbol_map {
 
 public:
   symbol_map() {}
+  symbol_map(std::initializer_list<std::pair<symbol_id, T>> init) {
+    for (const std::pair<symbol_id, T>& i : init) {
+      operator[](i.first) = i.second;
+    }
+  }
 
   std::optional<T> lookup(symbol_id name) const {
     if (name < values.size()) { return values[name]; }
