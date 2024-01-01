@@ -11,6 +11,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace slinky {
 
@@ -28,7 +29,7 @@ public:
   // Get or insert a new symbol_id for a name.
   symbol_id insert(const std::string& name);
   symbol_id insert_unique(const std::string& prefix = "_");
-  symbol_id lookup(const std::string& name) const;
+  std::optional<symbol_id> lookup(const std::string& name) const;
 };
 
 enum class node_type {

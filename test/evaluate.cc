@@ -9,10 +9,10 @@ using namespace slinky;
 
 TEST(evaluate_arithmetic) {
   node_context ctx;
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
 
   eval_context context;
-  context[ctx.lookup("x")] = 4;
+  context[x] = 4;
 
   ASSERT_EQ(evaluate(x + 5, context), 9);
   ASSERT_EQ(evaluate(x - 3, context), 1);
@@ -37,7 +37,7 @@ TEST(evaluate_arithmetic) {
 
 TEST(evaluate_call) {
   node_context ctx;
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
   std::vector<index_t> calls;
   stmt c = call_func::make(
       [&](std::span<const index_t> scalars, std::span<raw_buffer*> buffers) -> index_t {
@@ -47,7 +47,7 @@ TEST(evaluate_call) {
       {x}, {}, nullptr);
 
   eval_context context;
-  context[ctx.lookup("x")] = 2;
+  context[x] = 2;
 
   int result = evaluate(c, context);
   ASSERT_EQ(result, 0);
@@ -57,7 +57,7 @@ TEST(evaluate_call) {
 
 TEST(evaluate_loop) {
   node_context ctx;
-  expr x = make_variable(ctx, "x");
+  var x(ctx, "x");
   std::vector<index_t> calls;
   stmt c = call_func::make(
       [&](std::span<const index_t> scalars, std::span<raw_buffer*> buffers) -> index_t {
@@ -66,7 +66,7 @@ TEST(evaluate_loop) {
       },
       {x}, {}, nullptr);
 
-  stmt l = loop::make(ctx.lookup("x"), range(2, 12), c);
+  stmt l = loop::make(x.name(), range(2, 12), c);
 
   int result = evaluate(l);
   ASSERT_EQ(result, 0);
