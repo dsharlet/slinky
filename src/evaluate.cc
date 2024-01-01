@@ -328,10 +328,13 @@ public:
     index_t old_extent = dim.extent();
 
     index_t min = eval_expr(n->bounds.min);
-    index_t max = eval_expr(n->bounds.max);
-
     buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-    dim.set_bounds(min, max);
+    if (n->bounds.min.same_as(n->bounds.max)) {
+      // Crops to a single element are common, we can optimize them a little bit by re-using the min
+      dim.set_point(min);
+    } else {
+      dim.set_bounds(min, eval_expr(n->bounds.max));
+    }
 
     n->body.accept(this);
 

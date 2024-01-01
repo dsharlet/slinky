@@ -43,6 +43,7 @@ public:
   index_t fold_factor() const { return fold_factor_; }
 
   void set_extent(index_t extent) { extent_ = extent; }
+  void set_point(index_t x) { min_ = x; extent_ = 1; }
   void set_bounds(index_t min, index_t max) { min_ = min; extent_ = max - min + 1; }
   void set_range(index_t begin, index_t end) {  min_ = begin; extent_ = end - begin; }
   void set_min_extent(index_t min, index_t extent) { min_ = min; extent_ = extent; }
