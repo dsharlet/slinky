@@ -292,8 +292,8 @@ public:
     if (!mbs) return;
 
     if (!try_match(mbs->name, x->name)) return;
-    if (!try_match(mbs->elem_size, x->elem_size)) return;
     if (!try_match(mbs->base, x->base)) return;
+    if (!try_match(mbs->elem_size, x->elem_size)) return;
     if (!try_match(mbs->dims, x->dims)) return;
     if (!try_match(mbs->body, x->body)) return;
   }

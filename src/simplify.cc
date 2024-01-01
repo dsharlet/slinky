@@ -1046,17 +1046,24 @@ public:
 
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
+    expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
     box_expr bounds;
     dims.reserve(op->dims.size());
+    bool changed = false;
     for (const dim_expr& i : op->dims) {
       interval_expr bounds_i = mutate(i.bounds);
       dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
       bounds.push_back(bounds_i);
+      changed = changed || !dims.back().same_as(i);
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
     stmt body = mutate(op->body);
-    set_result(make_buffer::make(op->name, std::move(base), op->elem_size, std::move(dims), std::move(body)));
+    if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
+      set_result(make_buffer::make(op->name, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+    } else {
+      set_result(op);
+    }
   }
 
   void visit(const crop_buffer* op) override {

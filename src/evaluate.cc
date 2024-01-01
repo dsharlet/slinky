@@ -166,7 +166,9 @@ public:
     raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
     void* result = buf->base;
     for (std::size_t d = 0; d < x->args.size() - 1; ++d) {
-      result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(x->args[d + 1])));
+      if (x->args[d + 1].defined()) {
+        result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(x->args[d + 1])));
+      }
     }
     return result;
   }
@@ -305,7 +307,7 @@ public:
     // Allocate a buffer with space for its dims on the stack.
     char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
-    buffer->elem_size = n->elem_size;
+    buffer->elem_size = eval_expr(n->elem_size);
     buffer->base = reinterpret_cast<void*>(eval_expr(n->base));
     buffer->rank = rank;
     buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);

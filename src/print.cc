@@ -251,8 +251,10 @@ public:
   void visit(const make_buffer* n) override {
     os << indent();
     print_symbol_id(n->name);
-    os << " = make_buffer<" << n->elem_size << ">(";
+    os << " = make_buffer(";
     print(n->base);
+    os << ", ";
+    print(n->elem_size);
     os << ", {" << std::endl;
     ++depth;
     for (const dim_expr& d : n->dims) {

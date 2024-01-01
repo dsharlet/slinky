@@ -182,6 +182,7 @@ public:
   }
   virtual void visit(const make_buffer* x) override {
     expr base = mutate(x->base);
+    expr elem_size = mutate(x->elem_size);
     std::vector<dim_expr> dims;
     dims.reserve(x->dims.size());
     bool changed = false;
@@ -191,10 +192,10 @@ public:
       changed = changed || dims.back().same_as(i);
     }
     stmt body = mutate(x->body);
-    if (!changed && base.same_as(x->base) && body.same_as(x->body)) {
+    if (!changed && base.same_as(x->base) && elem_size.same_as(x->elem_size) && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(make_buffer::make(x->name, std::move(base), x->elem_size, std::move(dims), std::move(body)));
+      set_result(make_buffer::make(x->name, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     }
   }
   virtual void visit(const crop_buffer* x) override {

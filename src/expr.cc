@@ -326,11 +326,11 @@ stmt allocate::make(memory_type storage, symbol_id name, std::size_t elem_size, 
   return n;
 }
 
-stmt make_buffer::make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt make_buffer::make(symbol_id name, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new make_buffer();
   n->name = name;
   n->base = std::move(base);
-  n->elem_size = elem_size;
+  n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
   n->body = std::move(body);
   return n;

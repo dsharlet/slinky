@@ -542,13 +542,13 @@ class make_buffer : public stmt_node<make_buffer> {
 public:
   symbol_id name;
   expr base;
-  std::size_t elem_size;
+  expr elem_size;
   std::vector<dim_expr> dims;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, expr base, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(symbol_id name, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::make_buffer;
 };
@@ -740,6 +740,7 @@ public:
   }
   virtual void visit(const make_buffer* x) override {
     x->base.accept(this);
+    x->elem_size.accept(this);
     for (const dim_expr& i : x->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
