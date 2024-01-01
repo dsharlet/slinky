@@ -27,33 +27,6 @@ std::vector<expr> assert_points(std::span<const interval_expr> bounds) {
   return result;
 }
 
-// Implement a copy by evaluating the expressions for the input bounds at each output.
-// This is unusably slow, it exists as the reference implementation that should always
-// be correct.
-void general_copy(const raw_buffer& in, const std::vector<expr>& at, const raw_buffer& out,
-    const std::vector<var>& dims, const std::vector<char>& padding) {
-  assert(in.elem_size == out.elem_size);
-  std::vector<index_t> in_i(at.size());
-  eval_context ctx;
-  for_each_index(out, [&](std::span<index_t> out_i) {
-    // Set the output coordinates.
-    for (std::size_t d = 0; d < out_i.size(); ++d) {
-      ctx[dims[d]] = out_i[d];
-    }
-    // Evaluate the input coordinates.
-    for (std::size_t d = 0; d < in_i.size(); ++d) {
-      in_i[d] = evaluate(at[d], ctx);
-    }
-    const void* src;
-    if (out.contains(out_i)) {
-      src = in.address_at(in_i);
-    } else {
-      src = padding.data();
-    }
-    memcpy(out.address_at(out_i), src, out.elem_size);
-  });
-}
-
 std::vector<expr> substitute(std::vector<expr> x, const symbol_map<expr>& replacements) {
   for (expr& i : x) {
     i = substitute(i, replacements);
@@ -81,6 +54,24 @@ class copy_implementer : public node_mutator {
     std::vector<expr> loop_vars(dims.size());
     symbol_map<expr> dims_to_loop_vars;
     for (std::size_t od = 0; od < dims.size(); ++od) {
+      int uses_count = 0;
+      for (const expr& i : bounds) {
+        if (depends_on(i, dims[od].name())) {
+          uses_count++;
+        }
+      }
+
+      // If this dimension is copied directly, and no other dimension's bounds depend on this dimension, we can skip
+      // this loop and let the call to copy handle it.
+      if (od < bounds.size() && uses_count == 1) {
+        if (match(bounds[od], dims[od])) {
+          bounds[od] = expr();
+          continue;
+        } else {
+          // TODO: Try to match clamps and translations and call out to copy in those cases.
+        }
+      }
+
       // TODO: If we decide we can assume that output::dims and input::bounds must use the same context as the rest of
       // the pipeline, we could use those variables here, which would make for more readable code.
       loop_vars[od] = variable::make(ctx.insert_unique());
@@ -93,8 +84,10 @@ class copy_implementer : public node_mutator {
 
     // Make the loops.
     for (int od = 0; od < static_cast<int>(dims.size()); ++od) {
-      interval_expr bounds = {buffer_min(var(out_arg), od), buffer_max(var(out_arg), od)};
-      copy = loop::make(*as_variable(loop_vars[od]), bounds, copy);
+      if (loop_vars[od].defined()) {
+        interval_expr bounds = {buffer_min(var(out_arg), od), buffer_max(var(out_arg), od)};
+        copy = loop::make(*as_variable(loop_vars[od]), bounds, copy);
+      }
     }
     return copy;
   }
