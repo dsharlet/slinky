@@ -77,7 +77,7 @@ TEST(copy_flip_y) {
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, -y), in_buf(x, y));
+        ASSERT_EQ(out_buf(x, -y, z), in_buf(x, y, z));
       }
     }
   }
@@ -154,7 +154,7 @@ TEST(copy_transpose) {
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y), in_buf(y, x));
+        ASSERT_EQ(out_buf(x, y, z), in_buf(y, x, z));
       }
     }
   }
@@ -227,8 +227,9 @@ TEST(copy_padded) {
   var h(ctx, "h");
 
   // This is elementwise, but with a clamp to limit the bounds required of the input.
+  std::vector<char> padding(sizeof(int), 0);
   func crop = func::make_copy(
-      {in, {point(c), point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1)), point(z)}}, {out, {c, x, y, z}});
+      {in, {point(c), point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1)), point(z)}}, {out, {c, x, y, z}}, padding);
 
   pipeline p(ctx, {w, h}, {in}, {out});
 
@@ -260,8 +261,7 @@ TEST(copy_padded) {
           if (0 <= x && x < W && 0 <= y && y < H) {
             ASSERT_EQ(out_buf(c, x, y, z), in_buf(c, x, y, z));
           } else {
-            // TODO: Doesn't pad yet.
-            // ASSERT_EQ(out_buf(c, x, y, z), 0);
+            ASSERT_EQ(out_buf(c, x, y, z), 0);
           }
         }
       }

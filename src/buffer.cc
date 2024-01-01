@@ -170,12 +170,16 @@ std::size_t optimize_copy_dims(copy_dim* dims, std::size_t rank) {
 
   // Find dimensions we can fuse.
   for (std::size_t d = 0; d + 1 < rank;) {
-    if (dims[d].pad_before == 0 && dims[d].pad_after == 0 &&
-        dims[d + 1].dst_stride == dims[d].dst_stride * dims[d].total_size &&
-        dims[d + 1].src_stride == dims[d].src_stride * dims[d].total_size) {
-      assert(dims[d].size == dims[d].total_size);
-      dims[d].size = dims[d].size * dims[d + 1].size;
-      dims[d].total_size = dims[d].size;
+    copy_dim& a = dims[d];
+    const copy_dim& b = dims[d + 1];
+    if (a.pad_before == 0 && a.pad_after == 0 &&
+        b.dst_stride == a.dst_stride * a.total_size &&
+        b.src_stride == a.src_stride * a.total_size) {
+      assert(a.size == a.total_size);
+      a.pad_before = b.pad_before * a.size;
+      a.pad_after = b.pad_after * a.size;
+      a.total_size = b.total_size * a.size;
+      a.size = b.size * a.size;
 
       // Remove the now-fused dimension.
       for (std::size_t i = d + 1; i + 1 < rank; ++i) {

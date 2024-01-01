@@ -47,7 +47,7 @@ class copy_implementer : public node_mutator {
   node_context& ctx;
 
   stmt implement_copy(
-      const func* fn, std::vector<expr> bounds, std::vector<var> dims, symbol_id in_arg, symbol_id out_arg) {
+      const func* fn, std::vector<expr> in_x, std::vector<var> out_x, symbol_id in_arg, symbol_id out_arg) {
     // We're always going to have a call to copy at the innermost loop.
     stmt copy = call_func::make(
         [padding = fn->padding()](std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
@@ -60,45 +60,67 @@ class copy_implementer : public node_mutator {
         {}, {in_arg, out_arg}, fn);
 
     // Make variables for the loops.
-    std::vector<expr> loop_vars(dims.size());
-    symbol_map<expr> dims_to_loop_vars;
-    for (std::size_t od = 0; od < dims.size(); ++od) {
+    std::vector<expr> loop_vars(out_x.size());
+    symbol_map<expr> out_x_to_loop_vars;
+    for (std::size_t od = 0; od < out_x.size(); ++od) {
       int uses_count = 0;
-      for (const expr& i : bounds) {
-        if (depends_on(i, dims[od].name())) {
+      for (const expr& i : in_x) {
+        if (depends_on(i, out_x[od].name())) {
           uses_count++;
         }
       }
 
-      if (od < bounds.size() && uses_count <= 1) {
+      if (od < in_x.size() && uses_count <= 1) {
         // This input dimension is accessed only by this output dimension. We might be able to let copy handle it.
-        interval_expr bounds_od = bounds_of(bounds[od]);
-        if (match(bounds[od], dims[od])) {
-          // This dimension is a simple copy.
-          bounds[od] = expr();
-          continue;
-        } else if (match(bounds_od.min, bounds_od.max) && !depends_on(bounds_od.min, dims)) {
+        interval_expr bounds_x = bounds_of(in_x[od], {{out_x[od].name(), interval_expr::all()}});
+        bounds_x.min = simplify(bounds_x.min);
+        bounds_x.max = simplify(bounds_x.max);
+
+        if (bounds_x.min.defined() && match(bounds_x.min, bounds_x.max) && !depends_on(bounds_x.min, out_x)) {
           // This dimension is a broadcast.
           // TODO: copy can handle this, but we need to set the stride to 0 somehow.
-          //bounds[od] = expr();
-          //continue;
-        } else {
-          // TODO: Try to match clamps and translations and call out to copy in those cases.
+          // in_x[od] = expr();
+          // continue;
+        }
+
+        // Simplify the input x assuming it is in bounds.
+        expr without_bounds = simplify(in_x[od], {{out_x[od].name(), bounds_x}});
+        if (match(without_bounds, out_x[od])) {
+          // This dimension is a simple copy.
+          in_x[od] = expr();
+
+          // But did we clamp it?
+          if (!is_negative_infinity(bounds_x.min) || !is_positive_infinity(bounds_x.max)) {
+            copy = crop_dim::make(in_arg, od, bounds_x, copy);
+          }
+          continue;
+        }
+
+        // The above simplification doesn't actually handle clamps yet.
+        // TODO: When simplify can simplify away redundant clamps, this case should be removed.
+        symbol_map<expr> matches;
+        var x(0), a(1), b(2);
+        if (match(clamp(x, a, b), in_x[od], matches) && match(*matches[x], out_x[od])) {
+          // This dimension is a cropped copy.
+          in_x[od] = expr();
+
+          copy = crop_dim::make(in_arg, od, {*matches[a], *matches[b]}, copy);
+          continue;
         }
       }
 
       // TODO: If we decide we can assume that output::dims and input::bounds must use the same context as the rest of
       // the pipeline, we could use those variables here, which would make for more readable code.
       loop_vars[od] = variable::make(ctx.insert_unique());
-      dims_to_loop_vars[dims[od]] = loop_vars[od];
+      out_x_to_loop_vars[out_x[od]] = loop_vars[od];
     }
 
     // Slice the buffers.
-    copy = slice_buffer::make(in_arg, substitute(bounds, dims_to_loop_vars), copy);
+    copy = slice_buffer::make(in_arg, substitute(in_x, out_x_to_loop_vars), copy);
     copy = slice_buffer::make(out_arg, loop_vars, copy);
 
     // Make the loops.
-    for (int od = 0; od < static_cast<int>(dims.size()); ++od) {
+    for (int od = 0; od < static_cast<int>(out_x.size()); ++od) {
       if (loop_vars[od].defined()) {
         interval_expr bounds = {buffer_min(var(out_arg), od), buffer_max(var(out_arg), od)};
         copy = loop::make(*as_variable(loop_vars[od]), bounds, copy);
