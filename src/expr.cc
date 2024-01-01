@@ -408,6 +408,14 @@ expr buffer_at(expr buf, const std::vector<expr>& at) {
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
+expr buffer_at(expr buf, const std::vector<var>& at) {
+  std::vector<expr> args = {buf};
+  args.reserve(at.size() + 1);
+  for (const var& i : at) {
+    args.push_back(i);
+  }
+  return call::make(intrinsic::buffer_at, std::move(args));
+}
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
 

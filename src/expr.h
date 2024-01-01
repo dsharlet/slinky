@@ -808,7 +808,6 @@ inline void slice_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void slice_dim::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
-expr make_variable(node_context& ctx, const std::string& name);
 
 inline const index_t* as_constant(const expr& x) {
   const constant* cx = x.as<constant>();
@@ -872,6 +871,25 @@ inline bool is_non_positive(const expr& x) {
   return c ? *c <= 0 : false;
 }
 
+// This is an expr-like wrapper for use where only a `variable` expr is allowed.
+class var {
+  expr e_;
+
+public:
+  var();
+  var(symbol_id name);
+  var(node_context& ctx, const std::string& name);
+
+  symbol_id name() const {
+    assert(e_.defined());
+    return *as_variable(e_);
+  }
+
+  operator const expr&() const { return e_; }
+
+  expr operator-() const { return -e_; }
+};
+
 expr abs(expr x);
 
 expr buffer_rank(expr buf);
@@ -884,27 +902,10 @@ expr buffer_extent(expr buf, expr dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 expr buffer_at(expr buf, const std::vector<expr>& at);
+expr buffer_at(expr buf, const std::vector<var>& at);
 
 bool is_buffer_intrinsic(intrinsic fn);
 
-// This is an expr-like wrapper for use where only a `variable` expr is allowed.
-class var {
-  expr e_;
-
-public:
-  var();
-  var(symbol_id name);
-  var(node_context& ctx, const std::string& name);
-
-  symbol_id name() const { 
-    assert(e_.defined());
-    return *as_variable(e_); 
-  }
-
-  operator const expr&() const { return e_; }
-
-  expr operator-() const { return -e_; }
-};
 
 }  // namespace slinky
 
