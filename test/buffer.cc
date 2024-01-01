@@ -16,6 +16,8 @@ TEST(raw_buffer_make) {
 TEST(buffer) {
   buffer<int, 2> buf({10, 20});
 
+  ASSERT_EQ(buf.rank, 2);
+
   ASSERT_EQ(buf.dim(0).min(), 0);
   ASSERT_EQ(buf.dim(0).extent(), 10);
   ASSERT_EQ(buf.dim(0).stride(), sizeof(int));

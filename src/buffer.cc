@@ -73,6 +73,7 @@ void fill(char* dst, const copy_dim* dims, index_t elem_size, const void* value,
 }
 
 void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, const void* padding, int dim) {
+  // src can be nullptr, in which case we should only fill the padding.
   const copy_dim& d = dims[dim];
   if (dim == 0) {
     if (d.dst_stride == elem_size) {
@@ -82,15 +83,15 @@ void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, c
       }
       if (d.src_stride == elem_size) {
         // src and dst are both dense, this can be implemented by memcpy.
-        memcpy(dst, src, d.size * elem_size);
+        if (src) memcpy(dst, src, d.size * elem_size);
         dst += d.size * elem_size;
       } else if (d.src_stride == 0) {
         // Special case for broadcasting to a dense dst.
-        fill(dst, elem_size, src, d.size);
+        if (src) fill(dst, elem_size, src, d.size);
         dst += d.size * elem_size;
       } else {
         // Need to copy one element at a time to skip padding.
-        copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
+        if (src) copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
         dst += d.size * d.dst_stride;
       }
       if (d.pad_after > 0) {
@@ -102,7 +103,7 @@ void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, c
         fill(dst, d.dst_stride, elem_size, padding, d.pad_before);
         dst += d.dst_stride * d.pad_before;
       }
-      copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
+      if (src) copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
       dst += d.size * d.dst_stride;
       if (d.pad_after > 0) {
         fill(dst, d.dst_stride, elem_size, padding, d.pad_after);
@@ -115,7 +116,7 @@ void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, c
     }
     for (index_t i = 0; i < d.size; ++i) {
       copy(src, dst, dims, elem_size, padding, dim - 1);
-      src += d.src_stride;
+      if (src) src += d.src_stride;
       dst += d.dst_stride;
     }
     for (index_t i = 0; i < d.pad_after; ++i) {
@@ -135,6 +136,30 @@ void bubble_sort(It begin, It end) {
       }
     }
   }
+}
+
+index_t compute_padding(const dim& src, const dim& dst, copy_dim& dim) {
+  index_t src_offset = 0;
+  if (dst.end() <= src.begin() || dst.begin() >= src.end()) {
+    // This dimension is all padding.
+    dim.pad_before = dim.total_size;
+    dim.size = 0;
+    dim.pad_after = 0;
+  } else {
+    index_t copy_begin = std::max(src.begin(), dst.begin());
+    index_t copy_end = std::min(src.end(), dst.end());
+    dim.size = std::max<index_t>(0, copy_end - copy_begin);
+    dim.pad_before = std::max<index_t>(0, copy_begin - dst.begin());
+    dim.pad_after = std::max<index_t>(0, dst.end() - copy_end);
+
+    // If the src min is before the dst min, adjust the base.
+    if (dst.begin() > src.begin()) {
+      src_offset = dim.src_stride * (dst.begin() - src.begin());
+    }
+  }
+
+  assert(dim.pad_before + dim.pad_after + dim.size == dim.total_size);
+  return src_offset;
 }
 
 std::size_t optimize_copy_dims(copy_dim* dims, std::size_t rank) {
@@ -183,35 +208,40 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   // Make a list of pointers to dims that we are going to copy.
   copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * rank));
   for (std::size_t i = 0; i < rank; ++i) {
-    dims[i].src_stride = src.dim(i).stride();
-    dims[i].dst_stride = dst.dim(i).stride();
-    dims[i].total_size = dst.dim(i).extent();
-
-    if (dst.dim(i).end() <= src.dim(i).begin() || dst.dim(i).begin() >= src.dim(i).end()) {
-      // This dimension is all padding.
-      dims[i].pad_before = dims[i].total_size;
-      dims[i].size = 0;
-      dims[i].pad_after = 0;
-    } else {
-      index_t copy_begin = std::max(src.dim(i).begin(), dst.dim(i).begin());
-      index_t copy_end = std::min(src.dim(i).end(), dst.dim(i).end());
-      dims[i].size = std::max<index_t>(0, copy_end - copy_begin);
-      dims[i].pad_before = std::max<index_t>(0, copy_begin - dst.dim(i).begin());
-      dims[i].pad_after = std::max<index_t>(0, dst.dim(i).end() - copy_end);
-
-      // If the src min is before the dst min, adjust the base.
-      if (dst.dim(i).begin() > src.dim(i).begin()) {
-        src_base += dims[i].src_stride * (dst.dim(i).begin() - src.dim(i).begin());
-      }
-    }
-
-    assert(dims[i].pad_before + dims[i].pad_after + dims[i].size == dims[i].total_size);
+    dims[i].src_stride = src.dims[i].stride();
+    dims[i].dst_stride = dst.dims[i].stride();
+    dims[i].total_size = dst.dims[i].extent();
+    src_base += compute_padding(src.dims[i], dst.dims[i], dims[i]);
   }
 
   rank = optimize_copy_dims(dims, rank);
 
   // Now we have an optimized set of dimensions to copy. Run the copy.
   copy(src_base, dst_base, dims, dst.elem_size, padding, rank - 1);
+}
+
+void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
+  std::size_t rank = dst.rank;
+  if (rank == 0) {
+    // The buffer is scalar.
+    return;
+  }
+
+  char* dst_base = reinterpret_cast<char*>(dst.base);
+
+  // Make a list of pointers to dims that we are going to pad.
+  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * rank));
+  for (std::size_t i = 0; i < rank; ++i) {
+    dims[i].src_stride = 0;
+    dims[i].dst_stride = dst.dims[i].stride();
+    dims[i].total_size = dst.dims[i].extent();
+    compute_padding(in_bounds[i], dst.dims[i], dims[i]);
+  }
+
+  rank = optimize_copy_dims(dims, rank);
+
+  // Now we have an optimized set of dimensions to pad. Run the pad.
+  copy(nullptr, dst_base, dims, dst.elem_size, padding, rank - 1);
 }
 
 void fill(const raw_buffer& dst, const void* value) {
@@ -228,7 +258,7 @@ void fill(const raw_buffer& dst, const void* value) {
   copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * rank));
   for (std::size_t i = 0; i < rank; ++i) {
     dims[i].dst_stride = dst.dim(i).stride();
-    dims[i].src_stride = dims[i].dst_stride;  // For optimize_copy_dims
+    dims[i].src_stride = 0;  // For optimize_copy_dims
     dims[i].total_size = dst.dim(i).extent();
 
     dims[i].pad_before = dims[i].total_size;

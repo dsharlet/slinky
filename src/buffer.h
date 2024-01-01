@@ -122,19 +122,28 @@ public:
   void operator=(raw_buffer&&) = delete;
   ~raw_buffer() { free(); }
 
-  slinky::dim& dim(std::size_t i) { return dims[i]; }
-  const slinky::dim& dim(std::size_t i) const { return dims[i]; }
+  slinky::dim& dim(std::size_t i) {
+    assert(i < rank);
+    return dims[i];
+  }
+  const slinky::dim& dim(std::size_t i) const {
+    assert(i < rank);
+    return dims[i];
+  }
 
   template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
+    assert(sizeof...(indices) + 1 == rank);
     return flat_offset_bytes_impl(dims, i0, indices...);
   }
   template <typename... Indices>
   void* address_at(index_t i0, Indices... indices) const {
+    assert(sizeof...(indices) + 1 == rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
+    assert(sizeof...(indices) + 1 == rank);
     return contains_impl(dims, i0, indices...);
   }
 
@@ -279,6 +288,9 @@ const buffer<NewT>& raw_buffer::cast() const {
 // `padding` should point to `dst.elem_size` bytes, or if `padding` is null, out of bounds regions
 // are unmodified.
 void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding = nullptr);
+
+// Performs only the padding operation of a copy. The region that would have been copied is unmodified.
+void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
