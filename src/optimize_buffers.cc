@@ -41,11 +41,11 @@ class copy_implementer : public node_mutator {
       const func* fn, std::vector<expr> bounds, std::vector<var> dims, symbol_id in_arg, symbol_id out_arg) {
     // We're always going to have a call to copy at the innermost loop.
     stmt copy = call_func::make(
-        [](std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
+        [padding = fn->padding()](std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
           assert(buffers.size() == 2);
           const raw_buffer& in = *buffers[0];
           const raw_buffer& out = *buffers[1];
-          slinky::copy(in, out);
+          slinky::copy(in, out, padding.empty() ? nullptr : padding.data());
           return 0;
         },
         {}, {in_arg, out_arg}, fn);
