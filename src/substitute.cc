@@ -370,12 +370,18 @@ bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
 
 int compare(const expr& a, const expr& b) {
+  // This should match the behavior of matcher::try_match.
+  // TODO: It would be nice if we didn't need to duplicate this tricky logic.
+  if (!b.defined()) return a.defined() ? 1 : 0;
   matcher m(a);
   b.accept(&m);
   return m.match;
 }
 
 int compare(const stmt& a, const stmt& b) {
+  // This should match the behavior of matcher::try_match.
+  // TODO: It would be nice if we didn't need to duplicate this tricky logic.
+  if (!b.defined()) return a.defined() ? 1 : 0;
   matcher m(a);
   b.accept(&m);
   return m.match;

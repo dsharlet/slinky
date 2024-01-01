@@ -3,6 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
+#include <set>
 
 #include "evaluate.h"
 #include "node_mutator.h"
