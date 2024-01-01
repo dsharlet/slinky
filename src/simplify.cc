@@ -1127,6 +1127,7 @@ public:
     while (at.size() > 0 && !at.back().defined()) {
       at.pop_back();
     }
+    changed = changed || at.size() != op->at.size();
     if (at.empty()) {
       // This slice was a no-op.
       set_result(std::move(body));
