@@ -23,9 +23,8 @@ void fill(T* dst, T value, index_t size) {
 }
 
 void fill(char* dst, index_t elem_size, const void* value, index_t size) {
-  if (!value) {
-    return;
-  }
+  if (!value) return;
+
   switch (elem_size) {
   case 1: fill(reinterpret_cast<uint8_t*>(dst), *reinterpret_cast<const uint8_t*>(value), size); return;
   case 2: fill(reinterpret_cast<uint16_t*>(dst), *reinterpret_cast<const uint16_t*>(value), size); return;
@@ -39,6 +38,8 @@ void fill(char* dst, index_t elem_size, const void* value, index_t size) {
 }
 
 void fill(char* dst, index_t stride, index_t elem_size, const void* value, index_t size) {
+  if (!value) return;
+
   for (index_t i = 0; i < size; ++i) {
     memcpy(dst, value, elem_size);
     dst += stride;
@@ -54,9 +55,11 @@ void copy(const char* src, index_t src_stride, char* dst, index_t dst_stride, in
 }
 
 void fill(char* dst, const copy_dim* dims, index_t elem_size, const void* value, int dim) {
+  if (!value) return;
+
   const copy_dim& d = dims[dim];
   if (dim == 0) {
-    if (d.src_stride == elem_size && d.dst_stride == elem_size) {
+    if (d.dst_stride == elem_size) {
       fill(dst, elem_size, value, d.total_size);
     } else {
       fill(dst, d.dst_stride, elem_size, value, d.total_size);

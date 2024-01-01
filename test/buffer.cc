@@ -122,6 +122,17 @@ void test_copy() {
                     ASSERT_EQ(dst(i), padding);
                   }
                 });
+
+                copy(src, dst, nullptr);
+
+                for_each_index(dst, [&](auto i) {
+                  if (src.contains(i)) {
+                    ASSERT_EQ(dst(i), src(i));
+                  } else {
+                    // The padding should be unchanged.
+                    ASSERT_EQ(dst(i), padding);
+                  }
+                });
               }
             }
           }
