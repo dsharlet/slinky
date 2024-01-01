@@ -482,18 +482,21 @@ public:
 }  // namespace
 
 bool depends_on(const expr& e, symbol_id var) {
+  if (!e.defined()) return false;
   dependencies v(var);
   e.accept(&v);
   return v.found_var || v.found_buf;
 }
 
 bool depends_on_variable(const expr& e, symbol_id var) {
+  if (!e.defined()) return false;
   dependencies v(var);
   e.accept(&v);
   return v.found_var;
 }
 
 bool depends_on_buffer(const expr& e, symbol_id buf) {
+  if (!e.defined()) return false;
   dependencies v(buf);
   e.accept(&v);
   return v.found_buf;
