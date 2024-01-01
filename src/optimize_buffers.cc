@@ -34,6 +34,15 @@ std::vector<expr> substitute(std::vector<expr> x, const symbol_map<expr>& replac
   return x;
 }
 
+bool depends_on(const expr& e, std::span<const var> vars) {
+  for (const var& i : vars) {
+    if (depends_on(e, i.name())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 class copy_implementer : public node_mutator {
   node_context& ctx;
 
@@ -61,12 +70,18 @@ class copy_implementer : public node_mutator {
         }
       }
 
-      // If this dimension is copied directly, and no other dimension's bounds depend on this dimension, we can skip
-      // this loop and let the call to copy handle it.
-      if (od < bounds.size() && uses_count == 1) {
+      if (od < bounds.size() && uses_count <= 1) {
+        // This input dimension is accessed only by this output dimension. We might be able to let copy handle it.
+        interval_expr bounds_od = bounds_of(bounds[od]);
         if (match(bounds[od], dims[od])) {
+          // This dimension is a simple copy.
           bounds[od] = expr();
           continue;
+        } else if (match(bounds_od.min, bounds_od.max) && !depends_on(bounds_od.min, dims)) {
+          // This dimension is a broadcast.
+          // TODO: copy can handle this, but we need to set the stride to 0 somehow.
+          //bounds[od] = expr();
+          //continue;
         } else {
           // TODO: Try to match clamps and translations and call out to copy in those cases.
         }
