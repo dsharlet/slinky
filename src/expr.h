@@ -65,6 +65,8 @@ enum class node_type {
   make_buffer,
   crop_buffer,
   crop_dim,
+  slice_buffer,
+  slice_dim,
   check,
 };
 
@@ -571,7 +573,7 @@ public:
 // 1. Crop `name` to the interval_expr `min, max` in-place in each dimension.
 // 2. Evaluate `body`
 // 3. Restore the original buffer
-class crop_buffer : public stmt_node<make_buffer> {
+class crop_buffer : public stmt_node<crop_buffer> {
 public:
   symbol_id name;
   std::vector<interval_expr> bounds;
@@ -600,6 +602,33 @@ public:
   static stmt make(symbol_id name, int dim, interval_expr bounds, stmt body);
 
   static constexpr node_type static_type = node_type::crop_dim;
+};
+
+class slice_buffer : public stmt_node<slice_buffer> {
+public:
+  symbol_id name;
+  std::vector<expr> at;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, std::vector<expr> at, stmt body);
+
+  static constexpr node_type static_type = node_type::slice_buffer;
+};
+
+class slice_dim : public stmt_node<slice_dim> {
+public:
+  symbol_id name;
+  int dim;
+  expr at;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, int dim, expr at, stmt body);
+
+  static constexpr node_type static_type = node_type::slice_dim;
 };
 
 class check : public stmt_node<check> {
@@ -648,6 +677,8 @@ public:
   virtual void visit(const make_buffer*) = 0;
   virtual void visit(const crop_buffer*) = 0;
   virtual void visit(const crop_dim*) = 0;
+  virtual void visit(const slice_buffer*) = 0;
+  virtual void visit(const slice_dim*) = 0;
   virtual void visit(const check*) = 0;
 };
 
@@ -750,6 +781,16 @@ public:
     x->bounds.max.accept(this);
     x->body.accept(this);
   }
+  virtual void visit(const slice_buffer* x) override {
+    for (const expr& i : x->at) {
+      if (i.defined()) i.accept(this);
+    }
+    x->body.accept(this);
+  }
+  virtual void visit(const slice_dim* x) override {
+    x->at.accept(this);
+    x->body.accept(this);
+  }
   virtual void visit(const check* x) override { x->condition.accept(this); }
 };
 
@@ -784,6 +825,8 @@ inline void allocate::accept(node_visitor* v) const { v->visit(this); }
 inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_dim::accept(node_visitor* v) const { v->visit(this); }
+inline void slice_buffer::accept(node_visitor* v) const { v->visit(this); }
+inline void slice_dim::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 expr make_variable(node_context& ctx, const std::string& name);

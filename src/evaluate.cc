@@ -282,26 +282,6 @@ public:
     n->body.accept(this);
   }
 
-  void visit(const crop_dim* n) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
-    slinky::dim& dim = buffer->dims[n->dim];
-
-    void* old_base = buffer->base;
-    index_t old_min = dim.min();
-    index_t old_extent = dim.extent();
-
-    index_t min = eval_expr(n->bounds.min);
-    index_t max = eval_expr(n->bounds.max);
-
-    buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-    dim.set_bounds(min, max);
-
-    n->body.accept(this);
-
-    buffer->base = old_base;
-    dim.set_min_extent(old_min, old_extent);
-  }
-
   void visit(const crop_buffer* n) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
 
@@ -337,6 +317,83 @@ public:
       slinky::dim& dim = buffer->dims[d];
       dim.set_min_extent(old_bounds[d].min, old_bounds[d].extent);
     }
+  }
+
+  void visit(const crop_dim* n) override {
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
+    slinky::dim& dim = buffer->dims[n->dim];
+
+    void* old_base = buffer->base;
+    index_t old_min = dim.min();
+    index_t old_extent = dim.extent();
+
+    index_t min = eval_expr(n->bounds.min);
+    index_t max = eval_expr(n->bounds.max);
+
+    buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
+    dim.set_bounds(min, max);
+
+    n->body.accept(this);
+
+    buffer->base = old_base;
+    dim.set_min_extent(old_min, old_extent);
+  }
+
+  void visit(const slice_buffer* n) override {
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
+
+    // The rank of the result is equal to the current rank, less any sliced dimensions.
+    std::size_t old_rank = buffer->rank;
+    dim* old_dims = buffer->dims;
+
+    // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
+    buffer->dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * old_rank));
+
+    buffer->rank = 0;
+    index_t offset = 0;
+    for (std::size_t d = 0; d < old_rank; ++d) {
+      if (d < n->at.size() && n->at[d].defined()) {
+        offset += old_dims[d].flat_offset_bytes(eval_expr(n->at[d]));
+      } else {
+        buffer->dims[buffer->rank++] = old_dims[d];
+      }
+    }
+
+    void* old_base = buffer->base;
+    buffer->base = offset_bytes(buffer->base, offset);
+
+    n->body.accept(this);
+
+    buffer->base = old_base;
+    buffer->rank = old_rank;
+    buffer->dims = old_dims;
+  }
+
+  void visit(const slice_dim* n) override {
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
+
+    // The rank of the result is equal to the current rank, less any sliced dimensions.
+    dim* old_dims = buffer->dims;
+
+    buffer->dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * (buffer->rank - 1)));
+
+    index_t offset = buffer->dims[n->dim].flat_offset_bytes(eval_expr(n->at));
+    void* old_base = buffer->base;
+    buffer->base = offset_bytes(buffer->base, offset);
+
+    for (std::size_t d = 0; d < n->dim; ++d) {
+      buffer->dims[d] = old_dims[d];
+    }
+    for (std::size_t d = n->dim + 1; d < buffer->rank; ++d) {
+      buffer->dims[d - 1] = old_dims[d];
+    }
+    buffer->rank -= 1;
+
+    n->body.accept(this);
+
+    buffer->base = old_base;
+    buffer->rank += 1;
+    buffer->dims = old_dims;
   }
 
   void visit(const check* n) override {

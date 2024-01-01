@@ -231,6 +231,30 @@ public:
       set_result(crop_dim::make(x->name, x->dim, std::move(bounds), std::move(body)));
     }
   }
+  virtual void visit(const slice_buffer* x) override {
+    std::vector<expr> at;
+    at.reserve(x->at.size());
+    bool changed = false;
+    for (const expr& i : x->at) {
+      at.emplace_back(mutate(i));
+      changed = changed || at.back().same_as(i);
+    }
+    stmt body = mutate(x->body);
+    if (!changed && body.same_as(x->body)) {
+      set_result(x);
+    } else {
+      set_result(slice_buffer::make(x->name, std::move(at), std::move(body)));
+    }
+  }
+  virtual void visit(const slice_dim* x) override {
+    expr at = mutate(x->at);
+    stmt body = mutate(x->body);
+    if (at.same_as(x->at) && body.same_as(x->body)) {
+      set_result(x);
+    } else {
+      set_result(slice_dim::make(x->name, x->dim, std::move(at), std::move(body)));
+    }
+  }
   virtual void visit(const check* x) override {
     expr condition = mutate(x->condition);
     if (condition.same_as(x->condition)) {

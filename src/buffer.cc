@@ -154,6 +154,10 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   assert(src.elem_size == dst.elem_size);
 
   std::size_t rank = dst.rank;
+  if (rank == 0) {
+    memcpy(dst.base, src.base, dst.elem_size);
+    return;
+  }
 
   const char* src_base = reinterpret_cast<const char*>(src.base);
   char* dst_base = reinterpret_cast<char*>(dst.base);
@@ -194,6 +198,10 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
 
 void fill(const raw_buffer& dst, const void* value) {
   std::size_t rank = dst.rank;
+  if (rank == 0) {
+    memcpy(dst.base, value, dst.elem_size);
+    return;
+  }
 
   char* dst_base = reinterpret_cast<char*>(dst.base);
 

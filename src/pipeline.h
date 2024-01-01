@@ -104,9 +104,12 @@ private:
   std::vector<var> loops_;
   loop_id compute_at_;
 
+  std::vector<char> padding_;
+
 public:
   func() {}
   func(callable impl, std::vector<input> inputs, std::vector<output> outputs);
+  func(std::vector<input> inputs, output out, std::vector<char> padding);
   func(const func&) = default;
   func(func&&) = default;
   func& operator=(const func&) = default;
@@ -162,9 +165,14 @@ public:
         {std::move(in1)}, {std::move(out1), std::move(out2)});
   }
 
+  static func make_copy(input in, output out, std::vector<char> padding = {}) {
+    return func({std::move(in)}, {std::move(out)}, std::move(padding));
+  }
+
   const callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
+  const std::vector<char>& padding() const { return padding_; }
 };
 
 // TODO: I wanted this to be pipeline::build_options, but I hit some tricky compiler error

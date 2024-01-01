@@ -138,7 +138,7 @@ void test_copy() {
   test_copy<T, 3>();
 }
 
-TEST(copy) {
+TEST(buffer_copy) {
   test_copy<uint8_t>();
   test_copy<uint16_t>();
   test_copy<uint32_t>();

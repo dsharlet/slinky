@@ -11,6 +11,7 @@
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
+#include "optimize_buffers.h"
 
 namespace slinky {
 
@@ -52,6 +53,11 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
   for (auto& i : outputs_) {
     i.buffer->add_producer(this);
   }
+}
+
+func::func(std::vector<input> inputs, output out, std::vector<char> padding)
+    : func(nullptr, std::move(inputs), {std::move(out)}) {
+  padding_ = std::move(padding);
 }
 
 namespace {
@@ -228,11 +234,6 @@ public:
     // spans of buffers.
     std::size_t input_count = f->inputs().size();
     std::size_t output_count = f->outputs().size();
-    auto wrapper = [impl = f->impl(), input_count, output_count](
-                       std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
-      assert(buffers.size() == input_count + output_count);
-      return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
-    };
     std::vector<symbol_id> buffer_args;
     buffer_args.reserve(input_count + output_count);
     for (const func::input& i : f->inputs()) {
@@ -244,7 +245,17 @@ public:
         to_allocate.insert(i.buffer);
       }
     }
-    stmt call_f = call_func::make(std::move(wrapper), {}, std::move(buffer_args), f);
+    stmt call_f;
+    if (f->impl()) {
+      auto wrapper = [impl = f->impl(), input_count, output_count](
+                         std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
+        assert(buffers.size() == input_count + output_count);
+        return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
+      };
+      call_f = call_func::make(std::move(wrapper), {}, std::move(buffer_args), f);
+    } else {
+      call_f = call_func::make(nullptr, {}, std::move(buffer_args), f);
+    }
 
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);
@@ -318,6 +329,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = simplify(result);
 
+  result = implement_copies(result, ctx);
+
+  result = simplify(result);
+
   if (options.no_checks) {
     class remove_checks : public node_mutator {
     public:
@@ -326,7 +341,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
     result = remove_checks().mutate(result);
   }
-  print(std::cout, result, &ctx);
 
   return result;
 }

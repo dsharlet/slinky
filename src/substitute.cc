@@ -330,6 +330,27 @@ public:
     if (!try_match(cds->body, x->body)) return;
   }
 
+  void visit(const slice_buffer* x) override {
+    if (match) return;
+    const slice_buffer* cbs = match_self_as(x);
+    if (!cbs) return;
+
+    if (!try_match(cbs->name, x->name)) return;
+    if (!try_match(cbs->at, x->at)) return;
+    if (!try_match(cbs->body, x->body)) return;
+  }
+
+  void visit(const slice_dim* x) override {
+    if (match) return;
+    const slice_dim* cds = match_self_as(x);
+    if (!cds) return;
+
+    if (!try_match(cds->name, x->name)) return;
+    if (!try_match(cds->dim, x->dim)) return;
+    if (!try_match(cds->at, x->at)) return;
+    if (!try_match(cds->body, x->body)) return;
+  }
+
   void visit(const check* x) override {
     if (match) return;
     const check* cs = match_self_as(x);

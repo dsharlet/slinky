@@ -361,6 +361,23 @@ stmt crop_dim::make(symbol_id name, int dim, interval_expr bounds, stmt body) {
   return n;
 }
 
+stmt slice_buffer::make(symbol_id name, std::vector<expr> at, stmt body) {
+  auto n = new slice_buffer();
+  n->name = name;
+  n->at = std::move(at);
+  n->body = std::move(body);
+  return n;
+}
+
+stmt slice_dim::make(symbol_id name, int dim, expr at, stmt body) {
+  auto n = new slice_dim();
+  n->name = name;
+  n->dim = dim;
+  n->at = std::move(at);
+  n->body = std::move(body);
+  return n;
+}
+
 stmt check::make(expr condition) {
   auto n = new check();
   n->condition = std::move(condition);

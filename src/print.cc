@@ -324,6 +324,41 @@ public:
     os << indent() << "}" << std::endl;
   }
 
+  void visit(const slice_buffer* n) override {
+    os << indent();
+    os << "slice_buffer(";
+    print_symbol_id(n->name);
+    os << ", {" << std::endl;
+    ++depth;
+    for (const expr& d : n->at) {
+      os << indent();
+      print(d);
+      if (&d != &n->at.back()) {
+        os << ", ";
+      }
+      os << std::endl;
+    }
+    --depth;
+    os << indent() << "}) {" << std::endl;
+    ++depth;
+    print(n->body);
+    --depth;
+    os << indent() << "}" << std::endl;
+  }
+
+  void visit(const slice_dim* n) override {
+    os << indent();
+    os << "slice_dim<" << n->dim << ">(";
+    print_symbol_id(n->name);
+    os << ", ";
+    print(n->at);
+    os << ") {" << std::endl;
+    ++depth;
+    print(n->body);
+    --depth;
+    os << indent() << "}" << std::endl;
+  }
+
   void visit(const check* n) override {
     os << indent();
     os << "check(";

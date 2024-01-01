@@ -172,6 +172,8 @@ public:
   void visit(const make_buffer* x) override { std::abort(); }
   void visit(const crop_buffer* x) override { std::abort(); }
   void visit(const crop_dim* x) override { std::abort(); }
+  void visit(const slice_buffer* x) override { std::abort(); }
+  void visit(const slice_dim* x) override { std::abort(); }
   void visit(const check* x) override { std::abort(); }
 };
 
@@ -1099,6 +1101,65 @@ public:
     }
   }
 
+  void visit(const slice_buffer* op) override {
+    // Update the bounds for the slice. Sliced dimensions are removed from the bounds.
+    std::optional<box_expr> bounds = buffer_bounds[op->name];
+    std::vector<expr> at;
+    at.reserve(op->at.size());
+    std::size_t dims_count = 0;
+    bool changed = false;
+    for (index_t i = 0; i < static_cast<index_t>(op->at.size()); ++i) {
+      if (op->at[i].defined()) {
+        at.push_back(mutate(op->at[i]));
+        changed = changed || !at.back().same_as(op->at[i]);
+
+        // We sliced this dimension. Remove it from the bounds.
+        if (bounds && i < static_cast<index_t>(bounds->size())) {
+          bounds->erase(bounds->begin() + i);
+        }
+        ++dims_count;
+      }
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    stmt body = mutate(op->body);
+
+    // Remove trailing undefined bounds.
+    while (at.size() > 0 && !at.back().defined()) {
+      at.pop_back();
+    }
+    if (at.empty()) {
+      // This slice was a no-op.
+      set_result(std::move(body));
+    } else if (dims_count == 1) {
+      // This slice is of one dimension, replace it with slice_dim.
+      // We removed undefined trailing bounds, so this must be the dim we want.
+      int d = static_cast<int>(at.size()) - 1;
+      set_result(slice_dim::make(op->name, d, std::move(at[d]), std::move(body)));
+    } else if (changed || !body.same_as(op->body)) {
+      set_result(slice_buffer::make(op->name, std::move(at), std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const slice_dim* op) override {
+    expr at = mutate(op->at);
+
+    std::optional<box_expr> bounds = buffer_bounds[op->name];
+    if (bounds && op->dim < static_cast<index_t>(bounds->size())) {
+      bounds->erase(bounds->begin() + op->dim);
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    stmt body = mutate(op->body);
+    if (at.same_as(op->at) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(slice_dim::make(op->name, op->dim, std::move(at), std::move(body)));
+    }
+  }
+
   void visit(const check* op) override {
     if (!op->condition.defined()) {
       set_result(op);
@@ -1314,6 +1375,8 @@ public:
   void visit(const make_buffer* x) override { std::abort(); }
   void visit(const crop_buffer* x) override { std::abort(); }
   void visit(const crop_dim* x) override { std::abort(); }
+  void visit(const slice_buffer* x) override { std::abort(); }
+  void visit(const slice_dim* x) override { std::abort(); }
   void visit(const check* x) override { std::abort(); }
 };
 
