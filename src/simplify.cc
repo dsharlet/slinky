@@ -812,6 +812,16 @@ class simplifier : public node_mutator {
 public:
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
 
+  interval_expr mutate(const interval_expr& x) {
+    interval_expr result = {mutate(x.min), mutate(x.max)};
+    if (!result.min.same_as(result.max) && match(result.min, result.max)) {
+      // If the bounds are the same, make sure same_as returns true.
+      result.max = result.min;
+    }
+    return result;
+  }
+  using node_mutator::mutate;
+
   void visit(const variable* op) override {
     auto& ref_count = references[op->name];
     if (!ref_count) {
@@ -932,7 +942,7 @@ public:
   void visit(const let_stmt* op) override { set_result(visit_let(op)); }
 
   void visit(const loop* op) override {
-    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
+    interval_expr bounds = mutate(op->bounds);
 
     auto set_bounds = set_value_in_scope(expr_bounds, op->name, bounds);
     stmt body = mutate(op->body);
@@ -1004,7 +1014,7 @@ public:
     box_expr bounds;
     dims.reserve(op->dims.size());
     for (const dim_expr& i : op->dims) {
-      interval_expr bounds_i = {mutate(i.bounds.min), mutate(i.bounds.max)};
+      interval_expr bounds_i = mutate(i.bounds);
       dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
       bounds.push_back(bounds_i);
     }
@@ -1019,7 +1029,7 @@ public:
     box_expr bounds;
     dims.reserve(op->dims.size());
     for (const dim_expr& i : op->dims) {
-      interval_expr bounds_i = {mutate(i.bounds.min), mutate(i.bounds.max)};
+      interval_expr bounds_i = mutate(i.bounds);
       dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
       bounds.push_back(bounds_i);
     }
@@ -1039,21 +1049,21 @@ public:
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
-      expr min = mutate(op->bounds[i].min);
-      expr max = mutate(op->bounds[i].max);
-      bounds[i] = {min, max};
-      changed = changed || !bounds[i].same_as(op->bounds[i]);
+      interval_expr bounds_i = mutate(op->bounds[i]);
+      changed = changed || !bounds_i.same_as(op->bounds[i]);
+
+      bounds[i] = bounds_i;
 
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
       if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
-        if (prove_true(min == (*prev_bounds)[i].min) && prove_true(max == (*prev_bounds)[i].max)) {
-          min = expr();
-          max = expr();
+        if (prove_true(bounds_i.min == (*prev_bounds)[i].min) && prove_true(bounds_i.max == (*prev_bounds)[i].max)) {
+          bounds_i.min = expr();
+          bounds_i.max = expr();
         }
       }
-      new_bounds[i] = {min, max};
-      dims_count += min.defined() && max.defined() ? 1 : 0;
+      new_bounds[i] = bounds_i;
+      dims_count += bounds_i.min.defined() && bounds_i.max.defined() ? 1 : 0;
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
@@ -1079,8 +1089,8 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
-    
+    interval_expr bounds = mutate(op->bounds);
+
     std::optional<box_expr> buf_bounds = buffer_bounds[op->name];
     if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
       interval_expr& dim = (*buf_bounds)[op->dim];
