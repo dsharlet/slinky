@@ -42,6 +42,9 @@ bool prove_false(const expr& condition, const bounds_map& bounds = bounds_map())
 // Find the interval for `var` that makes `e` true.
 interval_expr where_true(const expr& condition, symbol_id var);
 
+// Compute the derivative of f with respect to x.
+expr differentiate(const expr& f, symbol_id x);
+
 }  // namespace slinky
 
 #endif  // SLINKY_SIMPLIFY_H

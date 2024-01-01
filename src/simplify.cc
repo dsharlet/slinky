@@ -190,6 +190,16 @@ public:
       assert_canonical v;
       replacement.accept(&v);
     }
+
+    bool operator<(const rule& r) const {
+      int c = compare(pattern, r.pattern);
+      if (c < 0) {
+        return true;
+      } else if (c > 0) {
+        return false;
+      }
+      return compare(predicate, r.predicate) < 0;
+    }
   };
 
 private:
@@ -197,12 +207,19 @@ private:
 
 public:
   rule_set(std::initializer_list<rule> rules) {
+    std::set<rule> rules_set;
     for (const rule& i : rules) {
       commute_variants v;
       i.pattern.accept(&v);
 
       for (expr& p : v.results) {
-        rules_.emplace_back(std::move(p), i.replacement, i.predicate);
+        rule new_rule(std::move(p), i.replacement, i.predicate);
+        auto dup = rules_set.insert(new_rule);
+        if (!dup.second) {
+          std::cerr << "Duplicate rule found: " << new_rule.pattern << " -> " << i.replacement << std::endl;
+          std::abort();
+        }
+        rules_.emplace_back(std::move(new_rule));
       }
     }
   }
@@ -262,8 +279,9 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(min(x, c0), c1), min(x, min(c0, c1))},
       {min(x, x + c0), x, c0 > 0},
       {min(x, x + c0), x + c0, c0 < 0},
-      {min(x + c0, y + c1), min(x, y + c1 - c0) + c0},
+      {min(x + c0, y + c1), min(x, y + (c1 - c0)) + c0},
       {min(x + c0, c1), min(x, c1 - c0) + c0},
+      {min(c0 - x, c0 - y), c0 - max(x, y)},
 
       // Algebraic simplifications
       {min(x, x), x},
@@ -315,8 +333,9 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(max(x, c0), c1), max(x, max(c0, c1))},
       {max(x, x + c0), x + c0, c0 > 0},
       {max(x, x + c0), x, c0 < 0},
-      {max(x + c0, y + c1), max(x, y + c1 - c0) + c0},
+      {max(x + c0, y + c1), max(x, y + (c1 - c0)) + c0},
       {max(x + c0, c1), max(x, c1 - c0) + c0},
+      {max(c0 - x, c0 - y), c0 - min(x, y)},
 
       // Algebraic simplifications
       {max(x, x), x},
@@ -375,8 +394,16 @@ expr simplify(const add* op, expr a, expr b) {
       {x + (c0 - y), (x - y) + c0},
       {x + (y + c0), (x + y) + c0},
       {(x + c0) - y, (x - y) + c0},
-      {(x + c0) + c1, x + (c0 + c1)},
       {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
+
+      {min(x + c0, y + c1) + c2, min(x + (c0 + c2), y + (c1 + c2))},
+      {max(x + c0, y + c1) + c2, max(x + (c0 + c2), y + (c1 + c2))},
+      {min(c0 - x, y + c1) + c2, min((c0 + c2) - x, y + (c1 + c2))},
+      {max(c0 - x, y + c1) + c2, max((c0 + c2) - x, y + (c1 + c2))},
+      {min(x + c0, c1 - y) + c2, min(x + (c0 + c2), (c1 + c2) - y)},
+      {max(x + c0, c1 - y) + c2, max(x + (c0 + c2), (c1 + c2) - y)},
+      {min(c0 - x, c1 - y) + c2, min((c0 + c2) - x, (c1 + c2) - y)},
+      {max(c0 - x, c1 - y) + c2, max((c0 + c2) - x, (c1 + c2) - y)},
 
       {select(x, c0, c1) + c2, select(x, c0 + c2, c1 + c2)},
       {select(x, y + c0, c1) + c2, select(x, y + (c0 + c2), c1 + c2)},
@@ -1091,6 +1118,10 @@ public:
 
   void visit(const crop_dim* op) override {
     interval_expr bounds = mutate(op->bounds);
+    if (!bounds.min.defined() && !bounds.max.defined()) {
+      set_result(mutate(op->body));
+      return;
+    }
 
     std::optional<box_expr> buf_bounds = buffer_bounds[op->name];
     if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
@@ -1470,5 +1501,102 @@ interval_expr where_true(const expr& condition, symbol_id var) {
   }
   return result;
 }
+
+namespace {
+
+class derivative : public node_mutator {
+  symbol_id dx;
+
+public:
+  derivative(symbol_id dx) : dx(dx) {}
+
+  template <typename T>
+  void visit_variable(const T* x) {
+    if (x->name == dx) {
+      set_result(1);
+    } else {
+      set_result(expr(0));
+    }
+  }
+
+  void visit(const variable* x) override { visit_variable(x); }
+  void visit(const wildcard* x) override { visit_variable(x); }
+  void visit(const constant*) override { set_result(expr(0)); }
+
+  void visit(const mul* x) override {
+    if (depends_on(x->a, dx) && depends_on(x->b, dx)) {
+      expr da = mutate(x->a);
+      expr db = mutate(x->b);
+      set_result(simplify(x, x->a, db) + simplify(x, da, x->b));
+    } else if (depends_on(x->a, dx)) {
+      set_result(simplify(x, mutate(x->a), x->b));
+    } else if (depends_on(x->b, dx)) {
+      set_result(simplify(x, x->a, mutate(x->b)));
+    } else {
+      set_result(expr(0));
+    }
+  }
+  void visit(const div* x) override {
+    if (depends_on(x->a, dx) && depends_on(x->b, dx)) {
+      expr da = mutate(x->a);
+      expr db = mutate(x->b);
+      set_result((da * x->b - x->a * db) / (x->b * x->b));
+    } else if (depends_on(x->a, dx)) {
+      set_result(mutate(x->a) / x->b);
+    } else if (depends_on(x->b, dx)) {
+      expr db = mutate(x->b);
+      set_result(-x->a / (x->b * x->b));
+    } else {
+      set_result(expr(0));
+    }
+  }
+
+  virtual void visit(const mod* x) override { set_result(indeterminate()); }
+  virtual void visit(const class min* x) override { set_result(select(x->a < x->b, mutate(x->a), mutate(x->b))); }
+  virtual void visit(const class max* x) override { set_result(select(x->b < x->a, mutate(x->a), mutate(x->b))); }
+
+  template <typename T>
+  void visit_compare(const T* x) {
+    if (depends_on(x->a, dx) || depends_on(x->b, dx)) {
+      set_result(indeterminate());
+    } else {
+      set_result(expr(0));
+    }
+  }
+
+  virtual void visit(const equal* x) override { visit_compare(x); }
+  virtual void visit(const not_equal* x) override { visit_compare(x); }
+  virtual void visit(const less* x) override { visit_compare(x); }
+  virtual void visit(const less_equal* x) override { visit_compare(x); }
+  virtual void visit(const logical_and* x) override {}
+  virtual void visit(const logical_or* x) override {}
+  virtual void visit(const logical_not* x) override { set_result(-mutate(x->x)); }
+
+  virtual void visit(const class select* x) override {
+    set_result(select(x->condition, mutate(x->true_value), mutate(x->false_value)));
+  }
+
+  virtual void visit(const load_buffer_meta* x) override {
+    assert(!depends_on(x->buffer, dx));
+    assert(!depends_on(x->dim, dx));
+    set_result(expr(0));
+  }
+
+  virtual void visit(const call* x) override {
+    switch (x->intrinsic) {
+    case intrinsic::abs:
+      assert(x->args.size() == 1);
+      set_result(select(x->args[0] > 0, x->args[0], -x->args[0]));
+      return;
+    case intrinsic::indeterminate: set_result(x); return;
+    case intrinsic::positive_infinity:
+    case intrinsic::negative_infinity: set_result(indeterminate()); return;
+    }
+  }
+};
+
+}  // namespace
+
+expr differentiate(const expr& f, symbol_id x) { return derivative(x).mutate(f); }
 
 }  // namespace slinky
