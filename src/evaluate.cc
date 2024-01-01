@@ -377,7 +377,8 @@ public:
 
     buffer->dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * (buffer->rank - 1)));
 
-    index_t offset = buffer->dims[n->dim].flat_offset_bytes(eval_expr(n->at));
+    index_t at = eval_expr(n->at);
+    index_t offset = old_dims[n->dim].flat_offset_bytes(at);
     void* old_base = buffer->base;
     buffer->base = offset_bytes(buffer->base, offset);
 
