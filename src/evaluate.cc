@@ -385,10 +385,10 @@ public:
     void* old_base = buffer->base;
     buffer->base = offset_bytes(buffer->base, offset);
 
-    for (std::size_t d = 0; d < n->dim; ++d) {
+    for (int d = 0; d < n->dim; ++d) {
       buffer->dims[d] = old_dims[d];
     }
-    for (std::size_t d = n->dim + 1; d < buffer->rank; ++d) {
+    for (int d = n->dim + 1; d < static_cast<int>(buffer->rank); ++d) {
       buffer->dims[d - 1] = old_dims[d];
     }
     buffer->rank -= 1;

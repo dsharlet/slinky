@@ -66,7 +66,7 @@ struct big {
 template <typename T, std::size_t N>
 void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr, bool broadcast = false) {
   index_t stride = broadcast ? 0 : buf.elem_size;
-  for (int i = 0; i < N; ++i) {
+  for (std::size_t i = 0; i < N; ++i) {
     dim& d = buf.dim(permutation ? permutation[i] : i);
     d.set_stride(stride);
     stride *= d.extent() + (padding ? padding[i] : 0);
