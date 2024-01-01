@@ -13,26 +13,23 @@ std::ostream& operator<<(std::ostream& os, memory_type type) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, buffer_meta meta) {
-  switch (meta) {
-  case buffer_meta::rank: return os << "rank";
-  case buffer_meta::base: return os << "base";
-  case buffer_meta::elem_size: return os << "elem_size";
-  case buffer_meta::min: return os << "min";
-  case buffer_meta::max: return os << "max";
-  case buffer_meta::extent: return os << "extent";
-  case buffer_meta::stride: return os << "stride";
-  case buffer_meta::fold_factor: return os << "fold_factor";
-  default: return os << "<invalid buffer_meta>";
-  }
-}
-
 std::ostream& operator<<(std::ostream& os, intrinsic i) {
   switch (i) {
   case intrinsic::positive_infinity: return os << "oo";
   case intrinsic::negative_infinity: return os << "-oo";
   case intrinsic::indeterminate: return os << "indeterminate";
   case intrinsic::abs: return os << "abs";
+  case intrinsic::buffer_rank: return os << "buffer_rank";
+  case intrinsic::buffer_base: return os << "buffer_base";
+  case intrinsic::buffer_elem_size: return os << "buffer_elem_size";
+  case intrinsic::buffer_size_bytes: return os << "buffer_size_bytes";
+  case intrinsic::buffer_min: return os << "buffer_min";
+  case intrinsic::buffer_max: return os << "buffer_max";
+  case intrinsic::buffer_stride: return os << "buffer_stride";
+  case intrinsic::buffer_fold_factor: return os << "buffer_fold_factor";
+  case intrinsic::buffer_extent: return os << "buffer_extent";
+  case intrinsic::buffer_at: return os << "buffer_at";
+
   default: return os << "<invalid intrinsic>";
   }
 }
@@ -161,21 +158,6 @@ public:
     print(op->true_value);
     os << ", ";
     print(op->false_value);
-    os << ")";
-  }
-
-  void visit(const load_buffer_meta* x) override {
-    os << "buffer_" << x->meta << "(";
-    print(x->buffer);
-    switch (x->meta) {
-    case buffer_meta::base:
-    case buffer_meta::rank:
-    case buffer_meta::elem_size: break;
-    default:
-      os << ", ";
-      print(x->dim);
-      break;
-    }
     os << ")";
   }
 

@@ -54,7 +54,6 @@ enum class node_type {
   logical_or,
   logical_not,
   select,
-  load_buffer_meta,
   call,
 
   call_func,
@@ -76,22 +75,24 @@ enum class memory_type {
   heap,
 };
 
-enum class buffer_meta {
-  rank,
-  base,
-  elem_size,
-  min,
-  max,
-  extent,
-  stride,
-  fold_factor,
-};
-
 enum class intrinsic {
   negative_infinity,
   positive_infinity,
   indeterminate,
   abs,
+
+  buffer_rank,
+  buffer_base,
+  buffer_elem_size,
+  buffer_size_bytes,
+
+  buffer_min,
+  buffer_max,
+  buffer_stride,
+  buffer_fold_factor,
+  buffer_extent,
+
+  buffer_at,
 };
 
 class node_visitor;
@@ -412,24 +413,6 @@ public:
   static constexpr node_type static_type = node_type::select;
 };
 
-// This expression loads buffer->base or a field from buffer->dims.
-class load_buffer_meta : public expr_node<load_buffer_meta> {
-public:
-  // TODO(https://github.com/dsharlet/slinky/issues/6): These should not be exprs, they are only
-  // because the simplifier wants to put wildcards here. A better pattern matching engine or just
-  // not using patterns to simplify these would eliminate this requirement.
-  expr buffer;
-  buffer_meta meta;
-  expr dim;
-
-  void accept(node_visitor* v) const;
-
-  static expr make(expr buffer, buffer_meta meta, expr dim = expr());
-
-  static constexpr node_type static_type = node_type::load_buffer_meta;
-};
-
-// This expression loads buffer->base or a field from buffer->dims.
 class call : public expr_node<call> {
 public:
   slinky::intrinsic intrinsic;
@@ -666,7 +649,6 @@ public:
   virtual void visit(const logical_or*) = 0;
   virtual void visit(const logical_not*) = 0;
   virtual void visit(const class select*) = 0;
-  virtual void visit(const load_buffer_meta*) = 0;
   virtual void visit(const call*) = 0;
 
   virtual void visit(const let_stmt*) = 0;
@@ -717,10 +699,6 @@ public:
     x->condition.accept(this);
     x->true_value.accept(this);
     x->false_value.accept(this);
-  }
-  virtual void visit(const load_buffer_meta* x) override {
-    x->buffer.accept(this);
-    if (x->dim.defined()) x->dim.accept(this);
   }
   virtual void visit(const call* x) override {
     for (const expr& i : x->args) {
@@ -814,7 +792,6 @@ inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_not::accept(node_visitor* v) const { v->visit(this); }
 inline void select::accept(node_visitor* v) const { v->visit(this); }
-inline void load_buffer_meta::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
 
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
@@ -905,6 +882,9 @@ interval_expr buffer_bounds(const expr& buf, const expr& dim);
 expr buffer_extent(expr buf, expr dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
+expr buffer_at(expr buf, const std::vector<expr>& at);
+
+bool is_buffer_intrinsic(intrinsic fn);
 
 // This is an expr-like wrapper for use where only a `variable` expr is allowed.
 class var {

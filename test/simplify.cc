@@ -131,7 +131,7 @@ TEST(simplify_let) {
       let::make(0, y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 }
 
-TEST(simplify_load_buffer_meta) {
+TEST(simplify_buffer_intrinsics) {
   test_simplify(buffer_extent(x, y) >= 0, true);
   test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
 }
@@ -259,12 +259,12 @@ constexpr int max_abs_constant = 256;
 
 index_t random_constant() { return (rand() & (2 * max_abs_constant - 1)) - max_abs_constant; }
 
-buffer_meta random_buffer_meta() {
+expr random_buffer_intrinsic() {
   switch (rand() % 3) {
-  case 0: return buffer_meta::min;
-  case 1: return buffer_meta::extent;
-  case 2: return buffer_meta::max;
-  default: return buffer_meta::base;
+  case 0: return buffer_min(random_pick(bufs), rand() % max_rank);
+  case 1: return buffer_extent(random_pick(bufs), rand() % max_rank);
+  case 2: return buffer_max(random_pick(bufs), rand() % max_rank);
+  default: return buffer_base(random_pick(bufs));
   }
 }
 
@@ -289,7 +289,7 @@ expr make_random_expr(int depth) {
     switch (rand() % 4) {
     default: return random_pick(vars);
     case 1: return constant::make(random_constant());
-    case 2: return load_buffer_meta::make(random_pick(bufs), random_buffer_meta(), rand() % max_rank);
+    case 2: return random_buffer_intrinsic();
     }
   } else {
     expr a = make_random_expr(depth - 1);

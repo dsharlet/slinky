@@ -131,28 +131,44 @@ public:
     }
   }
 
-  void visit(const load_buffer_meta* x) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(eval_expr(x->buffer));
-    assert(buffer);
-    if (x->meta == buffer_meta::rank) {
-      result = buffer->rank;
-    } else if (x->meta == buffer_meta::base) {
-      result = reinterpret_cast<index_t>(buffer->base);
-    } else if (x->meta == buffer_meta::elem_size) {
-      result = buffer->elem_size;
-    } else {
-      index_t d = eval_expr(x->dim);
-      assert(d < static_cast<index_t>(buffer->rank));
-      const slinky::dim& dim = buffer->dim(d);
-      switch (x->meta) {
-      case buffer_meta::min: result = dim.min(); return;
-      case buffer_meta::max: result = dim.max(); return;
-      case buffer_meta::extent: result = dim.extent(); return;
-      case buffer_meta::stride: result = dim.stride(); return;
-      case buffer_meta::fold_factor: result = dim.fold_factor(); return;
-      default: std::abort();  // Should be handled above.
-      }
+  index_t eval_buffer_metadata(const call* x) {
+    assert(x->args.size() == 1);
+    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
+    assert(buf);
+    switch (x->intrinsic) {
+    case intrinsic::buffer_rank: return buf->rank;
+    case intrinsic::buffer_elem_size: return buf->elem_size;
+    case intrinsic::buffer_base: return reinterpret_cast<index_t>(buf->base);
+    case intrinsic::buffer_size_bytes: return buf->size_bytes();
+    default: std::abort();
     }
+  }
+
+  index_t eval_dim_metadata(const call* x) {
+    assert(x->args.size() == 2);
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
+    assert(buffer);
+    index_t d = eval_expr(x->args[1]);
+    assert(d < static_cast<index_t>(buffer->rank));
+    const slinky::dim& dim = buffer->dim(d);
+    switch (x->intrinsic) {
+    case intrinsic::buffer_min: return dim.min();
+    case intrinsic::buffer_max: return dim.max();
+    case intrinsic::buffer_extent: return dim.extent();
+    case intrinsic::buffer_stride: return dim.stride();
+    case intrinsic::buffer_fold_factor: return dim.fold_factor();
+    default: std::abort();
+    }
+  }
+
+  void* eval_buffer_at(const call* x) {
+    assert(x->args.size() >= 1);
+    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
+    void* result = buf->base;
+    for (std::size_t d = 0; d < x->args.size() - 1; ++d) {
+      result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(x->args[d + 1])));
+    }
+    return result;
   }
 
   void visit(const call* x) override {
@@ -160,10 +176,33 @@ public:
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
     case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
     case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
+
     case intrinsic::abs:
       assert(x->args.size() == 1);
       result = std::abs(eval_expr(x->args[0]));
       return;
+
+    case intrinsic::buffer_rank:
+    case intrinsic::buffer_elem_size:
+    case intrinsic::buffer_base:
+    case intrinsic::buffer_size_bytes: 
+      result = eval_buffer_metadata(x); 
+      return;
+
+    case intrinsic::buffer_min:
+    case intrinsic::buffer_max:
+    case intrinsic::buffer_extent:
+    case intrinsic::buffer_stride:
+    case intrinsic::buffer_fold_factor: 
+      result = eval_dim_metadata(x); 
+      return;
+
+    case intrinsic::buffer_at: 
+      result = reinterpret_cast<index_t>(eval_buffer_at(x)); 
+      return;
+    default: 
+      std::cerr << "Unknown intrinsic: " << x->intrinsic << std::endl; 
+      std::abort();
     }
   }
 

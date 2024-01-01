@@ -45,7 +45,7 @@ public:
     auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
     stmt body = mutate(alloc->body);
 
-    // When we constructed the pipeline, the buffer dimensions were set to load_buffer_meta expressions.
+    // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
     // (This is a little janky because the buffers they are loading from don't exist where they are used.)
     // Here, we are building a list of replacements for those expressions. This way, if the user did something
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
@@ -114,17 +114,17 @@ public:
     set_result(s);
   }
 
-  expr get_buffer_meta(symbol_id buffer, buffer_meta meta, index_t d) {
+  expr buffer_intrinsic(symbol_id buffer, intrinsic fn, index_t d) {
     std::optional<box_expr>& bounds = inferring[buffer];
     if (bounds && d < static_cast<index_t>(bounds->size())) {
-      switch (meta) {
-      case buffer_meta::min: return (*bounds)[d].min;
-      case buffer_meta::max: return (*bounds)[d].max;
-      case buffer_meta::extent: return (*bounds)[d].extent();
+      switch (fn) {
+      case intrinsic::buffer_min: return (*bounds)[d].min;
+      case intrinsic::buffer_max: return (*bounds)[d].max;
+      case intrinsic::buffer_extent: return (*bounds)[d].extent();
       default: break;
       }
     }
-    return load_buffer_meta::make(variable::make(buffer), meta, d);
+    return call::make(fn, {variable::make(buffer), d});
   }
 
   void visit(const call_func* c) override {
@@ -146,8 +146,8 @@ public:
             mins[dim] = (*crops_i)[d].min;
             maxs[dim] = (*crops_i)[d].max;
           } else {
-            mins[dim] = get_buffer_meta(arg.name(), buffer_meta::min, d);
-            maxs[dim] = get_buffer_meta(arg.name(), buffer_meta::max, d);
+            mins[dim] = buffer_intrinsic(arg.name(), intrinsic::buffer_min, d);
+            maxs[dim] = buffer_intrinsic(arg.name(), intrinsic::buffer_max, d);
           }
         }
       }

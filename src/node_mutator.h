@@ -100,16 +100,6 @@ public:
     }
   }
 
-  virtual void visit(const load_buffer_meta* x) override {
-    expr buffer = mutate(x->buffer);
-    expr dim = mutate(x->dim);
-    if (buffer.same_as(x->buffer) && dim.same_as(x->dim)) {
-      set_result(x);
-    } else {
-      set_result(load_buffer_meta::make(std::move(buffer), x->meta, std::move(dim)));
-    }
-  }
-
   virtual void visit(const call* x) override { 
     std::vector<expr> args;
     args.reserve(x->args.size());

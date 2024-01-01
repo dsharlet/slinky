@@ -276,14 +276,6 @@ expr select::make(expr condition, expr true_value, expr false_value) {
   return n;
 }
 
-expr load_buffer_meta::make(expr buffer, buffer_meta meta, expr dim) {
-  auto n = new load_buffer_meta();
-  n->buffer = std::move(buffer);
-  n->meta = meta;
-  n->dim = std::move(dim);
-  return n;
-}
-
 expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   auto n = new call();
   n->intrinsic = i;
@@ -401,25 +393,42 @@ const expr& indeterminate() {
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 
-expr buffer_rank(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::rank); }
-expr buffer_base(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::base); }
-expr buffer_elem_size(expr buf) { return load_buffer_meta::make(std::move(buf), buffer_meta::elem_size); }
-expr buffer_min(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::min, std::move(dim)); }
-expr buffer_max(expr buf, expr dim) { return load_buffer_meta::make(std::move(buf), buffer_meta::max, std::move(dim)); }
-interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
-expr buffer_extent(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::extent, std::move(dim));
-}
-expr buffer_stride(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::stride, std::move(dim));
-}
+expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::move(buf)}); }
+expr buffer_base(expr buf) { return call::make(intrinsic::buffer_base, {std::move(buf)}); }
+expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
+expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
+expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
+expr buffer_extent(expr buf, expr dim) { return call::make(intrinsic::buffer_extent, {std::move(buf), std::move(dim)}); }
+expr buffer_stride(expr buf, expr dim) { return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)}); }
 expr buffer_fold_factor(expr buf, expr dim) {
-  return load_buffer_meta::make(std::move(buf), buffer_meta::fold_factor, std::move(dim));
+  return call::make(intrinsic::buffer_fold_factor, {std::move(buf), std::move(dim)});
+}
+expr buffer_at(expr buf, const std::vector<expr>& at) {
+  std::vector<expr> args = {buf};
+  args.insert(args.end(), at.begin(), at.end());
+  return call::make(intrinsic::buffer_at, std::move(args));
+}
+
+interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
+
+bool is_buffer_intrinsic(intrinsic i) {
+  switch (i) {
+  case intrinsic::buffer_rank:
+  case intrinsic::buffer_base:
+  case intrinsic::buffer_elem_size:
+  case intrinsic::buffer_size_bytes:
+  case intrinsic::buffer_min:
+  case intrinsic::buffer_max:
+  case intrinsic::buffer_stride:
+  case intrinsic::buffer_fold_factor:
+  case intrinsic::buffer_extent:
+  case intrinsic::buffer_at: return true;
+  default: return false;
+  }
 }
 
 var::var() {}
 var::var(symbol_id name) : e_(variable::make(name)) {}
 var::var(node_context& ctx, const std::string& name) : e_(make_variable(ctx, name)) {}
-
 
 }  // namespace slinky

@@ -27,10 +27,10 @@ expr c2 = wildcard::make(12, as_constant);
 bool should_commute(const expr& a, const expr& b) {
   auto order = [](node_type t) {
     switch (t) {
-    case node_type::call: return 200;
     case node_type::constant: return 100;
     case node_type::wildcard: return 99;
     case node_type::variable: return 0;
+    case node_type::call: return -1;
     default: return 1;
     }
   };
@@ -146,21 +146,14 @@ public:
     }
   }
 
-  void visit(const load_buffer_meta* x) override {
-    assert(x->buffer.as<variable>());
-    assert(x->dim.as<variable>());
-    results = {x};
-  }
   void visit(const call* x) override {
-    if (x->args.size() == 0) {
-      results = {x};
-    } else if (x->args.size() == 1) {
+    if (x->args.size() == 1) {
       x->args.front().accept(this);
       for (expr& i : results) {
         i = call::make(x->intrinsic, {i});
       }
     } else {
-      std::abort();
+      results = {x};
     }
   }
 
@@ -417,7 +410,7 @@ expr simplify(const add* op, expr a, expr b) {
 
       {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
       {buffer_min(x, y) + (z - buffer_max(x, y)), (z - buffer_extent(x, y)) + 1},
-      {buffer_max(x, y) + (z - buffer_min(x, y)), (z + buffer_extent(x, y)) - 1},
+      {buffer_max(x, y) + (z - buffer_min(x, y)), (buffer_extent(x, y) + z) - 1},
   };
   return rules.apply(e);
 }
@@ -473,8 +466,8 @@ expr simplify(const sub* op, expr a, expr b) {
       {c2 - select(x, c0 - y, c1 - z), select(x, y + (c2 - c0), z + (c2 - c1))},
 
       {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
-      {buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) - 1},
-      {(z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) - 1},
+      {buffer_max(x, y) - (buffer_min(x, y) + z), (buffer_extent(x, y) - z) - 1},
+      {(buffer_max(x, y) + z) - buffer_min(x, y), (buffer_extent(x, y) + z) - 1},
   };
   return rules.apply(e);
 }
@@ -1396,15 +1389,10 @@ public:
     }
   }
 
-  void visit(const load_buffer_meta* x) override { result = {x, x}; }
-
   void visit(const call* x) override {
     switch (x->intrinsic) {
     case intrinsic::abs: result = {0, x}; return;
-
-    case intrinsic::positive_infinity:
-    case intrinsic::negative_infinity:
-    case intrinsic::indeterminate: result = {x, x}; return;
+    default: result = {x, x}; return;
     }
   }
 
@@ -1576,23 +1564,7 @@ public:
     set_result(select(x->condition, mutate(x->true_value), mutate(x->false_value)));
   }
 
-  virtual void visit(const load_buffer_meta* x) override {
-    assert(!depends_on(x->buffer, dx));
-    assert(!depends_on(x->dim, dx));
-    set_result(expr(0));
-  }
-
-  virtual void visit(const call* x) override {
-    switch (x->intrinsic) {
-    case intrinsic::abs:
-      assert(x->args.size() == 1);
-      set_result(select(x->args[0] > 0, x->args[0], -x->args[0]));
-      return;
-    case intrinsic::indeterminate: set_result(x); return;
-    case intrinsic::positive_infinity:
-    case intrinsic::negative_infinity: set_result(indeterminate()); return;
-    }
-  }
+  virtual void visit(const call* x) override { std::abort(); }
 };
 
 }  // namespace

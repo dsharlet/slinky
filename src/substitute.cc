@@ -224,17 +224,6 @@ public:
     if (!try_match(se->false_value, x->false_value)) return;
   }
 
-  void visit(const load_buffer_meta* x) override {
-    if (match) return;
-
-    const load_buffer_meta* lbme = match_self_as(x);
-    if (!lbme) return;
-
-    if (!try_match(x->meta, lbme->meta)) return;
-    if (!try_match(lbme->buffer, x->buffer)) return;
-    if (!try_match(lbme->dim, x->dim)) return;
-  }
-
   void visit(const call* x) override {
     if (match) return;
     const call* c = match_self_as(x);
@@ -474,14 +463,21 @@ public:
 
   void visit(const variable* x) override { found_var = found_var || x->name == var; }
   void visit(const wildcard* x) override { found_var = found_var || x->name == var; }
-  void visit(const load_buffer_meta* x) override {
-    bool old_found_var = found_var;
-    found_var = false;
-    x->buffer.accept(this);
-    found_buf = found_buf || found_var;
-    found_var = old_found_var;
+  void visit(const call* x) override {
+    if (is_buffer_intrinsic(x->intrinsic)) {
+      assert(x->args.size() >= 1);
+      bool old_found_var = found_var;
+      found_var = false;
+      x->args[0].accept(this);
+      found_buf = found_buf || found_var;
+      found_var = old_found_var;
 
-    if (x->dim.defined()) x->dim.accept(this);
+      for (std::size_t i = 1; i < x->args.size(); ++i) {
+        x->args[i].accept(this);
+      }
+    } else {
+      recursive_node_visitor::visit(x);
+    }
   }
 };
 
