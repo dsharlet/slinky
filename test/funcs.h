@@ -102,6 +102,20 @@ index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<
   return 0;
 }
 
+// Matrix multiplication (not fast!)
+template <typename T>
+index_t outer_product(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
+  assert(a.rank == 1);
+  assert(b.rank == 1);
+  assert(c.rank == 2);
+  for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
+    for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
+      c(i, j) = a(i) * b(j);
+    }
+  }
+  return 0;
+}
+
 // A 2D 3x3 stencil operation.
 template <typename T>
 index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {

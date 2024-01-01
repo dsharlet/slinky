@@ -577,3 +577,41 @@ TEST(pipeline_multiple_outputs) {
     ASSERT_EQ(sum_xy_buf(z), expected_xy);
   }
 }
+
+TEST(pipeline_outer_product) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto a = buffer_expr::make(ctx, "a", sizeof(int), 1);
+  auto b = buffer_expr::make(ctx, "b", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+
+  var i(ctx, "i");
+  var j(ctx, "j");
+
+  func outer =
+      func::make<const int, const int, int>(outer_product<int>, {a, {point(i)}}, {b, {point(j)}}, {out, {i, j}});
+
+  pipeline p(ctx, {a, b}, {out});
+
+  // Run the pipeline.
+  const int M = 20;
+  const int N = 10;
+  buffer<int, 1> a_buf({M});
+  buffer<int, 1> b_buf({N});
+  init_random(a_buf);
+  init_random(b_buf);
+
+  buffer<int, 2> out_buf({M, N});
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&a_buf, &b_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  debug_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int j = 0; j < N; ++j) {
+    for (int i = 0; i < M; ++i) {
+      ASSERT_EQ(out_buf(i, j), a_buf(i) * b_buf(j));
+    }
+  }
+}
