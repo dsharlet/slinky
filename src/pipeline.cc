@@ -11,7 +11,7 @@
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
-#include "optimize_buffers.h"
+#include "optimizations.h"
 
 namespace slinky {
 

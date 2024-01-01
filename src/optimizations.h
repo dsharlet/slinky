@@ -1,5 +1,5 @@
-#ifndef SLINKY_OPTIMIZE_BUFFERS_H
-#define SLINKY_OPTIMIZE_BUFFERS_H
+#ifndef SLINKY_OPTIMIZATIONS_H
+#define SLINKY_OPTIMIZATIONS_H
 
 #include "expr.h"
 
@@ -16,4 +16,4 @@ stmt optimize_allocations(const stmt& s);
 
 }  // namespace slinky
 
-#endif  // SLINKY_OPTIMIZE_BUFFERS_H
+#endif  // SLINKY_OPTIMIZATIONS_H
