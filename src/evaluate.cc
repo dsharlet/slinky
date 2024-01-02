@@ -238,19 +238,7 @@ public:
   }
 
   void visit(const call_func* n) override {
-    index_t* scalars = reinterpret_cast<index_t*>(alloca(n->scalar_args.size() * sizeof(index_t)));
-    for (std::size_t i = 0; i < n->scalar_args.size(); ++i) {
-      scalars[i] = eval_expr(n->scalar_args[i]);
-    }
-
-    raw_buffer** buffers = reinterpret_cast<raw_buffer**>(alloca(n->buffer_args.size() * sizeof(raw_buffer*)));
-    for (std::size_t i = 0; i < n->buffer_args.size(); ++i) {
-      buffers[i] = reinterpret_cast<raw_buffer*>(*context.lookup(n->buffer_args[i]));
-    }
-
-    std::span<const index_t> scalars_span(scalars, n->scalar_args.size());
-    std::span<raw_buffer*> buffers_span(buffers, n->buffer_args.size());
-    result = n->target(scalars_span, buffers_span);
+    result = n->target(context);
     if (result) {
       if (context.call_failed) {
         context.call_failed(n);

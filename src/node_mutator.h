@@ -151,18 +151,7 @@ public:
     }
   }
   virtual void visit(const call_func* x) override {
-    std::vector<expr> scalar_args;
-    scalar_args.reserve(x->scalar_args.size());
-    bool changed = false;
-    for (const expr& i : x->scalar_args) {
-      scalar_args.push_back(mutate(i));
-      changed = changed || !scalar_args.back().same_as(i);
-    }
-    if (!changed) {
-      set_result(x);
-    } else {
-      set_result(call_func::make(x->target, std::move(scalar_args), x->buffer_args, x->fn));
-    }
+    set_result(x);
   }
   virtual void visit(const allocate* x) override {
     std::vector<dim_expr> dims;

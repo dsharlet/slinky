@@ -281,12 +281,9 @@ expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   return n;
 }
 
-stmt call_func::make(
-    call_func::callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn) {
+stmt call_func::make(call_func::callable target, const func* fn) {
   auto n = new call_func();
   n->target = std::move(target);
-  n->scalar_args = std::move(scalar_args);
-  n->buffer_args = std::move(buffer_args);
   n->fn = fn;
   return n;
 }
@@ -404,8 +401,12 @@ expr buffer_base(expr buf) { return call::make(intrinsic::buffer_base, {std::mov
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
 expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
-expr buffer_extent(expr buf, expr dim) { return call::make(intrinsic::buffer_extent, {std::move(buf), std::move(dim)}); }
-expr buffer_stride(expr buf, expr dim) { return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)}); }
+expr buffer_extent(expr buf, expr dim) {
+  return call::make(intrinsic::buffer_extent, {std::move(buf), std::move(dim)});
+}
+expr buffer_stride(expr buf, expr dim) {
+  return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)});
+}
 expr buffer_fold_factor(expr buf, expr dim) {
   return call::make(intrinsic::buffer_fold_factor, {std::move(buf), std::move(dim)});
 }

@@ -71,8 +71,7 @@ public:
 // Represents a node of computation in a pipeline.
 class func {
 public:
-  using callable = std::function<index_t(std::span<raw_buffer*>, std::span<raw_buffer*>)>;
-
+  using callable = call_func::callable;
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
 
@@ -85,6 +84,8 @@ public:
 
     // These intervals should be a function of the expressions found in the output dims.
     std::vector<interval_expr> bounds;
+
+    symbol_id name() const { return buffer->name(); }
   };
 
   struct output {
@@ -94,6 +95,8 @@ public:
 
     // If this exists for a dimension, specifies the alignment required in that dimension.
     std::vector<index_t> alignment;
+
+    symbol_id name() const { return buffer->name(); }
   };
 
 private:
@@ -132,17 +135,22 @@ public:
 
   // TODO(https://github.com/dsharlet/slinky/issues/8): Try to do this with a variadic template implementation.
   template <typename Out1>
-  static func make(callable_wrapper<Out1> impl, output arg) {
-    return func([impl = std::move(impl)](std::span<raw_buffer*> inputs,
-                    std::span<raw_buffer*> outputs) -> index_t { return impl(outputs[0]->cast<Out1>()); },
-        {}, {std::move(arg)});
+  static func make(callable_wrapper<Out1> impl, output out1) {
+    return func(
+        [impl = std::move(impl), out1 = out1.name()](eval_context& ctx) -> index_t {
+          const raw_buffer* out1_buf = ctx.lookup_buffer(out1);
+          return impl(out1_buf->cast<Out1>());
+        },
+        {}, {std::move(out1)});
   }
 
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
     return func(
-        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
-          return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>());
+        [impl = std::move(impl), in1 = in1.name(), out1 = out1.name()](eval_context& ctx) -> index_t {
+          const raw_buffer* in1_buf = ctx.lookup_buffer(in1);
+          const raw_buffer* out1_buf = ctx.lookup_buffer(out1);
+          return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>());
         },
         {std::move(in1)}, {std::move(out1)});
   }
@@ -150,8 +158,12 @@ public:
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
     return func(
-        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
-          return impl(inputs[0]->cast<const In1>(), inputs[1]->cast<const In2>(), outputs[0]->cast<Out1>());
+        [impl = std::move(impl), in1 = in1.name(), in2 = in2.name(), out1 = out1.name()](
+            eval_context& ctx) -> index_t {
+          const raw_buffer* in1_buf = ctx.lookup_buffer(in1);
+          const raw_buffer* in2_buf = ctx.lookup_buffer(in2);
+          const raw_buffer* out1_buf = ctx.lookup_buffer(out1);
+          return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), out1_buf->cast<Out1>());
         },
         {std::move(in1), std::move(in2)}, {std::move(out1)});
   }
@@ -159,8 +171,12 @@ public:
   template <typename In1, typename Out1, typename Out2>
   static func make(callable_wrapper<const In1, Out1, Out2> impl, input in1, output out1, output out2) {
     return func(
-        [impl = std::move(impl)](std::span<raw_buffer*> inputs, std::span<raw_buffer*> outputs) -> index_t {
-          return impl(inputs[0]->cast<const In1>(), outputs[0]->cast<Out1>(), outputs[1]->cast<Out2>());
+        [impl = std::move(impl), in1 = in1.name(), out1 = out1.name(), out2 = out2.name()](
+            eval_context& ctx) -> index_t {
+          const raw_buffer* in1_buf = ctx.lookup_buffer(in1);
+          const raw_buffer* out1_buf = ctx.lookup_buffer(out1);
+          const raw_buffer* out2_buf = ctx.lookup_buffer(out2);
+          return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>(), out2_buf->cast<Out2>());
         },
         {std::move(in1)}, {std::move(out1), std::move(out2)});
   }
@@ -169,7 +185,7 @@ public:
     return func({std::move(in)}, {std::move(out)}, std::move(padding));
   }
 
-  const callable& impl() const { return impl_; }
+  const call_func::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
   const std::vector<char>& padding() const { return padding_; }

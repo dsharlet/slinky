@@ -229,33 +229,12 @@ public:
   }
 
   void produce(stmt& result, const func* f, bool root = false) {
-    // TODO(https://github.com/dsharlet/slinky/issues/7): We shouldn't need this wrapper,
-    // it might add measureable overhead. All it does is split a span of buffers into two
-    // spans of buffers.
-    std::size_t input_count = f->inputs().size();
-    std::size_t output_count = f->outputs().size();
-    std::vector<symbol_id> buffer_args;
-    buffer_args.reserve(input_count + output_count);
-    for (const func::input& i : f->inputs()) {
-      buffer_args.push_back(i.buffer->name());
-    }
     for (const func::output& i : f->outputs()) {
-      buffer_args.push_back(i.buffer->name());
       if (!allocated.count(i.buffer)) {
         to_allocate.insert(i.buffer);
       }
     }
-    stmt call_f;
-    if (f->impl()) {
-      auto wrapper = [impl = f->impl(), input_count, output_count](
-                         std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
-        assert(buffers.size() == input_count + output_count);
-        return impl(buffers.subspan(0, input_count), buffers.subspan(input_count, output_count));
-      };
-      call_f = call_func::make(std::move(wrapper), {}, std::move(buffer_args), f);
-    } else {
-      call_f = call_func::make(nullptr, {}, std::move(buffer_args), f);
-    }
+    stmt call_f = call_func::make(f->impl(), f);
 
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);
@@ -341,6 +320,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
     result = remove_checks().mutate(result);
   }
+
+  std::cout << std::tie(result, ctx) << std::endl;
 
   return result;
 }

@@ -21,6 +21,8 @@ public:
   // message to cerr and abort.
   std::function<void(const expr&)> check_failed;
   std::function<void(const call_func*)> call_failed;
+
+  const raw_buffer* lookup_buffer(symbol_id id) { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
 
 index_t evaluate(const expr& e, eval_context& context);

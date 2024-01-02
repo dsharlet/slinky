@@ -169,7 +169,7 @@ public:
   }
 
   void visit(const call_func* n) override {
-    *this << indent() << "call(<fn>, {" << n->scalar_args << "}, {" << n->buffer_args << "})\n";
+    *this << indent() << "call(<fn>)\n";
   }
 
   void visit(const allocate* n) override {

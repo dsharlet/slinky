@@ -440,21 +440,20 @@ public:
 };
 
 class func;
+class eval_context;
 
-// Call `target` with a set of `scalar_args` scalars and `buffer_args` buffers.
+// Call `target`.
 class call_func : public stmt_node<call_func> {
 public:
-  typedef index_t (*callable_t)(std::span<const index_t>, std::span<raw_buffer*>);
-  using callable = std::function<index_t(std::span<const index_t>, std::span<raw_buffer*>)>;
+  typedef index_t (*callable_t)(eval_context&);
+  using callable = std::function<index_t(eval_context&)>;
 
   callable target;
-  std::vector<expr> scalar_args;
-  std::vector<symbol_id> buffer_args;
   const func* fn;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(callable target, std::vector<expr> scalar_args, std::vector<symbol_id> buffer_args, const func* fn);
+  static stmt make(callable target, const func* fn = nullptr);
 
   static constexpr node_type static_type = node_type::call_func;
 };
@@ -770,11 +769,7 @@ public:
     if (x->true_body.defined()) x->true_body.accept(this);
     if (x->false_body.defined()) x->false_body.accept(this);
   }
-  virtual void visit(const call_func* x) override {
-    for (const expr& i : x->scalar_args) {
-      i.accept(this);
-    }
-  }
+  virtual void visit(const call_func* x) override {}
   virtual void visit(const allocate* x) override {
     for (const dim_expr& i : x->dims) {
       i.bounds.min.accept(this);

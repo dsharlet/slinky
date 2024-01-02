@@ -270,8 +270,6 @@ public:
     if (!cs) return;
 
     if (!try_match(cs->fn, x->fn)) return;
-    if (!try_match(cs->scalar_args, x->scalar_args)) return;
-    if (!try_match(cs->buffer_args, x->buffer_args)) return;
     // TODO(https://github.com/dsharlet/slinky/issues/11): How to compare callable?
   }
 

@@ -71,14 +71,12 @@ class copy_implementer : public node_mutator {
       const func* fn, std::vector<expr> in_x, std::vector<var> out_x, symbol_id in_arg, symbol_id out_arg) {
     // We're always going to have a call to copy at the innermost loop.
     stmt copy = call_func::make(
-        [padding = fn->padding()](std::span<const index_t>, std::span<raw_buffer*> buffers) -> index_t {
-          assert(buffers.size() == 2);
-          const raw_buffer& in = *buffers[0];
-          const raw_buffer& out = *buffers[1];
+        [padding = fn->padding(), in_arg, out_arg](eval_context& ctx) -> index_t {
+          const raw_buffer& in = *ctx.lookup_buffer(in_arg);
+          const raw_buffer& out = *ctx.lookup_buffer(out_arg);
           slinky::copy(in, out, padding.empty() ? nullptr : padding.data());
           return 0;
-        },
-        {}, {in_arg, out_arg}, fn);
+        }, fn);
 
     expr out_buf = variable::make(out_arg);
     expr in_buf = variable::make(in_arg);
@@ -205,17 +203,15 @@ public:
     // the padding is not replaced.
     // TODO: We could be smarter about this, and not have this limitation.
     assert(c->fn->inputs().size() == 1 || c->fn->padding().empty());
-
     std::vector<stmt> results;
     results.reserve(c->fn->inputs().size());
 
-    assert(c->buffer_args.size() == c->fn->inputs().size() + 1);
-    auto arg_i = c->buffer_args.begin();
-    symbol_id output_arg = c->buffer_args.back();
+    assert(c->fn->outputs().size() == 1);
+    symbol_id output_arg = c->fn->outputs()[0].name();
 
     assert(c->fn);
     for (const func::input& i : c->fn->inputs()) {
-      results.push_back(implement_copy(c->fn, assert_points(i.bounds), output.dims, *arg_i++, output_arg));
+      results.push_back(implement_copy(c->fn, assert_points(i.bounds), output.dims, i.name(), output_arg));
     }
     set_result(block::make(results));
   }
