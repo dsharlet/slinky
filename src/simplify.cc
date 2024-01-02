@@ -787,7 +787,7 @@ expr simplify(const call* op, std::vector<expr> args) {
 
   if (op->intrinsic == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
-    for (index_t d = 1; d < args.size(); ++d) {
+    for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
       // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_base(b)
       if (args[d].defined() && match(args[d], buffer_min(args[0], d - 1))) {
         args[d] = expr();
