@@ -3,7 +3,6 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
-#include <set>
 
 #include "evaluate.h"
 #include "node_mutator.h"
@@ -184,16 +183,6 @@ public:
       assert_canonical v;
       replacement.accept(&v);
     }
-
-    bool operator<(const rule& r) const {
-      int c = compare(pattern, r.pattern);
-      if (c < 0) {
-        return true;
-      } else if (c > 0) {
-        return false;
-      }
-      return compare(predicate, r.predicate) < 0;
-    }
   };
 
 private:
@@ -201,19 +190,12 @@ private:
 
 public:
   rule_set(std::initializer_list<rule> rules) {
-    std::set<rule> rules_set;
     for (const rule& i : rules) {
       commute_variants v;
       i.pattern.accept(&v);
 
       for (expr& p : v.results) {
-        rule new_rule(std::move(p), i.replacement, i.predicate);
-        auto dup = rules_set.insert(new_rule);
-        if (!dup.second) {
-          std::cerr << "Duplicate rule found: " << new_rule.pattern << " -> " << i.replacement << std::endl;
-          std::abort();
-        }
-        rules_.emplace_back(std::move(new_rule));
+        rules_.emplace_back(std::move(p), i.replacement, i.predicate);
       }
     }
   }
@@ -394,8 +376,6 @@ expr simplify(const add* op, expr a, expr b) {
       {max(x + c0, y + c1) + c2, max(x + (c0 + c2), y + (c1 + c2))},
       {min(c0 - x, y + c1) + c2, min((c0 + c2) - x, y + (c1 + c2))},
       {max(c0 - x, y + c1) + c2, max((c0 + c2) - x, y + (c1 + c2))},
-      {min(x + c0, c1 - y) + c2, min(x + (c0 + c2), (c1 + c2) - y)},
-      {max(x + c0, c1 - y) + c2, max(x + (c0 + c2), (c1 + c2) - y)},
       {min(c0 - x, c1 - y) + c2, min((c0 + c2) - x, (c1 + c2) - y)},
       {max(c0 - x, c1 - y) + c2, max((c0 + c2) - x, (c1 + c2) - y)},
 
