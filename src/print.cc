@@ -248,13 +248,11 @@ public:
     os << ", {";
     if (!n->dims.empty()) {
       os << std::endl;
-    }
-    ++depth;
-    os << indent();
-    print_vector(n->dims, ",\n" + indent());
-    os << std::endl;
-    --depth;
-    if (!n->dims.empty()) {
+      ++depth;
+      os << indent();
+      print_vector(n->dims, ",\n" + indent());
+      os << std::endl;
+      --depth;
       os << indent();
     }
     os << "}) {" << std::endl;
@@ -268,13 +266,17 @@ public:
     os << indent();
     os << "crop_buffer(";
     print(n->name);
-    os << ", {" << std::endl;
-    ++depth;
-    os << indent();
-    print_vector(n->bounds, ",\n" + indent());
-    os << std::endl;
-    --depth;
-    os << indent() << "}) {" << std::endl;
+    os << ", {";
+    if (!n->bounds.empty()) {
+      os << std::endl;
+      ++depth;
+      os << indent();
+      print_vector(n->bounds, ",\n" + indent());
+      os << std::endl;
+      --depth;
+      os << indent();
+    }
+    os << "}) {" << std::endl;
     ++depth;
     print(n->body);
     --depth;
@@ -298,13 +300,17 @@ public:
     os << indent();
     os << "slice_buffer(";
     print(n->name);
-    os << ", {" << std::endl;
-    ++depth;
-    os << indent();
-    print_vector(n->at, ",\n" + indent());
-    os << std::endl;
-    --depth;
-    os << indent() << "}) {" << std::endl;
+    os << ", {";
+    if (!n->at.empty()) {
+      os << std::endl;
+      ++depth;
+      os << indent();
+      print_vector(n->at, ",\n" + indent());
+      os << std::endl;
+      --depth;
+      os << indent();
+    }
+    os << "}) {" << std::endl;
     ++depth;
     print(n->body);
     --depth;
