@@ -12,6 +12,8 @@ namespace slinky {
 bool match(const expr& p, const expr& e, symbol_map<expr>& matches);
 bool match(const expr& a, const expr& b);
 bool match(const stmt& a, const stmt& b);
+bool match(const interval_expr& a, const interval_expr& b);
+bool match(const dim_expr& a, const dim_expr& b);
 
 expr substitute(const expr& e, const symbol_map<expr>& replacements);
 stmt substitute(const stmt& s, const symbol_map<expr>& replacements);

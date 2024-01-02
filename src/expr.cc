@@ -424,6 +424,9 @@ expr buffer_at(expr buf, const std::vector<var>& at) {
 }
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
+dim_expr buffer_dim(const expr& buf, const expr& dim) {
+  return {buffer_bounds(buf, dim), buffer_stride(buf, dim), buffer_fold_factor(buf, dim)};
+}
 
 bool is_buffer_intrinsic(intrinsic i) {
   switch (i) {

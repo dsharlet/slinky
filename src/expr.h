@@ -916,12 +916,14 @@ expr buffer_base(expr buf);
 expr buffer_elem_size(expr buf);
 expr buffer_min(expr buf, expr dim);
 expr buffer_max(expr buf, expr dim);
-interval_expr buffer_bounds(const expr& buf, const expr& dim);
 expr buffer_extent(expr buf, expr dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 expr buffer_at(expr buf, const std::vector<expr>& at);
 expr buffer_at(expr buf, const std::vector<var>& at);
+
+interval_expr buffer_bounds(const expr& buf, const expr& dim);
+dim_expr buffer_dim(const expr& buf, const expr& dim);
 
 bool is_buffer_intrinsic(intrinsic fn);
 

@@ -367,6 +367,10 @@ bool match(const expr& p, const expr& e, symbol_map<expr>& matches) {
 
 bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
+bool match(const interval_expr& a, const interval_expr& b) { return match(a.min, b.min) && match(a.max, b.max); }
+bool match(const dim_expr& a, const dim_expr& b) {
+  return match(a.bounds, b.bounds) && match(a.stride, b.stride) && match(a.fold_factor, b.fold_factor);
+}
 
 int compare(const expr& a, const expr& b) {
   // This should match the behavior of matcher::try_match.

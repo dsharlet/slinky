@@ -221,7 +221,7 @@ TEST(bounds_of) {
 
 void test_where(const expr& test, symbol_id var, const interval_expr& expected) {
   interval_expr result = where_true(test, var);
-  if (!match(result.min, expected.min) || !match(result.max, expected.max)) {
+  if (!match(result, expected)) {
     std::cout << "where_true failed " << std::endl;
     std::cout << test << std::endl;
     std::cout << "got: " << std::endl;
