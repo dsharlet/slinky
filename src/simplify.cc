@@ -965,14 +965,29 @@ public:
 
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
+    expr step = mutate(op->step);
+
+    if (!step.defined()) {
+      step = 1;
+    }
+
+    if (prove_true(bounds.min + step > bounds.max)) {
+      // The loop only runs once.
+      set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
+      return;
+    }
 
     auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
 
-    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
+    if (is_constant(step, 1)) {
+      step = expr();
+    }
+
+    if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, std::move(bounds), std::move(body)));
+      set_result(loop::make(op->sym, std::move(bounds), std::move(step), std::move(body)));
     }
   }
 

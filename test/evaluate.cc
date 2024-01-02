@@ -64,12 +64,12 @@ TEST(evaluate_loop) {
         return 0;
       });
 
-  stmt l = loop::make(x.sym(), range(2, 12), c);
+  stmt l = loop::make(x.sym(), range(2, 12), 3, c);
 
   int result = evaluate(l);
   ASSERT_EQ(result, 0);
-  ASSERT_EQ(calls.size(), 10);
-  for (int i = 0; i < 10; ++i) {
-    ASSERT_EQ(calls[i], i + 2);
+  ASSERT_EQ(calls.size(), 4);
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_EQ(calls[i], i * 3 + 2);
   }
 }

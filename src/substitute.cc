@@ -251,6 +251,7 @@ public:
 
     if (!try_match(ls->sym, x->sym)) return;
     if (!try_match(ls->bounds, x->bounds)) return;
+    if (!try_match(ls->step, x->step)) return;
     if (!try_match(ls->body, x->body)) return;
   }
 

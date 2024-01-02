@@ -295,10 +295,11 @@ stmt block::make(stmt a, stmt b) {
   return n;
 }
 
-stmt loop::make(symbol_id sym, interval_expr bounds, stmt body) {
+stmt loop::make(symbol_id sym, interval_expr bounds, expr step, stmt body) {
   auto l = new loop();
   l->sym = sym;
   l->bounds = std::move(bounds);
+  l->step = std::move(step);
   l->body = std::move(body);
   return l;
 }

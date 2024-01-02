@@ -274,7 +274,7 @@ public:
       result = l;
     } else {
       // We rewrote the loop min.
-      result = loop::make(l->sym, {loop_min, l->bounds.max}, std::move(body));
+      result = loop::make(l->sym, {loop_min, l->bounds.max}, l->step, std::move(body));
     }
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need

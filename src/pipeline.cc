@@ -223,7 +223,7 @@ public:
     bounds.min = simplify(bounds.min);
     bounds.max = simplify(bounds.max);
 
-    stmt result = loop::make(loop.sym(), bounds, body);
+    stmt result = loop::make(loop.sym(), bounds, 1, body);
     crops.pop_back();
     return result;
   }

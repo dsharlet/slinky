@@ -70,8 +70,7 @@ public:
     return *this;
   }
 
-  printer& operator<<(const interval_expr& e) { return *this << "[" << e.min << ", " << e.max << "]";
-  }
+  printer& operator<<(const interval_expr& e) { return *this << "[" << e.min << ", " << e.max << "]"; }
 
   printer& operator<<(const dim_expr& d) {
     return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
@@ -139,9 +138,7 @@ public:
     *this << "select(" << op->condition << ", " << op->true_value << ", " << op->false_value << ")";
   }
 
-  void visit(const call* x) override {
-    *this << x->intrinsic << "(" << x->args << ")";
-  }
+  void visit(const call* x) override { *this << x->intrinsic << "(" << x->args << ")"; }
 
   void visit(const block* b) override {
     if (b->a.defined()) {
@@ -153,7 +150,11 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "loop(" << l->sym << " in " << l->bounds << ") {\n";
+    *this << indent() << "loop(" << l->sym << " in " << l->bounds;
+    if (l->step.defined()) {
+      *this << ", " << l->step;
+    }
+    *this << ") {\n ";
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -168,9 +169,7 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit(const call_func* n) override {
-    *this << indent() << "call(<fn>)\n";
-  }
+  void visit(const call_func* n) override { *this << indent() << "call(<fn>)\n"; }
 
   void visit(const allocate* n) override {
     *this << indent() << n->sym << " = allocate<" << n->elem_size << ">({\n";
@@ -234,9 +233,7 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit(const check* n) override {
-    *this << indent() << "check(" << n->condition << ")\n";
-  }
+  void visit(const check* n) override { *this << indent() << "check(" << n->condition << ")\n"; }
 };
 
 void print(std::ostream& os, const expr& e, const node_context* ctx) {
