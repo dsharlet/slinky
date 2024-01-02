@@ -46,7 +46,7 @@ public:
 
   printer(std::ostream& os, const node_context* context) : os(os), context(context) {}
 
-  void print_symbol_id(symbol_id id) {
+  void print(symbol_id id) {
     if (context) {
       os << context->name(id);
     } else {
@@ -80,17 +80,27 @@ public:
     os << "}";
   }
 
+  template <typename T>
+  void print_vector(const std::vector<T>& v, const std::string& sep = ", ") {
+    for (std::size_t i = 0; i < v.size(); ++i) {
+      print(v[i]);
+      if (i + 1 < v.size()) {
+        os << sep;
+      }
+    }
+  }
+
   void print(const stmt& s) { s.accept(this); }
 
   std::string indent() const { return std::string(depth, ' '); }
 
-  void visit(const variable* v) override { print_symbol_id(v->name); }
-  void visit(const wildcard* w) override { print_symbol_id(w->name); }
+  void visit(const variable* v) override { print(v->name); }
+  void visit(const wildcard* w) override { print(w->name); }
   void visit(const constant* c) override { os << c->value; }
 
   void visit(const let* l) override {
     os << "let ";
-    print_symbol_id(l->name);
+    print(l->name);
     os << " = ";
     print(l->value);
     os << " in ";
@@ -99,7 +109,7 @@ public:
 
   void visit(const let_stmt* l) override {
     os << indent() << "let ";
-    print_symbol_id(l->name);
+    print(l->name);
     os << " = ";
     print(l->value);
     os << " { " << std::endl;
@@ -163,12 +173,7 @@ public:
 
   void visit(const call* x) override {
     os << x->intrinsic << "(";
-    for (const expr& i : x->args) {
-      print(i);
-      if (!i.same_as(x->args.back())) {
-        os << ", ";
-      }
-    }
+    print_vector(x->args);
     os << ")";
   }
 
@@ -183,7 +188,7 @@ public:
 
   void visit(const loop* l) override {
     os << indent() << "loop(";
-    print_symbol_id(l->name);
+    print(l->name);
     os << " in ";
     print(l->bounds);
     os << ") {" << std::endl;
@@ -211,35 +216,20 @@ public:
 
   void visit(const call_func* n) override {
     os << indent() << "call(<fn>, {";
-    for (const expr& e : n->scalar_args) {
-      print(e);
-      if (&e != &n->scalar_args.back()) {
-        os << ", ";
-      }
-    }
+    print_vector(n->scalar_args);
     os << "}, {";
-    for (symbol_id id : n->buffer_args) {
-      print_symbol_id(id);
-      if (id != n->buffer_args.back()) {
-        os << ", ";
-      }
-    }
+    print_vector(n->buffer_args);
     os << "})" << std::endl;
   }
 
   void visit(const allocate* n) override {
     os << indent();
-    print_symbol_id(n->name);
+    print(n->name);
     os << " = allocate<" << n->elem_size << ">({" << std::endl;
     ++depth;
-    for (const dim_expr& d : n->dims) {
-      os << indent();
-      print(d);
-      if (&d != &n->dims.back()) {
-        os << ", ";
-      }
-      os << std::endl;
-    }
+    os << indent();
+    print_vector(n->dims, ",\n" + indent());
+    os << std::endl;
     --depth;
     os << indent() << "} on " << n->storage << ") {" << std::endl;
     ++depth;
@@ -250,23 +240,24 @@ public:
 
   void visit(const make_buffer* n) override {
     os << indent();
-    print_symbol_id(n->name);
+    print(n->name);
     os << " = make_buffer(";
     print(n->base);
     os << ", ";
     print(n->elem_size);
-    os << ", {" << std::endl;
-    ++depth;
-    for (const dim_expr& d : n->dims) {
-      os << indent();
-      print(d);
-      if (&d != &n->dims.back()) {
-        os << ", ";
-      }
+    os << ", {";
+    if (!n->dims.empty()) {
       os << std::endl;
     }
+    ++depth;
+    os << indent();
+    print_vector(n->dims, ",\n" + indent());
+    os << std::endl;
     --depth;
-    os << indent() << "}) {" << std::endl;
+    if (!n->dims.empty()) {
+      os << indent();
+    }
+    os << "}) {" << std::endl;
     ++depth;
     print(n->body);
     --depth;
@@ -276,17 +267,12 @@ public:
   void visit(const crop_buffer* n) override {
     os << indent();
     os << "crop_buffer(";
-    print_symbol_id(n->name);
+    print(n->name);
     os << ", {" << std::endl;
     ++depth;
-    for (const interval_expr& d : n->bounds) {
-      os << indent();
-      print(d);
-      if (&d != &n->bounds.back()) {
-        os << ", ";
-      }
-      os << std::endl;
-    }
+    os << indent();
+    print_vector(n->bounds, ",\n" + indent());
+    os << std::endl;
     --depth;
     os << indent() << "}) {" << std::endl;
     ++depth;
@@ -298,7 +284,7 @@ public:
   void visit(const crop_dim* n) override {
     os << indent();
     os << "crop_dim<" << n->dim << ">(";
-    print_symbol_id(n->name);
+    print(n->name);
     os << ", ";
     print(n->bounds);
     os << ") {" << std::endl;
@@ -311,17 +297,12 @@ public:
   void visit(const slice_buffer* n) override {
     os << indent();
     os << "slice_buffer(";
-    print_symbol_id(n->name);
+    print(n->name);
     os << ", {" << std::endl;
     ++depth;
-    for (const expr& d : n->at) {
-      os << indent();
-      print(d);
-      if (&d != &n->at.back()) {
-        os << ", ";
-      }
-      os << std::endl;
-    }
+    os << indent();
+    print_vector(n->at, ",\n" + indent());
+    os << std::endl;
     --depth;
     os << indent() << "}) {" << std::endl;
     ++depth;
@@ -333,7 +314,7 @@ public:
   void visit(const slice_dim* n) override {
     os << indent();
     os << "slice_dim<" << n->dim << ">(";
-    print_symbol_id(n->name);
+    print(n->name);
     os << ", ";
     print(n->at);
     os << ") {" << std::endl;
