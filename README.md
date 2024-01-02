@@ -1,12 +1,12 @@
 # Slinky
-This project aims to provide a lightweight runtime to semi-automatically optimize data flow pipelines for locality.
+[This project](https://en.wikipedia.org/wiki/Slinky) aims to provide a lightweight runtime to semi-automatically optimize data flow pipelines for locality.
 Pipelines are specified as graphs of operators processing data between buffers.
 After a pipeline is specified, Slinky will break the buffers into smaller chunks, and call the operator implementation to produce these chunks.
 
 Slinky is heavily inspired and motivated by [Halide](https://halide-lang.org).
 It can be described by starting with Halide, and making the following changes:
 - Slinky is a runtime, not a compiler.
-- All operations that read and write buffers are user defined callbacks.
+- All operations that read and write buffers are user defined callbacks (except copies and other data movement operations).
 - Bounds for each operation are manually provided instead of inferred (as in Halide).
 
 Because we are not responsible for generating the inner loop code like Halide, scheduling is a dramatically simpler problem.
@@ -16,6 +16,13 @@ The ultimate goal of Slinky is to make automatic scheduling of data flow pipelin
 
 ## Graph description
 The pipelines are described by operators called `func`s and connected by `buffer_expr`s.
+`func` has a list of `input` and `output` objects.
+A `func` can have multiple `output`s, but all outputs must be indexed by one set of dimensions for the `func`.
+An `input` or `output` is associated with a `buffer_expr`.
+An `output` has a list of dimensions, which identify variables (`var`) used to index the corresponding dimension of the `buffer_expr`.
+An `input` has a list of bounds expressions, expressed as an inclusive interval `[min, max]`, where the bounds can depend on the variables from the output dimensions.
+
+### Elementwise example
 Here is an example of a simple pipeline of two 1D elementwise `func`s:
 ```c++
 node_context ctx;
@@ -44,6 +51,68 @@ This pipeline could be implemented in two ways by Slinky:
 2. Allocating `intm` to have a single element, and executing `mul` followed by `add` in a single loop over the output elements.
 
 Of course, (2) would have extremely high overhead, and would not be a desireable strategy.
+
+### Stencil example
+Here is an example of a pipeline that has a stage that is a stencil, such as a convlution:
+```
+node_context ctx;
+
+auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+
+var x(ctx, "x");
+var y(ctx, "y");
+
+func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
+func stencil =
+    func::make<const short, short>(sum3x3<short>, {intm, {{x - 1, x + 1}, {y - 1, y + 1}}}, {out, {x, y}});
+
+pipeline p(ctx, {in}, {out});
+```
+- `in` and `out` are the input and output buffers.
+- `intm` is the intermediate buffer between the two operations.
+- We need two variables `x` and `y` to describe the buffers in this pipeline.
+- The first stage `add` is an elementwise operation that adds one to each element.
+- The second stage is a stencil `sum3x3`, which computes the sum of the 3x3 neighborhood around `x, y`.
+- The output of both stages is indexed by `x, y`. The first stage is similar to the previous elementwise example, but the stencil has bounds `[x - 1, x + 1], [y - 1, y + 1]`. 
+
+An interesting way to implement this pipeline is to compute rows of `out` at a time, keeping the window of rows required from `add` in memory.
+This can be expressed with the following schedule:
+```
+stencil.loops({y});
+add.compute_at({&stencil, y});
+```
+This means:
+- We want a loop over `y`, instead of just passing the whole 2D buffer to `sum3x3`.
+- We want to compute add at that same loop over y to compute `stencil`.
+
+This generates a program like so:
+```
+intm = allocate<intm>({
+  {[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], 2},
+  {[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], ((buffer_extent(out, 0) * 2) + 4), 3}
+} on heap) {
+ loop(y in [(buffer_min(out, 1) + -2), buffer_max(out, 1)]) {
+   crop_dim<1>(intm, [(y + 1), (y + 1)]) {
+   call(add)
+  }
+  if((buffer_min(out, 1) <= y)) {
+   crop_dim<1>(out, [y, y]) {
+    call(sum3x3)
+   }
+  }
+ }
+}
+```
+This program does the following:
+- Allocates a buffer for `intm`, with a fold factor of 3, meaning that the coordinates of the second dimension are modulo 3 when computing addresses.
+- Runs a loop over `y` starting from 2 rows before the first output row, calling `add` at each `y`.
+- After reaching the first output row, calls `sum3x3`, cropping the output to the current row `y`. This will access rows `(y - 1)%3`, `y%3`, and `(y + 1)%3` of `intm`. Since we've run `add` for 3 values of `y + 1` prior to the first call to `sum3x3`, all the required values of `intm` have been produced.
+- After the first row, the two functions are called in alternating order until `y` reaches the end of the output buffer.
+
+### Matrix multiply example
 
 Here is a more involved example, which computes the matrix product `d = (a x b) x c`:
 ```c++
@@ -99,13 +168,11 @@ We *think* Slinky's approach is a more easily solved problem, and will degrade m
 For example, consider a simple sequence of elementwise operations.
 This is a worst case scenario for (1), which will allocate a lot of memory, and access it with poor locality.
 (2) can do a good job, by generating code specific to the sequence of elementwise operations.
-(1) can only do a good job with a special case in the runtime (e.g. [LSTMs in TFlite](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/kernels/lstm.cc)).
+(1) can only do a good job with a special case in the runtime.
 Slinky aims to handle this case by allocating a small amount of intermediate memory, and executing chunks of the operations at a time.
 We are betting that the dispatch overhead can be amortized enough to be insignificant compared to the locality improvements.
 
 This is not limited to sequences of elementwise operations, frameworks often have fused sequences of common operation patterns, but if you aren't using one of those patterns, you end up with the worst case scenario of the entire intermediate buffer being realized into memory with poor locality.
-
-As a less contrived example: [FlashAttention](https://arxiv.org/abs/2205.14135) is largely just applying locality optimizations to transformers (used in large language models) in much the same way Slinky proposes to do more generally (and automatically).
 
 ## Data we have so far
 This [performance app](apps/performance.cc) attempts to measure the overhead of interpreting pipelines at runtime.
