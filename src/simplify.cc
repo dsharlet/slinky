@@ -1097,7 +1097,7 @@ public:
       }
     }
 
-    // Check if this make_buffer is equivalent to slice_buffer.
+    // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
     if (const call* bc = base.as<call>()) {
       if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
@@ -1116,6 +1116,32 @@ public:
         if (is_slice) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
           set_result(slice_buffer::make(op->name, std::move(at), std::move(body)));
+          return;
+        }
+
+        // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
+        bool is_crop = true;
+        box_expr crop_bounds(dims.size());
+        for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+          if (!match(dims[d].stride, buffer_stride(buf, d)) ||
+              !match(dims[d].fold_factor, buffer_fold_factor(buf, d))) {
+            is_crop = false;
+            break;
+          }
+
+          // If the argument is defined, we need the min to be the same as the argument.
+          // If it is not defined, it must be buffer_min(buf, d).
+          bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
+          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(buf, d);
+          if (match(dims[d].bounds.min, crop_min)) {
+            crop_bounds[d] = dims[d].bounds;
+          } else {
+            is_crop = false;
+            break;
+          }
+        }
+        if (is_crop) {
+          set_result(mutate(crop_buffer::make(op->name, std::move(crop_bounds), std::move(body))));
           return;
         }
       }
