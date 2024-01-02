@@ -301,15 +301,7 @@ public:
     os << "slice_buffer(";
     print(n->name);
     os << ", {";
-    if (!n->at.empty()) {
-      os << std::endl;
-      ++depth;
-      os << indent();
-      print_vector(n->at, ",\n" + indent());
-      os << std::endl;
-      --depth;
-      os << indent();
-    }
+    print_vector(n->at);
     os << "}) {" << std::endl;
     ++depth;
     print(n->body);
