@@ -89,6 +89,7 @@ class copy_implementer : public node_mutator {
     symbol_map<expr> out_x_to_loop_vars;
     std::vector<dim_expr> in_dims(out_x.size());
     std::vector<dim_expr> out_dims(out_x.size());
+    // If the input is lower rank than the output, this tells us the mapping from the output to the input dimensions.
     std::vector<index_t> in_dims_map(out_x.size());
     index_t id = 0;
     for (index_t od = 0; od < static_cast<index_t>(out_x.size()); ++od) {
@@ -136,8 +137,6 @@ class copy_implementer : public node_mutator {
 
       interval_expr clamp_bounds;
 
-      // We implement copies by first assuming that we are going to call copy for each point in the output buffer,
-      // and creating a single pointed buffer for each of these calls.
       if (!can_eliminate_output_loop(in_x, out_x[d], d)) {
         // We can't eliminate this dimension of the copy because another dimension uses it (e.g. a transpose).
       } else if (is_copy(in_x[d], out_x[d], clamp_bounds)) {
