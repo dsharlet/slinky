@@ -196,7 +196,7 @@ public:
   pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
       const build_options& options = build_options());
 
-  using scalars = std::span<index_t>;
+  using scalars = std::span<const index_t>;
   using buffers = std::span<const raw_buffer*>;
 
   index_t evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const;
