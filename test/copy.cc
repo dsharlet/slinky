@@ -309,6 +309,55 @@ TEST(copy_broadcast) {
   }
 }
 
+TEST(copy_broadcast_sliced) {
+  for (int dim = 0; dim < 3; ++dim) {
+    // Make the pipeline
+    node_context ctx;
+
+    auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+    auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+
+    var x(ctx, "x");
+    var y(ctx, "y");
+    var z(ctx, "z");
+
+    box_expr bounds = {point(x), point(y), point(z)};
+    bounds.erase(bounds.begin() + dim);
+    func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+
+    pipeline p(ctx, {in}, {out});
+
+    const int W = 8;
+    const int H = 5;
+    const int D = 3;
+
+    // Run the pipeline.
+    std::vector<index_t> in_extents = {W, H, D};
+    in_extents.erase(in_extents.begin() + dim);
+    buffer<int, 2> in_buf({in_extents[0], in_extents[1]});
+    init_random(in_buf);
+
+    // Ask for an output padded in every direction.
+    buffer<int, 3> out_buf({W, H, D});
+    out_buf.allocate();
+
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+
+    for (int z = 0; z < D; ++z) {
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          std::vector<index_t> i = {x, y, z};
+          i.erase(i.begin() + dim);
+          ASSERT_EQ(out_buf(x, y, z), in_buf(i));
+        }
+      }
+    }
+  }
+}
+
 TEST(copy_padded) {
   // Make the pipeline
   node_context ctx;

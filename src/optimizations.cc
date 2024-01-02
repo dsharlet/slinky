@@ -80,9 +80,16 @@ class copy_implementer : public node_mutator {
         },
         {}, {in_arg, out_arg}, fn);
 
-    // Make variables for the loops.
+    expr out_buf = variable::make(out_arg);
+    expr in_buf = variable::make(in_arg);
+
+    // Start out by describing the copy as a complete loop nest of scalar copies, where we compute the address of
+    // each scalar for every element. We might need to insert fake dimenions here if the copy is a broadcast.
     std::vector<expr> loop_vars(out_x.size());
     symbol_map<expr> out_x_to_loop_vars;
+    std::vector<dim_expr> in_dims(out_x.size());
+    std::vector<dim_expr> out_dims(out_x.size());
+    index_t id = 0;
     for (index_t od = 0; od < static_cast<index_t>(out_x.size()); ++od) {
       // TODO: If we decide we can assume that output::dims and input::bounds must use the same context as the rest of
       // the pipeline, we could use those variables here, which would make for more readable code (both here and in the
@@ -95,53 +102,67 @@ class copy_implementer : public node_mutator {
         i = substitute(i, out_x[od].name(), loop_var);
       }
       out_x[od] = loop_var;
-    }
 
-    std::vector<dim_expr> in_dims, out_dims;
-    expr out_buf = variable::make(out_arg);
-    expr in_buf = variable::make(in_arg);
-    index_t id = 0;
-    for (index_t od = 0; od < static_cast<index_t>(out_x.size()); ++od) {
-      // We implement copies by first assuming that we are going to call copy for each point in the output buffer,
-      // and creating a single pointed buffer for each of these calls.
-      dim_expr in_dim = {point(out_x[od]), buffer_stride(in_buf, id), buffer_fold_factor(in_buf, id)};
-      interval_expr out_bounds = point(out_x[od]);
+      // To start with, we describe copies as a loop over scalar copies.
+      out_dims[od] = {point(out_x[od]), buffer_stride(out_buf, od), buffer_fold_factor(out_buf, od)};
 
-      if (!can_eliminate_output_loop(in_x, out_x[od], od)) {
-        // We can't eliminate this dimension of the copy because another dimension uses it (e.g. a transpose).
-        ++id;
-      } else if (is_copy(in_x[od], out_x[od], in_dim.bounds)) {
-        // copy can handle this copy loop, eliminate it.
-        in_x[od] = expr();
-        ++id;
-        out_x[od] = var();
-        loop_vars[od] = expr();
-
-        // If the copy was clamped, clamp the input buffer accordingly.
-        if (is_negative_infinity(in_dim.bounds.min)) {
-          in_dim.bounds.min = buffer_min(out_buf, od);
-        }
-        if (is_positive_infinity(in_dim.bounds.max)) {
-          in_dim.bounds.max = buffer_max(out_buf, od);
-        }
-        out_bounds = buffer_bounds(out_buf, od);
-      } else if (is_broadcast(in_x[od], out_x[od])) {
-        // copy can handle this broadcast loop, eliminate it.
-        ++id;
-        out_x[od] = var();
-        loop_vars[od] = expr();
-
-        out_bounds = buffer_bounds(out_buf, od);
-        in_dim.bounds = out_bounds;
-        in_dim.stride = 0;
+      if (in_x.size() < out_x.size() && (od >= in_x.size() || !depends_on(in_x[od], out_x[od].name()))) {
+        // We want to rewrite copies like so:
+        //
+        //   out(x, y, z) = in(x, z)
+        //
+        // by inserting a dummy dimension of stride 0 to represent the broadcast. It doesn't matter where we insert it
+        // for correctness, but we want to insert it where we maximize the likliehood of being able to use `copy` to
+        // implement the loop.
+        in_dims[od] = {point(out_x[od]), 0, 0};
+        in_x.insert(in_x.begin() + od, out_x[od]);
       } else {
+        in_dims[od] = {point(out_x[od]), buffer_stride(in_buf, id), buffer_fold_factor(in_buf, id)};
         ++id;
       }
+    }
 
-      if (!out_bounds.min.same_as(out_bounds.max)) {
-        out_dims.emplace_back(out_bounds, buffer_stride(out_buf, od), buffer_fold_factor(out_buf, od));
-        // We want the output coordinates here, we adjust the base below.
-        in_dims.push_back(in_dim);
+    // After we've built the complete copy loop nest, find dimensions that the copy call can handle, and eliminate
+    // those loops from the loop nest.
+    assert(in_x.size() == out_x.size());
+    assert(in_dims.size() == out_dims.size());
+    for (index_t d = static_cast<index_t>(out_x.size()) - 1; d >= 0; --d) {
+      dim_expr& in_dim = in_dims[d];
+      dim_expr& out_dim = out_dims[d];
+      interval_expr& in_bounds = in_dim.bounds;
+      interval_expr& out_bounds = out_dim.bounds;
+
+      // We implement copies by first assuming that we are going to call copy for each point in the output buffer,
+      // and creating a single pointed buffer for each of these calls.
+      if (!can_eliminate_output_loop(in_x, out_x[d], d)) {
+        // We can't eliminate this dimension of the copy because another dimension uses it (e.g. a transpose).
+      } else if (is_copy(in_x[d], out_x[d], in_bounds)) {
+        // copy can handle this copy loop, eliminate it.
+        in_x[d] = expr();
+        out_x[d] = var();
+        loop_vars[d] = expr();
+
+        // If the copy was clamped, clamp the input buffer accordingly.
+        if (is_negative_infinity(in_bounds.min)) {
+          in_bounds.min = buffer_min(out_buf, d);
+        }
+        if (is_positive_infinity(in_bounds.max)) {
+          in_bounds.max = buffer_max(out_buf, d);
+        }
+        out_bounds = buffer_bounds(out_buf, d);
+      } else if (is_broadcast(in_x[d], out_x[d])) {
+        // copy can handle this broadcast loop, eliminate it.
+        out_x[d] = var();
+        loop_vars[d] = expr();
+
+        out_bounds = buffer_bounds(out_buf, d);
+        in_bounds = out_bounds;
+        in_dim.stride = 0;
+      }
+
+      if (out_bounds.min.same_as(out_bounds.max)) {
+        out_dims.erase(out_dims.begin() + d);
+        in_dims.erase(in_dims.begin() + d);
       }
     }
 
@@ -150,10 +171,10 @@ class copy_implementer : public node_mutator {
     copy = make_buffer::make(in_arg, buffer_at(in_buf, in_x), buffer_elem_size(in_buf), in_dims, copy);
 
     // Make the loops.
-    for (index_t od = 0; od < static_cast<index_t>(out_x.size()); ++od) {
-      if (loop_vars[od].defined()) {
-        interval_expr bounds = {buffer_min(out_buf, od), buffer_max(out_buf, od)};
-        copy = loop::make(*as_variable(loop_vars[od]), bounds, copy);
+    for (index_t d = 0; d < static_cast<index_t>(out_x.size()); ++d) {
+      if (loop_vars[d].defined()) {
+        interval_expr bounds = {buffer_min(out_buf, d), buffer_max(out_buf, d)};
+        copy = loop::make(*as_variable(loop_vars[d]), bounds, copy);
       }
     }
     return copy;
