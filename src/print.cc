@@ -52,11 +52,11 @@ public:
     return *this;
   }
 
-  printer& operator<<(symbol_id id) {
+  printer& operator<<(symbol_id sym) {
     if (context) {
-      os << context->name(id);
+      os << context->name(sym);
     } else {
-      os << "<" << id << ">";
+      os << "<" << sym << ">";
     }
     return *this;
   }
@@ -102,14 +102,14 @@ public:
 
   std::string indent(int extra = 0) const { return std::string(depth + extra, ' '); }
 
-  void visit(const variable* v) override { *this << v->name; }
-  void visit(const wildcard* w) override { *this << w->name; }
+  void visit(const variable* v) override { *this << v->sym; }
+  void visit(const wildcard* w) override { *this << w->sym; }
   void visit(const constant* c) override { *this << c->value; }
 
-  void visit(const let* l) override { *this << "let " << l->name << " = " << l->value << " in " << l->body; }
+  void visit(const let* l) override { *this << "let " << l->sym << " = " << l->value << " in " << l->body; }
 
   void visit(const let_stmt* l) override {
-    *this << indent() << "let " << l->name << " = " << l->value << " { \n";
+    *this << indent() << "let " << l->sym << " = " << l->value << " { \n";
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -153,7 +153,7 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "loop(" << l->name << " in " << l->bounds << ") {\n";
+    *this << indent() << "loop(" << l->sym << " in " << l->bounds << ") {\n";
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -173,7 +173,7 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << n->name << " = allocate<" << n->elem_size << ">({\n";
+    *this << indent() << n->sym << " = allocate<" << n->elem_size << ">({\n";
     *this << indent(2);
     print_vector(n->dims, ",\n" + indent(2));
     *this << "\n";
@@ -183,7 +183,7 @@ public:
   }
 
   void visit(const make_buffer* n) override {
-    *this << indent() << n->name << " = make_buffer(" << n->base << ", " << n->elem_size << ", {";
+    *this << indent() << n->sym << " = make_buffer(" << n->base << ", " << n->elem_size << ", {";
     if (!n->dims.empty()) {
       *this << "\n";
       *this << indent(2);
@@ -197,7 +197,7 @@ public:
   }
 
   void visit(const crop_buffer* n) override {
-    *this << indent() << "crop_buffer(" << n->name << ", {";
+    *this << indent() << "crop_buffer(" << n->sym << ", {";
     if (!n->bounds.empty()) {
       *this << "\n";
       *this << indent(2);
@@ -211,25 +211,25 @@ public:
   }
 
   void visit(const crop_dim* n) override {
-    *this << indent() << "crop_dim<" << n->dim << ">(" << n->name << ", " << n->bounds << ") {\n";
+    *this << indent() << "crop_dim<" << n->dim << ">(" << n->sym << ", " << n->bounds << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const slice_buffer* n) override {
-    *this << indent() << "slice_buffer(" << n->name << ", {" << n->at << "}) {\n";
+    *this << indent() << "slice_buffer(" << n->sym << ", {" << n->at << "}) {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << "slice_dim<" << n->dim << ">(" << n->name << ", " << n->at << ") {\n";
+    *this << indent() << "slice_dim<" << n->dim << ">(" << n->sym << ", " << n->at << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const truncate_rank* n) override {
-    *this << indent() << "truncate_rank<" << n->rank << ">(" << n->name << ") {\n";
+    *this << indent() << "truncate_rank<" << n->rank << ">(" << n->sym << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }

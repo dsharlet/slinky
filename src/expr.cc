@@ -5,30 +5,30 @@
 namespace slinky {
 
 std::string node_context::name(symbol_id i) const {
-  if (i < id_to_name.size()) {
-    return id_to_name[i];
+  if (i < sym_to_name.size()) {
+    return sym_to_name[i];
   } else {
     return "<" + std::to_string(i) + ">";
   }
 }
 
 symbol_id node_context::insert(const std::string& name) {
-  std::optional<symbol_id> id = lookup(name);
-  if (!id) {
-    id = id_to_name.size();
-    id_to_name.push_back(name);
+  std::optional<symbol_id> sym = lookup(name);
+  if (!sym) {
+    sym = sym_to_name.size();
+    sym_to_name.push_back(name);
   }
-  return *id;
+  return *sym;
 }
 symbol_id node_context::insert_unique(const std::string& prefix) {
-  symbol_id id = id_to_name.size();
-  id_to_name.push_back(prefix + std::to_string(id));
-  return id;
+  symbol_id sym = sym_to_name.size();
+  sym_to_name.push_back(prefix + std::to_string(sym));
+  return sym;
 }
 std::optional<symbol_id> node_context::lookup(const std::string& name) const {
   // TODO: At some point we might need a better data structure than doing this linear search.
-  for (symbol_id i = 0; i < id_to_name.size(); ++i) {
-    if (id_to_name[i] == name) {
+  for (symbol_id i = 0; i < sym_to_name.size(); ++i) {
+    if (sym_to_name[i] == name) {
       return i;
     }
   }
@@ -44,26 +44,26 @@ const T* make_bin_op(expr a, expr b) {
 }
 
 template <typename T, typename Body>
-const T* make_let(symbol_id name, expr value, Body body) {
+const T* make_let(symbol_id sym, expr value, Body body) {
   auto n = new T();
-  n->name = name;
+  n->sym = sym;
   n->value = std::move(value);
   n->body = std::move(body);
   return n;
 }
 
-expr let::make(symbol_id name, expr value, expr body) { return make_let<let>(name, std::move(value), std::move(body)); }
+expr let::make(symbol_id sym, expr value, expr body) { return make_let<let>(sym, std::move(value), std::move(body)); }
 
-stmt let_stmt::make(symbol_id name, expr value, stmt body) {
-  return make_let<let_stmt>(name, std::move(value), std::move(body));
+stmt let_stmt::make(symbol_id sym, expr value, stmt body) {
+  return make_let<let_stmt>(sym, std::move(value), std::move(body));
 }
 
 // TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user
 // of simplify_fuzz is malloc/free. Perhaps caching common values of variables (yes
 // we can cache variables!) would be worth doing.
-const variable* make_variable(symbol_id name) {
+const variable* make_variable(symbol_id sym) {
   auto n = new variable();
-  n->name = name;
+  n->sym = sym;
   return n;
 }
 
@@ -75,11 +75,11 @@ const constant* make_constant(index_t value) {
 
 expr::expr(index_t value) : expr(make_constant(value)) {}
 
-expr variable::make(symbol_id name) { return make_variable(name); }
+expr variable::make(symbol_id sym) { return make_variable(sym); }
 
-expr wildcard::make(symbol_id name, std::function<bool(const expr&)> matches) {
+expr wildcard::make(symbol_id sym, std::function<bool(const expr&)> matches) {
   auto n = new wildcard();
-  n->name = name;
+  n->sym = sym;
   n->matches = std::move(matches);
   return n;
 }
@@ -295,9 +295,9 @@ stmt block::make(stmt a, stmt b) {
   return n;
 }
 
-stmt loop::make(symbol_id name, interval_expr bounds, stmt body) {
+stmt loop::make(symbol_id sym, interval_expr bounds, stmt body) {
   auto l = new loop();
-  l->name = name;
+  l->sym = sym;
   l->bounds = std::move(bounds);
   l->body = std::move(body);
   return l;
@@ -311,19 +311,19 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n;
 }
 
-stmt allocate::make(memory_type storage, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(memory_type storage, symbol_id sym, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
   n->storage = storage;
-  n->name = name;
+  n->sym = sym;
   n->elem_size = elem_size;
   n->dims = std::move(dims);
   n->body = std::move(body);
   return n;
 }
 
-stmt make_buffer::make(symbol_id name, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt make_buffer::make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new make_buffer();
-  n->name = name;
+  n->sym = sym;
   n->base = std::move(base);
   n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
@@ -331,43 +331,43 @@ stmt make_buffer::make(symbol_id name, expr base, expr elem_size, std::vector<di
   return n;
 }
 
-stmt crop_buffer::make(symbol_id name, std::vector<interval_expr> bounds, stmt body) {
+stmt crop_buffer::make(symbol_id sym, std::vector<interval_expr> bounds, stmt body) {
   auto n = new crop_buffer();
-  n->name = name;
+  n->sym = sym;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
   return n;
 }
 
-stmt crop_dim::make(symbol_id name, int dim, interval_expr bounds, stmt body) {
+stmt crop_dim::make(symbol_id sym, int dim, interval_expr bounds, stmt body) {
   auto n = new crop_dim();
-  n->name = name;
+  n->sym = sym;
   n->dim = dim;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
   return n;
 }
 
-stmt slice_buffer::make(symbol_id name, std::vector<expr> at, stmt body) {
+stmt slice_buffer::make(symbol_id sym, std::vector<expr> at, stmt body) {
   auto n = new slice_buffer();
-  n->name = name;
+  n->sym = sym;
   n->at = std::move(at);
   n->body = std::move(body);
   return n;
 }
 
-stmt slice_dim::make(symbol_id name, int dim, expr at, stmt body) {
+stmt slice_dim::make(symbol_id sym, int dim, expr at, stmt body) {
   auto n = new slice_dim();
-  n->name = name;
+  n->sym = sym;
   n->dim = dim;
   n->at = std::move(at);
   n->body = std::move(body);
   return n;
 }
 
-stmt truncate_rank::make(symbol_id name, int rank, stmt body) {
+stmt truncate_rank::make(symbol_id sym, int rank, stmt body) {
   auto n = new truncate_rank();
-  n->name = name;
+  n->sym = sym;
   n->rank = rank;
   n->body = std::move(body);
   return n;
@@ -446,7 +446,7 @@ bool is_buffer_intrinsic(intrinsic i) {
 }
 
 var::var() {}
-var::var(symbol_id name) : e_(variable::make(name)) {}
-var::var(node_context& ctx, const std::string& name) : e_(variable::make(ctx.insert(name))) {}
+var::var(symbol_id sym) : e_(variable::make(sym)) {}
+var::var(node_context& ctx, const std::string& sym) : e_(variable::make(ctx.insert(sym))) {}
 
 }  // namespace slinky

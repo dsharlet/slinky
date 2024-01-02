@@ -31,7 +31,7 @@ std::vector<expr> assert_points(std::span<const interval_expr> bounds) {
 // use it).
 bool can_eliminate_output_loop(const std::vector<expr>& in, var out, std::size_t d) {
   for (std::size_t i = 0; i < in.size(); ++i) {
-    if (depends_on(in[i], out.name()) && i != d) {
+    if (depends_on(in[i], out.sym()) && i != d) {
       // An input that isn't in[d] depends on out, we can't eliminate it.
       return false;
     }
@@ -56,7 +56,7 @@ bool is_copy(expr in, var out, interval_expr& bounds) {
 }
 
 bool is_broadcast(expr in, var out) {
-  interval_expr bounds = bounds_of(in, {{out.name(), interval_expr::all()}});
+  interval_expr bounds = bounds_of(in, {{out.sym(), interval_expr::all()}});
   bounds.min = simplify(bounds.min);
   bounds.max = simplify(bounds.max);
 
@@ -99,14 +99,14 @@ class copy_implementer : public node_mutator {
 
       // Replace the variables with our new ones.
       for (expr& i : in_x) {
-        i = substitute(i, out_x[od].name(), loop_var);
+        i = substitute(i, out_x[od].sym(), loop_var);
       }
       out_x[od] = loop_var;
 
       // To start with, we describe copies as a loop over scalar copies.
       out_dims[od] = {point(out_x[od]), buffer_stride(out_buf, od), buffer_fold_factor(out_buf, od)};
       if (in_x.size() < out_x.size() &&
-          (od >= static_cast<index_t>(in_x.size()) || !depends_on(in_x[od], out_x[od].name()))) {
+          (od >= static_cast<index_t>(in_x.size()) || !depends_on(in_x[od], out_x[od].sym()))) {
         // We want to rewrite copies like so:
         //
         //   out(x, y, z) = in(x, z)
@@ -207,11 +207,11 @@ public:
     results.reserve(c->fn->inputs().size());
 
     assert(c->fn->outputs().size() == 1);
-    symbol_id output_arg = c->fn->outputs()[0].name();
+    symbol_id output_arg = c->fn->outputs()[0].sym();
 
     assert(c->fn);
     for (const func::input& i : c->fn->inputs()) {
-      results.push_back(implement_copy(c->fn, assert_points(i.bounds), output.dims, i.name(), output_arg));
+      results.push_back(implement_copy(c->fn, assert_points(i.bounds), output.dims, i.sym(), output_arg));
     }
     set_result(block::make(results));
   }

@@ -47,7 +47,7 @@ public:
     if (value.same_as(x->value) && body.same_as(x->body)) {
       return decltype(body){x};
     } else {
-      return T::make(x->name, std::move(value), std::move(body));
+      return T::make(x->sym, std::move(value), std::move(body));
     }
   }
 
@@ -137,7 +137,7 @@ public:
     if (bounds.same_as(x->bounds) && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(loop::make(x->name, std::move(bounds), std::move(body)));
+      set_result(loop::make(x->sym, std::move(bounds), std::move(body)));
     }
   }
   virtual void visit(const if_then_else* x) override {
@@ -166,7 +166,7 @@ public:
     if (!changed && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(allocate::make(x->storage, x->name, x->elem_size, std::move(dims), std::move(body)));
+      set_result(allocate::make(x->storage, x->sym, x->elem_size, std::move(dims), std::move(body)));
     }
   }
   virtual void visit(const make_buffer* x) override {
@@ -184,7 +184,7 @@ public:
     if (!changed && base.same_as(x->base) && elem_size.same_as(x->elem_size) && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(make_buffer::make(x->name, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+      set_result(make_buffer::make(x->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     }
   }
   virtual void visit(const crop_buffer* x) override {
@@ -199,7 +199,7 @@ public:
     if (!changed && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(crop_buffer::make(x->name, std::move(bounds), std::move(body)));
+      set_result(crop_buffer::make(x->sym, std::move(bounds), std::move(body)));
     }
   }
   virtual void visit(const crop_dim* x) override {
@@ -208,7 +208,7 @@ public:
     if (bounds.same_as(x->bounds) && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(crop_dim::make(x->name, x->dim, std::move(bounds), std::move(body)));
+      set_result(crop_dim::make(x->sym, x->dim, std::move(bounds), std::move(body)));
     }
   }
   virtual void visit(const slice_buffer* x) override {
@@ -223,7 +223,7 @@ public:
     if (!changed && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(slice_buffer::make(x->name, std::move(at), std::move(body)));
+      set_result(slice_buffer::make(x->sym, std::move(at), std::move(body)));
     }
   }
   virtual void visit(const slice_dim* x) override {
@@ -232,7 +232,7 @@ public:
     if (at.same_as(x->at) && body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(slice_dim::make(x->name, x->dim, std::move(at), std::move(body)));
+      set_result(slice_dim::make(x->sym, x->dim, std::move(at), std::move(body)));
     }
   }
   virtual void visit(const truncate_rank* x) override {
@@ -240,7 +240,7 @@ public:
     if (body.same_as(x->body)) {
       set_result(x);
     } else {
-      set_result(truncate_rank::make(x->name, x->rank, std::move(body)));
+      set_result(truncate_rank::make(x->sym, x->rank, std::move(body)));
     }
   }
   virtual void visit(const check* x) override {

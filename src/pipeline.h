@@ -19,7 +19,7 @@ struct loop_id {
 
 // Represents a symbolic buffer in a pipeline.
 class buffer_expr : public ref_counted {
-  symbol_id name_;
+  symbol_id sym_;
   index_t elem_size_;
   std::vector<dim_expr> dims_;
 
@@ -29,7 +29,7 @@ class buffer_expr : public ref_counted {
   memory_type storage_ = memory_type::heap;
   loop_id store_at_;
 
-  buffer_expr(symbol_id name, index_t elem_size, std::size_t rank);
+  buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank);
   buffer_expr(const buffer_expr&) = delete;
   buffer_expr(buffer_expr&&) = delete;
   buffer_expr& operator=(const buffer_expr&) = delete;
@@ -41,10 +41,10 @@ class buffer_expr : public ref_counted {
   void add_consumer(func* f);
 
 public:
-  static buffer_expr_ptr make(symbol_id name, index_t elem_size, std::size_t rank);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& name, index_t elem_size, std::size_t rank);
+  static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank);
 
-  symbol_id name() const { return name_; }
+  symbol_id sym() const { return sym_; }
   index_t elem_size() const { return elem_size_; }
   std::size_t rank() const { return dims_.size(); }
   const std::vector<dim_expr>& dims() const { return dims_; }
@@ -85,7 +85,7 @@ public:
     // These intervals should be a function of the expressions found in the output dims.
     std::vector<interval_expr> bounds;
 
-    symbol_id name() const { return buffer->name(); }
+    symbol_id sym() const { return buffer->sym(); }
   };
 
   struct output {
@@ -96,7 +96,7 @@ public:
     // If this exists for a dimension, specifies the alignment required in that dimension.
     std::vector<index_t> alignment;
 
-    symbol_id name() const { return buffer->name(); }
+    symbol_id sym() const { return buffer->sym(); }
   };
 
 private:
@@ -136,7 +136,7 @@ public:
   // TODO(https://github.com/dsharlet/slinky/issues/8): Try to do this with a variadic template implementation.
   template <typename Out1>
   static func make(callable_wrapper<Out1> impl, output out1) {
-    symbol_id out1_sym = out1.name();
+    symbol_id out1_sym = out1.sym();
     return func(
         [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
           const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
@@ -147,8 +147,8 @@ public:
 
   template <typename In1, typename Out1>
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
-    symbol_id in1_sym = in1.name();
-    symbol_id out1_sym = out1.name();
+    symbol_id in1_sym = in1.sym();
+    symbol_id out1_sym = out1.sym();
     return func(
         [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
           const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
@@ -160,9 +160,9 @@ public:
 
   template <typename In1, typename In2, typename Out1>
   static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
-    symbol_id in1_sym = in1.name();
-    symbol_id in2_sym = in2.name();
-    symbol_id out1_sym = out1.name();
+    symbol_id in1_sym = in1.sym();
+    symbol_id in2_sym = in2.sym();
+    symbol_id out1_sym = out1.sym();
     return func(
         [=, impl = std::move(impl)](
             eval_context& ctx) -> index_t {
@@ -176,9 +176,9 @@ public:
 
   template <typename In1, typename Out1, typename Out2>
   static func make(callable_wrapper<const In1, Out1, Out2> impl, input in1, output out1, output out2) {
-    symbol_id in1_sym = in1.name();
-    symbol_id out1_sym = out1.name();
-    symbol_id out2_sym = out2.name();
+    symbol_id in1_sym = in1.sym();
+    symbol_id out1_sym = out1.sym();
+    symbol_id out2_sym = out2.sym();
     return func(
         [=, impl = std::move(impl)](
             eval_context& ctx) -> index_t {

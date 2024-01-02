@@ -845,7 +845,7 @@ public:
   using node_mutator::mutate;
 
   void visit(const variable* op) override {
-    auto& ref_count = references[op->name];
+    auto& ref_count = references[op->sym];
     if (!ref_count) {
       ref_count = 1;
     } else {
@@ -942,21 +942,21 @@ public:
   template <typename T>
   auto visit_let(const T* op) {
     expr value = mutate(op->value);
-    auto set_bounds = set_value_in_scope(expr_bounds, op->name, bounds_of(value, expr_bounds));
+    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds_of(value, expr_bounds));
 
-    auto ref_count = set_value_in_scope(references, op->name, 0);
+    auto ref_count = set_value_in_scope(references, op->sym, 0);
     auto body = mutate(op->body);
 
-    int refs = *references[op->name];
+    int refs = *references[op->sym];
     if (refs == 0) {
       // This let is dead
       return body;
     } else if (refs == 1 || value.as<constant>() || value.as<variable>()) {
-      return mutate(substitute(body, op->name, value));
+      return mutate(substitute(body, op->sym, value));
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
       return decltype(body){op};
     } else {
-      return T::make(op->name, std::move(value), std::move(body));
+      return T::make(op->sym, std::move(value), std::move(body));
     }
   }
 
@@ -966,13 +966,13 @@ public:
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
 
-    auto set_bounds = set_value_in_scope(expr_bounds, op->name, bounds);
+    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
 
     if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->name, std::move(bounds), std::move(body)));
+      set_result(loop::make(op->sym, std::move(bounds), std::move(body)));
     }
   }
 
@@ -1040,9 +1040,9 @@ public:
       dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
       bounds.push_back(bounds_i);
     }
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     stmt body = mutate(op->body);
-    set_result(allocate::make(op->storage, op->name, op->elem_size, std::move(dims), std::move(body)));
+    set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
   }
 
   void visit(const make_buffer* op) override {
@@ -1061,18 +1061,18 @@ public:
       bounds.push_back(std::move(new_bounds));
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     stmt body = mutate(op->body);
 
     // Check if this make_buffer is equivalent to truncate_rank
-    var buf(op->name);
+    var buf(op->sym);
     if (match(base, buffer_base(buf)) && match(elem_size, buffer_elem_size(buf))) {
       bool is_truncate = true;
       for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
         is_truncate = is_truncate && match(dims[d], buffer_dim(buf, d));
       }
       if (is_truncate) {
-        set_result(truncate_rank::make(op->name, dims.size(), std::move(body)));
+        set_result(truncate_rank::make(op->sym, dims.size(), std::move(body)));
         return;
       }
     }
@@ -1095,7 +1095,7 @@ public:
         }
         if (is_slice) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          set_result(slice_buffer::make(op->name, std::move(at), std::move(body)));
+          set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
           return;
         }
 
@@ -1121,14 +1121,14 @@ public:
           }
         }
         if (is_crop) {
-          set_result(mutate(crop_buffer::make(op->name, std::move(crop_bounds), std::move(body))));
+          set_result(mutate(crop_buffer::make(op->sym, std::move(crop_bounds), std::move(body))));
           return;
         }
       }
     }
 
     if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
-      set_result(make_buffer::make(op->name, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+      set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     } else {
       set_result(op);
     }
@@ -1141,7 +1141,7 @@ public:
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    std::optional<box_expr> prev_bounds = buffer_bounds[op->name];
+    std::optional<box_expr> prev_bounds = buffer_bounds[op->sym];
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
@@ -1162,7 +1162,7 @@ public:
       dims_count += bounds_i.min.defined() && bounds_i.max.defined() ? 1 : 0;
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
 
     // Remove trailing undefined bounds.
@@ -1176,9 +1176,9 @@ public:
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(new_bounds.size()) - 1;
-      set_result(crop_dim::make(op->name, d, std::move(new_bounds[d]), std::move(body)));
+      set_result(crop_dim::make(op->sym, d, std::move(new_bounds[d]), std::move(body)));
     } else if (changed || !body.same_as(op->body)) {
-      set_result(crop_buffer::make(op->name, std::move(new_bounds), std::move(body)));
+      set_result(crop_buffer::make(op->sym, std::move(new_bounds), std::move(body)));
     } else {
       set_result(op);
     }
@@ -1191,7 +1191,7 @@ public:
       return;
     }
 
-    std::optional<box_expr> buf_bounds = buffer_bounds[op->name];
+    std::optional<box_expr> buf_bounds = buffer_bounds[op->sym];
     if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
       interval_expr& dim = (*buf_bounds)[op->dim];
       if (prove_true(bounds.min == dim.min) && prove_true(bounds.max == dim.max)) {
@@ -1202,18 +1202,18 @@ public:
       (*buf_bounds)[op->dim] = bounds;
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, buf_bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
     stmt body = mutate(op->body);
     if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(crop_dim::make(op->name, op->dim, std::move(bounds), std::move(body)));
+      set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
     }
   }
 
   void visit(const slice_buffer* op) override {
     // Update the bounds for the slice. Sliced dimensions are removed from the bounds.
-    std::optional<box_expr> bounds = buffer_bounds[op->name];
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
     std::vector<expr> at(op->at.size());
     std::size_t dims_count = 0;
     bool changed = false;
@@ -1230,7 +1230,7 @@ public:
       }
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
 
     // Remove trailing undefined bounds.
@@ -1245,9 +1245,9 @@ public:
       // This slice is of one dimension, replace it with slice_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(at.size()) - 1;
-      set_result(slice_dim::make(op->name, d, std::move(at[d]), std::move(body)));
+      set_result(slice_dim::make(op->sym, d, std::move(at[d]), std::move(body)));
     } else if (changed || !body.same_as(op->body)) {
-      set_result(slice_buffer::make(op->name, std::move(at), std::move(body)));
+      set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
     } else {
       set_result(op);
     }
@@ -1256,32 +1256,32 @@ public:
   void visit(const slice_dim* op) override {
     expr at = mutate(op->at);
 
-    std::optional<box_expr> bounds = buffer_bounds[op->name];
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds && op->dim < static_cast<index_t>(bounds->size())) {
       bounds->erase(bounds->begin() + op->dim);
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
     if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(slice_dim::make(op->name, op->dim, std::move(at), std::move(body)));
+      set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
     }
   }
 
   void visit(const truncate_rank* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->name];
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds && static_cast<int>(bounds->size()) > op->rank) {
       bounds->resize(op->rank);
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(truncate_rank::make(op->name, op->rank, std::move(body)));
+      set_result(truncate_rank::make(op->sym, op->rank, std::move(body)));
     }
   }
 
@@ -1325,8 +1325,8 @@ public:
 
   template <typename T>
   void visit_variable(const T* x) {
-    if (bounds.contains(x->name)) {
-      result = *bounds.lookup(x->name);
+    if (bounds.contains(x->sym)) {
+      result = *bounds.lookup(x->sym);
     } else {
       result = {x, x};
     }
@@ -1338,7 +1338,7 @@ public:
 
   void visit(const let* x) override {
     x->value.accept(this);
-    auto s = set_value_in_scope(bounds, x->name, result);
+    auto s = set_value_in_scope(bounds, x->sym, result);
     x->body.accept(this);
   }
 
@@ -1591,7 +1591,7 @@ public:
 
   template <typename T>
   void visit_variable(const T* x) {
-    if (x->name == dx) {
+    if (x->sym == dx) {
       set_result(1);
     } else {
       set_result(expr(0));

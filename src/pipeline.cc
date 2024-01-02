@@ -15,10 +15,10 @@
 
 namespace slinky {
 
-buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank)
-    : name_(name), elem_size_(elem_size), producer_(nullptr) {
+buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
+    : sym_(sym), elem_size_(elem_size), producer_(nullptr) {
   dims_.reserve(rank);
-  auto var = variable::make(name);
+  auto var = variable::make(sym);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
     interval_expr bounds = buffer_bounds(var, i);
     expr stride = buffer_stride(var, i);
@@ -27,12 +27,12 @@ buffer_expr::buffer_expr(symbol_id name, index_t elem_size, std::size_t rank)
   }
 }
 
-buffer_expr_ptr buffer_expr::make(symbol_id name, index_t elem_size, std::size_t rank) {
-  return buffer_expr_ptr(new buffer_expr(name, elem_size, rank));
+buffer_expr_ptr buffer_expr::make(symbol_id sym, index_t elem_size, std::size_t rank) {
+  return buffer_expr_ptr(new buffer_expr(sym, elem_size, rank));
 }
 
-buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& name, index_t elem_size, std::size_t rank) {
-  return buffer_expr_ptr(new buffer_expr(ctx.insert(name), elem_size, rank));
+buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank) {
+  return buffer_expr_ptr(new buffer_expr(ctx.insert(sym), elem_size, rank));
 }
 
 void buffer_expr::add_producer(func* f) {
@@ -163,7 +163,7 @@ public:
       }
 
       const loop_id& at = i->producer()->compute_at();
-      if (at.f == in && at.loop.name() == loop.name()) return i->producer();
+      if (at.f == in && at.loop.sym() == loop.sym()) return i->producer();
     }
     return nullptr;
   }
@@ -174,7 +174,7 @@ public:
     for (const auto& s : crops) {
       for (const func::output& o : f->outputs()) {
         // Find the crops for this buffer in this scope level s.
-        auto b = s.find(o.buffer->name());
+        auto b = s.find(o.buffer->sym());
         if (b == s.end()) continue;
 
         // Add all the crops for this buffer.
@@ -194,8 +194,8 @@ public:
     scope_crops& to_crop = crops.back();
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d].name() == loop.name()) {
-          to_crop[o.buffer->name()].emplace_back(d, point(loop));
+        if (o.dims[d].sym() == loop.sym()) {
+          to_crop[o.buffer->sym()].emplace_back(d, point(loop));
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
@@ -211,8 +211,8 @@ public:
 
     for (const buffer_expr_ptr& i : to_allocate) {
       const loop_id& at = i->store_at();
-      if (at.f == f && at.loop.name() == loop.name()) {
-        body = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), body);
+      if (at.f == f && at.loop.sym() == loop.sym()) {
+        body = allocate::make(i->storage(), i->sym(), i->elem_size(), i->dims(), body);
         allocated.insert(i);
       }
     }
@@ -223,7 +223,7 @@ public:
     bounds.min = simplify(bounds.min);
     bounds.max = simplify(bounds.max);
 
-    stmt result = loop::make(loop.name(), bounds, body);
+    stmt result = loop::make(loop.sym(), bounds, body);
     crops.pop_back();
     return result;
   }
@@ -247,7 +247,7 @@ public:
     result = block::make({call_f, result});
     if (root) {
       for (const auto& i : to_allocate) {
-        result = allocate::make(i->storage(), i->name(), i->elem_size(), i->dims(), result);
+        result = allocate::make(i->storage(), i->sym(), i->elem_size(), i->dims(), result);
         allocated.insert(i);
       }
       to_allocate.clear();
@@ -257,7 +257,7 @@ public:
 
 void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
-  expr buf_var = variable::make(b->name());
+  expr buf_var = variable::make(b->sym());
   checks.push_back(check::make(buf_var != 0));
   checks.push_back(check::make(buffer_rank(buf_var) == rank));
   checks.push_back(check::make(buffer_base(buf_var) != 0));
@@ -289,12 +289,12 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     builder.produce(result, f, /*root=*/true);
   }
 
-  std::vector<symbol_id> input_names;
-  input_names.reserve(inputs.size());
+  std::vector<symbol_id> input_syms;
+  input_syms.reserve(inputs.size());
   for (const buffer_expr_ptr& i : inputs) {
-    input_names.push_back(i->name());
+    input_syms.push_back(i->sym());
   }
-  result = infer_bounds(result, ctx, input_names);
+  result = infer_bounds(result, ctx, input_syms);
 
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
@@ -332,7 +332,7 @@ pipeline::pipeline(node_context& ctx, std::vector<var> args, std::vector<buffer_
     std::vector<buffer_expr_ptr> outputs, const build_options& options)
     : inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   for (const var& i : args) {
-    args_.push_back(i.name());
+    args_.push_back(i.sym());
   }
   body = build_pipeline(ctx, inputs_, outputs_, options);
 }
@@ -350,10 +350,10 @@ index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_c
     ctx[args_[i]] = args[i];
   }
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    ctx[inputs_[i]->name()] = reinterpret_cast<index_t>(inputs[i]);
+    ctx[inputs_[i]->sym()] = reinterpret_cast<index_t>(inputs[i]);
   }
   for (std::size_t i = 0; i < outputs.size(); ++i) {
-    ctx[outputs_[i]->name()] = reinterpret_cast<index_t>(outputs[i]);
+    ctx[outputs_[i]->sym()] = reinterpret_cast<index_t>(outputs[i]);
   }
 
   return slinky::evaluate(body, ctx);

@@ -130,10 +130,10 @@ public:
     if (!try_match(ex->b, x->b)) return;
   }
 
-  void match_wildcard(symbol_id name, std::function<bool(const expr&)> predicate) {
+  void match_wildcard(symbol_id sym, std::function<bool(const expr&)> predicate) {
     if (match) return;
 
-    std::optional<expr>& matched = (*matches)[name];
+    std::optional<expr>& matched = (*matches)[sym];
     if (matched) {
       // We already matched this variable. The expression must match.
       symbol_map<expr>* old_matches = matches;
@@ -152,22 +152,22 @@ public:
 
   void visit(const variable* x) override {
     if (matches) {
-      match_wildcard(x->name, nullptr);
+      match_wildcard(x->sym, nullptr);
     } else {
       const variable* ev = match_self_as(x);
       if (ev) {
-        try_match(ev->name, x->name);
+        try_match(ev->sym, x->sym);
       }
     }
   }
 
   void visit(const wildcard* x) override {
     if (matches) {
-      match_wildcard(x->name, x->matches);
+      match_wildcard(x->sym, x->matches);
     } else {
       const wildcard* ew = match_self_as(x);
       if (ew) {
-        try_match(ew->name, x->name);
+        try_match(ew->sym, x->sym);
       }
     }
   }
@@ -187,7 +187,7 @@ public:
     const T* el = match_self_as(x);
     if (!el) return;
 
-    if (!try_match(el->name, x->name)) return;
+    if (!try_match(el->sym, x->sym)) return;
     if (!try_match(el->value, x->value)) return;
     if (!try_match(el->body, x->body)) return;
   }
@@ -249,7 +249,7 @@ public:
     const loop* ls = match_self_as(x);
     if (!ls) return;
 
-    if (!try_match(ls->name, x->name)) return;
+    if (!try_match(ls->sym, x->sym)) return;
     if (!try_match(ls->bounds, x->bounds)) return;
     if (!try_match(ls->body, x->body)) return;
   }
@@ -278,7 +278,7 @@ public:
     const allocate* as = match_self_as(x);
     if (!as) return;
 
-    if (!try_match(as->name, x->name)) return;
+    if (!try_match(as->sym, x->sym)) return;
     if (!try_match(as->elem_size, x->elem_size)) return;
     if (!try_match(as->dims, x->dims)) return;
     if (!try_match(as->body, x->body)) return;
@@ -289,7 +289,7 @@ public:
     const make_buffer* mbs = match_self_as(x);
     if (!mbs) return;
 
-    if (!try_match(mbs->name, x->name)) return;
+    if (!try_match(mbs->sym, x->sym)) return;
     if (!try_match(mbs->base, x->base)) return;
     if (!try_match(mbs->elem_size, x->elem_size)) return;
     if (!try_match(mbs->dims, x->dims)) return;
@@ -301,7 +301,7 @@ public:
     const crop_buffer* cbs = match_self_as(x);
     if (!cbs) return;
 
-    if (!try_match(cbs->name, x->name)) return;
+    if (!try_match(cbs->sym, x->sym)) return;
     if (!try_match(cbs->bounds, x->bounds)) return;
     if (!try_match(cbs->body, x->body)) return;
   }
@@ -311,7 +311,7 @@ public:
     const crop_dim* cds = match_self_as(x);
     if (!cds) return;
 
-    if (!try_match(cds->name, x->name)) return;
+    if (!try_match(cds->sym, x->sym)) return;
     if (!try_match(cds->dim, x->dim)) return;
     if (!try_match(cds->bounds, x->bounds)) return;
     if (!try_match(cds->body, x->body)) return;
@@ -322,7 +322,7 @@ public:
     const slice_buffer* cbs = match_self_as(x);
     if (!cbs) return;
 
-    if (!try_match(cbs->name, x->name)) return;
+    if (!try_match(cbs->sym, x->sym)) return;
     if (!try_match(cbs->at, x->at)) return;
     if (!try_match(cbs->body, x->body)) return;
   }
@@ -332,7 +332,7 @@ public:
     const slice_dim* cds = match_self_as(x);
     if (!cds) return;
 
-    if (!try_match(cds->name, x->name)) return;
+    if (!try_match(cds->sym, x->sym)) return;
     if (!try_match(cds->dim, x->dim)) return;
     if (!try_match(cds->at, x->at)) return;
     if (!try_match(cds->body, x->body)) return;
@@ -343,7 +343,7 @@ public:
     const truncate_rank* trs = match_self_as(x);
     if (!trs) return;
 
-    if (!try_match(trs->name, x->name)) return;
+    if (!try_match(trs->sym, x->sym)) return;
     if (!try_match(trs->rank, x->rank)) return;
     if (!try_match(trs->body, x->body)) return;
   }
@@ -417,13 +417,13 @@ public:
 
   template <typename T>
   void visit_variable(const T* v) {
-    if (shadowed.contains(v->name)) {
+    if (shadowed.contains(v->sym)) {
       // This variable has been shadowed, don't substitute it.
       set_result(v);
-    } else if (v->name == target_var) {
+    } else if (v->sym == target_var) {
       set_result(replacement);
     } else {
-      std::optional<expr> r = replacements.lookup(v->name);
+      std::optional<expr> r = replacements.lookup(v->sym);
       set_result(r ? *r : v);
     }
   }
@@ -432,16 +432,16 @@ public:
   void visit(const wildcard* v) override { visit_variable(v); }
 
   template <typename T>
-  void visit_decl(const T* x, symbol_id name) {
-    auto s = set_value_in_scope(shadowed, name, true);
+  void visit_decl(const T* x, symbol_id sym) {
+    auto s = set_value_in_scope(shadowed, sym, true);
     node_mutator::visit(x);
   }
 
-  void visit(const loop* x) override { visit_decl(x, x->name); }
-  void visit(const let* x) override { visit_decl(x, x->name); }
-  void visit(const let_stmt* x) override { visit_decl(x, x->name); }
-  void visit(const allocate* x) override { visit_decl(x, x->name); }
-  void visit(const make_buffer* x) override { visit_decl(x, x->name); }
+  void visit(const loop* x) override { visit_decl(x, x->sym); }
+  void visit(const let* x) override { visit_decl(x, x->sym); }
+  void visit(const let_stmt* x) override { visit_decl(x, x->sym); }
+  void visit(const allocate* x) override { visit_decl(x, x->sym); }
+  void visit(const make_buffer* x) override { visit_decl(x, x->sym); }
 };
 
 }  // namespace
@@ -473,8 +473,8 @@ public:
 
   dependencies(symbol_id var) : var(var) {}
 
-  void visit(const variable* x) override { found_var = found_var || x->name == var; }
-  void visit(const wildcard* x) override { found_var = found_var || x->name == var; }
+  void visit(const variable* x) override { found_var = found_var || x->sym == var; }
+  void visit(const wildcard* x) override { found_var = found_var || x->sym == var; }
   void visit(const call* x) override {
     if (is_buffer_intrinsic(x->intrinsic)) {
       assert(x->args.size() >= 1);

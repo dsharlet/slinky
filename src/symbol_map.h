@@ -23,33 +23,33 @@ public:
     }
   }
 
-  std::optional<T> lookup(symbol_id name) const {
-    if (name < values.size()) { return values[name]; }
+  std::optional<T> lookup(symbol_id sym) const {
+    if (sym < values.size()) { return values[sym]; }
     return std::nullopt;
   }
-  std::optional<T> lookup(const var& v) const { return lookup(v.name()); }
+  std::optional<T> lookup(const var& v) const { return lookup(v.sym()); }
 
-  const T& lookup(symbol_id name, const T& def) const {
-    if (name < values.size()) { return values[name]; }
+  const T& lookup(symbol_id sym, const T& def) const {
+    if (sym < values.size()) { return values[sym]; }
     return def;
   }
-  const T& lookup(const var& v, const T& def) const { return lookup(v.name(), def); }
+  const T& lookup(const var& v, const T& def) const { return lookup(v.sym(), def); }
 
-  std::optional<T> operator[](symbol_id name) const {return lookup(name); } 
-  std::optional<T> operator[](const var& v) const { return lookup(v.name()); }
-  std::optional<T>& operator[](symbol_id name) {
-    grow(name);
-    return values[name];
+  std::optional<T> operator[](symbol_id sym) const {return lookup(sym); } 
+  std::optional<T> operator[](const var& v) const { return lookup(v.sym()); }
+  std::optional<T>& operator[](symbol_id sym) {
+    grow(sym);
+    return values[sym];
   }
   std::optional<T>& operator[](const var& v) {
-    return operator[](v.name());
+    return operator[](v.sym());
   }
 
-  bool contains(symbol_id name) const {
-    if (name >= values.size()) { return false; }
-    return !!values[name];
+  bool contains(symbol_id sym) const {
+    if (sym >= values.size()) { return false; }
+    return !!values[sym];
   }
-  bool contains(const var& v) const { return contains(v.name()); }
+  bool contains(const var& v) const { return contains(v.sym()); }
 
   std::size_t size() const { return values.size(); }
   auto begin() { return values.begin(); }
@@ -63,24 +63,24 @@ public:
 template <typename T>
 class scoped_value_in_symbol_map {
   symbol_map<T>* context;
-  symbol_id name;
+  symbol_id sym;
   std::optional<T> old_value;
 
 public:
-  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id name, T value) : context(&context), name(name) {
-    std::optional<T>& ctx_value = context[name];
+  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, T value) : context(&context), sym(sym) {
+    std::optional<T>& ctx_value = context[sym];
     old_value = std::move(ctx_value);
     ctx_value = std::move(value);
   }
-  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id name, std::optional<T> value)
-      : context(&context), name(name) {
-    std::optional<T>& ctx_value = context[name];
+  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, std::optional<T> value)
+      : context(&context), sym(sym) {
+    std::optional<T>& ctx_value = context[sym];
     old_value = std::move(ctx_value);
     ctx_value = std::move(value);
   }
 
   scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
-      : context(other.context), name(other.name), old_value(std::move(other.old_value)) {
+      : context(other.context), sym(other.sym), old_value(std::move(other.old_value)) {
     // Don't let other.~scoped_value() unset this value.
     other.context = nullptr;
   }
@@ -88,24 +88,24 @@ public:
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
     context = other.context;
-    name = other.name;
+    sym = other.sym;
     old_value = std::move(other.old_value);
     // Don't let other.~scoped_value_in_symbol_map() unset this value.
     other.context = nullptr;
   }
 
   ~scoped_value_in_symbol_map() {
-    if (context) { (*context)[name] = std::move(old_value); }
+    if (context) { (*context)[sym] = std::move(old_value); }
   }
 };
 
 template <typename T>
-scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id name, T value) {
-  return scoped_value_in_symbol_map<T>(context, name, value);
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id sym, T value) {
+  return scoped_value_in_symbol_map<T>(context, sym, value);
 }
 template <typename T>
-scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id name, std::optional<T> value) {
-  return scoped_value_in_symbol_map<T>(context, name, value);
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id sym, std::optional<T> value) {
+  return scoped_value_in_symbol_map<T>(context, sym, value);
 }
 
 }  // namespace slinky

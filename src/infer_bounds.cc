@@ -37,12 +37,12 @@ public:
 
   void visit(const allocate* alloc) override {
     {
-      std::optional<box_expr>& bounds = inferring[alloc->name];
+      std::optional<box_expr>& bounds = inferring[alloc->sym];
       assert(!bounds);
       bounds = box_expr();
     }
 
-    auto set_loops = set_value_in_scope(loops_since_allocate, alloc->name, loop_mins.size());
+    auto set_loops = set_value_in_scope(loops_since_allocate, alloc->sym, loop_mins.size());
     stmt body = mutate(alloc->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -53,17 +53,17 @@ public:
     // TODO: Is this actually a good design...?
     std::vector<std::pair<expr, expr>> replacements;
 
-    box_expr& inferred = *inferring[alloc->name];
+    box_expr& inferred = *inferring[alloc->sym];
     expr stride = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
-    auto& fold_factor = fold_factors[alloc->name];
+    auto& fold_factor = fold_factors[alloc->sym];
     for (index_t d = 0; d < static_cast<index_t>(inferred.size()); ++d) {
       interval_expr& i = inferred[d];
 
       i.min = simplify(i.min);
       i.max = simplify(i.max);
 
-      expr alloc_var = variable::make(alloc->name);
+      expr alloc_var = variable::make(alloc->sym);
       replacements.emplace_back(buffer_min(alloc_var, d), i.min);
       replacements.emplace_back(buffer_max(alloc_var, d), i.max);
       replacements.emplace_back(buffer_stride(alloc_var, d), stride);
@@ -106,7 +106,7 @@ public:
       checks.push_back(check::make(dims[d].max() >= inferred[d].max));
     }
 
-    stmt s = allocate::make(alloc->storage, alloc->name, alloc->elem_size, std::move(dims), body);
+    stmt s = allocate::make(alloc->storage, alloc->sym, alloc->elem_size, std::move(dims), body);
     s = block::make(block::make(checks), s);
     for (const auto& i : lets) {
       s = let_stmt::make(i.first, i.second, s);
@@ -133,22 +133,22 @@ public:
     for (const func::input& input : c->fn->inputs()) {
       symbol_map<expr> mins, maxs;
       for (const func::output& output : c->fn->outputs()) {
-        var arg(output.name());
+        var arg(output.sym());
         const std::optional<box_expr>& crops_i = crops[arg];
         for (index_t d = 0; d < static_cast<index_t>(output.dims.size()); ++d) {
-          symbol_id dim = output.dims[d].name();
+          symbol_id dim = output.dims[d].sym();
           if (crops_i && d < static_cast<index_t>(crops_i->size()) && (*crops_i)[d].min.defined() &&
               (*crops_i)[d].max.defined()) {
             mins[dim] = (*crops_i)[d].min;
             maxs[dim] = (*crops_i)[d].max;
           } else {
-            mins[dim] = buffer_intrinsic(arg.name(), intrinsic::buffer_min, d);
-            maxs[dim] = buffer_intrinsic(arg.name(), intrinsic::buffer_max, d);
+            mins[dim] = buffer_intrinsic(arg.sym(), intrinsic::buffer_min, d);
+            maxs[dim] = buffer_intrinsic(arg.sym(), intrinsic::buffer_max, d);
           }
         }
       }
 
-      std::optional<box_expr>& bounds = inferring[input.buffer->name()];
+      std::optional<box_expr>& bounds = inferring[input.buffer->sym()];
       assert(bounds);
       bounds->reserve(input.bounds.size());
       while (bounds->size() < input.bounds.size()) {
@@ -167,24 +167,24 @@ public:
     // Add any crops necessary.
     stmt result = c;
     for (const func::output& output : c->fn->outputs()) {
-      std::optional<box_expr>& bounds = inferring[output.buffer->name()];
+      std::optional<box_expr>& bounds = inferring[output.buffer->sym()];
       if (!bounds) continue;
 
       // Maybe a hack? Keep the original bounds for inference purposes, but compute new bounds
       // (sliding window) for the crop.
       box_expr crop_bounds = *bounds;
 
-      std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->name());
+      std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->sym());
 
       for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
-        symbol_id loop_name = loop_mins[l].first;
-        expr loop_var = variable::make(loop_name);
+        symbol_id loop_sym = loop_mins[l].first;
+        expr loop_var = variable::make(loop_sym);
         expr loop_min = loop_mins[l].second;
 
         box_expr prev_bounds(crop_bounds.size());
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
-          prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, loop_name, loop_var - 1));
-          prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, loop_name, loop_var - 1));
+          prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, loop_sym, loop_var - 1));
+          prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, loop_sym, loop_var - 1));
           if (prove_true(prev_bounds[d].min <= crop_bounds[d].min) &&
               prove_true(prev_bounds[d].max < crop_bounds[d].max)) {
             // The bounds for each loop iteration are monotonically increasing,
@@ -193,17 +193,17 @@ public:
             expr new_min = prev_bounds[d].max + 1;
 
             expr fold_factor = simplify(bounds_of(crop_bounds[d].extent()).max);
-            fold_factors[output.buffer->name()] = {d, fold_factor};
+            fold_factors[output.buffer->sym()] = {d, fold_factor};
 
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region. We'll insert
             // ifs around the other parts of the loop to avoid expanding the bounds that those
             // run on.
-            symbol_id new_loop_min_name = ctx.insert_unique();
-            expr new_loop_min_var = variable::make(new_loop_min_name);
-            expr new_min_at_new_loop_min = substitute(new_min, loop_name, new_loop_min_var);
-            expr old_min_at_loop_min = substitute(old_min, loop_name, loop_min);
-            expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_name).max;
+            symbol_id new_loop_min_sym = ctx.insert_unique();
+            expr new_loop_min_var = variable::make(new_loop_min_sym);
+            expr new_min_at_new_loop_min = substitute(new_min, loop_sym, new_loop_min_var);
+            expr old_min_at_loop_min = substitute(old_min, loop_sym, loop_min);
+            expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_sym).max;
             if (new_loop_min.defined()) {
               loop_mins[l].second = simplify(loop_min - (new_min - old_min));
 
@@ -221,7 +221,7 @@ public:
         }
       }
 
-      result = crop_buffer::make(output.buffer->name(), crop_bounds, result);
+      result = crop_buffer::make(output.buffer->sym(), crop_bounds, result);
     }
 
     // Insert ifs around these calls, in case the loop min shifts later.
@@ -236,15 +236,15 @@ public:
   }
 
   void visit(const crop_buffer* c) override {
-    auto new_crop = set_value_in_scope(crops, c->name, c->bounds);
+    auto new_crop = set_value_in_scope(crops, c->sym, c->bounds);
     node_mutator::visit(c);
   }
 
   void visit(const crop_dim* c) override {
-    std::optional<box_expr> cropped_bounds = crops[c->name];
+    std::optional<box_expr> cropped_bounds = crops[c->sym];
     vector_at(cropped_bounds, c->dim) = c->bounds;
 
-    auto new_crop = set_value_in_scope(crops, c->name, *cropped_bounds);
+    auto new_crop = set_value_in_scope(crops, c->sym, *cropped_bounds);
     stmt body = mutate(c->body);
     if (const if_then_else* body_if = body.as<if_then_else>()) {
       // TODO: HORRIBLE HACK: crop_dim modifies the buffer meta, which this if we inserted
@@ -255,16 +255,16 @@ public:
       // simplify away later anyways, and make it easier to track bounds. This isn't easily
       // doable due to this hack.
       set_result(if_then_else::make(
-          body_if->condition, crop_dim::make(c->name, c->dim, c->bounds, body_if->true_body), stmt()));
+          body_if->condition, crop_dim::make(c->sym, c->dim, c->bounds, body_if->true_body), stmt()));
     } else if (body.same_as(c->body)) {
       set_result(c);
     } else {
-      set_result(crop_dim::make(c->name, c->dim, c->bounds, std::move(body)));
+      set_result(crop_dim::make(c->sym, c->dim, c->bounds, std::move(body)));
     }
   }
 
   void visit(const loop* l) override {
-    loop_mins.emplace_back(l->name, l->bounds.min);
+    loop_mins.emplace_back(l->sym, l->bounds.min);
     stmt body = mutate(l->body);
     expr loop_min = loop_mins.back().second;
     loop_mins.pop_back();
@@ -274,7 +274,7 @@ public:
       result = l;
     } else {
       // We rewrote the loop min.
-      result = loop::make(l->name, {loop_min, l->bounds.max}, std::move(body));
+      result = loop::make(l->sym, {loop_min, l->bounds.max}, std::move(body));
     }
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
@@ -293,8 +293,8 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        j.min = min(substitute(j.min, l->name, loop_min), substitute(j.min, l->name, loop_max));
-        j.max = max(substitute(j.max, l->name, loop_min), substitute(j.max, l->name, loop_max));
+        j.min = min(substitute(j.min, l->sym, loop_min), substitute(j.min, l->sym, loop_max));
+        j.max = max(substitute(j.max, l->sym, loop_min), substitute(j.max, l->sym, loop_max));
       }
     }
     set_result(result);

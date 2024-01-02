@@ -64,7 +64,7 @@ TEST(evaluate_loop) {
         return 0;
       });
 
-  stmt l = loop::make(x.name(), range(2, 12), c);
+  stmt l = loop::make(x.sym(), range(2, 12), c);
 
   int result = evaluate(l);
   ASSERT_EQ(result, 0);

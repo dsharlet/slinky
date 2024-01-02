@@ -144,8 +144,8 @@ TEST(simplify_if_then_else) {
 }
 
 TEST(simplify_bounds) {
-  test_simplify(loop::make(x.name(), bounds(y - 2, z), if_then_else::make(y - 2 <= x, check::make(z))),
-      loop::make(x.name(), bounds(y + -2, z), check::make(z)));
+  test_simplify(loop::make(x.sym(), bounds(y - 2, z), if_then_else::make(y - 2 <= x, check::make(z))),
+      loop::make(x.sym(), bounds(y + -2, z), check::make(z)));
 }
 
 TEST(bounds_of) {

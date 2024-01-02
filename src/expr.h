@@ -20,7 +20,7 @@ using symbol_id = std::size_t;
 // We don't want to be doing string lookups in the inner loops. A node_context
 // uniquely maps strings to symbol_id.
 class node_context {
-  std::vector<std::string> id_to_name;
+  std::vector<std::string> sym_to_name;
 
 public:
   // Get the name of a symbol_id.
@@ -322,27 +322,27 @@ public:
   }
 };
 
-// Allows lifting a common subexpression `value` out of another expression `body`, by referencing the value by `name`.
+// Allows lifting a common subexpression `value` out of another expression `body`, by referencing the value by `sym`.
 class let : public expr_node<let> {
 public:
-  symbol_id name;
+  symbol_id sym;
   expr value;
   expr body;
 
   void accept(node_visitor* v) const;
 
-  static expr make(symbol_id name, expr value, expr body);
+  static expr make(symbol_id sym, expr value, expr body);
 
   static constexpr node_type static_type = node_type::let;
 };
 
 class variable : public expr_node<variable> {
 public:
-  symbol_id name;
+  symbol_id sym;
 
   void accept(node_visitor* v) const;
 
-  static expr make(symbol_id name);
+  static expr make(symbol_id sym);
 
   static constexpr node_type static_type = node_type::variable;
 };
@@ -354,12 +354,12 @@ public:
 // the expression mechanism.
 class wildcard : public expr_node<wildcard> {
 public:
-  symbol_id name;
+  symbol_id sym;
   std::function<bool(const expr&)> matches;
 
   void accept(node_visitor* v) const;
 
-  static expr make(symbol_id name, std::function<bool(const expr&)> matches);
+  static expr make(symbol_id sym, std::function<bool(const expr&)> matches);
 
   static constexpr node_type static_type = node_type::wildcard;
 };
@@ -458,16 +458,16 @@ public:
   static constexpr node_type static_type = node_type::call_func;
 };
 
-// Allows lifting a common subexpression `value` out of a statement `body`, by referencing the value by `name`.
+// Allows lifting a common subexpression `value` out of a statement `body`, by referencing the value by `sym`.
 class let_stmt : public stmt_node<let_stmt> {
 public:
-  symbol_id name;
+  symbol_id sym;
   expr value;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, expr value, stmt body);
+  static stmt make(symbol_id sym, expr value, stmt body);
 
   static constexpr node_type static_type = node_type::let_stmt;
 };
@@ -501,16 +501,16 @@ public:
   static constexpr node_type static_type = node_type::block;
 };
 
-// Runs `body` for each value i in the interval `bounds` with `name` set to i.
+// Runs `body` for each value i in the interval `bounds` with `sym` set to i.
 class loop : public stmt_node<loop> {
 public:
-  symbol_id name;
+  symbol_id sym;
   interval_expr bounds;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, interval_expr bounds, stmt body);
+  static stmt make(symbol_id sym, interval_expr bounds, stmt body);
 
   static constexpr node_type static_type = node_type::loop;
 };
@@ -546,19 +546,19 @@ struct dim_expr {
 };
 
 // Allocates memory and creates a buffer pointing to that memory. When control flow exits `body`, the buffer is freed.
-// `name` refers to a pointer to a `raw_buffer` object, the fields are initialized by the corresponding expressions in
+// `sym` refers to a pointer to a `raw_buffer` object, the fields are initialized by the corresponding expressions in
 // this node (`rank` is the size of `dims`).
 class allocate : public stmt_node<allocate> {
 public:
   memory_type storage;
-  symbol_id name;
+  symbol_id sym;
   std::size_t elem_size;
   std::vector<dim_expr> dims;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(memory_type storage, symbol_id name, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(memory_type storage, symbol_id sym, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
 };
@@ -567,7 +567,7 @@ public:
 // node (`rank` is the size of `dims`).
 class make_buffer : public stmt_node<make_buffer> {
 public:
-  symbol_id name;
+  symbol_id sym;
   expr base;
   expr elem_size;
   std::vector<dim_expr> dims;
@@ -575,23 +575,23 @@ public:
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::make_buffer;
 };
 
-// For the `body` scope, crops the buffer `name` to `bounds`. If the expressions in `bounds` are undefined, they default
+// For the `body` scope, crops the buffer `sym` to `bounds`. If the expressions in `bounds` are undefined, they default
 // to their original values in the existing buffer. The rank of the buffer is unchanged. If the size of `bounds` is less
 // than the rank, the missing values are considered undefined.
 class crop_buffer : public stmt_node<crop_buffer> {
 public:
-  symbol_id name;
+  symbol_id sym;
   std::vector<interval_expr> bounds;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, std::vector<interval_expr> bounds, stmt body);
+  static stmt make(symbol_id sym, std::vector<interval_expr> bounds, stmt body);
 
   static constexpr node_type static_type = node_type::crop_buffer;
 };
@@ -599,31 +599,31 @@ public:
 // Similar to `crop_buffer`, but only crops the dimension `dim`.
 class crop_dim : public stmt_node<crop_dim> {
 public:
-  symbol_id name;
+  symbol_id sym;
   int dim;
   interval_expr bounds;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, int dim, interval_expr bounds, stmt body);
+  static stmt make(symbol_id sym, int dim, interval_expr bounds, stmt body);
 
   static constexpr node_type static_type = node_type::crop_dim;
 };
 
-// For the `body` scope, slices the buffer `name` at the coordinate `at`. The `at` expressions can be undefined,
+// For the `body` scope, slices the buffer `sym` at the coordinate `at`. The `at` expressions can be undefined,
 // indicating that the corresponding dimension is preserved in the sliced buffer. The sliced buffer will have `rank`
 // equal to the rank of the existing buffer, less the number of sliced dimensions. If `at` is smaller than the rank
 // of the buffer, the missing values are considered undefined.
 class slice_buffer : public stmt_node<slice_buffer> {
 public:
-  symbol_id name;
+  symbol_id sym;
   std::vector<expr> at;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, std::vector<expr> at, stmt body);
+  static stmt make(symbol_id sym, std::vector<expr> at, stmt body);
 
   static constexpr node_type static_type = node_type::slice_buffer;
 };
@@ -632,28 +632,28 @@ public:
 // buffer.
 class slice_dim : public stmt_node<slice_dim> {
 public:
-  symbol_id name;
+  symbol_id sym;
   int dim;
   expr at;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, int dim, expr at, stmt body);
+  static stmt make(symbol_id sym, int dim, expr at, stmt body);
 
   static constexpr node_type static_type = node_type::slice_dim;
 };
 
-// Within `body`, remove the dimensions of the buffer `name` above `rank`.
+// Within `body`, remove the dimensions of the buffer `sym` above `rank`.
 class truncate_rank : public stmt_node<truncate_rank> {
 public:
-  symbol_id name;
+  symbol_id sym;
   int rank;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id name, int rank, stmt body);
+  static stmt make(symbol_id sym, int rank, stmt body);
 
   static constexpr node_type static_type = node_type::truncate_rank;
 };
@@ -860,7 +860,7 @@ inline const index_t* as_constant(const expr& x) {
 // If `x` is a variable, returns the `symbol_id` of the variable, otherwise `nullptr`.
 inline const symbol_id* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
-  return vx ? &vx->name : nullptr;
+  return vx ? &vx->sym : nullptr;
 }
 
 // Check if `x` is equal to the constant `value`.
@@ -921,10 +921,10 @@ class var {
 
 public:
   var();
-  var(symbol_id name);
-  var(node_context& ctx, const std::string& name);
+  var(symbol_id sym);
+  var(node_context& ctx, const std::string& sym);
 
-  symbol_id name() const {
+  symbol_id sym() const {
     assert(e_.defined());
     return *as_variable(e_);
   }
