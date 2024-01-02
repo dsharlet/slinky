@@ -149,6 +149,7 @@ class copy_implementer : public node_mutator {
         // If the copy was clamped, use the intersection of the clamp and the original bounds.
         out_bounds = buffer_bounds(out_buf, d);
         in_bounds = buffer_bounds(in_buf, in_dims_map[d]) & clamp_bounds;
+        in_x[d] = in_bounds.min;
       } else if (is_broadcast(in_x[d], out_x[d])) {
         // copy can handle this broadcast loop, eliminate it.
         in_x[d] = expr();
@@ -167,8 +168,14 @@ class copy_implementer : public node_mutator {
     }
 
     // Make the new buffers.
+    // We need the in_x in the original dims mapping, which may have had fewer dims.
+    // We rely on the fact that trailing undefined exprs are no-ops in buffer_at... :(
+    std::vector<expr> orig_in_x(in_x.size());
+    for (std::size_t d = 0; d < in_x.size(); ++d) {
+      orig_in_x[in_dims_map[d]] = in_x[d];
+    }
     copy = make_buffer::make(out_arg, buffer_at(out_buf, out_x), buffer_elem_size(out_buf), out_dims, copy);
-    copy = make_buffer::make(in_arg, buffer_at(in_buf, in_x), buffer_elem_size(in_buf), in_dims, copy);
+    copy = make_buffer::make(in_arg, buffer_at(in_buf, orig_in_x), buffer_elem_size(in_buf), in_dims, copy);
 
     // Make the loops.
     for (index_t d = 0; d < static_cast<index_t>(out_x.size()); ++d) {

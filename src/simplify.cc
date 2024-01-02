@@ -807,9 +807,21 @@ expr simplify(const call* op, std::vector<expr> args) {
 
   if (op->intrinsic == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
+    for (index_t d = 1; d < args.size(); ++d) {
+      // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_base(b)
+      if (args[d].defined() && match(args[d], buffer_min(args[0], d - 1))) {
+        args[d] = expr();
+        changed = true;
+      }
+    }
+    // Trailing undefined args have no effect.
     while (args.size() > 1 && !args.back().defined()) {
       args.pop_back();
       changed = true;
+    }
+
+    if (args.size() == 1) {
+      return call::make(intrinsic::buffer_base, std::move(args));
     }
   }
 
@@ -828,7 +840,6 @@ expr simplify(const call* op, std::vector<expr> args) {
       {abs(negative_infinity()), positive_infinity()},
       {abs(-x), abs(x)},
       {abs(abs(x)), abs(x)},
-      {buffer_at(x, std::vector<expr>{}), buffer_base(x)},
   };
   return rules.apply(e);
 }

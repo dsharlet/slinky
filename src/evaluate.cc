@@ -165,6 +165,7 @@ public:
     assert(x->args.size() >= 1);
     raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
     void* result = buf->base;
+    assert(x->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < x->args.size() - 1; ++d) {
       if (x->args[d + 1].defined()) {
         result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(x->args[d + 1])));
