@@ -8,7 +8,38 @@
 
 using namespace slinky;
 
-TEST(copy_trivial) {
+TEST(copy_trivial_1d) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+
+  var x(ctx, "x");
+
+  // This copy should be implemented as a single call to copy.
+  func copy = func::make_copy({in, {point(x)}}, {out, {x}});
+
+  pipeline p(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 10;
+  buffer<int, 1> in_buf({W});
+  init_random(in_buf);
+
+  buffer<int, 1> out_buf({W});
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int x = 0; x < W; ++x) {
+    ASSERT_EQ(out_buf(x), in_buf(x));
+  }
+}
+
+TEST(copy_trivial_2d) {
   // Make the pipeline
   node_context ctx;
 
@@ -40,6 +71,76 @@ TEST(copy_trivial) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), in_buf(x, y));
     }
+  }
+}
+
+TEST(copy_trivial_3d) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // This copy should be implemented as a single call to copy.
+  func copy = func::make_copy({in, {point(x), point(y), point(z)}}, {out, {x, y, z}});
+
+  pipeline p(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  const int D = 5;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  buffer<int, 3> out_buf({W, H, D});
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x, y, z));
+      }
+    }
+  }
+}
+
+TEST(copy_flip_x) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+
+  var x(ctx, "x");
+
+  func flip = func::make_copy({in, {point(-x)}}, {out, {x}});
+
+  pipeline p(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 10;
+  buffer<int, 1> in_buf({W});
+  init_random(in_buf);
+
+  buffer<int, 1> out_buf({W});
+  out_buf.dim(0).translate(-W + 1);
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int x = 0; x < W; ++x) {
+    ASSERT_EQ(out_buf(-x), in_buf(x));
   }
 }
 
@@ -172,7 +273,6 @@ TEST(copy_broadcast) {
     var y(ctx, "y");
     var z(ctx, "z");
 
-    // TODO: It would be nice if we could do this without the broadcast dimension being in the bounds at all.
     box_expr bounds = {point(x), point(y), point(z)};
     bounds[dim] = point(0);
     func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
@@ -200,9 +300,9 @@ TEST(copy_broadcast) {
     for (int z = 0; z < D; ++z) {
       for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-          index_t broadcast_xyz[] = {x, y, z};
-          broadcast_xyz[dim] = 0;
-          ASSERT_EQ(out_buf(x, y, z), in_buf(broadcast_xyz));
+          index_t i[] = {x, y, z};
+          i[dim] = 0;
+          ASSERT_EQ(out_buf(x, y, z), in_buf(i));
         }
       }
     }
