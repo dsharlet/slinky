@@ -2,16 +2,16 @@
 
 #include <cassert>
 #include <iostream>
-#include <set>
 #include <map>
+#include <set>
 
 #include "evaluate.h"
 #include "infer_bounds.h"
 #include "node_mutator.h"
+#include "optimizations.h"
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
-#include "optimizations.h"
 
 namespace slinky {
 
@@ -290,7 +290,22 @@ void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   }
 }
 
-stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+void assert_valid(const stmt& s, const std::vector<symbol_id>& scalars, const std::vector<buffer_expr_ptr>& inputs,
+    const std::vector<buffer_expr_ptr>& outputs, const node_context& ctx) {
+  std::vector<symbol_id> defined = scalars;
+  for (const buffer_expr_ptr& i : inputs) {
+    defined.push_back(i->name());
+  }
+  for (const buffer_expr_ptr& i : outputs) {
+    defined.push_back(i->name());
+  }
+  if (!is_valid(s, defined, &ctx)) {
+    std::cerr << "Statement is not valid!" << std::endl << s << std::endl;
+    std::abort();
+  }
+}
+
+stmt build_pipeline(node_context& ctx, const std::vector<symbol_id> args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
   pipeline_builder builder(inputs, outputs);
 
@@ -317,6 +332,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
   result = infer_bounds(result, ctx, input_names);
 
+  assert_valid(result, args, inputs, outputs, ctx);
+
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
@@ -342,6 +359,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = remove_checks().mutate(result);
   }
 
+  assert_valid(result, args, inputs, outputs, ctx);
+
+  std::cout << std::tie(result, ctx) << std::endl;
+
   return result;
 }
 
@@ -353,7 +374,7 @@ pipeline::pipeline(node_context& ctx, std::vector<var> args, std::vector<buffer_
   for (const var& i : args) {
     args_.push_back(i.name());
   }
-  body = build_pipeline(ctx, inputs_, outputs_, options);
+  body = build_pipeline(ctx, args_, inputs_, outputs_, options);
 }
 
 pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,

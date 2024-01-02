@@ -28,6 +28,14 @@ index_t evaluate(const stmt& s, eval_context& context);
 index_t evaluate(const expr& e);
 index_t evaluate(const stmt& s);
 
+// Checks that the stmt or expr are valid:
+// - No undefined variables are referenced.
+// - No illegal undefined nodes.
+// - Arithmetic is not performed on buffer pointers (data pointers are OK).
+// - Arithmetic values are not treated as buffer pointers.
+bool is_valid(const expr& e, const std::vector<symbol_id>& inputs, const node_context* symbols = nullptr);
+bool is_valid(const stmt& s, const std::vector<symbol_id>& inputs, const node_context* symbols = nullptr);
+
 // Returns true if `fn` can be evaluated.
 bool can_evaluate(intrinsic fn);
 
