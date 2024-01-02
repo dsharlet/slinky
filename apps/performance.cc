@@ -52,7 +52,7 @@ int main(int argc, const char** argv) {
 
   std::cout << std::endl;
   for (int total_size : total_sizes) {
-    std::cout << "total size (KB): " << total_size << std::endl;
+    std::cout << "### " << total_size << " KB" << std::endl;
     total_size *= 1024;
 
     std::cout << "| copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |" << std::endl;
