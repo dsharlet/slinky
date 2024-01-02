@@ -20,16 +20,16 @@ Here is an example of a simple pipeline of two 1D elementwise `func`s:
 ```c++
 node_context ctx;
 
-auto in = buffer_expr::make(ctx, "in", 1);
-auto out = buffer_expr::make(ctx, "out", 1);
-auto intm = buffer_expr::make(ctx, "intm", 1);
+auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
+auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
 
 var x(ctx, "x");
 
-func mul = func::make<const int, int>(multiply_2, { in, {point(x)} }, { intm, {x} });
-func add = func::make<const int, int>(add_1, { intm, {point(x)} }, { out, {x} });
+func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
+func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
 
-pipeline p({ in }, { out });
+pipeline p(ctx, {in}, {out});
 ```
 - `in` and `out` are the input and output buffers.
 - `intm` is the intermediate buffer between the two operations.
@@ -49,23 +49,31 @@ Here is a more involved example, which computes the matrix product `d = (a x b) 
 ```c++
 node_context ctx;
 
-auto a = buffer_expr::make(ctx, "a", 2);
-auto b = buffer_expr::make(ctx, "b", 2);
-auto c = buffer_expr::make(ctx, "c", 2);
-auto d = buffer_expr::make(ctx, "d", 2);
+auto a = buffer_expr::make(ctx, "a", sizeof(float), 2);
+auto b = buffer_expr::make(ctx, "b", sizeof(float), 2);
+auto c = buffer_expr::make(ctx, "c", sizeof(float), 2);
+auto abc = buffer_expr::make(ctx, "abc", sizeof(float), 2);
 
-auto ab = buffer_expr::make(ctx, "ab", 2);
+auto ab = buffer_expr::make(ctx, "ab", sizeof(float), 2);
 
 var i(ctx, "i");
 var j(ctx, "j");
+var k(ctx, "k");
 
+// The bounds required of the dimensions consumed by the reduction depend on the size of the
+// buffers passed in. Note that we haven't used any constants yet.
 auto K_ab = a->dim(1).bounds;
-auto K_d = c->dim(0).bounds;
+auto K_abc = c->dim(0).bounds;
 
-func matmul_ab = func::make<const float, const float, float>(matmul, { a, { point(i), K_ab } }, { b, {K_ab, point(j)} }, { ab, {i, j} });
-func matmul_abc = func::make<const float, const float, float>(matmul, { ab, { point(i), K_d } }, { c, {K_d, point(j)} }, { d, {i, j} });
+// We use float for this pipeline so we can test for correctness exactly.
+func matmul_ab =
+    func::make<const float, const float, float>(matmul<float>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
+func matmul_abc = func::make<const float, const float, float>(
+    matmul<float>, {ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}, {abc, {i, j}});
+	
+pipeline p(ctx, {a, b, c}, {abc});
 ```
-- `a`, `b`, `c`, `d` are input and output buffers.
+- `a`, `b`, `c`, `abc` are input and output buffers.
 - `ab` is the intermediate product `a x b`.
 - We need 2 variables `i` and `j` to describe this pipeline.
 - Both `func` objects have the same signature:
@@ -115,42 +123,42 @@ On my machine, here are some data points from this pipeline:
 ### 32 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 10.5384 | 14.6134 | 0.721144 | 
-| 2 | 12.7695 | 15.2579 | 0.836907 | 
-| 4 | 13.8164 | 15.6756 | 0.881392 | 
-| 8 | 15.2483 | 15.6591 | 0.973769 | 
-| 16 | 11.3288 | 11.9727 | 0.946221 | 
-| 32 | 11.6623 | 11.4421 | 1.01924 | 
+| 1 | 13.8726 | 16.9836 | 0.816825 | 
+| 2 | 15.8019 | 16.5786 | 0.953151 | 
+| 4 | 16.1773 | 17.0375 | 0.94951 | 
+| 8 | 16.28 | 17.1297 | 0.950395 | 
+| 16 | 12.1118 | 12.3749 | 0.978739 | 
+| 32 | 12.8886 | 13.3652 | 0.964338 | 
 
 ### 128 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 8.44042 | 12.705 | 0.664338 | 
-| 2 | 11.1834 | 12.6324 | 0.885292 | 
-| 4 | 11.4383 | 13.4383 | 0.851172 | 
-| 8 | 13.004 | 14.0874 | 0.923095 | 
-| 16 | 12.3004 | 11.9901 | 1.02588 | 
-| 32 | 13.1013 | 13.5748 | 0.965116 | 
+| 1 | 10.0869 | 11.6477 | 0.866 | 
+| 2 | 12.2537 | 12.6528 | 0.96846 | 
+| 4 | 12.9571 | 13.495 | 0.96014 | 
+| 8 | 13.0318 | 13.3503 | 0.976143 | 
+| 16 | 11.7615 | 12.2431 | 0.96066 | 
+| 32 | 12.3106 | 13.0289 | 0.944867 | 
 
 ### 512 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 7.26796 | 9.60147 | 0.756964 | 
-| 2 | 8.11451 | 9.62579 | 0.842996 | 
-| 4 | 9.04102 | 9.87818 | 0.915251 | 
-| 8 | 10.0044 | 10.5638 | 0.947051 | 
-| 16 | 10.3087 | 10.2799 | 1.0028 | 
-| 32 | 9.83799 | 11.2182 | 0.876967 | 
+| 1 | 8.24963 | 9.58973 | 0.860257 | 
+| 2 | 9.93212 | 10.253 | 0.968708 | 
+| 4 | 10.2215 | 10.1456 | 1.00747 | 
+| 8 | 10.0443 | 10.4342 | 0.962632 | 
+| 16 | 10.4525 | 10.6934 | 0.977467 | 
+| 32 | 10.3847 | 10.8897 | 0.953625 | 
 
-### 2 MB
+### 2048 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 7.27991 | 9.51897 | 0.764779 | 
-| 2 | 8.19928 | 9.9 | 0.82821 | 
-| 4 | 8.49202 | 10.7115 | 0.792797 | 
-| 8 | 9.71235 | 10.6595 | 0.911147 | 
-| 16 | 9.62439 | 10.4745 | 0.918841 | 
-| 32 | 10.439 | 11.0442 | 0.945199 | 
+| 1 | 8.61451 | 9.61295 | 0.896136 | 
+| 2 | 9.67016 | 10.3158 | 0.937412 | 
+| 4 | 10.3269 | 10.5495 | 0.978904 | 
+| 8 | 10.6252 | 10.5351 | 1.00855 | 
+| 16 | 10.2232 | 10.7941 | 0.947113 | 
+| 32 | 10.7753 | 10.8707 | 0.991226 | 
 
 (TODO: "My machine" is actually the GitHub Actions runner, because my machine is Windows Subsystem for Linux, which has nonsense performance I haven't figured out.)
 

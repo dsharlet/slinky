@@ -234,11 +234,6 @@ TEST(pipeline_matmuls) {
   auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
   auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
 
-  a->dim(1).stride = a->elem_size();
-  b->dim(1).stride = b->elem_size();
-  c->dim(1).stride = c->elem_size();
-  abc->dim(1).stride = abc->elem_size();
-
   auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
   var i(ctx, "i");
@@ -255,6 +250,11 @@ TEST(pipeline_matmuls) {
       func::make<const int, const int, int>(matmul<int>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
   func matmul_abc = func::make<const int, const int, int>(
       matmul<int>, {ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}, {abc, {i, j}});
+
+  a->dim(1).stride = a->elem_size();
+  b->dim(1).stride = b->elem_size();
+  c->dim(1).stride = c->elem_size();
+  abc->dim(1).stride = abc->elem_size();
 
   // TODO: There should be a more user friendly way to control the strides.
   ab->dim(1).stride = static_cast<index_t>(sizeof(int));
