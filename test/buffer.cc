@@ -61,6 +61,8 @@ struct big {
 
   operator uint64_t() const { return a + b; }
 
+  void operator+=(int r) { a += r; }
+
   bool operator==(const big& r) { return a == r.a && b == r.b; }
   bool operator!=(const big& r) { return a != r.a || b != r.b; }
 };
@@ -125,14 +127,32 @@ void test_copy() {
                   }
                 });
 
+                for_each_index(src, [&](auto i) { src(i) += 1; });
+
                 copy(src, dst, nullptr);
 
                 for_each_index(dst, [&](auto i) {
                   if (src.contains(i)) {
+                    // The copied area should have been copied.
                     ASSERT_EQ(dst(i), src(i));
                   } else {
                     // The padding should be unchanged.
                     ASSERT_EQ(dst(i), padding);
+                  }
+                });
+
+                for_each_index(src, [&](auto i) { src(i) += -1; });
+
+                T new_padding = 3;
+                pad(src.dims, dst, &new_padding);
+
+                for_each_index(dst, [&](auto i) {
+                  if (src.contains(i)) {
+                    // The src should not have been copied.
+                    ASSERT_NE(dst(i), src(i));
+                  } else {
+                    // But we should have new padding.
+                    ASSERT_EQ(dst(i), new_padding);
                   }
                 });
               }

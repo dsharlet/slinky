@@ -47,6 +47,7 @@ public:
 #define ASSERT(condition) assert_stream(condition, #condition)
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
+#define ASSERT_NE(a, b) ASSERT((a) != (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
 
 #define ASSERT_LT(a, b) ASSERT((a) < (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
 #define ASSERT_GT(a, b) ASSERT((a) > (b)) << "\n" << #a << "=" << (a) << "\n" << #b << "=" << (b) << " "
