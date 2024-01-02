@@ -1060,25 +1060,57 @@ public:
     std::vector<dim_expr> dims;
     box_expr bounds;
     dims.reserve(op->dims.size());
+    bounds.reserve(op->dims.size());
     bool changed = false;
-    var buf(op->name);
-    bool is_truncate = match(base, buffer_base(buf)) && match(elem_size, buffer_elem_size(buf));
-    for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
-      const dim_expr& op_dim = op->dims[d];
-      interval_expr new_bounds = mutate(op_dim.bounds);
-      dim_expr new_dim = {new_bounds, mutate(op_dim.stride), mutate(op_dim.fold_factor)};
-      changed = changed || !new_dim.same_as(op_dim);
-      is_truncate = is_truncate && match(new_dim.min(), buffer_min(buf, d)) &&
-                    match(new_dim.max(), buffer_max(buf, d)) && match(new_dim.stride, buffer_stride(buf, d)) &&
-                    match(new_dim.fold_factor, buffer_fold_factor(buf, d));
+    for (const dim_expr& d : op->dims) {
+      interval_expr new_bounds = mutate(d.bounds);
+      dim_expr new_dim = {new_bounds, mutate(d.stride), mutate(d.fold_factor)};
+      changed = changed || !new_dim.same_as(d);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
     }
+
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
     stmt body = mutate(op->body);
-    if (is_truncate) {
-      set_result(truncate_rank::make(op->name, dims.size(), std::move(body)));
-    } else if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
+
+    // Check if this make_buffer is equivalent to truncate_rank
+    var buf(op->name);
+    if (match(base, buffer_base(buf)) && match(elem_size, buffer_elem_size(buf))) {
+      bool is_truncate = true;
+      for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+        is_truncate = is_truncate && match(dims[d], buffer_dim(buf, d));
+      }
+      if (is_truncate) {
+        set_result(truncate_rank::make(op->name, dims.size(), std::move(body)));
+        return;
+      }
+    }
+
+    // Check if this make_buffer is equivalent to slice_buffer.
+    if (const call* bc = base.as<call>()) {
+      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
+        // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
+        // the dimensions to be identity.
+        index_t dim = 0;
+        bool is_slice = true;
+        for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+          if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
+            // Skip this dimension.
+            ++dim;
+          } else {
+            // This arg is undefined. We need to find the next dimension here to be a slice.
+            is_slice = is_slice && match(dims[dim], buffer_dim(buf, d));
+          }
+        }
+        if (is_slice) {
+          std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
+          set_result(slice_buffer::make(op->name, std::move(at), std::move(body)));
+          return;
+        }
+      }
+    }
+
+    if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(make_buffer::make(op->name, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     } else {
       set_result(op);
