@@ -368,6 +368,14 @@ stmt slice_dim::make(symbol_id name, int dim, expr at, stmt body) {
   return n;
 }
 
+stmt truncate_rank::make(symbol_id name, int rank, stmt body) {
+  auto n = new truncate_rank();
+  n->name = name;
+  n->rank = rank;
+  n->body = std::move(body);
+  return n;
+}
+
 stmt check::make(expr condition) {
   auto n = new check();
   n->condition = std::move(condition);

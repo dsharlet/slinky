@@ -340,6 +340,16 @@ public:
     if (!try_match(cds->body, x->body)) return;
   }
 
+  void visit(const truncate_rank* x) override {
+    if (match) return;
+    const truncate_rank* trs = match_self_as(x);
+    if (!trs) return;
+
+    if (!try_match(trs->name, x->name)) return;
+    if (!try_match(trs->rank, x->rank)) return;
+    if (!try_match(trs->body, x->body)) return;
+  }
+
   void visit(const check* x) override {
     if (match) return;
     const check* cs = match_self_as(x);

@@ -168,6 +168,7 @@ public:
   void visit(const crop_dim* x) override { std::abort(); }
   void visit(const slice_buffer* x) override { std::abort(); }
   void visit(const slice_dim* x) override { std::abort(); }
+  void visit(const truncate_rank* x) override { std::abort(); }
   void visit(const check* x) override { std::abort(); }
 };
 
@@ -1060,15 +1061,24 @@ public:
     box_expr bounds;
     dims.reserve(op->dims.size());
     bool changed = false;
-    for (const dim_expr& i : op->dims) {
-      interval_expr bounds_i = mutate(i.bounds);
-      dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
-      bounds.push_back(bounds_i);
-      changed = changed || !dims.back().same_as(i);
+    var buf(op->name);
+    bool is_truncate = match(base, buffer_base(buf)) && match(elem_size, buffer_elem_size(buf));
+    for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
+      const dim_expr& op_dim = op->dims[d];
+      interval_expr new_bounds = mutate(op_dim.bounds);
+      dim_expr new_dim = {new_bounds, mutate(op_dim.stride), mutate(op_dim.fold_factor)};
+      changed = changed || !new_dim.same_as(op_dim);
+      is_truncate = is_truncate && match(new_dim.min(), buffer_min(buf, d)) &&
+                    match(new_dim.max(), buffer_max(buf, d)) && match(new_dim.stride, buffer_stride(buf, d)) &&
+                    match(new_dim.fold_factor, buffer_fold_factor(buf, d));
+      dims.push_back(std::move(new_dim));
+      bounds.push_back(std::move(new_bounds));
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->name, std::move(bounds));
     stmt body = mutate(op->body);
-    if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
+    if (is_truncate) {
+      set_result(truncate_rank::make(op->name, dims.size(), std::move(body)));
+    } else if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(make_buffer::make(op->name, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     } else {
       set_result(op);
@@ -1208,6 +1218,21 @@ public:
       set_result(op);
     } else {
       set_result(slice_dim::make(op->name, op->dim, std::move(at), std::move(body)));
+    }
+  }
+
+  void visit(const truncate_rank* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->name];
+    if (bounds && bounds->size() > op->rank) {
+      bounds->resize(op->rank);
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->name, bounds);
+    stmt body = mutate(op->body);
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(truncate_rank::make(op->name, op->rank, std::move(body)));
     }
   }
 
@@ -1423,6 +1448,7 @@ public:
   void visit(const crop_dim* x) override { std::abort(); }
   void visit(const slice_buffer* x) override { std::abort(); }
   void visit(const slice_dim* x) override { std::abort(); }
+  void visit(const truncate_rank* x) override { std::abort(); }
   void visit(const check* x) override { std::abort(); }
 };
 

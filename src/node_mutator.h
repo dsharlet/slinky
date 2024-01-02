@@ -246,6 +246,14 @@ public:
       set_result(slice_dim::make(x->name, x->dim, std::move(at), std::move(body)));
     }
   }
+  virtual void visit(const truncate_rank* x) override {
+    stmt body = mutate(x->body);
+    if (body.same_as(x->body)) {
+      set_result(x);
+    } else {
+      set_result(truncate_rank::make(x->name, x->rank, std::move(body)));
+    }
+  }
   virtual void visit(const check* x) override {
     expr condition = mutate(x->condition);
     if (condition.same_as(x->condition)) {

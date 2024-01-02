@@ -441,6 +441,17 @@ public:
     buffer->dims = old_dims;
   }
 
+  void visit(const truncate_rank* n) override {
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->name));
+
+    std::size_t old_rank = buffer->rank;
+    buffer->rank = n->rank;
+
+    n->body.accept(this);
+
+    buffer->rank = old_rank;
+  }
+
   void visit(const check* n) override {
     result = eval_expr(n->condition, 0) != 0 ? 0 : 1;
     if (result) {

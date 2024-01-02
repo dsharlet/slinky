@@ -330,6 +330,17 @@ public:
     os << indent() << "}" << std::endl;
   }
 
+  void visit(const truncate_rank* n) override {
+    os << indent();
+    os << "truncate_rank<" << n->rank << ">(";
+    print(n->name);
+    os << ") {" << std::endl;
+    ++depth;
+    print(n->body);
+    --depth;
+    os << indent() << "}" << std::endl;
+  }
+
   void visit(const check* n) override {
     os << indent();
     os << "check(";

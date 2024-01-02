@@ -67,6 +67,7 @@ enum class node_type {
   crop_dim,
   slice_buffer,
   slice_dim,
+  truncate_rank,
   check,
 };
 
@@ -615,6 +616,19 @@ public:
   static constexpr node_type static_type = node_type::slice_dim;
 };
 
+class truncate_rank : public stmt_node<truncate_rank> {
+public:
+  symbol_id name;
+  int rank;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id name, int rank, stmt body);
+
+  static constexpr node_type static_type = node_type::truncate_rank;
+};
+
 class check : public stmt_node<check> {
 public:
   expr condition;
@@ -662,6 +676,7 @@ public:
   virtual void visit(const crop_dim*) = 0;
   virtual void visit(const slice_buffer*) = 0;
   virtual void visit(const slice_dim*) = 0;
+  virtual void visit(const truncate_rank*) = 0;
   virtual void visit(const check*) = 0;
 };
 
@@ -771,6 +786,9 @@ public:
     x->at.accept(this);
     x->body.accept(this);
   }
+  virtual void visit(const truncate_rank* x) override {
+    x->body.accept(this);
+  }
   virtual void visit(const check* x) override { x->condition.accept(this); }
 };
 
@@ -806,6 +824,7 @@ inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_dim::accept(node_visitor* v) const { v->visit(this); }
 inline void slice_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void slice_dim::accept(node_visitor* v) const { v->visit(this); }
+inline void truncate_rank::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 
