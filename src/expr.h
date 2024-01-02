@@ -8,10 +8,10 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
-#include <optional>
 
 namespace slinky {
 
@@ -98,6 +98,10 @@ enum class intrinsic {
 
 class node_visitor;
 
+// The next few classes are the base of the expression (`expr`) and statement (`stmt`) mechanism.
+// `base_expr_node` is the base of `expr`s, and always produce an `index_t`-sized result when evaluated.
+// `base_stmt_node` is the base of `stmt`s, and do not produce any result.
+// Both are immutable.
 class base_node : public ref_counted {
 public:
   base_node(node_type type) : type(type) {}
@@ -126,6 +130,7 @@ public:
   base_stmt_node(node_type type) : base_node(type) {}
 };
 
+// These next two are just helpers for constructing the type information.
 template <typename T>
 class expr_node : public base_expr_node {
 public:
@@ -146,21 +151,25 @@ expr operator*(expr a, expr b);
 expr operator/(expr a, expr b);
 expr operator%(expr a, expr b);
 
+// `expr` is an owner of a reference counted pointer to a `base_expr_node`, `stmt` similarly owns a `base_stmt_node`
+// pointer. Operations that appear to mutate these objects are actually just reassigning this reference counted pointer.
 class expr {
   ref_count<const base_expr_node> n_;
   node_type type_ = node_type::none;
 
 public:
-
   expr() = default;
   expr(const expr&) = default;
   expr(expr&&) = default;
-  expr(index_t x);
-  expr(int x) : expr(static_cast<index_t>(x)) {}
-  expr(const base_expr_node* n) : n_(n), type_(n ? n->type : node_type::none) {}
-
   expr& operator=(const expr&) = default;
   expr& operator=(expr&&) = default;
+
+  // Make a new constant expression.
+  expr(index_t x);
+  expr(int x) : expr(static_cast<index_t>(x)) {}
+
+  // Make an `expr` referencing an existing node.
+  expr(const base_expr_node* n) : n_(n), type_(n ? n->type : node_type::none) {}
 
   void accept(node_visitor* v) const {
     assert(defined());
@@ -275,6 +284,7 @@ inline interval_expr point(const expr& x) { return {x, x}; }
 inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
 inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
 
+// A box is a multidimensional interval.
 using box_expr = std::vector<interval_expr>;
 box_expr operator|(box_expr a, const box_expr& b);
 box_expr operator&(box_expr a, const box_expr& b);
@@ -312,6 +322,7 @@ public:
   }
 };
 
+// Allows lifting a common subexpression `value` out of another expression `body`, by referencing the value by `name`.
 class let : public expr_node<let> {
 public:
   symbol_id name;
@@ -401,6 +412,8 @@ public:
   static constexpr node_type static_type = node_type::logical_not;
 };
 
+// Similar to the C++ ternary operator. `true_value` or `false_value` are only evaluated when the `condition` is true or
+// false, respectively.
 class select : public expr_node<class select> {
 public:
   expr condition;
@@ -428,6 +441,7 @@ public:
 
 class func;
 
+// Call `target` with a set of `scalar_args` scalars and `buffer_args` buffers.
 class call_func : public stmt_node<call_func> {
 public:
   typedef index_t (*callable_t)(std::span<const index_t>, std::span<raw_buffer*>);
@@ -445,6 +459,7 @@ public:
   static constexpr node_type static_type = node_type::call_func;
 };
 
+// Allows lifting a common subexpression `value` out of a statement `body`, by referencing the value by `name`.
 class let_stmt : public stmt_node<let_stmt> {
 public:
   symbol_id name;
@@ -458,6 +473,8 @@ public:
   static constexpr node_type static_type = node_type::let_stmt;
 };
 
+// A block is a set of two other `stmt`s. Recursively using blocks allows an arbitrarily large set of `stmt`s to be
+// defined in sequence.
 class block : public stmt_node<block> {
 public:
   stmt a, b;
@@ -465,6 +482,8 @@ public:
   void accept(node_visitor* v) const;
 
   static stmt make(stmt a, stmt b);
+  // Recursively create blocks to contain all of the `stmts`. This may not produce a block at all if `stmts` contains
+  // only one item.
   static stmt make(std::span<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
   static stmt make(std::initializer_list<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
   template <typename It>
@@ -483,6 +502,7 @@ public:
   static constexpr node_type static_type = node_type::block;
 };
 
+// Runs `body` for each value i in the interval `bounds` with `name` set to i.
 class loop : public stmt_node<loop> {
 public:
   symbol_id name;
@@ -496,6 +516,8 @@ public:
   static constexpr node_type static_type = node_type::loop;
 };
 
+// Run `true_body` if `condition` is true, or `false_body` otherwise. Either body can be undefined, indicating that
+// nothing should happen in that case.
 class if_then_else : public stmt_node<if_then_else> {
 public:
   expr condition;
@@ -509,6 +531,7 @@ public:
   static constexpr node_type static_type = node_type::if_then_else;
 };
 
+// A helper containing sub-expressions that describe a dimension of a buffer, corresponding to `dim`.
 struct dim_expr {
   interval_expr bounds;
   expr stride;
@@ -523,6 +546,9 @@ struct dim_expr {
   }
 };
 
+// Allocates memory and creates a buffer pointing to that memory. When control flow exits `body`, the buffer is freed.
+// `name` refers to a pointer to a `raw_buffer` object, the fields are initialized by the corresponding expressions in
+// this node (`rank` is the size of `dims`).
 class allocate : public stmt_node<allocate> {
 public:
   memory_type storage;
@@ -538,7 +564,8 @@ public:
   static constexpr node_type static_type = node_type::allocate;
 };
 
-// Make a new buffer from raw fields.
+// Make a `raw_buffer` object around an existing pointer `base` with fields corresponding to the expressions in this
+// node (`rank` is the size of `dims`).
 class make_buffer : public stmt_node<make_buffer> {
 public:
   symbol_id name;
@@ -554,10 +581,9 @@ public:
   static constexpr node_type static_type = node_type::make_buffer;
 };
 
-// This node is equivalent to the following:
-// 1. Crop `name` to the interval_expr `min, max` in-place in each dimension.
-// 2. Evaluate `body`
-// 3. Restore the original buffer
+// For the `body` scope, crops the buffer `name` to `bounds`. If the expressions in `bounds` are undefined, they default
+// to their original values in the existing buffer. The rank of the buffer is unchanged. If the size of `bounds` is less
+// than the rank, the missing values are considered undefined.
 class crop_buffer : public stmt_node<crop_buffer> {
 public:
   symbol_id name;
@@ -571,10 +597,7 @@ public:
   static constexpr node_type static_type = node_type::crop_buffer;
 };
 
-// This node is equivalent to the following:
-// 1. Crop the `dim`th dimension of `name` to `bounds` in-place
-// 2. Evaluate `body`
-// 3. Restore the original buffer
+// Similar to `crop_buffer`, but only crops the dimension `dim`.
 class crop_dim : public stmt_node<crop_dim> {
 public:
   symbol_id name;
@@ -589,6 +612,10 @@ public:
   static constexpr node_type static_type = node_type::crop_dim;
 };
 
+// For the `body` scope, slices the buffer `name` at the coordinate `at`. The `at` expressions can be undefined,
+// indicating that the corresponding dimension is preserved in the sliced buffer. The sliced buffer will have `rank`
+// equal to the rank of the existing buffer, less the number of sliced dimensions. If `at` is smaller than the rank
+// of the buffer, the missing values are considered undefined.
 class slice_buffer : public stmt_node<slice_buffer> {
 public:
   symbol_id name;
@@ -602,6 +629,8 @@ public:
   static constexpr node_type static_type = node_type::slice_buffer;
 };
 
+// Similar to `slice_buffer`, but only slices one dimension `dim`. The rank of the result is one less than the original
+// buffer.
 class slice_dim : public stmt_node<slice_dim> {
 public:
   symbol_id name;
@@ -616,6 +645,7 @@ public:
   static constexpr node_type static_type = node_type::slice_dim;
 };
 
+// Within `body`, remove the dimensions of the buffer `name` above `rank`.
 class truncate_rank : public stmt_node<truncate_rank> {
 public:
   symbol_id name;
@@ -629,6 +659,7 @@ public:
   static constexpr node_type static_type = node_type::truncate_rank;
 };
 
+// Basically an assert.
 class check : public stmt_node<check> {
 public:
   expr condition;
@@ -786,9 +817,7 @@ public:
     x->at.accept(this);
     x->body.accept(this);
   }
-  virtual void visit(const truncate_rank* x) override {
-    x->body.accept(this);
-  }
+  virtual void visit(const truncate_rank* x) override { x->body.accept(this); }
   virtual void visit(const check* x) override { x->condition.accept(this); }
 };
 
@@ -827,41 +856,42 @@ inline void slice_dim::accept(node_visitor* v) const { v->visit(this); }
 inline void truncate_rank::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
-
+// If `x` is a constant, returns the value of the constant, otherwise `nullptr`.
 inline const index_t* as_constant(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? &cx->value : nullptr;
 }
 
+// If `x` is a variable, returns the `symbol_id` of the variable, otherwise `nullptr`.
 inline const symbol_id* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->name : nullptr;
 }
 
+// Check if `x` is equal to the constant `value`.
 inline bool is_constant(const expr& x, index_t value) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value == value : false;
 }
-
 inline bool is_zero(const expr& x) { return is_constant(x, 0); }
 inline bool is_true(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value != 0 : false;
 }
-
 inline bool is_false(const expr& x) { return is_zero(x); }
 
-inline bool is_intrinsic(const expr& x, intrinsic i) {
+// Check if `x` is a call to the intrinsic `fn`.
+inline bool is_intrinsic(const expr& x, intrinsic fn) {
   const call* c = x.as<call>();
-  return c ? c->intrinsic == i : false;
+  return c ? c->intrinsic == fn : false;
 }
-
 inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
 inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
 inline bool is_indeterminate(const expr& x) { return is_intrinsic(x, intrinsic::indeterminate); }
 inline bool is_infinity(const expr& x) { return is_positive_infinity(x) || is_negative_infinity(x); }
 inline bool is_finite(const expr& x) { return !is_infinity(x) && !is_indeterminate(x); }
 
+// Get an expression representing non-numerical constants.
 const expr& positive_infinity();
 const expr& negative_infinity();
 const expr& indeterminate();
@@ -926,7 +956,6 @@ interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
 
 bool is_buffer_intrinsic(intrinsic fn);
-
 
 }  // namespace slinky
 
