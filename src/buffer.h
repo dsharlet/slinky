@@ -98,6 +98,10 @@ protected:
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
   }
 
+  static bool contains_impl(const dim* dims, index_t i0) {
+    return dims->contains(i0);
+  }
+
   template <typename... Indices>
   static bool contains_impl(const dim* dims, index_t i0, Indices... indices) {
     return dims->contains(i0) && contains_impl(dims + 1, indices...);

@@ -358,7 +358,7 @@ TEST(copy_broadcast_sliced) {
   }
 }
 
-TEST(copy_padded) {
+void test_copy_padded_translated(int translate_x, int translate_z, bool clamped) {
   // Make the pipeline
   node_context ctx;
 
@@ -374,13 +374,16 @@ TEST(copy_padded) {
   // in the pipeline. This way, the bounds can vary at eval-time.
   var w(ctx, "w");
   var h(ctx, "h");
+  var dx(ctx, "dx");
+  var dz(ctx, "dz");
 
   // This is elementwise, but with a clamp to limit the bounds required of the input.
   std::vector<char> padding(sizeof(int), 0);
-  func crop = func::make_copy(
-      {in, {point(c), point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1)), point(z)}}, {out, {c, x, y, z}}, padding);
+  expr in_x = clamped ? clamp(x + dx, 0, w - 1) : x + dx;
+  expr in_y = clamped ? clamp(y, 0, h - 1) : y;
+  func crop = func::make_copy({in, {point(c), point(in_x), point(in_y), point(z + dz)}}, {out, {c, x, y, z}}, padding);
 
-  pipeline p(ctx, {w, h}, {in}, {out});
+  pipeline p(ctx, {w, h, dx, dz}, {in}, {out});
 
   const int C = 4;
   const int W = 8;
@@ -389,6 +392,7 @@ TEST(copy_padded) {
 
   // Run the pipeline.
   buffer<int, 4> in_buf({C, W, H, D});
+  in_buf.dim(3).translate(translate_z);
   init_random(in_buf);
 
   // Ask for an output padded in every direction.
@@ -397,18 +401,22 @@ TEST(copy_padded) {
   out_buf.dim(2).translate(-H);
   out_buf.allocate();
 
-  index_t args[] = {W, H};
+  index_t args[] = {W, H, translate_x, translate_z};
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   eval_context eval_ctx;
   p.evaluate(args, inputs, outputs, eval_ctx);
 
   for (int z = 0; z < D; ++z) {
+    int in_z = z + translate_z;
     for (int y = -H; y < 2 * H; ++y) {
       for (int x = -W; x < 2 * W; ++x) {
+        int in_x = x + translate_x;
         for (int c = 0; c < C; ++c) {
-          if (0 <= x && x < W && 0 <= y && y < H) {
-            ASSERT_EQ(out_buf(c, x, y, z), in_buf(c, x, y, z));
+          if (clamped) {
+            ASSERT_EQ(out_buf(c, x, y, z), in_buf(c, std::clamp(in_x, 0, W - 1), std::clamp(y, 0, H - 1), in_z));
+          } else if (in_buf.contains(c, in_x, y, in_z)) {
+            ASSERT_EQ(out_buf(c, x, y, z), in_buf(c, in_x, y, in_z));
           } else {
             ASSERT_EQ(out_buf(c, x, y, z), 0);
           }
@@ -417,3 +425,14 @@ TEST(copy_padded) {
     }
   }
 }
+
+TEST(copy_clamped) { test_copy_padded_translated(0, 0, true); }
+TEST(copy_translated_clamped) { 
+  test_copy_padded_translated(0, 0, true);
+  test_copy_padded_translated(-2, 0, true);
+  test_copy_padded_translated(1, -1, true);
+  test_copy_padded_translated(-3, 3, true);
+}
+
+// TODO: How to represent padding without clamps?
+//TEST(copy_padded) { test_copy_padded_translated(0, 0, false); }
