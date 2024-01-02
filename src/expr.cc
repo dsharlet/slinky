@@ -106,8 +106,6 @@ expr logical_not::make(expr x) {
   return n;
 }
 
-expr make_variable(node_context& ctx, const std::string& name) { return variable::make(ctx.insert(name)); }
-
 expr operator+(expr a, expr b) { return add::make(std::move(a), std::move(b)); }
 expr operator-(expr a, expr b) { return sub::make(std::move(a), std::move(b)); }
 expr operator*(expr a, expr b) { return mul::make(std::move(a), std::move(b)); }
@@ -437,6 +435,6 @@ bool is_buffer_intrinsic(intrinsic i) {
 
 var::var() {}
 var::var(symbol_id name) : e_(variable::make(name)) {}
-var::var(node_context& ctx, const std::string& name) : e_(make_variable(ctx, name)) {}
+var::var(node_context& ctx, const std::string& name) : e_(variable::make(ctx.insert(name))) {}
 
 }  // namespace slinky
