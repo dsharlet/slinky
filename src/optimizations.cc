@@ -106,7 +106,8 @@ class copy_implementer : public node_mutator {
 
       // To start with, we describe copies as a loop over scalar copies.
       out_dims[od] = {point(out_x[od]), buffer_stride(out_buf, od), buffer_fold_factor(out_buf, od)};
-      if (in_x.size() < out_x.size() && (od >= in_x.size() || !depends_on(in_x[od], out_x[od].name()))) {
+      if (in_x.size() < out_x.size() &&
+          (od >= static_cast<index_t>(in_x.size()) || !depends_on(in_x[od], out_x[od].name()))) {
         // We want to rewrite copies like so:
         //
         //   out(x, y, z) = in(x, z)

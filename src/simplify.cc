@@ -1255,7 +1255,7 @@ public:
 
   void visit(const truncate_rank* op) override {
     std::optional<box_expr> bounds = buffer_bounds[op->name];
-    if (bounds && bounds->size() > op->rank) {
+    if (bounds && static_cast<int>(bounds->size()) > op->rank) {
       bounds->resize(op->rank);
     }
 
