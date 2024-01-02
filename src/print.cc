@@ -40,93 +40,83 @@ std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
 
 class printer : public node_visitor {
 public:
-  int depth = 0;
+  int depth = -1;
   std::ostream& os;
   const node_context* context;
 
   printer(std::ostream& os, const node_context* context) : os(os), context(context) {}
 
-  void print(symbol_id id) {
+  template <typename T>
+  printer& operator<<(const T& x) {
+    os << x;
+    return *this;
+  }
+
+  printer& operator<<(symbol_id id) {
     if (context) {
       os << context->name(id);
     } else {
       os << "<" << id << ">";
     }
+    return *this;
   }
 
-  void print(const expr& e) {
+  printer& operator<<(const expr& e) {
     if (e.defined()) {
       e.accept(this);
     } else {
       os << "<>";
     }
+    return *this;
   }
 
-  void print(const interval_expr& e) {
-    os << "[";
-    print(e.min);
-    os << ", ";
-    print(e.max);
-    os << "]";
+  printer& operator<<(const interval_expr& e) { return *this << "[" << e.min << ", " << e.max << "]";
   }
 
-  void print(const dim_expr& d) {
-    os << "{";
-    print(d.bounds);
-    os << ", ";
-    print(d.stride);
-    os << ", ";
-    print(d.fold_factor);
-    os << "}";
+  printer& operator<<(const dim_expr& d) {
+    return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
   }
 
   template <typename T>
   void print_vector(const std::vector<T>& v, const std::string& sep = ", ") {
     for (std::size_t i = 0; i < v.size(); ++i) {
-      print(v[i]);
+      *this << v[i];
       if (i + 1 < v.size()) {
-        os << sep;
+        *this << sep;
       }
     }
   }
 
-  void print(const stmt& s) { s.accept(this); }
-
-  std::string indent() const { return std::string(depth, ' '); }
-
-  void visit(const variable* v) override { print(v->name); }
-  void visit(const wildcard* w) override { print(w->name); }
-  void visit(const constant* c) override { os << c->value; }
-
-  void visit(const let* l) override {
-    os << "let ";
-    print(l->name);
-    os << " = ";
-    print(l->value);
-    os << " in ";
-    print(l->body);
+  template <typename T>
+  printer& operator<<(const std::vector<T>& v) {
+    print_vector(v);
+    return *this;
   }
 
-  void visit(const let_stmt* l) override {
-    os << indent() << "let ";
-    print(l->name);
-    os << " = ";
-    print(l->value);
-    os << " { " << std::endl;
+  printer& operator<<(const stmt& s) {
     ++depth;
-    indent();
-    print(l->body);
+    s.accept(this);
     --depth;
-    os << indent() << "}" << std::endl;
+    return *this;
+  }
+
+  std::string indent(int extra = 0) const { return std::string(depth + extra, ' '); }
+
+  void visit(const variable* v) override { *this << v->name; }
+  void visit(const wildcard* w) override { *this << w->name; }
+  void visit(const constant* c) override { *this << c->value; }
+
+  void visit(const let* l) override { *this << "let " << l->name << " = " << l->value << " in " << l->body; }
+
+  void visit(const let_stmt* l) override {
+    *this << indent() << "let " << l->name << " = " << l->value << " { \n";
+    *this << l->body;
+    *this << indent() << "}\n";
   }
 
   template <typename T>
   void visit_bin_op(const T* op, const char* s) {
-    os << "(";
-    print(op->a);
-    os << s;
-    print(op->b);
-    os << ")";
+    *this << "(" << op->a << s << op->b << ")";
   }
 
   void visit(const add* x) override { visit_bin_op(x, " + "); }
@@ -140,215 +130,123 @@ public:
   void visit(const less_equal* x) override { visit_bin_op(x, " <= "); }
   void visit(const logical_and* x) override { visit_bin_op(x, " && "); }
   void visit(const logical_or* x) override { visit_bin_op(x, " || "); }
-  void visit(const logical_not* x) override {
-    os << "!";
-    print(x->x);
-  }
+  void visit(const logical_not* x) override { *this << "!" << x->x; }
 
-  void visit(const class min* op) override {
-    os << "min(";
-    print(op->a);
-    os << ", ";
-    print(op->b);
-    os << ")";
-  }
-
-  void visit(const class max* op) override {
-    os << "max(";
-    print(op->a);
-    os << ", ";
-    print(op->b);
-    os << ")";
-  }
+  void visit(const class min* op) override { *this << "min(" << op->a << ", " << op->b << ")"; }
+  void visit(const class max* op) override { *this << "max(" << op->a << ", " << op->b << ")"; }
 
   void visit(const class select* op) override {
-    os << "select(";
-    print(op->condition);
-    os << ", ";
-    print(op->true_value);
-    os << ", ";
-    print(op->false_value);
-    os << ")";
+    *this << "select(" << op->condition << ", " << op->true_value << ", " << op->false_value << ")";
   }
 
   void visit(const call* x) override {
-    os << x->intrinsic << "(";
-    print_vector(x->args);
-    os << ")";
+    *this << x->intrinsic << "(" << x->args << ")";
   }
 
   void visit(const block* b) override {
     if (b->a.defined()) {
-      print(b->a);
+      b->a.accept(this);
     }
     if (b->b.defined()) {
-      print(b->b);
+      b->b.accept(this);
     }
   }
 
   void visit(const loop* l) override {
-    os << indent() << "loop(";
-    print(l->name);
-    os << " in ";
-    print(l->bounds);
-    os << ") {" << std::endl;
-    ++depth;
-    print(l->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << indent() << "loop(" << l->name << " in " << l->bounds << ") {\n";
+    *this << l->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const if_then_else* n) override {
-    os << indent() << "if(";
-    print(n->condition);
-    os << ") {" << std::endl;
-    ++depth;
-    print(n->true_body);
-    --depth;
+    *this << indent() << "if(" << n->condition << ") {\n";
+    *this << n->true_body;
     if (n->false_body.defined()) {
-      os << indent() << "} else {" << std::endl;
-      ++depth;
-      print(n->false_body);
-      --depth;
+      *this << indent() << "} else {\n";
+      *this << n->false_body;
     }
-    os << indent() << "}" << std::endl;
+    *this << indent() << "}\n";
   }
 
   void visit(const call_func* n) override {
-    os << indent() << "call(<fn>, {";
-    print_vector(n->scalar_args);
-    os << "}, {";
-    print_vector(n->buffer_args);
-    os << "})" << std::endl;
+    *this << indent() << "call(<fn>, {" << n->scalar_args << "}, {" << n->buffer_args << "})\n";
   }
 
   void visit(const allocate* n) override {
-    os << indent();
-    print(n->name);
-    os << " = allocate<" << n->elem_size << ">({" << std::endl;
-    ++depth;
-    os << indent();
-    print_vector(n->dims, ",\n" + indent());
-    os << std::endl;
-    --depth;
-    os << indent() << "} on " << n->storage << ") {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << indent() << n->name << " = allocate<" << n->elem_size << ">({\n";
+    *this << indent(2);
+    print_vector(n->dims, ",\n" + indent(2));
+    *this << "\n";
+    *this << indent() << "} on " << n->storage << ") {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const make_buffer* n) override {
-    os << indent();
-    print(n->name);
-    os << " = make_buffer(";
-    print(n->base);
-    os << ", ";
-    print(n->elem_size);
-    os << ", {";
+    *this << indent() << n->name << " = make_buffer(" << n->base << ", " << n->elem_size << ", {";
     if (!n->dims.empty()) {
-      os << std::endl;
-      ++depth;
-      os << indent();
-      print_vector(n->dims, ",\n" + indent());
-      os << std::endl;
-      --depth;
-      os << indent();
+      *this << "\n";
+      *this << indent(2);
+      print_vector(n->dims, ",\n" + indent(2));
+      *this << "\n";
+      *this << indent();
     }
-    os << "}) {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << "}) {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const crop_buffer* n) override {
-    os << indent();
-    os << "crop_buffer(";
-    print(n->name);
-    os << ", {";
+    *this << indent() << "crop_buffer(" << n->name << ", {";
     if (!n->bounds.empty()) {
-      os << std::endl;
-      ++depth;
-      os << indent();
-      print_vector(n->bounds, ",\n" + indent());
-      os << std::endl;
-      --depth;
-      os << indent();
+      *this << "\n";
+      *this << indent(2);
+      print_vector(n->bounds, ",\n" + indent(2));
+      *this << "\n";
+      *this << indent();
     }
-    os << "}) {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << "}) {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const crop_dim* n) override {
-    os << indent();
-    os << "crop_dim<" << n->dim << ">(";
-    print(n->name);
-    os << ", ";
-    print(n->bounds);
-    os << ") {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << indent() << "crop_dim<" << n->dim << ">(" << n->name << ", " << n->bounds << ") {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const slice_buffer* n) override {
-    os << indent();
-    os << "slice_buffer(";
-    print(n->name);
-    os << ", {";
-    print_vector(n->at);
-    os << "}) {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << indent() << "slice_buffer(" << n->name << ", {" << n->at << "}) {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const slice_dim* n) override {
-    os << indent();
-    os << "slice_dim<" << n->dim << ">(";
-    print(n->name);
-    os << ", ";
-    print(n->at);
-    os << ") {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << indent() << "slice_dim<" << n->dim << ">(" << n->name << ", " << n->at << ") {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const truncate_rank* n) override {
-    os << indent();
-    os << "truncate_rank<" << n->rank << ">(";
-    print(n->name);
-    os << ") {" << std::endl;
-    ++depth;
-    print(n->body);
-    --depth;
-    os << indent() << "}" << std::endl;
+    *this << indent() << "truncate_rank<" << n->rank << ">(" << n->name << ") {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
   }
 
   void visit(const check* n) override {
-    os << indent();
-    os << "check(";
-    print(n->condition);
-    os << ")" << std::endl;
+    *this << indent() << "check(" << n->condition << ")\n";
   }
 };
 
 void print(std::ostream& os, const expr& e, const node_context* ctx) {
   printer p(os, ctx);
-  p.print(e);
+  p << e;
 }
 
 void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   printer p(os, ctx);
-  p.print(s);
+  p << s;
 }
 
 std::ostream& operator<<(std::ostream& os, const expr& e) {
