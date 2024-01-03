@@ -223,7 +223,7 @@ public:
     // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
     // not clear this optimization is necessary yet.
     std::optional<index_t> old_value = context[l->sym];
-    for (index_t i = min; result == 0 && i <= max; i += step) {
+    for (index_t i = min; result == 0 && min <= i && i <= max; i += step) {
       context[l->sym] = i;
       l->body.accept(this);
     }

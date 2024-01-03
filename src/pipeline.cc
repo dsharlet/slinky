@@ -186,7 +186,7 @@ public:
     return result;
   }
 
-  stmt make_loop(stmt body, const func* f, const var& loop) {
+  stmt make_loop(stmt body, const func* f, const var& loop, const expr& step) {
     // Find the bounds of this loop.
     interval_expr bounds = interval_expr::union_identity();
     // Crop all the outputs of this buffer for this loop.
@@ -195,7 +195,9 @@ public:
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d].sym() == loop.sym()) {
-          to_crop[o.buffer->sym()].emplace_back(d, point(loop));
+          // TODO: Clamp at buffer max here to handle loop extents not a multiple of the step.
+          //expr loop_max = buffer_max(var(o.sym()), d);
+          to_crop[o.buffer->sym()].emplace_back(d, slinky::bounds(loop, loop + step - 1));
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
@@ -223,7 +225,7 @@ public:
     bounds.min = simplify(bounds.min);
     bounds.max = simplify(bounds.max);
 
-    stmt result = loop::make(loop.sym(), bounds, 1, body);
+    stmt result = loop::make(loop.sym(), bounds, step, body);
     crops.pop_back();
     return result;
   }
@@ -242,7 +244,7 @@ public:
 
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
-      call_f = make_loop(call_f, f, loop);
+      call_f = make_loop(call_f, f, loop.sym, loop.step);
     }
     result = block::make({call_f, result});
     if (root) {

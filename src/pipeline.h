@@ -93,10 +93,14 @@ public:
 
     std::vector<var> dims;
 
-    // If this exists for a dimension, specifies the alignment required in that dimension.
-    std::vector<index_t> alignment;
-
     symbol_id sym() const { return buffer->sym(); }
+  };
+
+  struct loop_info {
+    var sym;
+    expr step;
+
+    loop_info(var sym, expr step = 1) : sym(sym), step(step) {}
   };
 
 private:
@@ -104,7 +108,7 @@ private:
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
-  std::vector<var> loops_;
+  std::vector<loop_info> loops_;
   loop_id compute_at_;
 
   std::vector<char> padding_;
@@ -120,12 +124,12 @@ public:
 
   bool defined() const { return impl_ != nullptr; }
 
-  // Describes which loops should be explicit for this func.
-  func& loops(std::vector<var> l) {
+  // Describes which loops should be explicit for this func, and the step size for that loop.
+  func& loops(std::vector<loop_info> l) {
     loops_ = std::move(l);
     return *this;
   }
-  const std::vector<var>& loops() const { return loops_; }
+  const std::vector<loop_info>& loops() const { return loops_; }
 
   func& compute_at(const loop_id& at) {
     compute_at_ = at;

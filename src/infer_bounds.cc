@@ -30,7 +30,7 @@ public:
   symbol_map<box_expr> inferring;
   symbol_map<std::pair<int, expr>> fold_factors;
   symbol_map<box_expr> crops;
-  std::vector<std::pair<symbol_id, expr>> loop_mins;
+  std::vector<std::pair<symbol_id, interval_expr>> loop_bounds;
   symbol_map<std::size_t> loops_since_allocate;
 
   bounds_inferrer(node_context& ctx) : ctx(ctx) {}
@@ -42,7 +42,7 @@ public:
       bounds = box_expr();
     }
 
-    auto set_loops = set_value_in_scope(loops_since_allocate, alloc->sym, loop_mins.size());
+    auto set_loops = set_value_in_scope(loops_since_allocate, alloc->sym, loop_bounds.size());
     stmt body = mutate(alloc->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -176,15 +176,16 @@ public:
 
       std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->sym());
 
-      for (std::size_t l = first_loop ? *first_loop : 0; l < loop_mins.size(); ++l) {
-        symbol_id loop_sym = loop_mins[l].first;
+      for (std::size_t l = first_loop ? *first_loop : 0; l < loop_bounds.size(); ++l) {
+        symbol_id loop_sym = loop_bounds[l].first;
         expr loop_var = variable::make(loop_sym);
-        expr loop_min = loop_mins[l].second;
+        expr loop_min = loop_bounds[l].second.min;
+        expr loop_max = loop_bounds[l].second.max;
 
         box_expr prev_bounds(crop_bounds.size());
         for (int d = 0; d < static_cast<int>(crop_bounds.size()); ++d) {
-          prev_bounds[d].min = simplify(substitute(crop_bounds[d].min, loop_sym, loop_var - 1));
-          prev_bounds[d].max = simplify(substitute(crop_bounds[d].max, loop_sym, loop_var - 1));
+          prev_bounds[d].min = substitute(crop_bounds[d].min, loop_sym, loop_var - 1);
+          prev_bounds[d].max = substitute(crop_bounds[d].max, loop_sym, loop_var - 1);
           if (prove_true(prev_bounds[d].min <= crop_bounds[d].min) &&
               prove_true(prev_bounds[d].max < crop_bounds[d].max)) {
             // The bounds for each loop iteration are monotonically increasing,
@@ -205,7 +206,7 @@ public:
             expr old_min_at_loop_min = substitute(old_min, loop_sym, loop_min);
             expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_sym).max;
             if (new_loop_min.defined()) {
-              loop_mins[l].second = simplify(loop_min - (new_min - old_min));
+              loop_bounds[l].second.min = simplify(loop_min - (new_min - old_min));
 
               old_min = new_min;
             } else {
@@ -229,8 +230,8 @@ public:
     // modifies the buffer meta, which the condition (probably) depends on.
     // To fix this, we hackily move the if out below, but this is a serious hack
     // that needs to be fixed.
-    for (const auto& l : loop_mins) {
-      result = if_then_else::make(variable::make(l.first) >= l.second, result, stmt());
+    for (const auto& l : loop_bounds) {
+      result = if_then_else::make(variable::make(l.first) >= l.second.min, result, stmt());
     }
     set_result(result);
   }
@@ -264,10 +265,12 @@ public:
   }
 
   void visit(const loop* l) override {
-    loop_mins.emplace_back(l->sym, l->bounds.min);
+    loop_bounds.emplace_back(l->sym, l->bounds);
     stmt body = mutate(l->body);
-    expr loop_min = loop_mins.back().second;
-    loop_mins.pop_back();
+    expr loop_min = loop_bounds.back().second.min;
+    // The loop max should not be changed.
+    assert(l->bounds.max.same_as(loop_bounds.back().second.max));
+    loop_bounds.pop_back();
 
     stmt result;
     if (loop_min.same_as(l->bounds.min) && body.same_as(l->body)) {
