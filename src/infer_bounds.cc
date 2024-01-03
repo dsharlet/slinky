@@ -39,6 +39,9 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
   }
 }
 
+// This pass tries to identify where call_func operations need to run to satisfy the requirements of their consumers (or
+// the output buffers). It updates `allocate` nodes to allocate enough memory for the uses of the allocation, and crops
+// producers to the required region.
 class bounds_inferrer : public node_mutator {
 public:
   symbol_map<box_expr> infer;
@@ -232,6 +235,9 @@ public:
   }
 };
 
+// Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
+// is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
+// only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
 class slider : public node_mutator {
 public:
   node_context& ctx;
@@ -458,9 +464,8 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
 
   result = simplify(result);
 
-  // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
-  // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
-  // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
+  // After simplifying and inferring the bounds of producers, we can try to run the sliding window
+  // optimization.
   result = slider(ctx).mutate(result);
 
   return result;
