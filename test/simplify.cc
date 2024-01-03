@@ -150,7 +150,7 @@ TEST(simplify_bounds) {
 }
 
 TEST(bounds_of) {
-  // Test bounds_of by testing expressions of two operands, and setting the
+  // Test bounds_of by testing expressions of up to two operands, and setting the
   // bounds of the two operands to all possible cases of overlap. This approach
   // to testing should be great at finding cases where bounds are incorrectly tight,
   // but this test doesn't cover regressions that relax the bounds produced.
@@ -169,7 +169,8 @@ TEST(bounds_of) {
       x != y,
       !(x < y),
       x < y && x != y,
-      x < y || x == y,
+      x < y || x == y, 
+      abs(x),
   };
 
   for (const expr& e : exprs) {

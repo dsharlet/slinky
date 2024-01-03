@@ -154,7 +154,7 @@ public:
     if (l->step.defined()) {
       *this << ", " << l->step;
     }
-    *this << ") {\n ";
+    *this << ") {\n";
     *this << l->body;
     *this << indent() << "}\n";
   }

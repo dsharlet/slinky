@@ -31,6 +31,24 @@ expr simplify(const logical_not* op, expr x);
 expr simplify(const class select* op, expr c, expr t, expr f);
 expr simplify(const call* op, std::vector<expr> args);
 
+// Helpers for producing the bounds of ops.
+interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const class max* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const add* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const div* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const less* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const less_equal* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b);
+interval_expr bounds_of(const logical_not* op, interval_expr x);
+interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t, interval_expr f);
+interval_expr bounds_of(const call* op, std::vector<interval_expr> args);
+
 // Determine an interval such that e is always inside the interval.
 interval_expr bounds_of(const expr& x, const bounds_map& bounds = bounds_map());
 

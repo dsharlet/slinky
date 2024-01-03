@@ -261,10 +261,13 @@ expr simplify(const class min* op, expr a, expr b) {
 
       // Algebraic simplifications
       {min(x, x), x},
+      {min(x, max(x, y)), x},
       {min(x, min(x, y)), min(x, y)},
       {min(max(x, y), min(x, z)), min(x, z)},
       {min(min(x, y), min(x, z)), min(x, min(y, z))},
       {min(max(x, y), max(x, z)), max(x, min(y, z))},
+      {min(x, min(y, x + z)), min(y, min(x, x + z))},
+      {min(x, min(y, x - z)), min(y, min(x, x - z))},
       {min(x / z, y / z), min(x, y) / z, z > 0},
       {min(x / z, y / z), max(x, y) / z, z < 0},
       {min(x * z, y * z), z * min(x, y), z > 0},
@@ -315,10 +318,13 @@ expr simplify(const class max* op, expr a, expr b) {
 
       // Algebraic simplifications
       {max(x, x), x},
+      {max(x, min(x, y)), x},
       {max(x, max(x, y)), max(x, y)},
       {max(min(x, y), max(x, z)), max(x, z)},
       {max(max(x, y), max(x, z)), max(x, max(y, z))},
       {max(min(x, y), min(x, z)), min(x, max(y, z))},
+      {max(x, max(y, x + z)), max(y, max(x, x + z))},
+      {max(x, max(y, x - z)), max(y, max(x, x - z))},
       {max(x / z, y / z), max(x, y) / z, z > 0},
       {max(x / z, y / z), min(x, y) / z, z < 0},
       {max(x * z, y * z), z * max(x, y), z > 0},
@@ -569,7 +575,21 @@ expr simplify(const less* op, expr a, expr b) {
       {c0 - x < c1, c0 - c1 < x},
       {c0 < c1 - x, x < c1 - c0},
 
+      {x < x + y, 0 < y},
+      {x + y < x, y < 0},
+      {x < x - y, y < 0},
+      {x - y < x, 0 < y},
       {x + y < x + z, y < z},
+      {x - y < x - z, z < y},
+      {x - y < z - y, x < z},
+
+      {min(x, y) < x, y < x},
+      {max(x, y) < x, false},
+      {x < max(x, y), x < y},
+      {x < min(x, y), false},
+      {min(x, y) < max(x, y), x != y},
+      {max(x, y) < min(x, y), false},
+      {min(x, y) < min(x, z), y < min(x, z)},
 
       {buffer_extent(x, y) < c0, false, c0 < 0},
       {c0 < buffer_extent(x, y), true, c0 < 0},
@@ -605,7 +625,20 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {x <= c1 - y, x + y <= c1},
       {x + c0 <= y + c1, x - y <= c1 - c0},
 
+      {x <= x + y, 0 <= y},
+      {x + y <= x, y <= 0},
+      {x <= x - y, y <= 0},
+      {x - y <= x, 0 <= y},
       {x + y <= x + z, y <= z},
+      {x - y <= x - z, z <= y},
+      {x - y <= z - y, x <= z},
+
+      {min(x, y) <= x, true},
+      {max(x, y) <= x, y <= x},
+      {x <= max(x, y), true},
+      {x <= min(x, y), x <= y},
+      {min(x, y) <= max(x, y), true},
+      {max(x, y) <= min(x, y), x == y},
 
       {buffer_extent(x, y) <= c0, false, c0 <= 0},
       {c0 <= buffer_extent(x, y), true, c0 <= 0},
@@ -826,23 +859,78 @@ expr simplify(const call* op, std::vector<expr> args) {
 
 namespace {
 
+// This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   symbol_map<int> references;
   symbol_map<box_expr> buffer_bounds;
   bounds_map expr_bounds;
 
+  interval_expr result_bounds;
+
+  void set_result(expr e, interval_expr bounds) {
+    assert(!result_bounds.min.defined() && !result_bounds.max.defined());
+    result_bounds = std::move(bounds);
+    node_mutator::set_result(std::move(e));
+  }
+  void set_result(stmt s) {
+    assert(!result_bounds.min.defined() && !result_bounds.max.defined());
+    result_bounds = interval_expr();
+    node_mutator::set_result(std::move(s));
+  }
+
 public:
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
 
-  interval_expr mutate(const interval_expr& x) {
-    interval_expr result = {mutate(x.min), mutate(x.max)};
+  expr mutate(const expr& e, interval_expr* bounds) {
+    expr result = node_mutator::mutate(e);
+    if (bounds) {
+      if (bounds != &result_bounds) {
+        *bounds = std::move(result_bounds);
+      }
+    } else {
+      result_bounds = {expr(), expr()};
+    }
+    return result;
+  }
+  expr mutate(const expr& e) override { return mutate(e, nullptr); }
+  stmt mutate(const stmt& s) override { return node_mutator::mutate(s); }
+
+  void mutate_and_set_result(const expr& e) {
+    assert(!result_bounds.min.defined() && !result_bounds.max.defined());
+    node_mutator::set_result(mutate(e, &result_bounds));
+  }
+
+  interval_expr mutate(
+      const interval_expr& x, interval_expr* min_bounds = nullptr, interval_expr* max_bounds = nullptr) {
+    interval_expr result = {mutate(x.min, min_bounds), mutate(x.max, max_bounds)};
     if (!result.min.same_as(result.max) && match(result.min, result.max)) {
       // If the bounds are the same, make sure same_as returns true.
       result.max = result.min;
     }
     return result;
   }
-  using node_mutator::mutate;
+
+  std::optional<bool> attempt_to_prove(const expr& e) {
+    interval_expr bounds;
+    mutate(e, &bounds);
+    if (is_true(bounds.min)) {
+      return true;
+    } else if (is_false(bounds.max)) {
+      return false;
+    } else {
+      return {};
+    }
+  }
+
+  bool prove_true(const expr& e) {
+    std::optional<bool> result = attempt_to_prove(e);
+    return result && *result;
+  }
+
+  bool prove_false(const expr& e) {
+    std::optional<bool> result = attempt_to_prove(e);
+    return result && !*result;
+  }
 
   void visit(const variable* op) override {
     auto& ref_count = references[op->sym];
@@ -851,37 +939,94 @@ public:
     } else {
       *ref_count += 1;
     }
-    set_result(op);
+    std::optional<interval_expr> bounds = expr_bounds[op->sym];
+    if (bounds) {
+      set_result(op, std::move(*bounds));
+    } else {
+      set_result(op, {op, op});
+    }
   }
+
+  void visit(const constant* op) override { set_result(op, {op, op}); }
 
   template <typename T>
   void visit_binary(const T* op) {
-    expr a = mutate(op->a);
-    expr b = mutate(op->b);
-    expr e = simplify(op, std::move(a), std::move(b));
-    if (!e.same_as(op)) {
-      e = mutate(e);
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
-    set_result(e);
   }
 
-  void visit(const class min* op) override { visit_binary(op); }
-  void visit(const class max* op) override { visit_binary(op); }
+  void visit(const class min* op) override {
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    std::optional<bool> lt = attempt_to_prove(a < b);
+    if (lt && *lt) {
+      set_result(std::move(a), std::move(a_bounds));
+      return;
+    } else if (lt && !*lt) {
+      set_result(std::move(b), std::move(b_bounds));
+      return;
+    }
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
+    }
+  }
+  void visit(const class max* op) override {
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    std::optional<bool> gt = attempt_to_prove(a > b);
+    if (gt && *gt) {
+      set_result(std::move(a), std::move(a_bounds));
+      return;
+    } else if (gt && !*gt) {
+      set_result(std::move(b), std::move(b_bounds));
+      return;
+    }
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
+    }
+  }
   void visit(const add* op) override { visit_binary(op); }
 
   void visit(const sub* op) override {
-    expr a = mutate(op->a);
-    expr b = mutate(op->b);
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
     const index_t* cb = as_constant(b);
+
     if (cb && *cb < 0) {
       // Canonicalize to addition with constants.
-      set_result(mutate(a + -*cb));
+      mutate_and_set_result(a + -*cb);
     } else {
-      expr e = simplify(op, std::move(a), std::move(b));
-      if (!e.same_as(op)) {
-        e = mutate(e);
+      expr result = simplify(op, std::move(a), std::move(b));
+      if (result.same_as(op)) {
+        set_result(std::move(result), bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
+      } else {
+        mutate_and_set_result(result);
       }
-      set_result(e);
     }
   }
 
@@ -895,83 +1040,124 @@ public:
   void visit(const logical_and* op) override { visit_binary(op); }
   void visit(const logical_or* op) override { visit_binary(op); }
   void visit(const logical_not* op) override {
-    expr x = mutate(op->x);
-    expr e = simplify(op, std::move(x));
-    if (!e.same_as(op)) {
-      e = mutate(e);
+    interval_expr bounds;
+    expr a = mutate(op->x, &bounds);
+
+    if (is_true(bounds.min)) {
+      set_result(false, {0, 0});
+    } else if (is_false(bounds.max)) {
+      set_result(true, {1, 1});
+    } else {
+      expr result = simplify(op, std::move(a));
+      if (result.same_as(op)) {
+        set_result(result, bounds_of(op, bounds));
+      } else {
+        mutate_and_set_result(result);
+      }
     }
-    set_result(e);
   }
 
   void visit(const class select* op) override {
-    expr c = mutate(op->condition);
-    std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
-    if (const_c) {
-      if (*const_c) {
-        set_result(mutate(op->true_value));
-      } else {
-        set_result(mutate(op->false_value));
-      }
+    interval_expr c_bounds;
+    expr c = mutate(op->condition, &c_bounds);
+    if (is_true(c_bounds.min)) {
+      mutate_and_set_result(op->true_value);
+      return;
+    } else if (is_false(c_bounds.max)) {
+      mutate_and_set_result(op->false_value);
       return;
     }
 
-    expr t = mutate(op->true_value);
-    expr f = mutate(op->false_value);
+    interval_expr t_bounds;
+    expr t = mutate(op->true_value, &t_bounds);
+    interval_expr f_bounds;
+    expr f = mutate(op->false_value, &f_bounds);
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
-    if (!e.same_as(op)) {
-      e = mutate(e);
+    if (e.same_as(op)) {
+      set_result(e, bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
+    } else {
+      mutate_and_set_result(e);
     }
-    set_result(e);
   }
 
   void visit(const call* op) override {
     std::vector<expr> args;
+    std::vector<interval_expr> args_bounds;
     args.reserve(op->args.size());
+    args_bounds.reserve(op->args.size());
     for (const expr& i : op->args) {
-      args.push_back(mutate(i));
+      interval_expr i_bounds;
+      args.push_back(mutate(i, &i_bounds));
+      args_bounds.push_back(std::move(i_bounds));
     }
 
     expr e = simplify(op, std::move(args));
-    if (!e.same_as(op)) {
-      e = mutate(e);
+    if (e.same_as(op)) {
+      set_result(e, bounds_of(op, std::move(args_bounds)));
+    } else {
+      mutate_and_set_result(e);
     }
-    set_result(e);
   }
 
-  template <typename T>
-  auto visit_let(const T* op) {
-    expr value = mutate(op->value);
-    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds_of(value, expr_bounds));
+  void visit(const let* op) override {
+    interval_expr value_bounds;
+    expr value = mutate(op->value, &value_bounds);
 
+    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, value_bounds);
     auto ref_count = set_value_in_scope(references, op->sym, 0);
-    auto body = mutate(op->body);
+    interval_expr body_bounds;
+    expr body = mutate(op->body, &body_bounds);
 
     int refs = *references[op->sym];
     if (refs == 0) {
       // This let is dead
-      return body;
+      set_result(body, std::move(body_bounds));
     } else if (refs == 1 || value.as<constant>() || value.as<variable>()) {
-      return mutate(substitute(body, op->sym, value));
+      mutate_and_set_result(substitute(body, op->sym, value));
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
-      return decltype(body){op};
+      set_result(op, std::move(body_bounds));
     } else {
-      return T::make(op->sym, std::move(value), std::move(body));
+      set_result(let::make(op->sym, std::move(value), std::move(body)), std::move(body_bounds));
     }
   }
 
-  void visit(const let* op) override { set_result(visit_let(op)); }
-  void visit(const let_stmt* op) override { set_result(visit_let(op)); }
+  void visit(const let_stmt* op) override {
+    interval_expr value_bounds;
+    expr value = mutate(op->value, &value_bounds);
+
+    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, value_bounds);
+    auto ref_count = set_value_in_scope(references, op->sym, 0);
+    stmt body = mutate(op->body);
+
+    int refs = *references[op->sym];
+    if (refs == 0) {
+      // This let is dead
+      set_result(body);
+    } else if (refs == 1 || value.as<constant>() || value.as<variable>()) {
+      set_result(mutate(substitute(body, op->sym, value)));
+    } else if (value.same_as(op->value) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(let_stmt::make(op->sym, std::move(value), std::move(body)));
+    }
+  }
 
   void visit(const loop* op) override {
-    interval_expr bounds = mutate(op->bounds);
+    interval_expr min_bounds;
+    interval_expr max_bounds;
+    interval_expr bounds = mutate(op->bounds, &min_bounds, &max_bounds);
     expr step = mutate(op->step);
 
     if (!step.defined()) {
       step = 1;
     }
 
-    if (prove_true(bounds.min + step > bounds.max)) {
+    if (prove_true(min_bounds.min > max_bounds.max)) {
+      // This loop is dead.
+      set_result(stmt());
+      return;
+    } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs once.
       set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
       return;
@@ -992,14 +1178,13 @@ public:
   }
 
   void visit(const if_then_else* op) override {
-    expr c = mutate(op->condition);
-    std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
-    if (const_c) {
-      if (*const_c) {
-        set_result(mutate(op->true_body));
-      } else {
-        set_result(mutate(op->false_body));
-      }
+    interval_expr c_bounds;
+    expr c = mutate(op->condition, &c_bounds);
+    if (prove_true(c_bounds.min)) {
+      set_result(mutate(op->true_body));
+      return;
+    } else if (prove_false(c_bounds.max)) {
+      set_result(mutate(op->false_body));
       return;
     }
 
@@ -1306,15 +1491,13 @@ public:
       return;
     }
 
-    expr c = mutate(op->condition);
-    std::optional<bool> const_c = attempt_to_prove(c, expr_bounds);
-    if (const_c) {
-      if (*const_c) {
-        set_result(stmt());
-      } else {
-        std::cerr << op->condition << " is statically false." << std::endl;
-        std::abort();
-      }
+    interval_expr c_bounds;
+    expr c = mutate(op->condition, &c_bounds);
+    if (is_true(c_bounds.min)) {
+      set_result(stmt());
+    } else if (is_false(c_bounds.max)) {
+      std::cerr << op->condition << " is statically false." << std::endl;
+      std::abort();
     } else if (c.same_as(op->condition)) {
       set_result(op);
     } else {
@@ -1325,228 +1508,167 @@ public:
 
 }  // namespace
 
-expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e); }
+expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e, nullptr); }
 stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
 
 namespace {
 
-class find_bounds : public node_visitor {
-  bounds_map bounds;
+template <typename T>
+interval_expr bounds_of_linear(const T* x, interval_expr a, interval_expr b) {
+  return {simplify(x, std::move(a.min), std::move(b.min)), simplify(x, std::move(a.max), std::move(b.max))};
+}
 
-public:
-  find_bounds(const bounds_map& bounds) : bounds(bounds) {}
-
-  interval_expr result;
-
-  template <typename T>
-  void visit_variable(const T* x) {
-    if (bounds.contains(x->sym)) {
-      result = *bounds.lookup(x->sym);
-    } else {
-      result = {x, x};
-    }
-  }
-
-  void visit(const variable* x) override { visit_variable(x); }
-  void visit(const wildcard* x) override { visit_variable(x); }
-  void visit(const constant* x) override { result = point(x); }
-
-  void visit(const let* x) override {
-    x->value.accept(this);
-    auto s = set_value_in_scope(bounds, x->sym, result);
-    x->body.accept(this);
-  }
-
-  struct binary_result {
-    interval_expr a;
-    interval_expr b;
-  };
-  template <typename T>
-  binary_result binary_bounds(const T* x) {
-    x->a.accept(this);
-    interval_expr ba = result;
-    x->b.accept(this);
-    return {ba, result};
-  }
-
-  template <typename T>
-  void visit_linear(const T* x) {
-    binary_result r = binary_bounds(x);
-    result = {simplify(x, r.a.min, r.b.min), simplify(x, r.a.max, r.b.max)};
-  }
-
-  void visit(const add* x) override { visit_linear(x); }
-  void visit(const sub* x) override {
-    binary_result r = binary_bounds(x);
-    result = {simplify(x, r.a.min, r.b.max), simplify(x, r.a.max, r.b.min)};
-  }
-
-  void visit(const mul* x) override {
-    binary_result r = binary_bounds(x);
-
-    // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
-    if (is_non_negative(r.a.min) && is_non_negative(r.b.min)) {
-      // Both are >= 0, neither intervals flip.
-      result = {simplify(x, r.a.min, r.b.min), simplify(x, r.a.max, r.b.max)};
-    } else if (is_non_positive(r.a.max) && is_non_positive(r.b.max)) {
-      // Both are <= 0, both intervals flip.
-      result = {simplify(x, r.a.max, r.b.max), simplify(x, r.a.min, r.b.min)};
-    } else if (r.b.is_single_point()) {
-      if (is_non_negative(r.b.min)) {
-        result = {simplify(x, r.a.min, r.b.min), simplify(x, r.a.max, r.b.min)};
-      } else if (is_non_positive(r.b.min)) {
-        result = {simplify(x, r.a.max, r.b.min), simplify(x, r.a.min, r.b.min)};
-      } else {
-        expr corners[] = {
-            simplify(x, r.a.min, r.b.min),
-            simplify(x, r.a.max, r.b.min),
-        };
-        result = {min(corners), max(corners)};
-      }
-    } else if (r.a.is_single_point()) {
-      if (is_non_negative(r.a.min)) {
-        result = {simplify(x, r.a.min, r.b.min), simplify(x, r.a.min, r.b.max)};
-      } else if (is_non_positive(r.a.min)) {
-        result = {simplify(x, r.a.min, r.b.max), simplify(x, r.a.min, r.b.min)};
-      } else {
-        expr corners[] = {
-            simplify(x, r.a.min, r.b.min),
-            simplify(x, r.a.min, r.b.max),
-        };
-        result = {min(corners), max(corners)};
-      }
-    } else {
-      // We don't know anything. The results is the union of all 4 possible intervals.
-      expr corners[] = {
-          simplify(x, r.a.min, r.b.min),
-          simplify(x, r.a.min, r.b.max),
-          simplify(x, r.a.max, r.b.min),
-          simplify(x, r.a.max, r.b.max),
-      };
-      result = {min(corners), max(corners)};
-    }
-  }
-  void visit(const div* x) override {
-    binary_result r = binary_bounds(x);
-    // Because b is an integer, the bounds of a will only be shrunk
-    // (we define division by 0 to be 0). The absolute value of the
-    // bounds are maximized when b is 1 or -1.
-    if (r.b.is_single_point() && is_zero(r.b.min)) {
-      result = {0, 0};
-    } else if (is_positive(r.b.min)) {
-      // b > 0 => the biggest result in absolute value occurs at the min of b.
-      result = (r.a | -r.a) / r.b.min;
-    } else if (is_negative(r.b.max)) {
-      // b < 0 => the biggest result in absolute value occurs at the max of b.
-      result = (r.a | -r.a) / r.b.max;
-    } else {
-      result = r.a | -r.a;
-    }
-  }
-  void visit(const mod* x) override {
-    binary_result r = binary_bounds(x);
-    result = {0, max(abs(r.b.min), abs(r.b.max))};
-  }
-
-  void visit(const class min* x) override { visit_linear(x); }
-  void visit(const class max* x) override { visit_linear(x); }
-  template <typename T>
-  void visit_less(const T* x) {
-    binary_result r = binary_bounds(x);
-    // This bit of genius comes from
-    // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
-    result = {simplify(x, r.a.max, r.b.min), simplify(x, r.a.min, r.b.max)};
-  }
-  void visit(const less* x) override { visit_less(x); }
-  void visit(const less_equal* x) override { visit_less(x); }
-
-  void visit(const equal* x) override {
-    binary_result r = binary_bounds(x);
-    result.min = 0;
-    result.max = r.a.min <= r.b.max && r.b.min <= r.a.max;
-  }
-  void visit(const not_equal* x) override {
-    binary_result r = binary_bounds(x);
-    result.min = r.a.max < r.b.min || r.b.max < r.a.min;
-    result.max = 1;
-  }
-  void visit(const logical_and* x) override { visit_linear(x); }
-  void visit(const logical_or* x) override { visit_linear(x); }
-  void visit(const logical_not* x) override {
-    x->x.accept(this);
-    result = {simplify(x, result.max), simplify(x, result.min)};
-  }
-
-  void visit(const class select* x) override {
-    x->condition.accept(this);
-    interval_expr cb = result;
-    x->true_value.accept(this);
-    interval_expr tb = result;
-    x->false_value.accept(this);
-    interval_expr fb = result;
-
-    if (is_true(cb.min)) {
-      result = tb;
-    } else if (is_false(cb.max)) {
-      result = fb;
-    } else {
-      result = fb | tb;
-    }
-  }
-
-  void visit(const call* x) override {
-    switch (x->intrinsic) {
-    case intrinsic::abs: result = {0, x}; return;
-    default: result = {x, x}; return;
-    }
-  }
-
-  void visit(const let_stmt* x) override { std::abort(); }
-  void visit(const block* x) override { std::abort(); }
-  void visit(const loop* x) override { std::abort(); }
-  void visit(const if_then_else* x) override { std::abort(); }
-  void visit(const call_func* x) override { std::abort(); }
-  void visit(const allocate* x) override { std::abort(); }
-  void visit(const make_buffer* x) override { std::abort(); }
-  void visit(const crop_buffer* x) override { std::abort(); }
-  void visit(const crop_dim* x) override { std::abort(); }
-  void visit(const slice_buffer* x) override { std::abort(); }
-  void visit(const slice_dim* x) override { std::abort(); }
-  void visit(const truncate_rank* x) override { std::abort(); }
-  void visit(const check* x) override { std::abort(); }
-};
+template <typename T>
+interval_expr bounds_of_less(const T* x, interval_expr a, interval_expr b) {
+  // This bit of genius comes from
+  // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
+  return {simplify(x, std::move(a.max), std::move(b.min)), simplify(x, std::move(a.min), std::move(b.max))};
+}
 
 }  // namespace
 
-interval_expr bounds_of(const expr& e, const bounds_map& bounds) {
-  find_bounds fb(bounds);
-  e.accept(&fb);
-  return fb.result;
+interval_expr bounds_of(const add* x, interval_expr a, interval_expr b) {
+  return bounds_of_linear(x, std::move(a), std::move(b));
+}
+interval_expr bounds_of(const sub* x, interval_expr a, interval_expr b) {
+  return {simplify(x, std::move(a.min), std::move(b.max)), simplify(x, std::move(a.max), std::move(b.min))};
+}
+interval_expr bounds_of(const mul* x, interval_expr a, interval_expr b) {
+  // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
+  if (is_non_negative(a.min) && is_non_negative(b.min)) {
+    // Both are >= 0, neither intervals flip.
+    return {simplify(x, a.min, b.min), simplify(x, a.max, b.max)};
+  } else if (is_non_positive(a.max) && is_non_positive(b.max)) {
+    // Both are <= 0, both intervals flip.
+    return {simplify(x, a.max, b.max), simplify(x, a.min, b.min)};
+  } else if (b.is_single_point()) {
+    if (is_non_negative(b.min)) {
+      return {simplify(x, a.min, b.min), simplify(x, a.max, b.min)};
+    } else if (is_non_positive(b.min)) {
+      return {simplify(x, a.max, b.min), simplify(x, a.min, b.min)};
+    } else {
+      expr corners[] = {
+          simplify(x, a.min, b.min),
+          simplify(x, a.max, b.min),
+      };
+      return {min(corners), max(corners)};
+    }
+  } else if (a.is_single_point()) {
+    if (is_non_negative(a.min)) {
+      return {simplify(x, a.min, b.min), simplify(x, a.min, b.max)};
+    } else if (is_non_positive(a.min)) {
+      return {simplify(x, a.min, b.max), simplify(x, a.min, b.min)};
+    } else {
+      expr corners[] = {
+          simplify(x, a.min, b.min),
+          simplify(x, a.min, b.max),
+      };
+      return {min(corners), max(corners)};
+    }
+  } else {
+    // We don't know anything. The results is the union of all 4 possible intervals.
+    expr corners[] = {
+        simplify(x, a.min, b.min),
+        simplify(x, a.min, b.max),
+        simplify(x, a.max, b.min),
+        simplify(x, a.max, b.max),
+    };
+    return {min(corners), max(corners)};
+  }
+}
+interval_expr bounds_of(const div* x, interval_expr a, interval_expr b) {
+  // Because b is an integer, the bounds of a will only be shrunk
+  // (we define division by 0 to be 0). The absolute value of the
+  // bounds are maximized when b is 1 or -1.
+  if (b.is_single_point() && is_zero(b.min)) {
+    return {0, 0};
+  } else if (is_positive(b.min)) {
+    // b > 0 => the biggest result in absolute value occurs at the min of b.
+    return (a | -a) / b.min;
+  } else if (is_negative(b.max)) {
+    // b < 0 => the biggest result in absolute value occurs at the max of b.
+    return (a | -a) / b.max;
+  } else {
+    return a | -a;
+  }
+}
+interval_expr bounds_of(const mod* x, interval_expr a, interval_expr b) { return {0, max(abs(b.min), abs(b.max))}; }
+
+interval_expr bounds_of(const class min* x, interval_expr a, interval_expr b) {
+  return bounds_of_linear(x, std::move(a), std::move(b));
+}
+interval_expr bounds_of(const class max* x, interval_expr a, interval_expr b) {
+  return bounds_of_linear(x, std::move(a), std::move(b));
+}
+
+interval_expr bounds_of(const less* x, interval_expr a, interval_expr b) {
+  return bounds_of_less(x, std::move(a), std::move(b));
+}
+interval_expr bounds_of(const less_equal* x, interval_expr a, interval_expr b) {
+  return bounds_of_less(x, std::move(a), std::move(b));
+}
+interval_expr bounds_of(const equal* x, interval_expr a, interval_expr b) {
+  return {0, a.min <= b.max && b.min <= a.max};
+}
+interval_expr bounds_of(const not_equal* x, interval_expr a, interval_expr b) {
+  return {a.max < b.min || b.max < a.min, 1};
+}
+
+interval_expr bounds_of(const logical_and* x, interval_expr a, interval_expr b) {
+  return bounds_of_linear(x, std::move(a), std::move(b));
+}
+interval_expr bounds_of(const logical_or* x, interval_expr a, interval_expr b) {
+  return bounds_of_linear(x, std::move(a), std::move(b));
+}
+interval_expr bounds_of(const logical_not* x, interval_expr a) {
+  return {simplify(x, std::move(a.max)), simplify(x, std::move(a.min))};
+}
+
+interval_expr bounds_of(const class select* x, interval_expr c, interval_expr t, interval_expr f) {
+  if (is_true(c.min)) {
+    return t;
+  } else if (is_false(c.max)) {
+    return f;
+  } else {
+    return f | t;
+  }
+}
+
+interval_expr bounds_of(const call* x, std::vector<interval_expr> args) {
+  switch (x->intrinsic) {
+  case intrinsic::abs:
+    assert(args.size() == 1);
+    if (is_positive(args[0].min)) {
+      return {args[0].min, args[0].max};
+    } else {
+      expr abs_min = simplify(x, {args[0].min});
+      expr abs_max = simplify(x, {args[0].max});
+      return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
+    }
+  default: return {x, x};
+  }
+}
+
+interval_expr bounds_of(const expr& e, const bounds_map& expr_bounds) {
+  simplifier s(expr_bounds);
+  interval_expr bounds;
+  s.mutate(e, &bounds);
+  return bounds;
 }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
-
-  expr c = s.mutate(condition);
-
-  interval_expr bounds = bounds_of(c, expr_bounds);
-  if (is_true(s.mutate(bounds.min))) {
-    return true;
-  } else if (is_false(s.mutate(bounds.max))) {
-    return false;
-  } else {
-    return {};
-  }
+  return s.attempt_to_prove(condition);
 }
 
-bool prove_true(const expr& condition, const bounds_map& bounds) {
-  std::optional<bool> r = attempt_to_prove(condition, bounds);
-  return r && *r;
+bool prove_true(const expr& condition, const bounds_map& expr_bounds) {
+  simplifier s(expr_bounds);
+  return s.prove_true(condition);
 }
 
-bool prove_false(const expr& condition, const bounds_map& bounds) {
-  std::optional<bool> r = attempt_to_prove(condition, bounds);
-  return r && !*r;
+bool prove_false(const expr& condition, const bounds_map& expr_bounds) {
+  simplifier s(expr_bounds);
+  return s.prove_false(condition);
 }
 
 interval_expr where_true(const expr& condition, symbol_id var) {
