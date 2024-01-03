@@ -190,6 +190,11 @@ public:
     node_mutator::visit(c);
   }
 
+  // TODO: Need to handle this?
+  void visit(const slice_buffer*) override { std::abort(); }
+  void visit(const slice_dim*) override { std::abort(); }
+  void visit(const truncate_rank*) override { std::abort(); }
+
   void visit(const loop* l) override {
     stmt body = mutate(l->body);
 
@@ -398,6 +403,11 @@ public:
       set_result(crop_dim::make(c->sym, c->dim, std::move(new_bounds), std::move(body)));
     }
   }
+
+  // TODO: Need to handle this?
+  void visit(const slice_buffer*) override { std::abort(); }
+  void visit(const slice_dim*) override { std::abort(); }
+  void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* l) override {
     loop_bounds.emplace_back(l->sym, l->bounds);
