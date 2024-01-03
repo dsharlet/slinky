@@ -41,11 +41,8 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
 
 class bounds_inferrer : public node_mutator {
 public:
-  node_context& ctx;
   symbol_map<box_expr> infer;
   symbol_map<box_expr> crops;
-
-  bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* alloc) override {
     {
@@ -437,14 +434,14 @@ public:
 }  // namespace
 
 stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
-  bounds_inferrer infer(ctx);
+  bounds_inferrer infer;
 
-  // Tell the bounds inferrer that we are buffers the bounds of the inputs too.
+  // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
   for (symbol_id i : inputs) {
     infer.infer[i] = box_expr();
   }
 
-  // Run it.
+  // Infer the bounds.
   stmt result = infer.mutate(s);
 
   // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
@@ -461,11 +458,10 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
 
   result = simplify(result);
 
-  slider slide(ctx);
-  for (symbol_id i : inputs) {
-    slide.buffer_bounds[i] = box_expr();
-  }
-  result = slide.mutate(result);
+  // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
+  // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
+  // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
+  result = slider(ctx).mutate(result);
 
   return result;
 }
