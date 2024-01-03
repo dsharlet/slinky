@@ -337,8 +337,6 @@ TEST(simplify_fuzz) {
 
     // Also test bounds_of.
     interval_expr bounds = bounds_of(test, var_bounds);
-    bounds.min = simplify(bounds.min);
-    bounds.max = simplify(bounds.max);
 
     for (int j = 0; j < checks; ++j) {
       for (const var& v : vars) {
