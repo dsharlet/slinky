@@ -69,9 +69,6 @@ public:
     for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
       interval_expr& i = bounds[d];
 
-      i.min = simplify(i.min);
-      i.max = simplify(i.max);
-
       expr alloc_var = variable::make(alloc->sym);
       replacements.emplace_back(buffer_min(alloc_var, d), i.min);
       replacements.emplace_back(buffer_max(alloc_var, d), i.max);
