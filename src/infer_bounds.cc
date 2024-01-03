@@ -26,23 +26,28 @@ T& vector_at(std::optional<std::vector<T>>& v, std::size_t n) {
 
 class bounds_inferrer : public node_mutator {
 public:
+  struct buffer_info {
+    box_expr bounds;
+    int fold_dim = -1;
+    expr fold_factor;
+    std::size_t loops_since = 0;
+  };
+
   node_context& ctx;
-  symbol_map<box_expr> inferring;
-  symbol_map<std::pair<int, expr>> fold_factors;
+  symbol_map<buffer_info> buffers;
   symbol_map<box_expr> crops;
   std::vector<std::pair<symbol_id, interval_expr>> loop_bounds;
-  symbol_map<std::size_t> loops_since_allocate;
 
   bounds_inferrer(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* alloc) override {
     {
-      std::optional<box_expr>& bounds = inferring[alloc->sym];
-      assert(!bounds);
-      bounds = box_expr();
+      std::optional<buffer_info>& info = buffers[alloc->sym];
+      assert(!info);
+      info = buffer_info();
     }
 
-    auto set_loops = set_value_in_scope(loops_since_allocate, alloc->sym, loop_bounds.size());
+    auto set_loops = set_value_in_scope(buffers, alloc->sym, buffer_info{.loops_since = loop_bounds.size()});
     stmt body = mutate(alloc->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -53,12 +58,11 @@ public:
     // TODO: Is this actually a good design...?
     std::vector<std::pair<expr, expr>> replacements;
 
-    box_expr& inferred = *inferring[alloc->sym];
+    buffer_info& info = *buffers[alloc->sym];
     expr stride = static_cast<index_t>(alloc->elem_size);
     std::vector<std::pair<symbol_id, expr>> lets;
-    auto& fold_factor = fold_factors[alloc->sym];
-    for (index_t d = 0; d < static_cast<index_t>(inferred.size()); ++d) {
-      interval_expr& i = inferred[d];
+    for (index_t d = 0; d < static_cast<index_t>(info.bounds.size()); ++d) {
+      interval_expr& i = info.bounds[d];
 
       i.min = simplify(i.min);
       i.max = simplify(i.max);
@@ -67,8 +71,8 @@ public:
       replacements.emplace_back(buffer_min(alloc_var, d), i.min);
       replacements.emplace_back(buffer_max(alloc_var, d), i.max);
       replacements.emplace_back(buffer_stride(alloc_var, d), stride);
-      if (fold_factor && fold_factor->first == d) {
-        replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_factor->second);
+      if (info.fold_dim == d) {
+        replacements.emplace_back(buffer_fold_factor(alloc_var, d), info.fold_factor);
       } else {
         replacements.emplace_back(buffer_fold_factor(alloc_var, d), -1);
       }
@@ -99,11 +103,12 @@ public:
       if (!changed) break;
     }
 
-    // Check that the actual bounds we generated are bigger than the inferred bounds.
+    // Check that the actual bounds we generated are bigger than the inferred bounds (in case the
+    // user set the bounds to something too small).
     std::vector<stmt> checks;
     for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-      checks.push_back(check::make(dims[d].min() <= inferred[d].min));
-      checks.push_back(check::make(dims[d].max() >= inferred[d].max));
+      checks.push_back(check::make(dims[d].min() <= info.bounds[d].min));
+      checks.push_back(check::make(dims[d].max() >= info.bounds[d].max));
     }
 
     stmt s = allocate::make(alloc->storage, alloc->sym, alloc->elem_size, std::move(dims), body);
@@ -115,12 +120,12 @@ public:
   }
 
   expr buffer_intrinsic(symbol_id buffer, intrinsic fn, index_t d) {
-    std::optional<box_expr>& bounds = inferring[buffer];
-    if (bounds && d < static_cast<index_t>(bounds->size())) {
+    std::optional<buffer_info>& info = buffers[buffer];
+    if (info && d < static_cast<index_t>(info->bounds.size())) {
       switch (fn) {
-      case intrinsic::buffer_min: return (*bounds)[d].min;
-      case intrinsic::buffer_max: return (*bounds)[d].max;
-      case intrinsic::buffer_extent: return (*bounds)[d].extent();
+      case intrinsic::buffer_min: return info->bounds[d].min;
+      case intrinsic::buffer_max: return info->bounds[d].max;
+      case intrinsic::buffer_extent: return info->bounds[d].extent();
       default: break;
       }
     }
@@ -148,11 +153,11 @@ public:
         }
       }
 
-      std::optional<box_expr>& bounds = inferring[input.buffer->sym()];
-      assert(bounds);
-      bounds->reserve(input.bounds.size());
-      while (bounds->size() < input.bounds.size()) {
-        bounds->push_back(interval_expr::union_identity());
+      std::optional<buffer_info>& info = buffers[input.buffer->sym()];
+      assert(info);
+      info->bounds.reserve(input.bounds.size());
+      while (info->bounds.size() < input.bounds.size()) {
+        info->bounds.push_back(interval_expr::union_identity());
       }
       for (std::size_t d = 0; d < input.bounds.size(); ++d) {
         expr min = substitute(input.bounds[d].min, mins);
@@ -160,23 +165,21 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        (*bounds)[d] |= slinky::bounds(min, max) | slinky::bounds(max, min);
+        info->bounds[d] |= slinky::bounds(min, max) | slinky::bounds(max, min);
       }
     }
 
     // Add any crops necessary.
     stmt result = c;
     for (const func::output& output : c->fn->outputs()) {
-      std::optional<box_expr>& bounds = inferring[output.buffer->sym()];
-      if (!bounds) continue;
+      std::optional<buffer_info>& info = buffers[output.buffer->sym()];
+      if (!info) continue;
 
       // Maybe a hack? Keep the original bounds for inference purposes, but compute new bounds
       // (sliding window) for the crop.
-      box_expr crop_bounds = *bounds;
+      box_expr crop_bounds = info->bounds;
 
-      std::optional<std::size_t> first_loop = loops_since_allocate.lookup(output.buffer->sym());
-
-      for (std::size_t l = first_loop ? *first_loop : 0; l < loop_bounds.size(); ++l) {
+      for (size_t l = info->loops_since; l < loop_bounds.size(); ++l) {
         symbol_id loop_sym = loop_bounds[l].first;
         expr loop_var = variable::make(loop_sym);
         expr loop_min = loop_bounds[l].second.min;
@@ -193,8 +196,9 @@ public:
             expr& old_min = crop_bounds[d].min;
             expr new_min = prev_bounds[d].max + 1;
 
-            expr fold_factor = simplify(bounds_of(crop_bounds[d].extent()).max);
-            fold_factors[output.buffer->sym()] = {d, fold_factor};
+            info->fold_dim = d;
+            info->fold_factor = simplify(bounds_of(crop_bounds[d].extent()).max);
+            assert(!depends_on(info->fold_factor, loop_sym));
 
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region. We'll insert
@@ -289,15 +293,19 @@ public:
     // Use the original loop min. Hack?
     loop_min = l->bounds.min;
     expr loop_max = l->bounds.max;
-    for (std::optional<box_expr>& i : inferring) {
+    for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
 
-      for (interval_expr& j : *i) {
+      for (interval_expr& j : i->bounds) {
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        j.min = min(substitute(j.min, l->sym, loop_min), substitute(j.min, l->sym, loop_max));
-        j.max = max(substitute(j.max, l->sym, loop_min), substitute(j.max, l->sym, loop_max));
+        if (depends_on(j.min, l->sym)) {
+          j.min = min(substitute(j.min, l->sym, loop_min), substitute(j.min, l->sym, loop_max));
+        }
+        if (depends_on(j.max, l->sym)) {
+          j.max = max(substitute(j.max, l->sym, loop_min), substitute(j.max, l->sym, loop_max));
+        }
       }
     }
     set_result(result);
@@ -320,9 +328,9 @@ public:
 stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
   bounds_inferrer b(ctx);
 
-  // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
+  // Tell the bounds inferrer that we are buffers the bounds of the inputs too.
   for (symbol_id i : inputs) {
-    b.inferring[i] = box_expr();
+    b.buffers[i] = bounds_inferrer::buffer_info();
   }
 
   // Run it.
@@ -332,7 +340,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   std::vector<stmt> checks;
   for (symbol_id i : inputs) {
     expr buf_var = variable::make(i);
-    const box_expr& bounds = *b.inferring[i];
+    const box_expr& bounds = b.buffers[i]->bounds;
     for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
       checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
       checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));
