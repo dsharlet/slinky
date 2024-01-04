@@ -177,7 +177,33 @@ public:
     return result;
   }
 
-  stmt make_loop(stmt body, const func* f, const var& loop, const expr& step) {
+  // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
+  stmt add_input_crops(stmt result, const func* f) {
+    symbol_map<expr> output_mins, output_maxs;
+    for (const func::output& o : f->outputs()) {
+      for (std::size_t d = 0; d < o.dims.size(); ++d) {
+        expr dim_min = o.buffer->dim(d).min();
+        expr dim_max = o.buffer->dim(d).max();
+        std::optional<expr>& min = output_mins[o.dims[d]];
+        std::optional<expr>& max = output_maxs[o.dims[d]];
+        min = min ? slinky::min(*min, dim_min) : dim_min;
+        max = max ? slinky::max(*max, dim_max) : dim_max;
+      }
+    }
+    for (const func::input& i : f->inputs()) {
+      if (produced.count(i.buffer)) continue;
+      box_expr crop(i.buffer->rank());
+      for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
+        expr min = simplify(substitute(i.bounds[d].min, output_mins));
+        expr max = simplify(substitute(i.bounds[d].max, output_maxs));
+        crop[d] = {min, max};
+      }
+      result = crop_buffer::make(i.sym(), crop, result);
+    }
+    return result;
+  }
+
+  stmt make_loop(stmt body, const func* f, const func::loop_info& loop) {
     // Find the bounds of this loop.
     interval_expr bounds = interval_expr::union_identity();
     // Crop all the outputs of this buffer for this loop.
@@ -187,7 +213,7 @@ public:
         if (o.dims[d].sym() == loop.sym()) {
           // TODO: Clamp at buffer max here to handle loop extents not a multiple of the step.
           //expr loop_max = buffer_max(var(o.sym()), d);
-          to_crop[o.buffer->sym()] = {d, slinky::bounds(loop, loop + step - 1)};
+          to_crop[o.buffer->sym()] = {d, slinky::bounds(loop.var, loop.var + loop.step - 1)};
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
@@ -197,7 +223,7 @@ public:
     body = add_crops(body, f, to_crop);
 
     // Before making this loop, see if there are any producers we need to insert here.
-    while (const func* next = find_next_producer(f, loop)) {
+    while (const func* next = find_next_producer(f, loop.var)) {
       produce(body, next);
     }
 
@@ -215,7 +241,7 @@ public:
     bounds.min = simplify(bounds.min);
     bounds.max = simplify(bounds.max);
 
-    stmt result = loop::make(loop.sym(), bounds, step, body);
+    stmt result = loop::make(loop.sym(), bounds, loop.step, body);
     return result;
   }
 
@@ -233,7 +259,7 @@ public:
 
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
-      call_f = make_loop(call_f, f, loop.sym, loop.step);
+      call_f = make_loop(call_f, f, loop);
     }
     result = block::make({call_f, result});
     if (root) {

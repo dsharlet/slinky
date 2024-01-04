@@ -926,6 +926,8 @@ public:
   var(symbol_id sym);
   var(node_context& ctx, const std::string& sym);
 
+  bool defined() const { return e_.defined(); }
+
   symbol_id sym() const {
     assert(e_.defined());
     return *as_variable(e_);

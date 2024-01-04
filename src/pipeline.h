@@ -15,6 +15,9 @@ using buffer_expr_ptr = ref_count<buffer_expr>;
 struct loop_id {
   const func* f = nullptr;
   var loop;
+
+  bool root() const { return !f; }
+  symbol_id sym() const { return loop.sym(); }
 };
 
 // Represents a symbolic buffer in a pipeline.
@@ -97,10 +100,15 @@ public:
   };
 
   struct loop_info {
-    var sym;
+    slinky::var var;
     expr step;
 
-    loop_info(var sym, expr step = 1) : sym(sym), step(step) {}
+    loop_info() {}
+    loop_info(slinky::var var, expr step = 1) : var(var), step(step) {}
+
+    symbol_id sym() const { return var.sym(); }
+
+    bool defined() const { return var.defined() && step.defined(); }
   };
 
 private:
