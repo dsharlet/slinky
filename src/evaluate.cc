@@ -67,6 +67,16 @@ public:
     }
   }
 
+  void visit(const stmt& x) {
+    switch (x.type()) {
+    //case node_type::call_func: visit(reinterpret_cast<const call_func*>(x.get())); return;
+    //case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(x.get())); return;
+    //case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(x.get())); return;
+    //case node_type::block: visit(reinterpret_cast<const block*>(x.get())); return;
+    default: x.accept(this);
+    }
+  }
+
   // Assume `e` is defined, evaluate it and return the result.
   index_t eval_expr(const expr& e) {
     visit(e);
@@ -102,7 +112,7 @@ public:
   template <typename T>
   void visit_let(const T* l) {
     auto set_value = set_value_in_scope(context, l->sym, eval_expr(l->value));
-    l->body.accept(this);
+    visit(l->body);
   }
 
   void visit(const let* l) override { visit_let(l); }
@@ -210,8 +220,8 @@ public:
   }
 
   void visit(const block* b) override {
-    if (result == 0) b->a.accept(this);
-    if (result == 0) b->b.accept(this);
+    if (result == 0) visit(b->a);
+    if (result == 0) visit(b->b);
   }
 
   void visit(const loop* l) override {
@@ -225,16 +235,20 @@ public:
     std::optional<index_t> old_value = context[l->sym];
     for (index_t i = min; result == 0 && min <= i && i <= max; i += step) {
       context[l->sym] = i;
-      l->body.accept(this);
+      visit(l->body);
     }
     context[l->sym] = old_value;
   }
 
   void visit(const if_then_else* n) override {
     if (eval_expr(n->condition)) {
-      n->true_body.accept(this);
-    } else if (n->false_body.defined()) {
-      n->false_body.accept(this);
+      if (n->true_body.defined()) {
+        visit(n->true_body);
+      }
+    } else {
+      if (n->false_body.defined()) {
+        visit(n->false_body);
+      }
     }
   }
 
@@ -280,7 +294,7 @@ public:
     }
 
     auto set_buffer = set_value_in_scope(context, n->sym, reinterpret_cast<index_t>(buffer));
-    n->body.accept(this);
+    visit(n->body);
 
     if (n->storage == memory_type::heap) {
       if (context.free) {
@@ -310,7 +324,7 @@ public:
     }
 
     auto set_buffer = set_value_in_scope(context, n->sym, reinterpret_cast<index_t>(buffer));
-    n->body.accept(this);
+    visit(n->body);
   }
 
   void visit(const crop_buffer* n) override {
@@ -341,7 +355,7 @@ public:
     void* old_base = buffer->base;
     buffer->base = offset_bytes(buffer->base, offset);
 
-    n->body.accept(this);
+    visit(n->body);
 
     buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
@@ -367,7 +381,7 @@ public:
       dim.set_bounds(min, eval_expr(n->bounds.max));
     }
 
-    n->body.accept(this);
+    visit(n->body);
 
     buffer->base = old_base;
     dim.set_min_extent(old_min, old_extent);
@@ -396,7 +410,7 @@ public:
     void* old_base = buffer->base;
     buffer->base = offset_bytes(buffer->base, offset);
 
-    n->body.accept(this);
+    visit(n->body);
 
     buffer->base = old_base;
     buffer->rank = old_rank;
@@ -424,7 +438,7 @@ public:
     }
     buffer->rank -= 1;
 
-    n->body.accept(this);
+    visit(n->body);
 
     buffer->base = old_base;
     buffer->rank += 1;
@@ -437,7 +451,7 @@ public:
     std::size_t old_rank = buffer->rank;
     buffer->rank = n->rank;
 
-    n->body.accept(this);
+    visit(n->body);
 
     buffer->rank = old_rank;
   }
