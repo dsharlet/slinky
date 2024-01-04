@@ -365,19 +365,7 @@ public:
     stmt body = mutate(c->body);
     box_expr new_bounds = *buffer_bounds[c->sym];
 
-    if (const if_then_else* body_if = body.as<if_then_else>()) {
-      // TODO: HORRIBLE HACK: crop_dim modifies the buffer meta, which this if we inserted
-      // above assumes didn't happen. The if should be outside the crop anyways, it's just
-      // not clear how to do that yet.
-      // One fix for the issue mentioned below regarding ignoring ifs in loop bodies would
-      // be to substitute a clamp on the loop variable for when the if is true. It should
-      // simplify away later anyways, and make it easier to track bounds. This isn't easily
-      // doable due to this hack.
-      set_result(if_then_else::make(
-          body_if->condition, crop_buffer::make(c->sym, std::move(new_bounds), body_if->true_body), stmt()));
-    } else {
-      set_result(crop_buffer::make(c->sym, std::move(new_bounds), std::move(body)));
-    }
+    set_result(crop_buffer::make(c->sym, std::move(new_bounds), std::move(body)));
   }
 
   void visit(const crop_dim* c) override {
@@ -387,17 +375,7 @@ public:
     stmt body = mutate(c->body);
     interval_expr new_bounds = (*buffer_bounds[c->sym])[c->dim];
 
-    if (const if_then_else* body_if = body.as<if_then_else>()) {
-      // TODO: HORRIBLE HACK: crop_dim modifies the buffer meta, which this if we inserted
-      // above assumes didn't happen. The if should be outside the crop anyways, it's just
-      // not clear how to do that yet.
-      // One fix for the issue mentioned below regarding ignoring ifs in loop bodies would
-      // be to substitute a clamp on the loop variable for when the if is true. It should
-      // simplify away later anyways, and make it easier to track bounds. This isn't easily
-      // doable due to this hack.
-      set_result(if_then_else::make(
-          body_if->condition, crop_dim::make(c->sym, c->dim, std::move(new_bounds), body_if->true_body), stmt()));
-    } else if (body.same_as(c->body) && new_bounds.same_as(c->bounds)) {
+    if (body.same_as(c->body) && new_bounds.same_as(c->bounds)) {
       set_result(c);
     } else {
       set_result(crop_dim::make(c->sym, c->dim, std::move(new_bounds), std::move(body)));
