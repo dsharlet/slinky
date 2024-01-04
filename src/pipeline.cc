@@ -75,10 +75,6 @@ class pipeline_builder {
     interval_expr bounds;
   };
 
-  using scope_crops = std::map<symbol_id, std::vector<crop_info>>;
-
-  std::vector<scope_crops> crops;
-
   stmt result;
 
 public:
@@ -170,18 +166,13 @@ public:
 
   bool complete() const { return produced.size() == to_produce.size(); }
 
-  stmt add_crops(stmt result, const func* f) {
-    for (const auto& s : crops) {
-      for (const func::output& o : f->outputs()) {
-        // Find the crops for this buffer in this scope level s.
-        auto b = s.find(o.buffer->sym());
-        if (b == s.end()) continue;
+  stmt add_crops(stmt result, const func* f, const symbol_map<std::pair<int, interval_expr>>& crops) {
+    for (const func::output& o : f->outputs()) {
+      // Find the crops for this buffer in this scope level s.
+      const auto& b = crops[o.sym()];
+      if (!b) continue;
 
-        // Add all the crops for this buffer.
-        for (const crop_info& c : b->second) {
-          result = crop_dim::make(b->first, c.dim, c.bounds, result);
-        }
-      }
+      result = crop_dim::make(o.sym(), b->first, b->second, result);
     }
     return result;
   }
@@ -190,21 +181,20 @@ public:
     // Find the bounds of this loop.
     interval_expr bounds = interval_expr::union_identity();
     // Crop all the outputs of this buffer for this loop.
-    crops.emplace_back();
-    scope_crops& to_crop = crops.back();
+    symbol_map<std::pair<int, interval_expr>> to_crop;
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d].sym() == loop.sym()) {
           // TODO: Clamp at buffer max here to handle loop extents not a multiple of the step.
           //expr loop_max = buffer_max(var(o.sym()), d);
-          to_crop[o.buffer->sym()].emplace_back(d, slinky::bounds(loop, loop + step - 1));
+          to_crop[o.buffer->sym()] = {d, slinky::bounds(loop, loop + step - 1)};
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
       }
     }
 
-    body = add_crops(body, f);
+    body = add_crops(body, f, to_crop);
 
     // Before making this loop, see if there are any producers we need to insert here.
     while (const func* next = find_next_producer(f, loop)) {
@@ -226,7 +216,6 @@ public:
     bounds.max = simplify(bounds.max);
 
     stmt result = loop::make(loop.sym(), bounds, step, body);
-    crops.pop_back();
     return result;
   }
 
