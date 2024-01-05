@@ -192,6 +192,7 @@ public:
       }
     }
     for (const func::input& i : f->inputs()) {
+      if (!i.buffer->producer()) continue;
       box_expr crop(i.buffer->rank());
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
         expr min = simplify(substitute(i.bounds[d].min, output_mins));
@@ -244,12 +245,19 @@ public:
     return body;
   }
 
+  stmt make_producers(const loop_id& at) {
+    stmt result;
+    while (const func* next = find_next_producer(at)) {
+      result = block::make({produce(next, at), result});
+    }
+    return result;
+  }
+
   stmt make_loop(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
     loop_id here = {f, loop.var};
     // Before making the loop, we need to produce any funcs that should be produced here.
-    while (const func* next = find_next_producer(here)) {
-      body = block::make(produce(next, here), body);
-    }
+    body = block::make({make_producers(here), body});
+    body = add_input_crops(body, f);
 
     // Make any allocations that should be here. 
     body = make_allocations(body, here);
@@ -282,10 +290,7 @@ public:
     }
 
     // Try to make any other producers needed here.
-    while (const func* next = find_next_producer(current_at)) {
-      result = block::make(produce(next, current_at), result);
-    }
-    return result;
+    return block::make({make_producers(current_at), result});
   }
 };
 
