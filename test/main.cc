@@ -17,7 +17,9 @@ bool wildcard_match(const char* p, const char* str) {
   } else if (*p == '*') {
     p++;
     do {
-      if (wildcard_match(p, str)) { return true; }
+      if (wildcard_match(p, str)) {
+        return true;
+      }
     } while (*str++);
   }
   return !*p;
@@ -50,6 +52,7 @@ int main(int argc, const char** argv) {
 
   size_t passed = 0;
   size_t total = 0;
+  std::vector<std::string> failed;
   for (auto& i : tests()) {
     if (!wildcard_match(filter, i.first.c_str())) continue;
 
@@ -59,9 +62,15 @@ int main(int argc, const char** argv) {
       i.second();
       std::cout << "passed" << std::endl;
       passed++;
-    } catch (const std::exception& e) { std::cout << "failed: " << e.what() << std::endl; }
+    } catch (const std::exception& e) {
+      std::cout << "failed: " << e.what() << std::endl;
+      failed.push_back(i.first);
+    }
     total++;
   }
   std::cout << passed << " of " << total << " tests passed, " << tests().size() - total << " skipped" << std::endl;
+  for (const std::string& i : failed) {
+    std::cout << i << " failed" << std::endl;
+  }
   return passed < total ? -1 : 0;
 }
