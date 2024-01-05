@@ -62,6 +62,18 @@ func::func(std::vector<input> inputs, output out, std::vector<char> padding)
 
 namespace {
 
+bool operator==(const loop_id& a, const loop_id& b) {
+  if (!a.func) {
+    return !b.func;
+  } else if (a.func == b.func) {
+    assert(a.var.defined());
+    assert(b.var.defined());
+    return a.var.sym() == b.var.sym();
+  } else {
+    return false;
+  }
+}
+
 class pipeline_builder {
   // We're going to incrementally build the body, starting at the end of the pipeline and adding
   // producers as necessary.
@@ -139,7 +151,7 @@ public:
 
   // Find the func f to run next. This is the func that produces a buffer we need that we have not
   // yet produced, and all the buffers produced by f are ready to be consumed.
-  const func* find_next_producer(const func* in = nullptr, const var& loop = var()) const {
+  const func* find_next_producer(const loop_id& at = loop_id()) const {
     for (const buffer_expr_ptr& i : to_produce) {
       if (produced.count(i)) continue;
 
@@ -153,29 +165,18 @@ public:
         continue;
       }
 
-      if (!in) {
-        assert(i->producer()->compute_at().f == nullptr);
-        return i->producer();
+      if (!(i->producer()->compute_at() == at)) {
+        // This shouldn't be computed here.
+        continue;
       }
 
-      const loop_id& at = i->producer()->compute_at();
-      if (at.f == in && at.loop.sym() == loop.sym()) return i->producer();
+      // We're in the right place, and the func is ready to be computed!
+      return i->producer();
     }
     return nullptr;
   }
 
   bool complete() const { return produced.size() == to_produce.size(); }
-
-  stmt add_crops(stmt result, const func* f, const symbol_map<std::pair<int, interval_expr>>& crops) {
-    for (const func::output& o : f->outputs()) {
-      // Find the crops for this buffer in this scope level s.
-      const auto& b = crops[o.sym()];
-      if (!b) continue;
-
-      result = crop_dim::make(o.sym(), b->first, b->second, result);
-    }
-    return result;
-  }
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
@@ -191,7 +192,6 @@ public:
       }
     }
     for (const func::input& i : f->inputs()) {
-      if (produced.count(i.buffer)) continue;
       box_expr crop(i.buffer->rank());
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
         expr min = simplify(substitute(i.bounds[d].min, output_mins));
@@ -203,33 +203,37 @@ public:
     return result;
   }
 
-  stmt make_loop(stmt body, const func* f, const func::loop_info& loop) {
-    // Find the bounds of this loop.
-    interval_expr bounds = interval_expr::union_identity();
+  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
     // Crop all the outputs of this buffer for this loop.
-    symbol_map<std::pair<int, interval_expr>> to_crop;
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d].sym() == loop.sym()) {
           // TODO: Clamp at buffer max here to handle loop extents not a multiple of the step.
-          //expr loop_max = buffer_max(var(o.sym()), d);
-          to_crop[o.buffer->sym()] = {d, slinky::bounds(loop.var, loop.var + loop.step - 1)};
+          // expr loop_max = buffer_max(var(o.sym()), d);
+          interval_expr bounds = slinky::bounds(loop.var, loop.var + loop.step - 1);
+          body = crop_dim::make(o.sym(), d, bounds, body);
+        }
+      }
+    }
+    return body;
+  }
+
+  interval_expr get_loop_bounds(const func* f, const func::loop_info& loop) {
+    interval_expr bounds = interval_expr::union_identity();
+    for (const func::output& o : f->outputs()) {
+      for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
+        if (o.dims[d].sym() == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
       }
     }
+    return bounds;
+  }
 
-    body = add_crops(body, f, to_crop);
-
-    // Before making this loop, see if there are any producers we need to insert here.
-    while (const func* next = find_next_producer(f, loop.var)) {
-      produce(body, next);
-    }
-
+  stmt make_allocations(stmt body, const loop_id& at = loop_id()) {
     for (const buffer_expr_ptr& i : to_allocate) {
-      const loop_id& at = i->store_at();
-      if (at.f == f && at.loop.sym() == loop.sym()) {
+      if (i->store_at() == at) {
         body = allocate::make(i->storage(), i->sym(), i->elem_size(), i->dims(), body);
         allocated.insert(i);
       }
@@ -237,38 +241,51 @@ public:
     for (const buffer_expr_ptr& i : allocated) {
       to_allocate.erase(i);
     }
-
-    bounds.min = simplify(bounds.min);
-    bounds.max = simplify(bounds.max);
-
-    stmt result = loop::make(loop.sym(), bounds, loop.step, body);
-    return result;
+    return body;
   }
 
-  void produce(stmt& result, const func* f, bool root = false) {
+  stmt make_loop(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
+    loop_id here = {f, loop.var};
+    // Before making the loop, we need to produce any funcs that should be produced here.
+    while (const func* next = find_next_producer(here)) {
+      body = block::make(produce(next, here), body);
+    }
+
+    // Make any allocations that should be here. 
+    body = make_allocations(body, here);
+
+    if (loop.defined()) {
+      // The loop body is done, and we have an actual loop to make here. Crop the body.
+      body = crop_for_loop(body, f, loop);
+      // And make the actual loop.
+      body = loop::make(loop.sym(), get_loop_bounds(f, loop), loop.step, body);
+    }
+    return body;
+  }
+
+  // Producing a func means:
+  // - Generating a call to the function f
+  // - Wrapping f with the loops it wanted to be explicit
+  // - Producing all the buffers that f consumes (recursively).
+  stmt produce(const func* f, const loop_id& current_at = loop_id()) {
+    stmt result = call_func::make(f->impl(), f);
     for (const func::output& i : f->outputs()) {
+      produced.insert(i.buffer);
       if (!allocated.count(i.buffer)) {
         to_allocate.insert(i.buffer);
       }
     }
-    stmt call_f = call_func::make(f->impl(), f);
-
-    for (const func::output& i : f->outputs()) {
-      produced.insert(i.buffer);
-    }
 
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
-      call_f = make_loop(call_f, f, loop);
+      result = make_loop(result, f, loop);
     }
-    result = block::make({call_f, result});
-    if (root) {
-      for (const auto& i : to_allocate) {
-        result = allocate::make(i->storage(), i->sym(), i->elem_size(), i->dims(), result);
-        allocated.insert(i);
-      }
-      to_allocate.clear();
+
+    // Try to make any other producers needed here.
+    while (const func* next = find_next_producer(current_at)) {
+      result = block::make(produce(next, current_at), result);
     }
+    return result;
   }
 };
 
@@ -304,7 +321,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       std::abort();
     }
 
-    builder.produce(result, f, /*root=*/true);
+    result = builder.produce(f);
+    result = builder.make_allocations(result);
   }
 
   std::vector<symbol_id> input_syms;

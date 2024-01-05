@@ -13,11 +13,11 @@ class buffer_expr;
 using buffer_expr_ptr = ref_count<buffer_expr>;
 
 struct loop_id {
-  const func* f = nullptr;
-  var loop;
+  const slinky::func* func = nullptr;
+  slinky::var var;
 
-  bool root() const { return !f; }
-  symbol_id sym() const { return loop.sym(); }
+  bool root() const { return !func; }
+  symbol_id sym() const { return var.sym(); }
 };
 
 // Represents a symbolic buffer in a pipeline.
