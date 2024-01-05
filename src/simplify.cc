@@ -22,6 +22,8 @@ expr c0 = wildcard::make(10, as_constant);
 expr c1 = wildcard::make(11, as_constant);
 expr c2 = wildcard::make(12, as_constant);
 
+expr finite_x = wildcard::make(20, is_finite);
+
 // Check if a and b are out of (canonical) order.
 bool should_commute(const expr& a, const expr& b) {
   auto order = [](node_type t) {
@@ -361,8 +363,8 @@ expr simplify(const add* op, expr a, expr b) {
       {x + indeterminate(), indeterminate()},
       {positive_infinity() + indeterminate(), indeterminate()},
       {negative_infinity() + positive_infinity(), indeterminate()},
-      {c0 + positive_infinity(), positive_infinity()},
-      {c0 + negative_infinity(), negative_infinity()},
+      {finite_x + positive_infinity(), positive_infinity()},
+      {finite_x + negative_infinity(), negative_infinity()},
       {x + 0, x},
       {x + x, x * 2},
       {x + (x + y), y + x * 2},
@@ -428,8 +430,8 @@ expr simplify(const sub* op, expr a, expr b) {
       {positive_infinity() - negative_infinity(), positive_infinity()},
       {negative_infinity() - negative_infinity(), indeterminate()},
       {negative_infinity() - positive_infinity(), negative_infinity()},
-      {c0 - positive_infinity(), negative_infinity()},
-      {c0 - negative_infinity(), positive_infinity()},
+      {finite_x - positive_infinity(), negative_infinity()},
+      {finite_x - negative_infinity(), positive_infinity()},
       {x - x, 0},
       {x - 0, x},
       {x - (c0 - y), (x + y) - c0},
@@ -514,8 +516,8 @@ expr simplify(const div* op, expr a, expr b) {
       {positive_infinity() / negative_infinity(), indeterminate()},
       {negative_infinity() / positive_infinity(), indeterminate()},
       {negative_infinity() / negative_infinity(), indeterminate()},
-      {c0 / positive_infinity(), 0},
-      {c0 / negative_infinity(), 0},
+      {finite_x / positive_infinity(), 0},
+      {finite_x / negative_infinity(), 0},
       {positive_infinity() / c0, positive_infinity(), c0 > 0},
       {negative_infinity() / c0, negative_infinity(), c0 > 0},
       {positive_infinity() / c0, negative_infinity(), c0 < 0},
@@ -564,8 +566,10 @@ expr simplify(const less* op, expr a, expr b) {
   }
 
   static rule_set rules = {
-      {positive_infinity() < c0, false},
-      {negative_infinity() < c0, true},
+      {positive_infinity() < finite_x, false},
+      {negative_infinity() < finite_x, true},
+      {finite_x < positive_infinity(), true},
+      {finite_x < negative_infinity(), false},
       {x < x, false},
       {x + c0 < c1, x < c1 - c0},
       {x < x + y, 0 < y},
@@ -612,10 +616,10 @@ expr simplify(const less_equal* op, expr a, expr b) {
   }
 
   static rule_set rules = {
-      {positive_infinity() <= c0, false},
-      {negative_infinity() <= c0, true},
-      {c0 <= positive_infinity(), true},
-      {c0 <= negative_infinity(), false},
+      {positive_infinity() <= finite_x, false},
+      {negative_infinity() <= finite_x, true},
+      {finite_x <= positive_infinity(), true},
+      {finite_x <= negative_infinity(), false},
       {x <= x, true},
       {x <= x + y, 0 <= y},
       {x + y <= x, y <= 0},
@@ -1681,6 +1685,7 @@ interval_expr where_true(const expr& condition, symbol_id var) {
 
     void visit(const variable* x) { leaves.push_back(x); }
     void visit(const constant* x) { leaves.push_back(x); }
+    void visit(const call* x) { if (is_buffer_intrinsic(x->intrinsic)) leaves.push_back(x); }
   };
 
   initial_guesses v;

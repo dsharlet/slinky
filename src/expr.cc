@@ -446,6 +446,14 @@ bool is_buffer_intrinsic(intrinsic i) {
   }
 }
 
+bool is_finite(const expr& x) {
+  if (x.as<constant>()) return true;
+  if (const call* c = x.as<call>()) {
+    return is_buffer_intrinsic(c->intrinsic);
+  }
+  return false;
+}
+
 var::var() {}
 var::var(symbol_id sym) : e_(variable::make(sym)) {}
 var::var(node_context& ctx, const std::string& sym) : e_(variable::make(ctx.insert(sym))) {}

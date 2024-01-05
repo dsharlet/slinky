@@ -243,7 +243,12 @@ public:
   node_context& ctx;
   symbol_map<box_expr> buffer_bounds;
   symbol_map<std::pair<int, expr>> fold_factors;
-  std::vector<std::pair<symbol_id, interval_expr>> loop_bounds;
+  struct loop_info {
+    symbol_id sym;
+    expr og_min;
+    expr min;
+  };
+  std::vector<loop_info> loops;
 
   slider(node_context& ctx) : ctx(ctx) {}
 
@@ -302,11 +307,9 @@ public:
       std::optional<box_expr>& bounds = buffer_bounds[output.buffer->sym()];
       if (!bounds) continue;
 
-      for (size_t l = 0; l < loop_bounds.size(); ++l) {
-        symbol_id loop_sym = loop_bounds[l].first;
+      for (size_t l = 0; l < loops.size(); ++l) {
+        symbol_id loop_sym = loops[l].sym;
         expr loop_var = variable::make(loop_sym);
-        expr loop_min = loop_bounds[l].second.min;
-        expr loop_max = loop_bounds[l].second.max;
 
         box_expr prev_bounds(bounds->size());
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
@@ -327,15 +330,15 @@ public:
             symbol_id new_loop_min_sym = ctx.insert_unique();
             expr new_loop_min_var = variable::make(new_loop_min_sym);
             expr new_min_at_new_loop_min = substitute(new_min, loop_sym, new_loop_min_var);
-            expr old_min_at_loop_min = substitute(old_min, loop_sym, loop_min);
+            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[l].og_min);
             expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_sym).max;
-            if (new_loop_min.defined()) {
-              loop_bounds[l].second.min = simplify(loop_min - (new_min - old_min));
+            if (!is_negative_infinity(new_loop_min)) {
+              loops[l].min = min(loops[l].min, new_loop_min);
 
               old_min = new_min;
             } else {
               // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
-              old_min = select(loop_var == loop_min, old_min, new_min);
+              old_min = select(loop_var == loops[l].og_min, old_min, new_min);
             }
             break;
           } else if (prove_true(prev_bounds[d].min > (*bounds)[d].min) &&
@@ -352,8 +355,8 @@ public:
     // modifies the buffer meta, which the condition (probably) depends on.
     // To fix this, we hackily move the if out below, but this is a serious hack
     // that needs to be fixed.
-    for (const auto& l : loop_bounds) {
-      result = if_then_else::make(variable::make(l.first) >= l.second.min, result, stmt());
+    for (const auto& l : loops) {
+      result = if_then_else::make(variable::make(l.sym) >= l.min, result, stmt());
     }
     set_result(result);
   }
@@ -388,12 +391,11 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* l) override {
-    loop_bounds.emplace_back(l->sym, l->bounds);
+    loops.emplace_back(l->sym, l->bounds.min, l->bounds.min);
     stmt body = mutate(l->body);
-    expr loop_min = loop_bounds.back().second.min;
+    expr loop_min = loops.back().min;
     // The loop max should not be changed.
-    assert(l->bounds.max.same_as(loop_bounds.back().second.max));
-    loop_bounds.pop_back();
+    loops.pop_back();
 
     if (loop_min.same_as(l->bounds.min) && body.same_as(l->body)) {
       set_result(l);

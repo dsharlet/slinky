@@ -240,6 +240,7 @@ void test_where_true(const expr& test, symbol_id var, const interval_expr& expec
 
 TEST(where_true) {
   test_where_true(x < 5, 0, bounds(negative_infinity(), 4));
+  test_where_true(x < buffer_min(y, 0), 0, bounds(negative_infinity(), buffer_min(y, 0) + -1));
   test_where_true(x / 2 < 7, 0, bounds(negative_infinity(), 13));
   test_where_true(min(x, 6) < 7, 0, bounds(negative_infinity(), positive_infinity()));
   test_where_true(-10 <= x && x < 5, 0, bounds(-10, 4));

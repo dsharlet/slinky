@@ -882,11 +882,13 @@ inline bool is_intrinsic(const expr& x, intrinsic fn) {
   const call* c = x.as<call>();
   return c ? c->intrinsic == fn : false;
 }
+bool is_buffer_intrinsic(intrinsic fn);
+
 inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
 inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
 inline bool is_indeterminate(const expr& x) { return is_intrinsic(x, intrinsic::indeterminate); }
 inline bool is_infinity(const expr& x) { return is_positive_infinity(x) || is_negative_infinity(x); }
-inline bool is_finite(const expr& x) { return !is_infinity(x) && !is_indeterminate(x); }
+bool is_finite(const expr& x);
 
 // Get an expression representing non-numerical constants.
 const expr& positive_infinity();
@@ -953,8 +955,6 @@ expr buffer_at(expr buf, const std::vector<var>& at);
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
-
-bool is_buffer_intrinsic(intrinsic fn);
 
 }  // namespace slinky
 
