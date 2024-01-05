@@ -3,6 +3,8 @@
 #include <cassert>
 #include <iostream>
 
+#include "pipeline.h"
+
 namespace slinky {
 
 std::ostream& operator<<(std::ostream& os, memory_type type) {
@@ -173,7 +175,20 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit(const call_func* n) override { *this << indent() << "call(<fn>)\n"; }
+  void visit(const call_func* n) override {
+    *this << indent() << "call(<fn>";
+    if (n->fn) {
+      std::vector<symbol_id> ins, outs;
+      for (const func::input& i : n->fn->inputs()) {
+        ins.push_back(i.sym());
+      }
+      for (const func::output& i : n->fn->outputs()) {
+        outs.push_back(i.sym());
+      }
+      *this << ", {" << ins << "}, {" << outs << "}";
+    }
+    *this << ")\n"; 
+  }
 
   void visit(const allocate* n) override {
     *this << indent() << n->sym << " = allocate<" << n->elem_size << ">({\n";
