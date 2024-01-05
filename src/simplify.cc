@@ -399,7 +399,7 @@ expr simplify(const add* op, expr a, expr b) {
 
       {buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1},
       {buffer_min(x, y) + (z - buffer_max(x, y)), (z - buffer_extent(x, y)) + 1},
-      {buffer_max(x, y) + (z - buffer_min(x, y)), (buffer_extent(x, y) + z) - 1},
+      {buffer_max(x, y) + (z - buffer_min(x, y)), (buffer_extent(x, y) + z) + -1},
   };
   return rules.apply(e);
 }
@@ -454,9 +454,9 @@ expr simplify(const sub* op, expr a, expr b) {
       {c2 - select(x, y + c0, c1 - z), select(x, (c2 - c0) - y, z + (c2 - c1))},
       {c2 - select(x, c0 - y, c1 - z), select(x, y + (c2 - c0), z + (c2 - c1))},
 
-      {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) - 1},
-      {buffer_max(x, y) - (buffer_min(x, y) + z), (buffer_extent(x, y) - z) - 1},
-      {(buffer_max(x, y) + z) - buffer_min(x, y), (buffer_extent(x, y) + z) - 1},
+      {buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) + -1},
+      {buffer_max(x, y) - (buffer_min(x, y) + z), (buffer_extent(x, y) - z) + -1},
+      {(buffer_max(x, y) + z) - buffer_min(x, y), (buffer_extent(x, y) + z) + -1},
   };
   return rules.apply(e);
 }
