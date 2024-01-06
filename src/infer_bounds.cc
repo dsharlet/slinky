@@ -90,12 +90,7 @@ public:
   symbol_map<box_expr> crops;
 
   void visit(const allocate* alloc) override {
-    {
-      std::optional<box_expr>& bounds = infer[alloc->sym];
-      assert(!bounds);
-      bounds = box_expr();
-    }
-
+    auto set_bounds = set_value_in_scope(infer, alloc->sym, box_expr());
     stmt body = mutate(alloc->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.

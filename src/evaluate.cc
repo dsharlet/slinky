@@ -60,7 +60,7 @@ void copy_stmt_impl(
     auto s = set_value_in_scope(ctx, c.dst_x[dim], dst_x);
     if (dim == 0) {
       const void* src_base = src.base;
-      for (int d = 0; d < src.rank; ++d) {
+      for (std::size_t d = 0; d < src.rank; ++d) {
         const class dim& src_dim = src.dims[d];
 
         index_t src_x = evaluate(c.src_x[d], ctx);
