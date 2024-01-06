@@ -445,6 +445,40 @@ public:
   void visit(const make_buffer* x) override { visit_decl(x, x->sym); }
 };
 
+template <typename T>
+T substitute(T x, std::span<const std::pair<expr, expr>> subs) {
+  for (const std::pair<expr, expr>& i : subs) {
+    x = substitutor(i.first, i.second).mutate(x);
+  }
+  return x;
+}
+
+template <typename T>
+T substitute_bounds_impl(T x, symbol_id buffer, int dim, const interval_expr& bounds) {
+  expr buf_var = variable::make(buffer);
+  std::pair<expr, expr> subs[] = {
+      {buffer_min(buf_var, dim), bounds.min},
+      {buffer_max(buf_var, dim), bounds.max},
+  };
+  return substitute(x, subs);
+}
+
+template <typename T>
+T substitute_bounds_impl(T x, symbol_id buffer, const box_expr& bounds) {
+  expr buf_var = variable::make(buffer);
+  std::vector<std::pair<expr, expr>> subs;
+  subs.reserve(bounds.size() * 2);
+  for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
+    if (bounds[d].min.defined()) {
+      subs.emplace_back(buffer_min(buf_var, d), bounds[d].min);
+    }
+    if (bounds[d].max.defined()) {
+      subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
+    }
+  }
+  return substitute(x, subs);
+}
+
 }  // namespace
 
 expr substitute(const expr& e, const symbol_map<expr>& replacements) { return substitutor(replacements).mutate(e); }
@@ -462,6 +496,19 @@ expr substitute(const expr& e, const expr& target, const expr& replacement) {
 }
 stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
   return substitutor(target, replacement).mutate(s);
+}
+
+expr substitute_bounds(const expr& e, symbol_id buffer, const box_expr& bounds) {
+  return substitute_bounds_impl(e, buffer, bounds);
+}
+stmt substitute_bounds(const stmt& s, symbol_id buffer, const box_expr& bounds) {
+  return substitute_bounds_impl(s, buffer, bounds);
+}
+expr substitute_bounds(const expr& e, symbol_id buffer, int dim, const interval_expr& bounds) {
+  return substitute_bounds_impl(e, buffer, dim, bounds);
+}
+stmt substitute_bounds(const stmt& s, symbol_id buffer, int dim, const interval_expr& bounds) {
+  return substitute_bounds_impl(s, buffer, dim, bounds);
 }
 
 namespace {

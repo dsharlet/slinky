@@ -11,6 +11,7 @@ using bounds_map = symbol_map<interval_expr>;
 // Try to simplify an expr or stmt.
 expr simplify(const expr& e, const bounds_map& bounds = bounds_map());
 stmt simplify(const stmt& s, const bounds_map& bounds = bounds_map());
+interval_expr simplify(const interval_expr& e, const bounds_map& bounds = bounds_map());
 
 // Helpers for producing simplified versions of ops. These do not recursively simplify their
 // operands. `op` is an existing node that may be returned if op is equivalent. `op` may be null.

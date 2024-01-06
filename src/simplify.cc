@@ -916,7 +916,11 @@ public:
 
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
+    // Visits to variables mutate this state, we don't want to do that while trying to prove some other expression.
+    symbol_map<int> refs;
+    std::swap(references, refs);
     mutate(e, &bounds);
+    std::swap(references, refs);
     if (is_true(bounds.min)) {
       return true;
     } else if (is_false(bounds.max)) {
@@ -1367,7 +1371,13 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    stmt body = mutate(op->body);
+    stmt body = op->body;
+    for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
+      if (new_bounds[d].min.defined() && new_bounds[d].max.defined()) {
+        body = substitute_bounds(body, op->sym, d, new_bounds[d]);
+      }
+    }
+    body = mutate(body);
 
     // Remove trailing undefined bounds.
     while (new_bounds.size() > 0 && !new_bounds.back().min.defined() && !new_bounds.back().max.defined()) {
@@ -1407,7 +1417,8 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
-    stmt body = mutate(op->body);
+    stmt body = substitute_bounds(op->body, op->sym, op->dim, bounds);
+    body = mutate(body);
     if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1514,6 +1525,10 @@ public:
 
 expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e, nullptr); }
 stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
+interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
+  simplifier s(bounds);
+  return {s.mutate(e.min, nullptr), s.mutate(e.max, nullptr)};
+}
 
 namespace {
 
