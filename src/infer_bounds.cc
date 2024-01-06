@@ -377,6 +377,7 @@ public:
 
     // Insert ifs around these calls, in case the loop min shifts later.
     for (const auto& l : loops) {
+      if (is_positive_infinity(l.bounds.min)) continue;
       result = if_then_else::make(variable::make(l.sym) >= l.bounds.min, result, stmt());
     }
     set_result(result);
@@ -414,12 +415,12 @@ public:
   void visit(const loop* l) override {
     var orig_min(ctx, ctx.name(l->sym) + "_min.orig");
 
-    loops.emplace_back(l->sym, orig_min, l->bounds, l->step);
+    loops.emplace_back(l->sym, orig_min, bounds(positive_infinity(), l->bounds.max), l->step);
     stmt body = mutate(l->body);
     expr loop_min = loops.back().bounds.min;
     loops.pop_back();
 
-    if (loop_min.same_as(orig_min) && body.same_as(l->body)) {
+    if (is_positive_infinity(loop_min) && body.same_as(l->body)) {
       set_result(l);
     } else {
       // We rewrote the loop min.
