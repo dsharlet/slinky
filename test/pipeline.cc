@@ -683,3 +683,78 @@ TEST(pipeline_outer_product) {
     }
   }
 }
+
+TEST(pipeline_unrelated) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+  auto out1 = buffer_expr::make(ctx, "out1", sizeof(short), 2);
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 1);
+  auto out2 = buffer_expr::make(ctx, "out2", sizeof(int), 1);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(int), 1);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add1 = func::make<const short, short>(add_1<short>, {in1, {point(x), point(y)}}, {intm1, {x, y}});
+  func stencil1 =
+      func::make<const short, short>(sum3x3<short>, {intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out1, {x, y}});
+
+  func mul2 = func::make<const int, int>(multiply_2<int>, {in2, {point(x)}}, {intm2, {x}});
+  func add2 = func::make<const int, int>(add_1<int>, {intm2, {point(x)}}, {out2, {x}});
+
+  stencil1.loops({{y, 2}});
+  add1.compute_at({&stencil1, y});
+
+  pipeline p(ctx, {in1, in2}, {out1, out2});
+
+  // Run the pipeline.
+  const int W1 = 20;
+  const int H1 = 10;
+  buffer<short, 2> in1_buf({W1 + 2, H1 + 2});
+  in1_buf.dim(0).translate(-1);
+  in1_buf.dim(1).translate(-1);
+  buffer<short, 2> out1_buf({W1, H1});
+
+  init_random(in1_buf);
+  out1_buf.allocate();
+   
+  const int N2 = 30;
+  buffer<int, 1> in2_buf({N2});
+  in2_buf.allocate();
+  for (int i = 0; i < N2; ++i) {
+    in2_buf(i) = i;
+  }
+
+  buffer<int, 1> out2_buf({N2});
+  out2_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
+  debug_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  ASSERT_EQ(eval_ctx.heap.total_size, N2 * sizeof(int) + (W1 + 2) * 4 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 2);
+
+  for (int y = 0; y < H1; ++y) {
+    for (int x = 0; x < W1; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          correct += in1_buf(x + dx, y + dy) + 1;
+        }
+      }
+      ASSERT_EQ(correct, out1_buf(x, y)) << x << " " << y;
+    }
+  }
+
+  for (int i = 0; i < N2; ++i) {
+    ASSERT_EQ(out2_buf(i), 2 * i + 1);
+  }
+}
+

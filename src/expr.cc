@@ -21,9 +21,12 @@ symbol_id node_context::insert(const std::string& name) {
   return *sym;
 }
 symbol_id node_context::insert_unique(const std::string& prefix) {
-  symbol_id sym = sym_to_name.size();
-  sym_to_name.push_back(prefix + std::to_string(sym));
-  return sym;
+  std::string name = prefix;
+  for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
+    if (!lookup(name)) break;
+    name = prefix + std::to_string(i);
+  }
+  return insert(name);
 }
 std::optional<symbol_id> node_context::lookup(const std::string& name) const {
   // TODO: At some point we might need a better data structure than doing this linear search.

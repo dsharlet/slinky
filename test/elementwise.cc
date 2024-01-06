@@ -61,8 +61,8 @@ public:
   }
 
   template <typename Impl>
-  void visit_binary(const buffer_expr_ptr& a, const buffer_expr_ptr& b, const Impl& impl) {
-    result = buffer_expr::make(ctx, name(a) + "_" + name(b), sizeof(T), Rank);
+  void visit_binary(const char* fn, const buffer_expr_ptr& a, const buffer_expr_ptr& b, const Impl& impl) {
+    result = buffer_expr::make(ctx, name(a) + fn + name(b), sizeof(T), Rank);
     func r = func::make<const T, const T, T>(
         [=](const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
           for_each_index(c, [&](auto i) { c(i) = impl(a(i), b(i)); });
@@ -73,27 +73,27 @@ public:
   }
 
   template <typename Impl>
-  void visit_binary(const expr& a, const expr& b, const Impl& impl) {
-    visit_binary(visit_expr(a), visit_expr(b), impl);
+  void visit_binary(const char* fn, const expr& a, const expr& b, const Impl& impl) {
+    visit_binary(fn, visit_expr(a), visit_expr(b), impl);
   }
 
   void visit(const class min* op) override {
-    visit_binary(op->a, op->b, [](T a, T b) { return std::min(a, b); });
+    visit_binary("min", op->a, op->b, [](T a, T b) { return std::min(a, b); });
   }
   void visit(const class max* op) override {
-    visit_binary(op->a, op->b, [](T a, T b) { return std::max(a, b); });
+    visit_binary("max", op->a, op->b, [](T a, T b) { return std::max(a, b); });
   }
-  void visit(const class add* op) override { visit_binary(op->a, op->b, std::plus<T>()); }
-  void visit(const sub* op) override { visit_binary(op->a, op->b, std::minus<T>()); }
-  void visit(const mul* op) override { visit_binary(op->a, op->b, std::multiplies<T>()); }
-  void visit(const slinky::div* op) override { visit_binary(op->a, op->b, std::divides<T>()); }
-  void visit(const slinky::mod* op) override { visit_binary(op->a, op->b, std::modulus<T>()); }
-  void visit(const less* op) override { visit_binary(op->a, op->b, std::less<T>()); }
-  void visit(const less_equal* op) override { visit_binary(op->a, op->b, std::less_equal<T>()); }
-  void visit(const equal* op) override { visit_binary(op->a, op->b, std::equal_to<T>()); }
-  void visit(const not_equal* op) override { visit_binary(op->a, op->b, std::not_equal_to<T>()); }
-  void visit(const logical_and* op) override { visit_binary(op->a, op->b, std::logical_and<T>()); }
-  void visit(const logical_or* op) override { visit_binary(op->a, op->b, std::logical_or<T>()); }
+  void visit(const class add* op) override { visit_binary("+", op->a, op->b, std::plus<T>()); }
+  void visit(const sub* op) override { visit_binary("-", op->a, op->b, std::minus<T>()); }
+  void visit(const mul* op) override { visit_binary("*", op->a, op->b, std::multiplies<T>()); }
+  void visit(const slinky::div* op) override { visit_binary("/", op->a, op->b, std::divides<T>()); }
+  void visit(const slinky::mod* op) override { visit_binary("%", op->a, op->b, std::modulus<T>()); }
+  void visit(const less* op) override { visit_binary("<", op->a, op->b, std::less<T>()); }
+  void visit(const less_equal* op) override { visit_binary("<=", op->a, op->b, std::less_equal<T>()); }
+  void visit(const equal* op) override { visit_binary("==", op->a, op->b, std::equal_to<T>()); }
+  void visit(const not_equal* op) override { visit_binary("==", op->a, op->b, std::not_equal_to<T>()); }
+  void visit(const logical_and* op) override { visit_binary("&&", op->a, op->b, std::logical_and<T>()); }
+  void visit(const logical_or* op) override { visit_binary("||", op->a, op->b, std::logical_or<T>()); }
   void visit(const class select* op) override {
     buffer_expr_ptr c = visit_expr(op->condition);
     buffer_expr_ptr t = visit_expr(op->true_value);
@@ -222,4 +222,11 @@ TEST(elementwise_mul_add) {
   var y(ctx, "y");
   var z(ctx, "z");
   test_expr_pipeline<int, 1>(ctx, x * y + z);
+}
+
+TEST(elementwise_exp) {
+  node_context ctx;
+  var x(ctx, "x");
+  var one(ctx, "one");
+  test_expr_pipeline<int, 1>(ctx, one + x + x * x + x * x * x + x * x * x * x);
 }

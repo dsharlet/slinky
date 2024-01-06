@@ -27,7 +27,6 @@ class buffer_expr : public ref_counted {
   std::vector<dim_expr> dims_;
 
   func* producer_;
-  std::vector<func*> consumers_;
 
   memory_type storage_ = memory_type::heap;
   loop_id store_at_;
@@ -41,10 +40,7 @@ class buffer_expr : public ref_counted {
 
   // Only func::func should add producers/consumers.
   friend class func;
-  void add_producer(func* f);
-  void add_consumer(func* f);
-  void remove_producer(func* f);
-  void remove_consumer(func* f);
+  void set_producer(func* f);
 
 public:
   static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
@@ -70,9 +66,7 @@ public:
   }
   const loop_id& store_at() const { return store_at_; }
 
-  // buffer_exprs can have many consumers, but only one producer.
   const func* producer() const { return producer_; }
-  const std::vector<func*>& consumers() const { return consumers_; }
 };
 
 // Represents a node of computation in a pipeline.

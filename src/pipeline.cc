@@ -45,30 +45,14 @@ buffer_expr_ptr buffer_expr::make(symbol_id sym, index_t elem_size, std::size_t 
 }
 
 buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank) {
-  return buffer_expr_ptr(new buffer_expr(ctx.insert(sym), elem_size, rank));
+  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), elem_size, rank));
 }
 
 buffer_expr_ptr buffer_expr::make(const raw_buffer& buffer) { return buffer_expr_ptr(new buffer_expr(buffer)); }
 
-void buffer_expr::add_producer(func* f) {
-  assert(producer_ == nullptr);
+void buffer_expr::set_producer(func* f) {
+  assert(producer_ == nullptr || f == nullptr);
   producer_ = f;
-}
-
-void buffer_expr::add_consumer(func* f) {
-  assert(std::find(consumers_.begin(), consumers_.end(), f) == consumers_.end());
-  consumers_.push_back(f);
-}
-
-void buffer_expr::remove_producer(func* f) {
-  assert(producer_ == f);
-  producer_ = nullptr;
-}
-
-void buffer_expr::remove_consumer(func* f) {
-  auto i = std::find(consumers_.begin(), consumers_.end(), f);
-  assert(i != consumers_.end());
-  consumers_.erase(i);
 }
 
 func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs)
@@ -100,19 +84,13 @@ func& func::operator=(func&& m) {
 func::~func() { remove_this_from_buffers(); }
 
 void func::add_this_to_buffers() {
-  for (auto& i : inputs_) {
-    i.buffer->add_consumer(this);
-  }
   for (auto& i : outputs_) {
-    i.buffer->add_producer(this);
+    i.buffer->set_producer(this);
   }
 }
 void func::remove_this_from_buffers() {
-  for (auto& i : inputs_) {
-    i.buffer->remove_consumer(this);
-  }
   for (auto& i : outputs_) {
-    i.buffer->remove_producer(this);
+    i.buffer->set_producer(nullptr);
   }
 }
 
@@ -413,8 +391,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
       std::abort();
     }
 
-    result = builder.produce(f);
-    result = builder.make_allocations(result);
+    stmt produce_f = builder.produce(f);
+    produce_f = builder.make_allocations(produce_f);
+    result = block::make({result, produce_f});
   }
 
   std::vector<symbol_id> input_syms;
