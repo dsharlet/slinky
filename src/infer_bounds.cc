@@ -226,12 +226,12 @@ public:
     set_result(result);
   }
 
-  void visit(const block* x) override {
+  void visit(const block* op) override {
     // Visit blocks in reverse order. TODO: Is this really sufficient?
-    stmt b = mutate(x->b);
-    stmt a = mutate(x->a);
-    if (a.same_as(x->a) && b.same_as(x->b)) {
-      set_result(x);
+    stmt b = mutate(op->b);
+    stmt a = mutate(op->a);
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
     } else {
       set_result(block::make(a, b));
     }
@@ -429,12 +429,12 @@ public:
     }
   }
 
-  void visit(const block* x) override {
+  void visit(const block* op) override {
     // Visit blocks in reverse order. TODO: Is this really sufficient?
-    stmt b = mutate(x->b);
-    stmt a = mutate(x->a);
-    if (a.same_as(x->a) && b.same_as(x->b)) {
-      set_result(x);
+    stmt b = mutate(op->b);
+    stmt a = mutate(op->a);
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
     } else {
       set_result(block::make(a, b));
     }

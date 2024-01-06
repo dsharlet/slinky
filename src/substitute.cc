@@ -28,10 +28,10 @@ public:
   matcher(const stmt& s, symbol_map<expr>* matches = nullptr) : self(s.get()), matches(matches) {}
 
   template <typename T>
-  bool try_match(T self, T x) {
-    if (self == x) {
+  bool try_match(T self, T op) {
+    if (self == op) {
       match = 0;
-    } else if (self < x) {
+    } else if (self < op) {
       match = -1;
     } else {
       match = 1;
@@ -40,79 +40,79 @@ public:
   }
 
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
-  void visit(const expr& x) {
-    switch (x.type()) {
-    case node_type::add: visit(reinterpret_cast<const add*>(x.get())); return;
-    case node_type::min: visit(reinterpret_cast<const class min*>(x.get())); return;
-    case node_type::max: visit(reinterpret_cast<const class max*>(x.get())); return;
-    default: x.accept(this);
+  void visit(const expr& op) {
+    switch (op.type()) {
+    case node_type::add: visit(reinterpret_cast<const add*>(op.get())); return;
+    case node_type::min: visit(reinterpret_cast<const class min*>(op.get())); return;
+    case node_type::max: visit(reinterpret_cast<const class max*>(op.get())); return;
+    default: op.accept(this);
     }
   }
 
-  bool try_match(const expr& e, const expr& x) {
-    if (!e.defined() && !x.defined()) {
+  bool try_match(const expr& e, const expr& op) {
+    if (!e.defined() && !op.defined()) {
       match = 0;
     } else if (!e.defined()) {
       match = -1;
-    } else if (!x.defined()) {
+    } else if (!op.defined()) {
       match = 1;
     } else {
       self = e.get();
-      visit(x);
+      visit(op);
     }
     return match == 0;
   }
 
-  bool try_match(const stmt& s, const stmt& x) {
-    if (!s.defined() && !x.defined()) {
+  bool try_match(const stmt& s, const stmt& op) {
+    if (!s.defined() && !op.defined()) {
       match = 0;
     } else if (!s.defined()) {
       match = -1;
-    } else if (!x.defined()) {
+    } else if (!op.defined()) {
       match = 1;
     } else {
       self = s.get();
-      x.accept(this);
+      op.accept(this);
     }
     return match == 0;
   }
 
-  bool try_match(const interval_expr& self, const interval_expr& x) {
-    if (!try_match(self.min, x.min)) return false;
-    if (!try_match(self.max, x.max)) return false;
+  bool try_match(const interval_expr& self, const interval_expr& op) {
+    if (!try_match(self.min, op.min)) return false;
+    if (!try_match(self.max, op.max)) return false;
     return true;
   }
 
-  bool try_match(const dim_expr& self, const dim_expr& x) {
-    if (!try_match(self.bounds, x.bounds)) return false;
-    if (!try_match(self.stride, x.stride)) return false;
-    if (!try_match(self.fold_factor, x.fold_factor)) return false;
+  bool try_match(const dim_expr& self, const dim_expr& op) {
+    if (!try_match(self.bounds, op.bounds)) return false;
+    if (!try_match(self.stride, op.stride)) return false;
+    if (!try_match(self.fold_factor, op.fold_factor)) return false;
     return true;
   }
 
   template <typename T>
-  bool try_match(const std::vector<T>& self, const std::vector<T>& x) {
-    if (self.size() < x.size()) {
+  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+    if (self.size() < op.size()) {
       match = -1;
       return false;
-    } else if (self.size() > x.size()) {
+    } else if (self.size() > op.size()) {
       match = 1;
       return false;
     }
 
     for (std::size_t i = 0; i < self.size(); ++i) {
-      if (!try_match(self[i], x[i])) return false;
+      if (!try_match(self[i], op[i])) return false;
     }
 
     return true;
   }
 
   template <typename T>
-  const T* match_self_as(const T* x) {
+  const T* match_self_as(const T* op) {
     const T* result = self_as<T>();
     if (result) {
       match = 0;
-    } else if (!self || self->type < x->type) {
+    } else if (!self || self->type < op->type) {
       match = -1;
     } else {
       match = 1;
@@ -121,13 +121,13 @@ public:
   }
 
   template <typename T>
-  void match_binary(const T* x) {
+  void match_binary(const T* op) {
     if (match) return;
-    const T* ex = match_self_as(x);
+    const T* ex = match_self_as(op);
     if (!ex) return;
 
-    if (!try_match(ex->a, x->a)) return;
-    if (!try_match(ex->b, x->b)) return;
+    if (!try_match(ex->a, op->a)) return;
+    if (!try_match(ex->b, op->b)) return;
   }
 
   void match_wildcard(symbol_id sym, std::function<bool(const expr&)> predicate) {
@@ -150,223 +150,223 @@ public:
     }
   }
 
-  void visit(const variable* x) override {
+  void visit(const variable* op) override {
     if (matches) {
-      match_wildcard(x->sym, nullptr);
+      match_wildcard(op->sym, nullptr);
     } else {
-      const variable* ev = match_self_as(x);
+      const variable* ev = match_self_as(op);
       if (ev) {
-        try_match(ev->sym, x->sym);
+        try_match(ev->sym, op->sym);
       }
     }
   }
 
-  void visit(const wildcard* x) override {
+  void visit(const wildcard* op) override {
     if (matches) {
-      match_wildcard(x->sym, x->matches);
+      match_wildcard(op->sym, op->matches);
     } else {
-      const wildcard* ew = match_self_as(x);
+      const wildcard* ew = match_self_as(op);
       if (ew) {
-        try_match(ew->sym, x->sym);
+        try_match(ew->sym, op->sym);
       }
     }
   }
 
-  void visit(const constant* x) override {
+  void visit(const constant* op) override {
     if (match) return;
 
-    const constant* ec = match_self_as(x);
+    const constant* ec = match_self_as(op);
     if (ec) {
-      try_match(ec->value, x->value);
+      try_match(ec->value, op->value);
     }
   }
 
   template <typename T>
-  void visit_let(const T* x) {
+  void visit_let(const T* op) {
     if (match) return;
-    const T* el = match_self_as(x);
+    const T* el = match_self_as(op);
     if (!el) return;
 
-    if (!try_match(el->sym, x->sym)) return;
-    if (!try_match(el->value, x->value)) return;
-    if (!try_match(el->body, x->body)) return;
+    if (!try_match(el->sym, op->sym)) return;
+    if (!try_match(el->value, op->value)) return;
+    if (!try_match(el->body, op->body)) return;
   }
 
-  void visit(const let* x) override { visit_let(x); }
-  void visit(const add* x) override { match_binary(x); }
-  void visit(const sub* x) override { match_binary(x); }
-  void visit(const mul* x) override { match_binary(x); }
-  void visit(const div* x) override { match_binary(x); }
-  void visit(const mod* x) override { match_binary(x); }
-  void visit(const class min* x) override { match_binary(x); }
-  void visit(const class max* x) override { match_binary(x); }
-  void visit(const equal* x) override { match_binary(x); }
-  void visit(const not_equal* x) override { match_binary(x); }
-  void visit(const less* x) override { match_binary(x); }
-  void visit(const less_equal* x) override { match_binary(x); }
-  void visit(const logical_and* x) override { match_binary(x); }
-  void visit(const logical_or* x) override { match_binary(x); }
-  void visit(const logical_not* x) override {
+  void visit(const let* op) override { visit_let(op); }
+  void visit(const add* op) override { match_binary(op); }
+  void visit(const sub* op) override { match_binary(op); }
+  void visit(const mul* op) override { match_binary(op); }
+  void visit(const div* op) override { match_binary(op); }
+  void visit(const mod* op) override { match_binary(op); }
+  void visit(const class min* op) override { match_binary(op); }
+  void visit(const class max* op) override { match_binary(op); }
+  void visit(const equal* op) override { match_binary(op); }
+  void visit(const not_equal* op) override { match_binary(op); }
+  void visit(const less* op) override { match_binary(op); }
+  void visit(const less_equal* op) override { match_binary(op); }
+  void visit(const logical_and* op) override { match_binary(op); }
+  void visit(const logical_or* op) override { match_binary(op); }
+  void visit(const logical_not* op) override {
     if (match) return;
-    const class logical_not* ne = match_self_as(x);
+    const class logical_not* ne = match_self_as(op);
     if (!ne) return;
 
-    try_match(ne->x, x->x);
+    try_match(ne->a, op->a);
   }
 
-  void visit(const class select* x) override {
+  void visit(const class select* op) override {
     if (match) return;
-    const class select* se = match_self_as(x);
+    const class select* se = match_self_as(op);
     if (!se) return;
 
-    if (!try_match(se->condition, x->condition)) return;
-    if (!try_match(se->true_value, x->true_value)) return;
-    if (!try_match(se->false_value, x->false_value)) return;
+    if (!try_match(se->condition, op->condition)) return;
+    if (!try_match(se->true_value, op->true_value)) return;
+    if (!try_match(se->false_value, op->false_value)) return;
   }
 
-  void visit(const call* x) override {
+  void visit(const call* op) override {
     if (match) return;
-    const call* c = match_self_as(x);
+    const call* c = match_self_as(op);
     if (!c) return;
 
-    if (!try_match(c->intrinsic, x->intrinsic)) return;
-    if (!try_match(c->args, x->args)) return;
+    if (!try_match(c->intrinsic, op->intrinsic)) return;
+    if (!try_match(c->args, op->args)) return;
   }
 
-  void visit(const let_stmt* x) override { visit_let(x); }
+  void visit(const let_stmt* op) override { visit_let(op); }
 
-  void visit(const block* x) override {
+  void visit(const block* op) override {
     if (match) return;
-    const block* bs = match_self_as(x);
+    const block* bs = match_self_as(op);
     if (!bs) return;
 
-    if (!try_match(bs->a, x->a)) return;
-    if (!try_match(bs->b, x->b)) return;
+    if (!try_match(bs->a, op->a)) return;
+    if (!try_match(bs->b, op->b)) return;
   }
 
-  void visit(const loop* x) override {
+  void visit(const loop* op) override {
     if (match) return;
-    const loop* ls = match_self_as(x);
+    const loop* ls = match_self_as(op);
     if (!ls) return;
 
-    if (!try_match(ls->sym, x->sym)) return;
-    if (!try_match(ls->bounds, x->bounds)) return;
-    if (!try_match(ls->step, x->step)) return;
-    if (!try_match(ls->body, x->body)) return;
+    if (!try_match(ls->sym, op->sym)) return;
+    if (!try_match(ls->bounds, op->bounds)) return;
+    if (!try_match(ls->step, op->step)) return;
+    if (!try_match(ls->body, op->body)) return;
   }
 
-  void visit(const if_then_else* x) override {
+  void visit(const if_then_else* op) override {
     if (match) return;
-    const if_then_else* is = match_self_as(x);
+    const if_then_else* is = match_self_as(op);
     if (!is) return;
 
-    if (!try_match(is->condition, x->condition)) return;
-    if (!try_match(is->true_body, x->true_body)) return;
-    if (!try_match(is->false_body, x->false_body)) return;
+    if (!try_match(is->condition, op->condition)) return;
+    if (!try_match(is->true_body, op->true_body)) return;
+    if (!try_match(is->false_body, op->false_body)) return;
   }
 
-  void visit(const call_stmt* x) override {
+  void visit(const call_stmt* op) override {
     if (match) return;
-    const call_stmt* cs = match_self_as(x);
+    const call_stmt* cs = match_self_as(op);
     if (!cs) return;
 
-    if (!try_match(cs->inputs, x->inputs)) return;
-    if (!try_match(cs->outputs, x->outputs)) return;
+    if (!try_match(cs->inputs, op->inputs)) return;
+    if (!try_match(cs->outputs, op->outputs)) return;
   }
 
-  void visit(const copy_stmt* x) override {
+  void visit(const copy_stmt* op) override {
     if (match) return;
-    const copy_stmt* cs = match_self_as(x);
+    const copy_stmt* cs = match_self_as(op);
     if (!cs) return;
 
-    if (!try_match(cs->src, x->src)) return;
-    if (!try_match(cs->src_x, x->src_x)) return;
-    if (!try_match(cs->dst, x->dst)) return;
-    if (!try_match(cs->dst_x, x->dst_x)) return;
-    if (!try_match(cs->padding, x->padding)) return;
+    if (!try_match(cs->src, op->src)) return;
+    if (!try_match(cs->src_x, op->src_x)) return;
+    if (!try_match(cs->dst, op->dst)) return;
+    if (!try_match(cs->dst_x, op->dst_x)) return;
+    if (!try_match(cs->padding, op->padding)) return;
   }
 
-  void visit(const allocate* x) override {
+  void visit(const allocate* op) override {
     if (match) return;
-    const allocate* as = match_self_as(x);
+    const allocate* as = match_self_as(op);
     if (!as) return;
 
-    if (!try_match(as->sym, x->sym)) return;
-    if (!try_match(as->elem_size, x->elem_size)) return;
-    if (!try_match(as->dims, x->dims)) return;
-    if (!try_match(as->body, x->body)) return;
+    if (!try_match(as->sym, op->sym)) return;
+    if (!try_match(as->elem_size, op->elem_size)) return;
+    if (!try_match(as->dims, op->dims)) return;
+    if (!try_match(as->body, op->body)) return;
   }
 
-  void visit(const make_buffer* x) override {
+  void visit(const make_buffer* op) override {
     if (match) return;
-    const make_buffer* mbs = match_self_as(x);
+    const make_buffer* mbs = match_self_as(op);
     if (!mbs) return;
 
-    if (!try_match(mbs->sym, x->sym)) return;
-    if (!try_match(mbs->base, x->base)) return;
-    if (!try_match(mbs->elem_size, x->elem_size)) return;
-    if (!try_match(mbs->dims, x->dims)) return;
-    if (!try_match(mbs->body, x->body)) return;
+    if (!try_match(mbs->sym, op->sym)) return;
+    if (!try_match(mbs->base, op->base)) return;
+    if (!try_match(mbs->elem_size, op->elem_size)) return;
+    if (!try_match(mbs->dims, op->dims)) return;
+    if (!try_match(mbs->body, op->body)) return;
   }
 
-  void visit(const crop_buffer* x) override {
+  void visit(const crop_buffer* op) override {
     if (match) return;
-    const crop_buffer* cbs = match_self_as(x);
+    const crop_buffer* cbs = match_self_as(op);
     if (!cbs) return;
 
-    if (!try_match(cbs->sym, x->sym)) return;
-    if (!try_match(cbs->bounds, x->bounds)) return;
-    if (!try_match(cbs->body, x->body)) return;
+    if (!try_match(cbs->sym, op->sym)) return;
+    if (!try_match(cbs->bounds, op->bounds)) return;
+    if (!try_match(cbs->body, op->body)) return;
   }
 
-  void visit(const crop_dim* x) override {
+  void visit(const crop_dim* op) override {
     if (match) return;
-    const crop_dim* cds = match_self_as(x);
+    const crop_dim* cds = match_self_as(op);
     if (!cds) return;
 
-    if (!try_match(cds->sym, x->sym)) return;
-    if (!try_match(cds->dim, x->dim)) return;
-    if (!try_match(cds->bounds, x->bounds)) return;
-    if (!try_match(cds->body, x->body)) return;
+    if (!try_match(cds->sym, op->sym)) return;
+    if (!try_match(cds->dim, op->dim)) return;
+    if (!try_match(cds->bounds, op->bounds)) return;
+    if (!try_match(cds->body, op->body)) return;
   }
 
-  void visit(const slice_buffer* x) override {
+  void visit(const slice_buffer* op) override {
     if (match) return;
-    const slice_buffer* cbs = match_self_as(x);
+    const slice_buffer* cbs = match_self_as(op);
     if (!cbs) return;
 
-    if (!try_match(cbs->sym, x->sym)) return;
-    if (!try_match(cbs->at, x->at)) return;
-    if (!try_match(cbs->body, x->body)) return;
+    if (!try_match(cbs->sym, op->sym)) return;
+    if (!try_match(cbs->at, op->at)) return;
+    if (!try_match(cbs->body, op->body)) return;
   }
 
-  void visit(const slice_dim* x) override {
+  void visit(const slice_dim* op) override {
     if (match) return;
-    const slice_dim* cds = match_self_as(x);
+    const slice_dim* cds = match_self_as(op);
     if (!cds) return;
 
-    if (!try_match(cds->sym, x->sym)) return;
-    if (!try_match(cds->dim, x->dim)) return;
-    if (!try_match(cds->at, x->at)) return;
-    if (!try_match(cds->body, x->body)) return;
+    if (!try_match(cds->sym, op->sym)) return;
+    if (!try_match(cds->dim, op->dim)) return;
+    if (!try_match(cds->at, op->at)) return;
+    if (!try_match(cds->body, op->body)) return;
   }
 
-  void visit(const truncate_rank* x) override {
+  void visit(const truncate_rank* op) override {
     if (match) return;
-    const truncate_rank* trs = match_self_as(x);
+    const truncate_rank* trs = match_self_as(op);
     if (!trs) return;
 
-    if (!try_match(trs->sym, x->sym)) return;
-    if (!try_match(trs->rank, x->rank)) return;
-    if (!try_match(trs->body, x->body)) return;
+    if (!try_match(trs->sym, op->sym)) return;
+    if (!try_match(trs->rank, op->rank)) return;
+    if (!try_match(trs->body, op->body)) return;
   }
 
-  void visit(const check* x) override {
+  void visit(const check* op) override {
     if (match) return;
-    const check* cs = match_self_as(x);
+    const check* cs = match_self_as(op);
     if (!cs) return;
 
-    try_match(cs->condition, x->condition);
+    try_match(cs->condition, op->condition);
   }
 };
 
@@ -419,11 +419,11 @@ public:
   substitutor(symbol_id target, const expr& replacement) : target_var(target), replacement(replacement) {}
   substitutor(const expr& target, const expr& replacement) : target(target), replacement(replacement) {}
 
-  expr mutate(const expr& x) override {
-    if (target.defined() && match(x, target)) {
+  expr mutate(const expr& op) override {
+    if (target.defined() && match(op, target)) {
       return replacement;
     } else {
-      return node_mutator::mutate(x);
+      return node_mutator::mutate(op);
     }
   }
   using node_mutator::mutate;
@@ -445,38 +445,38 @@ public:
   void visit(const wildcard* v) override { visit_variable(v); }
 
   template <typename T>
-  void visit_decl(const T* x, symbol_id sym) {
+  void visit_decl(const T* op, symbol_id sym) {
     auto s = set_value_in_scope(shadowed, sym, true);
-    node_mutator::visit(x);
+    node_mutator::visit(op);
   }
 
-  void visit(const loop* x) override { visit_decl(x, x->sym); }
-  void visit(const let* x) override { visit_decl(x, x->sym); }
-  void visit(const let_stmt* x) override { visit_decl(x, x->sym); }
-  void visit(const allocate* x) override { visit_decl(x, x->sym); }
-  void visit(const make_buffer* x) override { visit_decl(x, x->sym); }
+  void visit(const loop* op) override { visit_decl(op, op->sym); }
+  void visit(const let* op) override { visit_decl(op, op->sym); }
+  void visit(const let_stmt* op) override { visit_decl(op, op->sym); }
+  void visit(const allocate* op) override { visit_decl(op, op->sym); }
+  void visit(const make_buffer* op) override { visit_decl(op, op->sym); }
 };
 
 template <typename T>
-T substitute(T x, std::span<const std::pair<expr, expr>> subs) {
+T substitute(T op, std::span<const std::pair<expr, expr>> subs) {
   for (const std::pair<expr, expr>& i : subs) {
-    x = substitutor(i.first, i.second).mutate(x);
+    op = substitutor(i.first, i.second).mutate(op);
   }
-  return x;
+  return op;
 }
 
 template <typename T>
-T substitute_bounds_impl(T x, symbol_id buffer, int dim, const interval_expr& bounds) {
+T substitute_bounds_impl(T op, symbol_id buffer, int dim, const interval_expr& bounds) {
   expr buf_var = variable::make(buffer);
   std::pair<expr, expr> subs[] = {
       {buffer_min(buf_var, dim), bounds.min},
       {buffer_max(buf_var, dim), bounds.max},
   };
-  return substitute(x, subs);
+  return substitute(op, subs);
 }
 
 template <typename T>
-T substitute_bounds_impl(T x, symbol_id buffer, const box_expr& bounds) {
+T substitute_bounds_impl(T op, symbol_id buffer, const box_expr& bounds) {
   expr buf_var = variable::make(buffer);
   std::vector<std::pair<expr, expr>> subs;
   subs.reserve(bounds.size() * 2);
@@ -488,7 +488,7 @@ T substitute_bounds_impl(T x, symbol_id buffer, const box_expr& bounds) {
       subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
     }
   }
-  return substitute(x, subs);
+  return substitute(op, subs);
 }
 
 }  // namespace
@@ -541,31 +541,31 @@ public:
     found_var = old_found_var;
   }
 
-  void visit(const variable* x) override { found_var = found_var || x->sym == var; }
-  void visit(const wildcard* x) override { found_var = found_var || x->sym == var; }
-  void visit(const call* x) override {
-    if (is_buffer_intrinsic(x->intrinsic)) {
-      assert(x->args.size() >= 1);
-      accept_buffer(x->args[0]);
+  void visit(const variable* op) override { found_var = found_var || op->sym == var; }
+  void visit(const wildcard* op) override { found_var = found_var || op->sym == var; }
+  void visit(const call* op) override {
+    if (is_buffer_intrinsic(op->intrinsic)) {
+      assert(op->args.size() >= 1);
+      accept_buffer(op->args[0]);
 
-      for (std::size_t i = 1; i < x->args.size(); ++i) {
-        x->args[i].accept(this);
+      for (std::size_t i = 1; i < op->args.size(); ++i) {
+        op->args[i].accept(this);
       }
     } else {
-      recursive_node_visitor::visit(x);
+      recursive_node_visitor::visit(op);
     }
   }
 
-  void visit(const call_stmt* x) override {
-    for (symbol_id i : x->inputs) {
+  void visit(const call_stmt* op) override {
+    for (symbol_id i : op->inputs) {
       found_buf = found_buf || var == i;
     }
-    for (symbol_id i : x->outputs) {
+    for (symbol_id i : op->outputs) {
       found_buf = found_buf || var == i;
     }
   }
-  void visit(const copy_stmt* x) override {
-    found_buf = found_buf || var == x->src || var == x->dst;
+  void visit(const copy_stmt* op) override {
+    found_buf = found_buf || var == op->src || var == op->dst;
   }
 };
 

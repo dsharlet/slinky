@@ -53,13 +53,13 @@ bool should_commute(const expr& a, const expr& b) {
 class assert_canonical : public recursive_node_visitor {
 public:
   template <typename T>
-  void check(const T* x) {
-    if (should_commute(x->a, x->b)) {
-      std::cerr << "Non-canonical operands: " << expr(x) << std::endl;
+  void check(const T* op) {
+    if (should_commute(op->a, op->b)) {
+      std::cerr << "Non-canonical operands: " << expr(op) << std::endl;
       std::abort();
     }
-    x->a.accept(this);
-    x->b.accept(this);
+    op->a.accept(this);
+    op->b.accept(this);
   }
 
   void visit(const add* op) { check(op); };
@@ -79,18 +79,18 @@ class commute_variants : public node_visitor {
 public:
   std::vector<expr> results;
 
-  void visit(const variable* x) override { results = {x}; }
-  void visit(const wildcard* x) override { results = {x}; }
-  void visit(const constant* x) override { results = {x}; }
-  void visit(const let* x) override { std::abort(); }
+  void visit(const variable* op) override { results = {op}; }
+  void visit(const wildcard* op) override { results = {op}; }
+  void visit(const constant* op) override { results = {op}; }
+  void visit(const let* op) override { std::abort(); }
 
   template <typename T>
-  void visit_binary(bool commutative, const T* x) {
+  void visit_binary(bool commutative, const T* op) {
     // TODO: I think some of these patterns are redundant, but finding them is tricky.
 
-    x->a.accept(this);
+    op->a.accept(this);
     std::vector<expr> a = std::move(results);
-    x->b.accept(this);
+    op->b.accept(this);
     std::vector<expr> b = std::move(results);
 
     results.clear();
@@ -109,31 +109,31 @@ public:
     }
   }
 
-  void visit(const add* x) override { visit_binary(true, x); }
-  void visit(const sub* x) override { visit_binary(false, x); }
-  void visit(const mul* x) override { visit_binary(true, x); }
-  void visit(const div* x) override { visit_binary(false, x); }
-  void visit(const mod* x) override { visit_binary(false, x); }
-  void visit(const class min* x) override { visit_binary(true, x); }
-  void visit(const class max* x) override { visit_binary(true, x); }
-  void visit(const equal* x) override { visit_binary(true, x); }
-  void visit(const not_equal* x) override { visit_binary(true, x); }
-  void visit(const less* x) override { visit_binary(false, x); }
-  void visit(const less_equal* x) override { visit_binary(false, x); }
-  void visit(const logical_and* x) override { visit_binary(true, x); }
-  void visit(const logical_or* x) override { visit_binary(true, x); }
-  void visit(const logical_not* x) override {
-    x->x.accept(this);
+  void visit(const add* op) override { visit_binary(true, op); }
+  void visit(const sub* op) override { visit_binary(false, op); }
+  void visit(const mul* op) override { visit_binary(true, op); }
+  void visit(const div* op) override { visit_binary(false, op); }
+  void visit(const mod* op) override { visit_binary(false, op); }
+  void visit(const class min* op) override { visit_binary(true, op); }
+  void visit(const class max* op) override { visit_binary(true, op); }
+  void visit(const equal* op) override { visit_binary(true, op); }
+  void visit(const not_equal* op) override { visit_binary(true, op); }
+  void visit(const less* op) override { visit_binary(false, op); }
+  void visit(const less_equal* op) override { visit_binary(false, op); }
+  void visit(const logical_and* op) override { visit_binary(true, op); }
+  void visit(const logical_or* op) override { visit_binary(true, op); }
+  void visit(const logical_not* op) override {
+    op->a.accept(this);
     for (expr& i : results) {
       i = !i;
     }
   }
-  void visit(const class select* x) override {
-    x->condition.accept(this);
+  void visit(const class select* op) override {
+    op->condition.accept(this);
     std::vector<expr> c = std::move(results);
-    x->true_value.accept(this);
+    op->true_value.accept(this);
     std::vector<expr> t = std::move(results);
-    x->false_value.accept(this);
+    op->false_value.accept(this);
     std::vector<expr> f = std::move(results);
 
     results.clear();
@@ -147,31 +147,31 @@ public:
     }
   }
 
-  void visit(const call* x) override {
-    if (x->args.size() == 1) {
-      x->args.front().accept(this);
+  void visit(const call* op) override {
+    if (op->args.size() == 1) {
+      op->args.front().accept(this);
       for (expr& i : results) {
-        i = call::make(x->intrinsic, {i});
+        i = call::make(op->intrinsic, {i});
       }
     } else {
-      results = {x};
+      results = {op};
     }
   }
 
-  void visit(const let_stmt* x) override { std::abort(); }
-  void visit(const block* x) override { std::abort(); }
-  void visit(const loop* x) override { std::abort(); }
-  void visit(const if_then_else* x) override { std::abort(); }
-  void visit(const call_stmt* x) override { std::abort(); }
-  void visit(const copy_stmt* x) override { std::abort(); }
-  void visit(const allocate* x) override { std::abort(); }
-  void visit(const make_buffer* x) override { std::abort(); }
-  void visit(const crop_buffer* x) override { std::abort(); }
-  void visit(const crop_dim* x) override { std::abort(); }
-  void visit(const slice_buffer* x) override { std::abort(); }
-  void visit(const slice_dim* x) override { std::abort(); }
-  void visit(const truncate_rank* x) override { std::abort(); }
-  void visit(const check* x) override { std::abort(); }
+  void visit(const let_stmt* op) override { std::abort(); }
+  void visit(const block* op) override { std::abort(); }
+  void visit(const loop* op) override { std::abort(); }
+  void visit(const if_then_else* op) override { std::abort(); }
+  void visit(const call_stmt* op) override { std::abort(); }
+  void visit(const copy_stmt* op) override { std::abort(); }
+  void visit(const allocate* op) override { std::abort(); }
+  void visit(const make_buffer* op) override { std::abort(); }
+  void visit(const crop_buffer* op) override { std::abort(); }
+  void visit(const crop_dim* op) override { std::abort(); }
+  void visit(const slice_buffer* op) override { std::abort(); }
+  void visit(const slice_dim* op) override { std::abort(); }
+  void visit(const truncate_rank* op) override { std::abort(); }
+  void visit(const check* op) override { std::abort(); }
 };
 
 class rule_set {
@@ -203,13 +203,13 @@ public:
     }
   }
 
-  expr apply(expr x) {
-    // std::cerr << "apply_rules: " << x << std::endl;
+  expr apply(expr op) {
+    // std::cerr << "apply_rules: " << op << std::endl;
     symbol_map<expr> matches;
     for (const rule& r : rules_) {
       matches.clear();
       // std::cerr << "  Considering " << r.pattern << std::endl;
-      if (match(r.pattern, x, matches)) {
+      if (match(r.pattern, op, matches)) {
         // std::cerr << "  Matched:" << std::endl;
         // for (const auto& i : matches) {
         //   std::cerr << "    " << i.first << ": " << i.second << std::endl;
@@ -217,16 +217,16 @@ public:
 
         if (!r.predicate.defined() || prove_true(substitute(r.predicate, matches))) {
           // std::cerr << "  Applied " << r.pattern << " -> " << r.replacement << std::endl;
-          x = substitute(r.replacement, matches);
-          // std::cerr << "  Result: " << x << std::endl;
-          return x;
+          op = substitute(r.replacement, matches);
+          // std::cerr << "  Result: " << op << std::endl;
+          return op;
         } else {
           // std::cerr << "  Failed predicate: " << r.predicate << std::endl;
         }
       }
     }
     // std::cerr << "  Failed" << std::endl;
-    return x;
+    return op;
   }
 };
 
@@ -776,17 +776,17 @@ expr simplify(const logical_or* op, expr a, expr b) {
   return rules.apply(e);
 }
 
-expr simplify(const logical_not* op, expr value) {
-  const index_t* cv = as_constant(value);
+expr simplify(const logical_not* op, expr a) {
+  const index_t* cv = as_constant(a);
   if (cv) {
     return *cv == 0;
   }
 
   expr e;
-  if (op && value.same_as(op->x)) {
+  if (op && a.same_as(op->a)) {
     e = op;
   } else {
-    e = logical_not::make(std::move(value));
+    e = logical_not::make(std::move(a));
   }
 
   static rule_set rules = {
@@ -1065,7 +1065,7 @@ public:
   void visit(const logical_or* op) override { visit_binary(op); }
   void visit(const logical_not* op) override {
     interval_expr bounds;
-    expr a = mutate(op->x, &bounds);
+    expr a = mutate(op->a, &bounds);
 
     if (is_true(bounds.min)) {
       set_result(false, {0, 0});
@@ -1208,7 +1208,7 @@ public:
     stmt f = mutate(op->false_body);
 
     if (const logical_not* n = c.as<logical_not>()) {
-      c = n->x;
+      c = n->a;
       std::swap(t, f);
     }
 
@@ -1541,69 +1541,69 @@ interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
 namespace {
 
 template <typename T>
-interval_expr bounds_of_linear(const T* x, interval_expr a, interval_expr b) {
-  return {simplify(x, std::move(a.min), std::move(b.min)), simplify(x, std::move(a.max), std::move(b.max))};
+interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
+  return {simplify(op, std::move(a.min), std::move(b.min)), simplify(op, std::move(a.max), std::move(b.max))};
 }
 
 template <typename T>
-interval_expr bounds_of_less(const T* x, interval_expr a, interval_expr b) {
+interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
   // This bit of genius comes from
   // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
-  return {simplify(x, std::move(a.max), std::move(b.min)), simplify(x, std::move(a.min), std::move(b.max))};
+  return {simplify(op, std::move(a.max), std::move(b.min)), simplify(op, std::move(a.min), std::move(b.max))};
 }
 
 }  // namespace
 
-interval_expr bounds_of(const add* x, interval_expr a, interval_expr b) {
-  return bounds_of_linear(x, std::move(a), std::move(b));
+interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
+  return bounds_of_linear(op, std::move(a), std::move(b));
 }
-interval_expr bounds_of(const sub* x, interval_expr a, interval_expr b) {
-  return {simplify(x, std::move(a.min), std::move(b.max)), simplify(x, std::move(a.max), std::move(b.min))};
+interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
+  return {simplify(op, std::move(a.min), std::move(b.max)), simplify(op, std::move(a.max), std::move(b.min))};
 }
-interval_expr bounds_of(const mul* x, interval_expr a, interval_expr b) {
+interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
   if (is_non_negative(a.min) && is_non_negative(b.min)) {
     // Both are >= 0, neither intervals flip.
-    return {simplify(x, a.min, b.min), simplify(x, a.max, b.max)};
+    return {simplify(op, a.min, b.min), simplify(op, a.max, b.max)};
   } else if (is_non_positive(a.max) && is_non_positive(b.max)) {
     // Both are <= 0, both intervals flip.
-    return {simplify(x, a.max, b.max), simplify(x, a.min, b.min)};
+    return {simplify(op, a.max, b.max), simplify(op, a.min, b.min)};
   } else if (b.is_single_point()) {
     if (is_non_negative(b.min)) {
-      return {simplify(x, a.min, b.min), simplify(x, a.max, b.min)};
+      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
     } else if (is_non_positive(b.min)) {
-      return {simplify(x, a.max, b.min), simplify(x, a.min, b.min)};
+      return {simplify(op, a.max, b.min), simplify(op, a.min, b.min)};
     } else {
       expr corners[] = {
-          simplify(x, a.min, b.min),
-          simplify(x, a.max, b.min),
+          simplify(op, a.min, b.min),
+          simplify(op, a.max, b.min),
       };
       return {min(corners), max(corners)};
     }
   } else if (a.is_single_point()) {
     if (is_non_negative(a.min)) {
-      return {simplify(x, a.min, b.min), simplify(x, a.min, b.max)};
+      return {simplify(op, a.min, b.min), simplify(op, a.min, b.max)};
     } else if (is_non_positive(a.min)) {
-      return {simplify(x, a.min, b.max), simplify(x, a.min, b.min)};
+      return {simplify(op, a.min, b.max), simplify(op, a.min, b.min)};
     } else {
       expr corners[] = {
-          simplify(x, a.min, b.min),
-          simplify(x, a.min, b.max),
+          simplify(op, a.min, b.min),
+          simplify(op, a.min, b.max),
       };
       return {min(corners), max(corners)};
     }
   } else {
     // We don't know anything. The results is the union of all 4 possible intervals.
     expr corners[] = {
-        simplify(x, a.min, b.min),
-        simplify(x, a.min, b.max),
-        simplify(x, a.max, b.min),
-        simplify(x, a.max, b.max),
+        simplify(op, a.min, b.min),
+        simplify(op, a.min, b.max),
+        simplify(op, a.max, b.min),
+        simplify(op, a.max, b.max),
     };
     return {min(corners), max(corners)};
   }
 }
-interval_expr bounds_of(const div* x, interval_expr a, interval_expr b) {
+interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
@@ -1619,39 +1619,39 @@ interval_expr bounds_of(const div* x, interval_expr a, interval_expr b) {
     return a | -a;
   }
 }
-interval_expr bounds_of(const mod* x, interval_expr a, interval_expr b) { return {0, max(abs(b.min), abs(b.max))}; }
+interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) { return {0, max(abs(b.min), abs(b.max))}; }
 
-interval_expr bounds_of(const class min* x, interval_expr a, interval_expr b) {
-  return bounds_of_linear(x, std::move(a), std::move(b));
+interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
+  return bounds_of_linear(op, std::move(a), std::move(b));
 }
-interval_expr bounds_of(const class max* x, interval_expr a, interval_expr b) {
-  return bounds_of_linear(x, std::move(a), std::move(b));
+interval_expr bounds_of(const class max* op, interval_expr a, interval_expr b) {
+  return bounds_of_linear(op, std::move(a), std::move(b));
 }
 
-interval_expr bounds_of(const less* x, interval_expr a, interval_expr b) {
-  return bounds_of_less(x, std::move(a), std::move(b));
+interval_expr bounds_of(const less* op, interval_expr a, interval_expr b) {
+  return bounds_of_less(op, std::move(a), std::move(b));
 }
-interval_expr bounds_of(const less_equal* x, interval_expr a, interval_expr b) {
-  return bounds_of_less(x, std::move(a), std::move(b));
+interval_expr bounds_of(const less_equal* op, interval_expr a, interval_expr b) {
+  return bounds_of_less(op, std::move(a), std::move(b));
 }
-interval_expr bounds_of(const equal* x, interval_expr a, interval_expr b) {
+interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
   return {0, a.min <= b.max && b.min <= a.max};
 }
-interval_expr bounds_of(const not_equal* x, interval_expr a, interval_expr b) {
+interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
   return {a.max < b.min || b.max < a.min, 1};
 }
 
-interval_expr bounds_of(const logical_and* x, interval_expr a, interval_expr b) {
-  return bounds_of_linear(x, std::move(a), std::move(b));
+interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b) {
+  return bounds_of_linear(op, std::move(a), std::move(b));
 }
-interval_expr bounds_of(const logical_or* x, interval_expr a, interval_expr b) {
-  return bounds_of_linear(x, std::move(a), std::move(b));
+interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b) {
+  return bounds_of_linear(op, std::move(a), std::move(b));
 }
-interval_expr bounds_of(const logical_not* x, interval_expr a) {
-  return {simplify(x, std::move(a.max)), simplify(x, std::move(a.min))};
+interval_expr bounds_of(const logical_not* op, interval_expr a) {
+  return {simplify(op, std::move(a.max)), simplify(op, std::move(a.min))};
 }
 
-interval_expr bounds_of(const class select* x, interval_expr c, interval_expr t, interval_expr f) {
+interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t, interval_expr f) {
   if (is_true(c.min)) {
     return t;
   } else if (is_false(c.max)) {
@@ -1661,18 +1661,18 @@ interval_expr bounds_of(const class select* x, interval_expr c, interval_expr t,
   }
 }
 
-interval_expr bounds_of(const call* x, std::vector<interval_expr> args) {
-  switch (x->intrinsic) {
+interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
+  switch (op->intrinsic) {
   case intrinsic::abs:
     assert(args.size() == 1);
     if (is_positive(args[0].min)) {
       return {args[0].min, args[0].max};
     } else {
-      expr abs_min = simplify(x, {args[0].min});
-      expr abs_max = simplify(x, {args[0].max});
+      expr abs_min = simplify(op, {args[0].min});
+      expr abs_max = simplify(op, {args[0].max});
       return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
     }
-  default: return {x, x};
+  default: return {op, op};
   }
 }
 
@@ -1706,9 +1706,9 @@ interval_expr where_true(const expr& condition, symbol_id var) {
   public:
     std::vector<expr> leaves;
 
-    void visit(const variable* x) { leaves.push_back(x); }
-    void visit(const constant* x) { leaves.push_back(x); }
-    void visit(const call* x) { if (is_buffer_intrinsic(x->intrinsic)) leaves.push_back(x); }
+    void visit(const variable* op) { leaves.push_back(op); }
+    void visit(const constant* op) { leaves.push_back(op); }
+    void visit(const call* op) { if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op); }
   };
 
   initial_guesses v;
@@ -1755,76 +1755,76 @@ public:
   derivative(symbol_id dx) : dx(dx) {}
 
   template <typename T>
-  void visit_variable(const T* x) {
-    if (x->sym == dx) {
+  void visit_variable(const T* op) {
+    if (op->sym == dx) {
       set_result(1);
     } else {
       set_result(expr(0));
     }
   }
 
-  void visit(const variable* x) override { visit_variable(x); }
-  void visit(const wildcard* x) override { visit_variable(x); }
+  void visit(const variable* op) override { visit_variable(op); }
+  void visit(const wildcard* op) override { visit_variable(op); }
   void visit(const constant*) override { set_result(expr(0)); }
 
-  void visit(const mul* x) override {
-    if (depends_on(x->a, dx) && depends_on(x->b, dx)) {
-      expr da = mutate(x->a);
-      expr db = mutate(x->b);
-      set_result(simplify(x, x->a, db) + simplify(x, da, x->b));
-    } else if (depends_on(x->a, dx)) {
-      set_result(simplify(x, mutate(x->a), x->b));
-    } else if (depends_on(x->b, dx)) {
-      set_result(simplify(x, x->a, mutate(x->b)));
+  void visit(const mul* op) override {
+    if (depends_on(op->a, dx) && depends_on(op->b, dx)) {
+      expr da = mutate(op->a);
+      expr db = mutate(op->b);
+      set_result(simplify(op, op->a, db) + simplify(op, da, op->b));
+    } else if (depends_on(op->a, dx)) {
+      set_result(simplify(op, mutate(op->a), op->b));
+    } else if (depends_on(op->b, dx)) {
+      set_result(simplify(op, op->a, mutate(op->b)));
     } else {
       set_result(expr(0));
     }
   }
-  void visit(const div* x) override {
-    if (depends_on(x->a, dx) && depends_on(x->b, dx)) {
-      expr da = mutate(x->a);
-      expr db = mutate(x->b);
-      set_result((da * x->b - x->a * db) / (x->b * x->b));
-    } else if (depends_on(x->a, dx)) {
-      set_result(mutate(x->a) / x->b);
-    } else if (depends_on(x->b, dx)) {
-      expr db = mutate(x->b);
-      set_result(-x->a / (x->b * x->b));
+  void visit(const div* op) override {
+    if (depends_on(op->a, dx) && depends_on(op->b, dx)) {
+      expr da = mutate(op->a);
+      expr db = mutate(op->b);
+      set_result((da * op->b - op->a * db) / (op->b * op->b));
+    } else if (depends_on(op->a, dx)) {
+      set_result(mutate(op->a) / op->b);
+    } else if (depends_on(op->b, dx)) {
+      expr db = mutate(op->b);
+      set_result(-op->a / (op->b * op->b));
     } else {
       set_result(expr(0));
     }
   }
 
-  virtual void visit(const mod* x) override { set_result(indeterminate()); }
-  virtual void visit(const class min* x) override { set_result(select(x->a < x->b, mutate(x->a), mutate(x->b))); }
-  virtual void visit(const class max* x) override { set_result(select(x->b < x->a, mutate(x->a), mutate(x->b))); }
+  virtual void visit(const mod* op) override { set_result(indeterminate()); }
+  virtual void visit(const class min* op) override { set_result(select(op->a < op->b, mutate(op->a), mutate(op->b))); }
+  virtual void visit(const class max* op) override { set_result(select(op->b < op->a, mutate(op->a), mutate(op->b))); }
 
   template <typename T>
-  void visit_compare(const T* x) {
-    if (depends_on(x->a, dx) || depends_on(x->b, dx)) {
+  void visit_compare(const T* op) {
+    if (depends_on(op->a, dx) || depends_on(op->b, dx)) {
       set_result(indeterminate());
     } else {
       set_result(expr(0));
     }
   }
 
-  virtual void visit(const equal* x) override { visit_compare(x); }
-  virtual void visit(const not_equal* x) override { visit_compare(x); }
-  virtual void visit(const less* x) override { visit_compare(x); }
-  virtual void visit(const less_equal* x) override { visit_compare(x); }
-  virtual void visit(const logical_and* x) override {}
-  virtual void visit(const logical_or* x) override {}
-  virtual void visit(const logical_not* x) override { set_result(-mutate(x->x)); }
+  virtual void visit(const equal* op) override { visit_compare(op); }
+  virtual void visit(const not_equal* op) override { visit_compare(op); }
+  virtual void visit(const less* op) override { visit_compare(op); }
+  virtual void visit(const less_equal* op) override { visit_compare(op); }
+  virtual void visit(const logical_and* op) override {}
+  virtual void visit(const logical_or* op) override {}
+  virtual void visit(const logical_not* op) override { set_result(-mutate(op->a)); }
 
-  virtual void visit(const class select* x) override {
-    set_result(select(x->condition, mutate(x->true_value), mutate(x->false_value)));
+  virtual void visit(const class select* op) override {
+    set_result(select(op->condition, mutate(op->true_value), mutate(op->false_value)));
   }
 
-  virtual void visit(const call* x) override { std::abort(); }
+  virtual void visit(const call* op) override { std::abort(); }
 };
 
 }  // namespace
 
-expr differentiate(const expr& f, symbol_id x) { return derivative(x).mutate(f); }
+expr differentiate(const expr& f, symbol_id op) { return derivative(op).mutate(f); }
 
 }  // namespace slinky

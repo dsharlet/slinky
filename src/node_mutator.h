@@ -23,59 +23,59 @@ public:
   const expr& mutated_expr() const { return e_; }
   const stmt& mutated_stmt() const { return s_; }
 
-  virtual expr mutate(const expr& x) {
-    if (x.defined()) {
-      x.accept(this);
+  virtual expr mutate(const expr& e) {
+    if (e.defined()) {
+      e.accept(this);
       return std::move(e_);
     } else {
       return expr();
     }
   }
-  virtual stmt mutate(const stmt& x) {
-    if (x.defined()) {
-      x.accept(this);
+  virtual stmt mutate(const stmt& s) {
+    if (s.defined()) {
+      s.accept(this);
       return std::move(s_);
     } else {
       return stmt();
     }
   }
 
-  virtual void visit(const variable* x) override { set_result(x); }
-  virtual void visit(const wildcard* x) override { set_result(x); }
-  virtual void visit(const constant* x) override { set_result(x); }
+  virtual void visit(const variable* op) override { set_result(op); }
+  virtual void visit(const wildcard* op) override { set_result(op); }
+  virtual void visit(const constant* op) override { set_result(op); }
 
-  virtual void visit(const let* x) override;
-  virtual void visit(const let_stmt* x) override;
-  virtual void visit(const add* x) override;
-  virtual void visit(const sub* x) override;
-  virtual void visit(const mul* x) override;
-  virtual void visit(const div* x) override;
-  virtual void visit(const mod* x) override;
-  virtual void visit(const class min* x) override;
-  virtual void visit(const class max* x) override;
-  virtual void visit(const equal* x) override;
-  virtual void visit(const not_equal* x) override;
-  virtual void visit(const less* x) override;
-  virtual void visit(const less_equal* x) override;
-  virtual void visit(const logical_and* x) override;
-  virtual void visit(const logical_or* x) override;
-  virtual void visit(const logical_not* x) override;
-  virtual void visit(const class select* x) override;
-  virtual void visit(const call* x) override;
+  virtual void visit(const let*) override;
+  virtual void visit(const let_stmt*) override;
+  virtual void visit(const add*) override;
+  virtual void visit(const sub*) override;
+  virtual void visit(const mul*) override;
+  virtual void visit(const div*) override;
+  virtual void visit(const mod*) override;
+  virtual void visit(const class min*) override;
+  virtual void visit(const class max*) override;
+  virtual void visit(const equal*) override;
+  virtual void visit(const not_equal*) override;
+  virtual void visit(const less*) override;
+  virtual void visit(const less_equal*) override;
+  virtual void visit(const logical_and*) override;
+  virtual void visit(const logical_or*) override;
+  virtual void visit(const logical_not*) override;
+  virtual void visit(const class select*) override;
+  virtual void visit(const call*) override;
 
-  virtual void visit(const block* x) override;
-  virtual void visit(const loop* x) override;
-  virtual void visit(const if_then_else* x) override;
-  virtual void visit(const call_stmt* x) override;
-  virtual void visit(const copy_stmt* x) override;
-  virtual void visit(const allocate* x) override;
-  virtual void visit(const make_buffer* x) override;
-  virtual void visit(const crop_buffer* x) override;
-  virtual void visit(const crop_dim* x) override;
-  virtual void visit(const slice_buffer* x) override;
-  virtual void visit(const slice_dim* x) override;
-  virtual void visit(const truncate_rank* x) override;
-  virtual void visit(const check* x) override;
+  virtual void visit(const block*) override;
+  virtual void visit(const loop*) override;
+  virtual void visit(const if_then_else*) override;
+  virtual void visit(const call_stmt*) override;
+  virtual void visit(const copy_stmt*) override;
+  virtual void visit(const allocate*) override;
+  virtual void visit(const make_buffer*) override;
+  virtual void visit(const crop_buffer*) override;
+  virtual void visit(const crop_dim*) override;
+  virtual void visit(const slice_buffer*) override;
+  virtual void visit(const slice_dim*) override;
+  virtual void visit(const truncate_rank*) override;
+  virtual void visit(const check*) override;
 };
 
 }  // namespace slinky

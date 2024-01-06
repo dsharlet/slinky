@@ -100,9 +100,9 @@ expr less::make(expr a, expr b) { return make_bin_op<less>(std::move(a), std::mo
 expr less_equal::make(expr a, expr b) { return make_bin_op<less_equal>(std::move(a), std::move(b)); }
 expr logical_and::make(expr a, expr b) { return make_bin_op<logical_and>(std::move(a), std::move(b)); }
 expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move(a), std::move(b)); }
-expr logical_not::make(expr x) {
+expr logical_not::make(expr a) {
   logical_not* n = new logical_not();
-  n->x = std::move(x);
+  n->a = std::move(a);
   return n;
 }
 

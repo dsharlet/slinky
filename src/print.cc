@@ -47,8 +47,8 @@ public:
   printer(std::ostream& os, const node_context* context) : os(os), context(context) {}
 
   template <typename T>
-  printer& operator<<(const T& x) {
-    os << x;
+  printer& operator<<(const T& op) {
+    os << op;
     return *this;
   }
 
@@ -122,18 +122,18 @@ public:
     *this << "(" << op->a << s << op->b << ")";
   }
 
-  void visit(const add* x) override { visit_bin_op(x, " + "); }
-  void visit(const sub* x) override { visit_bin_op(x, " - "); }
-  void visit(const mul* x) override { visit_bin_op(x, " * "); }
-  void visit(const div* x) override { visit_bin_op(x, " / "); }
-  void visit(const mod* x) override { visit_bin_op(x, " % "); }
-  void visit(const equal* x) override { visit_bin_op(x, " == "); }
-  void visit(const not_equal* x) override { visit_bin_op(x, " != "); }
-  void visit(const less* x) override { visit_bin_op(x, " < "); }
-  void visit(const less_equal* x) override { visit_bin_op(x, " <= "); }
-  void visit(const logical_and* x) override { visit_bin_op(x, " && "); }
-  void visit(const logical_or* x) override { visit_bin_op(x, " || "); }
-  void visit(const logical_not* x) override { *this << "!" << x->x; }
+  void visit(const add* op) override { visit_bin_op(op, " + "); }
+  void visit(const sub* op) override { visit_bin_op(op, " - "); }
+  void visit(const mul* op) override { visit_bin_op(op, " * "); }
+  void visit(const div* op) override { visit_bin_op(op, " / "); }
+  void visit(const mod* op) override { visit_bin_op(op, " % "); }
+  void visit(const equal* op) override { visit_bin_op(op, " == "); }
+  void visit(const not_equal* op) override { visit_bin_op(op, " != "); }
+  void visit(const less* op) override { visit_bin_op(op, " < "); }
+  void visit(const less_equal* op) override { visit_bin_op(op, " <= "); }
+  void visit(const logical_and* op) override { visit_bin_op(op, " && "); }
+  void visit(const logical_or* op) override { visit_bin_op(op, " || "); }
+  void visit(const logical_not* op) override { *this << "!" << op->a; }
 
   void visit(const class min* op) override { *this << "min(" << op->a << ", " << op->b << ")"; }
   void visit(const class max* op) override { *this << "max(" << op->a << ", " << op->b << ")"; }
@@ -142,7 +142,7 @@ public:
     *this << "select(" << op->condition << ", " << op->true_value << ", " << op->false_value << ")";
   }
 
-  void visit(const call* x) override { *this << x->intrinsic << "(" << x->args << ")"; }
+  void visit(const call* op) override { *this << op->intrinsic << "(" << op->args << ")"; }
 
   void visit(const block* b) override {
     if (b->a.defined()) {

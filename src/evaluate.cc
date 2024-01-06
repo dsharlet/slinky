@@ -110,21 +110,21 @@ public:
   evaluator(eval_context& context) : context(context) {}
 
   // Skip the visitor pattern (two virtual function calls) for some frequently used node types.
-  void visit(const expr& x) {
-    switch (x.type()) {
-    case node_type::variable: visit(reinterpret_cast<const variable*>(x.get())); return;
-    case node_type::constant: visit(reinterpret_cast<const constant*>(x.get())); return;
-    default: x.accept(this);
+  void visit(const expr& op) {
+    switch (op.type()) {
+    case node_type::variable: visit(reinterpret_cast<const variable*>(op.get())); return;
+    case node_type::constant: visit(reinterpret_cast<const constant*>(op.get())); return;
+    default: op.accept(this);
     }
   }
 
-  void visit(const stmt& x) {
-    switch (x.type()) {
-    // case node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(x.get())); return;
-    // case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(x.get())); return;
-    // case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(x.get())); return;
-    // case node_type::block: visit(reinterpret_cast<const block*>(x.get())); return;
-    default: x.accept(this);
+  void visit(const stmt& op) {
+    switch (op.type()) {
+    // case node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(op.get())); return;
+    // case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(op.get())); return;
+    // case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(op.get())); return;
+    // case node_type::block: visit(reinterpret_cast<const block*>(op.get())); return;
+    default: op.accept(this);
     }
   }
 
@@ -169,34 +169,34 @@ public:
   void visit(const let* l) override { visit_let(l); }
   void visit(const let_stmt* l) override { visit_let(l); }
 
-  void visit(const add* x) override { result = eval_expr(x->a) + eval_expr(x->b); }
-  void visit(const sub* x) override { result = eval_expr(x->a) - eval_expr(x->b); }
-  void visit(const mul* x) override { result = eval_expr(x->a) * eval_expr(x->b); }
-  void visit(const div* x) override { result = euclidean_div(eval_expr(x->a), eval_expr(x->b)); }
-  void visit(const mod* x) override { result = euclidean_mod(eval_expr(x->a), eval_expr(x->b)); }
-  void visit(const class min* x) override { result = std::min(eval_expr(x->a), eval_expr(x->b)); }
-  void visit(const class max* x) override { result = std::max(eval_expr(x->a), eval_expr(x->b)); }
-  void visit(const equal* x) override { result = eval_expr(x->a) == eval_expr(x->b); }
-  void visit(const not_equal* x) override { result = eval_expr(x->a) != eval_expr(x->b); }
-  void visit(const less* x) override { result = eval_expr(x->a) < eval_expr(x->b); }
-  void visit(const less_equal* x) override { result = eval_expr(x->a) <= eval_expr(x->b); }
-  void visit(const logical_and* x) override { result = eval_expr(x->a) != 0 && eval_expr(x->b) != 0; }
-  void visit(const logical_or* x) override { result = eval_expr(x->a) != 0 || eval_expr(x->b) != 0; }
-  void visit(const logical_not* x) override { result = eval_expr(x->x) == 0; }
+  void visit(const add* op) override { result = eval_expr(op->a) + eval_expr(op->b); }
+  void visit(const sub* op) override { result = eval_expr(op->a) - eval_expr(op->b); }
+  void visit(const mul* op) override { result = eval_expr(op->a) * eval_expr(op->b); }
+  void visit(const div* op) override { result = euclidean_div(eval_expr(op->a), eval_expr(op->b)); }
+  void visit(const mod* op) override { result = euclidean_mod(eval_expr(op->a), eval_expr(op->b)); }
+  void visit(const class min* op) override { result = std::min(eval_expr(op->a), eval_expr(op->b)); }
+  void visit(const class max* op) override { result = std::max(eval_expr(op->a), eval_expr(op->b)); }
+  void visit(const equal* op) override { result = eval_expr(op->a) == eval_expr(op->b); }
+  void visit(const not_equal* op) override { result = eval_expr(op->a) != eval_expr(op->b); }
+  void visit(const less* op) override { result = eval_expr(op->a) < eval_expr(op->b); }
+  void visit(const less_equal* op) override { result = eval_expr(op->a) <= eval_expr(op->b); }
+  void visit(const logical_and* op) override { result = eval_expr(op->a) != 0 && eval_expr(op->b) != 0; }
+  void visit(const logical_or* op) override { result = eval_expr(op->a) != 0 || eval_expr(op->b) != 0; }
+  void visit(const logical_not* op) override { result = eval_expr(op->a) == 0; }
 
-  void visit(const class select* x) override {
-    if (eval_expr(x->condition)) {
-      result = eval_expr(x->true_value);
+  void visit(const class select* op) override {
+    if (eval_expr(op->condition)) {
+      result = eval_expr(op->true_value);
     } else {
-      result = eval_expr(x->false_value);
+      result = eval_expr(op->false_value);
     }
   }
 
-  index_t eval_buffer_metadata(const call* x) {
-    assert(x->args.size() == 1);
-    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
+  index_t eval_buffer_metadata(const call* op) {
+    assert(op->args.size() == 1);
+    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(op->args[0]));
     assert(buf);
-    switch (x->intrinsic) {
+    switch (op->intrinsic) {
     case intrinsic::buffer_rank: return buf->rank;
     case intrinsic::buffer_elem_size: return buf->elem_size;
     case intrinsic::buffer_base: return reinterpret_cast<index_t>(buf->base);
@@ -205,14 +205,14 @@ public:
     }
   }
 
-  index_t eval_dim_metadata(const call* x) {
-    assert(x->args.size() == 2);
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
+  index_t eval_dim_metadata(const call* op) {
+    assert(op->args.size() == 2);
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(eval_expr(op->args[0]));
     assert(buffer);
-    index_t d = eval_expr(x->args[1]);
+    index_t d = eval_expr(op->args[1]);
     assert(d < static_cast<index_t>(buffer->rank));
     const slinky::dim& dim = buffer->dim(d);
-    switch (x->intrinsic) {
+    switch (op->intrinsic) {
     case intrinsic::buffer_min: return dim.min();
     case intrinsic::buffer_max: return dim.max();
     case intrinsic::buffer_extent: return dim.extent();
@@ -222,43 +222,43 @@ public:
     }
   }
 
-  void* eval_buffer_at(const call* x) {
-    assert(x->args.size() >= 1);
-    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(x->args[0]));
+  void* eval_buffer_at(const call* op) {
+    assert(op->args.size() >= 1);
+    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval_expr(op->args[0]));
     void* result = buf->base;
-    assert(x->args.size() <= buf->rank + 1);
-    for (std::size_t d = 0; d < x->args.size() - 1; ++d) {
-      if (x->args[d + 1].defined()) {
-        result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(x->args[d + 1])));
+    assert(op->args.size() <= buf->rank + 1);
+    for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
+      if (op->args[d + 1].defined()) {
+        result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(op->args[d + 1])));
       }
     }
     return result;
   }
 
-  void visit(const call* x) override {
-    switch (x->intrinsic) {
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
     case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
     case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
 
     case intrinsic::abs:
-      assert(x->args.size() == 1);
-      result = std::abs(eval_expr(x->args[0]));
+      assert(op->args.size() == 1);
+      result = std::abs(eval_expr(op->args[0]));
       return;
 
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:
     case intrinsic::buffer_base:
-    case intrinsic::buffer_size_bytes: result = eval_buffer_metadata(x); return;
+    case intrinsic::buffer_size_bytes: result = eval_buffer_metadata(op); return;
 
     case intrinsic::buffer_min:
     case intrinsic::buffer_max:
     case intrinsic::buffer_extent:
     case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor: result = eval_dim_metadata(x); return;
+    case intrinsic::buffer_fold_factor: result = eval_dim_metadata(op); return;
 
-    case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(x)); return;
-    default: std::cerr << "Unknown intrinsic: " << x->intrinsic << std::endl; std::abort();
+    case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(op)); return;
+    default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
   }
 
