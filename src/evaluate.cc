@@ -48,6 +48,57 @@ void dump_context_for_expr(
   }
 }
 
+namespace {
+
+// This is a very slow implementation of copy_stmt. The expectation is that copies will have been lowered to aliases or
+// calls to `copy` in buffer.h/cc instead of relying on this implementation.
+void copy_stmt_impl(
+    eval_context& ctx, const raw_buffer& src, const dim* dst_dims, void* dst_base, const copy_stmt& c, int dim) {
+  const class dim& dst_dim = dst_dims[dim];
+  index_t dst_stride = dst_dim.stride();
+  for (index_t dst_x = dst_dim.begin(); dst_x < dst_dim.end(); ++dst_x) {
+    auto s = set_value_in_scope(ctx, c.dst_x[dim], dst_x);
+    if (dim == 0) {
+      const void* src_base = src.base;
+      for (int d = 0; d < src.rank; ++d) {
+        const class dim& src_dim = src.dims[d];
+
+        index_t src_x = evaluate(c.src_x[d], ctx);
+        if (src_dim.contains(src_x)) {
+          src_base = offset_bytes(src_base, src_dim.flat_offset_bytes(src_x));
+        } else {
+          src_base = nullptr;
+          break;
+        }
+      }
+      if (src_base) {
+        memcpy(dst_base, src_base, src.elem_size);
+      } else if (!c.padding.empty()) {
+        memcpy(dst_base, c.padding.data(), src.elem_size);
+      } else {
+        // Leave unmodified.
+      }
+    } else {
+      copy_stmt_impl(ctx, src, dst_dims, dst_base, c, dim - 1);
+    }
+    dst_base = offset_bytes(dst_base, dst_stride);
+  }
+}
+
+void copy_stmt_impl(eval_context& ctx, const raw_buffer& src, const raw_buffer& dst, const copy_stmt& c) {
+  assert(c.src_x.size() == src.rank);
+  assert(c.dst_x.size() == dst.rank);
+  assert(dst.elem_size == src.elem_size);
+  assert(c.padding.empty() || dst.elem_size == c.padding.size());
+  if (dst.rank == 0) {
+    // The buffer is scalar.
+    assert(src.rank == 0);
+    memcpy(dst.base, src.base, dst.elem_size);
+  } else {
+    copy_stmt_impl(ctx, src, dst.dims, dst.base, c, dst.rank - 1);
+  }
+}
+
 // TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/node_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.
@@ -69,10 +120,10 @@ public:
 
   void visit(const stmt& x) {
     switch (x.type()) {
-    //case node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(x.get())); return;
-    //case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(x.get())); return;
-    //case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(x.get())); return;
-    //case node_type::block: visit(reinterpret_cast<const block*>(x.get())); return;
+    // case node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(x.get())); return;
+    // case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(x.get())); return;
+    // case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(x.get())); return;
+    // case node_type::block: visit(reinterpret_cast<const block*>(x.get())); return;
     default: x.accept(this);
     }
   }
@@ -198,24 +249,16 @@ public:
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:
     case intrinsic::buffer_base:
-    case intrinsic::buffer_size_bytes: 
-      result = eval_buffer_metadata(x); 
-      return;
+    case intrinsic::buffer_size_bytes: result = eval_buffer_metadata(x); return;
 
     case intrinsic::buffer_min:
     case intrinsic::buffer_max:
     case intrinsic::buffer_extent:
     case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor: 
-      result = eval_dim_metadata(x); 
-      return;
+    case intrinsic::buffer_fold_factor: result = eval_dim_metadata(x); return;
 
-    case intrinsic::buffer_at: 
-      result = reinterpret_cast<index_t>(eval_buffer_at(x)); 
-      return;
-    default: 
-      std::cerr << "Unknown intrinsic: " << x->intrinsic << std::endl; 
-      std::abort();
+    case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(x)); return;
+    default: std::cerr << "Unknown intrinsic: " << x->intrinsic << std::endl; std::abort();
     }
   }
 
@@ -268,21 +311,7 @@ public:
     const raw_buffer* src = reinterpret_cast<raw_buffer*>(context.lookup(n->src, 0));
     const raw_buffer* dst = reinterpret_cast<raw_buffer*>(context.lookup(n->dst, 0));
 
-    // We only support simple copies here.
-    assert(src->rank == dst->rank);
-    assert(n->src_x.size() == src->rank);
-    assert(n->dst_x.size() == dst->rank);
-    for (std::size_t d = 0; d < src->rank; ++d) {
-      assert(is_variable(n->src_x[d], n->dst_x[d]));
-    }
-
-    assert(dst);
-    assert(src);
-    if (n->padding.empty()) {
-      copy(*src, *dst);
-    } else {
-      copy(*src, *dst, n->padding.data());
-    }
+    copy_stmt_impl(context, *src, *dst, *n);
   }
 
   void visit(const allocate* n) override {
@@ -491,6 +520,8 @@ public:
     }
   }
 };
+
+}  // namespace
 
 index_t evaluate(const expr& e, eval_context& context) {
   evaluator eval(context);
