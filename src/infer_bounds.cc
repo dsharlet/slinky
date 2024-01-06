@@ -111,15 +111,15 @@ public:
     box_expr& bounds = *infer[alloc->sym];
     expr stride = static_cast<index_t>(alloc->elem_size);
     for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-      interval_expr i = d < bounds.size() ? bounds[d] : alloc->dims[d].bounds;
+      const interval_expr& bounds_d = bounds[d];
 
-      substitutions.emplace_back(buffer_min(alloc_var, d), i.min);
-      substitutions.emplace_back(buffer_max(alloc_var, d), i.max);
+      substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
+      substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
       substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
-      substitutions.emplace_back(buffer_extent(alloc_var, d), i.extent());
-      stride *= i.extent();
+      substitutions.emplace_back(buffer_extent(alloc_var, d), bounds_d.extent());
+      stride *= bounds_d.extent();
     }
 
     // We need to keep replacing until nothing happens :(
