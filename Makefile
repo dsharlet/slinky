@@ -19,7 +19,7 @@ obj/apps/%.o: apps/%.cc $(DEPS)
 	mkdir -p $(@D)
 	$(CXX) -Isrc -c -o $@ $< $(CFLAGS) $(CXXFLAGS)
 
-bin/libslinky.a: obj/evaluate.o obj/pipeline.o obj/print.o obj/expr.o obj/substitute.o obj/infer_bounds.o obj/simplify.o obj/buffer.o obj/optimizations.o
+bin/libslinky.a: obj/evaluate.o obj/pipeline.o obj/print.o obj/expr.o obj/substitute.o obj/infer_bounds.o obj/simplify.o obj/buffer.o obj/optimizations.o obj/node_mutator.o
 	mkdir -p $(@D)
 	ar rc $@ $+
 	ranlib $@
