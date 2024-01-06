@@ -238,7 +238,7 @@ struct interval_expr {
   explicit interval_expr(const expr& point) : min(point), max(point) {}
   interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
-  bool same_as(const interval_expr& r) { return min.same_as(r.min) && max.same_as(r.max); }
+  bool same_as(const interval_expr& r) const { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_single_point() const { return min.same_as(max); }
 
@@ -560,7 +560,7 @@ struct dim_expr {
   const expr& max() const { return bounds.max; }
   expr extent() const { return bounds.extent(); }
 
-  bool same_as(const dim_expr& r) {
+  bool same_as(const dim_expr& r) const {
     return bounds.same_as(r.bounds) && stride.same_as(r.stride) && fold_factor.same_as(r.fold_factor);
   }
 };
