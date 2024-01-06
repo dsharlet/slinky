@@ -4,7 +4,6 @@
 #include <iostream>
 
 #include "node_mutator.h"
-#include "pipeline.h"
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
@@ -48,9 +47,9 @@ class input_crop_remover : public node_mutator {
   symbol_map<bool> used_as_output;
 
 public:
-  void visit(const call_func* op) {
-    for (const func::output& i : op->fn->outputs()) {
-      used_as_output[i.sym()] = true;
+  void visit(const call_stmt* op) {
+    for (symbol_id i : op->outputs) {
+      used_as_output[i] = true;
     }
     set_result(op);
   }
@@ -82,7 +81,7 @@ public:
   }
 };
 
-// This pass tries to identify where call_func operations need to run to satisfy the requirements of their consumers (or
+// This pass tries to identify where call_stmt operations need to run to satisfy the requirements of their consumers (or
 // the output buffers). It updates `allocate` nodes to allocate enough memory for the uses of the allocation, and crops
 // producers to the required region.
 class bounds_inferrer : public node_mutator {
@@ -168,11 +167,11 @@ public:
     set_result(block::make(block::make(checks), s));
   }
 
-  void visit(const call_func* c) override {
+  void visit(const call_stmt* c) override {
     // Record the bounds we currently have from the crops.
-    for (const func::input& input : c->fn->inputs()) {
-      if (infer.contains(input.sym())) {
-        infer[input.sym()] = crops[input.sym()];
+    for (symbol_id input : c->inputs) {
+      if (infer.contains(input)) {
+        infer[input] = crops[input];
       }
     }
     set_result(c);
@@ -308,12 +307,10 @@ public:
     set_result(allocate::make(alloc->storage, alloc->sym, alloc->elem_size, std::move(dims), body));
   }
 
-  void visit(const call_func* c) override {
-    assert(c->fn);
-
+  void visit(const call_stmt* c) override {
     stmt result = c;
-    for (const func::output& output : c->fn->outputs()) {
-      std::optional<box_expr>& bounds = buffer_bounds[output.buffer->sym()];
+    for (symbol_id output : c->outputs) {
+      std::optional<box_expr>& bounds = buffer_bounds[output];
       if (!bounds) continue;
 
       for (size_t l = 0; l < loops.size(); ++l) {
@@ -334,7 +331,7 @@ public:
             expr new_min = simplify(simplify(prev_bounds_d.max + 1));
 
             expr fold_factor = simplify(bounds_of(cur_bounds_d.extent()).max);
-            fold_factors[output.buffer->sym()] = {d, fold_factor};
+            fold_factors[output] = {d, fold_factor};
 
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region. We'll insert

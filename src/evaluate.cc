@@ -69,7 +69,7 @@ public:
 
   void visit(const stmt& x) {
     switch (x.type()) {
-    //case node_type::call_func: visit(reinterpret_cast<const call_func*>(x.get())); return;
+    //case node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(x.get())); return;
     //case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(x.get())); return;
     //case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(x.get())); return;
     //case node_type::block: visit(reinterpret_cast<const block*>(x.get())); return;
@@ -252,17 +252,18 @@ public:
     }
   }
 
-  void visit(const call_func* n) override {
+  void visit(const call_stmt* n) override {
     result = n->target(context);
     if (result) {
       if (context.call_failed) {
         context.call_failed(n);
       } else {
-        std::cerr << "call_func failed: " << stmt(n) << "->" << result << std::endl;
+        std::cerr << "call_stmt failed: " << stmt(n) << "->" << result << std::endl;
         std::abort();
       }
     }
   }
+  void visit(const copy_stmt* n) override { std::abort(); }
 
   void visit(const allocate* n) override {
     std::size_t rank = n->dims.size();

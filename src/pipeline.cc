@@ -9,10 +9,10 @@
 #include "evaluate.h"
 #include "infer_bounds.h"
 #include "node_mutator.h"
+#include "optimizations.h"
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
-#include "optimizations.h"
 
 namespace slinky {
 
@@ -59,6 +59,34 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
 func::func(std::vector<input> inputs, output out, std::vector<char> padding)
     : func(nullptr, std::move(inputs), {std::move(out)}) {
   padding_ = std::move(padding);
+}
+
+stmt func::make_call() const {
+  if (impl_) {
+    call_stmt::symbol_list inputs;
+    call_stmt::symbol_list outputs;
+    for (const func::input& i : inputs_) {
+      inputs.push_back(i.sym());
+    }
+    for (const func::output& i : outputs_) {
+      outputs.push_back(i.sym());
+    }
+    return call_stmt::make(impl_, {}, std::move(inputs), std::move(outputs));
+  } else {
+    // TODO: We should be able to handle copies from multiple inputs.
+    assert(inputs_.size() == 1);
+    assert(outputs_.size() == 1);
+    std::vector<expr> src_x;
+    std::vector<symbol_id> dst_x;
+    for (const interval_expr& i : inputs_[0].bounds) {
+      assert(match(i.min, i.max));
+      src_x.push_back(i.min);
+    }
+    for (const var& i : outputs_[0].dims) {
+      dst_x.push_back(i.sym());
+    }
+    return copy_stmt::make(inputs_[0].sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+  }
 }
 
 namespace {
@@ -279,7 +307,7 @@ public:
   // - Wrapping f with the loops it wanted to be explicit
   // - Producing all the buffers that f consumes (recursively).
   stmt produce(const func* f, const loop_id& current_at = loop_id()) {
-    stmt result = call_func::make(f->impl(), f);
+    stmt result = f->make_call();
     result = add_input_crops(result, f);
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);

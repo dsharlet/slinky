@@ -151,8 +151,20 @@ public:
       set_result(if_then_else::make(std::move(cond), std::move(true_body), std::move(false_body)));
     }
   }
-  virtual void visit(const call_func* x) override {
-    set_result(x);
+  virtual void visit(const call_stmt* x) override { set_result(x); }
+  virtual void visit(const copy_stmt* x) override { 
+    std::vector<expr> src_x;
+    src_x.reserve(x->src_x.size());
+    bool changed = false;
+    for (const expr& i : x->src_x) {
+      src_x.push_back(mutate(i));
+      changed = changed || !src_x.back().same_as(i);
+    }
+    if (!changed) {
+      set_result(x);
+    } else {
+      set_result(copy_stmt::make(x->src, std::move(src_x), x->dst, x->dst_x, x->padding));
+    }
   }
   virtual void visit(const allocate* x) override {
     std::vector<dim_expr> dims;

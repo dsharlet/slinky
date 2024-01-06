@@ -39,11 +39,12 @@ TEST(evaluate_call) {
   node_context ctx;
   var x(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call_func::make(
+  stmt c = call_stmt::make(
       [&](eval_context& ctx) -> index_t {
         calls.push_back(*ctx[x]);
         return 0;
-      });
+      },
+      {x.sym()}, {}, {});
 
   eval_context context;
   context[x] = 2;
@@ -58,11 +59,12 @@ TEST(evaluate_loop) {
   node_context ctx;
   var x(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call_func::make(
+  stmt c = call_stmt::make(
       [&](eval_context& ctx) -> index_t {
         calls.push_back(*ctx[x]);
         return 0;
-      });
+      },
+      {x.sym()}, {}, {});
 
   stmt l = loop::make(x.sym(), range(2, 12), 3, c);
 

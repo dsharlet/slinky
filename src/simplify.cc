@@ -162,7 +162,8 @@ public:
   void visit(const block* x) override { std::abort(); }
   void visit(const loop* x) override { std::abort(); }
   void visit(const if_then_else* x) override { std::abort(); }
-  void visit(const call_func* x) override { std::abort(); }
+  void visit(const call_stmt* x) override { std::abort(); }
+  void visit(const copy_stmt* x) override { std::abort(); }
   void visit(const allocate* x) override { std::abort(); }
   void visit(const make_buffer* x) override { std::abort(); }
   void visit(const crop_buffer* x) override { std::abort(); }

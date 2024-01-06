@@ -281,10 +281,23 @@ expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   return n;
 }
 
-stmt call_func::make(call_func::callable target, const func* fn) {
-  auto n = new call_func();
+stmt call_stmt::make(call_stmt::callable target, symbol_list scalars, symbol_list inputs, symbol_list outputs) {
+  auto n = new call_stmt();
   n->target = std::move(target);
-  n->fn = fn;
+  n->scalars = std::move(scalars);
+  n->inputs = std::move(inputs);
+  n->outputs = std::move(outputs);
+  return n;
+}
+
+stmt copy_stmt::make(
+    symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::vector<char> padding) {
+  auto n = new copy_stmt();
+  n->src = src;
+  n->src_x = std::move(src_x);
+  n->dst = dst;
+  n->dst_x = std::move(dst_x);
+  n->padding = std::move(padding);
   return n;
 }
 

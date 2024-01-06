@@ -56,7 +56,8 @@ enum class node_type {
   select,
   call,
 
-  call_func,
+  call_stmt,
+  copy_stmt,
   let_stmt,
   block,
   loop,
@@ -439,23 +440,42 @@ public:
   static constexpr node_type static_type = node_type::call;
 };
 
-class func;
 class eval_context;
 
 // Call `target`.
-class call_func : public stmt_node<call_func> {
+class call_stmt : public stmt_node<call_stmt> {
 public:
   typedef index_t (*callable_t)(eval_context&);
   using callable = std::function<index_t(eval_context&)>;
+  using symbol_list = std::vector<symbol_id>;
 
   callable target;
-  const func* fn;
+  // These are not actually used during evaluation. They are only here for analyzing the IR, so we can know what will be
+  // accessed (and how) by the callable.
+  symbol_list scalars;
+  symbol_list inputs;
+  symbol_list outputs;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(callable target, const func* fn = nullptr);
+  static stmt make(callable target, symbol_list scalars, symbol_list inputs, symbol_list outputs);
 
-  static constexpr node_type static_type = node_type::call_func;
+  static constexpr node_type static_type = node_type::call_stmt;
+};
+
+class copy_stmt : public stmt_node<copy_stmt> {
+public:
+  symbol_id src;
+  std::vector<expr> src_x;
+  symbol_id dst;
+  std::vector<symbol_id> dst_x;
+  std::vector<char> padding;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::vector<char> padding);
+
+  static constexpr node_type static_type = node_type::copy_stmt;
 };
 
 // Allows lifting a common subexpression `value` out of a statement `body`, by referencing the value by `sym`.
@@ -700,7 +720,8 @@ public:
   virtual void visit(const block*) = 0;
   virtual void visit(const loop*) = 0;
   virtual void visit(const if_then_else*) = 0;
-  virtual void visit(const call_func*) = 0;
+  virtual void visit(const call_stmt*) = 0;
+  virtual void visit(const copy_stmt*) = 0;
   virtual void visit(const allocate*) = 0;
   virtual void visit(const make_buffer*) = 0;
   virtual void visit(const crop_buffer*) = 0;
@@ -771,7 +792,12 @@ public:
     if (x->true_body.defined()) x->true_body.accept(this);
     if (x->false_body.defined()) x->false_body.accept(this);
   }
-  virtual void visit(const call_func* x) override {}
+  virtual void visit(const call_stmt* x) override {}
+  virtual void visit(const copy_stmt* x) override {
+    for (const expr& i : x->src_x) {
+      i.accept(this);
+    }
+  }
   virtual void visit(const allocate* x) override {
     for (const dim_expr& i : x->dims) {
       i.bounds.min.accept(this);
@@ -843,7 +869,8 @@ inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void block::accept(node_visitor* v) const { v->visit(this); }
 inline void loop::accept(node_visitor* v) const { v->visit(this); }
 inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
-inline void call_func::accept(node_visitor* v) const { v->visit(this); }
+inline void call_stmt::accept(node_visitor* v) const { v->visit(this); }
+inline void copy_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
 inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }

@@ -74,7 +74,7 @@ public:
 // Represents a node of computation in a pipeline.
 class func {
 public:
-  using callable = call_func::callable;
+  using callable = call_stmt::callable;
   template <typename... T>
   using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
 
@@ -206,10 +206,12 @@ public:
     return func({std::move(in)}, {std::move(out)}, std::move(padding));
   }
 
-  const call_func::callable& impl() const { return impl_; }
+  const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
   const std::vector<char>& padding() const { return padding_; }
+
+  stmt make_call() const;
 };
 
 // TODO: I wanted this to be pipeline::build_options, but I hit some tricky compiler error

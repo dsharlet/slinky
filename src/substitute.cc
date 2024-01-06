@@ -265,13 +265,26 @@ public:
     if (!try_match(is->false_body, x->false_body)) return;
   }
 
-  void visit(const call_func* x) override {
+  void visit(const call_stmt* x) override {
     if (match) return;
-    const call_func* cs = match_self_as(x);
+    const call_stmt* cs = match_self_as(x);
     if (!cs) return;
 
-    if (!try_match(cs->fn, x->fn)) return;
-    // TODO(https://github.com/dsharlet/slinky/issues/11): How to compare callable?
+    if (!try_match(cs->scalars, x->scalars)) return;
+    if (!try_match(cs->inputs, x->inputs)) return;
+    if (!try_match(cs->outputs, x->outputs)) return;
+  }
+
+  void visit(const copy_stmt* x) override {
+    if (match) return;
+    const copy_stmt* cs = match_self_as(x);
+    if (!cs) return;
+
+    if (!try_match(cs->src, x->src)) return;
+    if (!try_match(cs->src_x, x->src_x)) return;
+    if (!try_match(cs->dst, x->dst)) return;
+    if (!try_match(cs->dst_x, x->dst_x)) return;
+    if (!try_match(cs->padding, x->padding)) return;
   }
 
   void visit(const allocate* x) override {
