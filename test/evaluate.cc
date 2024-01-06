@@ -44,7 +44,7 @@ TEST(evaluate_call) {
         calls.push_back(*ctx[x]);
         return 0;
       },
-      {x.sym()}, {}, {});
+      {}, {});
 
   eval_context context;
   context[x] = 2;
@@ -64,7 +64,7 @@ TEST(evaluate_loop) {
         calls.push_back(*ctx[x]);
         return 0;
       },
-      {x.sym()}, {}, {});
+      {}, {});
 
   stmt l = loop::make(x.sym(), range(2, 12), 3, c);
 

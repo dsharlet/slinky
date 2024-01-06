@@ -174,10 +174,7 @@ public:
   }
 
   void visit(const call_stmt* n) override {
-    *this << indent() << "call(<fn>";
-    *this << ", {" << n->scalars << "}, {"
-          << ", {" << n->inputs << "}, {" << n->outputs << "}";
-    *this << ")\n";
+    *this << indent() << "call(<fn>, {" << n->inputs << "}, {" << n->outputs << "})\n";
   }
 
   void visit(const copy_stmt* n) override {

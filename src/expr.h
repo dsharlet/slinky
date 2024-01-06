@@ -452,13 +452,12 @@ public:
   callable target;
   // These are not actually used during evaluation. They are only here for analyzing the IR, so we can know what will be
   // accessed (and how) by the callable.
-  symbol_list scalars;
   symbol_list inputs;
   symbol_list outputs;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(callable target, symbol_list scalars, symbol_list inputs, symbol_list outputs);
+  static stmt make(callable target, symbol_list inputs, symbol_list outputs);
 
   static constexpr node_type static_type = node_type::call_stmt;
 };

@@ -270,7 +270,6 @@ public:
     const call_stmt* cs = match_self_as(x);
     if (!cs) return;
 
-    if (!try_match(cs->scalars, x->scalars)) return;
     if (!try_match(cs->inputs, x->inputs)) return;
     if (!try_match(cs->outputs, x->outputs)) return;
   }
@@ -534,16 +533,20 @@ public:
 
   dependencies(symbol_id var) : var(var) {}
 
+  void accept_buffer(const expr& e) {
+    bool old_found_var = found_var;
+    found_var = false;
+    e.accept(this);
+    found_buf = found_buf || found_var;
+    found_var = old_found_var;
+  }
+
   void visit(const variable* x) override { found_var = found_var || x->sym == var; }
   void visit(const wildcard* x) override { found_var = found_var || x->sym == var; }
   void visit(const call* x) override {
     if (is_buffer_intrinsic(x->intrinsic)) {
       assert(x->args.size() >= 1);
-      bool old_found_var = found_var;
-      found_var = false;
-      x->args[0].accept(this);
-      found_buf = found_buf || found_var;
-      found_var = old_found_var;
+      accept_buffer(x->args[0]);
 
       for (std::size_t i = 1; i < x->args.size(); ++i) {
         x->args[i].accept(this);
@@ -551,6 +554,18 @@ public:
     } else {
       recursive_node_visitor::visit(x);
     }
+  }
+
+  void visit(const call_stmt* x) override {
+    for (symbol_id i : x->inputs) {
+      found_buf = found_buf || var == i;
+    }
+    for (symbol_id i : x->outputs) {
+      found_buf = found_buf || var == i;
+    }
+  }
+  void visit(const copy_stmt* x) override {
+    found_buf = found_buf || var == x->src || var == x->dst;
   }
 };
 

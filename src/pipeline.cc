@@ -71,7 +71,7 @@ stmt func::make_call() const {
     for (const func::output& i : outputs_) {
       outputs.push_back(i.sym());
     }
-    return call_stmt::make(impl_, {}, std::move(inputs), std::move(outputs));
+    return call_stmt::make(impl_, std::move(inputs), std::move(outputs));
   } else {
     // TODO: We should be able to handle copies from multiple inputs.
     assert(inputs_.size() == 1);

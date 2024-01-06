@@ -83,8 +83,7 @@ class copy_implementer : public node_mutator {
           const raw_buffer& dst_buf = *ctx.lookup_buffer(dst);
           copy(ctx, src_buf, dst_buf, info);
           return 0;
-        },
-        {}, {c->src}, {c->dst});
+        }, {c->src}, {c->dst});
 
     return result;
   }
