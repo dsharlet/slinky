@@ -30,7 +30,7 @@ public:
   std::optional<T> lookup(const var& v) const { return lookup(v.sym()); }
 
   const T& lookup(symbol_id sym, const T& def) const {
-    if (sym < values.size()) { return values[sym]; }
+    if (sym < values.size() && values[sym]) { return *values[sym]; }
     return def;
   }
   const T& lookup(const var& v, const T& def) const { return lookup(v.sym(), def); }

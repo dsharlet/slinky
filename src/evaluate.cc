@@ -263,7 +263,27 @@ public:
       }
     }
   }
-  void visit(const copy_stmt* n) override { std::abort(); }
+
+  void visit(const copy_stmt* n) override {
+    const raw_buffer* src = reinterpret_cast<raw_buffer*>(context.lookup(n->src, 0));
+    const raw_buffer* dst = reinterpret_cast<raw_buffer*>(context.lookup(n->dst, 0));
+
+    // We only support simple copies here.
+    assert(src->rank == dst->rank);
+    assert(n->src_x.size() == src->rank);
+    assert(n->dst_x.size() == dst->rank);
+    for (std::size_t d = 0; d < src->rank; ++d) {
+      assert(is_variable(n->src_x[d], n->dst_x[d]));
+    }
+
+    assert(dst);
+    assert(src);
+    if (n->padding.empty()) {
+      copy(*src, *dst);
+    } else {
+      copy(*src, *dst, n->padding.data());
+    }
+  }
 
   void visit(const allocate* n) override {
     std::size_t rank = n->dims.size();

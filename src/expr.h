@@ -892,6 +892,12 @@ inline const symbol_id* as_variable(const expr& x) {
   return vx ? &vx->sym : nullptr;
 }
 
+// Check if `x` is a variable equal to the symbol `sym`.
+inline bool is_variable(const expr& x, symbol_id sym) {
+  const variable* vx = x.as<variable>();
+  return vx ? vx->sym == sym : false;
+}
+
 // Check if `x` is equal to the constant `value`.
 inline bool is_constant(const expr& x, index_t value) {
   const constant* cx = x.as<constant>();
