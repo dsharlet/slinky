@@ -527,11 +527,11 @@ namespace {
 
 class dependencies : public recursive_node_visitor {
 public:
-  symbol_id var;
+  std::span<const symbol_id> vars;
   bool found_var = false;
   bool found_buf = false;
 
-  dependencies(symbol_id var) : var(var) {}
+  dependencies(std::span<const symbol_id> vars) : vars(vars) {}
 
   void accept_buffer(const expr& e) {
     bool old_found_var = found_var;
@@ -541,8 +541,26 @@ public:
     found_var = old_found_var;
   }
 
-  void visit(const variable* op) override { found_var = found_var || op->sym == var; }
-  void visit(const wildcard* op) override { found_var = found_var || op->sym == var; }
+  void visit_var(symbol_id sym) {
+    for (symbol_id i : vars) {
+      if (i == sym) {
+        found_var = true;
+        return;
+      }
+    }
+  }
+
+  void visit_buf(symbol_id sym) {
+    for (symbol_id i : vars) {
+      if (i == sym) {
+        found_buf = true;
+        return;
+      }
+    }
+  }
+
+  void visit(const variable* op) override { visit_var(op->sym); }
+  void visit(const wildcard* op) override { visit_var(op->sym); }
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
@@ -558,14 +576,15 @@ public:
 
   void visit(const call_stmt* op) override {
     for (symbol_id i : op->inputs) {
-      found_buf = found_buf || var == i;
+      visit_buf(i);
     }
     for (symbol_id i : op->outputs) {
-      found_buf = found_buf || var == i;
+      visit_buf(i);
     }
   }
   void visit(const copy_stmt* op) override {
-    found_buf = found_buf || var == op->src || var == op->dst;
+    visit_buf(op->src);
+    visit_buf(op->dst);
   }
 };
 
@@ -573,21 +592,31 @@ public:
 
 bool depends_on(const expr& e, symbol_id var) {
   if (!e.defined()) return false;
-  dependencies v(var);
+  symbol_id vars[] = {var};
+  dependencies v(vars);
   e.accept(&v);
+  return v.found_var || v.found_buf;
+}
+
+bool depends_on(const stmt& s, std::span<const symbol_id> vars) {
+  if (!s.defined()) return false;
+  dependencies v(vars);
+  s.accept(&v);
   return v.found_var || v.found_buf;
 }
 
 bool depends_on_variable(const expr& e, symbol_id var) {
   if (!e.defined()) return false;
-  dependencies v(var);
+  symbol_id vars[] = {var};
+  dependencies v(vars);
   e.accept(&v);
   return v.found_var;
 }
 
 bool depends_on_buffer(const expr& e, symbol_id buf) {
   if (!e.defined()) return false;
-  dependencies v(buf);
+  symbol_id bufs[] = {buf};
+  dependencies v(bufs);
   e.accept(&v);
   return v.found_buf;
 }

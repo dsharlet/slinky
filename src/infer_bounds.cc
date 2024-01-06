@@ -7,6 +7,7 @@
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
+#include "optimizations.h"
 
 namespace slinky {
 
@@ -472,6 +473,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // optimization.
   result = slider(ctx).mutate(result);
 
+  result = reduce_scopes(result);
   // At this point, crops of input buffers are unnecessary.
   // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
   // be the case.

@@ -417,6 +417,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = implement_copies(result, ctx);
 
+  result = reduce_scopes(result);
+
   result = simplify(result);
 
   if (options.no_checks) {
