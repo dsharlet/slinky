@@ -28,6 +28,18 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
   }
 }
 
+buffer_expr::buffer_expr(const raw_buffer& c) { 
+  dims_.reserve(c.rank);
+
+  for (index_t d = 0; d < static_cast<index_t>(c.rank); ++d) {
+    expr min = c.dims[d].min();
+    expr max = c.dims[d].max();
+    expr stride = c.dims[d].stride();
+    expr fold_factor = c.dims[d].fold_factor();
+    dims_.emplace_back(bounds(min, max), stride, fold_factor);
+  }
+}
+
 buffer_expr_ptr buffer_expr::make(symbol_id sym, index_t elem_size, std::size_t rank) {
   return buffer_expr_ptr(new buffer_expr(sym, elem_size, rank));
 }
@@ -35,6 +47,8 @@ buffer_expr_ptr buffer_expr::make(symbol_id sym, index_t elem_size, std::size_t 
 buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert(sym), elem_size, rank));
 }
+
+buffer_expr_ptr buffer_expr::make(const raw_buffer& buffer) { return buffer_expr_ptr(new buffer_expr(buffer)); }
 
 void buffer_expr::add_producer(func* f) {
   assert(producer_ == nullptr);

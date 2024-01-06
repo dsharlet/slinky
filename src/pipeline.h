@@ -33,6 +33,7 @@ class buffer_expr : public ref_counted {
   loop_id store_at_;
 
   buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank);
+  buffer_expr(const raw_buffer& buffer);
   buffer_expr(const buffer_expr&) = delete;
   buffer_expr(buffer_expr&&) = delete;
   buffer_expr& operator=(const buffer_expr&) = delete;
@@ -46,6 +47,7 @@ class buffer_expr : public ref_counted {
 public:
   static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank);
+  static buffer_expr_ptr make(const raw_buffer& buffer);
 
   symbol_id sym() const { return sym_; }
   index_t elem_size() const { return elem_size_; }
@@ -176,14 +178,31 @@ public:
     symbol_id in2_sym = in2.sym();
     symbol_id out1_sym = out1.sym();
     return func(
-        [=, impl = std::move(impl)](
-            eval_context& ctx) -> index_t {
+        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
           const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
           const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
           const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
           return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), out1_buf->cast<Out1>());
         },
         {std::move(in1), std::move(in2)}, {std::move(out1)});
+  }
+
+  template <typename In1, typename In2, typename In3, typename Out1>
+  static func make(callable_wrapper<const In1, const In2, const In3, Out1> impl, input in1, input in2, input in3, output out1) {
+    symbol_id in1_sym = in1.sym();
+    symbol_id in2_sym = in2.sym();
+    symbol_id in3_sym = in3.sym();
+    symbol_id out1_sym = out1.sym();
+    return func(
+        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
+          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
+          const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
+          const raw_buffer* in3_buf = ctx.lookup_buffer(in3_sym);
+          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
+          return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), in3_buf->cast<const In3>(),
+              out1_buf->cast<Out1>());
+        },
+        {std::move(in1), std::move(in2), std::move(in3)}, {std::move(out1)});
   }
 
   template <typename In1, typename Out1, typename Out2>
@@ -242,6 +261,9 @@ public:
   index_t evaluate(buffers inputs, buffers outputs, eval_context& ctx) const;
   index_t evaluate(scalars args, buffers inputs, buffers outputs) const;
   index_t evaluate(buffers inputs, buffers outputs) const;
+
+  const std::vector<buffer_expr_ptr>& inputs() const { return inputs_; }
+  const std::vector<buffer_expr_ptr>& outputs() const { return outputs_; }
 };
 
 }  // namespace slinky
