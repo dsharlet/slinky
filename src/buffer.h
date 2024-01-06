@@ -10,6 +10,7 @@
 #include <span>
 
 #include "arithmetic.h"
+#include "ref_count.h"
 
 namespace slinky {
 
@@ -169,49 +170,25 @@ public:
     return result;
   }
 
-  std::size_t size_bytes() const {
-    index_t flat_min = 0;
-    index_t flat_max = 0;
-    for (std::size_t i = 0; i < rank; ++i) {
-      index_t extent = dims[i].extent();
-      if (dims[i].fold_factor() > 0) {
-        extent = std::min(extent, dims[i].fold_factor());
-      }
-      flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
-      flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
-    }
-    return flat_max - flat_min + elem_size;
-  }
+  std::size_t size_bytes() const;
 
   // Does not call constructor or destructor of T!
-  void allocate() {
-    assert(allocation == nullptr);
-
-    allocation = new char[size_bytes()];
-    base = allocation;
-  }
-
-  void free() {
-    delete[] allocation;
-    allocation = nullptr;
-    base = nullptr;
-  }
+  void allocate();
+  void free();
 
   template <typename NewT>
   const buffer<NewT>& cast() const;
+  template <typename NewT>
+  buffer<NewT>& cast();
 
   // Make a buffer and space for dims in the same object.
-  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size) {
-    char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
-    raw_buffer* buf = new (buf_and_dims) raw_buffer();
-    buf->base = nullptr;
-    buf->allocation = nullptr;
-    buf->rank = rank;
-    buf->elem_size = elem_size;
-    buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
-    new (buf->dims) slinky::dim[rank];
-    return {buf, destroy};
-  }
+  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
+
+  // Make a new buffer of rank extents.size(), with dim d having extent extents[d].
+  static raw_buffer_ptr make(std::size_t elem_size, std::span<const index_t> extents);
+
+  // Make a deep copy of another buffer, including allocating and copying the data if src is allocated.
+  static raw_buffer_ptr make(const raw_buffer& src);
 };
 
 template <typename T, std::size_t DimsSize>
@@ -286,6 +263,12 @@ template <typename NewT>
 const buffer<NewT>& raw_buffer::cast() const {
   assert(elem_size == sizeof(NewT));
   return *reinterpret_cast<const buffer<NewT>*>(this);
+}
+
+template <typename NewT>
+buffer<NewT>& raw_buffer::cast() {
+  assert(elem_size == sizeof(NewT));
+  return *reinterpret_cast<buffer<NewT>*>(this);
 }
 
 // Copy the contents of `src` to `dst`. When the `src` is out of bounds of `dst`, fill with `padding`.
