@@ -456,6 +456,9 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // optimization.
   result = slider(ctx).mutate(result);
 
+  // At this point, crops of input buffers are unnecessary.
+  // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
+  // be the case.
   result = input_crop_remover().mutate(result);
 
   return result;
