@@ -60,8 +60,46 @@ void buffer_expr::add_consumer(func* f) {
   consumers_.push_back(f);
 }
 
+void buffer_expr::remove_producer(func* f) {
+  assert(producer_ == f);
+  producer_ = nullptr;
+}
+
+void buffer_expr::remove_consumer(func* f) {
+  auto i = std::find(consumers_.begin(), consumers_.end(), f);
+  assert(i != consumers_.end());
+  consumers_.erase(i);
+}
+
 func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs)
     : impl_(std::move(impl)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+  add_this_to_buffers();
+}
+
+func::func(std::vector<input> inputs, output out, std::vector<char> padding)
+    : func(nullptr, std::move(inputs), {std::move(out)}) {
+  padding_ = std::move(padding);
+}
+
+func::func(func&& m) {
+  *this = std::move(m);
+}
+func& func::operator=(func&& m) {
+  if (this == &m) return *this;
+  m.remove_this_from_buffers(); 
+  impl_ = std::move(m.impl_);
+  inputs_ = std::move(m.inputs_);
+  outputs_ = std::move(m.outputs_);
+  loops_ = std::move(m.loops_);
+  compute_at_ = std::move(m.compute_at_);
+  padding_ = std::move(m.padding_);
+  add_this_to_buffers();
+  return *this;
+}
+
+func::~func() { remove_this_from_buffers(); }
+
+void func::add_this_to_buffers() {
   for (auto& i : inputs_) {
     i.buffer->add_consumer(this);
   }
@@ -69,10 +107,13 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
     i.buffer->add_producer(this);
   }
 }
-
-func::func(std::vector<input> inputs, output out, std::vector<char> padding)
-    : func(nullptr, std::move(inputs), {std::move(out)}) {
-  padding_ = std::move(padding);
+void func::remove_this_from_buffers() {
+  for (auto& i : inputs_) {
+    i.buffer->remove_consumer(this);
+  }
+  for (auto& i : outputs_) {
+    i.buffer->remove_producer(this);
+  }
 }
 
 stmt func::make_call() const {

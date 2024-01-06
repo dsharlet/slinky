@@ -43,6 +43,8 @@ class buffer_expr : public ref_counted {
   friend class func;
   void add_producer(func* f);
   void add_consumer(func* f);
+  void remove_producer(func* f);
+  void remove_consumer(func* f);
 
 public:
   static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
@@ -123,14 +125,18 @@ private:
 
   std::vector<char> padding_;
 
+  void add_this_to_buffers();
+  void remove_this_from_buffers();
+
 public:
   func() {}
   func(callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out, std::vector<char> padding);
-  func(const func&) = default;
-  func(func&&) = default;
-  func& operator=(const func&) = default;
-  func& operator=(func&&) = default;
+  func(func&&);
+  func& operator=(func&&);
+  ~func();
+  func(const func&) = delete;
+  func& operator=(const func&) = delete;
 
   bool defined() const { return impl_ != nullptr; }
 
