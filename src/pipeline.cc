@@ -2,8 +2,9 @@
 
 #include <cassert>
 #include <iostream>
-#include <set>
+#include <list>
 #include <map>
+#include <set>
 
 #include "evaluate.h"
 #include "infer_bounds.h"
@@ -78,7 +79,7 @@ class pipeline_builder {
   // We're going to incrementally build the body, starting at the end of the pipeline and adding
   // producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
-  std::set<buffer_expr_ptr> to_allocate;
+  std::list<buffer_expr_ptr> to_allocate;
   std::set<buffer_expr_ptr> produced;
   std::set<buffer_expr_ptr> allocated;
 
@@ -192,12 +193,12 @@ public:
       }
     }
     for (const func::input& i : f->inputs()) {
-      if (!i.buffer->producer()) continue;
       box_expr crop(i.buffer->rank());
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-        expr min = simplify(substitute(i.bounds[d].min, output_mins));
-        expr max = simplify(substitute(i.bounds[d].max, output_maxs));
-        crop[d] = {min, max};
+        expr min = substitute(i.bounds[d].min, output_mins);
+        expr max = substitute(i.bounds[d].max, output_maxs);
+        // The bounds may have been negated.
+        crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
       result = crop_buffer::make(i.sym(), crop, result);
     }
@@ -211,7 +212,7 @@ public:
         if (o.dims[d].sym() == loop.sym()) {
           // TODO: Clamp at buffer max here to handle loop extents not a multiple of the step.
           // expr loop_max = buffer_max(var(o.sym()), d);
-          interval_expr bounds = slinky::bounds(loop.var, loop.var + loop.step - 1);
+          interval_expr bounds = slinky::bounds(loop.var, simplify(loop.var + loop.step - 1));
           body = crop_dim::make(o.sym(), d, bounds, body);
         }
       }
@@ -229,37 +230,39 @@ public:
         }
       }
     }
-    return bounds;
+    return simplify(bounds);
   }
 
   stmt make_allocations(stmt body, const loop_id& at = loop_id()) {
     for (const buffer_expr_ptr& i : to_allocate) {
-      if (i->store_at() == at) {
+      if (i->store_at() == at && !allocated.count(i)) {
         body = allocate::make(i->storage(), i->sym(), i->elem_size(), i->dims(), body);
         allocated.insert(i);
       }
     }
     for (const buffer_expr_ptr& i : allocated) {
-      to_allocate.erase(i);
+      to_allocate.remove(i);
     }
     return body;
   }
 
-  stmt make_producers(const loop_id& at) {
-    stmt result;
-    while (const func* next = find_next_producer(at)) {
-      result = block::make({produce(next, at), result});
+  stmt make_producers(const loop_id& at, const func* f) {
+    if (const func* next = find_next_producer(at)) {
+      stmt result = produce(next, at);
+      result = add_input_crops(result, f);
+      result = block::make({make_producers(at, next), result});
+      return result;
+    } else {
+      return {};
     }
-    return result;
   }
 
   stmt make_loop(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
     loop_id here = {f, loop.var};
     // Before making the loop, we need to produce any funcs that should be produced here.
-    body = block::make({make_producers(here), body});
-    body = add_input_crops(body, f);
+    body = block::make({make_producers(here, f), body});
 
-    // Make any allocations that should be here. 
+    // Make any allocations that should be here.
     body = make_allocations(body, here);
 
     if (loop.defined()) {
@@ -277,10 +280,11 @@ public:
   // - Producing all the buffers that f consumes (recursively).
   stmt produce(const func* f, const loop_id& current_at = loop_id()) {
     stmt result = call_func::make(f->impl(), f);
+    result = add_input_crops(result, f);
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);
       if (!allocated.count(i.buffer)) {
-        to_allocate.insert(i.buffer);
+        to_allocate.push_front(i.buffer);
       }
     }
 
@@ -290,7 +294,8 @@ public:
     }
 
     // Try to make any other producers needed here.
-    return block::make({make_producers(current_at), result});
+    result = block::make({make_producers(current_at, f), result});
+    return result;
   }
 };
 

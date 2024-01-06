@@ -415,6 +415,74 @@ TEST(pipeline_stencil) {
   }
 }
 
+TEST(pipeline_stencil_chain) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+  auto intm = buffer_expr::make(ctx, "add_result", sizeof(short), 2);
+  auto intm2 = buffer_expr::make(ctx, "stencil1_result", sizeof(short), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  func stencil1 =
+      func::make<const short, short>(sum3x3<short>, {intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm2, {x, y}});
+  func stencil2 =
+      func::make<const short, short>(sum3x3<short>, {intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
+
+  stencil2.loops({y});
+  add.compute_at({&stencil2, y});
+  stencil1.compute_at({&stencil2, y});
+
+  pipeline p(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 4, H + 4});
+  in_buf.dim(0).translate(-2);
+  in_buf.dim(1).translate(-2);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  debug_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  buffer<short, 2> ref_intm({W + 4, H + 4});
+  buffer<short, 2> ref_intm2({W + 2, H + 2});
+  buffer<short, 2> ref_out({W, H});
+  ref_intm.dim(0).translate(-2);
+  ref_intm.dim(1).translate(-2);
+  ref_intm2.dim(0).translate(-1);
+  ref_intm2.dim(1).translate(-1);
+  ref_intm.allocate();
+  ref_intm2.allocate();
+  ref_out.allocate();
+
+  add_1<short>(in_buf.cast<const short>(), ref_intm.cast<short>());
+  sum3x3<short>(ref_intm.cast<const short>(), ref_intm2.cast<short>());
+  sum3x3<short>(ref_intm2.cast<const short>(), ref_out.cast<short>());
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    }
+  }
+
+  // TODO: The second buffer should fold to 3 too.
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short) + (W + 4) * 5 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 2);
+}
+
 TEST(pipeline_flip_y) {
   // Make the pipeline
   node_context ctx;

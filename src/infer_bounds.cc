@@ -15,13 +15,18 @@ namespace {
 
 // Get a reference to `n`th vector element of v, resizing the vector if necessary.
 template <typename T>
+T& vector_at(std::vector<T>& v, std::size_t n) {
+  if (n >= v.size()) {
+    v.resize(n + 1);
+  }
+  return v[n];
+}
+template <typename T>
 T& vector_at(std::optional<std::vector<T>>& v, std::size_t n) {
   if (!v) {
     v = std::vector<T>(n + 1);
-  } else if (n >= v->size()) {
-    v->resize(n + 1);
   }
-  return v->at(n);
+  return vector_at(*v, n);
 }
 
 void merge_crop(std::optional<box_expr>& bounds, int dim, const interval_expr& new_bounds) {
@@ -38,6 +43,44 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
     merge_crop(bounds, d, new_bounds[d]);
   }
 }
+
+class input_crop_remover : public node_mutator {
+  symbol_map<bool> used_as_output;
+
+public:
+  void visit(const call_func* op) {
+    for (const func::output& i : op->fn->outputs()) {
+      used_as_output[i.sym()] = true;
+    }
+    set_result(op);
+  }
+
+  void visit(const crop_buffer* op) {
+    auto s = set_value_in_scope(used_as_output, op->sym, false);
+    stmt body = mutate(op->body);
+
+    if (!*used_as_output[op->sym]) {
+      set_result(body);
+    } else if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(crop_buffer::make(op->sym, op->bounds, std::move(body)));
+    }
+  }
+
+  void visit(const crop_dim* op) {
+    auto s = set_value_in_scope(used_as_output, op->sym, false);
+    stmt body = mutate(op->body);
+
+    if (!*used_as_output[op->sym]) {
+      set_result(body);
+    } else if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(crop_dim::make(op->sym, op->dim, op->bounds, std::move(body)));
+    }
+  }
+};
 
 // This pass tries to identify where call_func operations need to run to satisfy the requirements of their consumers (or
 // the output buffers). It updates `allocate` nodes to allocate enough memory for the uses of the allocation, and crops
@@ -62,20 +105,21 @@ public:
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
     // inferred value.
     // TODO: Is this actually a good design...?
-    std::vector<std::pair<expr, expr>> replacements;
+    std::vector<std::pair<expr, expr>> substitutions;
+
+    expr alloc_var = variable::make(alloc->sym);
 
     box_expr& bounds = *infer[alloc->sym];
     expr stride = static_cast<index_t>(alloc->elem_size);
     for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-      interval_expr& i = bounds[d];
+      interval_expr i = d < bounds.size() ? bounds[d] : alloc->dims[d].bounds;
 
-      expr alloc_var = variable::make(alloc->sym);
-      replacements.emplace_back(buffer_min(alloc_var, d), i.min);
-      replacements.emplace_back(buffer_max(alloc_var, d), i.max);
-      replacements.emplace_back(buffer_stride(alloc_var, d), stride);
+      substitutions.emplace_back(buffer_min(alloc_var, d), i.min);
+      substitutions.emplace_back(buffer_max(alloc_var, d), i.max);
+      substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
 
       // We didn't initially set up the buffer with a max, but the user might have used it.
-      replacements.emplace_back(buffer_extent(alloc_var, d), i.extent());
+      substitutions.emplace_back(buffer_extent(alloc_var, d), i.extent());
       stride *= i.extent();
     }
 
@@ -86,7 +130,7 @@ public:
       for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
         dim_expr& dim = dims[d];
         dim_expr new_dim = dim;
-        for (auto& j : replacements) {
+        for (auto& j : substitutions) {
           new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
           new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
           new_dim.stride = substitute(new_dim.stride, j.first, j.second);
@@ -102,75 +146,36 @@ public:
     // Check that the actual bounds we generated are bigger than the inferred bounds (in case the
     // user set the bounds to something too small).
     std::vector<stmt> checks;
-    for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-      checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-      checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+    for (std::size_t d = 0; d < dims.size(); ++d) {
+      if (d < bounds.size()) {
+        checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+        checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+      }
+    }
+
+    // Substitute the allocation bounds in any remaining inferred bounds.
+    for (std::optional<box_expr>& i : infer) {
+      if (!i) continue;
+      for (interval_expr& j : *i) {
+        for (const auto& k : substitutions) {
+          j.min = substitute(j.min, k.first, k.second);
+          j.max = substitute(j.max, k.first, k.second);
+        }
+      }
     }
 
     stmt s = allocate::make(alloc->storage, alloc->sym, alloc->elem_size, std::move(dims), body);
     set_result(block::make(block::make(checks), s));
   }
 
-  expr buffer_intrinsic(symbol_id buffer, intrinsic fn, index_t d) {
-    std::optional<box_expr>& bounds = infer[buffer];
-    if (bounds && d < static_cast<index_t>(bounds->size())) {
-      switch (fn) {
-      case intrinsic::buffer_min: return (*bounds)[d].min;
-      case intrinsic::buffer_max: return (*bounds)[d].max;
-      case intrinsic::buffer_extent: return (*bounds)[d].extent();
-      default: break;
-      }
-    }
-    return call::make(fn, {variable::make(buffer), d});
-  }
-
   void visit(const call_func* c) override {
-    assert(c->fn);
-    // Expand the bounds required of the inputs.
+    // Record the bounds we currently have from the crops.
     for (const func::input& input : c->fn->inputs()) {
-      symbol_map<expr> mins, maxs;
-      for (const func::output& output : c->fn->outputs()) {
-        var arg(output.sym());
-        const std::optional<box_expr>& crops_i = crops[arg];
-        for (index_t d = 0; d < static_cast<index_t>(output.dims.size()); ++d) {
-          symbol_id dim = output.dims[d].sym();
-          if (crops_i && d < static_cast<index_t>(crops_i->size()) && (*crops_i)[d].min.defined() &&
-              (*crops_i)[d].max.defined()) {
-            mins[dim] = (*crops_i)[d].min;
-            maxs[dim] = (*crops_i)[d].max;
-          } else {
-            mins[dim] = buffer_intrinsic(arg.sym(), intrinsic::buffer_min, d);
-            maxs[dim] = buffer_intrinsic(arg.sym(), intrinsic::buffer_max, d);
-          }
-        }
-      }
-
-      std::optional<box_expr>& bounds = infer[input.buffer->sym()];
-      assert(bounds);
-      bounds->reserve(input.bounds.size());
-      while (bounds->size() < input.bounds.size()) {
-        bounds->push_back(interval_expr::union_identity());
-      }
-      for (std::size_t d = 0; d < input.bounds.size(); ++d) {
-        expr min = substitute(input.bounds[d].min, mins);
-        expr max = substitute(input.bounds[d].max, maxs);
-        // We need to be careful of the case where min > max, such as when a pipeline
-        // flips a dimension.
-        // TODO: This seems janky/possibly not right.
-        (*bounds)[d] |= slinky::bounds(min, max) | slinky::bounds(max, min);
+      if (infer.contains(input.sym())) {
+        infer[input.sym()] = crops[input.sym()];
       }
     }
-
-    // Add any crops necessary.
-    stmt result = c;
-    for (const func::output& output : c->fn->outputs()) {
-      std::optional<box_expr>& bounds = infer[output.buffer->sym()];
-      if (bounds) {
-        result = crop_buffer::make(output.buffer->sym(), *bounds, result);
-      }
-    }
-
-    set_result(result);
+    set_result(c);
   }
 
   void visit(const crop_buffer* c) override {
@@ -205,20 +210,24 @@ public:
 
     // We're leaving the body of l. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
-    for (std::optional<box_expr>& i : infer) {
-      if (!i) continue;
+    for (symbol_id buf = 0; buf < infer.size(); ++buf) {
+      std::optional<box_expr>& inferring = infer[buf];
+      if (!inferring) continue;
 
-      for (interval_expr& j : *i) {
+      for (interval_expr& j : *inferring) {
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
         if (depends_on(j.min, l->sym)) {
-          j.min = min(substitute(j.min, l->sym, l->bounds.min), substitute(j.min, l->sym, l->bounds.max));
+          j.min = simplify(static_cast<const class min*>(nullptr), substitute(j.min, l->sym, l->bounds.min),
+              substitute(j.min, l->sym, l->bounds.max));
         }
         if (depends_on(j.max, l->sym)) {
-          j.max = max(substitute(j.max, l->sym, l->bounds.min), substitute(j.max, l->sym, l->bounds.max));
+          j.max = simplify(static_cast<const class max*>(nullptr), substitute(j.max, l->sym, l->bounds.min),
+              substitute(j.max, l->sym, l->bounds.max));
         }
       }
+      result = crop_buffer::make(buf, *inferring, result);
     }
     set_result(result);
   }
@@ -311,17 +320,21 @@ public:
         symbol_id loop_sym = loops[l].sym;
         expr loop_var = variable::make(loop_sym);
 
-        box_expr prev_bounds(bounds->size());
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-          prev_bounds[d].min = substitute((*bounds)[d].min, loop_sym, loop_var - 1);
-          prev_bounds[d].max = substitute((*bounds)[d].max, loop_sym, loop_var - 1);
-          if (prove_true(prev_bounds[d].min <= (*bounds)[d].min) && prove_true(prev_bounds[d].max < (*bounds)[d].max)) {
+          interval_expr cur_bounds_d = (*bounds)[d];
+          interval_expr prev_bounds_d{
+              substitute(cur_bounds_d.min, loop_sym, loop_var - 1),
+              substitute(cur_bounds_d.max, loop_sym, loop_var - 1),
+          };
+
+          if (prove_true(prev_bounds_d.min <= cur_bounds_d.min) && prove_true(prev_bounds_d.max < cur_bounds_d.max)) {
             // The bounds for each loop iteration are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
-            expr& old_min = (*bounds)[d].min;
-            expr new_min = prev_bounds[d].max + 1;
+            expr old_min = cur_bounds_d.min;
+            expr new_min = simplify(simplify(prev_bounds_d.max + 1));
 
-            fold_factors[output.buffer->sym()] = {d, simplify(bounds_of((*bounds)[d].extent()).max)};
+            expr fold_factor = simplify(bounds_of(cur_bounds_d.extent()).max);
+            fold_factors[output.buffer->sym()] = {d, fold_factor};
 
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region. We'll insert
@@ -333,16 +346,16 @@ public:
             expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[l].og_min);
             expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_sym).max;
             if (!is_negative_infinity(new_loop_min)) {
-              loops[l].min = min(loops[l].min, new_loop_min);
+              loops[l].min = simplify(min(loops[l].min, new_loop_min));
 
-              old_min = new_min;
+              (*bounds)[d].min = new_min;
             } else {
               // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
-              old_min = select(loop_var == loops[l].og_min, old_min, new_min);
+              (*bounds)[d].min = select(loop_var == loops[l].og_min, old_min, new_min);
             }
             break;
-          } else if (prove_true(prev_bounds[d].min > (*bounds)[d].min) &&
-                     prove_true(prev_bounds[d].max >= (*bounds)[d].max)) {
+          } else if (prove_true(prev_bounds_d.min > cur_bounds_d.min) &&
+                     prove_true(prev_bounds_d.max >= cur_bounds_d.max)) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
           }
@@ -351,10 +364,6 @@ public:
     }
 
     // Insert ifs around these calls, in case the loop min shifts later.
-    // TODO: If there was already a crop_dim here, this if goes inside it, which
-    // modifies the buffer meta, which the condition (probably) depends on.
-    // To fix this, we hackily move the if out below, but this is a serious hack
-    // that needs to be fixed.
     for (const auto& l : loops) {
       result = if_then_else::make(variable::make(l.sym) >= l.min, result, stmt());
     }
@@ -391,17 +400,19 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* l) override {
-    loops.emplace_back(l->sym, l->bounds.min, l->bounds.min);
+    var orig_loop_min(ctx, ctx.name(l->sym) + "_min.orig");
+
+    loops.emplace_back(l->sym, orig_loop_min, orig_loop_min);
     stmt body = mutate(l->body);
     expr loop_min = loops.back().min;
-    // The loop max should not be changed.
     loops.pop_back();
 
-    if (loop_min.same_as(l->bounds.min) && body.same_as(l->body)) {
+    if (loop_min.same_as(orig_loop_min) && body.same_as(l->body)) {
       set_result(l);
     } else {
       // We rewrote the loop min.
-      set_result(loop::make(l->sym, {loop_min, l->bounds.max}, l->step, std::move(body)));
+      stmt result = loop::make(l->sym, {loop_min, l->bounds.max}, l->step, std::move(body));
+      set_result(let_stmt::make(orig_loop_min.sym(), l->bounds.min, result));
     }
   }
 
@@ -447,6 +458,8 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // After simplifying and inferring the bounds of producers, we can try to run the sliding window
   // optimization.
   result = slider(ctx).mutate(result);
+
+  result = input_crop_remover().mutate(result);
 
   return result;
 }
