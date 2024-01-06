@@ -191,7 +191,7 @@ TEST(pipeline_elementwise_1d_explicit) {
   func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
   func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
 
-  add.loops({x});
+  add.loops({{x, 3}});  // Doesn't divide the extent of the buffer below.
   mul.compute_at({&add, x});
 
   intm->store_at({&add, x});

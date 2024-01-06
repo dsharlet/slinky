@@ -252,9 +252,8 @@ public:
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d].sym() == loop.sym()) {
-          // TODO: Clamp at buffer max here to handle loop extents not a multiple of the step.
-          // expr loop_max = buffer_max(var(o.sym()), d);
-          interval_expr bounds = slinky::bounds(loop.var, simplify(loop.var + loop.step - 1));
+          expr loop_max = buffer_max(var(o.sym()), d);
+          interval_expr bounds = slinky::bounds(loop.var, min(loop.var + loop.step - 1, loop_max));
           body = crop_dim::make(o.sym(), d, bounds, body);
         }
       }

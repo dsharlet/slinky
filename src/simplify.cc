@@ -1158,10 +1158,6 @@ public:
     interval_expr bounds = mutate(op->bounds, &min_bounds, &max_bounds);
     expr step = mutate(op->step);
 
-    if (!step.defined()) {
-      step = 1;
-    }
-
     if (prove_true(min_bounds.min > max_bounds.max)) {
       // This loop is dead.
       set_result(stmt());
@@ -1174,10 +1170,6 @@ public:
 
     auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
-
-    if (is_constant(step, 1)) {
-      step = expr();
-    }
 
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);

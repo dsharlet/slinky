@@ -250,6 +250,7 @@ public:
     symbol_id sym;
     expr og_min;
     expr min;
+    expr step;
   };
   std::vector<loop_info> loops;
 
@@ -315,8 +316,8 @@ public:
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
           interval_expr prev_bounds_d{
-              substitute(cur_bounds_d.min, loop_sym, loop_var - 1),
-              substitute(cur_bounds_d.max, loop_sym, loop_var - 1),
+              substitute(cur_bounds_d.min, loop_sym, loop_var - loops[l].step),
+              substitute(cur_bounds_d.max, loop_sym, loop_var - loops[l].step),
           };
 
           if (prove_true(prev_bounds_d.min <= cur_bounds_d.min) && prove_true(prev_bounds_d.max < cur_bounds_d.max)) {
@@ -394,7 +395,7 @@ public:
   void visit(const loop* l) override {
     var orig_loop_min(ctx, ctx.name(l->sym) + "_min.orig");
 
-    loops.emplace_back(l->sym, orig_loop_min, orig_loop_min);
+    loops.emplace_back(l->sym, orig_loop_min, orig_loop_min, l->step);
     stmt body = mutate(l->body);
     expr loop_min = loops.back().min;
     loops.pop_back();
