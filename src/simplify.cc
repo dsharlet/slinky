@@ -258,7 +258,6 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(min(x, c0), c1), min(x, min(c0, c1))},
       {min(x, x + c0), x, c0 > 0},
       {min(x, x + c0), x + c0, c0 < 0},
-      {min(x + c0, y + c1), min(x, y + (c1 - c0)) + c0},
       {min(x + c0, c1), min(x, c1 - c0) + c0},
       {min(c0 - x, c0 - y), c0 - max(x, y)},
 
@@ -266,11 +265,14 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(x, x), x},
       {min(x, max(x, y)), x},
       {min(x, min(x, y)), min(x, y)},
+      {min(min(x, y), y + c0), min(x, min(y, y + c0))},
+      {min(min(x, y + c0), y), min(x, min(y, y + c0))},
       {min(max(x, y), min(x, z)), min(x, z)},
       {min(min(x, y), min(x, z)), min(x, min(y, z))},
       {min(max(x, y), max(x, z)), max(x, min(y, z))},
       {min(x, min(y, x + z)), min(y, min(x, x + z))},
       {min(x, min(y, x - z)), min(y, min(x, x - z))},
+      {min(min(x, (y + z)), (y + w)), min(x, min(y + z, y + w))},
       {min(x / z, y / z), min(x, y) / z, z > 0},
       {min(x / z, y / z), max(x, y) / z, z < 0},
       {min(x * z, y * z), z * min(x, y), z > 0},
@@ -285,6 +287,7 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)},
       {min(buffer_min(x, y), buffer_max(x, y) + c0), buffer_min(x, y), c0 > 0},
       {min(buffer_max(x, y), buffer_min(x, y) + c0), buffer_min(x, y) + c0, c0 < 0},
+      {min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, c0 > c1},
   };
   return rules.apply(e);
 }
@@ -315,7 +318,6 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(max(x, c0), c1), max(x, max(c0, c1))},
       {max(x, x + c0), x + c0, c0 > 0},
       {max(x, x + c0), x, c0 < 0},
-      {max(x + c0, y + c1), max(x, y + (c1 - c0)) + c0},
       {max(x + c0, c1), max(x, c1 - c0) + c0},
       {max(c0 - x, c0 - y), c0 - min(x, y)},
 
@@ -323,6 +325,8 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(x, x), x},
       {max(x, min(x, y)), x},
       {max(x, max(x, y)), max(x, y)},
+      {max(max(x, y), y + c0), max(x, max(y, y + c0))},
+      {max(max(x, y + c0), y), max(x, max(y, y + c0))},
       {max(min(x, y), max(x, z)), max(x, z)},
       {max(max(x, y), max(x, z)), max(x, max(y, z))},
       {max(min(x, y), min(x, z)), min(x, max(y, z))},
@@ -340,6 +344,7 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)},
       {max(buffer_min(x, y), buffer_max(x, y) + c0), buffer_max(x, y) + c0, c0 > 0},
       {max(buffer_max(x, y), buffer_min(x, y) + c0), buffer_max(x, y), c0 < 0},
+      {max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, c0 > c1},
   };
   return rules.apply(e);
 }
@@ -381,12 +386,17 @@ expr simplify(const add* op, expr a, expr b) {
       {(x + c0) - y, (x - y) + c0},
       {(x + c0) + (y + c1), (x + y) + (c0 + c1)},
 
+      {min(x, y - z) + z, min(y, x + z)},
+      {max(x, y - z) + z, max(y, x + z)},
+
       {min(x + c0, y + c1) + c2, min(x + (c0 + c2), y + (c1 + c2))},
       {max(x + c0, y + c1) + c2, max(x + (c0 + c2), y + (c1 + c2))},
       {min(c0 - x, y + c1) + c2, min((c0 + c2) - x, y + (c1 + c2))},
       {max(c0 - x, y + c1) + c2, max((c0 + c2) - x, y + (c1 + c2))},
       {min(c0 - x, c1 - y) + c2, min((c0 + c2) - x, (c1 + c2) - y)},
       {max(c0 - x, c1 - y) + c2, max((c0 + c2) - x, (c1 + c2) - y)},
+      {min(x, y + c0) + c1, min(x + c1, y + (c0 + c1))},
+      {max(x, y + c0) + c1, max(x + c1, y + (c0 + c1))},
 
       {select(x, c0, c1) + c2, select(x, c0 + c2, c1 + c2)},
       {select(x, y + c0, c1) + c2, select(x, y + (c0 + c2), c1 + c2)},
@@ -444,6 +454,9 @@ expr simplify(const sub* op, expr a, expr b) {
       {x - (x + y), -y},
       {(c0 - x) - (y - z), ((z - x) - y) + c0},
       {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
+
+      {min(x, y + z) - z, min(y, x - z)},
+      {max(x, y + z) - z, max(y, x - z)},
 
       {c2 - select(x, c0, c1), select(x, c2 - c0, c2 - c1)},
       {c2 - select(x, y + c0, c1), select(x, (c2 - c0) - y, c2 - c1)},
@@ -589,6 +602,7 @@ expr simplify(const less* op, expr a, expr b) {
       {x - y < z - y, x < z},
 
       {min(x, y) < x, y < x},
+      {min(x, min(y, z)) < y, min(x, z) < y},
       {max(x, y) < x, false},
       {x < max(x, y), x < y},
       {x < min(x, y), false},
@@ -639,6 +653,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {x - y <= z - y, x <= z},
 
       {min(x, y) <= x, true},
+      {min(x, min(y, z)) <= y, true},
       {max(x, y) <= x, y <= x},
       {x <= max(x, y), true},
       {x <= min(x, y), x <= y},

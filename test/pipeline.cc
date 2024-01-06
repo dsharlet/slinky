@@ -378,7 +378,7 @@ TEST(pipeline_stencil) {
   func stencil =
       func::make<const short, short>(sum3x3<short>, {intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
 
-  stencil.loops({y});
+  stencil.loops({{y, 2}});
   add.compute_at({&stencil, y});
 
   pipeline p(ctx, {in}, {out});
@@ -399,7 +399,7 @@ TEST(pipeline_stencil) {
   const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 4 * sizeof(short));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {

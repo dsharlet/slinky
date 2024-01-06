@@ -248,13 +248,16 @@ public:
   symbol_map<std::pair<int, expr>> fold_factors;
   struct loop_info {
     symbol_id sym;
-    expr og_min;
-    expr min;
+    expr orig_min;
+    interval_expr bounds;
     expr step;
   };
   std::vector<loop_info> loops;
 
-  slider(node_context& ctx) : ctx(ctx) {}
+  // We need an unknown to make equations of.
+  var x;
+
+  slider(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {}
 
   void visit(const allocate* alloc) override {
     box_expr bounds;
@@ -312,43 +315,59 @@ public:
       for (size_t l = 0; l < loops.size(); ++l) {
         symbol_id loop_sym = loops[l].sym;
         expr loop_var = variable::make(loop_sym);
+        const expr& loop_max = loops[l].bounds.max;
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
-          interval_expr prev_bounds_d{
+          interval_expr prev_bounds_d = {
               substitute(cur_bounds_d.min, loop_sym, loop_var - loops[l].step),
               substitute(cur_bounds_d.max, loop_sym, loop_var - loops[l].step),
           };
 
-          if (prove_true(prev_bounds_d.min <= cur_bounds_d.min) && prove_true(prev_bounds_d.max < cur_bounds_d.max)) {
+          // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
+          // some expression that is bounded by the loop bounds. This min simplifies away if we know that x <= loop_max,
+          // but the simplifier can't figure that out. As a hopefully temporary workaround, we can just substitute
+          // infinity for the loop max.
+          auto ignore_loop_max = [=](const expr& e) { return substitute(e, loop_max, positive_infinity()); };
+
+          expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max < cur_bounds_d.max;
+          expr is_monotonic_decreasing = prev_bounds_d.min > cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
+          is_monotonic_increasing = ignore_loop_max(is_monotonic_increasing);
+          is_monotonic_decreasing = ignore_loop_max(is_monotonic_decreasing);
+
+          if (prove_true(is_monotonic_increasing)) {
             // The bounds for each loop iteration are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
             expr old_min = cur_bounds_d.min;
             expr new_min = simplify(simplify(prev_bounds_d.max + 1));
 
-            expr fold_factor = simplify(bounds_of(cur_bounds_d.extent()).max);
-            fold_factors[output] = {d, fold_factor};
+            expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
+            if (!depends_on(fold_factor, loop_sym)) {
+              fold_factors[output] = {d, fold_factor};
+            } else {
+              // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+            }
 
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region. We'll insert
             // ifs around the other parts of the loop to avoid expanding the bounds that those
             // run on.
-            symbol_id new_loop_min_sym = ctx.insert_unique();
-            expr new_loop_min_var = variable::make(new_loop_min_sym);
-            expr new_min_at_new_loop_min = substitute(new_min, loop_sym, new_loop_min_var);
-            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[l].og_min);
-            expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, new_loop_min_sym).max;
+            expr new_min_at_new_loop_min = substitute(new_min, loop_sym, x);
+            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[l].orig_min);
+            expr new_loop_min =
+                where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
             if (!is_negative_infinity(new_loop_min)) {
-              loops[l].min = simplify(min(loops[l].min, new_loop_min));
+              loops[l].bounds.min = simplify(min(loops[l].bounds.min, new_loop_min));
 
               (*bounds)[d].min = new_min;
             } else {
               // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
-              (*bounds)[d].min = select(loop_var == loops[l].og_min, old_min, new_min);
+              // TODO: If another loop or func adjusts the loop min, we're going to run before the original min... that
+              // seems like it might be fine anyways here, but pretty janky.
+              (*bounds)[d].min = select(loop_var == loops[l].orig_min, old_min, new_min);
             }
             break;
-          } else if (prove_true(prev_bounds_d.min > cur_bounds_d.min) &&
-                     prove_true(prev_bounds_d.max >= cur_bounds_d.max)) {
+          } else if (prove_true(is_monotonic_decreasing)) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
           }
@@ -358,7 +377,7 @@ public:
 
     // Insert ifs around these calls, in case the loop min shifts later.
     for (const auto& l : loops) {
-      result = if_then_else::make(variable::make(l.sym) >= l.min, result, stmt());
+      result = if_then_else::make(variable::make(l.sym) >= l.bounds.min, result, stmt());
     }
     set_result(result);
   }
@@ -393,19 +412,19 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* l) override {
-    var orig_loop_min(ctx, ctx.name(l->sym) + "_min.orig");
+    var orig_min(ctx, ctx.name(l->sym) + "_min.orig");
 
-    loops.emplace_back(l->sym, orig_loop_min, orig_loop_min, l->step);
+    loops.emplace_back(l->sym, orig_min, l->bounds, l->step);
     stmt body = mutate(l->body);
-    expr loop_min = loops.back().min;
+    expr loop_min = loops.back().bounds.min;
     loops.pop_back();
 
-    if (loop_min.same_as(orig_loop_min) && body.same_as(l->body)) {
+    if (loop_min.same_as(orig_min) && body.same_as(l->body)) {
       set_result(l);
     } else {
       // We rewrote the loop min.
       stmt result = loop::make(l->sym, {loop_min, l->bounds.max}, l->step, std::move(body));
-      set_result(let_stmt::make(orig_loop_min.sym(), l->bounds.min, result));
+      set_result(let_stmt::make(orig_min.sym(), l->bounds.min, result));
     }
   }
 
