@@ -86,6 +86,17 @@ public:
     }
   }
 
+  void print_vector(const std::vector<char>& v, const std::string& sep = ", ") {
+    *this << std::hex;
+    for (std::size_t i = 0; i < v.size(); ++i) {
+      *this << (int)v[i];
+      if (i + 1 < v.size()) {
+        *this << sep;
+      }
+    }
+    *this << std::dec;
+  }
+
   template <typename T>
   printer& operator<<(const std::vector<T>& v) {
     print_vector(v);
