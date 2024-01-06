@@ -232,7 +232,7 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
   bubble_sort(dims, dims + rank);
 
   // Find dimensions we can fuse.
-  for (std::size_t d = 0; d + 1 < rank;) {
+  for (int d = 0; d + 1 < rank;) {
     copy_dim& a = dims[d];
     const copy_dim& b = dims[d + 1];
     if (a.pad_before == 0 && a.pad_after == 0 &&
@@ -245,7 +245,7 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
       a.size = b.size * a.size;
 
       // Remove the now-fused dimension.
-      for (std::size_t i = d + 1; i + 1 < rank; ++i) {
+      for (int i = d + 1; i + 1 < rank; ++i) {
         dims[i] = dims[i + 1];
       }
       --rank;
