@@ -13,6 +13,8 @@
 #include "ref_count.h"
 
 namespace slinky {
+  
+using index_t = std::ptrdiff_t;
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>

@@ -22,6 +22,10 @@ An `input` or `output` is associated with a `buffer_expr`.
 An `output` has a list of dimensions, which identify variables (`var`) used to index the corresponding dimension of the `buffer_expr`.
 An `input` has a list of bounds expressions, expressed as an inclusive interval `[min, max]`, where the bounds can depend on the variables from the output dimensions.
 
+The actual implementation of a `func` is a callback taking a single argument `eval_context`.
+This object contains the state of the program at the time of the call.
+Values of any symbol currently in scope at the time of the call can be accessed in the `eval_context`. 
+
 ### Elementwise example
 Here is an example of a simple pipeline of two 1D elementwise `func`s:
 ```c++
@@ -190,54 +194,60 @@ On my machine, here are some data points from this pipeline:
 ### 32 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 13.8726 | 16.9836 | 0.816825 | 
-| 2 | 15.8019 | 16.5786 | 0.953151 | 
-| 4 | 16.1773 | 17.0375 | 0.94951 | 
-| 8 | 16.28 | 17.1297 | 0.950395 | 
-| 16 | 12.1118 | 12.3749 | 0.978739 | 
-| 32 | 12.8886 | 13.3652 | 0.964338 | 
+| 1 | 27.9628 | 53.4015 | 0.523633 |
+| 2 | 38.0666 | 57.6909 | 0.659838 |
+| 4 | 45.7096 | 57.7501 | 0.791506 |
+| 8 | 49.5502 | 57.6375 | 0.859686 |
+| 16 | 51.2565 | 57.3557 | 0.893661 |
+| 32 | 53.9359 | 57.9311 | 0.931036 |
 
 ### 128 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 10.0869 | 11.6477 | 0.866 | 
-| 2 | 12.2537 | 12.6528 | 0.96846 | 
-| 4 | 12.9571 | 13.495 | 0.96014 | 
-| 8 | 13.0318 | 13.3503 | 0.976143 | 
-| 16 | 11.7615 | 12.2431 | 0.96066 | 
-| 32 | 12.3106 | 13.0289 | 0.944867 | 
+| 1 | 29.7561 | 60.5941 | 0.491073 |
+| 2 | 36.1747 | 53.0415 | 0.682008 |
+| 4 | 40.4246 | 50.2104 | 0.805104 |
+| 8 | 54.0319 | 61.5521 | 0.877823 |
+| 16 | 56.7812 | 60.7085 | 0.935309 |
+| 32 | 55.6005 | 58.1259 | 0.956552 |
 
 ### 512 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 8.24963 | 9.58973 | 0.860257 | 
-| 2 | 9.93212 | 10.253 | 0.968708 | 
-| 4 | 10.2215 | 10.1456 | 1.00747 | 
-| 8 | 10.0443 | 10.4342 | 0.962632 | 
-| 16 | 10.4525 | 10.6934 | 0.977467 | 
-| 32 | 10.3847 | 10.8897 | 0.953625 | 
+| 1 | 27.2978 | 54.8118 | 0.498029 |
+| 2 | 33.9102 | 50.2715 | 0.674541 |
+| 4 | 42.3863 | 55.4505 | 0.7644 |
+| 8 | 44.1691 | 50.598 | 0.872941 |
+| 16 | 48.8631 | 54.0616 | 0.903842 |
+| 32 | 51.6951 | 54.2791 | 0.952394 |
 
 ### 2048 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 8.61451 | 9.61295 | 0.896136 | 
-| 2 | 9.67016 | 10.3158 | 0.937412 | 
-| 4 | 10.3269 | 10.5495 | 0.978904 | 
-| 8 | 10.6252 | 10.5351 | 1.00855 | 
-| 16 | 10.2232 | 10.7941 | 0.947113 | 
-| 32 | 10.7753 | 10.8707 | 0.991226 | 
+| 1 | 27.3521 | 55.3013 | 0.4946 |
+| 2 | 34.5357 | 51.6156 | 0.669095 |
+| 4 | 41.7187 | 54.2764 | 0.768634 |
+| 8 | 44.3024 | 52.6728 | 0.841088 |
+| 16 | 48.9075 | 53.0902 | 0.921215 |
+| 32 | 50.9568 | 54.01 | 0.94347 |
 
-(TODO: "My machine" is actually the GitHub Actions runner, because my machine is Windows Subsystem for Linux, which has nonsense performance I haven't figured out.)
+### 8192 KB
+| copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
+|----------------|-------------|----------------|-------|
+| 1 | 23.2158 | 43.0015 | 0.539883 |
+| 2 | 23.3269 | 29.9594 | 0.778617 |
+| 4 | 27.2811 | 25.3637 | 1.0756 |
+| 8 | 28.3336 | 30.8823 | 0.917468 |
+| 16 | 29.5921 | 31.6358 | 0.935398 |
+| 32 | 30.7757 | 31.6981 | 0.970899 |
 
 ## Observations
 As we might expect, the observations vary depending on the total size of the copy.
 
 When the total size is small enough to fit in L1 or L2 cache, the cost of the `memcpy` will be small, and the overhead will be relatively more expensive.
-This cost is as much as 30% when copying 1 KB at a time, according to the data above.
+This cost is as much as 50% when copying 1 KB at a time, according to the data above.
 However, this is at an extreme case, included to understand where overhead becomes significant.
-A more realistic use case would be to take the L2 cache size of 256KB, and divide it into a few buffers.
+A more realistic use case would be to take the L2 cache size (256KB), and divide it into a few buffers.
 8KB implies 20-30 buffers fitting in L2 cache, which is likely excessive.
-However, even at 8KB, the overhead is around 5%, and this is only for a `memcpy`.
-A more realistic workload will amortize the overhead much more than this.
-
-For larger buffers and larger copies, the overhead very quickly becems negligible.
+However, even at 8KB, the overhead is around 10%, and this is only for a `memcpy`.
+A more realistic workload will amortize the overhead much more than this by doing more work.
