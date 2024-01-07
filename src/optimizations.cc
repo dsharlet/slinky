@@ -1,8 +1,8 @@
 #include "optimizations.h"
 
 #include <cassert>
-#include <set>
 #include <iostream>
+#include <set>
 
 #include "evaluate.h"
 #include "node_mutator.h"
@@ -173,19 +173,83 @@ public:
 stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 
 namespace {
+/*
+bool is_copy(expr in, var out, interval_expr& bounds) {
+  if (match(in, out)) {
+    bounds = interval_expr::all();
+    return true;
+  }
 
-class copy_implementer : public node_mutator {
-  node_context& ctx;
+  symbol_map<expr> matches;
+  var x(0), a(1), b(2);
+  if (match(clamp(x, a, b), in, matches) && match(*matches[x], out)) {
+    bounds = {*matches[a], *matches[b]};
+    return true;
+  }
 
+  return false;
+}
+
+bool is_broadcast(expr in, var out) {
+  interval_expr bounds = bounds_of(in, {{out.sym(), interval_expr::all()}});
+  bounds.min = simplify(bounds.min);
+  bounds.max = simplify(bounds.max);
+
+  // This is a broadcast if the bounds are a single point.
+  return bounds.min.defined() && match(bounds.min, bounds.max);
+}
+*/
+class copy_optimizer : public node_mutator {
 public:
-  copy_implementer(node_context& ctx) : ctx(ctx) {}
+  void visit(const copy_stmt* c) override {
+    // Start by making a call to copy.
+    stmt result = call_stmt::make(
+        [src = c->src, dst = c->dst, padding = c->padding](const eval_context& ctx) -> index_t {
+          const raw_buffer* src_buf = ctx.lookup_buffer(src);
+          const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+          copy(*src_buf, *dst_buf, padding.empty() ? nullptr : padding.data());
+          return 0;
+        },
+        {c->src}, {c->dst});
 
-  void visit(const copy_stmt* c) override { set_result(c); }
+    var src_var(c->src);
+    var dst_var(c->dst);
+
+    std::vector<expr> src_min = c ->src_x;
+    std::vector<std::pair<symbol_id, int>> dst_x;
+
+    // If we just leave these two arrays alone, the copy will be correct, but slow.
+    // We can speed it up by finding dimensions we can let pass through to the copy.
+    for (int d = 0; d < static_cast<int>(c->dst_x.size()); ++d) {
+      int dep_count = 0;
+      for (int src_d = 0; src_d < static_cast<int>(src_min.size()); ++src_d) {
+        if (depends_on(src_min[src_d], c->dst_x[d])) {
+          ++dep_count;
+        }
+      }
+      bool handled = false;
+      if (dep_count == 1) {
+        // TODO: Try to handle this dimension by passing it to copy.
+      }
+      if (!handled) {
+        dst_x.emplace_back(c->dst_x[d], d);
+      }
+    }
+
+    // Any dimensions left need loops and slices.
+    result = slice_buffer::make(c->src, src_min, result);
+    for (const std::pair<symbol_id, int>& d : dst_x) {
+      result = slice_dim::make(c->dst, d.second, var(d.first), result);
+      result = loop::make(d.first, buffer_bounds(dst_var, d.second), 1, result);
+    }
+
+    set_result(result);
+  }
 };
 
 }  // namespace
 
-stmt implement_copies(const stmt& s, node_context& ctx) { return copy_implementer(ctx).mutate(s); }
+stmt optimize_copies(const stmt& s) { return copy_optimizer().mutate(s); }
 
 namespace {
 

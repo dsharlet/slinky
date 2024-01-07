@@ -379,6 +379,7 @@ public:
 
   void visit(const crop_buffer* n) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
+    assert(buffer);
 
     struct range {
       index_t min;
@@ -416,6 +417,7 @@ public:
 
   void visit(const crop_dim* n) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
+    assert(buffer);
     slinky::dim& dim = buffer->dims[n->dim];
 
     void* old_base = buffer->base;
@@ -439,6 +441,7 @@ public:
 
   void visit(const slice_buffer* n) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
+    assert(buffer);
 
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     std::size_t old_rank = buffer->rank;
@@ -469,6 +472,7 @@ public:
 
   void visit(const slice_dim* n) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
+    assert(buffer);
 
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     dim* old_dims = buffer->dims;
@@ -497,6 +501,7 @@ public:
 
   void visit(const truncate_rank* n) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
+    assert(buffer);
 
     std::size_t old_rank = buffer->rank;
     buffer->rank = n->rank;
