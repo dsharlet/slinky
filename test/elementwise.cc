@@ -131,6 +131,110 @@ public:
 };
 
 template <typename T, std::size_t Rank>
+class elementwise_pipeline_evaluator : public node_visitor {
+public:
+  std::vector<index_t> extents;
+  symbol_map<buffer<T>*> vars;
+
+  buffer<T, Rank> result;
+
+  void init_buffer(buffer<T, Rank>& b) {
+    b.free();
+    index_t stride = sizeof(T);
+    for (std::size_t d = 0; d < Rank; ++d) {
+      b.dims[d].set_min_extent(0, extents[d]);
+      b.dims[d].set_stride(stride);
+      stride *= extents[d];
+    }
+    b.allocate();
+  }
+
+  void visit(const variable* v) override {
+    const std::optional<buffer<T>*>& i = vars[v->sym];
+    assert(i);
+    result.free();
+    index_t stride = sizeof(T);
+    for (std::size_t d = 0; d < Rank; ++d) {
+      result.dims[d].set_min_extent(0, extents[d]);
+      result.dims[d].set_stride(stride);
+      stride *= extents[d];
+    }
+    result.allocate();
+    copy(**i, result);
+  }
+
+  void visit(const constant* c) override {
+    result.free();
+    for (std::size_t d = 0; d < Rank; ++d) {
+      result.dims[d].set_min_extent(0, extents[d]);
+      result.dims[d].set_stride(0);
+    }
+    result.allocate();
+    memcpy(result.base(), &c->value, sizeof(T));
+  }
+
+  void visit_expr(const expr& e, buffer<T, Rank>& r) {
+    e.accept(this);
+    init_buffer(r);
+    copy(result, r);
+  }
+
+  template <typename Impl>
+  void visit_binary(const char* fn, const expr& a, const expr& b, const Impl& impl) {
+    buffer<T, Rank> a_buf;
+    visit_expr(a, a_buf);
+    b.accept(this);
+    for_each_index(result, [&](auto i) { result(i) = impl(a_buf(i), result(i)); });
+  }
+
+  void visit(const class min* op) override {
+    visit_binary("min", op->a, op->b, [](T a, T b) { return std::min(a, b); });
+  }
+  void visit(const class max* op) override {
+    visit_binary("max", op->a, op->b, [](T a, T b) { return std::max(a, b); });
+  }
+  void visit(const class add* op) override { visit_binary("+", op->a, op->b, std::plus<T>()); }
+  void visit(const sub* op) override { visit_binary("-", op->a, op->b, std::minus<T>()); }
+  void visit(const mul* op) override { visit_binary("*", op->a, op->b, std::multiplies<T>()); }
+  void visit(const slinky::div* op) override { visit_binary("/", op->a, op->b, std::divides<T>()); }
+  void visit(const slinky::mod* op) override { visit_binary("%", op->a, op->b, std::modulus<T>()); }
+  void visit(const less* op) override { visit_binary("<", op->a, op->b, std::less<T>()); }
+  void visit(const less_equal* op) override { visit_binary("<=", op->a, op->b, std::less_equal<T>()); }
+  void visit(const equal* op) override { visit_binary("==", op->a, op->b, std::equal_to<T>()); }
+  void visit(const not_equal* op) override { visit_binary("==", op->a, op->b, std::not_equal_to<T>()); }
+  void visit(const logical_and* op) override { visit_binary("&&", op->a, op->b, std::logical_and<T>()); }
+  void visit(const logical_or* op) override { visit_binary("||", op->a, op->b, std::logical_or<T>()); }
+  void visit(const class select* op) override {
+    buffer<T, Rank> c_buf;
+    visit_expr(op->condition, c_buf);
+    buffer<T, Rank> t_buf;
+    visit_expr(op->true_value, t_buf);
+    op->false_value.accept(this);
+    for_each_index(result, [&](auto i) { result(i) = c_buf(i) ? t_buf(i) : result(i); });
+  }
+
+  void visit(const wildcard*) override { std::abort(); }
+  void visit(const let*) override { std::abort(); }
+  void visit(const call*) override { std::abort(); }
+  void visit(const logical_not*) override { std::abort(); }
+
+  void visit(const let_stmt*) override { std::abort(); }
+  void visit(const block*) override { std::abort(); }
+  void visit(const loop*) override { std::abort(); }
+  void visit(const if_then_else*) override { std::abort(); }
+  void visit(const call_stmt*) override { std::abort(); }
+  void visit(const copy_stmt*) override { std::abort(); }
+  void visit(const allocate*) override { std::abort(); }
+  void visit(const make_buffer*) override { std::abort(); }
+  void visit(const crop_buffer*) override { std::abort(); }
+  void visit(const crop_dim*) override { std::abort(); }
+  void visit(const slice_buffer*) override { std::abort(); }
+  void visit(const slice_dim*) override { std::abort(); }
+  void visit(const truncate_rank*) override { std::abort(); }
+  void visit(const check*) override { std::abort(); }
+};
+
+template <typename T, std::size_t Rank>
 pipeline make_expr_pipeline(node_context& ctx, const expr& e) {}
 
 template <typename T, std::size_t Rank>
@@ -142,26 +246,43 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
 
   std::vector<index_t> extents;
   for (std::size_t i = 0; i < Rank; ++i) {
-    extents.push_back((rand() % 100) + 1);
+    extents.push_back(i * 3 + 5);
   }
 
   std::vector<const raw_buffer*> inputs;
-  std::vector<raw_buffer_ptr> input_bufs;
+  std::vector<buffer<T, Rank>> input_bufs(p.inputs().size());
 
   for (std::size_t i = 0; i < p.inputs().size(); ++i) {
-    input_bufs.emplace_back(raw_buffer::make(sizeof(T), extents));
-    inputs.push_back(&*input_bufs.back());
-    init_random(input_bufs.back()->cast<T>());
+    index_t stride = sizeof(T);
+    for (std::size_t d = 0; d < Rank; ++d) {
+      input_bufs[i].dims[d].set_min_extent(0, extents[d]);
+      input_bufs[i].dims[d].set_stride(stride);
+      stride *= extents[d];
+    }
+  }
+  for (std::size_t i = 0; i < p.inputs().size(); ++i) {
+    init_random(input_bufs[i]);
+    inputs.push_back(&input_bufs[i]);
   }
 
-  raw_buffer_ptr output_buf = raw_buffer::make(sizeof(T), extents);
-  output_buf->allocate();
+  buffer<T, Rank> output_buf(extents);
+  output_buf.allocate();
 
   std::vector<const raw_buffer*> outputs;
-  outputs.push_back(&*output_buf);
+  outputs.push_back(&output_buf);
 
   p.evaluate(inputs, outputs);
+
+  elementwise_pipeline_evaluator<T, Rank> eval;
+  eval.extents = extents;
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
+    eval.vars[p.inputs()[i]->sym()] = &input_bufs[i].template cast<T>();
+  }
+  e.accept(&eval);
+
+  for_each_index(output_buf, [&](auto i) { ASSERT_EQ(output_buf(i), eval.result(i)); });
 }
+
 
 // Compute max(a + b, 0) * c
 void test_elementwise(const int W, const int H) {

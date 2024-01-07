@@ -224,7 +224,7 @@ public:
   // Construct a buffer with extents, and strides computed such that the stride of dimension
   // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
   // dimension is "innermost".
-  buffer(std::initializer_list<index_t> extents) : buffer() {
+  buffer(std::span<const index_t> extents) : buffer() {
     assert(extents.size() <= rank);
     index_t stride = elem_size;
     slinky::dim* d = dims;
@@ -235,6 +235,7 @@ public:
       ++d;
     }
   }
+  buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
 
