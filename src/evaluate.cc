@@ -424,7 +424,7 @@ public:
 
     index_t min = std::max(dim.min(), eval_expr(n->bounds.min));
     buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-    if (n->bounds.min.same_as(n->bounds.max)) {
+    if (n->bounds.is_point()) {
       // Crops to a single element are common, we can optimize them a little bit by re-using the min
       dim.set_point(min);
     } else {

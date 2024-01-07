@@ -923,7 +923,7 @@ public:
   interval_expr mutate(
       const interval_expr& x, interval_expr* min_bounds = nullptr, interval_expr* max_bounds = nullptr) {
     interval_expr result = {mutate(x.min, min_bounds), mutate(x.max, max_bounds)};
-    if (!result.min.same_as(result.max) && match(result.min, result.max)) {
+    if (!result.is_point() && match(result.min, result.max)) {
       // If the bounds are the same, make sure same_as returns true.
       result.max = result.min;
     }
@@ -1588,7 +1588,7 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   } else if (is_non_positive(a.max) && is_non_positive(b.max)) {
     // Both are <= 0, both intervals flip.
     return {simplify(op, a.max, b.max), simplify(op, a.min, b.min)};
-  } else if (b.is_single_point()) {
+  } else if (b.is_point()) {
     if (is_non_negative(b.min)) {
       return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
     } else if (is_non_positive(b.min)) {
@@ -1600,7 +1600,7 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
       };
       return {min(corners), max(corners)};
     }
-  } else if (a.is_single_point()) {
+  } else if (a.is_point()) {
     if (is_non_negative(a.min)) {
       return {simplify(op, a.min, b.min), simplify(op, a.min, b.max)};
     } else if (is_non_positive(a.min)) {
@@ -1627,7 +1627,7 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
-  if (b.is_single_point() && is_zero(b.min)) {
+  if (b.is_point() && is_zero(b.min)) {
     return {0, 0};
   } else if (is_positive(b.min)) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
