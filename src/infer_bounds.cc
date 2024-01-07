@@ -173,6 +173,14 @@ public:
     set_result(c);
   }
 
+  void visit(const copy_stmt* c) override {
+    // Record the bounds we currently have from the crops.
+    if (infer.contains(c->src)) {
+      infer[c->src] = crops[c->src];
+    }
+    set_result(c);
+  }
+
   void visit(const crop_buffer* c) override {
     std::optional<box_expr> crop = crops[c->sym];
     merge_crop(crop, c->bounds);
