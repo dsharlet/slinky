@@ -83,9 +83,23 @@ bool is_elementwise(const box_expr& in_x, symbol_id out) {
 }
 
 class buffer_aliaser : public node_mutator {
-  struct buffer_info {
-    std::set<symbol_id> alias_candidates;
-    bool elementwise = true;
+  class buffer_info {
+    std::set<symbol_id> can_alias_;
+    std::set<symbol_id> cannot_alias_;
+
+  public:
+    const std::set<symbol_id>& can_alias() const { return can_alias_; }
+
+    void maybe_alias(symbol_id s) {
+      if (!cannot_alias_.count(s)) {
+        can_alias_.insert(s);
+      }
+    }
+
+    void do_not_alias(symbol_id s) {
+      can_alias_.erase(s);
+      cannot_alias_.insert(s);
+    }
   };
   symbol_map<buffer_info> alias_info;
   symbol_map<box_expr> buffer_bounds;
@@ -109,16 +123,16 @@ public:
     // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alias_info, op->sym, buffer_info());
     stmt body = mutate(op->body);
-    const buffer_info& info = *alias_info[op->sym];
+    const std::set<symbol_id>& can_alias = alias_info[op->sym]->can_alias();
 
-    if (info.elementwise && !info.alias_candidates.empty()) {
-      symbol_id target = *info.alias_candidates.begin();
+    if (!can_alias.empty()) {
+      symbol_id target = *can_alias.begin();
       set_result(let_stmt::make(op->sym, variable::make(target), std::move(body)));
       aliases[op->sym] = target;
       // Remove this as a candidate for other aliases.
       for (std::optional<buffer_info>& i : alias_info) {
         if (!i) continue;
-        i->alias_candidates.erase(target);
+        i->do_not_alias(target);
       }
     } else if (!body.same_as(op->body)) {
       set_result(clone_with_new_body(op, std::move(body)));
@@ -133,17 +147,14 @@ public:
       for (symbol_id i : op->inputs) {
         const std::optional<box_expr>& in_x = buffer_bounds[i];
         std::optional<buffer_info>& info = alias_info[i];
-        if (!in_x || !info) {
-          info->elementwise = false;
+        if (!info) continue;
+
+        if (!in_x || !is_elementwise(*in_x, o)) {
+          info->do_not_alias(o);
           return;
         }
 
-        if (!is_elementwise(*in_x, o)) {
-          info->elementwise = false;
-          return;
-        }
-
-        info->alias_candidates.insert(o);
+        info->maybe_alias(o);
       }
     }
   }
