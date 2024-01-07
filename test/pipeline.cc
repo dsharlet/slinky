@@ -720,7 +720,7 @@ TEST(pipeline_unrelated) {
 
   init_random(in1_buf);
   out1_buf.allocate();
-   
+
   const int N2 = 30;
   buffer<int, 1> in2_buf({N2});
   in2_buf.allocate();
@@ -757,3 +757,65 @@ TEST(pipeline_unrelated) {
   }
 }
 
+TEST(pipeline_padded_stencil) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(short), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  var w(ctx, "w");
+  var h(ctx, "h");
+
+  func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  func padded = func::make_copy({intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {padded_intm, {x, y}}, {6, 0});
+  func stencil = func::make<const short, short>(
+      sum3x3<short>, {padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
+
+  pipeline p(ctx, {w, h}, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  index_t args[] = {W, H};
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  debug_context eval_ctx;
+  p.evaluate(args, inputs, outputs, eval_ctx);
+  // ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 4 * sizeof(short));
+  //ASSERT_EQ(eval_ctx.heap.total_count, 1);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          // TODO: This should be padded, not clamped.
+          #if 0
+          if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
+            correct += in_buf(x + dx, y + dy) + 1;
+          } else {
+            correct += 7;
+          }
+          #else
+          correct += in_buf(std::clamp(x + dx, 0, W - 1), std::clamp(y + dy, 0, H - 1)) + 1;
+          #endif
+        }
+      }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+    }
+  }
+}
