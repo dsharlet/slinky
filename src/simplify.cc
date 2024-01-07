@@ -1172,12 +1172,10 @@ public:
   }
 
   void visit(const loop* op) override {
-    interval_expr min_bounds;
-    interval_expr max_bounds;
-    interval_expr bounds = mutate(op->bounds, &min_bounds, &max_bounds);
+    interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
-    if (prove_true(min_bounds.min > max_bounds.max)) {
+    if (prove_true(bounds.min > bounds.max)) {
       // This loop is dead.
       set_result(stmt());
       return;
