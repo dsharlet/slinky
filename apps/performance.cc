@@ -11,16 +11,14 @@ using namespace slinky;
 // Unfortunately, here in 2024 on modern OSes, the standard `memcpy` is over 10x slower than this on AMD CPUs. Over a
 // certain size, `memcpy` uses a `rep movsb` sequence, which is apparently really bad on AMD Zen:
 // https://bugs.launchpad.net/ubuntu/+source/glibc/+bug/2030515
-// This memcpy assumes src and dst are aligned to 16 bytes, and the size is aligned to 64 bytes.
-void fast_aligned_memcpy(char* dst, const char* src, std::size_t size) {
-  char* end = dst + size;
-  while (dst < end) {
-    _mm_store_ps((float*)dst, _mm_load_ps((const float*)src));
-    _mm_store_ps((float*)dst + 4, _mm_load_ps((const float*)src + 4));
-    _mm_store_ps((float*)dst + 8, _mm_load_ps((const float*)src + 8));
-    _mm_store_ps((float*)dst + 12, _mm_load_ps((const float*)src + 12));
-    dst += 64;
-    src += 64;
+// We can work around this by memcpying 2048 bytes or less at a time.
+void memcpy_workaround(char* dst, const char* src, std::size_t size) {
+  constexpr std::size_t chunk_size = 2048;
+  for (std::size_t i = 0; i < size; i += chunk_size) {
+    std::size_t size_i = std::min(size - i, chunk_size);
+    memcpy(dst, src, size_i);
+    dst += chunk_size;
+    src += chunk_size;
   }
 }
 
@@ -32,7 +30,7 @@ index_t copy(const buffer<const T>& in, const buffer<T>& out) {
   T* dst = &out(out.dim(0).min(), out.dim(1).min());
   std::size_t size_bytes = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
-    fast_aligned_memcpy((char*)dst, (const char*)src, size_bytes);
+    memcpy_workaround((char*)dst, (const char*)src, size_bytes);
     dst += out.dim(1).stride();
     src += in.dim(1).stride();
   }
