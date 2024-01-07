@@ -201,23 +201,23 @@ void bubble_sort(It begin, It end) {
   }
 }
 
-index_t compute_padding(const dim& src, const dim& dst, copy_dim& dim) {
+index_t compute_padding(index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim) {
   index_t src_offset = 0;
-  if (dst.end() <= src.begin() || dst.begin() >= src.end()) {
+  if (dst.end() <= src_begin || dst.begin() >= src_end) {
     // This dimension is all padding.
     dim.pad_before = dim.total_size;
     dim.size = 0;
     dim.pad_after = 0;
   } else {
-    index_t copy_begin = std::max(src.begin(), dst.begin());
-    index_t copy_end = std::min(src.end(), dst.end());
+    index_t copy_begin = std::max(src_begin, dst.begin());
+    index_t copy_end = std::min(src_end, dst.end());
     dim.size = std::max<index_t>(0, copy_end - copy_begin);
     dim.pad_before = std::max<index_t>(0, copy_begin - dst.begin());
     dim.pad_after = std::max<index_t>(0, dst.end() - copy_end);
 
     // If the src min is before the dst min, adjust the base.
-    if (dst.begin() > src.begin()) {
-      src_offset = dim.src_stride * (dst.begin() - src.begin());
+    if (dst.begin() > src_begin) {
+      src_offset = dim.src_stride * (dst.begin() - src_begin);
     }
   }
 
@@ -284,7 +284,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
       dims[rank].src_stride = src.dims[i].stride();
       dims[rank].dst_stride = dst.dims[i].stride();
       dims[rank].total_size = dst.dims[i].extent();
-      src_base += compute_padding(src.dims[i], dst.dims[i], dims[rank]);
+      src_base += compute_padding(src.dims[i].begin(), src.dims[i].end(), dst.dims[i], dims[rank]);
       ++rank;
     }
   }
@@ -311,7 +311,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
     dims[rank].src_stride = 0;
     dims[rank].dst_stride = dst.dims[i].stride();
     dims[rank].total_size = dst.dims[i].extent();
-    compute_padding(in_bounds[i], dst.dims[i], dims[rank]);
+    compute_padding(in_bounds[i].begin(), in_bounds[i].end(), dst.dims[i], dims[rank]);
     ++rank;
   }
 
