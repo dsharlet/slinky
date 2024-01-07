@@ -359,7 +359,7 @@ public:
   }
 };
 
-void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
+void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
   expr buf_var = variable::make(b->sym());
   checks.push_back(check::make(buf_var != 0));
@@ -367,10 +367,14 @@ void add_buffer_checks(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   checks.push_back(check::make(buffer_rank(buf_var) == rank));
   checks.push_back(check::make(buffer_base(buf_var) != 0));
   for (int d = 0; d < rank; ++d) {
+    expr fold_factor = buffer_fold_factor(buf_var, d);
     checks.push_back(check::make(b->dim(d).min() == buffer_min(buf_var, d)));
     checks.push_back(check::make(b->dim(d).max() == buffer_max(buf_var, d)));
     checks.push_back(check::make(b->dim(d).stride == buffer_stride(buf_var, d)));
-    checks.push_back(check::make(b->dim(d).fold_factor == buffer_fold_factor(buf_var, d)));
+    checks.push_back(check::make(b->dim(d).fold_factor == fold_factor));
+    if (output) {
+      checks.push_back(check::make(fold_factor <= 0 || b->dim(d).extent() <= fold_factor));
+    }
   }
 }
 
@@ -406,10 +410,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
-    add_buffer_checks(i, checks);
+    add_buffer_checks(i, /*output=*/false, checks);
   }
   for (const buffer_expr_ptr& i : outputs) {
-    add_buffer_checks(i, checks);
+    add_buffer_checks(i, /*output=*/true, checks);
   }
   result = block::make(block::make(checks), result);
 

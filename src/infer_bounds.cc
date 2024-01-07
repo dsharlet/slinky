@@ -442,17 +442,12 @@ public:
   }
 };
 
-}  // namespace
-
-stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
-  bounds_inferrer infer;
-
+stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
   // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
+  bounds_inferrer infer;
   for (symbol_id i : inputs) {
     infer.infer[i] = box_expr();
   }
-
-  // Infer the bounds.
   stmt result = infer.mutate(s);
 
   // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
@@ -463,15 +458,26 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
     for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
       checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
       checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));
+      expr fold_factor = buffer_fold_factor(buf_var, d);
+      checks.push_back(check::make(fold_factor <= 0 || bounds[d].extent() <= fold_factor));
     }
   }
-  result = block::make(block::make(checks), result);
+  return block::make(block::make(checks), result);
+}
 
+}  // namespace
+
+stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
+  stmt result = s;
+  
+  result = infer_bounds(s, inputs);
   result = simplify(result);
 
   // After simplifying and inferring the bounds of producers, we can try to run the sliding window
   // optimization.
   result = slider(ctx).mutate(result);
+
+  result = alias_buffers(result);
 
   result = reduce_scopes(result);
   // At this point, crops of input buffers are unnecessary.

@@ -345,7 +345,21 @@ TEST(elementwise_mul_add) {
   test_expr_pipeline<int, 1>(ctx, x * y + z);
 }
 
-TEST(elementwise_exp) {
+TEST(elementwise_exp2) {
+  node_context ctx;
+  var x(ctx, "x");
+  var one(ctx, "one");
+  test_expr_pipeline<int, 1>(ctx, one + x + x * x);
+}
+
+TEST(elementwise_exp3) {
+  node_context ctx;
+  var x(ctx, "x");
+  var one(ctx, "one");
+  test_expr_pipeline<int, 1>(ctx, one + x + x * x + x * x * x);
+}
+
+TEST(elementwise_exp4) {
   node_context ctx;
   var x(ctx, "x");
   var one(ctx, "one");

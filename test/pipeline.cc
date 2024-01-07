@@ -169,8 +169,7 @@ TEST(pipeline_elementwise_1d) {
   const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate can alias with the output.
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
@@ -738,8 +737,8 @@ TEST(pipeline_unrelated) {
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
-  ASSERT_EQ(eval_ctx.heap.total_size, N2 * sizeof(int) + (W1 + 2) * 4 * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 2);
+  ASSERT_EQ(eval_ctx.heap.total_size, (W1 + 2) * 4 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);  // intm2 aliased to out2.
 
   for (int y = 0; y < H1; ++y) {
     for (int x = 0; x < W1; ++x) {
