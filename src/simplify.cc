@@ -956,13 +956,17 @@ public:
     return result && !*result;
   }
 
-  void visit(const variable* op) override {
-    auto& ref_count = references[op->sym];
+  void visit_symbol(symbol_id sym) {
+    auto& ref_count = references[sym];
     if (!ref_count) {
       ref_count = 1;
     } else {
       *ref_count += 1;
     }
+  }
+
+  void visit(const variable* op) override {
+    visit_symbol(op->sym);
     std::optional<interval_expr> bounds = expr_bounds[op->sym];
     if (bounds) {
       set_result(op, std::move(*bounds));
@@ -1158,8 +1162,8 @@ public:
     if (refs == 0) {
       // This let is dead
       set_result(body);
-    } else if (refs == 1 || value.as<constant>() || value.as<variable>()) {
-      set_result(mutate(substitute(body, op->sym, value)));
+      // TODO: We could try substituting lets used once, or for simple lets, but we need to be careful because we can't
+      // substitute values passed to call_stmt.
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1245,6 +1249,22 @@ public:
     } else {
       set_result(block::make(std::move(a), std::move(b)));
     }
+  }
+
+  void visit(const call_stmt* op) override {
+    for (symbol_id i : op->inputs) {
+      visit_symbol(i);
+    }
+    for (symbol_id o : op->outputs) {
+      visit_symbol(o);
+    }
+    node_mutator::visit(op);
+  }
+
+  void visit(const copy_stmt* op) override {
+    visit_symbol(op->src);
+    visit_symbol(op->dst);
+    node_mutator::visit(op);
   }
 
   void visit(const allocate* op) override {
