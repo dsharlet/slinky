@@ -18,12 +18,16 @@ void dump_context_for_expr(
 
 using namespace slinky;
 
+namespace {
+
 node_context symbols;
 
 var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+
+}  // namespace
 
 template <typename T>
 void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {

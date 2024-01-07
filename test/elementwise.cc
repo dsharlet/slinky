@@ -283,47 +283,22 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   for_each_index(output_buf, [&](auto i) { ASSERT_EQ(output_buf(i), eval.result(i)); });
 }
 
-TEST(elementwise) {
-  node_context ctx;
-  var a(ctx, "a");
-  var b(ctx, "b");
-  var c(ctx, "c");
-  var d(ctx, "d");
-  test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c);
-}
+namespace {
 
-TEST(elementwise_add_xy) {
-  node_context ctx;
-  var x(ctx, "x");
-  var y(ctx, "y");
-  test_expr_pipeline<int, 1>(ctx, x + y);
-}
+node_context ctx;
+var a(ctx, "a");
+var b(ctx, "b");
+var c(ctx, "c");
+var d(ctx, "d");
+var x(ctx, "x");
+var y(ctx, "y");
+var z(ctx, "z");
 
-TEST(elementwise_mul_add) {
-  node_context ctx;
-  var x(ctx, "x");
-  var y(ctx, "y");
-  var z(ctx, "z");
-  test_expr_pipeline<int, 1>(ctx, x * y + z);
-}
+}  // namespace
 
-TEST(elementwise_exp2) {
-  node_context ctx;
-  var x(ctx, "x");
-  var one(ctx, "one");
-  test_expr_pipeline<int, 1>(ctx, one + x + x * x);
-}
-
-TEST(elementwise_exp3) {
-  node_context ctx;
-  var x(ctx, "x");
-  var one(ctx, "one");
-  test_expr_pipeline<int, 1>(ctx, one + x + x * x + x * x * x);
-}
-
-TEST(elementwise_exp4) {
-  node_context ctx;
-  var x(ctx, "x");
-  var one(ctx, "one");
-  test_expr_pipeline<int, 1>(ctx, one + x + x * x + x * x * x + x * x * x * x);
-}
+TEST(elementwise) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c); }
+TEST(elementwise_add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
+TEST(elementwise_mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
+TEST(elementwise_exp2) { test_expr_pipeline<int, 1>(ctx, a + x + x * x); }
+TEST(elementwise_exp3) { test_expr_pipeline<int, 1>(ctx, a + x + x * x + x * x * x); }
+TEST(elementwise_exp4) { test_expr_pipeline<int, 1>(ctx, a + x + x * x + x * x * x + x * x * x * x); }
