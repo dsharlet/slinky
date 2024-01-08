@@ -179,6 +179,7 @@ public:
 
   bool defined() const { return n_ != nullptr; }
   bool same_as(const expr& other) const { return n_ == other.n_; }
+  bool same_as(const base_expr_node* other) const { return n_ == other; }
   node_type type() const { return type_; }
   const base_expr_node* get() const { return n_; }
 
@@ -311,6 +312,7 @@ public:
 
   bool defined() const { return n_ != nullptr; }
   bool same_as(const stmt& other) const { return n_ == other.n_; }
+  bool same_as(const base_stmt_node* other) const { return n_ == other; }
   node_type type() const { return type_; }
   const base_stmt_node* get() const { return n_; }
 
