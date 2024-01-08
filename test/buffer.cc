@@ -21,12 +21,12 @@ TEST(buffer) {
   ASSERT_EQ(buf.dim(0).min(), 0);
   ASSERT_EQ(buf.dim(0).extent(), 10);
   ASSERT_EQ(buf.dim(0).stride(), sizeof(int));
-  ASSERT_EQ(buf.dim(0).fold_factor(), 0);
+  ASSERT_EQ(buf.dim(0).fold_factor(), dim::unfolded);
 
   ASSERT_EQ(buf.dim(1).min(), 0);
   ASSERT_EQ(buf.dim(1).extent(), 20);
   ASSERT_EQ(buf.dim(1).stride(), buf.dim(0).stride() * buf.dim(0).extent());
-  ASSERT_EQ(buf.dim(1).fold_factor(), 0);
+  ASSERT_EQ(buf.dim(1).fold_factor(), dim::unfolded);
 
   // buf should not have memory yet.
   ASSERT_EQ(buf.base(), nullptr);

@@ -373,7 +373,7 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
     checks.push_back(check::make(b->dim(d).stride == buffer_stride(buf_var, d)));
     checks.push_back(check::make(b->dim(d).fold_factor == fold_factor));
     if (output) {
-      checks.push_back(check::make(fold_factor <= 0 || b->dim(d).extent() <= fold_factor));
+      checks.push_back(check::make(b->dim(d).extent() <= fold_factor));
     }
   }
 }

@@ -34,7 +34,7 @@ void dump_context_for_expr(
           const dim& dim = buf->dims[d];
           s << "{min=" << dim.min() << ", max=" << dim.max() << ", extent=" << dim.extent()
             << ", stride=" << dim.stride();
-          if (dim.fold_factor() > 0) {
+          if (dim.fold_factor() != dim::unfolded) {
             s << ", fold_factor=" << dim.fold_factor();
           }
           s << "}";
@@ -327,7 +327,7 @@ public:
       slinky::dim& dim = buffer->dim(i);
       dim.set_bounds(eval_expr(n->dims[i].min()), eval_expr(n->dims[i].max()));
       dim.set_stride(eval_expr(n->dims[i].stride));
-      dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
+      dim.set_fold_factor(eval_expr(n->dims[i].fold_factor, dim::unfolded));
     }
 
     if (n->storage == memory_type::stack) {
@@ -370,7 +370,7 @@ public:
       slinky::dim& dim = buffer->dim(i);
       dim.set_bounds(eval_expr(n->dims[i].min()), eval_expr(n->dims[i].max()));
       dim.set_stride(eval_expr(n->dims[i].stride));
-      dim.set_fold_factor(eval_expr(n->dims[i].fold_factor));
+      dim.set_fold_factor(eval_expr(n->dims[i].fold_factor, dim::unfolded));
     }
 
     auto set_buffer = set_value_in_scope(context, n->sym, reinterpret_cast<index_t>(buffer));

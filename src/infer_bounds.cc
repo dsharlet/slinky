@@ -301,7 +301,7 @@ public:
       if (fold_info && fold_info->first == d) {
         replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info->second);
       } else {
-        replacements.emplace_back(buffer_fold_factor(alloc_var, d), -1);
+        replacements.emplace_back(buffer_fold_factor(alloc_var, d), expr());
       }
     }
 
@@ -501,8 +501,7 @@ stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
     for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
       checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
       checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));
-      expr fold_factor = buffer_fold_factor(buf_var, d);
-      checks.push_back(check::make(fold_factor <= 0 || bounds[d].extent() <= fold_factor));
+      checks.push_back(check::make(bounds[d].extent() <= buffer_fold_factor(buf_var, d)));
     }
   }
   return block::make(block::make(checks), result);

@@ -803,7 +803,7 @@ public:
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
       i.stride.accept(this);
-      i.fold_factor.accept(this);
+      if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
     op->body.accept(this);
   }
@@ -814,7 +814,7 @@ public:
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
       i.stride.accept(this);
-      i.fold_factor.accept(this);
+      if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
     op->body.accept(this);
   }

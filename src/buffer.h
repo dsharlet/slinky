@@ -35,7 +35,9 @@ class dim {
   index_t fold_factor_;
 
 public:
-  dim() : min_(0), extent_(0), stride_(0), fold_factor_(0) {}
+  static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
+
+  dim() : min_(0), extent_(0), stride_(0), fold_factor_(unfolded) {}
 
   index_t min() const { return min_; }
   index_t max() const { return min_ + extent_ - 1; }
@@ -60,9 +62,7 @@ public:
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(i >= min_);
     assert(i <= max());
-    // If we use a mask instead of a fold factor, we can just make the mask -1 by default, and
-    // always bitwise and to implement the fold factor.
-    if (fold_factor_ <= 0) {
+    if (fold_factor_ == unfolded) {
       return (i - min_) * stride_;
     } else {
       return euclidean_mod(i - min_, fold_factor_) * stride_;
