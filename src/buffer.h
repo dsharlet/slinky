@@ -13,7 +13,7 @@
 #include "ref_count.h"
 
 namespace slinky {
-  
+
 using index_t = std::ptrdiff_t;
 
 // Helper to offset a pointer by a number of bytes.
@@ -92,22 +92,26 @@ using raw_buffer_ptr = std::unique_ptr<raw_buffer, void (*)(raw_buffer*)>;
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer {
 protected:
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
-    return dims->flat_offset_bytes(i0);
-  }
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
 
   template <typename... Indices>
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
   }
 
-  static bool contains_impl(const dim* dims, index_t i0) {
-    return dims->contains(i0);
-  }
+  static bool contains_impl(const dim* dims, index_t i0) { return dims->contains(i0); }
 
   template <typename... Indices>
   static bool contains_impl(const dim* dims, index_t i0, Indices... indices) {
     return dims->contains(i0) && contains_impl(dims + 1, indices...);
+  }
+
+  static void translate_impl(dim* dims, index_t o0) { dims->translate(o0); }
+
+  template <typename... Offsets>
+  static void translate_impl(dim* dims, index_t o0, Offsets... offsets) {
+    dims->translate(o0);
+    translate_impl(dims + 1, offsets...);
   }
 
   static void destroy(raw_buffer* buf) {
@@ -170,6 +174,12 @@ public:
       result = result && dims[i].contains(indices[i]);
     }
     return result;
+  }
+
+  template <typename... Offsets>
+  void translate(index_t o0, Offsets... offsets) {
+    assert(sizeof...(offsets) + 1 <= rank);
+    translate_impl(dims, o0, offsets...);
   }
 
   std::size_t size_bytes() const;
@@ -240,12 +250,6 @@ public:
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
-
-  // Make a buffer and space for dims in the same allocation.
-  static std::unique_ptr<buffer<T>, void (*)(buffer<T>*)> make(std::size_t rank) {
-    auto buf = raw_buffer::make(rank, sizeof(T));
-    return {static_cast<buffer<T>*>(buf.release()), (void (*)(buffer<T>*))raw_buffer::destroy};
-  }
 
   // These accessors are not designed to be fast. They exist to facilitate testing,
   // and maybe they are useful to compute addresses.

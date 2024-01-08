@@ -386,8 +386,7 @@ TEST(pipeline_stencil) {
   const int W = 20;
   const int H = 10;
   buffer<short, 2> in_buf({W + 2, H + 2});
-  in_buf.dim(0).translate(-1);
-  in_buf.dim(1).translate(-1);
+  in_buf.translate(-1, -1);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -443,8 +442,7 @@ TEST(pipeline_stencil_chain) {
   const int W = 20;
   const int H = 10;
   buffer<short, 2> in_buf({W + 4, H + 4});
-  in_buf.dim(0).translate(-2);
-  in_buf.dim(1).translate(-2);
+  in_buf.translate(-2, -2);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -462,10 +460,8 @@ TEST(pipeline_stencil_chain) {
   buffer<short, 2> ref_intm({W + 4, H + 4});
   buffer<short, 2> ref_intm2({W + 2, H + 2});
   buffer<short, 2> ref_out({W, H});
-  ref_intm.dim(0).translate(-2);
-  ref_intm.dim(1).translate(-2);
-  ref_intm2.dim(0).translate(-1);
-  ref_intm2.dim(1).translate(-1);
+  ref_intm.translate(-2, -2);
+  ref_intm2.translate(-1, -1);
   ref_intm.allocate();
   ref_intm2.allocate();
   ref_out.allocate();
@@ -555,8 +551,7 @@ TEST(pipeline_padded_copy) {
 
   // Ask for an output padded in every direction.
   buffer<char, 2> out_buf({W * 3, H * 3});
-  out_buf.dim(0).translate(-W);
-  out_buf.dim(1).translate(-H);
+  out_buf.translate(-W, -H);
   out_buf.allocate();
 
   index_t args[] = {W, H};
@@ -713,8 +708,7 @@ TEST(pipeline_unrelated) {
   const int W1 = 20;
   const int H1 = 10;
   buffer<short, 2> in1_buf({W1 + 2, H1 + 2});
-  in1_buf.dim(0).translate(-1);
-  in1_buf.dim(1).translate(-1);
+  in1_buf.translate(-1, -1);
   buffer<short, 2> out1_buf({W1, H1});
 
   init_random(in1_buf);
@@ -779,8 +773,7 @@ TEST(pipeline_copied_result) {
   const int W = 20;
   const int H = 10;
   buffer<short, 2> in_buf({W + 2, H + 2});
-  in_buf.dim(0).translate(-1);
-  in_buf.dim(1).translate(-1);
+  in_buf.translate(-1, -1);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);

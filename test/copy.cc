@@ -397,8 +397,7 @@ void test_copy_padded_translated(int translate_x, int translate_z, bool clamped)
 
   // Ask for an output padded in every direction.
   buffer<int, 4> out_buf({C, W * 3, H * 3, D});
-  out_buf.dim(1).translate(-W);
-  out_buf.dim(2).translate(-H);
+  out_buf.translate(0, -W, -H);
   out_buf.allocate();
 
   index_t args[] = {W, H, translate_x, translate_z};
