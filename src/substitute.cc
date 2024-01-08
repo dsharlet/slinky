@@ -446,8 +446,12 @@ public:
 
   template <typename T>
   void visit_decl(const T* op, symbol_id sym) {
-    auto s = set_value_in_scope(shadowed, sym, true);
-    node_mutator::visit(op);
+    if (target.defined() && depends_on(target, sym)) {
+      set_result(op);
+    } else {
+      auto s = set_value_in_scope(shadowed, sym, true);
+      node_mutator::visit(op);
+    }
   }
 
   void visit(const loop* op) override { visit_decl(op, op->sym); }

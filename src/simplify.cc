@@ -1453,7 +1453,7 @@ public:
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
       if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
-        if (prove_true(bounds_i.min == (*prev_bounds)[i].min) && prove_true(bounds_i.max == (*prev_bounds)[i].max)) {
+        if (prove_true(bounds_i.min <= (*prev_bounds)[i].min) && prove_true(bounds_i.max >= (*prev_bounds)[i].max)) {
           bounds_i.min = expr();
           bounds_i.max = expr();
         }
@@ -1500,7 +1500,7 @@ public:
     std::optional<box_expr> buf_bounds = buffer_bounds[op->sym];
     if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
       interval_expr& dim = (*buf_bounds)[op->dim];
-      if (prove_true(bounds.min == dim.min) && prove_true(bounds.max == dim.max)) {
+      if (prove_true(bounds.min <= dim.min) && prove_true(bounds.max >= dim.max)) {
         // This crop is a no-op.
         set_result(mutate(op->body));
         return;
