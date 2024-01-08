@@ -357,7 +357,8 @@ public:
 
           interval_expr overlap = prev_bounds_d & cur_bounds_d;
           if (prove_true(ignore_loop_max(overlap.empty()))) {
-            // The bounds of each loop iteration do not overlap. We can fold the storage.
+            // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
+            // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {
               fold_factors[output] = {d, fold_factor};
