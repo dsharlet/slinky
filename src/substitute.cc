@@ -556,11 +556,9 @@ T substitute(T op, std::span<const std::pair<expr, expr>> subs) {
 template <typename T>
 T substitute_bounds_impl(T op, symbol_id buffer, int dim, const interval_expr& bounds) {
   expr buf_var = variable::make(buffer);
-  std::pair<expr, expr> subs[] = {
-      {buffer_min(buf_var, dim), bounds.min},
-      {buffer_max(buf_var, dim), bounds.max},
-  };
-  return substitute(op, subs);
+  if (bounds.min.defined()) op = substitute(op, buffer_min(buf_var, dim), bounds.min);
+  if (bounds.max.defined()) op = substitute(op, buffer_max(buf_var, dim), bounds.max);
+  return op;
 }
 
 template <typename T>
@@ -569,12 +567,8 @@ T substitute_bounds_impl(T op, symbol_id buffer, const box_expr& bounds) {
   std::vector<std::pair<expr, expr>> subs;
   subs.reserve(bounds.size() * 2);
   for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-    if (bounds[d].min.defined()) {
-      subs.emplace_back(buffer_min(buf_var, d), bounds[d].min);
-    }
-    if (bounds[d].max.defined()) {
-      subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
-    }
+    if (bounds[d].min.defined()) subs.emplace_back(buffer_min(buf_var, d), bounds[d].min);
+    if (bounds[d].max.defined()) subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
   }
   return substitute(op, subs);
 }

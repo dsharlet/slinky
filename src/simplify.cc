@@ -1479,19 +1479,17 @@ public:
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
       if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
-        if (prove_true(bounds_i.min <= (*prev_bounds)[i].min) && prove_true(bounds_i.max >= (*prev_bounds)[i].max)) {
-          bounds_i.min = expr();
-          bounds_i.max = expr();
-        }
+        if (prove_true(bounds_i.min <= (*prev_bounds)[i].min)) bounds_i.min = expr();
+        if (prove_true(bounds_i.max >= (*prev_bounds)[i].max)) bounds_i.max = expr();
       }
       new_bounds[i] = bounds_i;
-      dims_count += bounds_i.min.defined() && bounds_i.max.defined() ? 1 : 0;
+      dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = op->body;
     for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-      if (new_bounds[d].min.defined() && new_bounds[d].max.defined()) {
+      if (new_bounds[d].min.defined() || new_bounds[d].max.defined()) {
         body = substitute_bounds(body, op->sym, d, new_bounds[d]);
       }
     }
@@ -1526,7 +1524,10 @@ public:
     std::optional<box_expr> buf_bounds = buffer_bounds[op->sym];
     if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
       interval_expr& dim = (*buf_bounds)[op->dim];
-      if (prove_true(bounds.min <= dim.min) && prove_true(bounds.max >= dim.max)) {
+      if (prove_true(bounds.min <= dim.min)) bounds.min = expr();
+      if (prove_true(bounds.max >= dim.max)) bounds.max = expr();
+
+      if (!bounds.min.defined() && !bounds.max.defined()) {
         // This crop is a no-op.
         set_result(mutate(op->body));
         return;

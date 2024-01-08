@@ -381,19 +381,19 @@ public:
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
     assert(buffer);
 
-    struct range {
+    struct interval {
       index_t min;
-      index_t extent;
+      index_t max;
     };
 
     std::size_t crop_rank = n->bounds.size();
-    range* old_bounds = reinterpret_cast<range*>(alloca(sizeof(range) * crop_rank));
+    interval* old_bounds = reinterpret_cast<interval*>(alloca(sizeof(interval) * crop_rank));
 
     index_t offset = 0;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       old_bounds[d].min = dim.min();
-      old_bounds[d].extent = dim.extent();
+      old_bounds[d].max = dim.max();
 
       // Allow these expressions to be undefined, and if so, they default to their existing values.
       index_t min = std::max(dim.min(), eval_expr(n->bounds[d].min, dim.min()));
@@ -411,7 +411,7 @@ public:
     buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
-      dim.set_min_extent(old_bounds[d].min, old_bounds[d].extent);
+      dim.set_bounds(old_bounds[d].min, old_bounds[d].max);
     }
   }
 
@@ -422,21 +422,21 @@ public:
 
     void* old_base = buffer->base;
     index_t old_min = dim.min();
-    index_t old_extent = dim.extent();
+    index_t old_max = dim.max();
 
-    index_t min = std::max(dim.min(), eval_expr(n->bounds.min));
+    index_t min = std::max(old_min, eval_expr(n->bounds.min, old_min));
     buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
     if (n->bounds.is_point()) {
       // Crops to a single element are common, we can optimize them a little bit by re-using the min
       dim.set_point(min);
     } else {
-      dim.set_bounds(min, std::min(dim.max(), eval_expr(n->bounds.max)));
+      dim.set_bounds(min, std::min(old_max, eval_expr(n->bounds.max, old_max)));
     }
 
     visit(n->body);
 
     buffer->base = old_base;
-    dim.set_min_extent(old_min, old_extent);
+    dim.set_bounds(old_min, old_max);
   }
 
   void visit(const slice_buffer* n) override {

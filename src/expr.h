@@ -828,8 +828,8 @@ public:
     op->body.accept(this);
   }
   virtual void visit(const crop_dim* op) override {
-    op->bounds.min.accept(this);
-    op->bounds.max.accept(this);
+    if (op->bounds.min.defined()) op->bounds.min.accept(this);
+    if (op->bounds.max.defined()) op->bounds.max.accept(this);
     op->body.accept(this);
   }
   virtual void visit(const slice_buffer* op) override {
