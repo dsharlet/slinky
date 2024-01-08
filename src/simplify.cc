@@ -1332,13 +1332,15 @@ public:
     std::vector<dim_expr> dims;
     box_expr bounds;
     dims.reserve(op->dims.size());
-    for (const dim_expr& i : op->dims) {
-      interval_expr bounds_i = mutate(i.bounds);
-      dims.emplace_back(bounds_i, mutate(i.stride), mutate(i.fold_factor));
-      bounds.push_back(bounds_i);
+    stmt body = op->body;
+    for (std::size_t d = 0; d < op->dims.size(); ++d) {
+      interval_expr bounds_d = mutate(op->dims[d].bounds);
+      dims.emplace_back(bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor));
+      bounds.push_back(bounds_d);
+      body = substitute_bounds(body, op->sym, d, bounds_d);
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    stmt body = mutate(op->body);
+    body = mutate(body);
     set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
   }
 
@@ -1350,16 +1352,18 @@ public:
     dims.reserve(op->dims.size());
     bounds.reserve(op->dims.size());
     bool changed = false;
-    for (const dim_expr& d : op->dims) {
-      interval_expr new_bounds = mutate(d.bounds);
-      dim_expr new_dim = {new_bounds, mutate(d.stride), mutate(d.fold_factor)};
-      changed = changed || !new_dim.same_as(d);
+    stmt body = op->body;
+    for (std::size_t d = 0; d < op->dims.size(); ++d) {
+      interval_expr new_bounds = mutate(op->dims[d].bounds);
+      dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
+      body = substitute_bounds(body, op->sym, d, new_bounds);
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    stmt body = mutate(op->body);
+    body = mutate(body);
 
     if (const call* bc = base.as<call>()) {
       if (bc->intrinsic == intrinsic::buffer_base) {
@@ -1682,7 +1686,10 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
           simplify(op, a.min, b.min),
           simplify(op, a.max, b.min),
       };
-      return {min(corners), max(corners)};
+      return {
+          simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
+          simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]),
+      };
     }
   } else if (a.is_point()) {
     if (is_non_negative(a.min)) {
@@ -1694,7 +1701,10 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
           simplify(op, a.min, b.min),
           simplify(op, a.min, b.max),
       };
-      return {min(corners), max(corners)};
+      return {
+          simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
+          simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]),
+      };
     }
   } else {
     // We don't know anything. The results is the union of all 4 possible intervals.
@@ -1704,7 +1714,14 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
         simplify(op, a.max, b.min),
         simplify(op, a.max, b.max),
     };
-    return {min(corners), max(corners)};
+    return {
+        simplify(static_cast<const class min*>(nullptr),
+            simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
+            simplify(static_cast<const class min*>(nullptr), corners[2], corners[3])),
+        simplify(static_cast<const class max*>(nullptr),
+            simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]),
+            simplify(static_cast<const class max*>(nullptr), corners[2], corners[3])),
+    };
   }
 }
 interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
@@ -1739,10 +1756,14 @@ interval_expr bounds_of(const less_equal* op, interval_expr a, interval_expr b) 
   return bounds_of_less(op, std::move(a), std::move(b));
 }
 interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
-  return {0, a.min <= b.max && b.min <= a.max};
+  return {0, simplify(static_cast<const logical_and*>(nullptr),
+                 simplify(static_cast<const less_equal*>(nullptr), a.min, b.max),
+                 simplify(static_cast<const less_equal*>(nullptr), b.min, a.max))};
 }
 interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
-  return {a.max < b.min || b.max < a.min, 1};
+  return {simplify(static_cast<const logical_or*>(nullptr), simplify(static_cast<const less*>(nullptr), a.max, b.min),
+              simplify(static_cast<const less*>(nullptr), b.max, a.min)),
+      1};
 }
 
 interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b) {

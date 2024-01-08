@@ -136,10 +136,12 @@ public:
     std::optional<expr>& matched = (*matches)[sym];
     if (matched) {
       // We already matched this variable. The expression must match.
-      symbol_map<expr>* old_matches = matches;
-      matches = nullptr;
-      matched->accept(this);
-      matches = old_matches;
+      if (!matched->same_as(static_cast<const base_expr_node*>(self))) {
+        symbol_map<expr>* old_matches = matches;
+        matches = nullptr;
+        matched->accept(this);
+        matches = old_matches;
+      }
     } else if (!predicate || predicate(static_cast<const base_expr_node*>(self))) {
       // This is a new match.
       matched = static_cast<const base_expr_node*>(self);
@@ -445,20 +447,76 @@ public:
   void visit(const wildcard* v) override { visit_variable(v); }
 
   template <typename T>
-  void visit_decl(const T* op, symbol_id sym) {
-    if (target.defined() && depends_on(target, sym)) {
-      set_result(op);
+  T mutate_decl_body(symbol_id sym, const T& x) {
+    if (target.defined() && depends_on(x, sym)) {
+      return x;
     } else {
-      auto s = set_value_in_scope(shadowed, sym, true);
-      node_mutator::visit(op);
+      return mutate(x);
     }
   }
 
-  void visit(const loop* op) override { visit_decl(op, op->sym); }
-  void visit(const let* op) override { visit_decl(op, op->sym); }
-  void visit(const let_stmt* op) override { visit_decl(op, op->sym); }
-  void visit(const allocate* op) override { visit_decl(op, op->sym); }
-  void visit(const make_buffer* op) override { visit_decl(op, op->sym); }
+  template <typename T>
+  auto mutate_let(const T* op) {
+    expr value = mutate(op->value);
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    auto body = mutate_decl_body(op->sym, op->body);
+    if (value.same_as(op->value) && body.same_as(op->body)) {
+      return decltype(body){op};
+    } else {
+      return T::make(op->sym, std::move(value), std::move(body));
+    }
+  }
+
+  void visit(const let* op) override { set_result(mutate_let(op)); }
+  void visit(const let_stmt* op) override { set_result(mutate_let(op)); }
+
+  void visit(const loop* op) override {
+    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
+    expr step = mutate(op->step);
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(loop::make(op->sym, std::move(bounds), std::move(step), std::move(body)));
+    }
+  }
+  void visit(const allocate* op) override {
+    std::vector<dim_expr> dims;
+    dims.reserve(op->dims.size());
+    bool changed = false;
+    for (const dim_expr& i : op->dims) {
+      interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
+      dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
+      changed = changed || !dims.back().same_as(i);
+    }
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (!changed && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
+    }
+  }
+  void visit(const make_buffer* op) override {
+    expr base = mutate(op->base);
+    expr elem_size = mutate(op->elem_size);
+    std::vector<dim_expr> dims;
+    dims.reserve(op->dims.size());
+    bool changed = false;
+    for (const dim_expr& i : op->dims) {
+      interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
+      dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
+      changed = changed || dims.back().same_as(i);
+    }
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (!changed && base.same_as(op->base) && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+    }
+  }
 };
 
 template <typename T>
@@ -607,6 +665,14 @@ bool depends_on(const interval_expr& e, symbol_id var) {
   dependencies v(vars);
   if (e.min.defined()) e.min.accept(&v);
   if (e.max.defined()) e.max.accept(&v);
+  return v.found_var || v.found_buf;
+}
+
+bool depends_on(const stmt& s, symbol_id var) {
+  if (!s.defined()) return false;
+  symbol_id vars[] = {var};
+  dependencies v(vars);
+  s.accept(&v);
   return v.found_var || v.found_buf;
 }
 
