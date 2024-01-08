@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <map>
 #include <set>
 
 #include "evaluate.h"
@@ -82,17 +83,85 @@ bool is_elementwise(const box_expr& in_x, symbol_id out) {
   return true;
 }
 
+bool is_copy(expr in, var out, interval_expr& bounds) {
+  if (match(in, out)) {
+    bounds = interval_expr::all();
+    return true;
+  }
+
+  symbol_map<expr> matches;
+  var x(0), a(1), b(2);
+  if (match(clamp(x, a, b), in, matches) && match(*matches[x], out)) {
+    bounds = {*matches[a], *matches[b]};
+    return true;
+  }
+
+  return false;
+}
+
+bool is_copy(const copy_stmt* op, box_expr& bounds) {
+  if (op->src_x.size() != op->dst_x.size()) return false;
+  bounds.resize(op->dst_x.size());
+  for (std::size_t d = 0; d < op->dst_x.size(); ++d) {
+    if (!is_copy(op->src_x[d], op->dst_x[d], bounds[d])) return false;
+  }
+  return true;
+}
+
+std::vector<expr> mins(const box_expr& b) {
+  std::vector<expr> r;
+  r.reserve(b.size());
+  for (const interval_expr& d : b) {
+    r.push_back(d.min);
+  }
+  return r;
+}
+
+// Replaces `copy_stmt` with a call to `pad`.
+class replace_copy_with_pad : public node_mutator {
+  symbol_id src;
+  symbol_id dst;
+
+public:
+  replace_copy_with_pad(symbol_id src, symbol_id dst) : src(src), dst(dst) {}
+
+  void visit(const copy_stmt* op) {
+    if (op->src == src && op->dst == dst) {
+      stmt result;
+      if (!op->padding.empty()) {
+        result = call_stmt::make(
+            [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
+              const raw_buffer* src_buf = ctx.lookup_buffer(src);
+              const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+              pad(src_buf->dims, *dst_buf, padding.data());
+              return 0;
+            },
+            {src}, {dst});
+      }
+      set_result(result);
+    } else {
+      set_result(op);
+    }
+  }
+};
+
 class buffer_aliaser : public node_mutator {
+  struct buffer_alias {
+    box_expr bounds;
+    std::vector<expr> offset;
+  };
+
   class buffer_info {
-    std::set<symbol_id> can_alias_;
+  public:
+    std::map<symbol_id, buffer_alias> can_alias_;
     std::set<symbol_id> cannot_alias_;
 
   public:
-    const std::set<symbol_id>& can_alias() const { return can_alias_; }
+    const std::map<symbol_id, buffer_alias>& can_alias() const { return can_alias_; }
 
-    void maybe_alias(symbol_id s) {
+    void maybe_alias(symbol_id s, buffer_alias a) {
       if (!cannot_alias_.count(s)) {
-        can_alias_.insert(s);
+        can_alias_[s] = std::move(a);
       }
     }
 
@@ -103,7 +172,6 @@ class buffer_aliaser : public node_mutator {
   };
   symbol_map<buffer_info> alias_info;
   symbol_map<box_expr> buffer_bounds;
-  symbol_map<symbol_id> aliases;
 
 public:
   void visit(const allocate* op) override {
@@ -123,16 +191,26 @@ public:
     // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alias_info, op->sym, buffer_info());
     stmt body = mutate(op->body);
-    const std::set<symbol_id>& can_alias = alias_info[op->sym]->can_alias();
+    const std::map<symbol_id, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
 
     if (!can_alias.empty()) {
-      symbol_id target = *can_alias.begin();
-      set_result(let_stmt::make(op->sym, variable::make(target), std::move(body)));
-      aliases[op->sym] = target;
+      const std::pair<symbol_id, buffer_alias>& target = *can_alias.begin();
+      var target_var(target.first);
+      assert(target.second.bounds.size() == op->dims.size());
+      std::vector<dim_expr> dims(target.second.bounds.size());
+      for (int d = 0; d < static_cast<int>(target.second.bounds.size()); ++d) {
+        dims[d] = {target.second.bounds[d], buffer_stride(target_var, d), buffer_fold_factor(target_var, d)};
+      }
+      expr base = buffer_at(target_var, target.second.offset);
+      expr elem_size = buffer_elem_size(target_var);
+      stmt result = make_buffer::make(op->sym, base, elem_size, std::move(dims), std::move(body));
+      // If we aliased the source and destination of a copy, replace the copy with a pad.
+      result = replace_copy_with_pad(op->sym, target.first).mutate(result);
+      set_result(result);
       // Remove this as a candidate for other aliases.
       for (std::optional<buffer_info>& i : alias_info) {
         if (!i) continue;
-        i->do_not_alias(target);
+        i->do_not_alias(target.first);
       }
     } else if (!body.same_as(op->body)) {
       set_result(clone_with_new_body(op, std::move(body)));
@@ -153,10 +231,26 @@ public:
           info->do_not_alias(o);
           return;
         }
-
-        info->maybe_alias(o);
+        info->maybe_alias(o, {*in_x, mins(*in_x)});
       }
     }
+  }
+
+  void visit(const copy_stmt* op) override {
+    set_result(op);
+
+    box_expr bounds;
+    if (!is_copy(op, bounds)) {
+      return;
+    }
+
+    std::optional<buffer_info>& info = alias_info[op->src];
+    if (!info) {
+      return;
+    }
+
+    const std::optional<box_expr>& in_x = buffer_bounds[op->src];
+    info->maybe_alias(op->dst, {*in_x, mins(*in_x)});
   }
 
   void visit(const crop_buffer* c) override {
@@ -185,21 +279,6 @@ stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 
 namespace {
 /*
-bool is_copy(expr in, var out, interval_expr& bounds) {
-  if (match(in, out)) {
-    bounds = interval_expr::all();
-    return true;
-  }
-
-  symbol_map<expr> matches;
-  var x(0), a(1), b(2);
-  if (match(clamp(x, a, b), in, matches) && match(*matches[x], out)) {
-    bounds = {*matches[a], *matches[b]};
-    return true;
-  }
-
-  return false;
-}
 
 bool is_broadcast(expr in, var out) {
   interval_expr bounds = bounds_of(in, {{out.sym(), interval_expr::all()}});
@@ -223,10 +302,17 @@ public:
         },
         {c->src}, {c->dst});
 
+    box_expr bounds;
+    if (is_copy(c, bounds)) {
+      result = crop_buffer::make(c->src, bounds, result);
+      set_result(result);
+      return;
+    }
+
     var src_var(c->src);
     var dst_var(c->dst);
 
-    std::vector<expr> src_min = c ->src_x;
+    std::vector<expr> src_min = c->src_x;
     std::vector<std::pair<symbol_id, int>> dst_x;
 
     // If we just leave these two arrays alone, the copy will be correct, but slow.

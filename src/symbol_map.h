@@ -62,40 +62,44 @@ public:
 // Set a value in an eval_context upon construction, and restore the old value upon destruction.
 template <typename T>
 class scoped_value_in_symbol_map {
-  symbol_map<T>* context;
-  symbol_id sym;
-  std::optional<T> old_value;
+  symbol_map<T>* context_;
+  symbol_id sym_;
+  std::optional<T> old_value_;
 
 public:
-  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, T value) : context(&context), sym(sym) {
+  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, T value) : context_(&context), sym_(sym) {
     std::optional<T>& ctx_value = context[sym];
-    old_value = std::move(ctx_value);
+    old_value_ = std::move(ctx_value);
     ctx_value = std::move(value);
   }
   scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, std::optional<T> value)
-      : context(&context), sym(sym) {
+      : context_(&context), sym_(sym) {
     std::optional<T>& ctx_value = context[sym];
-    old_value = std::move(ctx_value);
+    old_value_ = std::move(ctx_value);
     ctx_value = std::move(value);
   }
 
   scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
-      : context(other.context), sym(other.sym), old_value(std::move(other.old_value)) {
+      : context_(other.context), sym_(other.sym), old_value_(std::move(other.old_value_)) {
     // Don't let other.~scoped_value() unset this value.
     other.context = nullptr;
   }
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
-    context = other.context;
-    sym = other.sym;
-    old_value = std::move(other.old_value);
+    context_ = other.context;
+    sym_ = other.sym;
+    old_value_ = std::move(other.old_value_);
     // Don't let other.~scoped_value_in_symbol_map() unset this value.
     other.context = nullptr;
   }
 
+  const std::optional<T>& old_value() const { return old_value_; }
+
   ~scoped_value_in_symbol_map() {
-    if (context) { (*context)[sym] = std::move(old_value); }
+    if (context_) {
+      (*context_)[sym_] = std::move(old_value_);
+    }
   }
 };
 

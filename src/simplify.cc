@@ -230,6 +230,57 @@ public:
   }
 };
 
+// Check if the buffer metadata for `sym` is mutated in `s`.
+bool is_buffer_mutated(symbol_id sym, const stmt& s) {
+  class visitor : public recursive_node_visitor {
+  public:
+    symbol_id sym;
+    bool result = false;
+
+    visitor(symbol_id sym) : sym(sym) {}
+
+    void visit(const crop_buffer* op) override {
+      result = result || op->sym == sym;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const crop_dim* op) override {
+      result = result || op->sym == sym;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const slice_buffer* op) override {
+      result = result || op->sym == sym;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const slice_dim* op) override {
+      result = result || op->sym == sym;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const truncate_rank* op) override {
+      result = result || op->sym == sym;
+      recursive_node_visitor::visit(op);
+    }
+
+    // If these nodes shadow the symbol we are looking for, ignore them.
+    void visit(const allocate* op) override {
+      if (op->sym == sym) return;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const make_buffer* op) override {
+      if (op->sym == sym) return;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const let_stmt* op) override {
+      if (op->sym == sym) return;
+      recursive_node_visitor::visit(op);
+    }
+
+    using recursive_node_visitor::visit;
+  };
+  visitor v(sym);
+  s.accept(&v);
+  return v.result;
+}
+
 }  // namespace
 
 expr simplify(const class min* op, expr a, expr b) {
@@ -1298,21 +1349,36 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     stmt body = mutate(op->body);
 
-    // Check if this make_buffer is equivalent to truncate_rank
-    var buf(op->sym);
-    if (match(base, buffer_base(buf)) && match(elem_size, buffer_elem_size(buf))) {
-      bool is_truncate = true;
-      for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-        is_truncate = is_truncate && match(dims[d], buffer_dim(buf, d));
-      }
-      if (is_truncate) {
-        set_result(truncate_rank::make(op->sym, dims.size(), std::move(body)));
-        return;
-      }
-    }
-
-    // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
     if (const call* bc = base.as<call>()) {
+      if (bc->intrinsic == intrinsic::buffer_base) {
+        // Check if this make_buffer is truncate_rank, or a clone.
+        const symbol_id* src_buf = as_variable(bc->args[0]);
+        if (src_buf) {
+          var buf(*src_buf);
+          if (match(elem_size, buffer_elem_size(buf))) {
+            bool is_clone = true;
+            for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+              is_clone = is_clone && match(dims[d], buffer_dim(buf, d));
+            }
+            if (is_clone) {
+              if (*src_buf == op->sym) {
+                set_result(mutate(truncate_rank::make(op->sym, dims.size(), std::move(body))));
+                return;
+              } else if (!is_buffer_mutated(op->sym, body) && !is_buffer_mutated(*src_buf, body)) {
+                const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
+                if (src_bounds && src_bounds->size() == dims.size()) {
+                  // This is a clone of src_buf, and we never mutate either buffer, we can just re-use it.
+                  set_result(let_stmt::make(op->sym, buf, std::move(body)));
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
+      var buf(op->sym);
       if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
@@ -1513,8 +1579,16 @@ public:
 
   void visit(const truncate_rank* op) override {
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    if (bounds && static_cast<int>(bounds->size()) > op->rank) {
-      bounds->resize(op->rank);
+    if (bounds) {
+      if (static_cast<int>(bounds->size()) > op->rank) {
+        bounds->resize(op->rank);
+      } else {
+        // truncate_rank can't add dimensions.
+        assert(static_cast<int>(bounds->size()) > op->rank);
+        // This truncate is a no-op.
+        set_result(mutate(op->body));
+        return;
+      }
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
