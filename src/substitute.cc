@@ -517,6 +517,32 @@ public:
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     }
   }
+  void visit(const slice_buffer* op) override {
+    std::vector<expr> at;
+    at.reserve(op->at.size());
+    bool changed = false;
+    for (const expr& i : op->at) {
+      at.emplace_back(mutate(i));
+      changed = changed || at.back().same_as(i);
+    }
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (!changed && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
+    }
+  }
+  void visit(const slice_dim* op) override {
+    expr at = mutate(op->at);
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (at.same_as(op->at) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
+    }
+  }
 };
 
 template <typename T>

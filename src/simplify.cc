@@ -1333,15 +1333,23 @@ public:
     box_expr bounds;
     dims.reserve(op->dims.size());
     stmt body = op->body;
+    bool changed = false;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       dims.emplace_back(bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor));
+      changed = changed || !dims.back().same_as(op->dims[d]);
       bounds.push_back(bounds_d);
       body = substitute_bounds(body, op->sym, d, bounds_d);
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     body = mutate(body);
-    set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (changed || !body.same_as(op->body)) {
+      set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
+    } else {
+      set_result(op);
+    }
   }
 
   void visit(const make_buffer* op) override {
@@ -1443,7 +1451,9 @@ public:
       }
     }
 
-    if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     } else {
       set_result(op);
@@ -1527,7 +1537,9 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
     stmt body = substitute_bounds(op->body, op->sym, op->dim, bounds);
     body = mutate(body);
-    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
@@ -1552,16 +1564,22 @@ public:
         ++dims_count;
       }
     }
+    stmt body = op->body;
+    if (bounds) {
+      body = substitute_bounds(body, op->sym, *bounds);
+    }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    stmt body = mutate(op->body);
+    body = mutate(body);
 
     // Remove trailing undefined bounds.
     while (at.size() > 0 && !at.back().defined()) {
       at.pop_back();
     }
     changed = changed || at.size() != op->at.size();
-    if (at.empty()) {
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (at.empty()) {
       // This slice was a no-op.
       set_result(std::move(body));
     } else if (dims_count == 1) {
@@ -1580,13 +1598,19 @@ public:
     expr at = mutate(op->at);
 
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    if (bounds && op->dim < static_cast<index_t>(bounds->size())) {
-      bounds->erase(bounds->begin() + op->dim);
+    stmt body = op->body;
+    if (bounds) {
+      if (op->dim < static_cast<index_t>(bounds->size())) {
+        bounds->erase(bounds->begin() + op->dim);
+      }
+      body = substitute_bounds(body, op->sym, *bounds);
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    stmt body = mutate(op->body);
-    if (at.same_as(op->at) && body.same_as(op->body)) {
+    body = mutate(body);
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
@@ -1609,7 +1633,9 @@ public:
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
-    if (body.same_as(op->body)) {
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(truncate_rank::make(op->sym, op->rank, std::move(body)));
