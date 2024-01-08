@@ -954,23 +954,22 @@ inline bool is_non_positive(const expr& x) {
 
 // This is an expr-like wrapper for use where only a `variable` expr is allowed.
 class var {
-  expr e_;
+  symbol_id sym_;
 
 public:
   var();
   var(symbol_id sym);
   var(node_context& ctx, const std::string& sym);
 
-  bool defined() const { return e_.defined(); }
+  bool defined() const { return sym_ != -1; }
 
   symbol_id sym() const {
-    assert(e_.defined());
-    return *as_variable(e_);
+    assert(sym_ != -1);
+    return sym_;
   }
 
-  operator const expr&() const { return e_; }
-
-  expr operator-() const { return -e_; }
+  operator expr() const;
+  expr operator-() const { return -static_cast<expr>(*this); }
 };
 
 expr abs(expr x);

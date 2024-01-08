@@ -469,8 +469,13 @@ bool is_finite(const expr& x) {
   return false;
 }
 
-var::var() {}
-var::var(symbol_id sym) : e_(variable::make(sym)) {}
-var::var(node_context& ctx, const std::string& sym) : e_(variable::make(ctx.insert(sym))) {}
+var::var() : sym_(-1) {}
+var::var(symbol_id sym) : sym_(sym) {}
+var::var(node_context& ctx, const std::string& sym) : sym_(ctx.insert(sym)) {}
+
+var::operator expr() const {
+  assert(sym_ != -1);
+  return expr(variable::make(sym_));
+}
 
 }  // namespace slinky
