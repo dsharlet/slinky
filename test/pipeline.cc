@@ -433,7 +433,7 @@ TEST(pipeline_stencil_chain) {
   func stencil2 =
       func::make<const short, short>(sum3x3<short>, {intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
 
-  stencil2.loops({y});
+  stencil2.loops({{y, 2}});
   add.compute_at({&stencil2, y});
   stencil1.compute_at({&stencil2, y});
 
@@ -455,7 +455,10 @@ TEST(pipeline_stencil_chain) {
   const raw_buffer* outputs[] = {&out_buf};
   debug_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 4 * sizeof(short) + (W + 4) * 4 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
+  // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});
   buffer<short, 2> ref_intm2({W + 2, H + 2});
   buffer<short, 2> ref_out({W, H});
@@ -476,10 +479,6 @@ TEST(pipeline_stencil_chain) {
       ASSERT_EQ(ref_out(x, y), out_buf(x, y));
     }
   }
-
-  // TODO: The second buffer should fold to 3 too.
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short) + (W + 4) * 5 * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 2);
 }
 
 TEST(pipeline_flip_y) {

@@ -598,6 +598,14 @@ bool depends_on(const expr& e, symbol_id var) {
   return v.found_var || v.found_buf;
 }
 
+bool depends_on(const interval_expr& e, symbol_id var) {
+  symbol_id vars[] = {var};
+  dependencies v(vars);
+  if (e.min.defined()) e.min.accept(&v);
+  if (e.max.defined()) e.max.accept(&v);
+  return v.found_var || v.found_buf;
+}
+
 bool depends_on(const stmt& s, std::span<const symbol_id> vars) {
   if (!s.defined()) return false;
   dependencies v(vars);

@@ -4,10 +4,10 @@
 #include <iostream>
 
 #include "node_mutator.h"
+#include "optimizations.h"
 #include "print.h"
 #include "simplify.h"
 #include "substitute.h"
-#include "optimizations.h"
 
 namespace slinky {
 
@@ -247,10 +247,20 @@ public:
   }
 };
 
+void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
+  for (symbol_id i = 0; i < buffers.size(); ++i) {
+    if (!buffers[i]) continue;
+    for (interval_expr& j : bounds) {
+      if (j.min.defined()) j.min = substitute_bounds(j.min, i, *buffers[i]);
+      if (j.max.defined()) j.max = substitute_bounds(j.max, i, *buffers[i]);
+    }
+  }
+}
+
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
 // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
-class slider : public node_mutator {
+class slide_and_fold_storage : public node_mutator {
 public:
   node_context& ctx;
   symbol_map<box_expr> buffer_bounds;
@@ -266,7 +276,7 @@ public:
   // We need an unknown to make equations of.
   var x;
 
-  slider(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {}
+  slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {}
 
   void visit(const allocate* alloc) override {
     box_expr bounds;
@@ -328,6 +338,12 @@ public:
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
+          if (!depends_on(cur_bounds_d, loop_sym)) {
+            // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
+            // just compute it once.
+            continue;
+          }
+
           interval_expr prev_bounds_d = {
               substitute(cur_bounds_d.min, loop_sym, loop_var - loops[l].step),
               substitute(cur_bounds_d.max, loop_sym, loop_var - loops[l].step),
@@ -339,16 +355,25 @@ public:
           // infinity for the loop max.
           auto ignore_loop_max = [=](const expr& e) { return substitute(e, loop_max, positive_infinity()); };
 
+          expr is_independent = prev_bounds_d.max < cur_bounds_d.min || prev_bounds_d.min > cur_bounds_d.max;
+          if (prove_true(ignore_loop_max(is_independent))) {
+            // The bounds of each loop iteration do not overlap. We can fold the storage.
+            expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
+            if (!depends_on(fold_factor, loop_sym)) {
+              fold_factors[output] = {d, fold_factor};
+            } else {
+              // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+            }
+            continue;
+          }
+
           expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max < cur_bounds_d.max;
           expr is_monotonic_decreasing = prev_bounds_d.min > cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
-          is_monotonic_increasing = ignore_loop_max(is_monotonic_increasing);
-          is_monotonic_decreasing = ignore_loop_max(is_monotonic_decreasing);
-
-          if (prove_true(is_monotonic_increasing)) {
-            // The bounds for each loop iteration are monotonically increasing,
+          if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
+            // The bounds for each loop iteration overlap and are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
             expr old_min = cur_bounds_d.min;
-            expr new_min = simplify(simplify(prev_bounds_d.max + 1));
+            expr new_min = simplify(prev_bounds_d.max + 1);
 
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {
@@ -362,11 +387,11 @@ public:
             // ifs around the other parts of the loop to avoid expanding the bounds that those
             // run on.
             expr new_min_at_new_loop_min = substitute(new_min, loop_sym, x);
-            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[l].orig_min);
+            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[l].bounds.min);
             expr new_loop_min =
                 where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
             if (!is_negative_infinity(new_loop_min)) {
-              loops[l].bounds.min = simplify(min(loops[l].bounds.min, new_loop_min));
+              loops[l].bounds.min = new_loop_min;
 
               (*bounds)[d].min = new_min;
             } else {
@@ -376,7 +401,7 @@ public:
               (*bounds)[d].min = select(loop_var == loops[l].orig_min, old_min, new_min);
             }
             break;
-          } else if (prove_true(is_monotonic_decreasing)) {
+          } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
           }
@@ -386,7 +411,6 @@ public:
 
     // Insert ifs around these calls, in case the loop min shifts later.
     for (const auto& l : loops) {
-      if (is_positive_infinity(l.bounds.min)) continue;
       result = if_then_else::make(variable::make(l.sym) >= l.bounds.min, result, stmt());
     }
     set_result(result);
@@ -395,16 +419,23 @@ public:
   void visit(const crop_buffer* c) override {
     std::optional<box_expr> bounds = buffer_bounds[c->sym];
     merge_crop(bounds, c->bounds);
+    if (bounds) {
+      substitute_bounds(*bounds, buffer_bounds);
+    }
     auto set_bounds = set_value_in_scope(buffer_bounds, c->sym, bounds);
     stmt body = mutate(c->body);
-    box_expr new_bounds = *buffer_bounds[c->sym];
-
-    set_result(crop_buffer::make(c->sym, std::move(new_bounds), std::move(body)));
+    if (buffer_bounds[c->sym]) {
+      box_expr new_bounds = *buffer_bounds[c->sym];
+      set_result(crop_buffer::make(c->sym, std::move(new_bounds), std::move(body)));
+    } else {
+      set_result(crop_buffer::make(c->sym, c->bounds, std::move(body)));
+    }
   }
 
   void visit(const crop_dim* c) override {
     std::optional<box_expr> bounds = buffer_bounds[c->sym];
     merge_crop(bounds, c->dim, c->bounds);
+    substitute_bounds(*bounds, buffer_bounds);
     auto set_bounds = set_value_in_scope(buffer_bounds, c->sym, bounds);
     stmt body = mutate(c->body);
     interval_expr new_bounds = (*buffer_bounds[c->sym])[c->dim];
@@ -424,12 +455,16 @@ public:
   void visit(const loop* l) override {
     var orig_min(ctx, ctx.name(l->sym) + "_min.orig");
 
-    loops.emplace_back(l->sym, orig_min, bounds(positive_infinity(), l->bounds.max), l->step);
+    loops.emplace_back(l->sym, orig_min, bounds(orig_min, l->bounds.max), l->step);
     stmt body = mutate(l->body);
     expr loop_min = loops.back().bounds.min;
     loops.pop_back();
 
-    if (is_positive_infinity(loop_min) && body.same_as(l->body)) {
+    if (loop_min.same_as(orig_min)) {
+      loop_min = l->bounds.min;
+    }
+
+    if (loop_min.same_as(l->bounds.min) && body.same_as(l->body)) {
       set_result(l);
     } else {
       // We rewrote the loop min.
@@ -477,19 +512,20 @@ stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
 
 stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
   stmt result = s;
-  
+
   result = infer_bounds(s, inputs);
+  // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
+  // of producers while we still understand the dependencies between stages.
+  result = slide_and_fold_storage(ctx).mutate(result);
+
+  // Now we can simplify.
   result = simplify(result);
+  result = reduce_scopes(result);
 
-  // After simplifying and inferring the bounds of producers, we can try to run the sliding window
-  // optimization.
-  result = slider(ctx).mutate(result);
-
+  // Try to reuse buffers and eliminate copies where possible.
   result = alias_buffers(result);
-
   result = optimize_copies(result);
 
-  result = reduce_scopes(result);
   // At this point, crops of input buffers are unnecessary.
   // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
   // be the case.

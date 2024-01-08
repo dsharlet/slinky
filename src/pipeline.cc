@@ -272,7 +272,7 @@ public:
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d].sym() == loop.sym()) {
           expr loop_max = buffer_max(var(o.sym()), d);
-          interval_expr bounds = slinky::bounds(loop.var, min(loop.var + loop.step - 1, loop_max));
+          interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
           body = crop_dim::make(o.sym(), d, bounds, body);
         }
       }
