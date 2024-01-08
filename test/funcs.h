@@ -116,16 +116,16 @@ index_t outer_product(const buffer<const T>& a, const buffer<const T>& b, const 
   return 0;
 }
 
-// A 2D 3x3 stencil operation.
-template <typename T>
-index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
+// A 2D stencil, sums [x + dx0, x + dx1] x [y + dy0, y + dy]
+template <typename T, int dx0, int dy0, int dx1, int dy1>
+index_t sum_stencil(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == 2);
   assert(out.rank == 2);
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
       T sum = 0;
-      for (index_t dy = -1; dy <= 1; ++dy) {
-        for (index_t dx = -1; dx <= 1; ++dx) {
+      for (index_t dy = dy0; dy <= dy1; ++dy) {
+        for (index_t dx = dx0; dx <= dx1; ++dx) {
           sum += in(x + dx, y + dy);
         }
       }
@@ -134,6 +134,13 @@ index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
   }
   return 0;
 }
+
+// A centered 2D 3x3 stencil operation.
+template <typename T>
+index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
+  return sum_stencil<T, -1, -1, 1, 1>(in, out);
+}
+
 
 }  // namespace slinky
 
