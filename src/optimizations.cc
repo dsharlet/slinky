@@ -398,6 +398,7 @@ stmt optimize_copies(const stmt& s) { return copy_optimizer().mutate(s); }
 
 namespace {
 
+// Traverse stmts in a block in order.
 template <typename Fn>
 void for_each_stmt_forward(const stmt& s, const Fn& fn) {
   if (const block* b = s.as<block>()) {
@@ -418,41 +419,46 @@ void for_each_stmt_backward(const stmt& s, const Fn& fn) {
   }
 }
 
+// Split `body` into 3 parts:
+// - stmts that don't depend on `vars`
+// - stmts that do depend on `vars`
+// - stmts that don't depend on `vars`
+std::tuple<stmt, stmt, stmt> split_body(const stmt& body, std::span<const symbol_id> vars) {
+  stmt before;
+  stmt new_body_after;
+  bool depended_on = false;
+  // First, split the body into the before, and the new body + after.
+  for_each_stmt_forward(body, [&](const stmt& s) {
+    if (depended_on || depends_on(s, vars)) {
+      new_body_after = block::make({new_body_after, s});
+      depended_on = true;
+    } else {
+      before = block::make({before, s});
+    }
+  });
+
+  // Now, split the new body + after into the new body and the after.
+  stmt new_body;
+  stmt after;
+  depended_on = false;
+  for_each_stmt_backward(new_body_after, [&](const stmt& s) {
+    if (!depended_on && !depends_on(s, vars)) {
+      after = block::make({s, after});
+    } else {
+      new_body = block::make({s, new_body});
+      depended_on = true;
+    }
+  });
+
+  return {before, new_body, after};
+}
+
+std::tuple<stmt, stmt, stmt> split_body(const stmt& body, symbol_id var) {
+  symbol_id vars[] = {var};
+  return split_body(body, vars);
+}
+
 class scope_reducer : public node_mutator {
-  std::tuple<stmt, stmt, stmt> split_body(const stmt& body, std::span<const symbol_id> vars) {
-    stmt before;
-    stmt new_body_after;
-    bool depended_on = false;
-    // First, split the body into the before, and the new body + after.
-    for_each_stmt_forward(body, [&](const stmt& s) {
-      if (depended_on || depends_on(s, vars)) {
-        new_body_after = block::make({new_body_after, s});
-        depended_on = true;
-      } else {
-        before = block::make({before, s});
-      }
-    });
-
-    // Now, split the new body + after into the new body and the after.
-    stmt new_body;
-    stmt after;
-    depended_on = false;
-    for_each_stmt_backward(new_body_after, [&](const stmt& s) {
-      if (!depended_on && !depends_on(s, vars)) {
-        after = block::make({s, after});
-      } else {
-        new_body = block::make({s, new_body});
-        depended_on = true;
-      }
-    });
-
-    return {before, new_body, after};
-  }
-  std::tuple<stmt, stmt, stmt> split_body(const stmt& body, symbol_id var) {
-    symbol_id vars[] = {var};
-    return split_body(body, vars);
-  }
-
 public:
   template <typename T>
   void visit_stmt(const T* op) {
