@@ -650,7 +650,7 @@ TEST(pipeline_outer_product) {
 
   auto a = buffer_expr::make(ctx, "a", sizeof(int), 1);
   auto b = buffer_expr::make(ctx, "b", sizeof(int), 1);
-  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
 
   var i(ctx, "i");
   var j(ctx, "j");

@@ -172,6 +172,7 @@ class buffer_aliaser : public node_mutator {
   };
   symbol_map<buffer_info> alias_info;
   symbol_map<box_expr> buffer_bounds;
+  symbol_map<std::size_t> elem_sizes;
 
 public:
   void visit(const allocate* op) override {
@@ -181,6 +182,7 @@ public:
       bounds.push_back(d.bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_elem_size = set_value_in_scope(elem_sizes, op->sym, op->elem_size);
 
     // When we allocate a buffer, we can look for all the uses of this buffer. If it is:
     // - consumed elemenwise,
@@ -202,7 +204,7 @@ public:
         dims[d] = {target.second.bounds[d], buffer_stride(target_var, d), buffer_fold_factor(target_var, d)};
       }
       expr base = buffer_at(target_var, target.second.offset);
-      expr elem_size = buffer_elem_size(target_var);
+      index_t elem_size = op->elem_size;
       stmt result = make_buffer::make(op->sym, base, elem_size, std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       result = replace_copy_with_pad(op->sym, target.first).mutate(result);
@@ -222,12 +224,16 @@ public:
   void visit(const call_stmt* op) override {
     set_result(op);
     for (symbol_id o : op->outputs) {
+      std::optional<std::size_t> elem_size_o = elem_sizes[o];
+      if (!elem_size_o) continue;
       for (symbol_id i : op->inputs) {
         const std::optional<box_expr>& in_x = buffer_bounds[i];
         std::optional<buffer_info>& info = alias_info[i];
         if (!info) continue;
+        std::optional<std::size_t> elem_size_i = elem_sizes[i];
+        if (!elem_size_i) continue;
 
-        if (!in_x || !is_elementwise(*in_x, o)) {
+        if (!in_x || *elem_size_o != *elem_size_i || !is_elementwise(*in_x, o)) {
           info->do_not_alias(o);
           return;
         }
@@ -271,6 +277,48 @@ public:
   void visit(const slice_buffer*) override { std::abort(); }
   void visit(const slice_dim*) override { std::abort(); }
   void visit(const truncate_rank*) override { std::abort(); }
+
+  // We need a better way to do this. `check` doesn't have a scope, so we need to be careful to only learn information
+  // about buffers within the scope the check has been guaranteed to have run in. For now, only bother with checks at
+  // the global scope.
+  bool at_root_scope = true;
+
+  void visit(const check* op) override {
+    set_result(op);
+    if (!at_root_scope) return;
+    if (const equal* eq = op->condition.as<equal>()) {
+      if (const call* c = eq->a.as<call>()) {
+        if (c->intrinsic == intrinsic::buffer_elem_size) {
+          const symbol_id* buf = as_variable(c->args[0]);
+          const index_t* value = as_constant(eq->b);
+          if (buf && value) {
+            elem_sizes[*buf] = *value;
+          }
+        }
+      }
+    }
+  }
+
+  void visit(const block* op) override {
+    stmt a, b;
+    if (op->a.defined()) {
+      if (!op->a.as<check>() && !op->a.as<block>()) {
+        at_root_scope = false;
+      }
+      a = mutate(op->a);
+    }
+    if (op->b.defined()) {
+      if (!op->b.as<check>() && !op->b.as<block>()) {
+        at_root_scope = false;
+      }
+      b = mutate(op->b);
+    }
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(block::make(std::move(a), std::move(b)));
+    }
+  }
 };
 
 }  // namespace

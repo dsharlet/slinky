@@ -366,6 +366,7 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
   // TODO: Maybe this check is overzealous (https://github.com/dsharlet/slinky/issues/17).
   checks.push_back(check::make(buffer_rank(buf_var) == rank));
   checks.push_back(check::make(buffer_base(buf_var) != 0));
+  checks.push_back(check::make(buffer_elem_size(buf_var) == b->elem_size()));
   for (int d = 0; d < rank; ++d) {
     expr fold_factor = buffer_fold_factor(buf_var, d);
     checks.push_back(check::make(b->dim(d).min() == buffer_min(buf_var, d)));
@@ -399,14 +400,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     produce_f = builder.make_allocations(produce_f);
     result = block::make({result, produce_f});
   }
-
-  std::vector<symbol_id> input_syms;
-  input_syms.reserve(inputs.size());
-  for (const buffer_expr_ptr& i : inputs) {
-    input_syms.push_back(i->sym());
-  }
-  result = infer_bounds(result, ctx, input_syms);
-
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
@@ -416,6 +409,14 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     add_buffer_checks(i, /*output=*/true, checks);
   }
   result = block::make(block::make(checks), result);
+
+  std::vector<symbol_id> input_syms;
+  input_syms.reserve(inputs.size());
+  for (const buffer_expr_ptr& i : inputs) {
+    input_syms.push_back(i->sym());
+  }
+  result = infer_bounds(result, ctx, input_syms);
+
 
   result = simplify(result);
 
