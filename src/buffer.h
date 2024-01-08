@@ -158,7 +158,7 @@ public:
     return contains_impl(dims, i0, indices...);
   }
 
-  std::ptrdiff_t flat_offset_bytes(std::span<index_t> indices) const {
+  std::ptrdiff_t flat_offset_bytes(std::span<const index_t> indices) const {
     assert(indices.size() == rank);
     index_t offset = 0;
     for (std::size_t i = 0; i < indices.size(); ++i) {
@@ -166,8 +166,8 @@ public:
     }
     return offset;
   }
-  void* address_at(std::span<index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
-  bool contains(std::span<index_t> indices) const {
+  void* address_at(std::span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
+  bool contains(std::span<const index_t> indices) const {
     assert(indices.size() == rank);
     bool result = true;
     for (std::size_t i = 0; i < indices.size(); ++i) {
@@ -180,6 +180,12 @@ public:
   void translate(index_t o0, Offsets... offsets) {
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
+  }
+  void translate(std::span<const index_t> offsets) {
+    assert(offsets.size() <= rank);
+    for (std::size_t i = 0; i < offsets.size(); ++i) {
+      dims[i].translate(offsets[i]);
+    }
   }
 
   std::size_t size_bytes() const;
@@ -262,8 +268,8 @@ public:
     return at(i0, indices...);
   }
 
-  auto& at(std::span<index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
-  auto& operator()(std::span<index_t> indices) const { return at(indices); }
+  auto& at(std::span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
+  auto& operator()(std::span<const index_t> indices) const { return at(indices); }
 };
 
 template <typename NewT>

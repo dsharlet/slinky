@@ -40,14 +40,14 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](std::span<index_t> i) { out(i) = in(i)*2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
   return 0;
 }
 
 template <typename T>
 index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](std::span<index_t> i) { out(i) = in(i) + 1; });
+  for_each_index(out, [&](auto i) { out(i) = in(i) + 1; });
   return 0;
 }
 
@@ -55,7 +55,7 @@ template <typename T>
 index_t add(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
   assert(a.rank == out.rank);
   assert(b.rank == out.rank);
-  for_each_index(out, [&](std::span<index_t> i) { out(i) = a(i) + b(i); });
+  for_each_index(out, [&](auto i) { out(i) = a(i) + b(i); });
   return 0;
 }
 
@@ -63,21 +63,21 @@ template <typename T>
 index_t multiply(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
   assert(a.rank == out.rank);
   assert(b.rank == out.rank);
-  for_each_index(out, [&](std::span<index_t> i) { out(i) = a(i) * b(i); });
+  for_each_index(out, [&](auto i) { out(i) = a(i) * b(i); });
   return 0;
 }
 
 template <typename T>
 index_t max_0(const buffer<const T>& a, const buffer<T>& out) {
   assert(a.rank == out.rank);
-  for_each_index(out, [&](std::span<index_t> i) { out(i) = std::max(a(i), 0); });
+  for_each_index(out, [&](auto i) { out(i) = std::max(a(i), 0); });
   return 0;
 }
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_index(x, [&](std::span<index_t> i) { x(i) = (rand() % 20) - 10; });
+  for_each_index(x, [&](auto i) { x(i) = (rand() % 20) - 10; });
 }
 
 // Matrix multiplication (not fast!)
