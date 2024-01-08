@@ -355,8 +355,8 @@ public:
           // infinity for the loop max.
           auto ignore_loop_max = [=](const expr& e) { return substitute(e, loop_max, positive_infinity()); };
 
-          expr is_independent = prev_bounds_d.max < cur_bounds_d.min || prev_bounds_d.min > cur_bounds_d.max;
-          if (prove_true(ignore_loop_max(is_independent))) {
+          interval_expr overlap = prev_bounds_d & cur_bounds_d;
+          if (prove_true(ignore_loop_max(overlap.empty()))) {
             // The bounds of each loop iteration do not overlap. We can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {

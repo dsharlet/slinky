@@ -252,6 +252,7 @@ struct interval_expr {
   const expr& begin() const { return min; }
   expr end() const { return max + 1; }
   expr extent() const { return max - min + 1; }
+  expr empty() const { return min > max; }
 
   interval_expr& operator*=(const expr& scale);
   interval_expr& operator/=(const expr& scale);
