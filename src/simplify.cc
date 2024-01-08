@@ -502,7 +502,9 @@ expr simplify(const sub* op, expr a, expr b) {
       {(c0 - x) - y, c0 - (x + y)},
       {(x + c0) - y, (x - y) + c0},
       {(x + y) - x, y},
+      {(x - y) - x, -y},
       {x - (x + y), -y},
+      {x - (x - y), y},
       {(c0 - x) - (y - z), ((z - x) - y) + c0},
       {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
 
@@ -661,6 +663,11 @@ expr simplify(const less* op, expr a, expr b) {
       {max(x, y) < min(x, y), false},
       {min(x, y) < min(x, z), y < min(x, z)},
 
+      {c0 < max(x, c1), c0 < x || c0 < c1},
+      {c0 < min(x, c1), c0 < x && c0 < c1},
+      {max(x, c0) < c1, x < c1 && c0 < c1},
+      {min(x, c0) < c1, x < c1 || c0 < c1},
+
       {buffer_extent(x, y) < c0, false, c0 < 0},
       {c0 < buffer_extent(x, y), true, c0 < 0},
   };
@@ -710,6 +717,11 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {x <= min(x, y), x <= y},
       {min(x, y) <= max(x, y), true},
       {max(x, y) <= min(x, y), x == y},
+
+      {c0 <= max(x, c1), c0 <= x || c0 <= c1},
+      {c0 <= min(x, c1), c0 <= x && c0 <= c1},
+      {max(x, c0) <= c1, x <= c1 && c0 <= c1},
+      {min(x, c0) <= c1, x <= c1 || c0 <= c1},
 
       {buffer_extent(x, y) <= c0, false, c0 <= 0},
       {c0 <= buffer_extent(x, y), true, c0 <= 0},
