@@ -51,29 +51,6 @@ index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   return 0;
 }
 
-template <typename T>
-index_t add(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
-  assert(a.rank == out.rank);
-  assert(b.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = a(i) + b(i); });
-  return 0;
-}
-
-template <typename T>
-index_t multiply(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
-  assert(a.rank == out.rank);
-  assert(b.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = a(i) * b(i); });
-  return 0;
-}
-
-template <typename T>
-index_t max_0(const buffer<const T>& a, const buffer<T>& out) {
-  assert(a.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = std::max(a(i), 0); });
-  return 0;
-}
-
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
