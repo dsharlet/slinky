@@ -15,31 +15,6 @@ namespace slinky {
 
 namespace {
 
-stmt clone_with_new_body(const let_stmt* op, stmt new_body) {
-  return let_stmt::make(op->sym, op->value, std::move(new_body));
-}
-stmt clone_with_new_body(const allocate* op, stmt new_body) {
-  return allocate::make(op->storage, op->sym, op->elem_size, op->dims, std::move(new_body));
-}
-stmt clone_with_new_body(const make_buffer* op, stmt new_body) {
-  return make_buffer::make(op->sym, op->base, op->elem_size, op->dims, std::move(new_body));
-}
-stmt clone_with_new_body(const crop_buffer* op, stmt new_body) {
-  return crop_buffer::make(op->sym, op->bounds, std::move(new_body));
-}
-stmt clone_with_new_body(const crop_dim* op, stmt new_body) {
-  return crop_dim::make(op->sym, op->dim, op->bounds, std::move(new_body));
-}
-stmt clone_with_new_body(const slice_buffer* op, stmt new_body) {
-  return slice_buffer::make(op->sym, op->at, std::move(new_body));
-}
-stmt clone_with_new_body(const slice_dim* op, stmt new_body) {
-  return slice_dim::make(op->sym, op->dim, op->at, std::move(new_body));
-}
-stmt clone_with_new_body(const truncate_rank* op, stmt new_body) {
-  return truncate_rank::make(op->sym, op->rank, std::move(new_body));
-}
-
 // Get a reference to `n`th vector element of v, resizing the vector if necessary.
 template <typename T>
 T& vector_at(std::vector<T>& v, std::size_t n) {

@@ -78,6 +78,16 @@ public:
   virtual void visit(const check*) override;
 };
 
+// This is helpful for writing templated mutators.
+stmt clone_with_new_body(const let_stmt* op, stmt new_body);
+stmt clone_with_new_body(const allocate* op, stmt new_body);
+stmt clone_with_new_body(const make_buffer* op, stmt new_body);
+stmt clone_with_new_body(const crop_buffer* op, stmt new_body);
+stmt clone_with_new_body(const crop_dim* op, stmt new_body);
+stmt clone_with_new_body(const slice_buffer* op, stmt new_body);
+stmt clone_with_new_body(const slice_dim* op, stmt new_body);
+stmt clone_with_new_body(const truncate_rank* op, stmt new_body);
+
 }  // namespace slinky
 
 #endif  // SLINKY_NODE_MUTATOR_H

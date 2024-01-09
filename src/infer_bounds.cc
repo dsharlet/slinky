@@ -54,42 +54,33 @@ public:
     }
     set_result(op);
   }
-
-  std::pair<stmt, bool> mutate_body(symbol_id sym, stmt body) {
-    auto s = set_value_in_scope(used_as_output, sym, false);
-    body = mutate(body);
-    return {body, *used_as_output[sym]};
+  void visit(const copy_stmt* op) {
+    used_as_output[op->dst] = true;
+    set_result(op);
   }
 
-  void visit(const crop_buffer* op) {
-    stmt body;
-    bool used_as_output_sym;
-    std::tie(body, used_as_output_sym) = mutate_body(op->sym, op->body);
-    if (used_as_output_sym) used_as_output[op->sym] = true;
+  template <typename T>
+  void visit_crop(const T* op) {
+    std::optional<bool> old_value = used_as_output[op->sym];
+    used_as_output[op->sym] = false;
+    stmt body = mutate(op->body);
 
-    if (!used_as_output_sym) {
+    if (!*used_as_output[op->sym]) {
+      used_as_output[op->sym] = old_value;
       set_result(body);
-    } else if (body.same_as(op->body)) {
+      return;
+    } 
+    used_as_output[op->sym] = true;
+
+    if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(crop_buffer::make(op->sym, op->bounds, std::move(body)));
+      set_result(clone_with_new_body(op, std::move(body)));
     }
   }
 
-  void visit(const crop_dim* op) {
-    stmt body;
-    bool used_as_output_sym;
-    std::tie(body, used_as_output_sym) = mutate_body(op->sym, op->body);
-    if (used_as_output_sym) used_as_output[op->sym] = true;
-
-    if (!used_as_output_sym) {
-      set_result(body);
-    } else if (body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(crop_dim::make(op->sym, op->dim, op->bounds, std::move(body)));
-    }
-  }
+  void visit(const crop_buffer* op) { visit_crop(op); }
+  void visit(const crop_dim* op) { visit_crop(op); }
 };
 
 // This pass tries to identify where call_stmt operations need to run to satisfy the requirements of their consumers (or
