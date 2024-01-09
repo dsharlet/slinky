@@ -1407,6 +1407,7 @@ public:
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
         index_t dim = 0;
+        index_t slice_rank = 0;
         bool is_slice = true;
         for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
           if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
@@ -1414,10 +1415,11 @@ public:
             ++dim;
           } else {
             // This arg is undefined. We need to find the next dimension here to be a slice.
+            ++slice_rank;
             is_slice = is_slice && match(dims[dim], buffer_dim(buf, d));
           }
         }
-        if (is_slice) {
+        if (is_slice && slice_rank == dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
           set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
           return;
