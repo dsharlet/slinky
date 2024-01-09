@@ -1433,7 +1433,7 @@ public:
         }
 
         // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
-        bool is_crop = true;
+        bool is_crop = bc->args.size() <= dims.size() + 1;
         box_expr crop_bounds(dims.size());
         for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
           if (!match(dims[d].stride, buffer_stride(buf, d)) ||

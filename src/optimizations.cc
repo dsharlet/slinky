@@ -347,37 +347,35 @@ public:
     var src_var(c->src);
     var dst_var(c->dst);
 
-    box_expr bounds;
-    std::vector<expr> offset;
-    if (is_copy(c, bounds, offset)) {
-      std::vector<dim_expr> dims;
-      std::vector<expr> at;
-      for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
-        expr min = clamp(buffer_min(dst_var, d), bounds[d].min, bounds[d].max);
-        expr max = clamp(buffer_max(dst_var, d), bounds[d].min, bounds[d].max);
-        dims.emplace_back(slinky::bounds(min, max), buffer_stride(src_var, d), buffer_fold_factor(src_var, d));
-        at.push_back(clamp(buffer_min(dst_var, d) + offset[d], bounds[d].min, bounds[d].max));
-      }
-      set_result(make_buffer::make(
-          c->src, buffer_at(src_var, at), buffer_elem_size(src_var), std::move(dims), std::move(result)));
-      return;
-    }
-
-    std::vector<expr> src_min = c->src_x;
+    std::vector<expr> src_x = c->src_x;
+    std::vector<dim_expr> src_dims;
     std::vector<std::pair<symbol_id, int>> dst_x;
+    int dst_d = 0;
 
     // If we just leave these two arrays alone, the copy will be correct, but slow.
     // We can speed it up by finding dimensions we can let pass through to the copy.
     for (int d = 0; d < static_cast<int>(c->dst_x.size()); ++d) {
       int dep_count = 0;
-      for (int src_d = 0; src_d < static_cast<int>(src_min.size()); ++src_d) {
-        if (depends_on(src_min[src_d], c->dst_x[d])) {
+      int src_d = -1;
+      for (int sd = 0; sd < static_cast<int>(src_x.size()); ++sd) {
+        if (depends_on(src_x[sd], c->dst_x[d])) {
           ++dep_count;
+          src_d = sd;
         }
       }
       bool handled = false;
       if (dep_count == 1) {
-        // TODO: Try to handle this dimension by passing it to copy.
+        expr offset;
+        interval_expr bounds;
+        if (is_copy(src_x[src_d], c->dst_x[d], bounds, offset)) {
+          expr min = clamp(buffer_min(dst_var, dst_d), bounds.min, bounds.max);
+          expr max = clamp(buffer_max(dst_var, dst_d), bounds.min, bounds.max);
+          src_dims.emplace_back(
+              slinky::bounds(min, max), buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d));
+          src_x[src_d] = clamp(buffer_min(dst_var, dst_d) + offset, bounds.min, bounds.max);
+          dst_d++;
+          handled = true;
+        }
       }
       if (!handled) {
         dst_x.emplace_back(c->dst_x[d], d);
@@ -385,7 +383,7 @@ public:
     }
 
     // Any dimensions left need loops and slices.
-    result = slice_buffer::make(c->src, src_min, result);
+    result = make_buffer::make(c->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
     for (const std::pair<symbol_id, int>& d : dst_x) {
       result = slice_dim::make(c->dst, d.second, var(d.first), result);
       result = loop::make(d.first, buffer_bounds(dst_var, d.second), 1, result);
