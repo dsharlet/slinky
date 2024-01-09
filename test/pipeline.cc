@@ -814,60 +814,76 @@ TEST(pipeline_copied_result) {
 }
 
 TEST(pipeline_padded_stencil) {
-  // Make the pipeline
-  node_context ctx;
+  for (int schedule : {0, 1, 2, 3}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
-  auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(short), 2);
+    auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+    auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(short), 2);
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  var w(ctx, "w");
-  var h(ctx, "h");
+    var w(ctx, "w");
+    var h(ctx, "h");
 
-  func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
-  func padded =
-      func::make_copy({intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {padded_intm, {x, y}}, {6, 0});
-  func stencil = func::make<const short, short>(
-      sum3x3<short>, {padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
+    func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
+    func padded =
+        func::make_copy({intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {padded_intm, {x, y}}, {6, 0});
+    func stencil = func::make<const short, short>(
+        sum3x3<short>, {padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
 
-  pipeline p(ctx, {w, h}, {in}, {out});
+    switch (schedule) {
+    case 0: break;
+    case 1: stencil.loops({y}); break;
+    case 2:
+      stencil.loops({y});
+      padded.compute_at({&stencil, y});
+      break;
+    case 3:
+      stencil.loops({y});
+      padded.compute_at({&stencil, y});
+      add.compute_at({&stencil, y});
+      break;
+    }
 
-  // Run the pipeline.
-  const int W = 20;
-  const int H = 10;
-  buffer<short, 2> in_buf({W, H});
-  buffer<short, 2> out_buf({W, H});
+    pipeline p(ctx, {w, h}, {in}, {out});
 
-  init_random(in_buf);
-  out_buf.allocate();
+    // Run the pipeline.
+    const int W = 20;
+    const int H = 10;
+    buffer<short, 2> in_buf({W, H});
+    buffer<short, 2> out_buf({W, H});
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
-  index_t args[] = {W, H};
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  debug_context eval_ctx;
-  p.evaluate(args, inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+    init_random(in_buf);
+    out_buf.allocate();
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      int correct = 0;
-      for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-          if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
-            correct += in_buf(x + dx, y + dy) + 1;
-          } else {
-            correct += 6;
+    // Not having std::span(std::initializer_list<T>) is unfortunate.
+    index_t args[] = {W, H};
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    debug_context eval_ctx;
+    p.evaluate(args, inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
+    ASSERT_EQ(eval_ctx.heap.total_count, 1);
+
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        int correct = 0;
+        for (int dy = -1; dy <= 1; ++dy) {
+          for (int dx = -1; dx <= 1; ++dx) {
+            if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
+              correct += in_buf(x + dx, y + dy) + 1;
+            } else {
+              correct += 6;
+            }
           }
         }
+        ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
       }
-      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
 }

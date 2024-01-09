@@ -55,11 +55,19 @@ public:
     set_result(op);
   }
 
-  void visit(const crop_buffer* op) {
-    auto s = set_value_in_scope(used_as_output, op->sym, false);
-    stmt body = mutate(op->body);
+  std::pair<stmt, bool> mutate_body(symbol_id sym, stmt body) {
+    auto s = set_value_in_scope(used_as_output, sym, false);
+    body = mutate(body);
+    return {body, *used_as_output[sym]};
+  }
 
-    if (!*used_as_output[op->sym]) {
+  void visit(const crop_buffer* op) {
+    stmt body;
+    bool used_as_output_sym;
+    std::tie(body, used_as_output_sym) = mutate_body(op->sym, op->body);
+    if (used_as_output_sym) used_as_output[op->sym] = true;
+
+    if (!used_as_output_sym) {
       set_result(body);
     } else if (body.same_as(op->body)) {
       set_result(op);
@@ -69,10 +77,12 @@ public:
   }
 
   void visit(const crop_dim* op) {
-    auto s = set_value_in_scope(used_as_output, op->sym, false);
-    stmt body = mutate(op->body);
+    stmt body;
+    bool used_as_output_sym;
+    std::tie(body, used_as_output_sym) = mutate_body(op->sym, op->body);
+    if (used_as_output_sym) used_as_output[op->sym] = true;
 
-    if (!*used_as_output[op->sym]) {
+    if (!used_as_output_sym) {
       set_result(body);
     } else if (body.same_as(op->body)) {
       set_result(op);
