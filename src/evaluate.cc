@@ -443,31 +443,29 @@ public:
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(n->sym));
     assert(buffer);
 
-    // The rank of the result is equal to the current rank, less any sliced dimensions.
-    std::size_t old_rank = buffer->rank;
-    dim* old_dims = buffer->dims;
-
     // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
-    buffer->dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * old_rank));
+    dim* dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * buffer->rank));
 
-    buffer->rank = 0;
+    std::size_t rank = 0;
     index_t offset = 0;
-    for (std::size_t d = 0; d < old_rank; ++d) {
+    for (std::size_t d = 0; d < buffer->rank; ++d) {
       if (d < n->at.size() && n->at[d].defined()) {
-        offset += old_dims[d].flat_offset_bytes(eval_expr(n->at[d]));
+        offset += buffer->dims[d].flat_offset_bytes(eval_expr(n->at[d]));
       } else {
-        buffer->dims[buffer->rank++] = old_dims[d];
+        dims[rank++] = buffer->dims[d];
       }
     }
 
-    void* old_base = buffer->base;
+    void* old_base = buffer->base;  
     buffer->base = offset_bytes(buffer->base, offset);
+    std::swap(buffer->rank, rank);
+    std::swap(buffer->dims, dims);  
 
     visit(n->body);
 
     buffer->base = old_base;
-    buffer->rank = old_rank;
-    buffer->dims = old_dims;
+    buffer->rank = rank;
+    buffer->dims = dims;
   }
 
   void visit(const slice_dim* n) override {
