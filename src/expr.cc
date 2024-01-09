@@ -444,6 +444,14 @@ interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_m
 dim_expr buffer_dim(const expr& buf, const expr& dim) {
   return {buffer_bounds(buf, dim), buffer_stride(buf, dim), buffer_fold_factor(buf, dim)};
 }
+std::vector<dim_expr> buffer_dims(const expr& buf, int rank) {
+  std::vector<dim_expr> result;
+  result.reserve(rank);
+  for (int d = 0; d < rank; ++d) {
+    result.push_back(buffer_dim(buf, d));
+  }
+  return result;
+}
 
 bool is_buffer_intrinsic(intrinsic i) {
   switch (i) {

@@ -989,6 +989,7 @@ expr buffer_at(expr buf, const std::vector<var>& at);
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
+std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
 }  // namespace slinky
 
