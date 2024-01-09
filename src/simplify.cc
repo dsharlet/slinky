@@ -1221,6 +1221,11 @@ public:
     auto ref_count = set_value_in_scope(references, op->sym, 0);
     stmt body = mutate(op->body);
 
+    if (!body.defined()) {
+      set_result(stmt());
+      return;
+    }
+    
     int refs = *references[op->sym];
     if (refs == 0) {
       // This let is dead
@@ -1251,7 +1256,9 @@ public:
     auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
 
-    if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(loop::make(op->sym, std::move(bounds), std::move(step), std::move(body)));
