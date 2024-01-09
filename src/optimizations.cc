@@ -320,17 +320,7 @@ public:
 stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 
 namespace {
-/*
 
-bool is_broadcast(expr in, var out) {
-  interval_expr bounds = bounds_of(in, {{out.sym(), interval_expr::all()}});
-  bounds.min = simplify(bounds.min);
-  bounds.max = simplify(bounds.max);
-
-  // This is a broadcast if the bounds are a single point.
-  return bounds.min.defined() && match(bounds.min, bounds.max);
-}
-*/
 class copy_optimizer : public node_mutator {
 public:
   void visit(const copy_stmt* c) override {
@@ -364,7 +354,10 @@ public:
         }
       }
       bool handled = false;
-      if (dep_count == 1) {
+      if (dep_count == 0) {
+        // This dimension is a broadcast.
+        // TODO: We should be able to let the copy handle this.
+      } else if (dep_count == 1) {
         expr offset;
         interval_expr bounds;
         if (is_copy(src_x[src_d], c->dst_x[d], bounds, offset)) {
