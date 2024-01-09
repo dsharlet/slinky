@@ -116,7 +116,11 @@ expr operator/(expr a, expr b) { return div::make(std::move(a), std::move(b)); }
 expr operator%(expr a, expr b) { return mod::make(std::move(a), std::move(b)); }
 expr min(expr a, expr b) { return min::make(std::move(a), std::move(b)); }
 expr max(expr a, expr b) { return max::make(std::move(a), std::move(b)); }
-expr clamp(expr x, expr a, expr b) { return min::make(max::make(std::move(x), std::move(a)), std::move(b)); }
+expr clamp(expr x, expr a, expr b) { 
+  if (a.defined()) x = max::make(std::move(x), std::move(a));
+  if (b.defined()) x = min::make(std::move(x), std::move(b)); 
+  return x;
+}
 expr select(expr c, expr t, expr f) { return select::make(std::move(c), std::move(t), std::move(f)); }
 expr operator==(expr a, expr b) { return equal::make(std::move(a), std::move(b)); }
 expr operator!=(expr a, expr b) { return not_equal::make(std::move(a), std::move(b)); }
@@ -449,6 +453,14 @@ std::vector<dim_expr> buffer_dims(const expr& buf, int rank) {
   result.reserve(rank);
   for (int d = 0; d < rank; ++d) {
     result.push_back(buffer_dim(buf, d));
+  }
+  return result;
+}
+
+box_expr dims_bounds(std::span<const dim_expr> dims) {
+  box_expr result(dims.size());
+  for (std::size_t d = 0; d < dims.size(); ++d) {
+    result[d] = dims[d].bounds;
   }
   return result;
 }

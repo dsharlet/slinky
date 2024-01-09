@@ -991,6 +991,8 @@ interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
 std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
+box_expr dims_bounds(std::span<const dim_expr> dims);
+
 }  // namespace slinky
 
 #endif  // SLINKY_EXPR_H
