@@ -156,7 +156,6 @@ expr operator%(expr a, expr b);
 // pointer. Operations that appear to mutate these objects are actually just reassigning this reference counted pointer.
 class expr {
   ref_count<const base_expr_node> n_;
-  node_type type_ = node_type::none;
 
 public:
   expr() = default;
@@ -170,7 +169,7 @@ public:
   expr(int x) : expr(static_cast<index_t>(x)) {}
 
   // Make an `expr` referencing an existing node.
-  expr(const base_expr_node* n) : n_(n), type_(n ? n->type : node_type::none) {}
+  expr(const base_expr_node* n) : n_(n) {}
 
   void accept(node_visitor* v) const {
     assert(defined());
@@ -180,12 +179,12 @@ public:
   bool defined() const { return n_ != nullptr; }
   bool same_as(const expr& other) const { return n_ == other.n_; }
   bool same_as(const base_expr_node* other) const { return n_ == other; }
-  node_type type() const { return type_; }
+  node_type type() const { return n_ ? n_->type : node_type::none; }
   const base_expr_node* get() const { return n_; }
 
   template <typename T>
   const T* as() const {
-    if (n_ && type_ == T::static_type) {
+    if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
       return nullptr;
@@ -294,13 +293,12 @@ box_expr operator&(box_expr a, const box_expr& b);
 
 class stmt {
   ref_count<const base_stmt_node> n_;
-  node_type type_ = node_type::none;
 
 public:
   stmt() = default;
   stmt(const stmt&) = default;
   stmt(stmt&&) = default;
-  stmt(const base_stmt_node* n) : n_(n), type_(n ? n->type : node_type::none) {}
+  stmt(const base_stmt_node* n) : n_(n) {}
 
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) = default;
@@ -313,12 +311,12 @@ public:
   bool defined() const { return n_ != nullptr; }
   bool same_as(const stmt& other) const { return n_ == other.n_; }
   bool same_as(const base_stmt_node* other) const { return n_ == other; }
-  node_type type() const { return type_; }
+  node_type type() const { return n_ ? n_->type : node_type::none; }
   const base_stmt_node* get() const { return n_; }
 
   template <typename T>
   const T* as() const {
-    if (type_ == T::static_type) {
+    if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
       return nullptr;
