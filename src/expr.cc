@@ -430,17 +430,16 @@ expr buffer_stride(expr buf, expr dim) {
 expr buffer_fold_factor(expr buf, expr dim) {
   return call::make(intrinsic::buffer_fold_factor, {std::move(buf), std::move(dim)});
 }
-expr buffer_at(expr buf, const std::vector<expr>& at) {
+
+expr buffer_at(expr buf, std::span<const expr> at) {
   std::vector<expr> args = {buf};
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
-expr buffer_at(expr buf, const std::vector<var>& at) {
+
+expr buffer_at(expr buf, std::span<const var> at) {
   std::vector<expr> args = {buf};
-  args.reserve(at.size() + 1);
-  for (const var& i : at) {
-    args.push_back(i);
-  }
+  args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
 
