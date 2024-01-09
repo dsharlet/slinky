@@ -83,38 +83,54 @@ bool is_elementwise(const box_expr& in_x, symbol_id out) {
   return true;
 }
 
-bool is_copy(expr in, var out, interval_expr& bounds) {
-  if (match(in, out)) {
-    bounds = interval_expr::all();
-    return true;
-  }
+bool is_copy(expr in, var out, interval_expr& bounds, expr& offset) {
+  static var x(0), a(1), b(2), dx(3), negative_dx(4), post_dx(5), negative_post_dx(6);
+  static expr patterns[] = {
+      x,
+      x + dx,
+      x - negative_dx,
+      clamp(x, a, b),
+      clamp(x + dx, a, b),
+      clamp(x - negative_dx, a, b),
+      clamp(x, a, b) + post_dx,
+      clamp(x, a, b) - negative_post_dx,
+  };
 
   symbol_map<expr> matches;
-  var x(0), a(1), b(2);
-  if (match(clamp(x, a, b), in, matches) && match(*matches[x], out)) {
-    bounds = {*matches[a], *matches[b]};
-    return true;
+  for (const expr& p : patterns) {
+    matches.clear();
+    if (match(p, in, matches) && match(*matches[x], out)) {
+      offset = 0;
+      // We found a pattern that is a copy. We don't care which one, we just need to look at the matches we have.
+      if (matches[a]) bounds.min = *matches[a];
+      if (matches[b]) bounds.max = *matches[b];
+      if (matches[dx]) offset = *matches[dx];
+      if (matches[negative_dx]) offset = -*matches[negative_dx];
+      if (matches[post_dx]) {
+        offset = *matches[post_dx];
+        if (bounds.min.defined()) bounds.min -= offset;
+        if (bounds.max.defined()) bounds.max -= offset;
+      }
+      if (matches[negative_post_dx]) {
+        offset = -*matches[negative_post_dx];
+        if (bounds.min.defined()) bounds.min -= offset;
+        if (bounds.max.defined()) bounds.max -= offset;
+      }
+      return true;
+    }
   }
 
   return false;
 }
 
-bool is_copy(const copy_stmt* op, box_expr& bounds) {
+bool is_copy(const copy_stmt* op, box_expr& bounds, std::vector<expr>& offset) {
   if (op->src_x.size() != op->dst_x.size()) return false;
   bounds.resize(op->dst_x.size());
+  offset.resize(op->dst_x.size());
   for (std::size_t d = 0; d < op->dst_x.size(); ++d) {
-    if (!is_copy(op->src_x[d], op->dst_x[d], bounds[d])) return false;
+    if (!is_copy(op->src_x[d], op->dst_x[d], bounds[d], offset[d])) return false;
   }
   return true;
-}
-
-std::vector<expr> mins(const box_expr& b) {
-  std::vector<expr> r;
-  r.reserve(b.size());
-  for (const interval_expr& d : b) {
-    r.push_back(d.min);
-  }
-  return r;
 }
 
 // Replaces `copy_stmt` with a call to `pad`.
@@ -147,7 +163,6 @@ public:
 
 class buffer_aliaser : public node_mutator {
   struct buffer_alias {
-    box_expr bounds;
     std::vector<expr> offset;
   };
 
@@ -198,14 +213,17 @@ public:
     if (!can_alias.empty()) {
       const std::pair<symbol_id, buffer_alias>& target = *can_alias.begin();
       var target_var(target.first);
-      assert(target.second.bounds.size() == op->dims.size());
-      std::vector<dim_expr> dims(target.second.bounds.size());
-      for (int d = 0; d < static_cast<int>(target.second.bounds.size()); ++d) {
-        dims[d] = {target.second.bounds[d], buffer_stride(target_var, d), buffer_fold_factor(target_var, d)};
+      // Crop the buffer to the bounds we already have. We can try to construct the dims we want directly in make_buffer
+      // below, but getting this right is a real brain twister, and the simplifier should be able to do this anyways.
+      body = crop_buffer::make(op->sym, dims_bounds(op->dims), body);
+
+      // Add the aliasing offset to the min of the buffer we're aliasing.
+      std::vector<expr> at = target.second.offset;
+      for (int d = 0; d < static_cast<int>(at.size()); ++d) {
+        at[d] += buffer_min(target_var, d);
       }
-      expr base = buffer_at(target_var, target.second.offset);
-      index_t elem_size = op->elem_size;
-      stmt result = make_buffer::make(op->sym, base, elem_size, std::move(dims), std::move(body));
+      stmt result = make_buffer::make(op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size),
+          buffer_dims(target_var, op->dims.size()), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       result = replace_copy_with_pad(op->sym, target.first).mutate(result);
       set_result(result);
@@ -237,7 +255,9 @@ public:
           info->do_not_alias(o);
           return;
         }
-        info->maybe_alias(o, {*in_x, mins(*in_x)});
+        buffer_alias a;
+        a.offset = {};
+        info->maybe_alias(o, std::move(a));
       }
     }
   }
@@ -245,18 +265,17 @@ public:
   void visit(const copy_stmt* op) override {
     set_result(op);
 
-    box_expr bounds;
-    if (!is_copy(op, bounds)) {
-      return;
-    }
-
     std::optional<buffer_info>& info = alias_info[op->src];
     if (!info) {
       return;
     }
 
-    const std::optional<box_expr>& in_x = buffer_bounds[op->src];
-    info->maybe_alias(op->dst, {*in_x, mins(*in_x)});
+    buffer_alias a;
+    box_expr bounds;
+    if (!is_copy(op, bounds, a.offset)) {
+      return;
+    }
+    info->maybe_alias(op->dst, std::move(a));
   }
 
   void visit(const crop_buffer* c) override {
@@ -350,15 +369,24 @@ public:
         },
         {c->src}, {c->dst});
 
-    box_expr bounds;
-    if (is_copy(c, bounds)) {
-      result = crop_buffer::make(c->src, bounds, result);
-      set_result(result);
-      return;
-    }
-
     var src_var(c->src);
     var dst_var(c->dst);
+
+    box_expr bounds;
+    std::vector<expr> offset;
+    if (is_copy(c, bounds, offset)) {
+      std::vector<dim_expr> dims;
+      std::vector<expr> at;
+      for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
+        expr min = clamp(buffer_min(dst_var, d), bounds[d].min, bounds[d].max);
+        expr max = clamp(buffer_max(dst_var, d), bounds[d].min, bounds[d].max);
+        dims.emplace_back(slinky::bounds(min, max), buffer_stride(src_var, d), buffer_fold_factor(src_var, d));
+        at.push_back(clamp(buffer_min(dst_var, d) + offset[d], bounds[d].min, bounds[d].max));
+      }
+      set_result(make_buffer::make(
+          c->src, buffer_at(src_var, at), buffer_elem_size(src_var), std::move(dims), std::move(result)));
+      return;
+    }
 
     std::vector<expr> src_min = c->src_x;
     std::vector<std::pair<symbol_id, int>> dst_x;

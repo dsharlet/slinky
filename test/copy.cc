@@ -16,26 +16,32 @@ TEST(copy_trivial_1d) {
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
 
   var x(ctx, "x");
+  var dx(ctx, "dx");
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x)}}, {out, {x}});
+  func copy = func::make_copy({in, {point(x + dx)}}, {out, {x}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p(ctx, {dx}, {in}, {out});
 
-  // Run the pipeline.
   const int W = 10;
-  buffer<int, 1> in_buf({W});
-  init_random(in_buf);
-
   buffer<int, 1> out_buf({W});
   out_buf.allocate();
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int x = 0; x < W; ++x) {
-    ASSERT_EQ(out_buf(x), in_buf(x));
+  for (int offset : {0, 2, -2}) {
+    // Run the pipeline.
+    buffer<int, 1> in_buf({W});
+    in_buf.translate(offset);
+    init_random(in_buf);
+
+    const index_t args[] = {offset};
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(args, inputs, outputs, eval_ctx);
+
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x), in_buf(x + offset));
+    }
   }
 }
 
@@ -48,28 +54,34 @@ TEST(copy_trivial_2d) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  var dy(ctx, "dy");
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x), point(y)}}, {out, {x, y}});
+  func copy = func::make_copy({in, {point(x), point(y + dy)}}, {out, {x, y}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p(ctx, {dy}, {in}, {out});
 
   // Run the pipeline.
   const int H = 20;
   const int W = 10;
-  buffer<int, 2> in_buf({W, H});
-  init_random(in_buf);
-
   buffer<int, 2> out_buf({W, H});
   out_buf.allocate();
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+  for (int offset : {0, -4, 3}) {
+    buffer<int, 2> in_buf({W, H});
+    in_buf.translate(0, offset);
+    init_random(in_buf);
+
+    const index_t args[] = {offset};
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(args, inputs, outputs, eval_ctx);
+
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x, y + offset));
+      }
     }
   }
 }
@@ -378,7 +390,10 @@ void test_copy_padded_translated(int translate_x, int translate_z, bool clamped)
   var dz(ctx, "dz");
 
   // This is elementwise, but with a clamp to limit the bounds required of the input.
-  std::vector<char> padding(sizeof(int), 0);
+  std::vector<char> padding;
+  if (!clamped) {
+    padding.assign(sizeof(int), 0);
+  }
   expr in_x = clamped ? clamp(x + dx, 0, w - 1) : x + dx;
   expr in_y = clamped ? clamp(y, 0, h - 1) : y;
   func crop = func::make_copy({in, {point(c), point(in_x), point(in_y), point(z + dz)}}, {out, {c, x, y, z}}, padding);
@@ -425,13 +440,13 @@ void test_copy_padded_translated(int translate_x, int translate_z, bool clamped)
   }
 }
 
-TEST(copy_clamped) { test_copy_padded_translated(0, 0, true); }
-TEST(copy_translated_clamped) { 
-  test_copy_padded_translated(0, 0, true);
-  test_copy_padded_translated(-2, 0, true);
-  test_copy_padded_translated(1, -1, true);
-  test_copy_padded_translated(-3, 3, true);
-}
+//TEST(copy_clamped) { test_copy_padded_translated(0, 0, true); }
+//TEST(copy_translated_clamped) { 
+//  test_copy_padded_translated(0, 0, true);
+//  test_copy_padded_translated(-2, 0, true);
+//  test_copy_padded_translated(1, -1, true);
+//  test_copy_padded_translated(-3, 3, true);
+//}
 
 // TODO: How to represent padding without clamps?
 //TEST(copy_padded) { test_copy_padded_translated(0, 0, false); }

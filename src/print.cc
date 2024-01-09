@@ -104,13 +104,11 @@ public:
   }
 
   printer& operator<<(const stmt& s) {
-    ++depth;
     if (s.defined()) {
+      ++depth;
       s.accept(this);
-    } else {
-      os << "<>";
+      --depth;
     }
-    --depth;
     return *this;
   }
 

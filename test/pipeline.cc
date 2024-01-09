@@ -751,50 +751,64 @@ TEST(pipeline_unrelated) {
 }
 
 TEST(pipeline_copied_result) {
-  // Make the pipeline
-  node_context ctx;
+  for (int schedule : {0, 1, 2}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+    auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-  func stencil =
-      func::make<const short, short>(sum3x3<short>, {in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm, {x, y}});
-  func padded = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
+    // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+    func stencil =
+        func::make<const short, short>(sum3x3<short>, {in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm, {x, y}});
+    func padded = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
 
-  pipeline p(ctx, {in}, {out});
+    switch (schedule) {
+    case 0:
+      break;
+    case 1:
+      padded.loops({y});
+      break;
+    case 2:
+      padded.loops({y});
+      stencil.compute_at({&padded, y});
+      break;
+    }
 
-  // Run the pipeline.
-  const int W = 20;
-  const int H = 10;
-  buffer<short, 2> in_buf({W + 2, H + 2});
-  in_buf.translate(-1, -1);
-  buffer<short, 2> out_buf({W, H});
+    pipeline p(ctx, {in}, {out});
 
-  init_random(in_buf);
-  out_buf.allocate();
+    // Run the pipeline.
+    const int W = 20;
+    const int H = 10;
+    buffer<short, 2> in_buf({W + 2, H + 2});
+    in_buf.translate(-1, -1);
+    buffer<short, 2> out_buf({W, H});
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  debug_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+    init_random(in_buf);
+    out_buf.allocate();
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      int correct = 0;
-      for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-          correct += in_buf(x + dx, y + dy);
+    // Not having std::span(std::initializer_list<T>) is unfortunate.
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    debug_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        int correct = 0;
+        for (int dy = -1; dy <= 1; ++dy) {
+          for (int dx = -1; dx <= 1; ++dx) {
+            correct += in_buf(x + dx, y + dy);
+          }
         }
+        ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
       }
-      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
 }
