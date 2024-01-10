@@ -192,7 +192,7 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << n->sym << " = allocate<" << n->elem_size << ">({\n";
+    *this << indent() << n->sym << " = allocate(" << n->elem_size << ", {\n ";
     *this << indent(2);
     print_vector(n->dims, ",\n" + indent(2));
     *this << "\n";
@@ -230,7 +230,7 @@ public:
   }
 
   void visit(const crop_dim* n) override {
-    *this << indent() << "crop_dim<" << n->dim << ">(" << n->sym << ", " << n->bounds << ") {\n";
+    *this << indent() << "crop_dim(" << n->sym << ", " << n->dim << ", " << n->bounds << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
@@ -242,13 +242,13 @@ public:
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << "slice_dim<" << n->dim << ">(" << n->sym << ", " << n->at << ") {\n";
+    *this << indent() << "slice_dim(" << n->sym << ", " << n->dim << ", " << n->at << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const truncate_rank* n) override {
-    *this << indent() << "truncate_rank<" << n->rank << ">(" << n->sym << ") {\n";
+    *this << indent() << "truncate_rank(" << n->sym << ", " << n->rank << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
