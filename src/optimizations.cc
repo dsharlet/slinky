@@ -83,13 +83,13 @@ bool is_copy(expr in, var out, interval_expr& bounds, expr& offset) {
       if (matches[negative_dx]) offset = -*matches[negative_dx];
       if (matches[post_dx]) {
         offset = *matches[post_dx];
-        if (bounds.min.defined()) bounds.min -= offset;
-        if (bounds.max.defined()) bounds.max -= offset;
+        if (bounds.min.defined()) bounds.min += offset;
+        if (bounds.max.defined()) bounds.max += offset;
       }
       if (matches[negative_post_dx]) {
         offset = -*matches[negative_post_dx];
-        if (bounds.min.defined()) bounds.min -= offset;
-        if (bounds.max.defined()) bounds.max -= offset;
+        if (bounds.min.defined()) bounds.min += offset;
+        if (bounds.max.defined()) bounds.max += offset;
       }
       return true;
     }
