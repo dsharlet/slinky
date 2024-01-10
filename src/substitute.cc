@@ -495,7 +495,7 @@ public:
     if (!changed && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
+      set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)));
     }
   }
   void visit(const make_buffer* op) override {

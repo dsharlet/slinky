@@ -153,15 +153,15 @@ TEST(simplify_bounds) {
   test_simplify(loop::make(x.sym(), min_extent(x, z), z, check::make(y)), check::make(y));
 
   test_simplify(
-      allocate::make(memory_type::heap, x.sym(), 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)),
+      allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)),
       stmt());
-  test_simplify(allocate::make(memory_type::heap, x.sym(), 1, {{bounds(2, 3), 4, 5}},
+  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
                     crop_dim::make(x.sym(), 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2))),
       stmt());
-  test_simplify(allocate::make(memory_type::heap, x.sym(), 1, {{bounds(y, z), 4, 5}},
+  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(y, z), 4, 5}},
                     crop_dim::make(x.sym(), 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2))),
-      allocate::make(memory_type::heap, x.sym(), 1, {{bounds(y, z), 4, 5}}, check::make(y == 2)));
-  test_simplify(allocate::make(memory_type::heap, x.sym(), 1, {{bounds(1, 10), 20, 0}, {bounds(y, z), 4, 5}},
+      allocate::make(x.sym(), memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2)));
+  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(1, 10), 20, 0}, {bounds(y, z), 4, 5}},
                     slice_dim::make(x.sym(), 0, 5, check::make(buffer_min(x, 0) == y))),
       stmt());
 }

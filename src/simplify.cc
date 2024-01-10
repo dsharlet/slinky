@@ -1367,7 +1367,7 @@ public:
     if (!body.defined()) {
       set_result(stmt());
     } else if (changed || !body.same_as(op->body)) {
-      set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
+      set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)));
     } else {
       set_result(op);
     }

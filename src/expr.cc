@@ -331,10 +331,10 @@ stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
   return n;
 }
 
-stmt allocate::make(memory_type storage, symbol_id sym, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
-  n->storage = storage;
   n->sym = sym;
+  n->storage = storage;
   n->elem_size = elem_size;
   n->dims = std::move(dims);
   n->body = std::move(body);

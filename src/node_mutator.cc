@@ -32,7 +32,7 @@ stmt clone_with_new_body(const let_stmt* op, stmt new_body) {
   return let_stmt::make(op->sym, op->value, std::move(new_body));
 }
 stmt clone_with_new_body(const allocate* op, stmt new_body) {
-  return allocate::make(op->storage, op->sym, op->elem_size, op->dims, std::move(new_body));
+  return allocate::make(op->sym, op->storage, op->elem_size, op->dims, std::move(new_body));
 }
 stmt clone_with_new_body(const make_buffer* op, stmt new_body) {
   return make_buffer::make(op->sym, op->base, op->elem_size, op->dims, std::move(new_body));
@@ -166,7 +166,7 @@ void node_mutator::visit(const allocate* op) {
   if (!changed && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(allocate::make(op->storage, op->sym, op->elem_size, std::move(dims), std::move(body)));
+    set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)));
   }
 }
 void node_mutator::visit(const make_buffer* op) {

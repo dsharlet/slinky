@@ -296,7 +296,7 @@ public:
   stmt make_allocations(stmt body, const loop_id& at = loop_id()) {
     for (const buffer_expr_ptr& i : to_allocate) {
       if (i->store_at() == at && !allocated.count(i)) {
-        body = allocate::make(i->storage(), i->sym(), i->elem_size(), i->dims(), body);
+        body = allocate::make(i->sym(), i->storage(), i->elem_size(), i->dims(), body);
         allocated.insert(i);
       }
     }

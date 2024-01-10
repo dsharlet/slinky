@@ -579,7 +579,7 @@ public:
 
   void accept(node_visitor* v) const;
 
-  static stmt make(memory_type storage, symbol_id sym, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr node_type static_type = node_type::allocate;
 };

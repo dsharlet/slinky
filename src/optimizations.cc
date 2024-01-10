@@ -253,18 +253,18 @@ public:
     info->maybe_alias(op->dst, std::move(a));
   }
 
-  void visit(const crop_buffer* c) override {
-    std::optional<box_expr> bounds = buffer_bounds[c->sym];
-    merge_crop(bounds, c->bounds);
-    auto set_bounds = set_value_in_scope(buffer_bounds, c->sym, bounds);
-    node_mutator::visit(c);
+  void visit(const crop_buffer* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    merge_crop(bounds, op->bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    node_mutator::visit(op);
   }
 
-  void visit(const crop_dim* c) override {
-    std::optional<box_expr> bounds = buffer_bounds[c->sym];
-    merge_crop(bounds, c->dim, c->bounds);
-    auto set_bounds = set_value_in_scope(buffer_bounds, c->sym, bounds);
-    node_mutator::visit(c);
+  void visit(const crop_dim* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    merge_crop(bounds, op->dim, op->bounds);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    node_mutator::visit(op);
   }
 
   // TODO: Need to handle this?
@@ -281,9 +281,9 @@ public:
     set_result(op);
     if (!at_root_scope) return;
     if (const equal* eq = op->condition.as<equal>()) {
-      if (const call* c = eq->a.as<call>()) {
-        if (c->intrinsic == intrinsic::buffer_elem_size) {
-          const symbol_id* buf = as_variable(c->args[0]);
+      if (const call* op = eq->a.as<call>()) {
+        if (op->intrinsic == intrinsic::buffer_elem_size) {
+          const symbol_id* buf = as_variable(op->args[0]);
           const index_t* value = as_constant(eq->b);
           if (buf && value) {
             elem_sizes[*buf] = *value;
@@ -323,32 +323,32 @@ namespace {
 
 class copy_optimizer : public node_mutator {
 public:
-  void visit(const copy_stmt* c) override {
+  void visit(const copy_stmt* op) override {
     // Start by making a call to copy.
     stmt result = call_stmt::make(
-        [src = c->src, dst = c->dst, padding = c->padding](const eval_context& ctx) -> index_t {
+        [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
           const raw_buffer* src_buf = ctx.lookup_buffer(src);
           const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
           copy(*src_buf, *dst_buf, padding.empty() ? nullptr : padding.data());
           return 0;
         },
-        {c->src}, {c->dst});
+        {op->src}, {op->dst});
 
-    var src_var(c->src);
-    var dst_var(c->dst);
+    var src_var(op->src);
+    var dst_var(op->dst);
 
-    std::vector<expr> src_x = c->src_x;
+    std::vector<expr> src_x = op->src_x;
     std::vector<dim_expr> src_dims;
     std::vector<std::pair<symbol_id, int>> dst_x;
     int dst_d = 0;
 
     // If we just leave these two arrays alone, the copy will be correct, but slow.
     // We can speed it up by finding dimensions we can let pass through to the copy.
-    for (int d = 0; d < static_cast<int>(c->dst_x.size()); ++d) {
+    for (int d = 0; d < static_cast<int>(op->dst_x.size()); ++d) {
       int dep_count = 0;
       int src_d = -1;
       for (int sd = 0; sd < static_cast<int>(src_x.size()); ++sd) {
-        if (depends_on(src_x[sd], c->dst_x[d])) {
+        if (depends_on(src_x[sd], op->dst_x[d])) {
           ++dep_count;
           src_d = sd;
         }
@@ -364,7 +364,7 @@ public:
       } else if (dep_count == 1) {
         expr offset;
         interval_expr bounds;
-        if (is_copy(src_x[src_d], c->dst_x[d], bounds, offset)) {
+        if (is_copy(src_x[src_d], op->dst_x[d], bounds, offset)) {
           expr min = clamp(buffer_min(dst_var, dst_d), bounds.min, bounds.max);
           expr max = clamp(buffer_max(dst_var, dst_d), bounds.min, bounds.max);
           src_dims.emplace_back(
@@ -375,14 +375,14 @@ public:
         }
       }
       if (!handled) {
-        dst_x.emplace_back(c->dst_x[d], d);
+        dst_x.emplace_back(op->dst_x[d], d);
       }
     }
 
     // Any dimensions left need loops and slices.
-    result = make_buffer::make(c->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
+    result = make_buffer::make(op->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
     for (const std::pair<symbol_id, int>& d : dst_x) {
-      result = slice_dim::make(c->dst, d.second, var(d.first), result);
+      result = slice_dim::make(op->dst, d.second, var(d.first), result);
       result = loop::make(d.first, buffer_bounds(dst_var, d.second), 1, result);
     }
 
