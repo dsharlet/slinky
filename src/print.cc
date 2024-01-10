@@ -192,7 +192,7 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << n->sym << " = allocate(" << n->elem_size << ", {\n ";
+    *this << indent() << n->sym << " = allocate(" << static_cast<index_t>(n->elem_size) << ", {\n";
     *this << indent(2);
     print_vector(n->dims, ",\n" + indent(2));
     *this << "\n";
