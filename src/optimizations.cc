@@ -355,8 +355,12 @@ public:
       }
       bool handled = false;
       if (dep_count == 0) {
-        // This dimension is a broadcast.
-        // TODO: We should be able to let the copy handle this.
+        // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
+        // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
+        // dimensions than the output) or not.
+        src_dims.emplace_back(buffer_bounds(dst_var, dst_d), 0, expr());
+        dst_d++;
+        handled = true;
       } else if (dep_count == 1) {
         expr offset;
         interval_expr bounds;
