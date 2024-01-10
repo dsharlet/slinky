@@ -157,77 +157,89 @@ TEST(copy_flip_x) {
 }
 
 TEST(copy_flip_y) {
-  // Make the pipeline
-  node_context ctx;
+  for (int split : {-1, 1, 2, 3}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+    auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
+    auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
 
-  var x(ctx, "x");
-  var y(ctx, "y");
-  var z(ctx, "z");
+    var x(ctx, "x");
+    var y(ctx, "y");
+    var z(ctx, "z");
 
-  // This copy should be implemented with a loop over y, and a call to copy at each y.
-  func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
+    // This copy should be implemented with a loop over y, and a call to copy at each y.
+    func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
 
-  pipeline p(ctx, {in}, {out});
+    if (split > 0) {
+      flip.loops({{y, split}});
+    }
 
-  // Run the pipeline.
-  const int H = 20;
-  const int W = 10;
-  const int D = 10;
-  buffer<int, 3> in_buf({W, H, D});
-  init_random(in_buf);
+    pipeline p(ctx, {in}, {out});
 
-  buffer<int, 3> out_buf({W, H, D});
-  out_buf.dim(1).translate(-H + 1);
-  out_buf.allocate();
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+    // Run the pipeline.
+    const int H = 20;
+    const int W = 10;
+    const int D = 10;
+    buffer<int, 3> in_buf({W, H, D});
+    init_random(in_buf);
 
-  for (int z = 0; z < D; ++z) {
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, -y, z), in_buf(x, y, z));
+    buffer<int, 3> out_buf({W, H, D});
+    out_buf.dim(1).translate(-H + 1);
+    out_buf.allocate();
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+
+    for (int z = 0; z < D; ++z) {
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          ASSERT_EQ(out_buf(x, -y, z), in_buf(x, y, z));
+        }
       }
     }
   }
 }
 
 TEST(copy_upsample_y) {
-  // Make the pipeline
-  node_context ctx;
+  for (int split : {-1, 1, 2, 4}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+    auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+    auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  // This copy should be implemented with a loop over y, and a call to copy at each y.
-  // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
-  func flip = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
+    // This copy should be implemented with a loop over y, and a call to copy at each y.
+    // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
+    func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
 
-  pipeline p(ctx, {in}, {out});
+    if (split > 0) {
+      upsample.loops({{y, split}});
+    }
 
-  // Run the pipeline.
-  const int H = 20;
-  const int W = 10;
-  buffer<int, 2> in_buf({W, H / 2});
-  init_random(in_buf);
+    pipeline p(ctx, {in}, {out});
 
-  buffer<int, 2> out_buf({W, H});
-  out_buf.allocate();
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+    // Run the pipeline.
+    const int H = 20;
+    const int W = 10;
+    buffer<int, 2> in_buf({W, H / 2});
+    init_random(in_buf);
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), in_buf(x, y / 2));
+    buffer<int, 2> out_buf({W, H});
+    out_buf.allocate();
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x, y / 2));
+      }
     }
   }
 }
