@@ -1220,7 +1220,6 @@ public:
     auto set_bounds = set_value_in_scope(expr_bounds, op->sym, value_bounds);
     auto ref_count = set_value_in_scope(references, op->sym, 0);
     stmt body = mutate(op->body);
-
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -1255,7 +1254,6 @@ public:
 
     auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
-
     if (!body.defined()) {
       set_result(stmt());
     } else if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
@@ -1379,6 +1377,10 @@ public:
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     body = mutate(body);
+    if (!body.defined()) {
+      set_result(stmt());
+      return;
+    }
 
     if (const call* bc = base.as<call>()) {
       if (bc->intrinsic == intrinsic::buffer_base) {
@@ -1460,9 +1462,7 @@ public:
       }
     }
 
-    if (!body.defined()) {
-      set_result(stmt());
-    } else if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
+    if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     } else {
       set_result(op);
@@ -1581,15 +1581,17 @@ public:
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     body = mutate(body);
+    if (!body.defined()) {
+      set_result(stmt());
+      return;
+    }
 
     // Remove trailing undefined bounds.
     while (at.size() > 0 && !at.back().defined()) {
       at.pop_back();
     }
     changed = changed || at.size() != op->at.size();
-    if (!body.defined()) {
-      set_result(stmt());
-    } else if (at.empty()) {
+    if (at.empty()) {
       // This slice was a no-op.
       set_result(std::move(body));
     } else if (dims_count == 1) {
