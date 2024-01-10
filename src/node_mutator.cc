@@ -125,7 +125,7 @@ void node_mutator::visit(const loop* op) {
   if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(loop::make(op->sym, std::move(bounds), std::move(step), std::move(body)));
+    set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
   }
 }
 void node_mutator::visit(const if_then_else* op) {

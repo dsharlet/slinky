@@ -324,7 +324,7 @@ public:
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, f, loop);
       // And make the actual loop.
-      body = loop::make(loop.sym(), get_loop_bounds(f, loop), loop.step, body);
+      body = loop::make(loop.sym(), loop.mode, get_loop_bounds(f, loop), loop.step, body);
     }
     return body;
   }

@@ -56,22 +56,24 @@ TEST(evaluate_call) {
 }
 
 TEST(evaluate_loop) {
-  node_context ctx;
-  var x(ctx, "x");
-  std::vector<index_t> calls;
-  stmt c = call_stmt::make(
-      [&](eval_context& ctx) -> index_t {
-        calls.push_back(*ctx[x]);
-        return 0;
-      },
-      {}, {});
+  for (loop_mode type : {loop_mode::serial}) {
+    node_context ctx;
+    var x(ctx, "x");
+    std::vector<index_t> calls;
+    stmt c = call_stmt::make(
+        [&](eval_context& ctx) -> index_t {
+          calls.push_back(*ctx[x]);
+          return 0;
+        },
+        {}, {});
 
-  stmt l = loop::make(x.sym(), range(2, 12), 3, c);
+    stmt l = loop::make(x.sym(), type, range(2, 12), 3, c);
 
-  int result = evaluate(l);
-  ASSERT_EQ(result, 0);
-  ASSERT_EQ(calls.size(), 4);
-  for (int i = 0; i < 4; ++i) {
-    ASSERT_EQ(calls[i], i * 3 + 2);
+    int result = evaluate(l);
+    ASSERT_EQ(result, 0);
+    ASSERT_EQ(calls.size(), 4);
+    for (int i = 0; i < 4; ++i) {
+      ASSERT_EQ(calls[i], i * 3 + 2);
+    }
   }
 }

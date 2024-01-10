@@ -478,7 +478,7 @@ public:
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
     }
   }
   void visit(const allocate* op) override {

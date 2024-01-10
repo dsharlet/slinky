@@ -100,9 +100,10 @@ public:
   struct loop_info {
     slinky::var var;
     expr step;
+    loop_mode mode;
 
     loop_info() {}
-    loop_info(slinky::var var, expr step = 1) : var(var), step(step) {}
+    loop_info(slinky::var var, expr step = 1, loop_mode mode = loop_mode::serial) : var(var), step(step), mode(mode) {}
 
     symbol_id sym() const { return var.sym(); }
 

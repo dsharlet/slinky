@@ -383,7 +383,7 @@ public:
     result = make_buffer::make(op->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
     for (const std::pair<symbol_id, int>& d : dst_x) {
       result = slice_dim::make(op->dst, d.second, var(d.first), result);
-      result = loop::make(d.first, buffer_bounds(dst_var, d.second), 1, result);
+      result = loop::make(d.first, loop_mode::serial, buffer_bounds(dst_var, d.second), 1, result);
     }
 
     set_result(result);

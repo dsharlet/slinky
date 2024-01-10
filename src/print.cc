@@ -13,6 +13,14 @@ std::ostream& operator<<(std::ostream& os, memory_type type) {
   }
 }
 
+std::ostream& operator<<(std::ostream& os, loop_mode mode) {
+  switch (mode) {
+  case loop_mode::serial: return os << "serial";
+  case loop_mode::parallel: return os << "parallel";
+  default: return os << "<invalid loop_mode>";
+  }
+}
+
 std::ostream& operator<<(std::ostream& os, intrinsic i) {
   switch (i) {
   case intrinsic::positive_infinity: return os << "oo";
@@ -163,7 +171,7 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "loop(" << l->sym << " in " << l->bounds;
+    *this << indent() << l->mode << " loop(" << l->sym << " in " << l->bounds;
     if (l->step.defined()) {
       *this << ", " << l->step;
     }

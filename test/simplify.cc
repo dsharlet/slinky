@@ -148,9 +148,9 @@ TEST(simplify_if_then_else) {
 }
 
 TEST(simplify_bounds) {
-  test_simplify(loop::make(x.sym(), bounds(y - 2, z), 2, if_then_else::make(y - 2 <= x, check::make(z))),
-      loop::make(x.sym(), bounds(y + -2, z), 2, check::make(z)));
-  test_simplify(loop::make(x.sym(), min_extent(x, z), z, check::make(y)), check::make(y));
+  test_simplify(loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, if_then_else::make(y - 2 <= x, check::make(z))),
+      loop::make(x.sym(), loop_mode::serial, bounds(y + -2, z), 2, check::make(z)));
+  test_simplify(loop::make(x.sym(), loop_mode::serial, min_extent(x, z), z, check::make(y)), check::make(y));
 
   test_simplify(
       allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)),

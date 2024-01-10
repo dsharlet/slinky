@@ -209,7 +209,7 @@ public:
       result = op;
     } else {
       // We rewrote the loop min.
-      result = loop::make(op->sym, op->bounds, op->step, std::move(body));
+      result = loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body));
     }
 
     // We're leaving the body of op. If any of the bounds used that loop variable, we need
@@ -470,7 +470,7 @@ public:
       set_result(op);
     } else {
       // We rewrote the loop min.
-      stmt result = loop::make(op->sym, {loop_min, op->bounds.max}, op->step, std::move(body));
+      stmt result = loop::make(op->sym, op->mode, {loop_min, op->bounds.max}, op->step, std::move(body));
       set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
     }
   }

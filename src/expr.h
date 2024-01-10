@@ -72,6 +72,11 @@ enum class node_type {
   check,
 };
 
+enum class loop_mode {
+  serial,
+  parallel,
+};
+
 enum class memory_type {
   stack,
   heap,
@@ -525,13 +530,14 @@ public:
 class loop : public stmt_node<loop> {
 public:
   symbol_id sym;
+  loop_mode mode;
   interval_expr bounds;
   expr step;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id sym, interval_expr bounds, expr step, stmt body);
+  static stmt make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body);
 
   static constexpr node_type static_type = node_type::loop;
 };

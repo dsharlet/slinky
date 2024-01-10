@@ -271,6 +271,7 @@ public:
     index_t min = eval_expr(op->bounds.min);
     index_t max = eval_expr(op->bounds.max);
     index_t step = eval_expr(op->step, 1);
+    assert(op->mode == loop_mode::serial);
     // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
     // because the context could grow and invalidate the reference. This could be fixed by having evaluate
     // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
@@ -456,10 +457,10 @@ public:
       }
     }
 
-    void* old_base = buffer->base;  
+    void* old_base = buffer->base;
     buffer->base = offset_bytes(buffer->base, offset);
     std::swap(buffer->rank, rank);
-    std::swap(buffer->dims, dims);  
+    std::swap(buffer->dims, dims);
 
     visit(op->body);
 
