@@ -144,11 +144,6 @@ class pipeline_builder {
   std::set<buffer_expr_ptr> produced;
   std::set<buffer_expr_ptr> allocated;
 
-  struct crop_info {
-    int dim;
-    interval_expr bounds;
-  };
-
   stmt result;
 
 public:
