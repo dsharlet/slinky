@@ -193,9 +193,13 @@ private:
 
 public:
   rule_set(std::initializer_list<rule> rules) {
+    node_type type = node_type::none;
     for (const rule& i : rules) {
       commute_variants v;
       i.pattern.accept(&v);
+
+      assert(type == node_type::none || i.pattern.type() == type);
+      type = i.pattern.type();
 
       for (expr& p : v.results) {
         rules_.emplace_back(std::move(p), i.replacement, i.predicate);
