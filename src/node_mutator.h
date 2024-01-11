@@ -70,6 +70,7 @@ public:
   virtual void visit(const copy_stmt*) override;
   virtual void visit(const allocate*) override;
   virtual void visit(const make_buffer*) override;
+  virtual void visit(const clone_buffer*) override;
   virtual void visit(const crop_buffer*) override;
   virtual void visit(const crop_dim*) override;
   virtual void visit(const slice_buffer*) override;
@@ -82,6 +83,7 @@ public:
 stmt clone_with_new_body(const let_stmt* op, stmt new_body);
 stmt clone_with_new_body(const allocate* op, stmt new_body);
 stmt clone_with_new_body(const make_buffer* op, stmt new_body);
+stmt clone_with_new_body(const clone_buffer* op, stmt new_body);
 stmt clone_with_new_body(const crop_buffer* op, stmt new_body);
 stmt clone_with_new_body(const crop_dim* op, stmt new_body);
 stmt clone_with_new_body(const slice_buffer* op, stmt new_body);

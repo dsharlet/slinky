@@ -166,6 +166,7 @@ public:
   void visit(const copy_stmt* op) override { std::abort(); }
   void visit(const allocate* op) override { std::abort(); }
   void visit(const make_buffer* op) override { std::abort(); }
+  void visit(const clone_buffer* op) override { std::abort(); }
   void visit(const crop_buffer* op) override { std::abort(); }
   void visit(const crop_dim* op) override { std::abort(); }
   void visit(const slice_buffer* op) override { std::abort(); }
@@ -270,6 +271,10 @@ bool is_buffer_mutated(symbol_id sym, const stmt& s) {
       recursive_node_visitor::visit(op);
     }
     void visit(const make_buffer* op) override {
+      if (op->sym == sym) return;
+      recursive_node_visitor::visit(op);
+    }
+    void visit(const clone_buffer* op) override {
       if (op->sym == sym) return;
       recursive_node_visitor::visit(op);
     }
@@ -1413,13 +1418,17 @@ public:
               if (*src_buf == op->sym) {
                 set_result(mutate(truncate_rank::make(op->sym, dims.size(), std::move(body))));
                 return;
-              } else if (!is_buffer_mutated(op->sym, body) && !is_buffer_mutated(*src_buf, body)) {
-                const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
-                if (src_bounds && src_bounds->size() == dims.size()) {
+              } 
+              const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
+              if (src_bounds && src_bounds->size() == dims.size()) {
+                if (!is_buffer_mutated(op->sym, body) && !is_buffer_mutated(*src_buf, body)) {
                   // This is a clone of src_buf, and we never mutate either buffer, we can just re-use it.
                   set_result(let_stmt::make(op->sym, buf, std::move(body)));
-                  return;
+                } else {
+                  // This is a clone of src_buf, but we've mutated one of them. Use clone_buffer instead.
+                  set_result(clone_buffer::make(op->sym, *src_buf, std::move(body)));
                 }
+                return;
               }
             }
           }

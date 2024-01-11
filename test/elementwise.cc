@@ -122,6 +122,7 @@ public:
   void visit(const copy_stmt*) override { std::abort(); }
   void visit(const allocate*) override { std::abort(); }
   void visit(const make_buffer*) override { std::abort(); }
+  void visit(const clone_buffer*) override { std::abort(); }
   void visit(const crop_buffer*) override { std::abort(); }
   void visit(const crop_dim*) override { std::abort(); }
   void visit(const slice_buffer*) override { std::abort(); }
@@ -226,6 +227,7 @@ public:
   void visit(const copy_stmt*) override { std::abort(); }
   void visit(const allocate*) override { std::abort(); }
   void visit(const make_buffer*) override { std::abort(); }
+  void visit(const clone_buffer*) override { std::abort(); }
   void visit(const crop_buffer*) override { std::abort(); }
   void visit(const crop_dim*) override { std::abort(); }
   void visit(const slice_buffer*) override { std::abort(); }

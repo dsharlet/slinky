@@ -223,6 +223,12 @@ public:
     *this << indent() << "}\n";
   }
 
+  void visit(const clone_buffer* n) override {
+    *this << indent() << n->sym << " = clone_buffer(" << n->src << ") {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
+  }
+
   void visit(const crop_buffer* n) override {
     *this << indent() << "crop_buffer(" << n->sym << ", {";
     if (!n->bounds.empty()) {

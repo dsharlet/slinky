@@ -64,6 +64,7 @@ enum class node_type {
   if_then_else,
   allocate,
   make_buffer,
+  clone_buffer,
   crop_buffer,
   crop_dim,
   slice_buffer,
@@ -607,6 +608,22 @@ public:
   static constexpr node_type static_type = node_type::make_buffer;
 };
 
+// Makes a clone of an existing buffer.
+// TODO: This basically only exists because we cannot use `make_buffer` to clone a buffer of unknown rank. Maybe there's
+// a better way to do this.
+class clone_buffer : public stmt_node<clone_buffer> {
+public:
+  symbol_id sym;
+  symbol_id src;
+  stmt body;
+
+  void accept(node_visitor* v) const;
+
+  static stmt make(symbol_id sym, symbol_id src, stmt body);
+
+  static constexpr node_type static_type = node_type::clone_buffer;
+};
+
 // For the `body` scope, crops the buffer `sym` to `bounds`. If the expressions in `bounds` are undefined, they default
 // to their original values in the existing buffer. The rank of the buffer is unchanged. If the size of `bounds` is less
 // than the rank, the missing values are considered undefined.
@@ -730,6 +747,7 @@ public:
   virtual void visit(const copy_stmt*) = 0;
   virtual void visit(const allocate*) = 0;
   virtual void visit(const make_buffer*) = 0;
+  virtual void visit(const clone_buffer*) = 0;
   virtual void visit(const crop_buffer*) = 0;
   virtual void visit(const crop_dim*) = 0;
   virtual void visit(const slice_buffer*) = 0;
@@ -824,6 +842,9 @@ public:
     }
     op->body.accept(this);
   }
+  virtual void visit(const clone_buffer* op) override {
+    op->body.accept(this);
+  }
   virtual void visit(const crop_buffer* op) override {
     for (const interval_expr& i : op->bounds) {
       if (i.min.defined()) i.min.accept(this);
@@ -879,6 +900,7 @@ inline void call_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void copy_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
 inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
+inline void clone_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }
 inline void crop_dim::accept(node_visitor* v) const { v->visit(this); }
 inline void slice_buffer::accept(node_visitor* v) const { v->visit(this); }

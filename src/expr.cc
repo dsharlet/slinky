@@ -352,6 +352,14 @@ stmt make_buffer::make(symbol_id sym, expr base, expr elem_size, std::vector<dim
   return n;
 }
 
+stmt clone_buffer::make(symbol_id sym, symbol_id src, stmt body) {
+  auto n = new clone_buffer();
+  n->sym = sym;
+  n->src = src;
+  n->body = std::move(body);
+  return n;
+}
+
 stmt crop_buffer::make(symbol_id sym, std::vector<interval_expr> bounds, stmt body) {
   auto n = new crop_buffer();
   n->sym = sym;

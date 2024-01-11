@@ -455,6 +455,11 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* op) override {
+    if (op->mode == loop_mode::parallel) {
+      // Don't try sliding window or storage folding on parallel loops.
+      node_mutator::visit(op);
+      return;
+    }
     var orig_min(ctx, ctx.name(op->sym) + "_min.orig");
 
     loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);

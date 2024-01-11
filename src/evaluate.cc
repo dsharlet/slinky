@@ -378,6 +378,21 @@ public:
     visit(op->body);
   }
 
+  void visit(const clone_buffer* op) override {
+    raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * src->rank));
+
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
+    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
+    buffer->elem_size = src->elem_size;
+    buffer->base = src->base;
+    buffer->rank = src->rank;
+    memcpy(buffer->dims, src->dims, sizeof(dim) * src->rank);
+
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    visit(op->body);
+  }
+
   void visit(const crop_buffer* op) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);

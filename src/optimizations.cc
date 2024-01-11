@@ -479,6 +479,7 @@ public:
   void visit(const let_stmt* op) override { visit_stmt(op); }
   void visit(const allocate* op) override { visit_stmt(op); }
   void visit(const make_buffer* op) override { visit_stmt(op); }
+  void visit(const clone_buffer* op) override { visit_stmt(op); }
   void visit(const crop_buffer* op) override { visit_stmt(op); }
   void visit(const crop_dim* op) override { visit_stmt(op); }
   void visit(const slice_buffer* op) override { visit_stmt(op); }

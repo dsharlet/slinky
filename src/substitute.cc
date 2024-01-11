@@ -311,6 +311,16 @@ public:
     if (!try_match(mbs->body, op->body)) return;
   }
 
+  void visit(const clone_buffer* op) override {
+    if (match) return;
+    const clone_buffer* mbs = match_self_as(op);
+    if (!mbs) return;
+
+    if (!try_match(mbs->sym, op->sym)) return;
+    if (!try_match(mbs->src, op->src)) return;
+    if (!try_match(mbs->body, op->body)) return;
+  }
+
   void visit(const crop_buffer* op) override {
     if (match) return;
     const crop_buffer* cbs = match_self_as(op);
@@ -515,6 +525,15 @@ public:
       set_result(op);
     } else {
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+    }
+  }
+  void visit(const clone_buffer* op) override {
+    auto s = set_value_in_scope(shadowed, op->sym, true);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_buffer::make(op->sym, op->src, std::move(body)));
     }
   }
   void visit(const slice_buffer* op) override {
