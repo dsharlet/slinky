@@ -2,6 +2,7 @@
 #include "expr.h"
 #include "print.h"
 #include "test.h"
+#include "thread_pool.h"
 
 #include <cassert>
 
@@ -56,24 +57,29 @@ TEST(evaluate_call) {
 }
 
 TEST(evaluate_loop) {
-  for (loop_mode type : {loop_mode::serial}) {
-    node_context ctx;
-    var x(ctx, "x");
-    std::vector<index_t> calls;
+  node_context ctx;
+  var x(ctx, "x");
+
+  thread_pool t;
+
+  eval_context eval_ctx;
+  eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
+  eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
+  eval_ctx.work_on_tasks = [&](std::function<bool()> f) { t.work_on_tasks(std::move(f)); };
+
+  for (loop_mode type : {loop_mode::serial, loop_mode::parallel}) {
+    std::atomic<index_t> sum_x = 0;
     stmt c = call_stmt::make(
         [&](eval_context& ctx) -> index_t {
-          calls.push_back(*ctx[x]);
+          sum_x += *ctx[x];
           return 0;
         },
         {}, {});
 
     stmt l = loop::make(x.sym(), type, range(2, 12), 3, c);
 
-    int result = evaluate(l);
+    int result = evaluate(l, eval_ctx);
     ASSERT_EQ(result, 0);
-    ASSERT_EQ(calls.size(), 4);
-    for (int i = 0; i < 4; ++i) {
-      ASSERT_EQ(calls[i], i * 3 + 2);
-    }
+    ASSERT_EQ(sum_x, 2 + 5 + 8 + 11);
   }
 }

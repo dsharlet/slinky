@@ -271,17 +271,62 @@ public:
     index_t min = eval_expr(op->bounds.min);
     index_t max = eval_expr(op->bounds.max);
     index_t step = eval_expr(op->step, 1);
-    assert(op->mode == loop_mode::serial);
-    // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
-    // because the context could grow and invalidate the reference. This could be fixed by having evaluate
-    // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
-    // not clear this optimization is necessary yet.
-    std::optional<index_t> old_value = context[op->sym];
-    for (index_t i = min; result == 0 && min <= i && i <= max; i += step) {
-      context[op->sym] = i;
-      visit(op->body);
+    if (op->mode == loop_mode::parallel) {
+      assert(context.enqueue_many);
+      assert(context.work_on_tasks);
+      struct shared_state {
+        // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
+        // iterations completed. This allows us to check if the loop is done without relying on the workers actually
+        // running. If the thread pool is busy, then we might enqueue workers that never run until after the loop is
+        // done. Waiting for these to return (after doing nothing) would risk deadlock.
+        std::atomic<index_t> i, done;
+
+        // We want copies of these in the shared state so we can allow the worker to run after returning from this
+        // scope.
+        index_t min, max, step;
+
+        // The first non-zero result is stored here.
+        std::atomic<index_t> result;
+
+        shared_state(index_t min, index_t max, index_t step)
+            : i(min), done(min), min(min), max(max), step(step), result(0) {}
+      };
+      auto state = std::make_shared<shared_state>(min, max, step);
+      // It is safe to capture op even though it's a pointer, because we only access it after we know that we're still
+      // in this scope.
+      // TODO: Can we do this without capturing context by value?
+      auto worker = [state, context = this->context, op]() mutable {
+        while (state->result == 0) {
+          index_t i = state->i.fetch_add(state->step);
+          if (!(state->min <= i && i <= state->max)) break;
+
+          context[op->sym] = i;
+          // Evaluate the parallel loop body with our copy of the context.
+          index_t result = evaluate(op->body, context);
+          index_t expected = 0;
+          state->result.compare_exchange_strong(expected, result);
+          state->done += state->step;
+        }
+      };
+      // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
+      context.enqueue_many(worker);
+      worker();
+      // While the loop still isn't done, work on other tasks.
+      context.work_on_tasks([&]() { return state->result == 0 && min <= state->done && state->done <= max; });
+      result = state->result;
+    } else {
+      assert(op->mode == loop_mode::serial);
+      // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
+      // because the context could grow and invalidate the reference. This could be fixed by having evaluate
+      // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
+      // not clear this optimization is necessary yet.
+      std::optional<index_t> old_value = context[op->sym];
+      for (index_t i = min; result == 0 && min <= i && i <= max; i += step) {
+        context[op->sym] = i;
+        visit(op->body);
+      }
+      context[op->sym] = old_value;
     }
-    context[op->sym] = old_value;
   }
 
   void visit(const if_then_else* op) override {
@@ -414,7 +459,10 @@ public:
       // Allow these expressions to be undefined, and if so, they default to their existing values.
       index_t min = std::max(dim.min(), eval_expr(op->bounds[d].min, dim.min()));
       index_t max = std::min(dim.max(), eval_expr(op->bounds[d].max, dim.max()));
-      offset += dim.flat_offset_bytes(min);
+      index_t offset_d = dim.flat_offset_bytes(min);
+      // Crops can't span a folding boundary if they move the base pointer.
+      assert(offset_d == 0 || max / dim.fold_factor() == min / dim.fold_factor());
+      offset += offset_d;
 
       dim.set_bounds(min, max);
     }
@@ -446,7 +494,10 @@ public:
       // Crops to a single element are common, we can optimize them a little bit by re-using the min
       dim.set_point(min);
     } else {
-      dim.set_bounds(min, std::min(old_max, eval_expr(op->bounds.max, old_max)));
+      index_t max = std::min(old_max, eval_expr(op->bounds.max, old_max));
+      // Crops can't span a folding boundary if they move the base pointer.
+      assert(buffer->base == old_base || max / dim.fold_factor() == min / dim.fold_factor());
+      dim.set_bounds(min, max);
     }
 
     visit(op->body);

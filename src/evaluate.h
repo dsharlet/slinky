@@ -22,6 +22,14 @@ public:
   std::function<void(const expr&)> check_failed;
   std::function<void(const call_stmt*)> call_failed;
 
+  using task = std::function<void()>;
+  // Function called to execute a task on as many threads as are available.
+  std::function<void(const task&)> enqueue_many;
+  // Function called to execute a single task in parallel.
+  std::function<void(task)> enqueue_one;
+  // Function called to indicate that this thread should wait until the given condition is true.
+  std::function<void(std::function<bool()>)> work_on_tasks;
+
   const raw_buffer* lookup_buffer(symbol_id id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
 

@@ -491,4 +491,59 @@ public:
 
 stmt reduce_scopes(const stmt& s) { return scope_reducer().mutate(s); }
 
+namespace {
+
+class race_condition_fixer : public node_mutator {
+  symbol_map<bool> mutated;
+
+public:
+  void visit(const loop* op) override {
+    if (op->mode != loop_mode::parallel) {
+      node_mutator::visit(op);
+      return;
+    }
+
+    // We've hit a parallel loop. The buffers that are allocated outside this loop, but mutated inside this loop, will
+    // be true in the mutated map. We need to make copies of these buffers upon entering the loop.
+    stmt body = mutate(op->body);
+    for (symbol_id i = 0; i < mutated.size(); ++i) {
+      if (mutated[i] && *mutated[i]) {
+        body = clone_buffer::make(i, i, body);
+      }
+    }
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body)));
+    }
+  }
+
+  template <typename T>
+  void visit_buffer_allocator(const T* op) {
+    // Buffers start out not mutated.
+    auto s = set_value_in_scope(mutated, op->sym, false);
+    node_mutator::visit(op);
+  }
+
+  void visit(const allocate* op) override { visit_buffer_allocator(op); }
+  void visit(const make_buffer* op) override { visit_buffer_allocator(op); }
+  void visit(const clone_buffer* op) override { visit_buffer_allocator(op); }
+
+  template <typename T>
+  void visit_buffer_mutator(const T* op) {
+    mutated[op->sym] = true;
+    node_mutator::visit(op);
+  }
+
+  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const truncate_rank* op) override { visit_buffer_mutator(op); }
+};
+
+}  // namespace
+
+stmt fix_buffer_races(const stmt& s) { return race_condition_fixer().mutate(s); }
+
 }  // namespace slinky

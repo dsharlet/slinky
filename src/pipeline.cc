@@ -412,6 +412,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
   result = infer_bounds(result, ctx, input_syms);
 
+  result = fix_buffer_races(result);
+
   result = simplify(result);
 
   if (options.no_checks) {
