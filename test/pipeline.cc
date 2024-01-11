@@ -168,7 +168,6 @@ TEST(pipeline_matmuls) {
 
       var i(ctx, "i");
       var j(ctx, "j");
-      var k(ctx, "k");
 
       // The bounds required of the dimensions consumed by the reduction depend on the size of the
       // buffers passed in. Note that we haven't used any constants yet.

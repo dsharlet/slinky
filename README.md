@@ -131,7 +131,6 @@ auto ab = buffer_expr::make(ctx, "ab", sizeof(float), 2);
 
 var i(ctx, "i");
 var j(ctx, "j");
-var k(ctx, "k");
 
 // The bounds required of the dimensions consumed by the reduction depend on the size of the
 // buffers passed in. Note that we haven't used any constants yet.
