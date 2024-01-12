@@ -17,7 +17,7 @@ public:
 
 private:
   std::vector<std::thread> workers_;
-  std::atomic<bool> run_;
+  std::atomic<bool> stop_;
 
   std::deque<task> task_queue_;
   std::mutex mutex_;
@@ -31,7 +31,7 @@ public:
 
   void enqueue(int n, const task& t);
   void enqueue(task t);
-  void work_on_tasks(std::function<bool()> while_true);
+  void wait_for(std::function<bool()> condition);
 };
 
 }  // namespace slinky

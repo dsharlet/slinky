@@ -46,7 +46,7 @@ public:
 
     enqueue_many = [&](const thread_pool::task& t) { threads.enqueue(threads.thread_count(), t); };
     enqueue_one = [&](thread_pool::task t) { threads.enqueue(std::move(t)); };
-    work_on_tasks = [&](std::function<bool()> while_true) { return threads.work_on_tasks(std::move(while_true)); };
+    wait_for = [&](std::function<bool()> condition) { return threads.wait_for(std::move(condition)); };
   }
 };
 

@@ -273,7 +273,7 @@ public:
     index_t step = eval_expr(op->step, 1);
     if (op->mode == loop_mode::parallel) {
       assert(context.enqueue_many);
-      assert(context.work_on_tasks);
+      assert(context.wait_for);
       struct shared_state {
         // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
         // iterations completed. This allows us to check if the loop is done without relying on the workers actually
@@ -312,7 +312,7 @@ public:
       context.enqueue_many(worker);
       worker();
       // While the loop still isn't done, work on other tasks.
-      context.work_on_tasks([&]() { return state->result == 0 && min <= state->done && state->done <= max; });
+      context.wait_for([&]() { return state->result != 0 || !(min <= state->done && state->done <= max); });
       result = state->result;
     } else {
       assert(op->mode == loop_mode::serial);

@@ -2,24 +2,24 @@
 
 namespace slinky {
 
-thread_pool::thread_pool(int workers) : run_(true) {
-  auto worker = [this]() { work_on_tasks([this]() -> bool { return run_; }); };
+thread_pool::thread_pool(int workers) : stop_(false) {
+  auto worker = [this]() { wait_for([this]() -> bool { return stop_; }); };
   for (int i = 0; i < workers; ++i) {
     workers_.emplace_back(worker);
   }
 }
 
 thread_pool::~thread_pool() {
-  run_ = false;
+  stop_ = true;
   cv_.notify_all();
   for (std::thread& i : workers_) {
     i.join();
   }
 }
 
-void thread_pool::work_on_tasks(std::function<bool()> while_true) {
+void thread_pool::wait_for(std::function<bool()> condition) {
   std::unique_lock l(mutex_);
-  while (while_true()) {
+  while (!condition()) {
     if (!task_queue_.empty()) {
       auto task = std::move(task_queue_.front());
       task_queue_.pop_front();

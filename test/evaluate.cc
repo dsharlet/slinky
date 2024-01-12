@@ -65,7 +65,7 @@ TEST(evaluate_loop) {
   eval_context eval_ctx;
   eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
   eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
-  eval_ctx.work_on_tasks = [&](std::function<bool()> f) { t.work_on_tasks(std::move(f)); };
+  eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
 
   for (loop_mode type : {loop_mode::serial, loop_mode::parallel}) {
     std::atomic<index_t> sum_x = 0;

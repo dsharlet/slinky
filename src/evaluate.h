@@ -28,7 +28,7 @@ public:
   // Function called to execute a single task in parallel.
   std::function<void(task)> enqueue_one;
   // Function called to indicate that this thread should wait until the given condition is true.
-  std::function<void(std::function<bool()>)> work_on_tasks;
+  std::function<void(std::function<bool()>)> wait_for;
 
   const raw_buffer* lookup_buffer(symbol_id id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
