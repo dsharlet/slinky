@@ -303,8 +303,9 @@ public:
           context[op->sym] = i;
           // Evaluate the parallel loop body with our copy of the context.
           index_t result = evaluate(op->body, context);
-          index_t expected = 0;
-          state->result.compare_exchange_strong(expected, result);
+          if (result != 0) {
+            state->result = result;
+          }
           state->done += state->step;
         }
       };
