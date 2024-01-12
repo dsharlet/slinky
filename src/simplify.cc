@@ -1250,6 +1250,8 @@ public:
     if (refs == 0) {
       // This let is dead
       set_result(body);
+    } else if (is_variable(value, op->sym)) {
+      set_result(body);
       // TODO: We could try substituting lets used once, or for simple lets, but we need to be careful because we can't
       // substitute values passed to call_stmt.
     } else if (value.same_as(op->value) && body.same_as(op->body)) {
@@ -1572,6 +1574,17 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
     stmt body = substitute_bounds(op->body, op->sym, op->dim, bounds);
     body = mutate(body);
+
+    if (const slice_dim* slice = body.as<slice_dim>()) {
+      if (slice->sym == op->sym && slice->dim == op->dim) {
+        // This is a slice of the same dimension of the buffer we just cropped.
+        // Don't drop the clamp that crop performs.
+        expr at = clamp(slice->at, bounds.min, bounds.max);
+        set_result(mutate(slice_dim::make(op->sym, op->dim, at, slice->body)));
+        return;
+      }
+    }
+
     if (!body.defined()) {
       set_result(stmt());
     } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
