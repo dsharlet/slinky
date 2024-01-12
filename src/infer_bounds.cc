@@ -471,12 +471,19 @@ public:
       loop_min = op->bounds.min;
     }
 
-    if (loop_min.same_as(op->bounds.min) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
+    if (!is_variable(loop_min, orig_min.sym())) {
       // We rewrote the loop min.
       stmt result = loop::make(op->sym, op->mode, {loop_min, op->bounds.max}, op->step, std::move(body));
       set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
+      return;
+    } else {
+      body = substitute(body, orig_min.sym(), op->bounds.min);
+    }
+
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body)));
     }
   }
 
