@@ -320,6 +320,8 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(x, x + c0), x + c0, c0 < 0},
       {min(x + c0, c1), min(x, c1 - c0) + c0},
       {min(c0 - x, c0 - y), c0 - max(x, y)},
+      {min(x, -x), -abs(x)},
+      {min(x + c0, c0 - x), c0 - abs(x)},
 
       // Algebraic simplifications
       {min(x, x), x},
@@ -340,6 +342,7 @@ expr simplify(const class min* op, expr a, expr b) {
       {min(x + z, y + z), z + min(x, y)},
       {min(x - z, y - z), min(x, y) - z},
       {min(z - x, z - y), z - max(x, y)},
+      {min(x + z, z - y), z + min(x, -y)},
 
       // Buffer meta simplifications
       // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
@@ -380,6 +383,8 @@ expr simplify(const class max* op, expr a, expr b) {
       {max(x, x + c0), x, c0 < 0},
       {max(x + c0, c1), max(x, c1 - c0) + c0},
       {max(c0 - x, c0 - y), c0 - min(x, y)},
+      {max(x, -x), abs(x)},
+      {max(x + c0, c0 - x), abs(x) + c0},
 
       // Algebraic simplifications
       {max(x, x), x},
@@ -529,6 +534,8 @@ expr simplify(const sub* op, expr a, expr b) {
       {(c0 - x) - (y - z), ((z - x) - y) + c0},
       {(x + c0) - (y + c1), (x - y) + (c0 - c1)},
 
+      {(x + y) / c0 - x / c0, (y + (x % c0)) / c0, c0 > 0},
+
       {min(x, y + z) - z, min(y, x - z)},
       {max(x, y + z) - z, max(y, x - z)},
 
@@ -613,6 +620,7 @@ expr simplify(const div* op, expr a, expr b) {
       {x / 0, 0},
       {0 / x, 0},
       {x / 1, x},
+      {x / -1, -x},
       {x / x, x != 0},
   };
   return rules.apply(e);
@@ -722,6 +730,9 @@ expr simplify(const less_equal* op, expr a, expr b) {
       {c0 - x <= y, c0 <= y + x},
       {x <= c1 - y, x + y <= c1},
       {x + c0 <= y + c1, x - y <= c1 - c0},
+
+      {(x + c0) / c1 <= x / c1, c0 <= 0},
+      {x / c1 <= (x + c0) / c1, 0 <= c0},
 
       {x <= x + y, 0 <= y},
       {x + y <= x, y <= 0},

@@ -245,10 +245,11 @@ TEST(pipeline_matmuls) {
   }
 }
 
-index_t upsample2x(const buffer<const int>& in, const buffer<int>& out) {
+index_t pyramid_upsample2x(const buffer<const int>& skip, const buffer<const int>& in, const buffer<int>& out) {
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
-      out(x, y) = in(x >> 1, y >> 1);
+      out(x, y) = in((x + 0) >> 1, (y + 0) >> 1) + in((x + 1) >> 1, (y + 0) >> 1) + in((x + 0) >> 1, (y + 1) >> 1) +
+                  in((x + 1) >> 1, (y + 1) >> 1) + skip(x, y);
     }
   }
   return 0;
@@ -279,14 +280,19 @@ TEST(pipeline_pyramid) {
 
   func downsample =
       func::make<const int, int>(downsample2x, {in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}, {intm, {x, y}});
-  func upsample = func::make<const int, int>(upsample2x, {intm, {point(x) / 2, point(y) / 2}}, {out, {x, y}});
+  func upsample = func::make<const int, const int, int>(pyramid_upsample2x, {in, {point(x), point(y)}},
+      {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}, {out, {x, y}});
+
+  upsample.loops({{y, 1}});
+  downsample.compute_at({&upsample, y});
 
   pipeline p(ctx, {in}, {out});
 
   // Run the pipeline.
   const int W = 10;
   const int H = 10;
-  buffer<int, 2> in_buf({W, H});
+  buffer<int, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
   buffer<int, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -297,7 +303,7 @@ TEST(pipeline_pyramid) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(int) / 4);
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 

@@ -372,8 +372,9 @@ public:
             continue;
           }
 
-          expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max < cur_bounds_d.max;
-          expr is_monotonic_decreasing = prev_bounds_d.min > cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
+          // Allowing the leading edge to not change means that some calls may ask for empty buffers.
+          expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
+          expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
           if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
             // The bounds for each loop iteration overlap and are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
@@ -477,13 +478,11 @@ public:
       loop_min = op->bounds.min;
     }
 
-    if (!is_variable(loop_min, orig_min.sym())) {
-      // We rewrote the loop min.
+    if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym())) {
+      // We rewrote or used the loop min.
       stmt result = loop::make(op->sym, op->mode, {loop_min, op->bounds.max}, op->step, std::move(body));
       set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
       return;
-    } else {
-      body = substitute(body, orig_min.sym(), op->bounds.min);
     }
 
     if (body.same_as(op->body)) {
