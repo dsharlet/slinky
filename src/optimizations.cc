@@ -58,17 +58,12 @@ bool is_elementwise(const box_expr& in_x, symbol_id out) {
   return true;
 }
 
-bool is_copy(expr in, var out, interval_expr& bounds, expr& offset) {
-  static var x(0), a(1), b(2), dx(3), negative_dx(4), post_dx(5), negative_post_dx(6);
+bool is_copy(expr in, var out, expr& offset) {
+  static var x(0), dx(1), negative_dx(2);
   static expr patterns[] = {
       x,
       x + dx,
       x - negative_dx,
-      clamp(x, a, b),
-      clamp(x + dx, a, b),
-      clamp(x - negative_dx, a, b),
-      clamp(x, a, b) + post_dx,
-      clamp(x, a, b) - negative_post_dx,
   };
 
   symbol_map<expr> matches;
@@ -77,20 +72,8 @@ bool is_copy(expr in, var out, interval_expr& bounds, expr& offset) {
     if (match(p, in, matches) && match(*matches[x], out)) {
       offset = 0;
       // We found a pattern that is a copy. We don't care which one, we just need to look at the matches we have.
-      if (matches[a]) bounds.min = *matches[a];
-      if (matches[b]) bounds.max = *matches[b];
       if (matches[dx]) offset = *matches[dx];
       if (matches[negative_dx]) offset = -*matches[negative_dx];
-      if (matches[post_dx]) {
-        offset = *matches[post_dx];
-        if (bounds.min.defined()) bounds.min += offset;
-        if (bounds.max.defined()) bounds.max += offset;
-      }
-      if (matches[negative_post_dx]) {
-        offset = -*matches[negative_post_dx];
-        if (bounds.min.defined()) bounds.min += offset;
-        if (bounds.max.defined()) bounds.max += offset;
-      }
       return true;
     }
   }
@@ -98,12 +81,11 @@ bool is_copy(expr in, var out, interval_expr& bounds, expr& offset) {
   return false;
 }
 
-bool is_copy(const copy_stmt* op, box_expr& bounds, std::vector<expr>& offset) {
+bool is_copy(const copy_stmt* op, std::vector<expr>& offset) {
   if (op->src_x.size() != op->dst_x.size()) return false;
-  bounds.resize(op->dst_x.size());
   offset.resize(op->dst_x.size());
   for (std::size_t d = 0; d < op->dst_x.size(); ++d) {
-    if (!is_copy(op->src_x[d], op->dst_x[d], bounds[d], offset[d])) return false;
+    if (!is_copy(op->src_x[d], op->dst_x[d], offset[d])) return false;
   }
   return true;
 }
@@ -246,8 +228,7 @@ public:
     }
 
     buffer_alias a;
-    box_expr bounds;
-    if (!is_copy(op, bounds, a.offset)) {
+    if (!is_copy(op, a.offset)) {
       return;
     }
     info->maybe_alias(op->dst, std::move(a));
@@ -363,13 +344,10 @@ public:
         handled = true;
       } else if (dep_count == 1) {
         expr offset;
-        interval_expr bounds;
-        if (is_copy(src_x[src_d], op->dst_x[d], bounds, offset)) {
-          expr min = clamp(buffer_min(dst_var, dst_d), bounds.min, bounds.max);
-          expr max = clamp(buffer_max(dst_var, dst_d), bounds.min, bounds.max);
+        if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
           src_dims.emplace_back(
-              slinky::bounds(min, max), buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d));
-          src_x[src_d] = clamp(buffer_min(dst_var, dst_d) + offset, bounds.min, bounds.max);
+              buffer_bounds(dst_var, dst_d), buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d));
+          src_x[src_d] = buffer_min(dst_var, dst_d) + offset;
           dst_d++;
           handled = true;
         }
