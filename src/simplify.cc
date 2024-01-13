@@ -622,6 +622,9 @@ expr simplify(const div* op, expr a, expr b) {
       {x / 1, x},
       {x / -1, -x},
       {x / x, x != 0},
+
+      {(x + c0) / c1, x / c1 + c0 / c1, c0 % c1 == 0},
+      {(c0 - x) / c1, c0 / c1 + (-x / c1), c0 != 0 && c0 % c1 == 0},
   };
   return rules.apply(e);
 }
@@ -1256,7 +1259,7 @@ public:
       set_result(stmt());
       return;
     }
-    
+
     int refs = *references[op->sym];
     if (refs == 0) {
       // This let is dead
@@ -1431,7 +1434,7 @@ public:
               if (*src_buf == op->sym) {
                 set_result(mutate(truncate_rank::make(op->sym, dims.size(), std::move(body))));
                 return;
-              } 
+              }
               const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
               if (src_bounds && src_bounds->size() == dims.size()) {
                 if (!is_buffer_mutated(op->sym, body) && !is_buffer_mutated(*src_buf, body)) {
