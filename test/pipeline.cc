@@ -795,15 +795,14 @@ TEST(pipeline_padded_stencil) {
     auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
     auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(short), 2);
 
+    intm->dim(0).bounds = out->dim(0).bounds;
+    intm->dim(1).bounds = out->dim(1).bounds;
+
     var x(ctx, "x");
     var y(ctx, "y");
 
-    var w(ctx, "w");
-    var h(ctx, "h");
-
     func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
-    func padded =
-        func::make_copy({intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {padded_intm, {x, y}}, {6, 0});
+    func padded = func::make_copy({intm, {point(x), point(y)}}, {padded_intm, {x, y}}, {6, 0});
     func stencil = func::make<const short, short>(
         sum3x3<short>, {padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
 
@@ -821,7 +820,7 @@ TEST(pipeline_padded_stencil) {
       break;
     }
 
-    pipeline p(ctx, {w, h}, {in}, {out});
+    pipeline p(ctx, {in}, {out});
 
     // Run the pipeline.
     const int W = 20;
@@ -833,11 +832,10 @@ TEST(pipeline_padded_stencil) {
     out_buf.allocate();
 
     // Not having std::span(std::initializer_list<T>) is unfortunate.
-    index_t args[] = {W, H};
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
-    p.evaluate(args, inputs, outputs, eval_ctx);
+    p.evaluate(inputs, outputs, eval_ctx);
     ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
     ASSERT_EQ(eval_ctx.heap.total_count, 1);
 

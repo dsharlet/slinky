@@ -451,25 +451,27 @@ public:
     std::size_t crop_rank = op->bounds.size();
     interval* old_bounds = reinterpret_cast<interval*>(alloca(sizeof(interval) * crop_rank));
 
-    index_t offset = 0;
+    void* old_base = buffer->base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
-      old_bounds[d].min = dim.min();
-      old_bounds[d].max = dim.max();
+      index_t old_min = dim.min();
+      index_t old_max = dim.max();
+      old_bounds[d].min = old_min;
+      old_bounds[d].max = old_max;
 
       // Allow these expressions to be undefined, and if so, they default to their existing values.
-      index_t min = std::max(dim.min(), eval_expr(op->bounds[d].min, dim.min()));
-      index_t max = std::min(dim.max(), eval_expr(op->bounds[d].max, dim.max()));
-      index_t offset_d = dim.flat_offset_bytes(min);
-      // Crops can't span a folding boundary if they move the base pointer.
-      assert(offset_d == 0 || max / dim.fold_factor() == min / dim.fold_factor());
-      offset += offset_d;
+      index_t min = std::max(old_min, eval_expr(op->bounds[d].min, old_min));
+      index_t max = std::min(old_max, eval_expr(op->bounds[d].max, old_max));
 
+      if (max >= min) {
+        index_t offset = dim.flat_offset_bytes(min);
+        // Crops can't span a folding boundary if they move the base pointer.
+        assert(offset == 0 || max / dim.fold_factor() == min / dim.fold_factor());
+        buffer->base = offset_bytes(buffer->base, offset);
+      }
+      
       dim.set_bounds(min, max);
     }
-
-    void* old_base = buffer->base;
-    buffer->base = offset_bytes(buffer->base, offset);
 
     visit(op->body);
 
@@ -484,22 +486,20 @@ public:
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
     slinky::dim& dim = buffer->dims[op->dim];
-
-    void* old_base = buffer->base;
     index_t old_min = dim.min();
     index_t old_max = dim.max();
 
     index_t min = std::max(old_min, eval_expr(op->bounds.min, old_min));
-    buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-    if (op->bounds.is_point()) {
-      // Crops to a single element are common, we can optimize them a little bit by re-using the min
-      dim.set_point(min);
-    } else {
-      index_t max = std::min(old_max, eval_expr(op->bounds.max, old_max));
+    index_t max = std::min(old_max, eval_expr(op->bounds.max, old_max));
+
+    void* old_base = buffer->base;
+    if (max >= min) {
+      buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
       // Crops can't span a folding boundary if they move the base pointer.
       assert(buffer->base == old_base || max / dim.fold_factor() == min / dim.fold_factor());
-      dim.set_bounds(min, max);
     }
+
+    dim.set_bounds(min, max);
 
     visit(op->body);
 
