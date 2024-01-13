@@ -69,7 +69,7 @@ public:
       used_as_output[op->sym] = old_value;
       set_result(body);
       return;
-    } 
+    }
     used_as_output[op->sym] = true;
 
     if (body.same_as(op->body)) {
@@ -146,8 +146,8 @@ public:
       if (d < bounds.size()) {
         // TODO: These checks fail in a case that seems reasonable (setting the bounds of a buffer that
         // is going to be copied for the purposes of adding padding). Maybe the checks aren't valid?
-        //checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-        //checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+        // checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+        // checks.push_back(check::make(dims[d].max() >= bounds[d].max));
       }
     }
 
@@ -328,9 +328,10 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
-  void visit(const call_stmt* op) override {
+  template <typename T>
+  void visit_call_or_copy(const T* op, std::span<const symbol_id> outputs) {
     stmt result = op;
-    for (symbol_id output : op->outputs) {
+    for (symbol_id output : outputs) {
       std::optional<box_expr>& bounds = buffer_bounds[output];
       if (!bounds) continue;
 
@@ -419,6 +420,9 @@ public:
     }
     set_result(result);
   }
+
+  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
+  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->dst, 1}); }
 
   void visit(const crop_buffer* op) override {
     std::optional<box_expr> bounds = buffer_bounds[op->sym];

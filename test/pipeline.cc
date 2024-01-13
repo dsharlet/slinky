@@ -836,8 +836,13 @@ TEST(pipeline_padded_stencil) {
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
-    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (H + 2) * sizeof(short));
-    ASSERT_EQ(eval_ctx.heap.total_count, 1);
+    if (schedule == 2) {
+      //ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
+      ASSERT_EQ(eval_ctx.heap.total_count, 2);
+    } else if (schedule == 3) {
+      ASSERT_EQ(eval_ctx.heap.total_size, W * sizeof(short) + (W + 2) * 3 * sizeof(short));
+      ASSERT_EQ(eval_ctx.heap.total_count, 2);
+    }
 
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {

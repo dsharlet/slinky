@@ -146,14 +146,21 @@ class buffer_aliaser : public node_mutator {
   symbol_map<buffer_info> alias_info;
   symbol_map<box_expr> buffer_bounds;
   symbol_map<std::size_t> elem_sizes;
+  symbol_map<bool> do_not_alias;
 
 public:
   void visit(const allocate* op) override {
     box_expr bounds;
     bounds.reserve(op->dims.size());
+    bool do_not_alias_sym = false;
     for (const dim_expr& d : op->dims) {
       bounds.push_back(d.bounds);
+      if (d.fold_factor.defined()) {
+        // This buffer can't be aliased.
+        do_not_alias_sym = true;
+      }
     }
+    auto set_do_not_alias = set_value_in_scope(do_not_alias, op->sym, do_not_alias_sym);
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     auto set_elem_size = set_value_in_scope(elem_sizes, op->sym, op->elem_size);
 
@@ -161,6 +168,7 @@ public:
     // - consumed elemenwise,
     // - consumed by a producer that has an output that we can re-use,
     // - not consumed after the buffer it aliases to is produced,
+    // - doesn't have any folded dimensions,
     // then we can alias it to the buffer produced by its consumer.
 
     // Start out by setting it to elementwise.
@@ -202,6 +210,12 @@ public:
     for (symbol_id o : op->outputs) {
       std::optional<std::size_t> elem_size_o = elem_sizes[o];
       if (!elem_size_o) continue;
+
+      std::optional<bool> no_alias = do_not_alias[o];
+      if (no_alias && *no_alias) {
+        continue;
+      }
+      
       for (symbol_id i : op->inputs) {
         const std::optional<box_expr>& in_x = buffer_bounds[i];
         std::optional<buffer_info>& info = alias_info[i];
@@ -222,6 +236,11 @@ public:
 
   void visit(const copy_stmt* op) override {
     set_result(op);
+
+    std::optional<bool> no_alias = do_not_alias[op->dst];
+    if (no_alias && *no_alias) {
+      return;
+    }
 
     std::optional<buffer_info>& info = alias_info[op->src];
     if (!info) {
