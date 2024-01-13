@@ -64,6 +64,7 @@ bool is_copy(expr in, var out, expr& offset) {
       x,
       x + dx,
       x - negative_dx,
+      // TODO: we could also handle scaling of x by multiplying the stride.
   };
 
   symbol_map<expr> matches;
