@@ -114,6 +114,8 @@ expr operator-(expr a, expr b) { return sub::make(std::move(a), std::move(b)); }
 expr operator*(expr a, expr b) { return mul::make(std::move(a), std::move(b)); }
 expr operator/(expr a, expr b) { return div::make(std::move(a), std::move(b)); }
 expr operator%(expr a, expr b) { return mod::make(std::move(a), std::move(b)); }
+expr euclidean_div(expr a, expr b) { return div::make(std::move(a), std::move(b)); }
+expr euclidean_mod(expr a, expr b) { return mod::make(std::move(a), std::move(b)); }
 expr min(expr a, expr b) { return min::make(std::move(a), std::move(b)); }
 expr max(expr a, expr b) { return max::make(std::move(a), std::move(b)); }
 expr clamp(expr x, expr a, expr b) { 
