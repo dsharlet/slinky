@@ -1460,8 +1460,8 @@ public:
       if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
-        index_t dim = 0;
-        index_t slice_rank = 0;
+        std::size_t dim = 0;
+        std::size_t slice_rank = 0;
         bool is_slice = true;
         for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
           if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {

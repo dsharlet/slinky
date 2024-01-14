@@ -17,14 +17,14 @@ struct memory_info {
   std::atomic<index_t> total_count = 0;
   std::atomic<index_t> total_size = 0;
 
-  void track_allocate(std::size_t size) {
+  void track_allocate(index_t size) {
     live_count += 1;
     live_size += size;
     total_count += 1;
     total_size += size;
   }
 
-  void track_free(std::size_t size) {
+  void track_free(index_t size) {
     live_count -= 1;
     live_size -= size;
   }

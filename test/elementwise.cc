@@ -237,9 +237,6 @@ public:
 };
 
 template <typename T, std::size_t Rank>
-pipeline make_expr_pipeline(node_context& ctx, const expr& e) {}
-
-template <typename T, std::size_t Rank>
 void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_builder<T, Rank> builder(ctx);
   e.accept(&builder);
