@@ -118,7 +118,6 @@ void test_copy() {
                 dst.allocate();
 
                 copy(src, dst, &padding);
-
                 for_each_index(dst, [&](auto i) {
                   if (src.contains(i)) {
                     ASSERT_EQ(dst(i), src(i));
@@ -130,7 +129,6 @@ void test_copy() {
                 for_each_index(src, [&](auto i) { src(i) += 1; });
 
                 copy(src, dst, nullptr);
-
                 for_each_index(dst, [&](auto i) {
                   if (src.contains(i)) {
                     // The copied area should have been copied.
@@ -145,7 +143,6 @@ void test_copy() {
 
                 T new_padding = 3;
                 pad(src.dims, dst, &new_padding);
-
                 for_each_index(dst, [&](auto i) {
                   if (src.contains(i)) {
                     // The src should not have been copied.

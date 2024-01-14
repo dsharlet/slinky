@@ -261,6 +261,9 @@ TEST(where_true) {
   test_where_true(x / 2 < 7, 0, bounds(negative_infinity(), 13));
   test_where_true(min(x, 6) < 7, 0, bounds(negative_infinity(), positive_infinity()));
   test_where_true(-10 <= x && x < 5, 0, bounds(-10, 4));
+  test_where_true(-x < 5, 0, bounds(-4, positive_infinity()));
+  test_where_true(3 * x < 5, 0, bounds(negative_infinity(), 1));
+  test_where_true(3 * (x + 2) < 5, 0, bounds(negative_infinity(), -1));
 }
 
 std::vector<var> vars = {x, y, z};
