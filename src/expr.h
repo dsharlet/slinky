@@ -515,6 +515,7 @@ public:
   static stmt make(It begin, It end) {
     stmt result;
     for (It i = begin; i != end; ++i) {
+      if (!i->defined()) continue;
       if (result.defined()) {
         result = block::make(result, *i);
       } else {

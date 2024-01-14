@@ -410,8 +410,8 @@ namespace {
 template <typename Fn>
 void for_each_stmt_forward(const stmt& s, const Fn& fn) {
   if (const block* b = s.as<block>()) {
-    for_each_stmt_forward(b->a, fn);
-    for_each_stmt_forward(b->b, fn);
+    if (b->a.defined()) for_each_stmt_forward(b->a, fn);
+    if (b->b.defined()) for_each_stmt_forward(b->b, fn);
   } else {
     fn(s);
   }
@@ -420,8 +420,8 @@ void for_each_stmt_forward(const stmt& s, const Fn& fn) {
 template <typename Fn>
 void for_each_stmt_backward(const stmt& s, const Fn& fn) {
   if (const block* b = s.as<block>()) {
-    for_each_stmt_backward(b->b, fn);
-    for_each_stmt_backward(b->a, fn);
+    if (b->b.defined()) for_each_stmt_backward(b->b, fn);
+    if (b->a.defined()) for_each_stmt_backward(b->a, fn);
   } else {
     fn(s);
   }
