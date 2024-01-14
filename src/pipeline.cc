@@ -106,19 +106,22 @@ stmt func::make_call() const {
     }
     return call_stmt::make(impl_, std::move(inputs), std::move(outputs));
   } else {
-    // TODO: We should be able to handle copies from multiple inputs.
-    assert(inputs_.size() == 1);
-    assert(outputs_.size() == 1);
-    std::vector<expr> src_x;
-    std::vector<symbol_id> dst_x;
-    for (const interval_expr& i : inputs_[0].bounds) {
-      assert(match(i.min, i.max));
-      src_x.push_back(i.min);
+    std::vector<stmt> copies;
+    for (const func::input& input : inputs_) {
+      // TODO: We should be able to handle copies from multiple inputs.
+      assert(outputs_.size() == 1);
+      std::vector<expr> src_x;
+      std::vector<symbol_id> dst_x;
+      for (const interval_expr& i : input.bounds) {
+        assert(match(i.min, i.max));
+        src_x.push_back(i.min);
+      }
+      for (const var& i : outputs_[0].dims) {
+        dst_x.push_back(i.sym());
+      }
+      copies.push_back(copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_));
     }
-    for (const var& i : outputs_[0].dims) {
-      dst_x.push_back(i.sym());
-    }
-    return copy_stmt::make(inputs_[0].sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+    return block::make(copies);
   }
 }
 

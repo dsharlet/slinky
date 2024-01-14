@@ -215,7 +215,7 @@ public:
       if (no_alias && *no_alias) {
         continue;
       }
-      
+
       for (symbol_id i : op->inputs) {
         const std::optional<box_expr>& in_x = buffer_bounds[i];
         std::optional<buffer_info>& info = alias_info[i];
@@ -365,9 +365,11 @@ public:
       } else if (dep_count == 1) {
         expr offset;
         if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
+          interval_expr dst_bounds = buffer_bounds(dst_var, dst_d);
+          interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
           src_dims.emplace_back(
-              buffer_bounds(dst_var, dst_d), buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d));
-          src_x[src_d] = buffer_min(dst_var, dst_d) + offset;
+              dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d));
+          src_x[src_d] = max(buffer_min(dst_var, dst_d) + offset, buffer_min(src_var, src_d));
           dst_d++;
           handled = true;
         }

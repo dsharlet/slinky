@@ -382,6 +382,49 @@ TEST(copy_broadcast_sliced) {
   }
 }
 
+TEST(copy_concatenate) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(int), 2);
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  func concat =
+      func::make_copy({in1, {point(x), point(y)}}, {in2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
+
+  pipeline p(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+
+  const int W = 8;
+  const int H1 = 5;
+  const int H2 = 4;
+
+  // Run the pipeline.
+  buffer<int, 2> in1_buf({W, H1});
+  buffer<int, 2> in2_buf({W, H2});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  // Ask for an output padded in every direction.
+  buffer<int, 2> out_buf({W, H1 + H2});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H1 + H2; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1));
+    }
+  }
+}
+
 void test_copy_padded_translated(int translate_x, int translate_z, bool clamped) {
   // Make the pipeline
   node_context ctx;

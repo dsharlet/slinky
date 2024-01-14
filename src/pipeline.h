@@ -222,8 +222,14 @@ public:
         {std::move(in1)}, {std::move(out1), std::move(out2)});
   }
 
+  static func make_copy(std::vector<input> in, output out, std::vector<char> padding = {}) {
+    return func(std::move(in), {std::move(out)}, std::move(padding));
+  }
   static func make_copy(input in, output out, std::vector<char> padding = {}) {
     return func({std::move(in)}, {std::move(out)}, std::move(padding));
+  }
+  static func make_copy(input in1, input in2, output out, std::vector<char> padding = {}) {
+    return func({std::move(in1), std::move(in2)}, {std::move(out)}, std::move(padding));
   }
 
   const call_stmt::callable& impl() const { return impl_; }
