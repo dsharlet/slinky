@@ -416,6 +416,8 @@ public:
     }
 
     // Insert ifs around these calls, in case the loop min shifts later.
+    // TODO: I think this actually needs to be some kind of crop. If the loop step is not 1, this could
+    // cause the first few iterations of the guarded statement to be skipped.
     for (const auto& op : loops) {
       result = if_then_else::make(variable::make(op.sym) >= op.bounds.min, result, stmt());
     }
@@ -535,6 +537,11 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
+    
+  // At this point, crops of input buffers are unnecessary.
+  // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
+  // be the case.
+  result = input_crop_remover().mutate(result);
 
   // Now we can simplify.
   result = simplify(result);
@@ -543,11 +550,6 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // Try to reuse buffers and eliminate copies where possible.
   result = alias_buffers(result);
   result = optimize_copies(result);
-
-  // At this point, crops of input buffers are unnecessary.
-  // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
-  // be the case.
-  result = input_crop_remover().mutate(result);
 
   return result;
 }

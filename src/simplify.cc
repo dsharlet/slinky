@@ -623,6 +623,10 @@ expr simplify(const div* op, expr a, expr b) {
       {x / -1, -x},
       {x / x, x != 0},
 
+      {(x / c0) / c1, x / (c0 * c1), c0 > 0 && c1 > 0},
+      {(x / c0 + c1) / c2, (x + (c1 * c0)) / (c0 * c2), c0 > 0 && c2 > 0},
+      {(x * c0) / c1, x * (c0 / c1), c0 % c1 == 0 && c1 > 0},
+
       {(x + c0) / c1, x / c1 + c0 / c1, c0 % c1 == 0},
       {(c0 - x) / c1, c0 / c1 + (-x / c1), c0 != 0 && c0 % c1 == 0},
   };
