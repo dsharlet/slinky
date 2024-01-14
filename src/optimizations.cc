@@ -101,18 +101,18 @@ public:
 
   void visit(const copy_stmt* op) {
     if (op->src == src && op->dst == dst) {
-      stmt result;
-      if (!op->padding.empty()) {
-        result = call_stmt::make(
+      if (op->padding.empty()) {
+        set_result(stmt());
+      } else {
+        set_result(call_stmt::make(
             [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
               const raw_buffer* src_buf = ctx.lookup_buffer(src);
               const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
               pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
-            {src}, {dst});
+            {src}, {dst}));
       }
-      set_result(result);
     } else {
       set_result(op);
     }
@@ -179,17 +179,21 @@ public:
     if (!can_alias.empty()) {
       const std::pair<symbol_id, buffer_alias>& target = *can_alias.begin();
       var target_var(target.first);
-      // Crop the buffer to the bounds we already have. We can try to construct the dims we want directly in make_buffer
-      // below, but getting this right is a real brain twister, and the simplifier should be able to do this anyways.
-      body = crop_buffer::make(op->sym, dims_bounds(op->dims), body);
 
-      // Add the aliasing offset to the min of the buffer we're aliasing.
+      // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
+      // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
+      // buffer_at call that is out of bounds.
       std::vector<expr> at = target.second.offset;
-      for (int d = 0; d < static_cast<int>(at.size()); ++d) {
-        at[d] += buffer_min(target_var, d);
+      std::vector<dim_expr> dims = buffer_dims(target_var, op->dims.size());
+      assert(at.size() <= dims.size());
+      at.resize(dims.size());
+      for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
+        if (!at[d].defined()) at[d] = 0;
+        at[d] = max(buffer_min(target_var, d) - at[d], op->dims[d].bounds.min);
+        dims[d].bounds &= op->dims[d].bounds;
       }
-      stmt result = make_buffer::make(op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size),
-          buffer_dims(target_var, op->dims.size()), std::move(body));
+      stmt result = make_buffer::make(
+          op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size), std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       result = replace_copy_with_pad(op->sym, target.first).mutate(result);
       set_result(result);
