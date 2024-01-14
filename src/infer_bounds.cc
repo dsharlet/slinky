@@ -146,6 +146,7 @@ public:
       if (d < bounds.size()) {
         // TODO: These checks fail in a case that seems reasonable (setting the bounds of a buffer that
         // is going to be copied for the purposes of adding padding). Maybe the checks aren't valid?
+        // Maybe they should be skipped if the consumer is a copy? That seems like a hack.
         // checks.push_back(check::make(dims[d].min() <= bounds[d].min));
         // checks.push_back(check::make(dims[d].max() >= bounds[d].max));
       }
@@ -469,7 +470,7 @@ public:
       node_mutator::visit(op);
       return;
     }
-    var orig_min(ctx, ctx.name(op->sym) + "_min.orig");
+    var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);
     stmt body = mutate(op->body);
