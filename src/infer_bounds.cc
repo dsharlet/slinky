@@ -340,6 +340,7 @@ public:
         symbol_id loop_sym = loops[op].sym;
         expr loop_var = variable::make(loop_sym);
         const expr& loop_max = loops[op].bounds.max;
+        const expr& loop_step = loops[op].step;
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
@@ -350,8 +351,8 @@ public:
           }
 
           interval_expr prev_bounds_d = {
-              substitute(cur_bounds_d.min, loop_sym, loop_var - loops[op].step),
-              substitute(cur_bounds_d.max, loop_sym, loop_var - loops[op].step),
+              substitute(cur_bounds_d.min, loop_sym, loop_var - loop_step),
+              substitute(cur_bounds_d.max, loop_sym, loop_var - loop_step),
           };
 
           // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
@@ -384,6 +385,8 @@ public:
 
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {
+              // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+              fold_factor = simplify(align_up(fold_factor, loop_step));
               fold_factors[output] = {d, fold_factor};
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -417,11 +420,12 @@ public:
     }
 
     // Insert ifs around these calls, in case the loop min shifts later.
-    // TODO: I think this actually needs to be some kind of crop. If the loop step is not 1, this could
-    // cause the first few iterations of the guarded statement to be skipped.
-    for (const auto& op : loops) {
-      result = if_then_else::make(variable::make(op.sym) >= op.bounds.min, result, stmt());
-    }
+    // TODO: We don't actually need to do this, because the crops applied to this buffer will be clamped, and we'll end
+    // up with an empty production. It's a little janky, but it handles the case where the warmup is not aligned to the
+    // loop step size.
+    // for (const auto& op : loops) {
+    //  result = if_then_else::make(variable::make(op.sym) >= op.bounds.min, result, stmt());
+    //}
     set_result(result);
   }
 
@@ -538,7 +542,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
-    
+
   // At this point, crops of input buffers are unnecessary.
   // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
   // be the case.

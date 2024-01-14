@@ -308,7 +308,7 @@ TEST(pipeline_pyramid) {
 }
 
 TEST(pipeline_stencil) {
-  for (int split : {0, 1, 2}) {
+  for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
       node_context ctx;
@@ -348,7 +348,7 @@ TEST(pipeline_stencil) {
       test_context eval_ctx;
       p.evaluate(inputs, outputs, eval_ctx);
       if (lm == loop_mode::serial && split > 0) {
-        ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (2 + split) * sizeof(short));
+        ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
       }
       ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
@@ -412,8 +412,8 @@ TEST(pipeline_stencil_chain) {
       test_context eval_ctx;
       p.evaluate(inputs, outputs, eval_ctx);
       if (split > 0 && lm == loop_mode::serial) {
-        ASSERT_EQ(
-            eval_ctx.heap.total_size, (W + 2) * (split + 2) * sizeof(short) + (W + 4) * (split + 2) * sizeof(short));
+        ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short) +
+                                                (W + 4) * align_up(split + 2, split) * sizeof(short));
       }
       ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
