@@ -994,12 +994,8 @@ public:
   var(symbol_id sym);
   var(node_context& ctx, const std::string& sym);
 
-  bool defined() const { return sym_ != -1; }
-
-  symbol_id sym() const {
-    assert(sym_ != -1);
-    return sym_;
-  }
+  bool defined() const;
+  symbol_id sym() const;
 
   operator expr() const;
   expr operator-() const { return -static_cast<expr>(*this); }

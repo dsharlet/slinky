@@ -2,6 +2,8 @@
 
 #include "simplify.h"
 
+#include <limits>
+
 namespace slinky {
 
 std::string node_context::name(symbol_id i) const {
@@ -499,12 +501,25 @@ bool is_finite(const expr& x) {
   return false;
 }
 
-var::var() : sym_(-1) {}
+namespace {
+
+symbol_id undef_var = std::numeric_limits<symbol_id>::max();
+
+}
+
+var::var() : sym_(undef_var) {}
 var::var(symbol_id sym) : sym_(sym) {}
 var::var(node_context& ctx, const std::string& sym) : sym_(ctx.insert(sym)) {}
 
+bool var::defined() const { return sym_ != undef_var; }
+
+symbol_id var::sym() const {
+  assert(defined());
+  return sym_;
+}
+
 var::operator expr() const {
-  assert(sym_ != -1);
+  assert(sym_ != undef_var);
   return expr(variable::make(sym_));
 }
 

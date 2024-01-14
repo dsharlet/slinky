@@ -12,10 +12,10 @@ using namespace slinky;
 thread_pool threads;
 
 struct memory_info {
-  std::atomic<std::ptrdiff_t> live_count = 0;
-  std::atomic<std::ptrdiff_t> live_size = 0;
-  std::atomic<std::ptrdiff_t> total_count = 0;
-  std::atomic<std::ptrdiff_t> total_size = 0;
+  std::atomic<index_t> live_count = 0;
+  std::atomic<index_t> live_size = 0;
+  std::atomic<index_t> total_count = 0;
+  std::atomic<index_t> total_size = 0;
 
   void track_allocate(std::size_t size) {
     live_count += 1;
