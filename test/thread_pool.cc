@@ -26,6 +26,8 @@ void thread_pool::wait_for(std::function<bool()> condition) {
       l.unlock();
       task();
       l.lock();
+      // This is pretty inefficient. It is here to wake up threads that are waiting for a condition to become true, that
+      // may have become true due to the task completing. There may be a better way to do this.
       cv_.notify_all();
     } else {
       cv_.wait(l);

@@ -29,8 +29,10 @@ public:
 
   int thread_count() const { return workers_.size(); }
 
+  // Enqueues `n` copies of task `t` on the thread pool queue.
   void enqueue(int n, const task& t);
   void enqueue(task t);
+  // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   void wait_for(std::function<bool()> condition);
 };
 
