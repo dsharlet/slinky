@@ -552,6 +552,9 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   result = alias_buffers(result);
   result = optimize_copies(result);
 
+  result = simplify(result);
+  result = reduce_scopes(result);
+
   return result;
 }
 

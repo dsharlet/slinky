@@ -397,6 +397,7 @@ TEST(copy_concatenate) {
   func concat =
       func::make_copy({in1, {point(x), point(y)}}, {in2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
 
+  // TODO: The checks on the input bounds are overzealous in this case. We shouldn't need to disable checks.
   pipeline p(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
 
   const int W = 8;

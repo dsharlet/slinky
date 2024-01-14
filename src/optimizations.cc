@@ -195,13 +195,19 @@ public:
       stmt result = make_buffer::make(
           op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size), std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
-      result = replace_copy_with_pad(op->sym, target.first).mutate(result);
-      set_result(result);
-      // Remove this as a candidate for other aliases.
-      for (std::optional<buffer_info>& i : alias_info) {
-        if (!i) continue;
-        i->do_not_alias(target.first);
+      stmt pad_result = replace_copy_with_pad(op->sym, target.first).mutate(result);
+      if (pad_result.same_as(result)) {
+        // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
+        // without understanding the lifetimes more carefully.
+        // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
+        // of the region that has been aliased so far, and allow another alias as long as it does not intersect that
+        // region. That will likely be very difficult to do symbolically.
+        for (std::optional<buffer_info>& i : alias_info) {
+          if (!i) continue;
+          i->do_not_alias(target.first);
+        }
       }
+      set_result(pad_result);
     } else if (!body.same_as(op->body)) {
       set_result(clone_with_new_body(op, std::move(body)));
     } else {

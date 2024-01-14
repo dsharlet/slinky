@@ -790,6 +790,58 @@ TEST(pipeline_copied_result) {
   }
 }
 
+TEST(pipeline_concatenated_result) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+
+  intm1->dim(1).bounds = in1->dim(1).bounds;
+  intm2->dim(1).bounds = in2->dim(1).bounds;
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add1 = func::make<const short, short>(add_1<short>, {in1, {point(x), point(y)}}, {intm1, {x, y}});
+  func add2 = func::make<const short, short>(add_1<short>, {in2, {point(x), point(y)}}, {intm2, {x, y}});
+  func concatenated = func::make_copy(
+      {intm1, {point(x), point(y)}}, {intm2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
+
+  // TODO: The checks on the input bounds are overzealous in this case. We shouldn't need to disable checks.
+  pipeline p(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H1 = 4;
+  const int H2 = 7;
+  buffer<short, 2> in1_buf({W, H1});
+  buffer<short, 2> in2_buf({W, H2});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 2> out_buf({W, H1 + H2});
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+
+  for (int y = 0; y < H1 + H2; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
+    }
+  }
+}
+
 TEST(pipeline_padded_stencil) {
   for (int schedule : {0, 1, 2, 3}) {
     // Make the pipeline
