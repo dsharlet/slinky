@@ -126,7 +126,8 @@ private:
 public:
   func() {}
   func(callable impl, std::vector<input> inputs, std::vector<output> outputs);
-  func(std::vector<input> inputs, output out, std::vector<char> padding);
+  func(std::vector<input> inputs, output out);
+  func(input input, output out, std::vector<char> padding);
   func(func&&);
   func& operator=(func&&);
   ~func();
@@ -222,14 +223,14 @@ public:
         {std::move(in1)}, {std::move(out1), std::move(out2)});
   }
 
-  static func make_copy(std::vector<input> in, output out, std::vector<char> padding = {}) {
-    return func(std::move(in), {std::move(out)}, std::move(padding));
+  static func make_copy(std::vector<input> in, output out) {
+    return func(std::move(in), {std::move(out)});
   }
   static func make_copy(input in, output out, std::vector<char> padding = {}) {
-    return func({std::move(in)}, {std::move(out)}, std::move(padding));
+    return func(std::move(in), {std::move(out)}, std::move(padding));
   }
-  static func make_copy(input in1, input in2, output out, std::vector<char> padding = {}) {
-    return func({std::move(in1), std::move(in2)}, {std::move(out)}, std::move(padding));
+  static func make_copy(input in1, input in2, output out) {
+    return func({std::move(in1), std::move(in2)}, {std::move(out)});
   }
 
   const call_stmt::callable& impl() const { return impl_; }

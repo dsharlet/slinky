@@ -28,7 +28,7 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
   }
 }
 
-buffer_expr::buffer_expr(const raw_buffer& c) { 
+buffer_expr::buffer_expr(const raw_buffer& c) {
   dims_.reserve(c.rank);
 
   for (index_t d = 0; d < static_cast<index_t>(c.rank); ++d) {
@@ -60,17 +60,16 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
   add_this_to_buffers();
 }
 
-func::func(std::vector<input> inputs, output out, std::vector<char> padding)
-    : func(nullptr, std::move(inputs), {std::move(out)}) {
+func::func(input input, output out, std::vector<char> padding) : func(nullptr, {std::move(input)}, {std::move(out)}) {
   padding_ = std::move(padding);
 }
 
-func::func(func&& m) {
-  *this = std::move(m);
-}
+func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
+
+func::func(func&& m) { *this = std::move(m); }
 func& func::operator=(func&& m) {
   if (this == &m) return *this;
-  m.remove_this_from_buffers(); 
+  m.remove_this_from_buffers();
   impl_ = std::move(m.impl_);
   inputs_ = std::move(m.inputs_);
   outputs_ = std::move(m.outputs_);
@@ -106,9 +105,9 @@ stmt func::make_call() const {
     }
     return call_stmt::make(impl_, std::move(inputs), std::move(outputs));
   } else {
+    assert(padding_.empty() || inputs_.size() == 1);
     std::vector<stmt> copies;
     for (const func::input& input : inputs_) {
-      // TODO: We should be able to handle copies from multiple inputs.
       assert(outputs_.size() == 1);
       std::vector<expr> src_x;
       std::vector<symbol_id> dst_x;
