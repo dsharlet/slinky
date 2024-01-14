@@ -253,6 +253,8 @@ public:
     for (const func::input& i : f->inputs()) {
       box_expr crop(i.buffer->rank());
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
+        // TODO: We may have been given bounds on the input that are smaller than the bounds implied by the output, e.g.
+        // in the case of copy with padding.
         expr min = substitute(i.bounds[d].min, output_mins);
         expr max = substitute(i.bounds[d].max, output_maxs);
         // The bounds may have been negated.
