@@ -83,6 +83,28 @@ public:
   void visit(const crop_dim* op) { visit_crop(op); }
 };
 
+// Keep substituting substitutions until nothing happens.
+std::vector<dim_expr> recursive_substitute(
+    std::vector<dim_expr> dims, std::span<const std::pair<expr, expr>> substitutions) {
+  while (true) {
+    bool changed = false;
+    for (dim_expr& dim : dims) {
+      dim_expr new_dim = dim;
+      for (const std::pair<expr, expr>& j : substitutions) {
+        new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
+        new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
+        new_dim.stride = substitute(new_dim.stride, j.first, j.second);
+        new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
+      }
+      if (!new_dim.same_as(dim)) {
+        changed = true;
+        dim = new_dim;
+      }
+    }
+    if (!changed) return dims;
+  }
+}
+
 // This pass tries to identify where call_stmt operations need to run to satisfy the requirements of their consumers (or
 // the output buffers). It updates `allocate` nodes to allocate enough memory for the uses of the allocation, and crops
 // producers to the required region.
@@ -118,26 +140,7 @@ public:
       substitutions.emplace_back(buffer_extent(alloc_var, d), bounds_d.extent());
       stride *= bounds_d.extent();
     }
-
-    // We need to keep replacing until nothing happens :(
-    std::vector<dim_expr> dims(op->dims);
-    while (true) {
-      bool changed = false;
-      for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-        dim_expr& dim = dims[d];
-        dim_expr new_dim = dim;
-        for (auto& j : substitutions) {
-          new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
-          new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
-          new_dim.stride = substitute(new_dim.stride, j.first, j.second);
-        }
-        if (!new_dim.same_as(dim)) {
-          changed = true;
-          dim = new_dim;
-        }
-      }
-      if (!changed) break;
-    }
+    std::vector<dim_expr> dims = recursive_substitute(op->dims, substitutions);
 
     // Check that the actual bounds we generated are bigger than the inferred bounds (in case the
     // user set the bounds to something too small).
@@ -297,7 +300,6 @@ public:
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
     // inferred value.
     // TODO: Is this actually a good design...?
-    std::vector<dim_expr> dims(op->dims);
     std::optional<std::pair<int, expr>> fold_info = fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
@@ -308,23 +310,7 @@ public:
         replacements.emplace_back(buffer_fold_factor(alloc_var, d), expr());
       }
     }
-
-    // We need to keep replacing until nothing happens :(
-    while (true) {
-      bool changed = false;
-      for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-        dim_expr& dim = dims[d];
-        dim_expr new_dim = dim;
-        for (auto& j : replacements) {
-          new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
-        }
-        if (!new_dim.same_as(dim)) {
-          changed = true;
-          dim = new_dim;
-        }
-      }
-      if (!changed) break;
-    }
+    std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
 
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
