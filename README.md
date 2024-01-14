@@ -50,11 +50,19 @@ pipeline p(ctx, {in}, {out});
 	- The output dimension is indexed by `x`, and both operations require a the single point interval `[x, x]` of their inputs.
 	- `multiply_2` and `add_1` are functions implementing this operation.
 
-This pipeline could be implemented in two ways by Slinky:
+The possible implementations of this pipeline vary between two extremes:
 1. Allocating `intm` to have the same size as `out`, and executing all of `mul`, followed by all of `add`.
 2. Allocating `intm` to have a single element, and executing `mul` followed by `add` in a single loop over the output elements.
 
 Of course, (2) would have extremely high overhead, and would not be a desireable strategy.
+If the buffers are large, (1) is inefficient due to poor memory locality.
+The ideal strategy is to split `out` into chunks, and compute the two operations at each chunk.
+This allows targeting a chunk size that fits in the cache, but amortizes the overhead of setting up the buffers and calling the functions implementing this operation.
+This can be implemented with the following schedule:
+```
+add.loops({x, chunk_size});
+mul.compute_at({&stencil, x});
+```
 
 ### Stencil example
 Here is an example of a pipeline that has a stage that is a stencil, such as a convlution:
@@ -100,21 +108,21 @@ intm = allocate<intm>({
 } on heap) {
  loop(y in [(buffer_min(out, 1) + -2), buffer_max(out, 1)]) {
    crop_dim<1>(intm, [(y + 1), (y + 1)]) {
-   call(add)
+   call(add, {in}, {intm})
   }
-  if((buffer_min(out, 1) <= y)) {
-   crop_dim<1>(out, [y, y]) {
-    call(sum3x3)
-   }
+  crop_dim<1>(out, [y, y]) {
+   call(sum3x3, {intm}, {out})
   }
  }
 }
 ```
 This program does the following:
 - Allocates a buffer for `intm`, with a fold factor of 3, meaning that the coordinates of the second dimension are modulo 3 when computing addresses.
-- Runs a loop over `y` starting from 2 rows before the first output row, calling `add` at each `y`.
-- After reaching the first output row, calls `sum3x3`, cropping the output to the current row `y`. This will access rows `(y - 1)%3`, `y%3`, and `(y + 1)%3` of `intm`. Since we've run `add` for 3 values of `y + 1` prior to the first call to `sum3x3`, all the required values of `intm` have been produced.
-- After the first row, the two functions are called in alternating order until `y` reaches the end of the output buffer.
+- Runs a loop over `y` starting from 2 rows before the first output row, calling `add` and `sum3x3` at each `y`.
+- The calls are cropped to the line to be produced on the current iteration `y`. `sum3x3` reads rows `y-1`, `y`, and `y+1` of `intm`, so we need to produce `y+1` of `intm` before producing `y` of `out`.
+- The `intm` buffer persists between loop iterations, so we only need to compute the newly required line `y+1` of `intm` on each iteration, lines `y-1` and `y` were already produced on previous iterations.
+- Because we started the loop two iterations of `y` early, lines `y-1` and `y` have already been produced for the first value of `y` of `out`. For these two "warmup" iterations, the `sum3x3` call's crop of `out` will be an empty buffer.
+- Because we only need lines `[y-1,y+1]`, we can "fold" the storage of `intm`, by rewriting all accesses `y` to be `y%3`.
 
 ### Matrix multiply example
 
@@ -155,9 +163,11 @@ pipeline p(ctx, {a, b, c}, {abc});
 	- The bounds required of the second operand is similar, we just need all the rows and one column instead. We use `dim(0).bounds` of the second operand to avoid relying on the intermediate buffer, which will have its bounds inferred (maybe this would still work...).
 	- `matmul` is the callback function implementing the matrix multiply operation.
 
-This pipeline could be implemented in two ways by Slinky:
+Much like the elementwise example, we can compute this in a variety of ways between two extremes:
 1. Allocating `ab` to have the full extent of the product `a x b`, and executing all of the first multiply followed by all of the second multiply.
-2. Each row of the second product depends only on the same row of the first product. Therefore, we can allocate `ab` to hold only one row of the product `a x b`, and compute both products in a loop over rows of the final result	.
+2. Each row of the second product depends only on the same row of the first product. Therefore, we can allocate `ab` to hold only one row of the product `a x b`, and compute both products in a loop over rows of the final result.
+
+In practice, matrix multiplication kernels like to produce multiple rows at once for maximum efficiency.
 
 ## Where this helps
 We expect this approach to fill a gap between two extremes that seem prevalent today (TODO: is this really true? I think so...):
