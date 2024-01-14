@@ -668,7 +668,7 @@ public:
       accept_buffer(op->args[0]);
 
       for (std::size_t i = 1; i < op->args.size(); ++i) {
-        op->args[i].accept(this);
+        if (op->args[i].defined()) op->args[i].accept(this);
       }
     } else {
       recursive_node_visitor::visit(op);
