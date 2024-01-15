@@ -293,11 +293,21 @@ var x(ctx, "x");
 var y(ctx, "y");
 var z(ctx, "z");
 
+expr pow(expr x, int n) {
+  if (n == 0) {
+    return 1;
+  } else if (n == 1) {
+    return x;
+  } else {
+    return x * pow(x, n - 1);
+  }
+}
+
 }  // namespace
 
 TEST(elementwise) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c); }
 TEST(elementwise_add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
 TEST(elementwise_mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
-TEST(elementwise_exp2) { test_expr_pipeline<int, 1>(ctx, a + x + x * x); }
-TEST(elementwise_exp3) { test_expr_pipeline<int, 1>(ctx, a + x + x * x + x * x * x); }
-TEST(elementwise_exp4) { test_expr_pipeline<int, 1>(ctx, a + x + x * x + x * x * x + x * x * x * x); }
+TEST(elementwise_exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
+TEST(elementwise_exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
+TEST(elementwise_exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
