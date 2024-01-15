@@ -178,15 +178,6 @@ We expect Slinky to execute suitable pipelines using less memory than (1), but a
 We emphasize *possible* because actually building a compiler that does this well on novel code is very difficult.
 We *think* Slinky's approach is a more easily solved problem, and will degrade more gracefully in failure cases.
 
-For example, consider a simple sequence of elementwise operations.
-This is a worst case scenario for (1), which will allocate a lot of memory, and access it with poor locality.
-(2) can do a good job, by generating code specific to the sequence of elementwise operations.
-(1) can only do a good job with a special case in the runtime.
-Slinky aims to handle this case by allocating a small amount of intermediate memory, and executing chunks of the operations at a time.
-We are betting that the dispatch overhead can be amortized enough to be insignificant compared to the locality improvements.
-
-This is not limited to sequences of elementwise operations, frameworks often have fused sequences of common operation patterns, but if you aren't using one of those patterns, you end up with the worst case scenario of the entire intermediate buffer being realized into memory with poor locality.
-
 ## Data we have so far
 This [performance app](apps/performance.cc) attempts to measure the overhead of interpreting pipelines at runtime.
 The test performs a copy between two 2D buffers of "total size" bytes, and the inner dimension is "copy size" bytes
