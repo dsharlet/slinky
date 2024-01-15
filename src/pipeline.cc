@@ -239,6 +239,8 @@ public:
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
+    // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
+    // output associated with a particular dimension.
     symbol_map<expr> output_mins, output_maxs;
     for (const func::output& o : f->outputs()) {
       for (std::size_t d = 0; d < o.dims.size(); ++d) {
@@ -250,11 +252,12 @@ public:
         max = max ? slinky::max(*max, dim_max) : dim_max;
       }
     }
+    // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
     for (const func::input& i : f->inputs()) {
       box_expr crop(i.buffer->rank());
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-        // TODO: We may have been given bounds on the input that are smaller than the bounds implied by the output, e.g.
-        // in the case of copy with padding.
+        // TODO (https://github.com/dsharlet/slinky/issues/21): We may have been given bounds on the input that are
+        // smaller than the bounds implied by the output, e.g. in the case of copy with padding.
         expr min = substitute(i.bounds[d].min, output_mins);
         expr max = substitute(i.bounds[d].max, output_maxs);
         // The bounds may have been negated.

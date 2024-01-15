@@ -813,7 +813,8 @@ TEST(pipeline_concatenated_result) {
   func concatenated = func::make_copy(
       {intm1, {point(x), point(y)}}, {intm2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
 
-  // TODO: The checks on the input bounds are overzealous in this case. We shouldn't need to disable checks.
+  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
+  // shouldn't need to disable checks.
   pipeline p(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
 
   // Run the pipeline.
