@@ -17,7 +17,7 @@
 namespace slinky {
 
 buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
-    : sym_(sym), elem_size_(elem_size), producer_(nullptr) {
+    : sym_(sym), elem_size_(elem_size), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
   auto var = variable::make(sym);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
@@ -28,14 +28,15 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
   }
 }
 
-buffer_expr::buffer_expr(const raw_buffer& c) {
-  dims_.reserve(c.rank);
+buffer_expr::buffer_expr(symbol_id sym, const raw_buffer* c)
+    : sym_(sym), elem_size_(c->elem_size), producer_(nullptr), constant_(c) {
+  dims_.reserve(c->rank);
 
-  for (index_t d = 0; d < static_cast<index_t>(c.rank); ++d) {
-    expr min = c.dims[d].min();
-    expr max = c.dims[d].max();
-    expr stride = c.dims[d].stride();
-    expr fold_factor = c.dims[d].fold_factor();
+  for (index_t d = 0; d < static_cast<index_t>(c->rank); ++d) {
+    expr min = c->dims[d].min();
+    expr max = c->dims[d].max();
+    expr stride = c->dims[d].stride();
+    expr fold_factor = c->dims[d].fold_factor();
     dims_.emplace_back(bounds(min, max), stride, fold_factor);
   }
 }
@@ -48,7 +49,12 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, ind
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), elem_size, rank));
 }
 
-buffer_expr_ptr buffer_expr::make(const raw_buffer& buffer) { return buffer_expr_ptr(new buffer_expr(buffer)); }
+buffer_expr_ptr buffer_expr::make(symbol_id sym, const raw_buffer* buffer) {
+  return buffer_expr_ptr(new buffer_expr(sym, buffer));
+}
+buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, const raw_buffer* buffer) {
+  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), buffer));
+}
 
 void buffer_expr::set_producer(func* f) {
   assert(producer_ == nullptr || f == nullptr);
@@ -149,7 +155,8 @@ class pipeline_builder {
   stmt result;
 
 public:
-  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs) {
+  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
+      std::vector<buffer_expr_ptr>& constants) {
     // To start with, we need to produce the outputs.
     for (auto& i : outputs) {
       to_produce.insert(i);
@@ -170,7 +177,11 @@ public:
 
         for (const func::input& j : i->producer()->inputs()) {
           if (!to_produce.count(j.buffer)) {
-            produce_next.insert(j.buffer);
+            if (j.buffer->constant()) {
+              constants.push_back(j.buffer);
+            } else {
+              produce_next.insert(j.buffer);
+            }
           }
         }
       }
@@ -382,8 +393,9 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
-  pipeline_builder builder(inputs, outputs);
+    const std::vector<buffer_expr_ptr>& outputs, std::vector<buffer_expr_ptr>& constants,
+    const build_options& options) {
+  pipeline_builder builder(inputs, outputs, constants);
 
   stmt result;
 
@@ -417,6 +429,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   for (const buffer_expr_ptr& i : inputs) {
     input_syms.push_back(i->sym());
   }
+  for (const buffer_expr_ptr& i : constants) {
+    input_syms.push_back(i->sym());
+  }
   result = infer_bounds(result, ctx, input_syms);
 
   result = fix_buffer_races(result);
@@ -445,7 +460,7 @@ pipeline::pipeline(node_context& ctx, std::vector<var> args, std::vector<buffer_
   for (const var& i : args) {
     args_.push_back(i.sym());
   }
-  body = build_pipeline(ctx, inputs_, outputs_, options);
+  body = build_pipeline(ctx, inputs_, outputs_, constants_, options);
 }
 
 pipeline::pipeline(node_context& ctx, std::vector<buffer_expr_ptr> inputs, std::vector<buffer_expr_ptr> outputs,
@@ -465,6 +480,9 @@ index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_c
   }
   for (std::size_t i = 0; i < outputs.size(); ++i) {
     ctx[outputs_[i]->sym()] = reinterpret_cast<index_t>(outputs[i]);
+  }
+  for (const buffer_expr_ptr& i : constants_) {
+    ctx[i->sym()] = reinterpret_cast<index_t>(i->constant());
   }
 
   return slinky::evaluate(body, ctx);

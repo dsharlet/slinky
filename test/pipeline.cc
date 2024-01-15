@@ -920,3 +920,40 @@ TEST(pipeline_padded_stencil) {
     }
   }
 }
+
+TEST(pipeline_constant) {
+  // Make the pipeline
+  node_context ctx;
+
+  const int W = 20;
+  const int H = 10;
+
+  buffer<short, 2> constant_buf({W, H});
+  init_random(constant_buf);
+
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+  auto constant = buffer_expr::make(ctx, "constant", &constant_buf);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add = func::make<const short, short>(add_1<short>, {constant, {point(x), point(y)}}, {out, {x, y}});
+
+  pipeline p(ctx, {}, {out});
+
+  // Run the pipeline.
+  buffer<short, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate({}, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), constant_buf(x, y) + 1);
+    }
+  }
+}

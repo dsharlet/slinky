@@ -46,13 +46,15 @@ public:
   }
 
   void visit(const constant* c) override {
+    std::abort();
+    // This isn't right, because `value` is on the stack and needs to be kept alive.
     buffer<T, Rank> value;
     for (std::size_t d = 0; d < Rank; ++d) {
       value.dims[d].set_stride(0);
     }
     value.allocate();
     memcpy(value.base(), &c->value, sizeof(T));
-    result = buffer_expr::make(value);
+    result = buffer_expr::make(ctx, "constant", &value);
   }
 
   buffer_expr_ptr visit_expr(const expr& e) {

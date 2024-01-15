@@ -27,12 +27,13 @@ class buffer_expr : public ref_counted {
   std::vector<dim_expr> dims_;
 
   func* producer_;
+  const raw_buffer* constant_;
 
   memory_type storage_ = memory_type::heap;
   loop_id store_at_;
 
   buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank);
-  buffer_expr(const raw_buffer& buffer);
+  buffer_expr(symbol_id sym, const raw_buffer* buffer);
   buffer_expr(const buffer_expr&) = delete;
   buffer_expr(buffer_expr&&) = delete;
   buffer_expr& operator=(const buffer_expr&) = delete;
@@ -45,7 +46,12 @@ class buffer_expr : public ref_counted {
 public:
   static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank);
-  static buffer_expr_ptr make(const raw_buffer& buffer);
+  // Make a constant buffer_expr. This does not take ownership of the object, and it must be kept alive as long as this
+  // buffer_expr is alive.
+  // TODO: This should probably either be some kind of smart pointer, or maybe at least copy the raw_buffer object (but
+  // not the underlying data).
+  static buffer_expr_ptr make(symbol_id sym, const raw_buffer* buffer);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& sum, const raw_buffer* buffer);
 
   symbol_id sym() const { return sym_; }
   index_t elem_size() const { return elem_size_; }
@@ -67,6 +73,8 @@ public:
   const loop_id& store_at() const { return store_at_; }
 
   const func* producer() const { return producer_; }
+
+  const raw_buffer* constant() const { return constant_; }
 };
 
 // Represents a node of computation in a pipeline.
@@ -190,7 +198,8 @@ public:
   }
 
   template <typename In1, typename In2, typename In3, typename Out1>
-  static func make(callable_wrapper<const In1, const In2, const In3, Out1> impl, input in1, input in2, input in3, output out1) {
+  static func make(
+      callable_wrapper<const In1, const In2, const In3, Out1> impl, input in1, input in2, input in3, output out1) {
     symbol_id in1_sym = in1.sym();
     symbol_id in2_sym = in2.sym();
     symbol_id in3_sym = in3.sym();
@@ -213,8 +222,7 @@ public:
     symbol_id out1_sym = out1.sym();
     symbol_id out2_sym = out2.sym();
     return func(
-        [=, impl = std::move(impl)](
-            eval_context& ctx) -> index_t {
+        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
           const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
           const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
           const raw_buffer* out2_buf = ctx.lookup_buffer(out2_sym);
@@ -223,9 +231,7 @@ public:
         {std::move(in1)}, {std::move(out1), std::move(out2)});
   }
 
-  static func make_copy(std::vector<input> in, output out) {
-    return func(std::move(in), {std::move(out)});
-  }
+  static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
   static func make_copy(input in, output out, std::vector<char> padding = {}) {
     return func(std::move(in), {std::move(out)}, std::move(padding));
   }
@@ -251,6 +257,7 @@ class pipeline {
   std::vector<symbol_id> args_;
   std::vector<buffer_expr_ptr> inputs_;
   std::vector<buffer_expr_ptr> outputs_;
+  std::vector<buffer_expr_ptr> constants_;
 
   stmt body;
 
