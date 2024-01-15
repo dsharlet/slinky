@@ -1,13 +1,16 @@
 #ifndef SLINKY_TEST_THREAD_POOL_H
 #define SLINKY_TEST_THREAD_POOL_H
 
+#include <condition_variable>
 #include <deque>
 #include <functional>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
+#include <thread>
 
 // This file provides a simple thread pool that can be used for testing parallel work.
+// Note that this is in the test folder, not the src folder. Slinky does not provide a
+// thread pool, to support parallelism in slinky pipelines, you must provide implementations of
+// `eval_context::enqueue_many`, `eval_context::enqueue_one`, and `eval_context::wait_for`.
 
 namespace slinky {
 

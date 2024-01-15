@@ -82,24 +82,17 @@ void fill(T* dst, T value, index_t size) {
   std::fill(dst, dst + size, value);
 }
 
-void fill(char* dst, index_t elem_size, const void* value, index_t size) {
-  if (!value) return;
-
-  switch (elem_size) {
-  case 1: fill(reinterpret_cast<uint8_t*>(dst), *reinterpret_cast<const uint8_t*>(value), size); return;
-  case 2: fill(reinterpret_cast<uint16_t*>(dst), *reinterpret_cast<const uint16_t*>(value), size); return;
-  case 4: fill(reinterpret_cast<uint32_t*>(dst), *reinterpret_cast<const uint32_t*>(value), size); return;
-  case 8: fill(reinterpret_cast<uint64_t*>(dst), *reinterpret_cast<const uint64_t*>(value), size); return;
-  }
-  for (index_t i = 0; i < size; ++i) {
-    memcpy(dst, value, elem_size);
-    dst += elem_size;
-  }
-}
-
 void fill(char* dst, index_t stride, index_t elem_size, const void* value, index_t size) {
   if (!value) return;
 
+  if (stride == elem_size) {
+    switch (elem_size) {
+    case 1: fill(reinterpret_cast<uint8_t*>(dst), *reinterpret_cast<const uint8_t*>(value), size); return;
+    case 2: fill(reinterpret_cast<uint16_t*>(dst), *reinterpret_cast<const uint16_t*>(value), size); return;
+    case 4: fill(reinterpret_cast<uint32_t*>(dst), *reinterpret_cast<const uint32_t*>(value), size); return;
+    case 8: fill(reinterpret_cast<uint64_t*>(dst), *reinterpret_cast<const uint64_t*>(value), size); return;
+    }
+  }
   for (index_t i = 0; i < size; ++i) {
     memcpy(dst, value, elem_size);
     dst += stride;
@@ -119,11 +112,7 @@ void fill(char* dst, const copy_dim* dims, index_t elem_size, const void* value,
 
   const copy_dim& d = dims[dim];
   if (dim == 0) {
-    if (d.dst_stride == elem_size) {
-      fill(dst, elem_size, value, d.total_size);
-    } else {
-      fill(dst, d.dst_stride, elem_size, value, d.total_size);
-    }
+    fill(dst, d.dst_stride, elem_size, value, d.total_size);
   } else {
     for (index_t i = 0; i < d.total_size; ++i) {
       fill(dst, dims, elem_size, value, dim - 1);
@@ -136,38 +125,25 @@ void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, c
   // src can be nullptr, in which case we should only fill the padding.
   const copy_dim& d = dims[dim];
   if (dim == 0) {
-    if (d.dst_stride == elem_size) {
-      if (d.pad_before > 0) {
-        fill(dst, elem_size, padding, d.pad_before);
-        dst += d.pad_before * d.dst_stride;
-      }
-      if (d.src_stride == elem_size) {
+    if (d.pad_before > 0) {
+      fill(dst, d.dst_stride, elem_size, padding, d.pad_before);
+      dst += d.dst_stride * d.pad_before;
+    }
+    if (src) {
+      if (d.dst_stride == elem_size && d.src_stride == elem_size) {
         // src and dst are both dense, this can be implemented by memcpy.
-        if (src) memcpy(dst, src, d.size * elem_size);
-        dst += d.size * elem_size;
+        memcpy(dst, src, d.size * elem_size);
       } else if (d.src_stride == 0) {
-        // Special case for broadcasting to a dense dst.
-        if (src) fill(dst, elem_size, src, d.size);
-        dst += d.size * elem_size;
+        // Special case for broadcasting.
+        fill(dst, d.dst_stride, elem_size, src, d.size);
       } else {
         // Need to copy one element at a time to skip padding.
-        if (src) copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
-        dst += d.size * d.dst_stride;
+        copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
       }
-      if (d.pad_after > 0) {
-        fill(dst, elem_size, padding, d.pad_after);
-      }
-    } else {
-      // Need to copy one element at a time to skip padding.
-      if (d.pad_before > 0) {
-        fill(dst, d.dst_stride, elem_size, padding, d.pad_before);
-        dst += d.dst_stride * d.pad_before;
-      }
-      if (src) copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
-      dst += d.size * d.dst_stride;
-      if (d.pad_after > 0) {
-        fill(dst, d.dst_stride, elem_size, padding, d.pad_after);
-      }
+    }
+    dst += d.size * d.dst_stride;
+    if (d.pad_after > 0) {
+      fill(dst, d.dst_stride, elem_size, padding, d.pad_after);
     }
   } else {
     for (index_t i = 0; i < d.pad_before; ++i) {
