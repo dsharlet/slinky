@@ -18,29 +18,39 @@ TEST(copy_trivial_1d) {
   var x(ctx, "x");
   var dx(ctx, "dx");
 
-  // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x + dx)}}, {out, {x}});
+  std::vector<char> padding(sizeof(int), 0);
 
-  pipeline p(ctx, {dx}, {in}, {out});
+  // This copy should be implemented as a single call to copy.
+  func copy = func::make_copy({in, {point(x + dx)}}, {out, {x}}, padding);
+
+  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
+  // shouldn't need to disable checks.
+  pipeline p(ctx, {dx}, {in}, {out}, build_options{.no_checks = true});
 
   const int W = 10;
   buffer<int, 1> out_buf({W});
   out_buf.allocate();
 
   for (int offset : {0, 2, -2}) {
-    // Run the pipeline.
-    buffer<int, 1> in_buf({W});
-    in_buf.translate(offset);
-    init_random(in_buf);
+    for (int in_offset : {0, offset}) {
+      // Run the pipeline.
+      buffer<int, 1> in_buf({W});
+      in_buf.translate(in_offset);
+      init_random(in_buf);
 
-    const index_t args[] = {offset};
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
-    p.evaluate(args, inputs, outputs, eval_ctx);
+      const index_t args[] = {offset};
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      eval_context eval_ctx;
+      p.evaluate(args, inputs, outputs, eval_ctx);
 
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x), in_buf(x + offset));
+      for (int x = 0; x < W; ++x) {
+        if (in_buf.contains(x + offset)) {
+          ASSERT_EQ(out_buf(x), in_buf(x + offset));
+        } else {
+          ASSERT_EQ(out_buf(x), 0);
+        }
+      }
     }
   }
 }
@@ -55,11 +65,15 @@ TEST(copy_trivial_2d) {
   var x(ctx, "x");
   var y(ctx, "y");
   var dy(ctx, "dy");
+  
+  std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x), point(y + dy)}}, {out, {x, y}});
+  func copy = func::make_copy({in, {point(x), point(y + dy)}}, {out, {x, y}}, padding);
 
-  pipeline p(ctx, {dy}, {in}, {out});
+  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
+  // shouldn't need to disable checks.
+  pipeline p(ctx, {dy}, {in}, {out}, build_options{.no_checks = true});
 
   // Run the pipeline.
   const int H = 20;
@@ -68,19 +82,25 @@ TEST(copy_trivial_2d) {
   out_buf.allocate();
 
   for (int offset : {0, -4, 3}) {
-    buffer<int, 2> in_buf({W, H});
-    in_buf.translate(0, offset);
-    init_random(in_buf);
+    for (int in_offset : {0, offset}) {
+      buffer<int, 2> in_buf({W, H});
+      in_buf.translate(0, in_offset);
+      init_random(in_buf);
 
-    const index_t args[] = {offset};
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
-    p.evaluate(args, inputs, outputs, eval_ctx);
+      const index_t args[] = {offset};
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      eval_context eval_ctx;
+      p.evaluate(args, inputs, outputs, eval_ctx);
 
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y), in_buf(x, y + offset));
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          if (in_buf.contains(x, y + offset)) {
+            ASSERT_EQ(out_buf(x, y), in_buf(x, y + offset));
+          } else {
+            ASSERT_EQ(out_buf(x, y), 0);
+          }
+        }
       }
     }
   }
@@ -426,84 +446,3 @@ TEST(copy_concatenate) {
     }
   }
 }
-
-void test_copy_padded_translated(int translate_x, int translate_z, bool clamped) {
-  // Make the pipeline
-  node_context ctx;
-
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 4);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 4);
-
-  var c(ctx, "c");
-  var x(ctx, "x");
-  var y(ctx, "y");
-  var z(ctx, "z");
-
-  // We could just clamp using the bounds directly below, but that would hardcode the bounds we clamp
-  // in the pipeline. This way, the bounds can vary at eval-time.
-  var w(ctx, "w");
-  var h(ctx, "h");
-  var dx(ctx, "dx");
-  var dz(ctx, "dz");
-
-  // This is elementwise, but with a clamp to limit the bounds required of the input.
-  std::vector<char> padding;
-  if (!clamped) {
-    padding.assign(sizeof(int), 0);
-  }
-  expr in_x = clamped ? clamp(x + dx, 0, w - 1) : x + dx;
-  expr in_y = clamped ? clamp(y, 0, h - 1) : y;
-  func crop = func::make_copy({in, {point(c), point(in_x), point(in_y), point(z + dz)}}, {out, {c, x, y, z}}, padding);
-
-  pipeline p(ctx, {w, h, dx, dz}, {in}, {out});
-
-  const int C = 4;
-  const int W = 8;
-  const int H = 5;
-  const int D = 3;
-
-  // Run the pipeline.
-  buffer<int, 4> in_buf({C, W, H, D});
-  in_buf.dim(3).translate(translate_z);
-  init_random(in_buf);
-
-  // Ask for an output padded in every direction.
-  buffer<int, 4> out_buf({C, W * 3, H * 3, D});
-  out_buf.translate(0, -W, -H);
-  out_buf.allocate();
-
-  index_t args[] = {W, H, translate_x, translate_z};
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
-  p.evaluate(args, inputs, outputs, eval_ctx);
-
-  for (int z = 0; z < D; ++z) {
-    int in_z = z + translate_z;
-    for (int y = -H; y < 2 * H; ++y) {
-      for (int x = -W; x < 2 * W; ++x) {
-        int in_x = x + translate_x;
-        for (int c = 0; c < C; ++c) {
-          if (clamped) {
-            ASSERT_EQ(out_buf(c, x, y, z), in_buf(c, std::clamp(in_x, 0, W - 1), std::clamp(y, 0, H - 1), in_z));
-          } else if (in_buf.contains(c, in_x, y, in_z)) {
-            ASSERT_EQ(out_buf(c, x, y, z), in_buf(c, in_x, y, in_z));
-          } else {
-            ASSERT_EQ(out_buf(c, x, y, z), 0);
-          }
-        }
-      }
-    }
-  }
-}
-
-//TEST(copy_clamped) { test_copy_padded_translated(0, 0, true); }
-//TEST(copy_translated_clamped) { 
-//  test_copy_padded_translated(0, 0, true);
-//  test_copy_padded_translated(-2, 0, true);
-//  test_copy_padded_translated(1, -1, true);
-//  test_copy_padded_translated(-3, 3, true);
-//}
-
-// TODO: How to represent padding without clamps?
-//TEST(copy_padded) { test_copy_padded_translated(0, 0, false); }
