@@ -178,7 +178,9 @@ public:
         for (const func::input& j : i->producer()->inputs()) {
           if (!to_produce.count(j.buffer)) {
             if (j.buffer->constant()) {
-              constants.push_back(j.buffer);
+              if (std::find(constants.begin(), constants.end(), j.buffer) == constants.end()) {
+                constants.push_back(j.buffer);
+              }
             } else {
               produce_next.insert(j.buffer);
             }
