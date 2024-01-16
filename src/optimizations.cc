@@ -1,7 +1,6 @@
 #include "optimizations.h"
 
 #include <cassert>
-#include <iostream>
 #include <map>
 #include <set>
 
