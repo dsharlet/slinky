@@ -328,6 +328,10 @@ TEST(pipeline_stencil) {
       if (split > 0) {
         stencil.loops({{y, split, lm}});
         add.compute_at({&stencil, y});
+        if (lm == loop_mode::parallel) {
+          intm->store_at({&stencil, y});
+          intm->store_in(memory_type::stack);
+        }
       }
 
       pipeline p(ctx, {in}, {out});
@@ -350,7 +354,7 @@ TEST(pipeline_stencil) {
       if (lm == loop_mode::serial && split > 0) {
         ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
       }
-      ASSERT_EQ(eval_ctx.heap.total_count, 1);
+      ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
 
       for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -392,6 +396,12 @@ TEST(pipeline_stencil_chain) {
         stencil2.loops({{y, split, lm}});
         add.compute_at({&stencil2, y});
         stencil1.compute_at({&stencil2, y});
+        if (lm == loop_mode::parallel) {
+          intm->store_at({&stencil2, y});
+          intm2->store_at({&stencil2, y});
+          intm->store_in(memory_type::stack);
+          intm2->store_in(memory_type::stack);
+        }
       }
 
       pipeline p(ctx, {in}, {out});
@@ -415,7 +425,7 @@ TEST(pipeline_stencil_chain) {
         ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short) +
                                                 (W + 4) * align_up(split + 2, split) * sizeof(short));
       }
-      ASSERT_EQ(eval_ctx.heap.total_count, 2);
+      ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 2 : 0);
 
       // Run the pipeline stages manually to get the reference result.
       buffer<short, 2> ref_intm({W + 4, H + 4});
