@@ -86,16 +86,18 @@ int main(int argc, const char** argv) {
         in_buf.base()[i] = rand() % 64;
       }
 
+      eval_context ctx;
+
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
 
       memset(out_buf.base(), 0, total_size);
-      double loop_t = benchmark([&]() { loop.evaluate(inputs, outputs); });
+      double loop_t = benchmark([&]() { loop.evaluate(inputs, outputs, ctx); });
       assert(memcmp(out_buf.base(), in_buf.base(), total_size) == 0);
       std::cout << total_size / (loop_t * 1e9) << " | ";
 
       memset(out_buf.base(), 0, total_size);
-      double no_loop_t = benchmark([&]() { no_loop.evaluate(inputs, outputs); });
+      double no_loop_t = benchmark([&]() { no_loop.evaluate(inputs, outputs, ctx); });
       assert(memcmp(out_buf.base(), in_buf.base(), total_size) == 0);
       std::cout << total_size / (no_loop_t * 1e9) << " | ";
 
