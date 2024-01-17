@@ -242,17 +242,6 @@ public:
     }
     set_result(result);
   }
-
-  void visit(const block* op) override {
-    // Visit blocks in reverse order. TODO: Is this really sufficient?
-    stmt b = mutate(op->b);
-    stmt a = mutate(op->a);
-    if (a.same_as(op->a) && b.same_as(op->b)) {
-      set_result(op);
-    } else {
-      set_result(block::make(a, b));
-    }
-  }
 };
 
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
