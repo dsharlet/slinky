@@ -237,9 +237,27 @@ public:
         continue;
       }
 
-      if (i->producer()->compute_at() && !(*i->producer()->compute_at() == at)) {
-        // This shouldn't be computed here.
-        continue;
+      if (i->producer()->compute_at()) {
+        if (!(*i->producer()->compute_at() == at)) {
+          // This shouldn't be computed here.
+          continue;
+        }
+      } else if (!at.root()) {
+        // By default, we want to compute everything as soon as it is consumed, so it ends up in the innermost loop possible,
+        // unless this doesn't depend on the loops we're in at all.
+        bool consumed = false;
+        for (const buffer_expr_ptr& j : produced) {
+          if (!j->producer()) continue;
+          for (const func::input& k : j->producer()->inputs()) {
+            if (k.buffer == i) {
+              consumed = true;
+              break;
+            }
+          }
+        }
+        if (!consumed) {
+          continue;
+        }
       }
 
       // We're in the right place, and the func is ready to be computed!
