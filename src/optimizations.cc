@@ -46,13 +46,12 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
 }
 
 bool is_elementwise(const box_expr& in_x, symbol_id out) {
-  expr out_var = variable::make(out);
   for (index_t d = 0; d < static_cast<index_t>(in_x.size()); ++d) {
     // TODO: This is too lax, we really need to check for elementwise before we've computed the bounds of this
     // particular call, so we can check that a single point of the output is a function of the same point in the input
     // (and not a rectangle of output being a function of a rectangle of the input).
-    if (!match(in_x[d].min, buffer_min(out_var, d))) return false;
-    if (!match(in_x[d].max, buffer_max(out_var, d))) return false;
+    if (!is_buffer_min(in_x[d].min, out, d)) return false;
+    if (!is_buffer_max(in_x[d].max, out, d)) return false;
   }
   return true;
 }

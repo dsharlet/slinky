@@ -1585,6 +1585,8 @@ public:
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
       interval_expr bounds_i = mutate(op->bounds[i]);
+      if (is_buffer_min(bounds_i.min, op->sym, i)) bounds_i.min = expr();
+      if (is_buffer_max(bounds_i.max, op->sym, i)) bounds_i.max = expr();
       changed = changed || !bounds_i.same_as(op->bounds[i]);
 
       bounds[i] = bounds_i;
@@ -1629,6 +1631,8 @@ public:
 
   void visit(const crop_dim* op) override {
     interval_expr bounds = mutate(op->bounds);
+    if (is_buffer_min(bounds.min, op->sym, op->dim)) bounds.min = expr();
+    if (is_buffer_max(bounds.max, op->sym, op->dim)) bounds.max = expr();
     if (!bounds.min.defined() && !bounds.max.defined()) {
       set_result(mutate(op->body));
       return;

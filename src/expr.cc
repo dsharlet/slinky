@@ -501,6 +501,22 @@ bool is_finite(const expr& x) {
   return false;
 }
 
+bool is_buffer_min(const expr& x, symbol_id sym, int dim) {
+  const call* c = x.as<call>();
+  if (!c || c->intrinsic != intrinsic::buffer_min) return false;
+
+  assert(c->args.size() == 2);
+  return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
+}
+
+bool is_buffer_max(const expr& x, symbol_id sym, int dim) {
+  const call* c = x.as<call>();
+  if (!c || c->intrinsic != intrinsic::buffer_max) return false;
+
+  assert(c->args.size() == 2);
+  return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
+}
+
 namespace {
 
 symbol_id undef_var = std::numeric_limits<symbol_id>::max();
