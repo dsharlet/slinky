@@ -149,7 +149,7 @@ class pipeline_builder {
   // producers as necessary.
   std::set<buffer_expr_ptr> to_produce;
   std::list<buffer_expr_ptr> to_allocate;
-  std::set<buffer_expr_ptr> produced;
+  std::set<buffer_expr_ptr> produced, consumed;
   std::set<buffer_expr_ptr> allocated;
 
   stmt result;
@@ -243,19 +243,10 @@ public:
           continue;
         }
       } else if (!at.root()) {
-        // By default, we want to compute everything as soon as it is consumed, so it ends up in the innermost loop possible,
-        // unless this doesn't depend on the loops we're in at all.
-        bool consumed = false;
-        for (const buffer_expr_ptr& j : produced) {
-          if (!j->producer()) continue;
-          for (const func::input& k : j->producer()->inputs()) {
-            if (k.buffer == i) {
-              consumed = true;
-              break;
-            }
-          }
-        }
-        if (!consumed) {
+        // By default, we want to compute everything as soon as it is consumed, so it ends up in the innermost loop
+        // possible. But if we do this blindly, then unrelated pipelines that aren't consumed inside these loops at
+        // all will get generated here.
+        if (!consumed.count(i)) {
           continue;
         }
       }
@@ -382,6 +373,9 @@ public:
       if (!allocated.count(i.buffer)) {
         to_allocate.push_front(i.buffer);
       }
+    }
+    for (const func::input& i : f->inputs()) {
+      consumed.insert(i.buffer);
     }
 
     // Generate the loops that we want to be explicit.
