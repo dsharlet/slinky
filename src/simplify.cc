@@ -1573,6 +1573,22 @@ public:
     }
   }
 
+  // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
+  static expr simplify_crop_bound(expr x, symbol_id sym, int dim) {
+    if (const class max* m = x.as<class max>()) {
+      if (is_buffer_min(m->a, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
+      if (is_buffer_min(m->b, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
+    } else if (const class min* m = x.as<class min>()) {
+      if (is_buffer_max(m->a, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
+      if (is_buffer_max(m->b, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
+    }
+    return x;
+  }
+
+  static interval_expr simplify_crop_bounds(interval_expr i, symbol_id sym, int dim) {
+    return {simplify_crop_bound(i.min, sym, dim), simplify_crop_bound(i.max, sym, dim)};
+  }
+
   void visit(const crop_buffer* op) override {
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
@@ -1580,13 +1596,14 @@ public:
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
+    expr sym_var = variable::make(op->sym);
     std::optional<box_expr> prev_bounds = buffer_bounds[op->sym];
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
-      interval_expr bounds_i = mutate(op->bounds[i]);
-      if (is_buffer_min(bounds_i.min, op->sym, i)) bounds_i.min = expr();
-      if (is_buffer_max(bounds_i.max, op->sym, i)) bounds_i.max = expr();
+      interval_expr bounds_i = simplify_crop_bounds(mutate(op->bounds[i]), op->sym, i);
+      if (prove_true(bounds_i.min <= buffer_min(sym_var, i))) bounds_i.min = expr();
+      if (prove_true(bounds_i.max >= buffer_max(sym_var, i))) bounds_i.max = expr();
       changed = changed || !bounds_i.same_as(op->bounds[i]);
 
       bounds[i] = bounds_i;
@@ -1630,9 +1647,10 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    interval_expr bounds = mutate(op->bounds);
-    if (is_buffer_min(bounds.min, op->sym, op->dim)) bounds.min = expr();
-    if (is_buffer_max(bounds.max, op->sym, op->dim)) bounds.max = expr();
+    interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->sym, op->dim);
+    expr sym_var = variable::make(op->sym);
+    if (prove_true(bounds.min <= buffer_min(sym_var, op->dim))) bounds.min = expr();
+    if (prove_true(bounds.max >= buffer_max(sym_var, op->dim))) bounds.max = expr();
     if (!bounds.min.defined() && !bounds.max.defined()) {
       set_result(mutate(op->body));
       return;
