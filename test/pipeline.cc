@@ -114,7 +114,6 @@ TEST(pipeline_elementwise_1d) {
 
         if (split > 0) {
           add.loops({{x, split, lm}});
-          mul.compute_at({&add, x});
           if (schedule_storage) {
             intm->store_at({&add, x});
             intm->store_in(memory_type::stack);
@@ -191,7 +190,6 @@ TEST(pipeline_matmuls) {
 
       if (split > 0) {
         matmul_abc.loops({{i, split, lm}});
-        matmul_ab.compute_at({&matmul_abc, i});
 
         if (lm == loop_mode::parallel) {
           ab->store_at({&matmul_abc, i});
@@ -284,7 +282,6 @@ TEST(pipeline_pyramid) {
       {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}, {out, {x, y}});
 
   upsample.loops({{y, 1}});
-  downsample.compute_at({&upsample, y});
 
   pipeline p(ctx, {in}, {out});
 
@@ -327,7 +324,6 @@ TEST(pipeline_stencil) {
 
       if (split > 0) {
         stencil.loops({{y, split, lm}});
-        add.compute_at({&stencil, y});
         if (lm == loop_mode::parallel) {
           intm->store_at({&stencil, y});
           intm->store_in(memory_type::stack);
@@ -394,8 +390,6 @@ TEST(pipeline_stencil_chain) {
 
       if (split > 0) {
         stencil2.loops({{y, split, lm}});
-        add.compute_at({&stencil2, y});
-        stencil1.compute_at({&stencil2, y});
         if (lm == loop_mode::parallel) {
           intm->store_at({&stencil2, y});
           intm2->store_at({&stencil2, y});
@@ -690,7 +684,6 @@ TEST(pipeline_unrelated) {
   func add2 = func::make<const int, int>(add_1<int>, {intm2, {point(x)}}, {out2, {x}});
 
   stencil1.loops({{y, 2}});
-  add1.compute_at({&stencil1, y});
 
   pipeline p(ctx, {in1, in2}, {out1, out2});
 
@@ -760,10 +753,12 @@ TEST(pipeline_copied_result) {
 
     switch (schedule) {
     case 0: break;
-    case 1: padded.loops({y}); break;
+    case 1:
+      padded.loops({y});
+      stencil.compute_root();
+      break;
     case 2:
       padded.loops({y});
-      stencil.compute_at({&padded, y});
       break;
     }
 
@@ -877,15 +872,13 @@ TEST(pipeline_padded_stencil) {
 
     switch (schedule) {
     case 0: break;
-    case 1: stencil.loops({y}); break;
-    case 2:
+    case 1:
       stencil.loops({y});
-      padded.compute_at({&stencil, y});
+      padded.compute_root();
       break;
+    case 2: stencil.loops({y}); break;
     case 3:
       stencil.loops({y});
-      padded.compute_at({&stencil, y});
-      add.compute_at({&stencil, y});
       break;
     }
 

@@ -30,7 +30,7 @@ class buffer_expr : public ref_counted {
   const raw_buffer* constant_;
 
   memory_type storage_ = memory_type::heap;
-  loop_id store_at_;
+  std::optional<loop_id> store_at_;
 
   buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank);
   buffer_expr(symbol_id sym, const raw_buffer* buffer);
@@ -66,11 +66,19 @@ public:
   }
   memory_type storage() const { return storage_; }
 
-  buffer_expr& store_at(loop_id at) {
+  buffer_expr& store_at(const loop_id& at) {
     store_at_ = at;
     return *this;
   }
-  const loop_id& store_at() const { return store_at_; }
+  buffer_expr& store_at(std::optional<loop_id> at) {
+    store_at_ = std::move(at);
+    return *this;
+  }
+  buffer_expr& store_root() {
+    store_at_ = loop_id();
+    return *this;
+  }
+  const std::optional<loop_id>& store_at() const { return store_at_; }
 
   const func* producer() const { return producer_; }
 
@@ -124,7 +132,7 @@ private:
   std::vector<output> outputs_;
 
   std::vector<loop_info> loops_;
-  loop_id compute_at_;
+  std::optional<loop_id> compute_at_;
 
   std::vector<char> padding_;
 
@@ -155,7 +163,15 @@ public:
     compute_at_ = at;
     return *this;
   }
-  const loop_id& compute_at() const { return compute_at_; }
+  func& compute_at(std::optional<loop_id> at) {
+    compute_at_ = std::move(at);
+    return *this;
+  }
+  func& compute_root() {
+    compute_at_ = loop_id();
+    return *this;
+  }
+  const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
   // TODO(https://github.com/dsharlet/slinky/issues/8): Try to do this with a variadic template implementation.
   template <typename Out1>

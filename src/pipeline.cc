@@ -237,7 +237,7 @@ public:
         continue;
       }
 
-      if (!(i->producer()->compute_at() == at)) {
+      if (i->producer()->compute_at() && !(*i->producer()->compute_at() == at)) {
         // This shouldn't be computed here.
         continue;
       }
@@ -310,7 +310,10 @@ public:
 
   stmt make_allocations(stmt body, const loop_id& at = loop_id()) {
     for (const buffer_expr_ptr& i : to_allocate) {
-      if (i->store_at() == at && !allocated.count(i)) {
+      if (allocated.count(i)) continue;
+      // TODO: I think this check is technically OK, but it is sloppy and allows incorrect explicit schedules (e.g. if
+      // i->store_at() was set, but we didn't find the storage location).
+      if (at.root() || (i->store_at() && *i->store_at() == at)) {
         body = allocate::make(i->sym(), i->storage(), i->elem_size(), i->dims(), body);
         allocated.insert(i);
       }
