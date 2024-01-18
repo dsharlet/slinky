@@ -1,7 +1,7 @@
 #ifndef SLINKY_NODE_MUTATOR_H
 #define SLINKY_NODE_MUTATOR_H
 
-#include "expr.h"
+#include "src/expr.h"
 
 namespace slinky {
 

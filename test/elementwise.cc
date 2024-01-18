@@ -1,8 +1,9 @@
-#include "expr.h"
-#include "funcs.h"
-#include "pipeline.h"
-#include "print.h"
-#include "test.h"
+#include <gtest/gtest.h>
+
+#include "src/expr.h"
+#include "src/pipeline.h"
+#include "src/print.h"
+#include "test/funcs.h"
 
 #include <cassert>
 #include <map>
@@ -307,9 +308,9 @@ expr pow(expr x, int n) {
 
 }  // namespace
 
-TEST(elementwise) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c); }
-TEST(elementwise_add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
-TEST(elementwise_mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
-TEST(elementwise_exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
-TEST(elementwise_exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
-TEST(elementwise_exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
+TEST(elementwise, add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
+TEST(elementwise, mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
+TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c); }
+TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
+TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
+TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }

@@ -1,9 +1,10 @@
-#include "buffer.h"
-#include "test.h"
+#include <gtest/gtest.h>
+
+#include "src/buffer.h"
 
 using namespace slinky;
 
-TEST(raw_buffer_make) {
+TEST(buffer, make) {
   auto buf = raw_buffer::make(2, 4);
   buf->dim(0).set_min_extent(0, 10);
   buf->dim(0).set_stride(4);
@@ -13,7 +14,7 @@ TEST(raw_buffer_make) {
   ASSERT_EQ(buf->size_bytes(), buf->dim(0).extent() * buf->dim(1).extent() * buf->elem_size);
 }
 
-TEST(buffer) {
+TEST(buffer, buffer) {
   buffer<int, 2> buf({10, 20});
 
   ASSERT_EQ(buf.rank, 2);
@@ -168,7 +169,7 @@ void test_copy() {
   test_copy<T, 3>();
 }
 
-TEST(buffer_copy) {
+TEST(buffer, copy) {
   test_copy<uint8_t>();
   test_copy<uint16_t>();
   test_copy<uint32_t>();

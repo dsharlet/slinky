@@ -1,9 +1,9 @@
-#include "substitute.h"
+#include "src/substitute.h"
 
 #include <cassert>
 
-#include "node_mutator.h"
-#include "symbol_map.h"
+#include "src/node_mutator.h"
+#include "src/symbol_map.h"
 
 namespace slinky {
 

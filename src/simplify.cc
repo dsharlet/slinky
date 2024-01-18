@@ -1,13 +1,13 @@
-#include "simplify.h"
+#include "src/simplify.h"
 
 #include <cassert>
 #include <iostream>
 #include <limits>
 
-#include "evaluate.h"
-#include "node_mutator.h"
-#include "print.h"
-#include "substitute.h"
+#include "src/evaluate.h"
+#include "src/node_mutator.h"
+#include "src/print.h"
+#include "src/substitute.h"
 
 namespace slinky {
 

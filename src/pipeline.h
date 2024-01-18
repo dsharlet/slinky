@@ -1,9 +1,9 @@
 #ifndef SLINKY_PIPELINE_H
 #define SLINKY_PIPELINE_H
 
-#include "evaluate.h"
-#include "expr.h"
-#include "ref_count.h"
+#include "src/evaluate.h"
+#include "src/expr.h"
+#include "src/ref_count.h"
 
 namespace slinky {
 

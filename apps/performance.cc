@@ -1,5 +1,5 @@
-#include "benchmark.h"
-#include "pipeline.h"
+#include "apps/benchmark.h"
+#include "src/pipeline.h"
 
 #include <cassert>
 #include <cstdlib>

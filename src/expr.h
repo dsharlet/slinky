@@ -1,8 +1,8 @@
 #ifndef SLINKY_EXPR_H
 #define SLINKY_EXPR_H
 
-#include "buffer.h"
-#include "ref_count.h"
+#include "src/buffer.h"
+#include "src/ref_count.h"
 
 #include <cstdlib>
 #include <functional>

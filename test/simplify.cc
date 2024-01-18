@@ -1,10 +1,11 @@
-#include "simplify.h"
-#include "buffer.h"
-#include "evaluate.h"
-#include "expr.h"
-#include "print.h"
-#include "substitute.h"
-#include "test.h"
+#include <gtest/gtest.h>
+
+#include "src/simplify.h"
+#include "src/buffer.h"
+#include "src/evaluate.h"
+#include "src/expr.h"
+#include "src/print.h"
+#include "src/substitute.h"
 
 #include <cassert>
 
@@ -48,7 +49,7 @@ void test_simplify(const expr& test, const expr& expected) {
     std::cout << result << std::endl;
     std::cout << "expected: " << std::endl;
     std::cout << expected << std::endl;
-    ASSERT(false);
+    ASSERT_TRUE(false);
   }
 }
 
@@ -61,11 +62,11 @@ void test_simplify(const stmt& test, const stmt& expected) {
     std::cout << result << std::endl;
     std::cout << "expected: " << std::endl;
     std::cout << expected << std::endl;
-    ASSERT(false);
+    ASSERT_TRUE(false);
   }
 }
 
-TEST(simplify) {
+TEST(simplify, basic) {
   test_simplify(expr(1) + 2, 3);
   test_simplify(expr(1) - 2, -1);
   test_simplify(expr(1) < 2, 1);
@@ -123,7 +124,7 @@ TEST(simplify) {
   test_simplify(select(x, 1, 2) + 1, select(x, 2, 3));
 }
 
-TEST(simplify_let) {
+TEST(simplify, let) {
   // lets that should be removed
   test_simplify(let::make(0, y, z), z);                      // Dead let
   test_simplify(let::make(0, y * 2, x), y * 2);              // Single use, substitute
@@ -135,19 +136,19 @@ TEST(simplify_let) {
       let::make(0, y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 }
 
-TEST(simplify_buffer_intrinsics) {
+TEST(simplify, buffer_intrinsics) {
   test_simplify(buffer_extent(x, y) >= 0, true);
   test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
 }
 
-TEST(simplify_if_then_else) {
+TEST(simplify, if_then_else) {
   test_simplify(if_then_else::make(x == x, check::make(y), check::make(z)), check::make(y));
   test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
   test_simplify(block::make(if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))),
       if_then_else::make(x, block::make(check::make(y), check::make(z))));
 }
 
-TEST(simplify_bounds) {
+TEST(simplify, bounds) {
   test_simplify(loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, if_then_else::make(y - 2 <= x, check::make(z))),
       loop::make(x.sym(), loop_mode::serial, bounds(y + -2, z), 2, check::make(z)));
   test_simplify(loop::make(x.sym(), loop_mode::serial, min_extent(x, z), z, check::make(y)), check::make(y));
@@ -166,7 +167,7 @@ TEST(simplify_bounds) {
       stmt());
 }
 
-TEST(bounds_of) {
+TEST(simplify, bounds_of) {
   // Test bounds_of by testing expressions of up to two operands, and setting the
   // bounds of the two operands to all possible cases of overlap. This approach
   // to testing should be great at finding cases where bounds are incorrectly tight,
@@ -247,7 +248,7 @@ void test_where(const expr& test, symbol_id var, const interval_expr& expected) 
     std::cout << result << std::endl;
     std::cout << "expected: " << std::endl;
     std::cout << expected << std::endl;
-    ASSERT(false);
+    ASSERT_TRUE(false);
   }
 }
 
@@ -255,7 +256,7 @@ void test_where_true(const expr& test, symbol_id var, const interval_expr& expec
   test_where(test, var, expected);
 }
 
-TEST(where_true) {
+TEST(simplify, where_true) {
   test_where_true(x < 5, 0, bounds(negative_infinity(), 4));
   test_where_true(x < buffer_min(y, 0), 0, bounds(negative_infinity(), buffer_min(y, 0) + -1));
   test_where_true(x / 2 < 7, 0, bounds(negative_infinity(), 13));
@@ -331,7 +332,7 @@ expr make_random_expr(int depth) {
   }
 }
 
-TEST(simplify_fuzz) {
+TEST(simplify, fuzz) {
   const int seed = time(nullptr);
   srand(seed);
   constexpr int tests = 10000;

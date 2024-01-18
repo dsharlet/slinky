@@ -1,7 +1,7 @@
 #ifndef SLINKY_PRINT_H
 #define SLINKY_PRINT_H
 
-#include "expr.h"
+#include "src/expr.h"
 
 #include <tuple>
 

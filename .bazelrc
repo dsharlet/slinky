@@ -1,0 +1,2 @@
+common --enable_bzlmod
+build --action_env=BAZEL_CXXOPTS="-std=c++20:-fstrict-aliasing:-Wall"

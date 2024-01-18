@@ -1,11 +1,11 @@
-#include "evaluate.h"
+#include "src/evaluate.h"
 
 #include <cassert>
 #include <iostream>
 
-#include "print.h"
-#include "simplify.h"
-#include "substitute.h"
+#include "src/print.h"
+#include "src/simplify.h"
+#include "src/substitute.h"
 
 namespace slinky {
 

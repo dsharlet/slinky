@@ -1,7 +1,7 @@
 # Output directories
-bin/*
-obj/*
-docs/*
+bazel-*
+
+*.lock
 
 # Compiled Object files
 *.slo
@@ -17,9 +17,6 @@ docs/*
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
 
 # Compiled Static libraries
 *.lai

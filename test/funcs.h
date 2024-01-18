@@ -1,7 +1,7 @@
 #ifndef SLINKY_TEST_FUNCS_H
 #define SLINKY_TEST_FUNCS_H
 
-#include "buffer.h"
+#include "src/buffer.h"
 
 namespace slinky {
 

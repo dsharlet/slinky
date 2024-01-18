@@ -1,9 +1,10 @@
-#include "pipeline.h"
-#include "expr.h"
-#include "funcs.h"
-#include "print.h"
-#include "test.h"
-#include "thread_pool.h"
+#include <gtest/gtest.h>
+
+#include "src/pipeline.h"
+#include "src/expr.h"
+#include "src/print.h"
+#include "test/funcs.h"
+#include "test/thread_pool.h"
 
 #include <cassert>
 
@@ -51,7 +52,7 @@ public:
 };
 
 // A trivial pipeline with one stage
-TEST(pipeline_trivial) {
+TEST(pipeline, trivial) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -96,7 +97,7 @@ TEST(pipeline_trivial) {
 }
 
 // An example of two 1D elementwise operations in sequence.
-TEST(pipeline_elementwise_1d) {
+TEST(pipeline, elementwise_1d) {
   for (int split : {0, 1, 2, 3}) {
     for (bool schedule_storage : {false, true}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -152,7 +153,7 @@ TEST(pipeline_elementwise_1d) {
 }
 
 // Two matrix multiplies: D = (A x B) x C.
-TEST(pipeline_matmuls) {
+TEST(pipeline, matmuls) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -264,7 +265,7 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-TEST(pipeline_pyramid) {
+TEST(pipeline, pyramid) {
   // Make the pipeline
   node_context ctx;
 
@@ -304,7 +305,7 @@ TEST(pipeline_pyramid) {
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
-TEST(pipeline_stencil) {
+TEST(pipeline, stencil) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -367,7 +368,7 @@ TEST(pipeline_stencil) {
   }
 }
 
-TEST(pipeline_stencil_chain) {
+TEST(pipeline, stencil_chain) {
   for (int split : {0, 1, 2}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -444,7 +445,7 @@ TEST(pipeline_stencil_chain) {
   }
 }
 
-TEST(pipeline_flip_y) {
+TEST(pipeline, flip_y) {
   // Make the pipeline
   node_context ctx;
 
@@ -483,7 +484,7 @@ TEST(pipeline_flip_y) {
   }
 }
 
-TEST(pipeline_padded_copy) {
+TEST(pipeline, padded_copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -540,7 +541,7 @@ TEST(pipeline_padded_copy) {
   }
 }
 
-TEST(pipeline_multiple_outputs) {
+TEST(pipeline, multiple_outputs) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -612,7 +613,7 @@ TEST(pipeline_multiple_outputs) {
   }
 }
 
-TEST(pipeline_outer_product) {
+TEST(pipeline, outer_product) {
   for (int split_i : {0, 1, 2, 3}) {
     for (int split_j : {0, 1, 2, 3}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -661,7 +662,7 @@ TEST(pipeline_outer_product) {
   }
 }
 
-TEST(pipeline_unrelated) {
+TEST(pipeline, unrelated) {
   // Make the pipeline
   node_context ctx;
 
@@ -733,7 +734,7 @@ TEST(pipeline_unrelated) {
   }
 }
 
-TEST(pipeline_copied_result) {
+TEST(pipeline, copied_result) {
   for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
@@ -795,7 +796,7 @@ TEST(pipeline_copied_result) {
   }
 }
 
-TEST(pipeline_concatenated_result) {
+TEST(pipeline, concatenated_result) {
   // Make the pipeline
   node_context ctx;
 
@@ -848,7 +849,7 @@ TEST(pipeline_concatenated_result) {
   }
 }
 
-TEST(pipeline_padded_stencil) {
+TEST(pipeline, padded_stencil) {
   for (int schedule : {0, 1, 2, 3}) {
     // Make the pipeline
     node_context ctx;
@@ -924,7 +925,7 @@ TEST(pipeline_padded_stencil) {
   }
 }
 
-TEST(pipeline_constant) {
+TEST(pipeline, constant) {
   // Make the pipeline
   node_context ctx;
 

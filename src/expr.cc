@@ -1,6 +1,6 @@
-#include "expr.h"
+#include "src/expr.h"
 
-#include "simplify.h"
+#include "src/simplify.h"
 
 #include <limits>
 

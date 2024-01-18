@@ -1,7 +1,7 @@
 #ifndef SLINKY_OPTIMIZATIONS_H
 #define SLINKY_OPTIMIZATIONS_H
 
-#include "expr.h"
+#include "src/expr.h"
 
 namespace slinky {
 

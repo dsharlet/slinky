@@ -21,7 +21,7 @@ jobs:
           gcc: '11'
 
       - name: Build and test
-        run: make test -j8
+        run: bazel test -c opt ...
         
       - name: Build and run performance app
-        run: make bin/performance && bin/performance
+        run: bazel run -c opt apps/performance

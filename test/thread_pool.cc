@@ -1,4 +1,4 @@
-#include "thread_pool.h"
+#include "test/thread_pool.h"
 
 namespace slinky {
 

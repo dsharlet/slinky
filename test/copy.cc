@@ -1,14 +1,15 @@
-#include "expr.h"
-#include "funcs.h"
-#include "pipeline.h"
-#include "print.h"
-#include "test.h"
+#include <gtest/gtest.h>
+
+#include "src/expr.h"
+#include "src/pipeline.h"
+#include "src/print.h"
+#include "test/funcs.h"
 
 #include <cassert>
 
 using namespace slinky;
 
-TEST(copy_trivial_1d) {
+TEST(copy, trivial_1d) {
   // Make the pipeline
   node_context ctx;
 
@@ -55,7 +56,7 @@ TEST(copy_trivial_1d) {
   }
 }
 
-TEST(copy_trivial_2d) {
+TEST(copy, trivial_2d) {
   // Make the pipeline
   node_context ctx;
 
@@ -106,7 +107,7 @@ TEST(copy_trivial_2d) {
   }
 }
 
-TEST(copy_trivial_3d) {
+TEST(copy, trivial_3d) {
   // Make the pipeline
   node_context ctx;
 
@@ -145,7 +146,7 @@ TEST(copy_trivial_3d) {
   }
 }
 
-TEST(copy_flip_x) {
+TEST(copy, flip_x) {
   // Make the pipeline
   node_context ctx;
 
@@ -176,7 +177,7 @@ TEST(copy_flip_x) {
   }
 }
 
-TEST(copy_flip_y) {
+TEST(copy, flip_y) {
   for (int split : {-1, 1, 2, 3}) {
     // Make the pipeline
     node_context ctx;
@@ -222,7 +223,7 @@ TEST(copy_flip_y) {
   }
 }
 
-TEST(copy_upsample_y) {
+TEST(copy, upsample_y) {
   for (int split : {-1, 1, 2, 4}) {
     // Make the pipeline
     node_context ctx;
@@ -264,7 +265,7 @@ TEST(copy_upsample_y) {
   }
 }
 
-TEST(copy_transpose) {
+TEST(copy, transpose) {
   // Make the pipeline
   node_context ctx;
 
@@ -305,7 +306,7 @@ TEST(copy_transpose) {
   }
 }
 
-TEST(copy_broadcast) {
+TEST(copy, broadcast) {
   for (int dim = 0; dim < 3; ++dim) {
     // Make the pipeline
     node_context ctx;
@@ -353,7 +354,7 @@ TEST(copy_broadcast) {
   }
 }
 
-TEST(copy_broadcast_sliced) {
+TEST(copy, broadcast_sliced) {
   for (int dim = 0; dim < 3; ++dim) {
     // Make the pipeline
     node_context ctx;
@@ -402,7 +403,7 @@ TEST(copy_broadcast_sliced) {
   }
 }
 
-TEST(copy_concatenate) {
+TEST(copy, concatenate) {
   // Make the pipeline
   node_context ctx;
 

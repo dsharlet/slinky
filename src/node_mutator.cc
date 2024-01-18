@@ -1,4 +1,4 @@
-#include "node_mutator.h"
+#include "src/node_mutator.h"
 
 namespace slinky {
 

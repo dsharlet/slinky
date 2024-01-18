@@ -1,16 +1,16 @@
-#include "test.h"
+#include <gtest/gtest.h>
 
 #include <cassert>
 
-#include "expr.h"
-#include "funcs.h"
-#include "pipeline.h"
-#include "print.h"
+#include "src/expr.h"
+#include "src/pipeline.h"
+#include "src/print.h"
+#include "test/funcs.h"
 
 using namespace slinky;
 
 // A trivial pipeline with one stage.
-TEST(pipeline_checks) {
+TEST(pipeline, checks) {
   // Make the pipeline
   node_context ctx;
 
@@ -39,7 +39,7 @@ TEST(pipeline_checks) {
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   index_t result = p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT(result != 0) << " null inputs should have failed";
+  ASSERT_NE(result, 0) << " null inputs should have failed";
 
   // The input and output pointers are null.
   ASSERT_EQ(checks_failed, 1);
@@ -47,7 +47,7 @@ TEST(pipeline_checks) {
   in_buf.allocate();
   out_buf.allocate();
   result = p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT(result == 0) << " should succeed";
+  ASSERT_EQ(result, 0) << " should succeed";
 
   // Shouldn't have failed.
   ASSERT_EQ(checks_failed, 1);
@@ -55,7 +55,7 @@ TEST(pipeline_checks) {
   buffer<int, 1> too_small_buf({N - 1});
   const raw_buffer* too_small[] = {&too_small_buf};
   result = p.evaluate(too_small, outputs, eval_ctx);
-  ASSERT(result != 0) << " too small should have failed";
+  ASSERT_NE(result, 0) << " too small should have failed";
 
   // Input is too small.
   ASSERT_EQ(checks_failed, 2);

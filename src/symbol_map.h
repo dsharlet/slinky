@@ -3,7 +3,7 @@
 
 #include <optional>
 
-#include "expr.h"
+#include "src/expr.h"
 
 namespace slinky {
 

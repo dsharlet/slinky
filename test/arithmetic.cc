@@ -1,10 +1,10 @@
-#include "arithmetic.h"
+#include <gtest/gtest.h>
 
-#include "test.h"
+#include "src/arithmetic.h"
 
 using namespace slinky;
 
-TEST(arithmetic_euclidean_div_mod) {
+TEST(arithmetic, euclidean_div_mod) {
   for (int i = 0; i < 1000; ++i) {
     int a = rand();
     int b = rand();

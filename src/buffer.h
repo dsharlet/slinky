@@ -9,8 +9,7 @@
 #include <memory>
 #include <span>
 
-#include "arithmetic.h"
-#include "ref_count.h"
+#include "src/arithmetic.h"
 
 namespace slinky {
 

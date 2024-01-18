@@ -1,14 +1,15 @@
-#include "evaluate.h"
-#include "expr.h"
-#include "print.h"
-#include "test.h"
-#include "thread_pool.h"
+#include <gtest/gtest.h>
+
+#include "src/evaluate.h"
+#include "src/expr.h"
+#include "src/print.h"
+#include "test/thread_pool.h"
 
 #include <cassert>
 
 using namespace slinky;
 
-TEST(evaluate_arithmetic) {
+TEST(evaluate, arithmetic) {
   node_context ctx;
   var x(ctx, "x");
 
@@ -36,7 +37,7 @@ TEST(evaluate_arithmetic) {
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 }
 
-TEST(evaluate_call) {
+TEST(evaluate, call) {
   node_context ctx;
   var x(ctx, "x");
   std::vector<index_t> calls;
@@ -56,7 +57,7 @@ TEST(evaluate_call) {
   ASSERT_EQ(calls[0], 2);
 }
 
-TEST(evaluate_loop) {
+TEST(evaluate, loop) {
   node_context ctx;
   var x(ctx, "x");
 

@@ -1,14 +1,14 @@
-#include "optimizations.h"
+#include "src/optimizations.h"
 
 #include <cassert>
 #include <map>
 #include <set>
 
-#include "evaluate.h"
-#include "node_mutator.h"
-#include "print.h"
-#include "simplify.h"
-#include "substitute.h"
+#include "src/evaluate.h"
+#include "src/node_mutator.h"
+#include "src/print.h"
+#include "src/simplify.h"
+#include "src/substitute.h"
 
 namespace slinky {
 

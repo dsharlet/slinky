@@ -2,6 +2,7 @@
 #define SLINKY_EUCLIDEAN_DIVISION_H
 
 #include <cmath>
+#include <limits>
 
 namespace slinky {
 
