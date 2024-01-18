@@ -3,6 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
+#include <list>
 
 #include "evaluate.h"
 #include "node_mutator.h"
@@ -1297,7 +1298,66 @@ public:
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
-    } else if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+      return;
+    }
+
+    // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
+    // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the union
+    // of the bounds covered by the loop.
+    class count_calls_copies : public recursive_node_visitor {
+    public:
+      int count = 0;
+
+      void visit(const call_stmt* op) { count++; }
+      void visit(const copy_stmt* op) { count++; }
+    };
+    count_calls_copies counter;
+    body.accept(&counter);
+    if (counter.count == 1) {
+      stmt result = body;
+      std::list<std::tuple<symbol_id, int, interval_expr>> new_crops;
+      bool drop_loop = true;
+      while (true) {
+        // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
+        if (const crop_dim* crop = result.as<crop_dim>()) {
+          // Find the bounds of the crop on the next iteration.
+          interval_expr next_iter = {
+              substitute(crop->bounds.min, op->sym, var(op->sym) + op->step),
+              substitute(crop->bounds.max, op->sym, var(op->sym) + op->step),
+          };
+          if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
+            result = crop->body;
+            interval_expr new_crop = {
+                substitute(crop->bounds.min, op->sym, op->bounds.min),
+                substitute(crop->bounds.max, op->sym, op->bounds.max),
+            };
+            new_crops.emplace_front(crop->sym, crop->dim, new_crop);
+          } else {
+            // This crop was not contiguous, we can't drop the loop.
+            drop_loop = false;
+            break;
+          }
+        } else if (result.as<call_stmt>() || result.as<copy_stmt>()) {
+          // We've found the actual body of the loop.
+          break;
+        } else {
+          // TODO: We might be able to handle other cases too, like blocks of copies all to the same buffer (a
+          // concatenate?).
+          drop_loop = false;
+          break;
+        }
+      }
+      if (drop_loop) {
+        // Rewrite the crops to cover the whole loop, and drop the loop.
+        for (const auto& c : new_crops) {
+          result = crop_dim::make(std::get<0>(c), std::get<1>(c), std::get<2>(c), result);
+        }
+        set_result(std::move(result));
+        return;
+      }
+    }
+
+    if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
