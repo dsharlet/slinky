@@ -937,6 +937,7 @@ inline bool is_constant(const expr& x, index_t value) {
   return cx ? cx->value == value : false;
 }
 inline bool is_zero(const expr& x) { return is_constant(x, 0); }
+inline bool is_one(const expr& x) { return is_constant(x, 1); }
 inline bool is_true(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value != 0 : false;
