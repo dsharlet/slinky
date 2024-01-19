@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "runtime/buffer.h"
+#include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "builder/node_mutator.h"

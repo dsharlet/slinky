@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "runtime/depends_on.h"
 #include "runtime/expr.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"

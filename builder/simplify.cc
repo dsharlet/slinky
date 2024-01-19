@@ -15,6 +15,7 @@
 #include "builder/substitute.h"
 #include "runtime/expr.h"
 #include "runtime/evaluate.h"
+#include "runtime/depends_on.h"
 #include "runtime/print.h"
 #include "runtime/util.h"
 

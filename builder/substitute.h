@@ -25,14 +25,6 @@ stmt substitute_bounds(const stmt& s, symbol_id buffer, const box_expr& bounds);
 expr substitute_bounds(const expr& e, symbol_id buffer, int dim, const interval_expr& bounds);
 stmt substitute_bounds(const stmt& s, symbol_id buffer, int dim, const interval_expr& bounds);
 
-// Check if `e` depends on a variable `var` or buffer `buf`.
-bool depends_on(const expr& e, symbol_id var);
-bool depends_on(const interval_expr& e, symbol_id var);
-bool depends_on(const stmt& s, symbol_id var);
-bool depends_on(const stmt& s, span<const symbol_id> vars);
-bool depends_on_variable(const expr& e, symbol_id var);
-bool depends_on_buffer(const expr& e, symbol_id buf);
-
 // Compute a sort ordering of two nodes based on their structure (not their values).
 int compare(const expr& a, const expr& b);
 int compare(const stmt& a, const stmt& b);

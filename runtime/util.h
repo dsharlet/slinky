@@ -105,7 +105,7 @@ inline T saturate_mul(T a, T b) {
 
 template <typename T>
 inline T saturate_div(T a, T b) {
-  // This is safe from overflow unless a is +inf and b is -1.
+  // This is safe from overflow unless a is max and b is -1.
   if (a == std::numeric_limits<T>::max() && b == -1) {
     return std::numeric_limits<T>::min();
   } else {
