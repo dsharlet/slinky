@@ -37,7 +37,6 @@ cc_library(
         "print.h",
         "simplify.h",
         "substitute.h",
-        "symbol_map.h",
         "util.h", 
     ],
     deps = [":runtime"],

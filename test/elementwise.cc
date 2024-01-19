@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <cassert>
+#include <cstdlib>
+#include <functional>
+#include <map>
+#include <string>
+#include <vector>
+
 #include "src/expr.h"
 #include "src/pipeline.h"
-#include "src/print.h"
 #include "test/funcs.h"
-
-#include <cassert>
-#include <map>
 
 using namespace slinky;
 

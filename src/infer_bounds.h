@@ -1,7 +1,9 @@
 #ifndef SLINKY_INFER_BOUNDS_H
 #define SLINKY_INFER_BOUNDS_H
 
-#include "src/symbol_map.h"
+#include <vector>
+
+#include "src/expr.h"
 
 namespace slinky {
 

@@ -2,7 +2,6 @@
 #define SLINKY_SIMPLIFY_H
 
 #include "src/expr.h"
-#include "src/symbol_map.h"
 
 namespace slinky {
 

@@ -2,9 +2,9 @@
 
 #include <cassert>
 
+#include "src/buffer.h"
 #include "src/expr.h"
 #include "src/pipeline.h"
-#include "src/print.h"
 #include "test/funcs.h"
 
 using namespace slinky;

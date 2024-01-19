@@ -5,12 +5,14 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include "src/buffer.h"
 #include "src/expr.h"
 #include "src/print.h"
 #include "src/substitute.h"

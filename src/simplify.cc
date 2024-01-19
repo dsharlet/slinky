@@ -1,14 +1,21 @@
 #include "src/simplify.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstdlib>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <tuple>
+#include <vector>
+#include <utility>
 
 #include "src/expr.h"
 #include "src/evaluate.h"
 #include "src/node_mutator.h"
 #include "src/print.h"
 #include "src/substitute.h"
+#include "src/util.h"
 
 namespace slinky {
 
@@ -1625,7 +1632,7 @@ public:
     body = mutate(body);
 
     // Remove trailing undefined bounds.
-    while (new_bounds.size() > 0 && !new_bounds.back().min.defined() && !new_bounds.back().max.defined()) {
+    while (!new_bounds.empty() && !new_bounds.back().min.defined() && !new_bounds.back().max.defined()) {
       new_bounds.pop_back();
     }
     if (new_bounds.empty()) {
@@ -1721,7 +1728,7 @@ public:
     }
 
     // Remove trailing undefined bounds.
-    while (at.size() > 0 && !at.back().defined()) {
+    while (!at.empty() && !at.back().defined()) {
       at.pop_back();
     }
     changed = changed || at.size() != op->at.size();

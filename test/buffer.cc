@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <cstddef>
+
 #include "src/buffer.h"
 
 using namespace slinky;
@@ -58,11 +61,17 @@ struct big {
   big(int i) { assign(i); }
   big(const big&) = default;
 
-  void operator=(int i) { assign(i); }
+  big& operator=(int i) {
+    assign(i);
+    return *this;
+  }
 
   operator uint64_t() const { return a + b; }
 
-  void operator+=(int r) { a += r; }
+  big& operator+=(int r) {
+    a += r;
+    return *this;
+  }
 
   bool operator==(const big& r) { return a == r.a && b == r.b; }
   bool operator!=(const big& r) { return a != r.a || b != r.b; }

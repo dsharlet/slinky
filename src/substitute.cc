@@ -1,10 +1,15 @@
 #include "src/substitute.h"
 
 #include <cassert>
+#include <cstddef>
+#include <functional>
+#include <optional>
+#include <vector>
+#include <utility>
 
 #include "src/expr.h"
 #include "src/node_mutator.h"
-#include "src/symbol_map.h"
+#include "src/util.h"
 
 namespace slinky {
 

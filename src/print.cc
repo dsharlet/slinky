@@ -24,8 +24,8 @@ std::ostream& operator<<(std::ostream& os, loop_mode mode) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, intrinsic i) {
-  switch (i) {
+std::ostream& operator<<(std::ostream& os, intrinsic fn) {
+  switch (fn) {
   case intrinsic::positive_infinity: return os << "oo";
   case intrinsic::negative_infinity: return os << "-oo";
   case intrinsic::indeterminate: return os << "indeterminate";

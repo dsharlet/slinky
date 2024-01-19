@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <cassert>
+#include <vector>
+
 #include "src/expr.h"
 #include "src/pipeline.h"
-#include "src/print.h"
 #include "test/funcs.h"
-
-#include <cassert>
 
 using namespace slinky;
 

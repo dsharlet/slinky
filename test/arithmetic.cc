@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+
 #include "src/util.h"
 
 using namespace slinky;

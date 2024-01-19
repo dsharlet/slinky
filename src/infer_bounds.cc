@@ -12,6 +12,7 @@
 #include "src/optimizations.h"
 #include "src/simplify.h"
 #include "src/substitute.h"
+#include "src/util.h"
 
 namespace slinky {
 

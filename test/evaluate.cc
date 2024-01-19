@@ -1,11 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <cassert>
+
 #include "src/evaluate.h"
 #include "src/expr.h"
-#include "src/print.h"
 #include "test/thread_pool.h"
-
-#include <cassert>
 
 using namespace slinky;
 

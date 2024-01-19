@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <cassert>
+#include <iostream>
+
 #include "src/simplify.h"
 #include "src/buffer.h"
 #include "src/evaluate.h"
 #include "src/expr.h"
 #include "src/print.h"
 #include "src/substitute.h"
-
-#include <cassert>
 
 namespace slinky {
 

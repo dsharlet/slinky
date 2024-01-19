@@ -1,6 +1,7 @@
 #include "src/expr.h"
 
 #include "src/simplify.h"
+#include "src/util.h"
 
 #include <algorithm>
 #include <cassert>

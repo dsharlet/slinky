@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "src/evaluate.h"
+#include "src/expr.h"
 #include "src/node_mutator.h"
 #include "src/substitute.h"
 
