@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <tuple>
 #include <vector>
 #include <utility>
@@ -1436,6 +1437,7 @@ public:
     bool changed = false;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
+      body = substitute_bounds(body, op->sym, d, bounds_d);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
       if (is_one(new_dim.fold_factor) || prove_true(new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
@@ -1443,8 +1445,7 @@ public:
       }
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
-      bounds.push_back(bounds_d);
-      body = substitute_bounds(body, op->sym, d, bounds_d);
+      bounds.push_back(std::move(bounds_d));
     }
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     body = mutate(body);
@@ -1468,6 +1469,7 @@ public:
     stmt body = op->body;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
+      body = substitute_bounds(body, op->sym, d, new_bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
       if (is_one(new_dim.fold_factor) || prove_true(new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
@@ -1476,7 +1478,6 @@ public:
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
-      body = substitute_bounds(body, op->sym, d, new_bounds);
     }
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
