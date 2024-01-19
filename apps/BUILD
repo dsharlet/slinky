@@ -6,5 +6,5 @@ cc_binary(
 cc_binary(
     name = "performance",
     srcs = ["performance.cc", "benchmark.h"],
-    deps = ["//src:slinky"],
+    deps = ["//builder", "//runtime"],
 )

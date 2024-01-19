@@ -1,6 +1,6 @@
 #include "apps/benchmark.h"
-#include "src/pipeline.h"
-#include "src/func.h"
+#include "runtime/pipeline.h"
+#include "builder/func.h"
 
 #include <algorithm>
 #include <cassert>
