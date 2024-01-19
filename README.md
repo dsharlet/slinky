@@ -28,6 +28,7 @@ Values of any symbol currently in scope at the time of the call can be accessed 
 
 ### Elementwise example
 Here is an example of a simple pipeline of two 1D elementwise `func`s:
+
 ```c++
 node_context ctx;
 
@@ -42,6 +43,7 @@ func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}}
 
 pipeline p = build_pipeline(ctx, {in}, {out});
 ```
+
 - `in` and `out` are the input and output buffers.
 - `intm` is the intermediate buffer between the two operations.
 - To describe this pipeline, we need one variable `x`.
@@ -59,14 +61,16 @@ If the buffers are large, (1) is inefficient due to poor memory locality.
 The ideal strategy is to split `out` into chunks, and compute the two operations at each chunk.
 This allows targeting a chunk size that fits in the cache, but amortizes the overhead of setting up the buffers and calling the functions implementing this operation.
 This can be implemented with the following schedule:
-```
+
+```c++
 add.loops({x, chunk_size});
 mul.compute_at({&stencil, x});
 ```
 
 ### Stencil example
 Here is an example of a pipeline that has a stage that is a stencil, such as a convlution:
-```
+
+```c++
 node_context ctx;
 
 auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
@@ -83,6 +87,7 @@ func stencil =
 
 pipeline p = build_pipeline(ctx, {in}, {out});
 ```
+
 - `in` and `out` are the input and output buffers.
 - `intm` is the intermediate buffer between the two operations.
 - We need two variables `x` and `y` to describe the buffers in this pipeline.
@@ -92,15 +97,18 @@ pipeline p = build_pipeline(ctx, {in}, {out});
 
 An interesting way to implement this pipeline is to compute rows of `out` at a time, keeping the window of rows required from `add` in memory.
 This can be expressed with the following schedule:
-```
+
+```c++
 stencil.loops({y});
 add.compute_at({&stencil, y});
 ```
+
 This means:
 - We want a loop over `y`, instead of just passing the whole 2D buffer to `sum3x3`.
 - We want to compute add at that same loop over y to compute `stencil`.
 
 This generates a program like so:
+
 ```
 intm = allocate<intm>({
   {[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], 2},
@@ -116,6 +124,7 @@ intm = allocate<intm>({
  }
 }
 ```
+
 This program does the following:
 - Allocates a buffer for `intm`, with a fold factor of 3, meaning that the coordinates of the second dimension are modulo 3 when computing addresses.
 - Runs a loop over `y` starting from 2 rows before the first output row, calling `add` and `sum3x3` at each `y`.
@@ -127,6 +136,7 @@ This program does the following:
 ### Matrix multiply example
 
 Here is a more involved example, which computes the matrix product `d = (a x b) x c`:
+
 ```c++
 node_context ctx;
 
@@ -153,6 +163,7 @@ func matmul_abc = func::make<const float, const float, float>(
 	
 pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
 ```
+
 - `a`, `b`, `c`, `abc` are input and output buffers.
 - `ab` is the intermediate product `a x b`.
 - We need 2 variables `i` and `j` to describe this pipeline.
