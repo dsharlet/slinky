@@ -10,10 +10,12 @@
 #include <vector>
 #include <utility>
 
+#include "src/buffer.h"
 #include "src/evaluate.h"
 #include "src/expr.h"
 #include "src/node_mutator.h"
 #include "src/substitute.h"
+#include "src/util.h"
 
 namespace slinky {
 
