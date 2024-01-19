@@ -1,5 +1,8 @@
 #include "test/thread_pool.h"
 
+#include <thread>
+#include <functional>
+#include <mutex>
 #include <vector>
 
 namespace slinky {
