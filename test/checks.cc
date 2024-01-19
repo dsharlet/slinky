@@ -4,6 +4,7 @@
 
 #include "src/buffer.h"
 #include "src/expr.h"
+#include "src/func.h"
 #include "src/pipeline.h"
 #include "test/funcs.h"
 
@@ -21,7 +22,7 @@ TEST(pipeline, checks) {
 
   func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline
   const int N = 10;

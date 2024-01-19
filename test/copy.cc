@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "src/expr.h"
+#include "src/func.h"
 #include "src/pipeline.h"
 #include "test/funcs.h"
 
@@ -26,7 +27,7 @@ TEST(copy, trivial_1d) {
 
   // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
   // shouldn't need to disable checks.
-  pipeline p(ctx, {dx}, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {dx}, {in}, {out}, build_options{.no_checks = true});
 
   const int W = 10;
   buffer<int, 1> out_buf({W});
@@ -74,7 +75,7 @@ TEST(copy, trivial_2d) {
 
   // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
   // shouldn't need to disable checks.
-  pipeline p(ctx, {dy}, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {dy}, {in}, {out}, build_options{.no_checks = true});
 
   // Run the pipeline.
   const int H = 20;
@@ -121,7 +122,7 @@ TEST(copy, trivial_3d) {
   // This copy should be implemented as a single call to copy.
   func copy = func::make_copy({in, {point(x), point(y), point(z)}}, {out, {x, y, z}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int H = 20;
@@ -157,7 +158,7 @@ TEST(copy, flip_x) {
 
   func flip = func::make_copy({in, {point(-x)}}, {out, {x}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int W = 10;
@@ -196,7 +197,7 @@ TEST(copy, flip_y) {
       flip.loops({{y, split}});
     }
 
-    pipeline p(ctx, {in}, {out});
+    pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
     const int H = 20;
@@ -242,7 +243,7 @@ TEST(copy, upsample_y) {
       upsample.loops({{y, split}});
     }
 
-    pipeline p(ctx, {in}, {out});
+    pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
     const int H = 20;
@@ -281,7 +282,7 @@ TEST(copy, transpose) {
   // result in a loop plus a call to that.
   func flip = func::make_copy({in, {point(y), point(x), point(z)}}, {out, {x, y, z}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int H = 20;
@@ -322,7 +323,7 @@ TEST(copy, broadcast) {
     bounds[dim] = point(0);
     func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
 
-    pipeline p(ctx, {in}, {out});
+    pipeline p = build_pipeline(ctx, {in}, {out});
 
     const int W = 8;
     const int H = 5;
@@ -370,7 +371,7 @@ TEST(copy, broadcast_sliced) {
     bounds.erase(bounds.begin() + dim);
     func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
 
-    pipeline p(ctx, {in}, {out});
+    pipeline p = build_pipeline(ctx, {in}, {out});
 
     const int W = 8;
     const int H = 5;
@@ -420,7 +421,7 @@ TEST(copy, concatenate) {
 
   // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
   // shouldn't need to disable checks.
-  pipeline p(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
 
   const int W = 8;
   const int H1 = 5;

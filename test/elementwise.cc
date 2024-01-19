@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "src/expr.h"
+#include "src/func.h"
 #include "src/pipeline.h"
 #include "test/funcs.h"
 
@@ -247,7 +248,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_builder<T, Rank> builder(ctx);
   e.accept(&builder);
 
-  pipeline p(ctx, builder.inputs, {builder.result});
+  pipeline p = build_pipeline(ctx, builder.inputs, {builder.result});
 
   std::vector<index_t> extents;
   for (std::size_t i = 0; i < Rank; ++i) {
@@ -281,7 +282,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_evaluator<T, Rank> eval;
   eval.extents = extents;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    eval.vars[p.inputs()[i]->sym()] = &input_bufs[i].template cast<T>();
+    eval.vars[p.inputs()[i]] = &input_bufs[i].template cast<T>();
   }
   e.accept(&eval);
 

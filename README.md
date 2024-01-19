@@ -40,7 +40,7 @@ var x(ctx, "x");
 func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
 func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
 
-pipeline p(ctx, {in}, {out});
+pipeline p = build_pipeline(ctx, {in}, {out});
 ```
 - `in` and `out` are the input and output buffers.
 - `intm` is the intermediate buffer between the two operations.
@@ -81,7 +81,7 @@ func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)
 func stencil =
     func::make<const short, short>(sum3x3<short>, {intm, {{x - 1, x + 1}, {y - 1, y + 1}}}, {out, {x, y}});
 
-pipeline p(ctx, {in}, {out});
+pipeline p = build_pipeline(ctx, {in}, {out});
 ```
 - `in` and `out` are the input and output buffers.
 - `intm` is the intermediate buffer between the two operations.
@@ -151,7 +151,7 @@ func matmul_ab =
 func matmul_abc = func::make<const float, const float, float>(
     matmul<float>, {ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}, {abc, {i, j}});
 	
-pipeline p(ctx, {a, b, c}, {abc});
+pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
 ```
 - `a`, `b`, `c`, `abc` are input and output buffers.
 - `ab` is the intermediate product `a x b`.

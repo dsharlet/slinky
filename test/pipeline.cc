@@ -4,6 +4,7 @@
 
 #include "src/pipeline.h"
 #include "src/expr.h"
+#include "src/func.h"
 #include "test/funcs.h"
 #include "test/thread_pool.h"
 
@@ -67,7 +68,7 @@ TEST(pipeline, trivial) {
         mul.loops({{x, split, lm}});
       }
 
-      pipeline p(ctx, {in}, {out});
+      pipeline p = build_pipeline(ctx, {in}, {out});
 
       // Run the pipeline
       const int N = 10;
@@ -120,7 +121,7 @@ TEST(pipeline, elementwise_1d) {
           }
         }
 
-        pipeline p(ctx, {in}, {out});
+        pipeline p = build_pipeline(ctx, {in}, {out});
 
         // Run the pipeline
         const int N = 10;
@@ -196,7 +197,7 @@ TEST(pipeline, matmuls) {
         }
       }
 
-      pipeline p(ctx, {a, b, c}, {abc});
+      pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
 
       // Run the pipeline.
       const int M = 10;
@@ -283,7 +284,7 @@ TEST(pipeline, pyramid) {
 
   upsample.loops({{y, 1}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int W = 10;
@@ -330,7 +331,7 @@ TEST(pipeline, stencil) {
         }
       }
 
-      pipeline p(ctx, {in}, {out});
+      pipeline p = build_pipeline(ctx, {in}, {out});
 
       // Run the pipeline.
       const int W = 20;
@@ -398,7 +399,7 @@ TEST(pipeline, stencil_chain) {
         }
       }
 
-      pipeline p(ctx, {in}, {out});
+      pipeline p = build_pipeline(ctx, {in}, {out});
 
       // Run the pipeline.
       const int W = 20;
@@ -458,7 +459,7 @@ TEST(pipeline, flip_y) {
   func copy = func::make<const char, char>(::copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
   func flip = func::make<const char, char>(flip_y<char>, {intm, {point(x), point(-y)}}, {out, {x, y}});
 
-  pipeline p(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int H = 20;
@@ -507,7 +508,7 @@ TEST(pipeline, padded_copy) {
 
   crop.loops({y});
 
-  pipeline p(ctx, {w, h}, {in}, {out});
+  pipeline p = build_pipeline(ctx, {w, h}, {in}, {out});
 
   const int W = 8;
   const int H = 5;
@@ -578,7 +579,7 @@ TEST(pipeline, multiple_outputs) {
         sums.loops({{z, split, lm}});
       }
 
-      pipeline p(ctx, {in}, {sum_x, sum_xy});
+      pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
 
       // Run the pipeline.
       const int H = 20;
@@ -634,7 +635,7 @@ TEST(pipeline, outer_product) {
         if (split_j > 0) loops.emplace_back(j, split_j, lm);
         outer.loops(loops);
 
-        pipeline p(ctx, {a, b}, {out});
+        pipeline p = build_pipeline(ctx, {a, b}, {out});
 
         // Run the pipeline.
         const int M = 20;
@@ -685,7 +686,7 @@ TEST(pipeline, unrelated) {
 
   stencil1.loops({{y, 2}});
 
-  pipeline p(ctx, {in1, in2}, {out1, out2});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out1, out2});
 
   // Run the pipeline.
   const int W1 = 20;
@@ -762,7 +763,7 @@ TEST(pipeline, copied_result) {
       break;
     }
 
-    pipeline p(ctx, {in}, {out});
+    pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
     const int W = 20;
@@ -820,7 +821,7 @@ TEST(pipeline, concatenated_result) {
 
   // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
   // shouldn't need to disable checks.
-  pipeline p(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
 
   // Run the pipeline.
   const int W = 20;
@@ -882,7 +883,7 @@ TEST(pipeline, padded_stencil) {
       break;
     }
 
-    pipeline p(ctx, {in}, {out});
+    pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
     const int W = 20;
@@ -943,7 +944,7 @@ TEST(pipeline, constant) {
 
   func add = func::make<const short, short>(add_1<short>, {constant, {point(x), point(y)}}, {out, {x, y}});
 
-  pipeline p(ctx, {}, {out});
+  pipeline p = build_pipeline(ctx, {}, {out});
 
   // Run the pipeline.
   buffer<short, 2> out_buf({W, H});
@@ -952,6 +953,8 @@ TEST(pipeline, constant) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
+  // TODO: Should pipeline understand constants and do this itself?
+  eval_ctx[constant->sym()] = reinterpret_cast<index_t>(constant->constant());
   p.evaluate({}, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -987,7 +990,7 @@ TEST(pipeline, parallel_stencils) {
 
   diff.loops({{y, 2}});
 
-  pipeline p(ctx, {in1, in2}, {out});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   // Run the pipeline.
   const int W = 20;

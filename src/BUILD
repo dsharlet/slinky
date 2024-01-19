@@ -19,6 +19,7 @@ cc_library(
     srcs = [
         "evaluate.cc",
         "expr.cc",
+        "func.cc",
         "infer_bounds.cc",
         "node_mutator.cc",
         "optimizations.cc",
@@ -30,6 +31,7 @@ cc_library(
     hdrs = [
         "evaluate.h",
         "expr.h",
+        "func.h",
         "infer_bounds.h",
         "node_mutator.h",
         "optimizations.h",

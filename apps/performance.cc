@@ -1,5 +1,6 @@
 #include "apps/benchmark.h"
 #include "src/pipeline.h"
+#include "src/func.h"
 
 #include <algorithm>
 #include <cassert>
@@ -55,7 +56,7 @@ pipeline make_pipeline(bool explicit_y) {
     copy.loops({y});
   }
 
-  pipeline p(ctx, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_checks = true});
 
   return p;
 }
