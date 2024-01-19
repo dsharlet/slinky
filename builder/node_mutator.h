@@ -1,5 +1,5 @@
-#ifndef SLINKY_NODE_MUTATOR_H
-#define SLINKY_NODE_MUTATOR_H
+#ifndef SLINKY_BUILDER_NODE_MUTATOR_H
+#define SLINKY_BUILDER_NODE_MUTATOR_H
 
 #include "runtime/expr.h"
 
@@ -92,4 +92,4 @@ stmt clone_with_new_body(const truncate_rank* op, stmt new_body);
 
 }  // namespace slinky
 
-#endif  // SLINKY_NODE_MUTATOR_H
+#endif  // SLINKY_BUILDER_NODE_MUTATOR_H

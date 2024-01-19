@@ -1,5 +1,5 @@
-#ifndef SLINKY_SIMPLIFY_H
-#define SLINKY_SIMPLIFY_H
+#ifndef SLINKY_BUILDER_SIMPLIFY_H
+#define SLINKY_BUILDER_SIMPLIFY_H
 
 #include "runtime/expr.h"
 
@@ -65,4 +65,4 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args);
 
 }  // namespace slinky
 
-#endif  // SLINKY_SIMPLIFY_H
+#endif  // SLINKY_BUILDER_SIMPLIFY_H

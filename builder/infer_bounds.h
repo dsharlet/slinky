@@ -1,5 +1,5 @@
-#ifndef SLINKY_INFER_BOUNDS_H
-#define SLINKY_INFER_BOUNDS_H
+#ifndef SLINKY_BUILDER_INFER_BOUNDS_H
+#define SLINKY_BUILDER_INFER_BOUNDS_H
 
 #include <vector>
 
@@ -11,4 +11,4 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
 
 }  // namespace slinky
 
-#endif  // SLINKY_INFER_BOUNDS_H
+#endif  // SLINKY_BUILDER_INFER_BOUNDS_H

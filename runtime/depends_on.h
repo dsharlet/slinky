@@ -1,5 +1,5 @@
-#ifndef SLINKY_DEPENDS_ON_H
-#define SLINKY_DEPENDS_ON_H
+#ifndef SLINKY_RUNTIME_DEPENDS_ON_H
+#define SLINKY_RUNTIME_DEPENDS_ON_H
 
 #include "runtime/expr.h"
 
@@ -15,4 +15,4 @@ bool depends_on_buffer(const expr& e, symbol_id buf);
 
 }  // namespace slinky
 
-#endif  // SLINKY_DEPENDS_ON_H
+#endif  // SLINKY_RUNTIME_DEPENDS_ON_H

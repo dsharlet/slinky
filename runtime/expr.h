@@ -1,5 +1,5 @@
-#ifndef SLINKY_EXPR_H
-#define SLINKY_EXPR_H
+#ifndef SLINKY_RUNTIME_EXPR_H
+#define SLINKY_RUNTIME_EXPR_H
 
 #include "runtime/buffer.h"
 #include "runtime/util.h"
@@ -1135,4 +1135,4 @@ scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_
 
 }  // namespace slinky
 
-#endif  // SLINKY_EXPR_H
+#endif  // SLINKY_RUNTIME_EXPR_H

@@ -1,5 +1,5 @@
-#ifndef SLINKY_BUFFER_H
-#define SLINKY_BUFFER_H
+#ifndef SLINKY_RUNTIME_BUFFER_H
+#define SLINKY_RUNTIME_BUFFER_H
 
 #include <algorithm>
 #include <cassert>
@@ -327,4 +327,4 @@ void for_each_index(const raw_buffer& buf, F&& f) {
 
 }  // namespace slinky
 
-#endif  // SLINKY_BUFFER_H
+#endif  // SLINKY_RUNTIME_BUFFER_H

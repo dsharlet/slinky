@@ -1,5 +1,5 @@
-#ifndef SLINKY_OPTIMIZATIONS_H
-#define SLINKY_OPTIMIZATIONS_H
+#ifndef SLINKY_BUILDER_OPTIMIZATIONS_H
+#define SLINKY_BUILDER_OPTIMIZATIONS_H
 
 #include "runtime/expr.h"
 
@@ -20,4 +20,4 @@ stmt fix_buffer_races(const stmt& s);
 
 }  // namespace slinky
 
-#endif  // SLINKY_OPTIMIZATIONS_H
+#endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

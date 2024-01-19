@@ -1,5 +1,5 @@
-#ifndef SLINKY_PIPELINE_H
-#define SLINKY_PIPELINE_H
+#ifndef SLINKY_RUNTIME_PIPELINE_H
+#define SLINKY_RUNTIME_PIPELINE_H
 
 #include <vector>
 
@@ -37,4 +37,4 @@ public:
 
 }  // namespace slinky
 
-#endif  // SLINKY_PIPELINE_H
+#endif  // SLINKY_RUNTIME_PIPELINE_H

@@ -1,5 +1,5 @@
-#ifndef SLINKY_EVALUATE_H
-#define SLINKY_EVALUATE_H
+#ifndef SLINKY_RUNTIME_EVALUATE_H
+#define SLINKY_RUNTIME_EVALUATE_H
 
 #include "runtime/expr.h"
 
@@ -42,4 +42,4 @@ bool can_evaluate(intrinsic fn);
 
 }  // namespace slinky
 
-#endif  // SLINKY_EVALUATE_H
+#endif  // SLINKY_RUNTIME_EVALUATE_H

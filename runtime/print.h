@@ -1,5 +1,5 @@
-#ifndef SLINKY_PRINT_H
-#define SLINKY_PRINT_H
+#ifndef SLINKY_RUNTIME_PRINT_H
+#define SLINKY_RUNTIME_PRINT_H
 
 #include "runtime/expr.h"
 
@@ -22,4 +22,4 @@ std::ostream& operator<<(std::ostream& os, intrinsic fn);
 
 }  // namespace slinky
 
-#endif  // SLINKY_PRINT_H
+#endif  // SLINKY_RUNTIME_PRINT_H

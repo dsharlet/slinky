@@ -1,5 +1,5 @@
-#ifndef SLINKY_SUBSTITUTE_H
-#define SLINKY_SUBSTITUTE_H
+#ifndef SLINKY_BUILDER_SUBSTITUTE_H
+#define SLINKY_BUILDER_SUBSTITUTE_H
 
 #include "runtime/expr.h"
 
@@ -45,4 +45,4 @@ struct node_less {
 
 }  // namespace slinky
 
-#endif  // SLINKY_SUBSTITUTE_H
+#endif  // SLINKY_BUILDER_SUBSTITUTE_H

@@ -1,5 +1,5 @@
-#ifndef SLINKY_UTIL_H
-#define SLINKY_UTIL_H
+#ifndef SLINKY_RUNTIME_UTIL_H
+#define SLINKY_RUNTIME_UTIL_H
 
 #include <array>
 #include <atomic>
@@ -209,4 +209,4 @@ public:
 
 }  // namespace slinky
 
-#endif  // SLINKY_UTIL_H
+#endif  // SLINKY_RUNTIME_UTIL_H
