@@ -30,7 +30,7 @@ stmt substitute_bounds(const stmt& s, symbol_id buffer, int dim, const interval_
 bool depends_on(const expr& e, symbol_id var);
 bool depends_on(const interval_expr& e, symbol_id var);
 bool depends_on(const stmt& e, symbol_id var);
-bool depends_on(const stmt& s, std::span<const symbol_id> vars);
+bool depends_on(const stmt& s, span<const symbol_id> vars);
 bool depends_on_variable(const expr& e, symbol_id var);
 bool depends_on_buffer(const expr& e, symbol_id buf);
 

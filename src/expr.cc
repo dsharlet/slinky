@@ -136,7 +136,7 @@ expr operator&&(expr a, expr b) { return logical_and::make(std::move(a), std::mo
 expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::move(b)); }
 expr operator!(expr x) { return logical_not::make(std::move(x)); }
 
-expr min(std::span<expr> x) {
+expr min(span<expr> x) {
   if (x.empty()) {
     return expr();
   } else if (x.size() == 1) {
@@ -146,7 +146,7 @@ expr min(std::span<expr> x) {
   }
 }
 
-expr max(std::span<expr> x) {
+expr max(span<expr> x) {
   if (x.empty()) {
     return expr();
   } else if (x.size() == 1) {
@@ -444,13 +444,13 @@ expr buffer_fold_factor(expr buf, expr dim) {
   return call::make(intrinsic::buffer_fold_factor, {std::move(buf), std::move(dim)});
 }
 
-expr buffer_at(expr buf, std::span<const expr> at) {
+expr buffer_at(expr buf, span<const expr> at) {
   std::vector<expr> args = {buf};
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
 
-expr buffer_at(expr buf, std::span<const var> at) {
+expr buffer_at(expr buf, span<const var> at) {
   std::vector<expr> args = {buf};
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
@@ -469,7 +469,7 @@ std::vector<dim_expr> buffer_dims(const expr& buf, int rank) {
   return result;
 }
 
-box_expr dims_bounds(std::span<const dim_expr> dims) {
+box_expr dims_bounds(span<const dim_expr> dims) {
   box_expr result(dims.size());
   for (std::size_t d = 0; d < dims.size(); ++d) {
     result[d] = dims[d].bounds;

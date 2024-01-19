@@ -1,6 +1,7 @@
 #ifndef SLINKY_TEST_THREAD_POOL_H
 #define SLINKY_TEST_THREAD_POOL_H
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <functional>

@@ -96,7 +96,7 @@ void node_mutator::visit(const call* op) {
   args.reserve(op->args.size());
   bool changed = false;
   for (const expr& i : op->args) {
-    args.emplace_back(mutate(i));
+    args.push_back(mutate(i));
     changed = changed || !args.back().same_as(i);
   }
   if (!changed) {
@@ -156,7 +156,7 @@ void node_mutator::visit(const allocate* op) {
   bool changed = false;
   for (const dim_expr& i : op->dims) {
     interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-    dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
+    dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
     changed = changed || !dims.back().same_as(i);
   }
   stmt body = mutate(op->body);
@@ -174,7 +174,7 @@ void node_mutator::visit(const make_buffer* op) {
   bool changed = false;
   for (const dim_expr& i : op->dims) {
     interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-    dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
+    dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
     changed = changed || !dims.back().same_as(i);
   }
   stmt body = mutate(op->body);
@@ -221,7 +221,7 @@ void node_mutator::visit(const slice_buffer* op) {
   at.reserve(op->at.size());
   bool changed = false;
   for (const expr& i : op->at) {
-    at.emplace_back(mutate(i));
+    at.push_back(mutate(i));
     changed = changed || !at.back().same_as(i);
   }
   stmt body = mutate(op->body);

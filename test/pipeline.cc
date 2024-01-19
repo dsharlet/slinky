@@ -82,7 +82,7 @@ TEST(pipeline, trivial) {
       buffer<int, 1> out_buf({N});
       out_buf.allocate();
 
-      // Not having std::span(std::initializer_list<T>) is unfortunate.
+      // Not having span(std::initializer_list<T>) is unfortunate.
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
       test_context eval_ctx;
@@ -135,7 +135,7 @@ TEST(pipeline, elementwise_1d) {
         buffer<int, 1> out_buf({N});
         out_buf.allocate();
 
-        // Not having std::span(std::initializer_list<T>) is unfortunate.
+        // Not having span(std::initializer_list<T>) is unfortunate.
         const raw_buffer* inputs[] = {&in_buf};
         const raw_buffer* outputs[] = {&out_buf};
         test_context eval_ctx;
@@ -218,7 +218,7 @@ TEST(pipeline, matmuls) {
       init_random(c_buf);
       abc_buf.allocate();
 
-      // Not having std::span(std::initializer_list<T>) is unfortunate.
+      // Not having span(std::initializer_list<T>) is unfortunate.
       const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
       const raw_buffer* outputs[] = {&abc_buf};
       test_context eval_ctx;
@@ -296,7 +296,7 @@ TEST(pipeline, pyramid) {
   init_random(in_buf);
   out_buf.allocate();
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
@@ -343,7 +343,7 @@ TEST(pipeline, stencil) {
       init_random(in_buf);
       out_buf.allocate();
 
-      // Not having std::span(std::initializer_list<T>) is unfortunate.
+      // Not having span(std::initializer_list<T>) is unfortunate.
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
       test_context eval_ctx;
@@ -411,7 +411,7 @@ TEST(pipeline, stencil_chain) {
       init_random(in_buf);
       out_buf.allocate();
 
-      // Not having std::span(std::initializer_list<T>) is unfortunate.
+      // Not having span(std::initializer_list<T>) is unfortunate.
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
       test_context eval_ctx;
@@ -708,7 +708,7 @@ TEST(pipeline, unrelated) {
   buffer<int, 1> out2_buf({N2});
   out2_buf.allocate();
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
   test_context eval_ctx;
@@ -775,7 +775,7 @@ TEST(pipeline, copied_result) {
     init_random(in_buf);
     out_buf.allocate();
 
-    // Not having std::span(std::initializer_list<T>) is unfortunate.
+    // Not having span(std::initializer_list<T>) is unfortunate.
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
@@ -835,7 +835,7 @@ TEST(pipeline, concatenated_result) {
   buffer<short, 2> out_buf({W, H1 + H2});
   out_buf.allocate();
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
@@ -894,7 +894,7 @@ TEST(pipeline, padded_stencil) {
     init_random(in_buf);
     out_buf.allocate();
 
-    // Not having std::span(std::initializer_list<T>) is unfortunate.
+    // Not having span(std::initializer_list<T>) is unfortunate.
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
@@ -950,7 +950,7 @@ TEST(pipeline, constant) {
   buffer<short, 2> out_buf({W, H});
   out_buf.allocate();
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate({}, outputs, eval_ctx);
@@ -1003,7 +1003,7 @@ TEST(pipeline, parallel_stencils) {
   init_random(in2_buf);
   out_buf.allocate();
 
-  // Not having std::span(std::initializer_list<T>) is unfortunate.
+  // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;

@@ -10,6 +10,7 @@ cc_library(
     hdrs = [
         "arithmetic.h", 
         "buffer.h",
+        "span.h",
     ],
     visibility = ["//visibility:public"],
 )
@@ -38,6 +39,7 @@ cc_library(
         "print.h",
         "ref_count.h",
         "simplify.h",
+        "span.h",
         "substitute.h",
         "symbol_map.h",
     ],

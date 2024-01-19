@@ -6,9 +6,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <span>
 
 #include "src/arithmetic.h"
+#include "src/span.h"
 
 namespace slinky {
 
@@ -156,7 +156,7 @@ public:
     return contains_impl(dims, i0, indices...);
   }
 
-  std::ptrdiff_t flat_offset_bytes(std::span<const index_t> indices) const {
+  std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
     assert(indices.size() == rank);
     index_t offset = 0;
     for (std::size_t i = 0; i < indices.size(); ++i) {
@@ -164,8 +164,8 @@ public:
     }
     return offset;
   }
-  void* address_at(std::span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
-  bool contains(std::span<const index_t> indices) const {
+  void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
+  bool contains(span<const index_t> indices) const {
     assert(indices.size() == rank);
     bool result = true;
     for (std::size_t i = 0; i < indices.size(); ++i) {
@@ -179,7 +179,7 @@ public:
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
   }
-  void translate(std::span<const index_t> offsets) {
+  void translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
@@ -201,7 +201,7 @@ public:
   static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
 
   // Make a new buffer of rank extents.size(), with dim d having extent extents[d].
-  static raw_buffer_ptr make(std::size_t elem_size, std::span<const index_t> extents);
+  static raw_buffer_ptr make(std::size_t elem_size, span<const index_t> extents);
 
   // Make a deep copy of another buffer, including allocating and copying the data if src is allocated.
   static raw_buffer_ptr make(const raw_buffer& src);
@@ -240,7 +240,7 @@ public:
   // Construct a buffer with extents, and strides computed such that the stride of dimension
   // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
   // dimension is "innermost".
-  buffer(std::span<const index_t> extents) : buffer() {
+  buffer(span<const index_t> extents) : buffer() {
     assert(extents.size() <= rank);
     index_t stride = elem_size;
     slinky::dim* d = dims;
@@ -266,8 +266,8 @@ public:
     return at(i0, indices...);
   }
 
-  auto& at(std::span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
-  auto& operator()(std::span<const index_t> indices) const { return at(indices); }
+  auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
+  auto& operator()(span<const index_t> indices) const { return at(indices); }
 };
 
 template <typename NewT>
@@ -296,30 +296,30 @@ void fill(const raw_buffer& dst, const void* value);
 namespace internal {
 
 template <typename F>
-void for_each_index(std::span<const dim> dims, int d, std::span<index_t> is, F&& f) {
+void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, F&& f) {
   if (d == 0) {
     for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
       is[0] = i;
-      f(is);
+      f(span<const index_t>(is, is + rank));
     }
   } else {
     for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
       is[d] = i;
-      for_each_index(dims, d - 1, is, f);
+      for_each_index(dims, d - 1, is, rank, f);
     }
   }
 }
 
 }  // namespace internal
 
-// Call `f(std::span<index_t>)` for each index in the range of `dims`, or the dims of `buf`.
+// Call `f(span<index_t>)` for each index in the range of `dims`, or the dims of `buf`.
 // This function is not fast, use it for non-performance critical code. It is useful for
 // making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
 template <typename F>
-void for_each_index(std::span<const dim> dims, F&& f) {
+void for_each_index(span<const dim> dims, F&& f) {
   // Not using alloca for performance, but to avoid including <vector>
   index_t* i = reinterpret_cast<index_t*>(alloca(dims.size() * sizeof(index_t)));
-  internal::for_each_index(dims, dims.size() - 1, {i, dims.size()}, f);
+  internal::for_each_index(dims, dims.size() - 1, i, dims.size(), f);
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, F&& f) {

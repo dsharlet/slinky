@@ -24,7 +24,7 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
     interval_expr bounds = buffer_bounds(var, i);
     expr stride = buffer_stride(var, i);
     expr fold_factor = buffer_fold_factor(var, i);
-    dims_.emplace_back(bounds, stride, fold_factor);
+    dims_.push_back({bounds, stride, fold_factor});
   }
 }
 
@@ -37,7 +37,7 @@ buffer_expr::buffer_expr(symbol_id sym, const raw_buffer* c)
     expr max = c->dims[d].max();
     expr stride = c->dims[d].stride();
     expr fold_factor = c->dims[d].fold_factor();
-    dims_.emplace_back(bounds(min, max), stride, fold_factor);
+    dims_.push_back({bounds(min, max), stride, fold_factor});
   }
 }
 

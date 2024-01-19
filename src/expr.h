@@ -3,13 +3,13 @@
 
 #include "src/buffer.h"
 #include "src/ref_count.h"
+#include "src/span.h"
 
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -238,8 +238,8 @@ expr min(expr a, expr b);
 expr max(expr a, expr b);
 expr clamp(expr x, expr a, expr b);
 expr select(expr c, expr t, expr f);
-expr min(std::span<expr> x);
-expr max(std::span<expr> x);
+expr min(span<expr> x);
+expr max(span<expr> x);
 
 struct interval_expr {
   expr min, max;
@@ -513,7 +513,7 @@ public:
   static stmt make(stmt a, stmt b);
   // Recursively create blocks to contain all of the `stmts`. This may not produce a block at all if `stmts` contains
   // only one item.
-  static stmt make(std::span<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
+  static stmt make(span<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
   static stmt make(std::initializer_list<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
   template <typename It>
   static stmt make(It begin, It end) {
@@ -1014,14 +1014,14 @@ expr buffer_max(expr buf, expr dim);
 expr buffer_extent(expr buf, expr dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
-expr buffer_at(expr buf, std::span<const expr> at);
-expr buffer_at(expr buf, std::span<const var> at);
+expr buffer_at(expr buf, span<const expr> at);
+expr buffer_at(expr buf, span<const var> at);
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
 std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
-box_expr dims_bounds(std::span<const dim_expr> dims);
+box_expr dims_bounds(span<const dim_expr> dims);
 
 }  // namespace slinky
 

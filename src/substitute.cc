@@ -497,7 +497,7 @@ public:
     bool changed = false;
     for (const dim_expr& i : op->dims) {
       interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
+      dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
       changed = changed || !dims.back().same_as(i);
     }
     auto s = set_value_in_scope(shadowed, op->sym, true);
@@ -516,7 +516,7 @@ public:
     bool changed = false;
     for (const dim_expr& i : op->dims) {
       interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.emplace_back(std::move(bounds), mutate(i.stride), mutate(i.fold_factor));
+      dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
       changed = changed || dims.back().same_as(i);
     }
     auto s = set_value_in_scope(shadowed, op->sym, true);
@@ -541,7 +541,7 @@ public:
     at.reserve(op->at.size());
     bool changed = false;
     for (const expr& i : op->at) {
-      at.emplace_back(mutate(i));
+      at.push_back(mutate(i));
       changed = changed || at.back().same_as(i);
     }
     auto s = set_value_in_scope(shadowed, op->sym, true);
@@ -565,7 +565,7 @@ public:
 };
 
 template <typename T>
-T substitute(T op, std::span<const std::pair<expr, expr>> subs) {
+T substitute(T op, span<const std::pair<expr, expr>> subs) {
   for (const std::pair<expr, expr>& i : subs) {
     op = substitutor(i.first, i.second).mutate(op);
   }
@@ -628,11 +628,11 @@ namespace {
 
 class dependencies : public recursive_node_visitor {
 public:
-  std::span<const symbol_id> vars;
+  span<const symbol_id> vars;
   bool found_var = false;
   bool found_buf = false;
 
-  dependencies(std::span<const symbol_id> vars) : vars(vars) {}
+  dependencies(span<const symbol_id> vars) : vars(vars) {}
 
   void accept_buffer(const expr& e) {
     bool old_found_var = found_var;
@@ -715,7 +715,7 @@ bool depends_on(const stmt& s, symbol_id var) {
   return v.found_var || v.found_buf;
 }
 
-bool depends_on(const stmt& s, std::span<const symbol_id> vars) {
+bool depends_on(const stmt& s, span<const symbol_id> vars) {
   if (!s.defined()) return false;
   dependencies v(vars);
   s.accept(&v);

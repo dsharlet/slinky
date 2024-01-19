@@ -85,7 +85,7 @@ public:
 
 // Keep substituting substitutions until nothing happens.
 std::vector<dim_expr> recursive_substitute(
-    std::vector<dim_expr> dims, std::span<const std::pair<expr, expr>> substitutions) {
+    std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
   while (true) {
     bool changed = false;
     for (dim_expr& dim : dims) {
@@ -311,7 +311,7 @@ public:
   }
 
   template <typename T>
-  void visit_call_or_copy(const T* op, std::span<const symbol_id> outputs) {
+  void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
     stmt result = op;
     for (symbol_id output : outputs) {
       std::optional<box_expr>& bounds = buffer_bounds[output];
@@ -457,7 +457,7 @@ public:
     }
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
-    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);
+    loops.push_back({op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step});
     stmt body = mutate(op->body);
     expr loop_min = loops.back().bounds.min;
     loops.pop_back();

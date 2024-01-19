@@ -41,7 +41,7 @@ raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
   return {buf, destroy};
 }
 
-raw_buffer_ptr raw_buffer::make(std::size_t elem_size, std::span<const index_t> extents) {
+raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> extents) {
   raw_buffer_ptr result = make(extents.size(), elem_size);
   index_t stride = elem_size;
   for (std::size_t d = 0; d < extents.size(); ++d) {

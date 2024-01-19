@@ -367,7 +367,7 @@ public:
         // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
         // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
         // dimensions than the output) or not.
-        src_dims.emplace_back(buffer_bounds(dst_var, dst_d), 0, expr());
+        src_dims.push_back({buffer_bounds(dst_var, dst_d), 0, expr()});
         dst_d++;
         handled = true;
       } else if (dep_count == 1) {
@@ -375,8 +375,8 @@ public:
         if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
           interval_expr dst_bounds = buffer_bounds(dst_var, dst_d);
           interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
-          src_dims.emplace_back(
-              dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d));
+          src_dims.push_back(
+              {dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d)});
           src_x[src_d] = max(buffer_min(dst_var, dst_d) + offset, buffer_min(src_var, src_d));
           dst_d++;
           handled = true;
@@ -429,7 +429,7 @@ void for_each_stmt_backward(const stmt& s, const Fn& fn) {
 // - stmts that don't depend on `vars`
 // - stmts that do depend on `vars`
 // - stmts that don't depend on `vars`
-std::tuple<stmt, stmt, stmt> split_body(const stmt& body, std::span<const symbol_id> vars) {
+std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> vars) {
   stmt before;
   stmt new_body_after;
   bool depended_on = false;
