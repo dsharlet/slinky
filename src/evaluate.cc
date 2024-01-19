@@ -16,6 +16,7 @@
 #include "src/expr.h"
 #include "src/print.h"
 #include "src/substitute.h"
+#include "src/util.h"
 
 namespace slinky {
 

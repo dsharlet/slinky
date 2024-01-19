@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "src/util.h"
+
 namespace slinky {
 
 std::size_t raw_buffer::size_bytes() const {
