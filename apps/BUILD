@@ -1,3 +1,8 @@
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:private"],
+)
+
 cc_binary(
     name = "memcpy",
     srcs = ["memcpy.cc", "benchmark.h"],
