@@ -1,3 +1,7 @@
+package(
+    default_visibility = ["//visibility:private"],
+    default_testonly = True,
+)
 
 cc_library(
     name = "thread_pool",
