@@ -3,7 +3,7 @@
 
 #include "src/evaluate.h"
 #include "src/expr.h"
-#include "src/ref_count.h"
+#include "src/util.h"
 
 namespace slinky {
 

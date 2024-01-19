@@ -2,8 +2,7 @@
 #define SLINKY_EXPR_H
 
 #include "src/buffer.h"
-#include "src/ref_count.h"
-#include "src/span.h"
+#include "src/util.h"
 
 #include <cstdlib>
 #include <functional>

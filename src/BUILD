@@ -8,9 +8,8 @@ cc_library(
         "buffer.cc",
     ],
     hdrs = [
-        "arithmetic.h", 
         "buffer.h",
-        "span.h",
+        "util.h", 
     ],
     visibility = ["//visibility:public"],
 )
@@ -29,7 +28,6 @@ cc_library(
         "substitute.cc",
     ],
     hdrs = [
-        "arithmetic.h",
         "evaluate.h",
         "expr.h",
         "infer_bounds.h",
@@ -37,11 +35,10 @@ cc_library(
         "optimizations.h",
         "pipeline.h",
         "print.h",
-        "ref_count.h",
         "simplify.h",
-        "span.h",
         "substitute.h",
         "symbol_map.h",
+        "util.h", 
     ],
     deps = [":runtime"],
     visibility = ["//visibility:public"],

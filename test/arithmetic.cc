@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "src/arithmetic.h"
+#include "src/util.h"
 
 using namespace slinky;
 
