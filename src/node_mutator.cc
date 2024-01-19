@@ -1,5 +1,7 @@
 #include "src/node_mutator.h"
 
+#include <utility>
+
 namespace slinky {
 
 namespace {

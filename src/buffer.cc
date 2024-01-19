@@ -1,6 +1,10 @@
 #include "src/buffer.h"
 
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 namespace slinky {
 

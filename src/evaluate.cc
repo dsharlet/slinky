@@ -2,9 +2,9 @@
 
 #include <cassert>
 #include <iostream>
+#include <memory>
 
 #include "src/print.h"
-#include "src/simplify.h"
 #include "src/substitute.h"
 
 namespace slinky {

@@ -1,10 +1,16 @@
 #include "src/pipeline.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdlib>
 #include <iostream>
 #include <list>
-#include <map>
+#include <optional>
 #include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "src/evaluate.h"
 #include "src/infer_bounds.h"
@@ -28,15 +34,15 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
   }
 }
 
-buffer_expr::buffer_expr(symbol_id sym, const raw_buffer* c)
-    : sym_(sym), elem_size_(c->elem_size), producer_(nullptr), constant_(c) {
-  dims_.reserve(c->rank);
+buffer_expr::buffer_expr(symbol_id sym, const raw_buffer* buffer)
+    : sym_(sym), elem_size_(buffer->elem_size), producer_(nullptr), constant_(buffer) {
+  dims_.reserve(buffer->rank);
 
-  for (index_t d = 0; d < static_cast<index_t>(c->rank); ++d) {
-    expr min = c->dims[d].min();
-    expr max = c->dims[d].max();
-    expr stride = c->dims[d].stride();
-    expr fold_factor = c->dims[d].fold_factor();
+  for (index_t d = 0; d < static_cast<index_t>(buffer->rank); ++d) {
+    expr min = buffer->dims[d].min();
+    expr max = buffer->dims[d].max();
+    expr stride = buffer->dims[d].stride();
+    expr fold_factor = buffer->dims[d].fold_factor();
     dims_.push_back({bounds(min, max), stride, fold_factor});
   }
 }

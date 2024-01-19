@@ -1,6 +1,7 @@
 #ifndef SLINKY_APPS_BENCHMARK_H
 #define SLINKY_APPS_BENCHMARK_H
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 

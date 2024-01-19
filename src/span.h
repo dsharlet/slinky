@@ -1,6 +1,8 @@
 #ifndef SLINKY_SPAN_H
 #define SLINKY_SPAN_H
 
+#include <type_traits>
+#include <cstddef>
 #include <vector>
 #include <array>
 

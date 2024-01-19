@@ -1,8 +1,10 @@
 #include "apps/benchmark.h"
 #include "src/pipeline.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <immintrin.h>
 #include <iostream>
 

@@ -1,9 +1,6 @@
 #include "apps/benchmark.h"
 
 #include <cassert>
-#include <chrono>
-#include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <iostream>
 

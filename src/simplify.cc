@@ -1972,10 +1972,10 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
   }
 }
 
-interval_expr bounds_of(const expr& e, const bounds_map& expr_bounds) {
+interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
   interval_expr bounds;
-  s.mutate(e, &bounds);
+  s.mutate(x, &bounds);
   return bounds;
 }
 
@@ -2121,6 +2121,6 @@ public:
 
 }  // namespace
 
-expr differentiate(const expr& f, symbol_id op) { return derivative(op).mutate(f); }
+expr differentiate(const expr& f, symbol_id x) { return derivative(x).mutate(f); }
 
 }  // namespace slinky

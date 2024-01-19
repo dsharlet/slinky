@@ -2,7 +2,15 @@
 
 #include "src/simplify.h"
 
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <functional>
 #include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace slinky {
 
@@ -78,7 +86,7 @@ const constant* make_constant(index_t value) {
   return n;
 }
 
-expr::expr(index_t value) : expr(make_constant(value)) {}
+expr::expr(index_t x) : expr(make_constant(x)) {}
 
 expr variable::make(symbol_id sym) { return make_variable(sym); }
 
@@ -477,8 +485,8 @@ box_expr dims_bounds(span<const dim_expr> dims) {
   return result;
 }
 
-bool is_buffer_intrinsic(intrinsic i) {
-  switch (i) {
+bool is_buffer_intrinsic(intrinsic fn) {
+  switch (fn) {
   case intrinsic::buffer_rank:
   case intrinsic::buffer_base:
   case intrinsic::buffer_elem_size:

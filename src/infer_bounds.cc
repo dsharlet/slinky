@@ -1,11 +1,13 @@
 #include "src/infer_bounds.h"
 
 #include <cassert>
-#include <iostream>
+#include <cstddef>
+#include <optional>
+#include <utility>
+#include <vector>
 
 #include "src/node_mutator.h"
 #include "src/optimizations.h"
-#include "src/print.h"
 #include "src/simplify.h"
 #include "src/substitute.h"
 
@@ -317,7 +319,7 @@ public:
       std::optional<box_expr>& bounds = buffer_bounds[output];
       if (!bounds) continue;
 
-      for (size_t op = 0; op < loops.size(); ++op) {
+      for (std::size_t op = 0; op < loops.size(); ++op) {
         symbol_id loop_sym = loops[op].sym;
         expr loop_var = variable::make(loop_sym);
         const expr& loop_max = loops[op].bounds.max;

@@ -1,13 +1,17 @@
 #include "src/optimizations.h"
 
 #include <cassert>
+#include <cstddef>
+#include <cstdlib>
 #include <map>
+#include <optional>
 #include <set>
+#include <tuple>
+#include <vector>
+#include <utility>
 
 #include "src/evaluate.h"
 #include "src/node_mutator.h"
-#include "src/print.h"
-#include "src/simplify.h"
 #include "src/substitute.h"
 
 namespace slinky {

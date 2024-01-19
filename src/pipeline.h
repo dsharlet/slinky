@@ -51,7 +51,7 @@ public:
   // TODO: This should probably either be some kind of smart pointer, or maybe at least copy the raw_buffer object (but
   // not the underlying data).
   static buffer_expr_ptr make(symbol_id sym, const raw_buffer* buffer);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sum, const raw_buffer* buffer);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const raw_buffer* buffer);
 
   symbol_id sym() const { return sym_; }
   index_t elem_size() const { return elem_size_; }
