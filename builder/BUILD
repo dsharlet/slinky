@@ -32,8 +32,8 @@ cc_test(
     srcs = ["checks_test.cc"],
     deps = [
         ":builder",
-        "//runtime",
         "@googletest//:gtest_main",
+        "//runtime",
     ],
 )
 
@@ -42,8 +42,8 @@ cc_test(
     srcs = ["copy_test.cc"],
     deps = [
         ":builder",
-        "//runtime",
         "@googletest//:gtest_main",
+        "//runtime",
     ],
 )
 
@@ -52,8 +52,8 @@ cc_test(
     srcs = ["elementwise_test.cc"],
     deps = [
         ":builder",
-        "//runtime",
         "@googletest//:gtest_main",
+        "//runtime",
     ],
 )
 
@@ -62,9 +62,9 @@ cc_test(
     srcs = ["pipeline_test.cc"],
     deps = [
         ":builder",
+        "@googletest//:gtest_main",
         "//runtime",
         "//runtime:thread_pool",
-        "@googletest//:gtest_main",
     ],
 )
 
@@ -73,7 +73,7 @@ cc_test(
     srcs = ["simplify_test.cc"],
     deps = [
         ":builder",
-        "//runtime",
         "@googletest//:gtest_main",
+        "//runtime",
     ],
 )

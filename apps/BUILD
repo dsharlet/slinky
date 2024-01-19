@@ -5,11 +5,20 @@ package(
 
 cc_binary(
     name = "memcpy",
-    srcs = ["memcpy.cc", "benchmark.h"],
+    srcs = [
+        "benchmark.h",
+        "memcpy.cc", 
+    ],
 )
 
 cc_binary(
     name = "performance",
-    srcs = ["performance.cc", "benchmark.h"],
-    deps = ["//builder", "//runtime"],
+    srcs = [
+        "benchmark.h",
+        "performance.cc",
+    ],
+    deps = [
+        "//builder", 
+        "//runtime",
+    ],
 )
