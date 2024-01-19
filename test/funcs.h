@@ -51,6 +51,14 @@ index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   return 0;
 }
 
+template <typename T>
+index_t subtract(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
+  assert(a.rank == out.rank);
+  assert(b.rank == out.rank);
+  for_each_index(out, [&](auto i) { out(i) = a(i) - b(i); });
+  return 0;
+}
+
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
@@ -118,6 +126,11 @@ index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
   return sum_stencil<T, -1, -1, 1, 1>(in, out);
 }
 
+// A centered 2D 5x5 stencil operation.
+template <typename T>
+index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
+  return sum_stencil<T, -2, -2, 2, 2>(in, out);
+}
 
 }  // namespace slinky
 
