@@ -803,7 +803,7 @@ public:
 
   virtual void visit(const let_stmt* op) override {
     op->value.accept(this);
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const block* op) override {
     if (op->a.defined()) op->a.accept(this);
@@ -812,8 +812,8 @@ public:
   virtual void visit(const loop* op) override {
     op->bounds.min.accept(this);
     op->bounds.max.accept(this);
-    op->step.accept(this);
-    op->body.accept(this);
+    if (op->step.defined()) op->step.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const if_then_else* op) override {
     op->condition.accept(this);
@@ -833,7 +833,7 @@ public:
       i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const make_buffer* op) override {
     op->base.accept(this);
@@ -844,32 +844,32 @@ public:
       i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const clone_buffer* op) override {
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const crop_buffer* op) override {
     for (const interval_expr& i : op->bounds) {
       if (i.min.defined()) i.min.accept(this);
       if (i.max.defined()) i.max.accept(this);
     }
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const crop_dim* op) override {
     if (op->bounds.min.defined()) op->bounds.min.accept(this);
     if (op->bounds.max.defined()) op->bounds.max.accept(this);
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const slice_buffer* op) override {
     for (const expr& i : op->at) {
       if (i.defined()) i.accept(this);
     }
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const slice_dim* op) override {
     op->at.accept(this);
-    op->body.accept(this);
+    if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const truncate_rank* op) override { op->body.accept(this); }
   virtual void visit(const check* op) override { op->condition.accept(this); }

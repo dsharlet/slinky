@@ -438,7 +438,7 @@ public:
   substitutor(const expr& target, const expr& replacement) : target(target), replacement(replacement) {}
 
   expr mutate(const expr& op) override {
-    if (target.defined() && match(op, target)) {
+    if (target.defined() && op.defined() && match(op, target)) {
       return replacement;
     } else {
       return node_mutator::mutate(op);
