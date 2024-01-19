@@ -1,3 +1,6 @@
+package(
+    default_visibility = ["//visibility:private"],
+)
 
 cc_library(
     name = "runtime",
