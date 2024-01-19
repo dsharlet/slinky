@@ -1,9 +1,8 @@
 #ifndef SLINKY_BUFFER_H
 #define SLINKY_BUFFER_H
 
+#include <algorithm>
 #include <cassert>
-#include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>

@@ -1,6 +1,7 @@
 #ifndef SLINKY_REF_COUNT_H
 #define SLINKY_REF_COUNT_H
 
+#include <algorithm>
 #include <atomic>
 
 namespace slinky {
