@@ -2,6 +2,7 @@
 
 #include <cassert>
 
+#include "src/expr.h"
 #include "src/node_mutator.h"
 #include "src/symbol_map.h"
 

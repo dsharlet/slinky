@@ -2,10 +2,12 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 #include <vector>
 
+#include "src/expr.h"
 #include "src/node_mutator.h"
 #include "src/optimizations.h"
 #include "src/simplify.h"

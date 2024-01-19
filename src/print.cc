@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string>
 
+#include "src/expr.h"
+
 namespace slinky {
 
 std::ostream& operator<<(std::ostream& os, memory_type type) {

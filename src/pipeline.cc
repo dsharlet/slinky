@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "src/evaluate.h"
+#include "src/expr.h"
 #include "src/infer_bounds.h"
 #include "src/node_mutator.h"
 #include "src/optimizations.h"

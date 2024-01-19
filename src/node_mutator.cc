@@ -1,6 +1,9 @@
 #include "src/node_mutator.h"
 
 #include <utility>
+#include <vector>
+
+#include "src/expr.h"
 
 namespace slinky {
 

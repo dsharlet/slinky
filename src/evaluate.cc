@@ -1,9 +1,17 @@
 #include "src/evaluate.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cassert>
+#include <cstddef>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <string>
+#include <utility>
 
+#include "src/expr.h"
 #include "src/print.h"
 #include "src/substitute.h"
 
