@@ -5,6 +5,7 @@ After a pipeline is specified, Slinky will break the buffers into smaller chunks
 
 Slinky is heavily inspired and motivated by [Halide](https://halide-lang.org).
 It can be described by starting with Halide, and making the following changes:
+
 - Slinky is a runtime, not a compiler.
 - All operations that read and write buffers are user defined callbacks (except copies and other data movement operations).
 - Bounds for each operation are manually provided instead of inferred (as in Halide).
@@ -126,6 +127,7 @@ intm = allocate<intm>({
 ```
 
 This program does the following:
+
 - Allocates a buffer for `intm`, with a fold factor of 3, meaning that the coordinates of the second dimension are modulo 3 when computing addresses.
 - Runs a loop over `y` starting from 2 rows before the first output row, calling `add` and `sum3x3` at each `y`.
 - The calls are cropped to the line to be produced on the current iteration `y`. `sum3x3` reads rows `y-1`, `y`, and `y+1` of `intm`, so we need to produce `y+1` of `intm` before producing `y` of `out`.
@@ -175,6 +177,7 @@ pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
 	- `matmul` is the callback function implementing the matrix multiply operation.
 
 Much like the elementwise example, we can compute this in a variety of ways between two extremes:
+
 1. Allocating `ab` to have the full extent of the product `a x b`, and executing all of the first multiply followed by all of the second multiply.
 2. Each row of the second product depends only on the same row of the first product. Therefore, we can allocate `ab` to hold only one row of the product `a x b`, and compute both products in a loop over rows of the final result.
 
@@ -182,6 +185,7 @@ In practice, matrix multiplication kernels like to produce multiple rows at once
 
 ## Where this helps
 We expect this approach to fill a gap between two extremes that seem prevalent today (TODO: is this really true? I think so...):
+
 1. Pipeline interpreters that execute entire operations one at a time.
 2. Pipeline compilers that generate code specific to a pipeline.
 
@@ -193,6 +197,7 @@ We *think* Slinky's approach is a more easily solved problem, and will degrade m
 This [performance app](apps/performance.cc) attempts to measure the overhead of interpreting pipelines at runtime.
 The test performs a copy between two 2D buffers of "total size" bytes, and the inner dimension is "copy size" bytes
 The inner dimension is copied with `memcpy`, the outer dimension is a loop implemented in one of two ways:
+
 1. An "explicit loop" version, which has a loop in the pipeline for the outer dimension (interpreted by Slinky).
 2. An "implicit loop" version, which loops over the outer dimension in the callback.
 
