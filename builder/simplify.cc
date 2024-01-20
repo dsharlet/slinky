@@ -1599,17 +1599,7 @@ public:
     return {simplify_crop_bound(i.min, sym, dim), simplify_crop_bound(i.max, sym, dim)};
   }
 
-  template <typename T>
-  static stmt clone_op_across_block(const T* op, stmt a, stmt b) {
-    return block::make(clone_with_new_body(op, std::move(a)), clone_with_new_body(op, std::move(b)));
-  }
-
   void visit(const crop_buffer* op) override {
-    if (const block* b = op->body.as<block>()) {
-      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
-      return;
-    }
-
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
     // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
@@ -1639,19 +1629,20 @@ public:
       dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
 
-    auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = op->body;
-    for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-      if (new_bounds[d].min.defined() || new_bounds[d].max.defined()) {
-        body = substitute_bounds(body, op->sym, d, new_bounds[d]);
+    {
+      auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
+      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+      for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
+        if (new_bounds[d].min.defined() || new_bounds[d].max.defined()) {
+          body = substitute_bounds(body, op->sym, d, new_bounds[d]);
+        }
       }
-    }
-    body = mutate(body);
-
-    if (!*bounds_used[op->sym]) {
-      set_result(body);
-      return;
+      body = mutate(body);
+      if (!body.defined() || !*bounds_used[op->sym]) {
+        set_result(body);
+        return;
+      }
     }
 
     // Remove trailing undefined bounds.
@@ -1661,6 +1652,9 @@ public:
     if (new_bounds.empty()) {
       // This crop was a no-op.
       set_result(std::move(body));
+    } else if (const block* b = body.as<block>()) {
+      set_result(block::make(
+          mutate(crop_buffer::make(op->sym, new_bounds, b->a)), mutate(crop_buffer::make(op->sym, new_bounds, b->b))));
     } else if (dims_count == 1) {
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1674,11 +1668,6 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    if (const block* b = op->body.as<block>()) {
-      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
-      return;
-    }
-
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->sym, op->dim);
     expr sym_var = variable::make(op->sym);
     if (prove_true(bounds.min <= buffer_min(sym_var, op->dim))) bounds.min = expr();
@@ -1703,17 +1692,18 @@ public:
       if (bounds.max.defined()) (*buf_bounds)[op->dim].max = bounds.max;
     }
 
-    auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
-    stmt body = substitute_bounds(op->body, op->sym, op->dim, bounds);
-    body = mutate(body);
-
-    if (!*bounds_used[op->sym]) {
-      set_result(body);
-      return;
+    stmt body;
+    {
+      auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
+      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
+      body = substitute_bounds(op->body, op->sym, op->dim, bounds);
+      body = mutate(body);
+      if (!body.defined() || !*bounds_used[op->sym]) {
+        set_result(body);
+        return;
+      }
     }
 
-    set_bounds.exit_scope();
 
     if (const slice_dim* slice = body.as<slice_dim>()) {
       if (slice->sym == op->sym && slice->dim == op->dim) {
@@ -1735,8 +1725,9 @@ public:
       }
     }
 
-    if (!body.defined()) {
-      set_result(stmt());
+    if (const block* b = body.as<block>()) {
+      set_result(block::make(mutate(crop_dim::make(op->sym, op->dim, bounds, b->a)),
+          mutate(crop_dim::make(op->sym, op->dim, bounds, b->b))));
     } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1745,11 +1736,6 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    if (const block* b = op->body.as<block>()) {
-      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
-      return;
-    }
-
     // Update the bounds for the slice. Sliced dimensions are removed from the bounds.
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     std::vector<expr> at(op->at.size());
@@ -1772,8 +1758,10 @@ public:
       body = substitute_bounds(body, op->sym, *bounds);
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    body = mutate(body);
+    {
+      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+      body = mutate(body);
+    }
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -1787,6 +1775,9 @@ public:
     if (at.empty()) {
       // This slice was a no-op.
       set_result(std::move(body));
+    } else if (const block* b = body.as<block>()) {
+      set_result(
+          block::make(mutate(slice_buffer::make(op->sym, at, b->a)), mutate(slice_buffer::make(op->sym, at, b->b))));
     } else if (dims_count == 1) {
       // This slice is of one dimension, replace it with slice_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1800,11 +1791,6 @@ public:
   }
 
   void visit(const slice_dim* op) override {
-    if (const block* b = op->body.as<block>()) {
-      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
-      return;
-    }
-
     expr at = mutate(op->at);
 
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
@@ -1816,10 +1802,15 @@ public:
       body = substitute_bounds(body, op->sym, *bounds);
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    body = mutate(body);
+    {
+      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+      body = mutate(body);
+    }
     if (!body.defined()) {
       set_result(stmt());
+    } else if (const block* b = body.as<block>()) {
+      set_result(block::make(
+          mutate(slice_dim::make(op->sym, op->dim, at, b->a)), mutate(slice_dim::make(op->sym, op->dim, at, b->b))));
     } else if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1828,11 +1819,6 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
-    if (const block* b = op->body.as<block>()) {
-      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
-      return;
-    }
-    
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
       if (static_cast<int>(bounds->size()) > op->rank) {
@@ -1846,10 +1832,16 @@ public:
       }
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    stmt body = mutate(op->body);
+    stmt body;
+    {
+      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+      body = mutate(op->body);
+    }
     if (!body.defined()) {
       set_result(stmt());
+    } else if (const block* b = body.as<block>()) {
+      set_result(block::make(
+          mutate(truncate_rank::make(op->sym, op->rank, b->a)), mutate(truncate_rank::make(op->sym, op->rank, b->b))));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
