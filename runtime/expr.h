@@ -1117,10 +1117,15 @@ public:
 
   const std::optional<T>& old_value() const { return old_value_; }
 
-  ~scoped_value_in_symbol_map() {
+  void exit_scope() {
     if (context_) {
       (*context_)[sym_] = std::move(old_value_);
+      context_ = nullptr;
     }
+  }
+
+  ~scoped_value_in_symbol_map() {
+    exit_scope();
   }
 };
 
