@@ -1599,7 +1599,17 @@ public:
     return {simplify_crop_bound(i.min, sym, dim), simplify_crop_bound(i.max, sym, dim)};
   }
 
+  template <typename T>
+  static stmt clone_op_across_block(const T* op, stmt a, stmt b) {
+    return block::make(clone_with_new_body(op, std::move(a)), clone_with_new_body(op, std::move(b)));
+  }
+
   void visit(const crop_buffer* op) override {
+    if (const block* b = op->body.as<block>()) {
+      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
+      return;
+    }
+
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
     // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
@@ -1664,6 +1674,11 @@ public:
   }
 
   void visit(const crop_dim* op) override {
+    if (const block* b = op->body.as<block>()) {
+      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
+      return;
+    }
+
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->sym, op->dim);
     expr sym_var = variable::make(op->sym);
     if (prove_true(bounds.min <= buffer_min(sym_var, op->dim))) bounds.min = expr();
@@ -1718,6 +1733,11 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
+    if (const block* b = op->body.as<block>()) {
+      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
+      return;
+    }
+
     // Update the bounds for the slice. Sliced dimensions are removed from the bounds.
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     std::vector<expr> at(op->at.size());
@@ -1768,6 +1788,11 @@ public:
   }
 
   void visit(const slice_dim* op) override {
+    if (const block* b = op->body.as<block>()) {
+      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
+      return;
+    }
+
     expr at = mutate(op->at);
 
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
@@ -1791,6 +1816,11 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
+    if (const block* b = op->body.as<block>()) {
+      set_result(mutate(clone_op_across_block(op, b->a, b->b)));
+      return;
+    }
+    
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
       if (static_cast<int>(bounds->size()) > op->rank) {
