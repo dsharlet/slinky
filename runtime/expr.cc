@@ -128,9 +128,9 @@ expr euclidean_div(expr a, expr b) { return div::make(std::move(a), std::move(b)
 expr euclidean_mod(expr a, expr b) { return mod::make(std::move(a), std::move(b)); }
 expr min(expr a, expr b) { return min::make(std::move(a), std::move(b)); }
 expr max(expr a, expr b) { return max::make(std::move(a), std::move(b)); }
-expr clamp(expr x, expr a, expr b) { 
+expr clamp(expr x, expr a, expr b) {
   if (a.defined()) x = max::make(std::move(x), std::move(a));
-  if (b.defined()) x = min::make(std::move(x), std::move(b)); 
+  if (b.defined()) x = min::make(std::move(x), std::move(b));
   return x;
 }
 expr select(expr c, expr t, expr f) { return select::make(std::move(c), std::move(t), std::move(f)); }
@@ -177,15 +177,15 @@ const interval_expr& interval_expr::intersection_identity() { return all(); }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_non_negative(scale)) {
-    min = mul::make(min, scale);
-    max = mul::make(max, scale);
+    if (min.defined()) min = mul::make(min, scale);
+    if (max.defined()) max = mul::make(max, scale);
   } else if (is_negative(scale)) {
     std::swap(min, max);
-    min = mul::make(min, scale);
-    max = mul::make(max, scale);
+    if (min.defined()) min = mul::make(min, scale);
+    if (max.defined()) max = mul::make(max, scale);
   } else {
-    min = mul::make(min, scale);
-    max = mul::make(max, scale);
+    if (min.defined()) min = mul::make(min, scale);
+    if (max.defined()) max = mul::make(max, scale);
     *this |= bounds(max, min);
   }
   return *this;
@@ -193,29 +193,29 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
 
 interval_expr& interval_expr::operator/=(const expr& scale) {
   if (is_non_negative(scale)) {
-    min = div::make(min, scale);
-    max = div::make(max, scale);
+    if (min.defined()) min = div::make(min, scale);
+    if (max.defined()) max = div::make(max, scale);
   } else if (is_negative(scale)) {
     std::swap(min, max);
-    min = div::make(min, scale);
-    max = div::make(max, scale);
+    if (min.defined()) min = div::make(min, scale);
+    if (max.defined()) max = div::make(max, scale);
   } else {
-    min = div::make(min, scale);
-    max = div::make(max, scale);
+    if (min.defined()) min = div::make(min, scale);
+    if (max.defined()) max = div::make(max, scale);
     *this |= bounds(max, min);
   }
   return *this;
 }
 
 interval_expr& interval_expr::operator+=(const expr& offset) {
-  min = add::make(min, offset);
-  max = add::make(max, offset);
+  if (min.defined()) min = add::make(min, offset);
+  if (max.defined()) max = add::make(max, offset);
   return *this;
 }
 
 interval_expr& interval_expr::operator-=(const expr& offset) {
-  min = sub::make(min, offset);
-  max = sub::make(max, offset);
+  if (min.defined()) min = sub::make(min, offset);
+  if (max.defined()) max = sub::make(max, offset);
   return *this;
 }
 
@@ -243,17 +243,19 @@ interval_expr interval_expr::operator-(const expr& offset) const {
   return result;
 }
 
-interval_expr interval_expr::operator-() const { return {-max, -min}; }
+interval_expr interval_expr::operator-() const {
+  return {max.defined() ? -max : expr(), min.defined() ? -min : expr()};
+}
 
 interval_expr& interval_expr::operator|=(const interval_expr& r) {
-  min = slinky::min(min, r.min);
-  max = slinky::max(max, r.max);
+  min = (min.defined() && r.min.defined()) ? slinky::min(min, r.min) : expr();
+  max = (max.defined() && r.max.defined()) ? slinky::max(max, r.max) : expr();
   return *this;
 }
 
 interval_expr& interval_expr::operator&=(const interval_expr& r) {
-  min = slinky::max(min, r.min);
-  max = slinky::min(max, r.max);
+  min = (min.defined() && r.min.defined()) ? slinky::max(min, r.min) : min.defined() ? min : r.min;
+  max = (max.defined() && r.max.defined()) ? slinky::min(max, r.max) : max.defined() ? max : r.max;
   return *this;
 }
 
