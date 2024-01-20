@@ -1107,7 +1107,7 @@ TEST(pipeline, parallel_stencils) {
   var y(ctx, "y");
 
   func add1 = func::make<const short, short>(add_1<short>, {in1, {point(x), point(y)}}, {intm1, {x, y}});
-  func add2 = func::make<const short, short>(add_1<short>, {in2, {point(x), point(y)}}, {intm2, {x, y}});
+  func add2 = func::make<const short, short>(multiply_2<short>, {in2, {point(x), point(y)}}, {intm2, {x, y}});
   func stencil1 =
       func::make<const short, short>(sum3x3<short>, {intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm3, {x, y}});
   func stencil2 =
@@ -1153,7 +1153,7 @@ TEST(pipeline, parallel_stencils) {
   ref_out.allocate();
 
   add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
-  add_1<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
+  multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
   sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
   sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
   subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
