@@ -1,5 +1,5 @@
-#ifndef SLINKY_BUILDER_FUNC_H
-#define SLINKY_BUILDER_FUNC_H
+#ifndef SLINKY_BUILDER_PIPELINE_H
+#define SLINKY_BUILDER_PIPELINE_H
 
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
@@ -277,4 +277,4 @@ pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& i
 
 }  // namespace slinky
 
-#endif  // SLINKY_BUILDER_FUNC_H
+#endif  // SLINKY_BUILDER_PIPELINE_H

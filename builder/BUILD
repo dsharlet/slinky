@@ -8,7 +8,7 @@ package(
 cc_library(
     name = "builder",
     srcs = [
-        "func.cc",
+        "pipeline.cc",
         "infer_bounds.cc",
         "node_mutator.cc",
         "optimizations.cc",
@@ -16,7 +16,7 @@ cc_library(
         "substitute.cc",
     ],
     hdrs = [
-        "func.h",
+        "pipeline.h",
         "infer_bounds.h",
         "node_mutator.h",
         "optimizations.h",

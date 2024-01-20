@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "runtime/expr.h"
-#include "builder/func.h"
+#include "builder/pipeline.h"
 #include "runtime/pipeline.h"
 
 using namespace slinky;

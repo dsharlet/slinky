@@ -1,4 +1,4 @@
-#include "builder/func.h"
+#include "builder/pipeline.h"
 
 #include <algorithm>
 #include <cassert>

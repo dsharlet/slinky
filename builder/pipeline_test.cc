@@ -4,7 +4,7 @@
 
 #include "runtime/pipeline.h"
 #include "runtime/expr.h"
-#include "builder/func.h"
+#include "builder/pipeline.h"
 #include "runtime/thread_pool.h"
 
 using namespace slinky;
