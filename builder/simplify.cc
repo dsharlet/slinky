@@ -1624,7 +1624,8 @@ public:
         if (prove_true(bounds_i.min <= (*prev_bounds)[i].min)) bounds_i.min = expr();
         if (prove_true(bounds_i.max >= (*prev_bounds)[i].max)) bounds_i.max = expr();
       }
-      new_bounds[i] = bounds_i;
+      if (bounds_i.min.defined()) new_bounds[i].min = bounds_i.min;
+      if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
       dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
 
@@ -1683,7 +1684,8 @@ public:
         set_result(mutate(op->body));
         return;
       }
-      (*buf_bounds)[op->dim] = bounds;
+      if (bounds.min.defined()) (*buf_bounds)[op->dim].min = bounds.min;
+      if (bounds.max.defined()) (*buf_bounds)[op->dim].max = bounds.max;
     }
 
     auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
