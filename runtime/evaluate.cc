@@ -479,11 +479,6 @@ public:
         // Crops can't span a folding boundary if they move the base pointer.
         assert(offset == 0 || max / dim.fold_factor() == min / dim.fold_factor());
         buffer->base = offset_bytes(buffer->base, offset);
-      } else {
-        // The buffer is empty, we can skip the body.
-        // TODO: This is risky, perhaps the crop body contains other work unrelated to this crop that
-        // is not a no-op?
-        return;
       }
       
       dim.set_bounds(min, max);
@@ -513,11 +508,6 @@ public:
       buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
       // Crops can't span a folding boundary if they move the base pointer.
       assert(buffer->base == old_base || max / dim.fold_factor() == min / dim.fold_factor());
-    } else {
-      // The buffer is empty, we can skip the body.
-      // TODO: This is risky, perhaps the crop body contains other work unrelated to this crop that
-      // is not a no-op?
-      return;
     }
 
     dim.set_bounds(min, max);
