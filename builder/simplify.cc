@@ -1630,14 +1630,14 @@ public:
     }
 
     stmt body = op->body;
+    for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
+      if (new_bounds[d].min.defined() || new_bounds[d].max.defined()) {
+        body = substitute_bounds(body, op->sym, d, new_bounds[d]);
+      }
+    }
     {
       auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        if (new_bounds[d].min.defined() || new_bounds[d].max.defined()) {
-          body = substitute_bounds(body, op->sym, d, new_bounds[d]);
-        }
-      }
       body = mutate(body);
       if (!body.defined() || !*bounds_used[op->sym]) {
         set_result(body);
@@ -1692,11 +1692,10 @@ public:
       if (bounds.max.defined()) (*buf_bounds)[op->dim].max = bounds.max;
     }
 
-    stmt body;
+    stmt body = substitute_bounds(op->body, op->sym, op->dim, bounds);
     {
       auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
-      body = substitute_bounds(op->body, op->sym, op->dim, bounds);
       body = mutate(body);
       if (!body.defined() || !*bounds_used[op->sym]) {
         set_result(body);
