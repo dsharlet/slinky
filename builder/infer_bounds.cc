@@ -533,6 +533,9 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // At this point, crops of input buffers are unnecessary.
   // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
   // be the case.
+  // TODO: This is now somewhat redundant with the simplifier, but what the simplifier does is more correct.
+  // Unfortunately, we need the more aggressive incorrect crop removal here! This needs to be fixed, and this
+  // should be removed completely.
   result = input_crop_remover().mutate(result);
 
   // Now we can simplify.

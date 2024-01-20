@@ -8,14 +8,14 @@
 #include <limits>
 #include <optional>
 #include <tuple>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "builder/node_mutator.h"
 #include "builder/substitute.h"
-#include "runtime/expr.h"
-#include "runtime/evaluate.h"
 #include "runtime/depends_on.h"
+#include "runtime/evaluate.h"
+#include "runtime/expr.h"
 #include "runtime/print.h"
 #include "runtime/util.h"
 
@@ -991,6 +991,7 @@ namespace {
 class simplifier : public node_mutator {
   symbol_map<int> references;
   symbol_map<box_expr> buffer_bounds;
+  symbol_map<bool> bounds_used;
   bounds_map expr_bounds;
 
   interval_expr result_bounds;
@@ -1064,12 +1065,15 @@ public:
     return result && !*result;
   }
 
-  void visit_symbol(symbol_id sym) {
+  void visit_symbol(symbol_id sym, bool bounds_used = true) {
     auto& ref_count = references[sym];
     if (!ref_count) {
       ref_count = 1;
     } else {
       *ref_count += 1;
+    }
+    if (bounds_used) {
+      this->bounds_used[sym] = true;
     }
   }
 
@@ -1416,7 +1420,7 @@ public:
 
   void visit(const call_stmt* op) override {
     for (symbol_id i : op->inputs) {
-      visit_symbol(i);
+      visit_symbol(i, /*bounds_used=*/false);
     }
     for (symbol_id o : op->outputs) {
       visit_symbol(o);
@@ -1624,6 +1628,7 @@ public:
       dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
 
+    auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = op->body;
     for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
@@ -1632,6 +1637,11 @@ public:
       }
     }
     body = mutate(body);
+
+    if (!*bounds_used[op->sym]) {
+      set_result(body);
+      return;
+    }
 
     // Remove trailing undefined bounds.
     while (!new_bounds.empty() && !new_bounds.back().min.defined() && !new_bounds.back().max.defined()) {
@@ -1676,9 +1686,15 @@ public:
       (*buf_bounds)[op->dim] = bounds;
     }
 
+    auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
     stmt body = substitute_bounds(op->body, op->sym, op->dim, bounds);
     body = mutate(body);
+
+    if (!*bounds_used[op->sym]) {
+      set_result(body);
+      return;
+    }
 
     if (const slice_dim* slice = body.as<slice_dim>()) {
       if (slice->sym == op->sym && slice->dim == op->dim) {
