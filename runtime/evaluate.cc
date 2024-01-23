@@ -195,7 +195,7 @@ public:
   void visit(const logical_or* op) override { result = eval_expr(op->a) != 0 || eval_expr(op->b) != 0; }
   void visit(const logical_not* op) override { result = eval_expr(op->a) == 0; }
 
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     if (eval_expr(op->condition)) {
       result = eval_expr(op->true_value);
     } else {

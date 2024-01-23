@@ -106,7 +106,7 @@ public:
   void visit(const not_equal* op) override { visit_binary("==", op->a, op->b, std::not_equal_to<T>()); }
   void visit(const logical_and* op) override { visit_binary("&&", op->a, op->b, std::logical_and<T>()); }
   void visit(const logical_or* op) override { visit_binary("||", op->a, op->b, std::logical_or<T>()); }
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     buffer_expr_ptr c = visit_expr(op->condition);
     buffer_expr_ptr t = visit_expr(op->true_value);
     buffer_expr_ptr f = visit_expr(op->false_value);
@@ -217,7 +217,7 @@ public:
   void visit(const not_equal* op) override { visit_binary("==", op->a, op->b, std::not_equal_to<T>()); }
   void visit(const logical_and* op) override { visit_binary("&&", op->a, op->b, std::logical_and<T>()); }
   void visit(const logical_or* op) override { visit_binary("||", op->a, op->b, std::logical_or<T>()); }
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     buffer<T, Rank> c_buf;
     visit_expr(op->condition, c_buf);
     buffer<T, Rank> t_buf;

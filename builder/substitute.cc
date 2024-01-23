@@ -223,9 +223,9 @@ public:
     try_match(ne->a, op->a);
   }
 
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     if (match) return;
-    const class select* se = match_self_as(op);
+    const select_expr* se = match_self_as(op);
     if (!se) return;
 
     if (!try_match(se->condition, op->condition)) return;

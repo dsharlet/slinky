@@ -425,7 +425,7 @@ public:
 
 // Similar to the C++ ternary operator. `true_value` or `false_value` are only evaluated when the `condition` is true or
 // false, respectively.
-class select : public expr_node<class select> {
+class select_expr : public expr_node<class select_expr> {
 public:
   expr condition;
   expr true_value;
@@ -740,7 +740,7 @@ public:
   virtual void visit(const logical_and*) = 0;
   virtual void visit(const logical_or*) = 0;
   virtual void visit(const logical_not*) = 0;
-  virtual void visit(const class select*) = 0;
+  virtual void visit(const select_expr*) = 0;
   virtual void visit(const call*) = 0;
 
   virtual void visit(const let_stmt*) = 0;
@@ -790,7 +790,7 @@ public:
   virtual void visit(const logical_and* op) override { visit_binary(op); }
   virtual void visit(const logical_or* op) override { visit_binary(op); }
   virtual void visit(const logical_not* op) override { op->a.accept(this); }
-  virtual void visit(const class select* op) override {
+  virtual void visit(const select_expr* op) override {
     op->condition.accept(this);
     op->true_value.accept(this);
     op->false_value.accept(this);
@@ -893,7 +893,7 @@ inline void less_equal::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
 inline void logical_not::accept(node_visitor* v) const { v->visit(this); }
-inline void select::accept(node_visitor* v) const { v->visit(this); }
+inline void select_expr::accept(node_visitor* v) const { v->visit(this); }
 inline void call::accept(node_visitor* v) const { v->visit(this); }
 
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }

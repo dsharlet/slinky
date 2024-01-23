@@ -42,7 +42,7 @@ expr simplify(const not_equal* op, expr a, expr b);
 expr simplify(const logical_and* op, expr a, expr b);
 expr simplify(const logical_or* op, expr a, expr b);
 expr simplify(const logical_not* op, expr a);
-expr simplify(const class select* op, expr c, expr t, expr f);
+expr simplify(const select_expr* op, expr c, expr t, expr f);
 expr simplify(const call* op, std::vector<expr> args);
 
 // Helpers for producing the bounds of ops.
@@ -60,7 +60,7 @@ interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b);
 interval_expr bounds_of(const logical_and* op, interval_expr a, interval_expr b);
 interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b);
 interval_expr bounds_of(const logical_not* op, interval_expr a);
-interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t, interval_expr f);
+interval_expr bounds_of(const select_expr* op, interval_expr c, interval_expr t, interval_expr f);
 interval_expr bounds_of(const call* op, std::vector<interval_expr> args);
 
 }  // namespace slinky

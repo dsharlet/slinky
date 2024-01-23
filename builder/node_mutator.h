@@ -60,7 +60,7 @@ public:
   virtual void visit(const logical_and*) override;
   virtual void visit(const logical_or*) override;
   virtual void visit(const logical_not*) override;
-  virtual void visit(const class select*) override;
+  virtual void visit(const select_expr*) override;
   virtual void visit(const call*) override;
 
   virtual void visit(const block*) override;

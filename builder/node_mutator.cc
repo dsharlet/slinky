@@ -85,14 +85,14 @@ void node_mutator::visit(const logical_not* op) {
   }
 }
 
-void node_mutator::visit(const class select* op) {
+void node_mutator::visit(const select_expr* op) {
   expr c = mutate(op->condition);
   expr t = mutate(op->true_value);
   expr f = mutate(op->false_value);
   if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
     set_result(op);
   } else {
-    set_result(select::make(std::move(c), std::move(t), std::move(f)));
+    set_result(select_expr::make(std::move(c), std::move(t), std::move(f)));
   }
 }
 

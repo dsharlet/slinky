@@ -133,7 +133,7 @@ expr clamp(expr x, expr a, expr b) {
   if (b.defined()) x = min::make(std::move(x), std::move(b));
   return x;
 }
-expr select(expr c, expr t, expr f) { return select::make(std::move(c), std::move(t), std::move(f)); }
+expr select(expr c, expr t, expr f) { return select_expr::make(std::move(c), std::move(t), std::move(f)); }
 expr operator==(expr a, expr b) { return equal::make(std::move(a), std::move(b)); }
 expr operator!=(expr a, expr b) { return not_equal::make(std::move(a), std::move(b)); }
 expr operator<(expr a, expr b) { return less::make(std::move(a), std::move(b)); }
@@ -287,8 +287,8 @@ box_expr operator&(box_expr a, const box_expr& b) {
   return a;
 }
 
-expr select::make(expr condition, expr true_value, expr false_value) {
-  auto n = new select();
+expr select_expr::make(expr condition, expr true_value, expr false_value) {
+  auto n = new select_expr();
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
   n->false_value = std::move(false_value);

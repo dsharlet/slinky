@@ -1,5 +1,6 @@
 common --enable_bzlmod
 build --action_env=BAZEL_CXXOPTS="-std=c++17:-fstrict-aliasing:-Wall"
+# build --action_env=BAZEL_CXXOPTS="-std=c++20:-fstrict-aliasing:-Wall"
 build --copt=-fdiagnostics-color=always
 run --copt=-fdiagnostics-color=always
 test --copt=-fdiagnostics-color=always

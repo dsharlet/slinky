@@ -138,7 +138,7 @@ public:
       i = !i;
     }
   }
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     op->condition.accept(this);
     std::vector<expr> c = std::move(results);
     op->true_value.accept(this);
@@ -151,7 +151,7 @@ public:
     for (const expr& i : c) {
       for (const expr& j : t) {
         for (const expr& k : f) {
-          results.push_back(select::make(i, j, k));
+          results.push_back(select_expr::make(i, j, k));
         }
       }
     }
@@ -907,7 +907,7 @@ expr simplify(const logical_not* op, expr a) {
   return rules.apply(e);
 }
 
-expr simplify(const class select* op, expr c, expr t, expr f) {
+expr simplify(const select_expr* op, expr c, expr t, expr f) {
   std::optional<bool> const_c = attempt_to_prove(c);
   if (const_c) {
     if (*const_c) {
@@ -923,7 +923,7 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   } else if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
     e = op;
   } else {
-    e = select::make(std::move(c), std::move(t), std::move(f));
+    e = select_expr::make(std::move(c), std::move(t), std::move(f));
   }
   static rule_set rules = {
       {select(!x, y, z), select(x, z, y)},
@@ -1197,7 +1197,7 @@ public:
     }
   }
 
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     interval_expr c_bounds;
     expr c = mutate(op->condition, &c_bounds);
     if (is_true(c_bounds.min)) {
@@ -2009,7 +2009,7 @@ interval_expr bounds_of(const logical_not* op, interval_expr a) {
   return {simplify(op, std::move(a.max)), simplify(op, std::move(a.min))};
 }
 
-interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t, interval_expr f) {
+interval_expr bounds_of(const select_expr* op, interval_expr c, interval_expr t, interval_expr f) {
   if (is_true(c.min)) {
     return t;
   } else if (is_false(c.max)) {
@@ -2174,7 +2174,7 @@ public:
   virtual void visit(const logical_or* op) override {}
   virtual void visit(const logical_not* op) override { set_result(-mutate(op->a)); }
 
-  virtual void visit(const class select* op) override {
+  virtual void visit(const select_expr* op) override {
     set_result(select(op->condition, mutate(op->true_value), mutate(op->false_value)));
   }
 

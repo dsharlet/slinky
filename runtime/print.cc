@@ -158,7 +158,7 @@ public:
   void visit(const class min* op) override { *this << "min(" << op->a << ", " << op->b << ")"; }
   void visit(const class max* op) override { *this << "max(" << op->a << ", " << op->b << ")"; }
 
-  void visit(const class select* op) override {
+  void visit(const select_expr* op) override {
     *this << "select(" << op->condition << ", " << op->true_value << ", " << op->false_value << ")";
   }
 
