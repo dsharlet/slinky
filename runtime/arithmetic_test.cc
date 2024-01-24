@@ -8,8 +8,8 @@ using namespace slinky;
 
 TEST(arithmetic, euclidean_div_mod) {
   for (int i = 0; i < 1000; ++i) {
-    int a = rand();
-    int b = rand();
+    int a = rand() / 2;
+    int b = rand() / 2;
 
     ASSERT_EQ(euclidean_div(a, b), a / b);
     ASSERT_EQ(euclidean_mod(a, b), a % b);

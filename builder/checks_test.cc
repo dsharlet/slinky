@@ -52,6 +52,7 @@ TEST(pipeline, checks) {
   ASSERT_EQ(checks_failed, 1);
 
   in_buf.allocate();
+  for_each_index(in_buf, [&](const auto i) { in_buf(i) = 0; });
   out_buf.allocate();
   result = p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(result, 0) << " should succeed";

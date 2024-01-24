@@ -53,8 +53,8 @@ struct big {
   uint64_t a, b;
 
   void assign(int i) {
-    a = i * 2;
-    b = i * 2 + 1;
+    a = i;
+    b = i / 2;
   }
 
   big() = default;
