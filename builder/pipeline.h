@@ -17,8 +17,13 @@ struct loop_id {
   const slinky::func* func = nullptr;
   slinky::var var;
 
-  bool root() const { return !func; }
   symbol_id sym() const { return var.sym(); }
+
+  static loop_id outermost();
+  static loop_id innermost();
+
+  bool is_outermost() const;
+  bool is_innermost() const;
 };
 
 // Represents a symbolic buffer in a pipeline.
@@ -260,8 +265,6 @@ public:
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
   const std::vector<char>& padding() const { return padding_; }
-
-  stmt make_call() const;
 };
 
 struct build_options {
