@@ -288,6 +288,9 @@ public:
       bounds.push_back(d.bounds);
     }
     auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    // Initialize the fold factors to infinity.
+    auto set_fold_factors =
+        set_value_in_scope(fold_factors, op->sym, std::vector<expr>(op->dims.size(), positive_infinity()));
     stmt body = mutate(op->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -296,16 +299,11 @@ public:
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
     // inferred value.
     // TODO: Is this actually a good design...?
-    std::optional<std::vector<expr>> fold_info = fold_factors[op->sym];
+    const std::vector<expr>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
       expr alloc_var = variable::make(op->sym);
-      if (fold_info && d < static_cast<index_t>(fold_info->size()) && (*fold_info)[d].defined()) {
-        replacements.emplace_back(buffer_fold_factor(alloc_var, d), (*fold_info)[d]);
-      } else {
-        // Treat the fold factor as infinity for now.
-        replacements.emplace_back(buffer_fold_factor(alloc_var, d), positive_infinity());
-      }
+      replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d]);
     }
     std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
     // Replace infinite fold factors with undefined.
