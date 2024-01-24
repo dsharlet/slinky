@@ -267,7 +267,7 @@ class slide_and_fold_storage : public node_mutator {
 public:
   node_context& ctx;
   symbol_map<box_expr> buffer_bounds;
-  symbol_map<std::pair<int, expr>> fold_factors;
+  symbol_map<std::vector<expr>> fold_factors;
   struct loop_info {
     symbol_id sym;
     expr orig_min;
@@ -296,12 +296,12 @@ public:
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
     // inferred value.
     // TODO: Is this actually a good design...?
-    std::optional<std::pair<int, expr>> fold_info = fold_factors[op->sym];
+    std::optional<std::vector<expr>> fold_info = fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
       expr alloc_var = variable::make(op->sym);
-      if (fold_info && fold_info->first == d) {
-        replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info->second);
+      if (fold_info && d < static_cast<index_t>(fold_info->size()) && (*fold_info)[d].defined()) {
+        replacements.emplace_back(buffer_fold_factor(alloc_var, d), (*fold_info)[d]);
       } else {
         // Treat the fold factor as infinity for now.
         replacements.emplace_back(buffer_fold_factor(alloc_var, d), positive_infinity());
@@ -354,7 +354,7 @@ public:
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {
-              fold_factors[output] = {d, fold_factor};
+              vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
             }
@@ -374,7 +374,7 @@ public:
             if (!depends_on(fold_factor, loop_sym)) {
               // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
               fold_factor = simplify(align_up(fold_factor, loop_step));
-              fold_factors[output] = {d, fold_factor};
+              vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
             }

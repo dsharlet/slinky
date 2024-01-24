@@ -279,6 +279,70 @@ TEST(pipeline, elementwise_1d) {
   }
 }
 
+// An example of two 2D elementwise operations in sequence.
+TEST(pipeline, elementwise_2d) {
+  for (int split : {0, 1, 2, 3}) {
+    for (bool schedule_storage : {false, true}) {
+      for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
+        // Make the pipeline
+        node_context ctx;
+
+        auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+        auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+        auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+
+        var x(ctx, "x");
+        var y(ctx, "y");
+
+        func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x), point(y)}}, {intm, {x, y}});
+        func add = func::make<const int, int>(add_1<int>, {intm, {point(x), point(y)}}, {out, {x, y}});
+
+        if (split > 0) {
+          add.loops({{x, split, lm}, {y, split, lm}});
+          if (schedule_storage) {
+            intm->store_at({&add, x});
+            intm->store_in(memory_type::stack);
+          }
+        }
+
+        pipeline p = build_pipeline(ctx, {in}, {out});
+
+        // Run the pipeline
+        const int W = 15;
+        const int H = 10;
+
+        buffer<int, 2> in_buf({W, H});
+        in_buf.allocate();
+        for (int y = 0; y < H; ++y) {
+          for (int x = 0; x < W; ++x) {
+            in_buf(x, y) = y * W + x;
+          }
+        }
+
+        buffer<int, 2> out_buf({W, H});
+        out_buf.allocate();
+
+        // Not having span(std::initializer_list<T>) is unfortunate.
+        const raw_buffer* inputs[] = {&in_buf};
+        const raw_buffer* outputs[] = {&out_buf};
+        test_context eval_ctx;
+        p.evaluate(inputs, outputs, eval_ctx);
+        if (schedule_storage) {
+          ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
+        } else if (split > 0 && lm == loop_mode::serial) {
+          ASSERT_EQ(eval_ctx.heap.total_size, split * split * sizeof(int));
+        }
+
+        for (int y = 0; y < H; ++y) {
+          for (int x = 0; x < W; ++x) {
+            ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
+          }
+        }
+      }
+    }
+  }
+}
+
 // Two matrix multiplies: D = (A x B) x C.
 TEST(pipeline, matmuls) {
   for (int split : {0, 1, 2, 3}) {
