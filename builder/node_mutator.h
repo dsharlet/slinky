@@ -80,6 +80,7 @@ public:
 };
 
 // This is helpful for writing templated mutators.
+stmt clone_with_new_body(const loop* op, stmt new_body);
 stmt clone_with_new_body(const let_stmt* op, stmt new_body);
 stmt clone_with_new_body(const allocate* op, stmt new_body);
 stmt clone_with_new_body(const make_buffer* op, stmt new_body);

@@ -33,6 +33,9 @@ expr mutate_binary(node_mutator* this_, const T* op) {
 
 }  // namespace
 
+stmt clone_with_new_body(const loop* op, stmt new_body) {
+  return loop::make(op->sym, op->mode, op->bounds, op->step, std::move(new_body));
+}
 stmt clone_with_new_body(const let_stmt* op, stmt new_body) {
   return let_stmt::make(op->sym, op->value, std::move(new_body));
 }
