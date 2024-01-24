@@ -301,8 +301,8 @@ public:
     // TODO: Is this actually a good design...?
     const std::vector<expr>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
+    expr alloc_var = variable::make(op->sym);
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
-      expr alloc_var = variable::make(op->sym);
       replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d]);
     }
     std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
@@ -316,7 +316,7 @@ public:
 
   template <typename T>
   void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
-    stmt result = op;
+    set_result(op);
     for (symbol_id output : outputs) {
       std::optional<box_expr>& bounds = buffer_bounds[output];
       if (!bounds) continue;
@@ -378,9 +378,7 @@ public:
             }
 
             // Now that we're only computing the newly required parts of the domain, we need
-            // to move the loop min back so we compute the whole required region. We'll insert
-            // ifs around the other parts of the loop to avoid expanding the bounds that those
-            // run on.
+            // to move the loop min back so we compute the whole required region.
             expr new_min_at_new_loop_min = substitute(new_min, loop_sym, x);
             expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[op].bounds.min);
             expr new_loop_min =
@@ -403,15 +401,6 @@ public:
         }
       }
     }
-
-    // Insert ifs around these calls, in case the loop min shifts later.
-    // TODO: We don't actually need to do this, because the crops applied to this buffer will be clamped, and we'll end
-    // up with an empty production. It's a little janky, but it handles the case where the warmup is not aligned to the
-    // loop step size.
-    // for (const auto& op : loops) {
-    //  result = if_then_else::make(variable::make(op.sym) >= op.bounds.min, result, stmt());
-    //}
-    set_result(result);
   }
 
   void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
