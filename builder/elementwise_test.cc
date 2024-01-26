@@ -11,7 +11,7 @@
 #include "builder/pipeline.h"
 #include "runtime/pipeline.h"
 
-using namespace slinky;
+namespace slinky {
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
@@ -323,3 +323,5 @@ TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) *
 TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
 TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
 TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
+
+}

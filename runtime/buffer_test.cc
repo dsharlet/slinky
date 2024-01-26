@@ -5,7 +5,7 @@
 
 #include "runtime/buffer.h"
 
-using namespace slinky;
+namespace slinky {
 
 TEST(buffer, make) {
   auto buf = raw_buffer::make(2, 4);
@@ -184,4 +184,6 @@ TEST(buffer, copy) {
   test_copy<uint32_t>();
   test_copy<uint64_t>();
   test_copy<big>();
+}
+
 }

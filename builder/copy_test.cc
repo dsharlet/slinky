@@ -7,7 +7,7 @@
 #include "builder/pipeline.h"
 #include "runtime/pipeline.h"
 
-using namespace slinky;
+namespace slinky {
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
@@ -453,3 +453,6 @@ TEST(copy, concatenate) {
     }
   }
 }
+
+}
+
