@@ -3,8 +3,8 @@
 #include <cassert>
 #include <vector>
 
-#include "runtime/expr.h"
 #include "builder/pipeline.h"
+#include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
 using namespace slinky;
@@ -72,7 +72,7 @@ TEST(copy, trivial_2d) {
   var x(ctx, "x");
   var y(ctx, "y");
   var dy(ctx, "dy");
-  
+
   std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.

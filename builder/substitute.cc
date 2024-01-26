@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "builder/node_mutator.h"
 #include "runtime/depends_on.h"

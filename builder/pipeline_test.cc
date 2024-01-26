@@ -2,9 +2,9 @@
 
 #include <cassert>
 
-#include "runtime/pipeline.h"
-#include "runtime/expr.h"
 #include "builder/pipeline.h"
+#include "runtime/expr.h"
+#include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
 
 using namespace slinky;
@@ -50,7 +50,6 @@ public:
   }
 };
 
-
 // This file provides a number of toy funcs for test pipelines.
 
 // Copy from input to output.
@@ -86,7 +85,7 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
   return 0;
 }
 
@@ -949,9 +948,7 @@ TEST(pipeline, copied_result) {
       padded.loops({y});
       stencil.compute_root();
       break;
-    case 2:
-      padded.loops({y});
-      break;
+    case 2: padded.loops({y}); break;
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
@@ -1069,9 +1066,7 @@ TEST(pipeline, padded_stencil) {
       padded.compute_root();
       break;
     case 2: stencil.loops({y}); break;
-    case 3:
-      stencil.loops({y});
-      break;
+    case 3: stencil.loops({y}); break;
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
@@ -1091,7 +1086,7 @@ TEST(pipeline, padded_stencil) {
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
     if (schedule == 2) {
-      //ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
+      // ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
       ASSERT_EQ(eval_ctx.heap.total_count, 2);
     } else if (schedule == 3) {
       ASSERT_EQ(eval_ctx.heap.total_size, W * sizeof(short) + (W + 2) * 3 * sizeof(short));

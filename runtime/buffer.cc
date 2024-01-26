@@ -58,7 +58,7 @@ raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> exten
   return result;
 }
 
-raw_buffer_ptr raw_buffer::make(const raw_buffer& src) { 
+raw_buffer_ptr raw_buffer::make(const raw_buffer& src) {
   raw_buffer_ptr result = make(src.rank, src.elem_size);
   for (std::size_t d = 0; d < src.rank; ++d) {
     result->dims[d] = src.dims[d];
@@ -206,8 +206,7 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
   for (int d = 0; d + 1 < rank;) {
     copy_dim& a = dims[d];
     const copy_dim& b = dims[d + 1];
-    if (a.pad_before == 0 && a.pad_after == 0 &&
-        b.dst_stride == a.dst_stride * a.total_size &&
+    if (a.pad_before == 0 && a.pad_after == 0 && b.dst_stride == a.dst_stride * a.total_size &&
         b.src_stride == a.src_stride * a.total_size) {
       assert(a.size == a.total_size);
       a.pad_before = b.pad_before * a.size;

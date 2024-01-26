@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 #include "runtime/buffer.h"
 

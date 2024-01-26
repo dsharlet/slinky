@@ -2,9 +2,9 @@
 
 #include <cassert>
 
+#include "builder/pipeline.h"
 #include "runtime/buffer.h"
 #include "runtime/expr.h"
-#include "builder/pipeline.h"
 #include "runtime/pipeline.h"
 
 using namespace slinky;
@@ -12,7 +12,7 @@ using namespace slinky;
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
   return 0;
 }
 
@@ -36,9 +36,7 @@ TEST(pipeline, checks) {
   int checks_failed = 0;
 
   eval_context eval_ctx;
-  eval_ctx.check_failed = [&](const expr& c) {
-    checks_failed++;
-  };
+  eval_ctx.check_failed = [&](const expr& c) { checks_failed++; };
 
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});

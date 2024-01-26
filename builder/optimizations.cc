@@ -7,15 +7,15 @@
 #include <optional>
 #include <set>
 #include <tuple>
-#include <vector>
 #include <utility>
+#include <vector>
 
+#include "builder/node_mutator.h"
+#include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "builder/node_mutator.h"
-#include "builder/substitute.h"
 #include "runtime/util.h"
 
 namespace slinky {
@@ -67,9 +67,7 @@ bool is_elementwise(const box_expr& in_x, symbol_id out) {
 bool is_copy(expr in, var out, expr& offset) {
   static var x(0), dx(1), negative_dx(2);
   static expr patterns[] = {
-      x,
-      x + dx,
-      x - negative_dx,
+      x, x + dx, x - negative_dx,
       // TODO: we could also handle scaling of x by multiplying the stride.
   };
 

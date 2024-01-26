@@ -480,7 +480,7 @@ public:
         assert(offset == 0 || max / dim.fold_factor() == min / dim.fold_factor());
         buffer->base = offset_bytes(buffer->base, offset);
       }
-      
+
       dim.set_bounds(min, max);
     }
 

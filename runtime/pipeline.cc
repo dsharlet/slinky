@@ -8,8 +8,7 @@
 namespace slinky {
 
 pipeline::pipeline(std::vector<var> args, std::vector<var> inputs, std::vector<var> outputs, stmt body)
-    : args_(std::move(args)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), body_(std::move(body)) {
-}
+    : args_(std::move(args)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), body_(std::move(body)) {}
 
 pipeline::pipeline(std::vector<var> inputs, std::vector<var> outputs, stmt body)
     : pipeline({}, std::move(inputs), std::move(outputs), std::move(body)) {}

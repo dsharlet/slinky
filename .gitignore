@@ -35,5 +35,8 @@ bazel-*
 # Visual Studio folder status
 .vs
 
+# Mac nonsense
+.DS_Store
+
 # perf outputs
 perf.data*
