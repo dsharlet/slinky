@@ -48,6 +48,20 @@ TEST(buffer, buffer) {
   }
 }
 
+TEST(buffer, rank0) { 
+  buffer<int> buf;
+  ASSERT_EQ(buf.rank, 0);
+  ASSERT_EQ(buf.size_bytes(), 4);
+
+  // buf should not have memory yet.
+  ASSERT_EQ(buf.base(), nullptr);
+
+  buf.allocate();
+
+  buf() = 3;
+  ASSERT_EQ(buf(), 3);
+}
+
 // A non-standard size type that acts like an integer for testing.
 struct big {
   uint64_t a, b;
