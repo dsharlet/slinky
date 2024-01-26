@@ -56,7 +56,7 @@ public:
 // Copy from input to output.
 // TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
-index_t simple_copy(const buffer<const T>& in, const buffer<T>& out) {
+index_t copy_2d(const buffer<const T>& in, const buffer<T>& out) {
   copy(in, out, nullptr);
   return 0;
 }
@@ -647,7 +647,7 @@ TEST(pipeline, flip_y) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make<const char, char>(simple_copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  func copy = func::make<const char, char>(copy_2d<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
   func flip = func::make<const char, char>(flip_y<char>, {intm, {point(x), point(-y)}}, {out, {x, y}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -692,7 +692,7 @@ TEST(pipeline, padded_copy) {
   var h(ctx, "h");
 
   // Copy the input so we can measure the size of the buffer we think we need internally.
-  func copy = func::make<const char, char>(simple_copy<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  func copy = func::make<const char, char>(copy_2d<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
   // This is elementwise, but with a clamp to limit the bounds required of the input.
   func crop = func::make<const char, char>(
       zero_padded_copy<char>, {intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {out, {x, y}});

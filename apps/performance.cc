@@ -28,7 +28,7 @@ void memcpy_workaround(char* dst, const char* src, std::size_t size) {
 // Copy from input to output.
 // TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
-index_t simple_copy(const buffer<const T>& in, const buffer<T>& out) {
+index_t copy_2d(const buffer<const T>& in, const buffer<T>& out) {
   const T* src = &in(out.dim(0).min(), out.dim(1).min());
   T* dst = &out(out.dim(0).min(), out.dim(1).min());
   std::size_t size_bytes = out.dim(0).extent() * out.elem_size;
@@ -50,7 +50,7 @@ pipeline make_pipeline(bool explicit_y) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make<const char, char>(simple_copy<char>, {in, {point(x), point(y)}}, {out, {x, y}});
+  func copy = func::make<const char, char>(copy_2d<char>, {in, {point(x), point(y)}}, {out, {x, y}});
 
   if (explicit_y) {
     copy.loops({y});
