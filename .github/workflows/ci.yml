@@ -7,6 +7,17 @@ on:
       - main
 
 jobs:
+  check_clang_format:
+    name: Check clang-format
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DoozyX/clang-format-lint-action@v0.17
+        with:
+          source: '.'
+          extensions: 'h,cc'
+          clangFormatVersion: 17
+
   build:
     runs-on: ubuntu-latest
 
