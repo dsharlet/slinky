@@ -144,11 +144,15 @@ public:
     assert(sizeof...(indices) + 1 == rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
+  std::ptrdiff_t flat_offset_bytes() const { return 0; }
+  void* address_at() const { return base; }
+
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 == rank);
     return contains_impl(dims, i0, indices...);
   }
+  bool contains() const { return true; }
 
   std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
     assert(indices.size() == rank);
@@ -261,6 +265,9 @@ public:
   auto& operator()(index_t i0, Indices... indices) const {
     return at(i0, indices...);
   }
+
+  auto& at() const { return *base(); }
+  auto& operator()() const { return *base(); }
 
   auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
