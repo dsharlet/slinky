@@ -395,6 +395,9 @@ public:
     }
 
     // TODO: Try to optimize reshapes, where the index of the input is an "unpacking" of a flat index of the output.
+    // This will require the simplifier to understand the constraints implied by the checks on the buffer metadata
+    // at the beginning of the pipeline, e.g. that buffer_stride(dst_var, d) == buffer_stride(dst_var, d - 1) *
+    // buffer_extent(dst_var, d - 1).
 
     // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
     result = make_buffer::make(op->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
