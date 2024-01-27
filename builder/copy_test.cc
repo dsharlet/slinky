@@ -3,8 +3,8 @@
 #include <cassert>
 #include <vector>
 
-#include "runtime/expr.h"
 #include "builder/pipeline.h"
+#include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
 using namespace slinky;
@@ -72,7 +72,7 @@ TEST(copy, trivial_2d) {
   var x(ctx, "x");
   var y(ctx, "y");
   var dy(ctx, "dy");
-  
+
   std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.
@@ -451,5 +451,60 @@ TEST(copy, concatenate) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1));
     }
+  }
+}
+
+TEST(copy, reshape) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+
+  // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
+  // prior dimensions).
+  for (auto i : {in, out}) {
+    i->dim(0).stride = static_cast<index_t>(sizeof(int));
+    i->dim(1).stride = i->dim(0).stride * i->dim(0).extent();
+    i->dim(2).stride = i->dim(1).stride * i->dim(1).extent();
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // Compute the "flat" index of the coordinates in the output.
+  expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
+
+  // Unpack the coordinates in the input from the flat index of the output.
+  box_expr bounds = {
+      point(flat_out % in->dim(0).extent()),
+      point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
+      point(flat_out / (in->dim(0).extent() * in->dim(1).extent())),
+  };
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+
+  // Run the pipeline.
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  // The output should be the same size as the input, but with permuted dimensions.
+  buffer<int, 3> out_buf({H, D, W});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // This should have been a "flat" copy.
+  for (int i = 0; i < W * H * D; ++i) {
+    ASSERT_EQ(in_buf.base()[i], out_buf.base()[i]);
   }
 }

@@ -9,7 +9,7 @@ namespace slinky {
 stmt alias_buffers(const stmt& s);
 
 // Find copy operations that can be implemented with calls to copy.
-stmt optimize_copies(const stmt& s);
+stmt optimize_copies(const stmt& s, node_context& ctx);
 
 // Attempt to reduce the scope of statements to only the operations required.
 stmt reduce_scopes(const stmt& s);
