@@ -7,7 +7,7 @@
 #include "builder/pipeline.h"
 #include "runtime/pipeline.h"
 
-using namespace slinky;
+namespace slinky {
 
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
@@ -67,4 +67,6 @@ TEST(pipeline, checks) {
 
   // Input is too small.
   ASSERT_EQ(checks_failed, 2);
+}
+
 }

@@ -7,15 +7,15 @@
 #include <optional>
 #include <set>
 #include <tuple>
-#include <vector>
 #include <utility>
+#include <vector>
 
+#include "builder/node_mutator.h"
+#include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "builder/node_mutator.h"
-#include "builder/substitute.h"
 #include "runtime/util.h"
 
 namespace slinky {
@@ -67,9 +67,7 @@ bool is_elementwise(const box_expr& in_x, symbol_id out) {
 bool is_copy(expr in, var out, expr& offset) {
   static var x(0), dx(1), negative_dx(2);
   static expr patterns[] = {
-      x,
-      x + dx,
-      x - negative_dx,
+      x, x + dx, x - negative_dx,
       // TODO: we could also handle scaling of x by multiplying the stride.
   };
 
@@ -339,7 +337,11 @@ stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 namespace {
 
 class copy_optimizer : public node_mutator {
+  node_context& ctx;
+
 public:
+  copy_optimizer(node_context& ctx) : ctx(ctx) {}
+
   void visit(const copy_stmt* op) override {
     // Start by making a call to copy.
     stmt result = call_stmt::make(
@@ -357,7 +359,6 @@ public:
     std::vector<expr> src_x = op->src_x;
     std::vector<dim_expr> src_dims;
     std::vector<std::pair<symbol_id, int>> dst_x;
-    int dst_d = 0;
 
     // If we just leave these two arrays alone, the copy will be correct, but slow.
     // We can speed it up by finding dimensions we can let pass through to the copy.
@@ -375,18 +376,16 @@ public:
         // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
         // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
         // dimensions than the output) or not.
-        src_dims.push_back({buffer_bounds(dst_var, dst_d), 0, expr()});
-        dst_d++;
+        src_dims.push_back({buffer_bounds(dst_var, d), 0, expr()});
         handled = true;
       } else if (dep_count == 1) {
         expr offset;
         if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
-          interval_expr dst_bounds = buffer_bounds(dst_var, dst_d);
+          interval_expr dst_bounds = buffer_bounds(dst_var, d);
           interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
           src_dims.push_back(
               {dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d)});
-          src_x[src_d] = max(buffer_min(dst_var, dst_d) + offset, buffer_min(src_var, src_d));
-          dst_d++;
+          src_x[src_d] = max(buffer_min(dst_var, d) + offset, buffer_min(src_var, src_d));
           handled = true;
         }
       }
@@ -395,11 +394,42 @@ public:
       }
     }
 
-    // Any dimensions left need loops and slices.
+    // TODO: Try to optimize reshapes, where the index of the input is an "unpacking" of a flat index of the output.
+    // This will require the simplifier to understand the constraints implied by the checks on the buffer metadata
+    // at the beginning of the pipeline, e.g. that buffer_stride(dst_var, d) == buffer_stride(dst_var, d - 1) *
+    // buffer_extent(dst_var, d - 1).
+
+    // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
     result = make_buffer::make(op->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
+
+    // Any dimensions left need loops and slices.
+    // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
+    // the body, we'll make lets of the buffer metadata outside the loops.
+    // TODO: Is this really the right thing to do, or is it an artifact of a bad idea/implementation?
+    std::vector<std::pair<symbol_id, expr>> lets;
+    symbol_id let_id = ctx.insert_unique();
+    auto do_substitute = [&](const expr& value) {
+      stmt new_result = substitute(result, value, variable::make(let_id));
+      if (!new_result.same_as(result)) {
+        lets.push_back({let_id, value});
+        let_id = ctx.insert_unique();
+        result = std::move(new_result);
+      }
+    };
+    for (int d = 0; d < static_cast<index_t>(op->dst_x.size()); ++d) {
+      do_substitute(buffer_min(dst_var, d));
+      do_substitute(buffer_max(dst_var, d));
+      do_substitute(buffer_extent(dst_var, d));
+      do_substitute(buffer_stride(dst_var, d));
+      do_substitute(buffer_fold_factor(dst_var, d));
+    }
+
     for (const std::pair<symbol_id, int>& d : dst_x) {
       result = slice_dim::make(op->dst, d.second, var(d.first), result);
       result = loop::make(d.first, loop_mode::serial, buffer_bounds(dst_var, d.second), 1, result);
+    }
+    for (const auto& i : lets) {
+      result = let_stmt::make(i.first, i.second, result);
     }
 
     set_result(result);
@@ -408,7 +438,7 @@ public:
 
 }  // namespace
 
-stmt optimize_copies(const stmt& s) { return copy_optimizer().mutate(s); }
+stmt optimize_copies(const stmt& s, node_context& ctx) { return copy_optimizer(ctx).mutate(s); }
 
 namespace {
 
