@@ -5,7 +5,12 @@
 
 namespace slinky {
 
-void visualize(const char* filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs, const node_context* ctx = nullptr);
+// Generate an HTML file that visualizes the evaluation of a pipeline given a set of scalar `args`, and buffers `inputs`
+// and `outputs`.
+void visualize(const char* filename, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
+    pipeline::buffers outputs, const node_context* ctx = nullptr);
+void visualize(const char* filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
+    const node_context* ctx = nullptr);
 
 }  // namespace slinky
 
