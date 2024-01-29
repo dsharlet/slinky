@@ -13,7 +13,7 @@ TEST(evaluate, arithmetic) {
   var x(ctx, "x");
 
   eval_context context;
-  context[x] = 4;
+  context.symbols()[x] = 4;
 
   ASSERT_EQ(evaluate(x + 5, context), 9);
   ASSERT_EQ(evaluate(x - 3, context), 1);
@@ -42,13 +42,13 @@ TEST(evaluate, call) {
   std::vector<index_t> calls;
   stmt c = call_stmt::make(
       [&](eval_context& ctx) -> index_t {
-        calls.push_back(*ctx[x]);
+        calls.push_back(*ctx.symbols()[x]);
         return 0;
       },
       {}, {});
 
   eval_context context;
-  context[x] = 2;
+  context.symbols()[x] = 2;
 
   int result = evaluate(c, context);
   ASSERT_EQ(result, 0);
@@ -71,7 +71,7 @@ TEST(evaluate, loop) {
     std::atomic<index_t> sum_x = 0;
     stmt c = call_stmt::make(
         [&](eval_context& ctx) -> index_t {
-          sum_x += *ctx[x];
+          sum_x += *ctx.symbols()[x];
           return 0;
         },
         {}, {});

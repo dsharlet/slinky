@@ -19,13 +19,13 @@ index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_c
   assert(outputs.size() == outputs_.size());
 
   for (std::size_t i = 0; i < args.size(); ++i) {
-    ctx[args_[i]] = args[i];
+    ctx.symbols()[args_[i]] = args[i];
   }
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    ctx[inputs_[i]] = reinterpret_cast<index_t>(inputs[i]);
+    ctx.symbols()[inputs_[i]] = reinterpret_cast<index_t>(inputs[i]);
   }
   for (std::size_t i = 0; i < outputs.size(); ++i) {
-    ctx[outputs_[i]] = reinterpret_cast<index_t>(outputs[i]);
+    ctx.symbols()[outputs_[i]] = reinterpret_cast<index_t>(outputs[i]);
   }
 
   return slinky::evaluate(body_, ctx);

@@ -210,8 +210,8 @@ TEST(simplify, bounds_of) {
             eval_context ctx;
             for (int y_val = y_min; y_val <= y_max; ++y_val) {
               for (int x_val = x_min; x_val <= x_max; ++x_val) {
-                ctx[x] = x_val;
-                ctx[y] = y_val;
+                ctx.symbols()[x] = x_val;
+                ctx.symbols()[y] = y_val;
 
                 index_t result = evaluate(e, ctx);
                 index_t min = evaluate(bounds_e.min);
@@ -221,7 +221,7 @@ TEST(simplify, bounds_of) {
                   std::cerr << "bounds_of failure: " << e << " -> " << bounds_e << std::endl;
                   std::cerr << result << " not in [" << min << ", " << max << "]" << std::endl;
                   std::cerr << "ctx: " << std::endl;
-                  dump_context_for_expr(std::cerr, ctx, e, &symbols);
+                  dump_context_for_expr(std::cerr, ctx.symbols(), e, &symbols);
                   std::cerr << std::endl;
                   std::cerr << "bounds: " << std::endl;
                   dump_symbol_map(std::cerr, bounds);
@@ -343,7 +343,7 @@ TEST(simplify, fuzz) {
     buffers.emplace_back(raw_buffer::make(max_rank, 4));
   }
   for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    ctx[bufs[i]] = reinterpret_cast<index_t>(&*buffers[i]);
+    ctx.symbols()[bufs[i]] = reinterpret_cast<index_t>(&*buffers[i]);
   }
 
   symbol_map<interval_expr> var_bounds;
@@ -360,7 +360,7 @@ TEST(simplify, fuzz) {
 
     for (int j = 0; j < checks; ++j) {
       for (const var& v : vars) {
-        ctx[v] = random_constant();
+        ctx.symbols()[v] = random_constant();
       }
       for (auto& b : buffers) {
         for (int d = 0; d < max_rank; ++d) {
@@ -379,7 +379,7 @@ TEST(simplify, fuzz) {
         std::cerr << " -> " << eval_test << std::endl;
         print(std::cerr, simplified, &symbols);
         std::cerr << " -> " << eval_simplified << std::endl;
-        dump_context_for_expr(std::cerr, ctx, test, &symbols);
+        dump_context_for_expr(std::cerr, ctx.symbols(), test, &symbols);
         ASSERT_EQ(eval_test, eval_simplified);
       } else {
         index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
@@ -390,7 +390,7 @@ TEST(simplify, fuzz) {
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.min, &symbols);
           std::cerr << " -> " << min << std::endl;
-          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          dump_context_for_expr(std::cerr, ctx.symbols(), test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(min, eval_test);
         }
@@ -400,7 +400,7 @@ TEST(simplify, fuzz) {
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.max, &symbols);
           std::cerr << " -> " << max << std::endl;
-          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          dump_context_for_expr(std::cerr, ctx.symbols(), test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(eval_test, max);
         }

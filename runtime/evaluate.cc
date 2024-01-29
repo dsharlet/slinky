@@ -27,19 +27,19 @@ bool can_evaluate(intrinsic fn) {
   }
 }
 
-void dump_context_for_expr(
-    std::ostream& s, const symbol_map<index_t>& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
-  for (symbol_id i = 0; i < ctx.size(); ++i) {
+void dump_context_for_expr(std::ostream& s, const symbol_map<index_t>& symbol_map, const expr& deps_of,
+    const node_context* symbols = nullptr) {
+  for (symbol_id i = 0; i < symbol_map.size(); ++i) {
     std::string sym = symbols ? symbols->name(i) : "<" + std::to_string(i) + ">";
     if (!deps_of.defined() || depends_on_variable(deps_of, i)) {
-      if (ctx.contains(i)) {
-        s << "  " << sym << " = " << *ctx.lookup(i) << std::endl;
+      if (symbol_map.contains(i)) {
+        s << "  " << sym << " = " << *symbol_map.lookup(i) << std::endl;
       } else {
         s << "  " << sym << " = <>" << std::endl;
       }
     } else if (!deps_of.defined() || depends_on_buffer(deps_of, i)) {
-      if (ctx.contains(i)) {
-        const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx.lookup(i));
+      if (symbol_map.contains(i)) {
+        const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*symbol_map.lookup(i));
         s << "  " << sym << " = {base=" << buf->base << ", elem_size=" << buf->elem_size << ", dims={";
         for (std::size_t d = 0; d < buf->rank; ++d) {
           const dim& dim = buf->dims[d];
@@ -68,7 +68,7 @@ void copy_stmt_impl(
   const class dim& dst_dim = dst_dims[dim];
   index_t dst_stride = dst_dim.stride();
   for (index_t dst_x = dst_dim.begin(); dst_x < dst_dim.end(); ++dst_x) {
-    auto s = set_value_in_scope(ctx, c.dst_x[dim], dst_x);
+    auto s = set_value_in_scope(ctx.symbols(), c.dst_x[dim], dst_x);
     if (dim == 0) {
       const void* src_base = src.base;
       for (std::size_t d = 0; d < src.rank; ++d) {
@@ -157,14 +157,14 @@ public:
   }
 
   void visit(const variable* op) override {
-    auto value = context.lookup(op->sym);
+    auto value = context.symbols().lookup(op->sym);
     assert(value);
     result = *value;
   }
 
   void visit(const wildcard* op) override {
     // Maybe evaluating this should just be an error.
-    auto value = context.lookup(op->sym);
+    auto value = context.symbols().lookup(op->sym);
     assert(value);
     result = *value;
   }
@@ -173,7 +173,7 @@ public:
 
   template <typename T>
   void visit_let(const T* op) {
-    auto set_value = set_value_in_scope(context, op->sym, eval_expr(op->value));
+    auto set_value = set_value_in_scope(context.symbols(), op->sym, eval_expr(op->value));
     visit(op->body);
   }
 
@@ -311,7 +311,7 @@ public:
           index_t i = state->i.fetch_add(state->step);
           if (!(state->min <= i && i <= state->max)) break;
 
-          context[op->sym] = i;
+          context.symbols()[op->sym] = i;
           // Evaluate the parallel loop body with our copy of the context.
           index_t result = evaluate(op->body, context);
           if (result != 0) {
@@ -332,12 +332,12 @@ public:
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
       // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
       // not clear this optimization is necessary yet.
-      std::optional<index_t> old_value = context[op->sym];
+      std::optional<index_t> old_value = context.symbols()[op->sym];
       for (index_t i = min; result == 0 && min <= i && i <= max; i += step) {
-        context[op->sym] = i;
+        context.symbols()[op->sym] = i;
         visit(op->body);
       }
-      context[op->sym] = old_value;
+      context.symbols()[op->sym] = old_value;
     }
   }
 
@@ -366,8 +366,8 @@ public:
   }
 
   void visit(const copy_stmt* op) override {
-    const raw_buffer* src = reinterpret_cast<raw_buffer*>(context.lookup(op->src, 0));
-    const raw_buffer* dst = reinterpret_cast<raw_buffer*>(context.lookup(op->dst, 0));
+    const raw_buffer* src = reinterpret_cast<raw_buffer*>(context.symbols().lookup(op->src, 0));
+    const raw_buffer* dst = reinterpret_cast<raw_buffer*>(context.symbols().lookup(op->dst, 0));
 
     copy_stmt_impl(context, *src, *dst, *op);
   }
@@ -401,7 +401,7 @@ public:
       }
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context.symbols(), op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
 
     if (op->storage == memory_type::heap) {
@@ -431,12 +431,12 @@ public:
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context.symbols(), op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
   }
 
   void visit(const clone_buffer* op) override {
-    raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.symbols().lookup(op->sym));
     char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * src->rank));
 
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
@@ -446,12 +446,12 @@ public:
     buffer->rank = src->rank;
     memcpy(buffer->dims, src->dims, sizeof(dim) * src->rank);
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context.symbols(), op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
   }
 
   void visit(const crop_buffer* op) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.symbols().lookup(op->sym));
     assert(buffer);
 
     struct interval {
@@ -494,7 +494,7 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.symbols().lookup(op->sym));
     assert(buffer);
     slinky::dim& dim = buffer->dims[op->dim];
     index_t old_min = dim.min();
@@ -519,7 +519,7 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.symbols().lookup(op->sym));
     assert(buffer);
 
     // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
@@ -548,7 +548,7 @@ public:
   }
 
   void visit(const slice_dim* op) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.symbols().lookup(op->sym));
     assert(buffer);
 
     // The rank of the result is equal to the current rank, less any sliced dimensions.
@@ -577,7 +577,7 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.symbols().lookup(op->sym));
     assert(buffer);
 
     std::size_t old_rank = buffer->rank;
@@ -596,7 +596,7 @@ public:
       } else {
         std::cerr << "Check failed: " << op->condition << std::endl;
         std::cerr << "Context: " << std::endl;
-        dump_context_for_expr(std::cerr, context, op->condition);
+        dump_context_for_expr(std::cerr, context.symbols(), op->condition);
         std::abort();
       }
     }

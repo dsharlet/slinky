@@ -5,8 +5,7 @@
 
 namespace slinky {
 
-// TODO: Probably shouldn't inherit here.
-class eval_context : public symbol_map<index_t> {
+class eval_context {
 public:
   // These two functions implement allocation. `allocate` is called before
   // running the body, and `free` is called after.
@@ -32,7 +31,15 @@ public:
   std::function<void(task)> enqueue_one;
   std::function<void(std::function<bool()>)> wait_for;
 
-  const raw_buffer* lookup_buffer(symbol_id id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
+  const raw_buffer* lookup_buffer(symbol_id id) const {
+    return reinterpret_cast<const raw_buffer*>(*symbols_.lookup(id));
+  }
+
+  symbol_map<index_t>& symbols() { return symbols_; }
+  const symbol_map<index_t>& symbols() const { return symbols_; }
+
+private:
+  symbol_map<index_t> symbols_;
 };
 
 index_t evaluate(const expr& e, eval_context& context);
