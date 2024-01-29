@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <memory>
 
 #include "runtime/util.h"
@@ -67,6 +68,8 @@ public:
   }
 };
 
+using dim_init_fn = std::function<void(std::size_t index, dim& d)>;
+
 template <typename T, std::size_t DimsSize = 0>
 class buffer;
 
@@ -124,6 +127,18 @@ public:
   void operator=(const raw_buffer&) = delete;
   void operator=(raw_buffer&&) = delete;
   ~raw_buffer() { free(); }
+
+  // This ctor is public, but only intended for use with the ALLOC_RAW_BUFFER_ON_STACK macro.
+  inline raw_buffer(
+      char* allocation_in, void* base_in, std::size_t elem_size_in, std::size_t rank_in, slinky::dim* dims_in, dim_init_fn d_fn)
+      : allocation(allocation_in), base(base_in), elem_size(elem_size_in), rank(rank_in), dims(dims_in) {
+    (void)new (dims) class dim[rank];
+    if (d_fn) {
+      for (std::size_t i = 0; i < rank; ++i) {
+        d_fn(i, dims[i]);
+      }
+    }
+  }
 
   slinky::dim& dim(std::size_t i) {
     assert(i < rank);
@@ -206,6 +221,12 @@ public:
 
   static void destroy(raw_buffer* buf);
 };
+
+// Allocate a raw_buffer on the stack, using alloca(), with enough dims for the given rank/
+#define ALLOC_RAW_BUFFER_ON_STACK(BUFFER_NAME, BASE, ELEM_SIZE, RANK, DIM_INIT_FN)                                                  \
+  char* BUFFER_NAME_##storage = reinterpret_cast<char*>(alloca(sizeof(slinky::raw_buffer) + sizeof(slinky::dim) * (RANK)));         \
+  slinky::raw_buffer* BUFFER_NAME = new (BUFFER_NAME_##storage) slinky::raw_buffer(/*allocation*/ nullptr, (BASE), (ELEM_SIZE), (RANK),                            \
+          reinterpret_cast<dim*>(&BUFFER_NAME_##storage[sizeof(raw_buffer)]), (DIM_INIT_FN));
 
 template <typename T, std::size_t DimsSize>
 class buffer : public raw_buffer {

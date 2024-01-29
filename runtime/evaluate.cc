@@ -372,21 +372,21 @@ public:
     copy_stmt_impl(context, *src, *dst, *op);
   }
 
-  void visit(const allocate* op) override {
-    std::size_t rank = op->dims.size();
-    // Allocate a buffer with space for its dims on the stack.
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
-    buffer->elem_size = op->elem_size;
-    buffer->rank = rank;
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
+  template <typename OP>
+  void copy_dim_from(OP* op, std::size_t i, slinky::dim& dim) {
+    assert(i < op->dims.size());
+    dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
+    dim.set_stride(eval_expr(op->dims[i].stride));
+    dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
+  }
 
-    for (std::size_t i = 0; i < rank; ++i) {
-      slinky::dim& dim = buffer->dim(i);
-      dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
-      dim.set_stride(eval_expr(op->dims[i].stride));
-      dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
-    }
+  void visit(const allocate* op) override {
+    // Allocate a buffer with space for its dims on the stack.
+    void* base = nullptr;
+    std::size_t elem_size = op->elem_size;
+    std::size_t rank = op->dims.size();
+    const auto dim_init_fn = [this, op](std::size_t i, slinky::dim& dim) { copy_dim_from(op, i, dim); };
+    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank, dim_init_fn)
 
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
@@ -415,21 +415,12 @@ public:
   }
 
   void visit(const make_buffer* op) override {
-    std::size_t rank = op->dims.size();
     // Allocate a buffer with space for its dims on the stack.
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
-    buffer->elem_size = eval_expr(op->elem_size);
-    buffer->base = reinterpret_cast<void*>(eval_expr(op->base));
-    buffer->rank = rank;
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
-
-    for (std::size_t i = 0; i < rank; ++i) {
-      slinky::dim& dim = buffer->dim(i);
-      dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
-      dim.set_stride(eval_expr(op->dims[i].stride));
-      dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
-    }
+    void* base = reinterpret_cast<void*>(eval_expr(op->base));
+    std::size_t elem_size = eval_expr(op->elem_size);
+    std::size_t rank = op->dims.size();
+    const auto dim_init_fn = [this, op](std::size_t i, slinky::dim& dim) { copy_dim_from(op, i, dim); };
+    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank, dim_init_fn)
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
@@ -437,14 +428,13 @@ public:
 
   void visit(const clone_buffer* op) override {
     raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * src->rank));
 
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
-    buffer->elem_size = src->elem_size;
-    buffer->base = src->base;
-    buffer->rank = src->rank;
-    memcpy(buffer->dims, src->dims, sizeof(dim) * src->rank);
+    // Allocate a buffer with space for its dims on the stack.
+    void* base = src->base;
+    std::size_t elem_size = src->elem_size;
+    std::size_t rank = src->rank;
+    const auto dim_init_fn = [src](std::size_t i, slinky::dim& dim) { dim = src->dim(i); };
+    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank, dim_init_fn)
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
@@ -480,7 +470,7 @@ public:
         assert(offset == 0 || max / dim.fold_factor() == min / dim.fold_factor());
         buffer->base = offset_bytes(buffer->base, offset);
       }
-      
+
       dim.set_bounds(min, max);
     }
 

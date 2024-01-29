@@ -37,13 +37,8 @@ void raw_buffer::free() {
 
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
   char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
-  raw_buffer* buf = new (buf_and_dims) raw_buffer();
-  buf->base = nullptr;
-  buf->allocation = nullptr;
-  buf->rank = rank;
-  buf->elem_size = elem_size;
-  buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
-  new (buf->dims) slinky::dim[rank];
+  raw_buffer* buf = new (buf_and_dims) raw_buffer(/*allocation*/nullptr, /*base*/nullptr, elem_size, rank,
+    reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer)), /*dim_init_fn*/nullptr);
   return buf;
 }
 
@@ -234,6 +229,10 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
 
 }  // namespace
 
+// Use a little macro helper here to make calls to alloca() less verbose
+#define ALLOC_COPY_DIMS_ON_STACK(RANK) \
+  (reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * (RANK))))
+
 void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
@@ -248,7 +247,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to copy.
-  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * dst.rank));
+  copy_dim* dims = ALLOC_COPY_DIMS_ON_STACK(dst.rank);
 
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
@@ -285,7 +284,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to pad.
-  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * dst.rank));
+  copy_dim* dims = ALLOC_COPY_DIMS_ON_STACK(dst.rank);
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
     if (dst.dims[i].max() < dst.dims[i].min()) return;
@@ -314,7 +313,7 @@ void fill(const raw_buffer& dst, const void* value) {
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to copy.
-  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * dst.rank));
+  copy_dim* dims = ALLOC_COPY_DIMS_ON_STACK(dst.rank);
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
     if (dst.dims[i].max() < dst.dims[i].min()) return;
