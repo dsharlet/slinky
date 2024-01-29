@@ -410,4 +410,3 @@ TEST(simplify, fuzz) {
 }
 
 }  // namespace slinky
-

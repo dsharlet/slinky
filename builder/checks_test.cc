@@ -67,4 +67,4 @@ TEST(pipeline, checks) {
   ASSERT_EQ(checks_failed, 2);
 }
 
-}
+}  // namespace slinky

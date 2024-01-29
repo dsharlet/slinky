@@ -48,7 +48,7 @@ TEST(buffer, buffer) {
   }
 }
 
-TEST(buffer, rank0) { 
+TEST(buffer, rank0) {
   buffer<int> buf;
   ASSERT_EQ(buf.rank, 0);
   ASSERT_EQ(buf.size_bytes(), 4);
@@ -200,4 +200,4 @@ TEST(buffer, copy) {
   test_copy<big>();
 }
 
-}
+}  // namespace slinky

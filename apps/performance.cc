@@ -61,7 +61,7 @@ pipeline make_pipeline(bool explicit_y) {
   return p;
 }
 
-}
+}  // namespace slinky
 
 int main(int argc, const char** argv) {
   using namespace slinky;

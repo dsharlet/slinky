@@ -1224,4 +1224,4 @@ TEST(pipeline, parallel_stencils) {
   }
 }
 
-}
+}  // namespace slinky
