@@ -524,7 +524,7 @@ public:
     for (const dim_expr& i : op->dims) {
       interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
       dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
-      changed = changed || dims.back().same_as(i);
+      changed = changed || !dims.back().same_as(i);
     }
     auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
@@ -549,7 +549,7 @@ public:
     bool changed = false;
     for (const expr& i : op->at) {
       at.push_back(mutate(i));
-      changed = changed || at.back().same_as(i);
+      changed = changed || !at.back().same_as(i);
     }
     auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
