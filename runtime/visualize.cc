@@ -197,12 +197,18 @@ public:
   }
 
   void visit(const call_stmt* n) override {
+    for (symbol_id i : n->inputs) {
+      *this << indent() << "consume(" << i << ");\n";
+    }
     for (symbol_id i : n->outputs) {
       *this << indent() << "produce(" << i << ");\n";
     }
   }
 
-  void visit(const copy_stmt* n) override { *this << indent() << "produce(" << n->dst << ");\n"; }
+  void visit(const copy_stmt* n) override {
+    *this << indent() << "consume(" << n->src << ");\n";
+    *this << indent() << "produce(" << n->dst << ");\n";
+  }
 
   void visit(const allocate* n) override {
     *this << indent() << "{ let " << n->sym << " = allocate('" << n->sym << "', " << static_cast<index_t>(n->elem_size)
@@ -293,11 +299,12 @@ const char* header =
     "  display: inline-block;\n"
     "  margin:3px;\n"
     "}\n"
-    "div.mem_wrapper, div.overlays {"
-    "  position:absolute;\n"
+    "div.mem_wrapper {\n"
     "  width:100%;\n"
     "  height:100%;\n"
-    "  margin:3px;\n"
+    "}\n"
+    "div.overlays {\n"
+    "  margin:auto;\n"
     "}\n"
     "p#name, p#bounds {\n"
     "  font-family: monospace;\n"
@@ -311,11 +318,11 @@ const char* header =
     "<body>\n"
     "<div width='100%' height='100%' id='buffers' class='buffers'>\n"
     "  <div class='buffer' id='template' style='display:none;'>\n"
-    "    <div class='mem_wrapper'><canvas id='mem' style='width:100%; height:100%'></canvas></div>\n"
     "    <div class='overlays'>\n"
     "      <p class='name' id='name'></p>\n"
     "      <p class='bounds' id='bounds'></p>\n"
     "    </div>\n"
+    "    <div class='mem_wrapper'><canvas id='mem' style='width:100%; height:100%'></canvas></div>\n"
     "  </div>\n"
     "</div>\n"
     "<div class='sliderdiv' width='100%'>\n"
@@ -330,6 +337,13 @@ const char* header =
     "function min(a, b) { return Math.min(a, b); }\n"
     "function max(a, b) { return Math.max(a, b); }\n"
     "function clamp(x, a, b) { return min(max(x, a), b); }\n"
+    "function unpack_dim(at, dim) {\n"
+    "  if (dim.stride == 0) {\n"
+    "    return 0;\n"
+    "  } else {\n"
+    "    return Math.floor(at / dim.stride) % (dim.bounds.max - dim.bounds.min + 1);\n"
+    "  }\n"
+    "}\n"
     "function define_mapping(name, base, size, elem_size, dims) {\n"
     "  const buf = __template.cloneNode(true);\n"
     "  buf.id = name;\n"
@@ -342,9 +356,7 @@ const char* header =
     "    let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));\n"
     "    return function(at) {\n"
     "      at -= base;\n"
-    "      x = Math.floor(at / sorted_dims[0].stride) % (sorted_dims[0].bounds.max - sorted_dims[0].bounds.min + 1);\n"
-    "      y = Math.floor(at / sorted_dims[1].stride) % (sorted_dims[1].bounds.max - sorted_dims[1].bounds.min + 1);\n"
-    "      return [x, y];\n"
+    "      return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];\n"
     "    }\n"
     "  }\n"
     "  mem.mapping = closure(base, elem_size, dims);\n"
@@ -381,7 +393,7 @@ const char* header =
     "  mem.height = mem.offsetHeight;\n"
     "  const ctx = mem.getContext('2d');\n"
     "  ctx.clearRect(0, 0, mem.width, mem.height);\n"
-    "  for (p of mem.productions) {\n"
+    "  for (let p of mem.productions) {\n"
     "    dt = t - p.t;\n"
     "    if (dt < 0) continue;\n"
     "    color = make_color(lerp_color(p.buf.color, [0, 0, 0], clamp(dt / 8, 0, 0.25)));\n"
@@ -471,13 +483,14 @@ const char* header =
     "  return result;\n"
     "}\n"
     "function produce(b) {\n"
-    "  for (m of __heap_map) {\n"
+    "  for (let m of __heap_map) {\n"
     "    if (m.begin <= b.base && b.base < m.end) {\n"
     "      m.element.productions.push({t: __event_t++, buf: clone_buffer(b)});\n"
     "      return;\n"
     "    }\n"
     "  }\n"
-    "}\n";
+    "}\n"
+    "function consume(b) {}\n";
 const char* footer =
     "let __end_t = __event_t;\n"
     "let __event_slider = document.getElementById('event_slider');\n"
