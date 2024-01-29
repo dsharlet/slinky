@@ -72,7 +72,7 @@ class buffer;
 
 class raw_buffer;
 
-using raw_buffer_ptr = std::unique_ptr<raw_buffer, void (*)(raw_buffer*)>;
+using raw_buffer_ptr = ref_count<raw_buffer>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -87,7 +87,7 @@ using raw_buffer_ptr = std::unique_ptr<raw_buffer, void (*)(raw_buffer*)>;
 // And a class buffer<T, DimsSize>:
 // - Has a type, can be accessed via operator() and at.
 // - Provides storage for DimsSize dims (default is 0).
-class raw_buffer {
+class raw_buffer : public ref_counted<raw_buffer> {
 protected:
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
 
@@ -109,11 +109,6 @@ protected:
   static void translate_impl(dim* dims, index_t o0, Offsets... offsets) {
     dims->translate(o0);
     translate_impl(dims + 1, offsets...);
-  }
-
-  static void destroy(raw_buffer* buf) {
-    buf->~raw_buffer();
-    delete[] (char*)buf;
   }
 
 public:
@@ -149,11 +144,15 @@ public:
     assert(sizeof...(indices) + 1 == rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
+  std::ptrdiff_t flat_offset_bytes() const { return 0; }
+  void* address_at() const { return base; }
+
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 == rank);
     return contains_impl(dims, i0, indices...);
   }
+  bool contains() const { return true; }
 
   std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
     assert(indices.size() == rank);
@@ -204,6 +203,8 @@ public:
 
   // Make a deep copy of another buffer, including allocating and copying the data if src is allocated.
   static raw_buffer_ptr make(const raw_buffer& src);
+
+  static void destroy(raw_buffer* buf);
 };
 
 template <typename T, std::size_t DimsSize>
@@ -264,6 +265,9 @@ public:
   auto& operator()(index_t i0, Indices... indices) const {
     return at(i0, indices...);
   }
+
+  auto& at() const { return *base(); }
+  auto& operator()() const { return *base(); }
 
   auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }

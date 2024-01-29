@@ -342,7 +342,7 @@ TEST(simplify, fuzz) {
     buffers.emplace_back(raw_buffer::make(max_rank, 4));
   }
   for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    ctx[bufs[i]] = reinterpret_cast<index_t>(buffers[i].get());
+    ctx[bufs[i]] = reinterpret_cast<index_t>(&*buffers[i]);
   }
 
   symbol_map<interval_expr> var_bounds;
