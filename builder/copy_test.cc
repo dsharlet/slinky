@@ -7,7 +7,7 @@
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
-using namespace slinky;
+namespace slinky {
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
@@ -569,4 +569,6 @@ TEST(copy, batch_reshape) {
       ASSERT_EQ(in_base[i], out_base[i]);
     }
   }
+}
+
 }
