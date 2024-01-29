@@ -159,6 +159,7 @@ public:
 };
 
 // Base class for reference counted objects.
+template <typename T>
 class ref_counted {
   mutable std::atomic<int> ref_count_{0};
 
@@ -166,7 +167,11 @@ public:
   int ref_count() const { return ref_count_; }
   void add_ref() const { ++ref_count_; }
   void release() const {
-    if (--ref_count_ == 0) delete this;
+    if (--ref_count_ == 0) {
+      // This const_cast is ugly, but:
+      // https://stackoverflow.com/questions/755196/deleting-a-pointer-to-const-t-const
+      T::destroy(const_cast<T*>(static_cast<const T*>(this)));
+    }
   }
 
   virtual ~ref_counted() {}

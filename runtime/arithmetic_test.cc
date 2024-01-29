@@ -4,7 +4,7 @@
 
 #include "runtime/util.h"
 
-using namespace slinky;
+namespace slinky {
 
 TEST(arithmetic, euclidean_div_mod) {
   for (int i = 0; i < 1000; ++i) {
@@ -31,4 +31,6 @@ TEST(arithmetic, euclidean_div_mod) {
     ASSERT_EQ(euclidean_div(a, -b) * -b + euclidean_mod(a, -b), a);
     ASSERT_EQ(euclidean_div(-a, -b) * -b + euclidean_mod(-a, -b), -a);
   }
+}
+
 }

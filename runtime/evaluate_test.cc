@@ -6,7 +6,7 @@
 #include "runtime/expr.h"
 #include "runtime/thread_pool.h"
 
-using namespace slinky;
+namespace slinky {
 
 TEST(evaluate, arithmetic) {
   node_context ctx;
@@ -82,4 +82,6 @@ TEST(evaluate, loop) {
     ASSERT_EQ(result, 0);
     ASSERT_EQ(sum_x, 2 + 5 + 8 + 11);
   }
+}
+
 }

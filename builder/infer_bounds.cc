@@ -531,7 +531,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
 
   // Try to reuse buffers and eliminate copies where possible.
   result = alias_buffers(result);
-  result = optimize_copies(result);
+  result = optimize_copies(result, ctx);
 
   result = simplify(result);
   result = reduce_scopes(result);

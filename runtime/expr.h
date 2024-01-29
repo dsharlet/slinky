@@ -108,7 +108,7 @@ class node_visitor;
 // `base_expr_node` is the base of `expr`s, and always produce an `index_t`-sized result when evaluated.
 // `base_stmt_node` is the base of `stmt`s, and do not produce any result.
 // Both are immutable.
-class base_node : public ref_counted {
+class base_node : public ref_counted<base_node> {
 public:
   base_node(node_type type) : type(type) {}
 
@@ -124,6 +124,8 @@ public:
       return nullptr;
     }
   }
+
+  static void destroy(base_node* p) { delete p; }
 };
 
 class base_expr_node : public base_node {

@@ -22,7 +22,7 @@ struct loop_id {
 };
 
 // Represents a symbolic buffer in a pipeline.
-class buffer_expr : public ref_counted {
+class buffer_expr : public ref_counted<buffer_expr> {
   symbol_id sym_;
   index_t elem_size_;
   std::vector<dim_expr> dims_;
@@ -84,6 +84,8 @@ public:
   const func* producer() const { return producer_; }
 
   const raw_buffer* constant() const { return constant_; }
+
+  static void destroy(buffer_expr* p) { delete p; }
 };
 
 // Represents a node of computation in a pipeline.

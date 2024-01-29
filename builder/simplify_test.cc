@@ -16,10 +16,6 @@ namespace slinky {
 void dump_context_for_expr(
     std::ostream&, const symbol_map<index_t>&, const expr& = expr(), const node_context* symbols = nullptr);
 
-}  // namespace slinky
-
-using namespace slinky;
-
 namespace {
 
 node_context symbols;
@@ -347,7 +343,7 @@ TEST(simplify, fuzz) {
     buffers.emplace_back(raw_buffer::make(max_rank, 4));
   }
   for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    ctx[bufs[i]] = reinterpret_cast<index_t>(buffers[i].get());
+    ctx[bufs[i]] = reinterpret_cast<index_t>(&*buffers[i]);
   }
 
   symbol_map<interval_expr> var_bounds;
@@ -412,3 +408,6 @@ TEST(simplify, fuzz) {
     }
   }
 }
+
+}  // namespace slinky
+

@@ -44,7 +44,12 @@ raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
   buf->elem_size = elem_size;
   buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
   new (buf->dims) slinky::dim[rank];
-  return {buf, destroy};
+  return buf;
+}
+
+void raw_buffer::destroy(raw_buffer* buf) {
+  buf->~raw_buffer();
+  delete[] (char*)buf;
 }
 
 raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> extents) {

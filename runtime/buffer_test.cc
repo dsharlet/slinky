@@ -5,7 +5,7 @@
 
 #include "runtime/buffer.h"
 
-using namespace slinky;
+namespace slinky {
 
 TEST(buffer, make) {
   auto buf = raw_buffer::make(2, 4);
@@ -46,6 +46,20 @@ TEST(buffer, buffer) {
   for (int i = 0; i < 10 * 20; ++i) {
     ASSERT_EQ(i, buf.base()[i]);
   }
+}
+
+TEST(buffer, rank0) { 
+  buffer<int> buf;
+  ASSERT_EQ(buf.rank, 0);
+  ASSERT_EQ(buf.size_bytes(), 4);
+
+  // buf should not have memory yet.
+  ASSERT_EQ(buf.base(), nullptr);
+
+  buf.allocate();
+
+  buf() = 3;
+  ASSERT_EQ(buf(), 3);
 }
 
 // A non-standard size type that acts like an integer for testing.
@@ -184,4 +198,6 @@ TEST(buffer, copy) {
   test_copy<uint32_t>();
   test_copy<uint64_t>();
   test_copy<big>();
+}
+
 }
