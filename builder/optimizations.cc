@@ -108,14 +108,14 @@ public:
       if (op->padding.empty()) {
         set_result(stmt());
       } else {
-        set_result(call_stmt::make(
-            [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
-              const raw_buffer* src_buf = ctx.lookup_buffer(src);
-              const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
-              pad(src_buf->dims, *dst_buf, padding.data());
-              return 0;
-            },
-            {src}, {dst}));
+        const auto replace_copy_with_pad_fn = [src = op->src, dst = op->dst, padding = op->padding](
+                                                  const eval_context& ctx) -> index_t {
+          const raw_buffer* src_buf = ctx.lookup_buffer(src);
+          const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+          pad(src_buf->dims, *dst_buf, padding.data());
+          return 0;
+        };
+        set_result(call_stmt::make({replace_copy_with_pad_fn, "replace_copy_with_pad"}, {src}, {dst}));
       }
     } else {
       set_result(op);
@@ -344,14 +344,14 @@ public:
 
   void visit(const copy_stmt* op) override {
     // Start by making a call to copy.
-    stmt result = call_stmt::make(
-        [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
-          const raw_buffer* src_buf = ctx.lookup_buffer(src);
-          const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
-          copy(*src_buf, *dst_buf, padding.empty() ? nullptr : padding.data());
-          return 0;
-        },
-        {op->src}, {op->dst});
+    const auto copy_wrapper = [src = op->src, dst = op->dst, padding = op->padding](
+                                  const eval_context& ctx) -> index_t {
+      const raw_buffer* src_buf = ctx.lookup_buffer(src);
+      const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+      copy(*src_buf, *dst_buf, padding.empty() ? nullptr : padding.data());
+      return 0;
+    };
+    stmt result = call_stmt::make({copy_wrapper, "copy_wrapper"}, {op->src}, {op->dst});
 
     var src_var(op->src);
     var dst_var(op->dst);

@@ -153,7 +153,7 @@ public:
   func(const func&) = delete;
   func& operator=(const func&) = delete;
 
-  bool defined() const { return impl_ != nullptr; }
+  bool defined() const { return impl_.defined(); }
 
   // Describes which loops should be explicit for this func, and the step size for that loop.
   func& loops(std::vector<loop_info> l) {
@@ -192,13 +192,12 @@ public:
   static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
     symbol_id in1_sym = in1.sym();
     symbol_id out1_sym = out1.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>());
-        },
-        {std::move(in1)}, {std::move(out1)});
+    const auto callable_wrapper = [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
+      const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
+      const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
+      return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>());
+    };
+    return func({callable_wrapper, "callable_wrapper"}, {std::move(in1)}, {std::move(out1)});
   }
 
   template <typename In1, typename In2, typename Out1>
@@ -206,14 +205,13 @@ public:
     symbol_id in1_sym = in1.sym();
     symbol_id in2_sym = in2.sym();
     symbol_id out1_sym = out1.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), out1_buf->cast<Out1>());
-        },
-        {std::move(in1), std::move(in2)}, {std::move(out1)});
+    const auto callable_wrapper = [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
+      const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
+      const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
+      const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
+      return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), out1_buf->cast<Out1>());
+    };
+    return func({callable_wrapper, "callable_wrapper"}, {std::move(in1), std::move(in2)}, {std::move(out1)});
   }
 
   template <typename In1, typename In2, typename In3, typename Out1>
@@ -223,16 +221,16 @@ public:
     symbol_id in2_sym = in2.sym();
     symbol_id in3_sym = in3.sym();
     symbol_id out1_sym = out1.sym();
+    const auto callable_wrapper = [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
+      const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
+      const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
+      const raw_buffer* in3_buf = ctx.lookup_buffer(in3_sym);
+      const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
+      return impl(
+          in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), in3_buf->cast<const In3>(), out1_buf->cast<Out1>());
+    };
     return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
-          const raw_buffer* in3_buf = ctx.lookup_buffer(in3_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), in3_buf->cast<const In3>(),
-              out1_buf->cast<Out1>());
-        },
-        {std::move(in1), std::move(in2), std::move(in3)}, {std::move(out1)});
+        {callable_wrapper, "callable_wrapper"}, {std::move(in1), std::move(in2), std::move(in3)}, {std::move(out1)});
   }
 
   template <typename In1, typename Out1, typename Out2>
@@ -240,14 +238,13 @@ public:
     symbol_id in1_sym = in1.sym();
     symbol_id out1_sym = out1.sym();
     symbol_id out2_sym = out2.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          const raw_buffer* out2_buf = ctx.lookup_buffer(out2_sym);
-          return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>(), out2_buf->cast<Out2>());
-        },
-        {std::move(in1)}, {std::move(out1), std::move(out2)});
+    const auto callable_wrapper = [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
+      const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
+      const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
+      const raw_buffer* out2_buf = ctx.lookup_buffer(out2_sym);
+      return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>(), out2_buf->cast<Out2>());
+    };
+    return func({callable_wrapper, "callable_wrapper"}, {std::move(in1)}, {std::move(out1), std::move(out2)});
   }
 
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }

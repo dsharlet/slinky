@@ -74,11 +74,11 @@ func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs
   add_this_to_buffers();
 }
 
-func::func(input input, output out, std::vector<char> padding) : func(nullptr, {std::move(input)}, {std::move(out)}) {
+func::func(input input, output out, std::vector<char> padding) : func({}, {std::move(input)}, {std::move(out)}) {
   padding_ = std::move(padding);
 }
 
-func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
+func::func(std::vector<input> inputs, output out) : func({}, std::move(inputs), {std::move(out)}) {}
 
 func::func(func&& m) { *this = std::move(m); }
 func& func::operator=(func&& m) {
@@ -108,7 +108,7 @@ void func::remove_this_from_buffers() {
 }
 
 stmt func::make_call() const {
-  if (impl_) {
+  if (impl_.defined()) {
     call_stmt::symbol_list inputs;
     call_stmt::symbol_list outputs;
     for (const func::input& i : inputs_) {

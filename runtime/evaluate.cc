@@ -354,12 +354,13 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    result = op->target(context);
+    result = op->target.fn(context);
     if (result) {
       if (context.call_failed) {
-        context.call_failed(op);
+        context.call_failed(op, op->target.name);
       } else {
-        std::cerr << "call_stmt failed: " << stmt(op) << "->" << result << std::endl;
+        std::cerr << "call_stmt failed for callable '" << op->target.name << "': " << stmt(op) << "->" << result
+                  << std::endl;
         std::abort();
       }
     }

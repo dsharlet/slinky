@@ -40,12 +40,11 @@ TEST(evaluate, call) {
   node_context ctx;
   var x(ctx, "x");
   std::vector<index_t> calls;
-  stmt c = call_stmt::make(
-      [&](eval_context& ctx) -> index_t {
-        calls.push_back(*ctx[x]);
-        return 0;
-      },
-      {}, {});
+  const auto test_fn = [&](eval_context& ctx) -> index_t {
+    calls.push_back(*ctx[x]);
+    return 0;
+  };
+  stmt c = call_stmt::make({test_fn, "test_fn"}, {}, {});
 
   eval_context context;
   context[x] = 2;
@@ -69,12 +68,11 @@ TEST(evaluate, loop) {
 
   for (loop_mode type : {loop_mode::serial, loop_mode::parallel}) {
     std::atomic<index_t> sum_x = 0;
-    stmt c = call_stmt::make(
-        [&](eval_context& ctx) -> index_t {
-          sum_x += *ctx[x];
-          return 0;
-        },
-        {}, {});
+    const auto test_fn = [&](eval_context& ctx) -> index_t {
+      sum_x += *ctx[x];
+      return 0;
+    };
+    stmt c = call_stmt::make({test_fn, "test_fn"}, {}, {});
 
     stmt l = loop::make(x.sym(), type, range(2, 12), 3, c);
 

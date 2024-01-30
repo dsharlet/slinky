@@ -19,7 +19,7 @@ public:
   // If these functions are not defined, the default handler will write a
   // message to cerr and abort.
   std::function<void(const expr&)> check_failed;
-  std::function<void(const call_stmt*)> call_failed;
+  std::function<void(const call_stmt*, const std::string&)> call_failed;
 
   // Functions implementing parallelism:
   // - `enqueue_many` should enqueue the task N times for asynchronous execution, where N is the maximum number of
