@@ -227,7 +227,8 @@ public:
   }
 
   void visit(const make_buffer* n) override {
-    *this << indent() << "{ let " << n->sym << " = make_buffer(" << n->base << ", " << n->elem_size << ", [";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', " << n->base << ", "
+          << n->elem_size << ", [";
     if (!n->dims.empty()) {
       *this << "\n";
       *this << indent(2);
@@ -359,13 +360,13 @@ function unpack_dim(at, dim) {
   }
 }
 function define_mapping(name, base, size, elem_size, dims) {
-  const buf = __template.cloneNode(true);
+  let buf = __template.cloneNode(true);
   buf.id = name;
   buf.style = '';
-  const mem = buf.querySelector('canvas#mem');
+  buf.mem = buf.querySelector('canvas#mem');
   buf.querySelector('p#name').innerText = name;
   buf.querySelector('p#bounds').innerText = dims.map(i => '[' + i.bounds.min + ',' + i.bounds.max + ']').toString();
-  mem.base = base;
+  buf.mem.base = base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
     return function(at) {
@@ -373,12 +374,20 @@ function define_mapping(name, base, size, elem_size, dims) {
       return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
     }
   }
-  mem.mapping = closure(base, elem_size, dims);
-  mem.elem_size = elem_size;
-  mem.productions = [];
+  buf.mem.mapping = closure(base, elem_size, dims);
+  buf.mem.elem_size = elem_size;
+  buf.mem.productions = [];
   __buffers.appendChild(buf);
-  __heap_map.push({begin: base, end: base + size, element: mem})
-  window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
+  __heap_map.push({begin: base, end: base + size, element: buf})
+  window.requestAnimationFrame(function(t) { draw(buf.mem, __current_t); });
+}
+function find_mapping(base) {
+  for (let m of __heap_map) {
+    if (m.begin <= base && base < m.end) {
+      return m;
+    }
+  }
+  return 0;
 }
 function for_each_offset_dim(buf, at, dim, fn) {
   for (let i = buf.dims[dim].bounds.min; i <= buf.dims[dim].bounds.max; ++i) {
@@ -458,7 +467,14 @@ function allocate(name, elem_size, dims) {
   return {base: base, elem_size: elem_size, dims: dims, color: next_color()};
 }
 function free(b) {}
-function make_buffer(base, elem_size, dims) { return {base: base, elem_size: elem_size, dims: dims, color: next_color()}; }
+function make_buffer(name, base, elem_size, dims) { 
+  let m = find_mapping(base);
+  if (m) {
+    let title = m.element.querySelector('p#name');
+    title.innerText = title.innerText + " / " + name;
+  }
+  return {base: base, elem_size: elem_size, dims: dims, color: next_color()}; 
+}
 function clone_buffer(b) { return structuredClone(b); }
 function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
 function crop_dim(b, d, bounds) {
@@ -496,11 +512,9 @@ function truncate_rank(b, rank) {
   return result;
 }
 function produce(b) {
-  for (let m of __heap_map) {
-    if (m.begin <= b.base && b.base < m.end) {
-      m.element.productions.push({t: __event_t++, buf: clone_buffer(b)});
-      return;
-    }
+  m = find_mapping(b.base);
+  if (m) {
+    m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
   }
 }
 function consume(b) {};
@@ -511,12 +525,13 @@ let __event_slider = document.getElementById('event_slider');
 let __autoplay = true;
 __event_slider.max = __end_t - 1;
 document.addEventListener('keyup', event => { if (event.code === 'Space') __autoplay = !__autoplay; });
+let rate = 3000 / __end_t;
 setInterval(function() {
   if (__autoplay) {
     __current_t = (__current_t + 1) % __end_t;
     __event_slider.value = __current_t;
   }
-}, 100);
+}, rate);
 </script></body></html>
 )html";
 
