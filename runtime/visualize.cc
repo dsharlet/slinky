@@ -350,6 +350,13 @@ var __event_t = 1;
 function min(a, b) { return Math.min(a, b); }
 function max(a, b) { return Math.max(a, b); }
 function clamp(x, a, b) { return min(max(x, a), b); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp_color(a, b, t) {
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+function make_color(a) {
+  return 'rgb(' + a[0] + ', ' + a[1] + ', ' + a[2] + ')';
+}
 function unpack_dim(at, dim) {
   if (dim.stride == 0) {
     return 0;
@@ -357,21 +364,22 @@ function unpack_dim(at, dim) {
     return Math.floor(at / dim.stride) % (dim.bounds.max - dim.bounds.min + 1);
   }
 }
-function add_label(buf, name, dims) {
+function add_label(buf, name, dims, color) {
   let label = name + ': ' + dims.map(i => '[' + i.bounds.min + ',' + i.bounds.max + ']').toString();
   let p = document.createElement('p');
   p.classList.add('label');
+  p.style.color = make_color(color);
   p.appendChild(document.createTextNode(label));
   buf.querySelector('.overlays').appendChild(p);
 }
 
-function define_mapping(name, base, size, elem_size, dims) {
+function define_mapping(buffer) {
   let buf = __template.cloneNode(true);
   buf.id = name;
   buf.style = '';
   buf.mem = buf.querySelector('canvas#mem');
-  add_label(buf, name, dims);
-  buf.mem.base = base;
+  add_label(buf, buffer.name, buffer.dims, buffer.color);
+  buf.mem.base = buffer.base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
     return function(at) {
@@ -379,11 +387,11 @@ function define_mapping(name, base, size, elem_size, dims) {
       return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
     }
   }
-  buf.mem.mapping = closure(base, elem_size, dims);
-  buf.mem.elem_size = elem_size;
+  buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
+  buf.mem.elem_size = buffer.elem_size;
   buf.mem.productions = [];
   __buffers.appendChild(buf);
-  __heap_map.push({begin: base, end: base + size, element: buf})
+  __heap_map.push({begin: buffer.base, end: buffer.base + buffer.size, element: buf})
   window.requestAnimationFrame(function(t) { draw(buf.mem, __current_t); });
 }
 function find_mapping(base) {
@@ -394,10 +402,10 @@ function find_mapping(base) {
   }
   return 0;
 }
-function add_mapping(name, base, elem_size, dims) {
-  let m = find_mapping(base);
+function add_mapping(buffer) {
+  let m = find_mapping(buffer.base);
   if (m) {
-    add_label(m.element, name, dims);
+    add_label(m.element, buffer.name, buffer.dims, buffer.color);
   }
 }
 function for_each_offset_dim(buf, at, dim, fn) {
@@ -413,13 +421,6 @@ function for_each_offset_dim(buf, at, dim, fn) {
 }
 function for_each_offset(buf, fn) {
   for_each_offset_dim(buf, buf.base, buf.dims.length - 1, fn);
-}
-function lerp(a, b, t) { return a + (b - a) * t; }
-function lerp_color(a, b, t) {
-  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-}
-function make_color(a) {
-  return 'rgb(' + a[0] + ', ' + a[1] + ', ' + a[2] + ')';
 }
 function draw(mem, t) {
   if (!mem.getContext) return;
@@ -466,7 +467,7 @@ function flat_allocate(size) {
   return result;
 }
 function next_color() {
-  const colors = [[255, 0, 0], [0, 255, 0], [65, 105, 225], [255, 255, 0], [255, 0, 255], [0, 255, 255]];
+  const colors = [[255, 0, 0], [0, 255, 0], [65, 105, 225], [240, 230, 140], [255, 0, 255], [0, 255, 255]];
   if (typeof next_color.next == 'undefined') {
     next_color.next = 0;
   }
@@ -482,15 +483,17 @@ function allocate(name, elem_size, dims, hidden = false) {
   }
   let size = flat_max - flat_min + elem_size;
   let base = flat_allocate(size);
+  let buffer = {name: name, base: base, size: size, elem_size: elem_size, dims: dims, color: next_color()};
   if (!hidden) {
-    define_mapping(name, base, size, elem_size, dims);
+    define_mapping(buffer);
   }
-  return {base: base, elem_size: elem_size, dims: dims, color: next_color()};
+  return buffer;
 }
 function free(b) {}
 function make_buffer(name, base, elem_size, dims) { 
-  add_mapping(name, base, elem_size, dims);
-  return {base: base, elem_size: elem_size, dims: dims, color: next_color()}; 
+  let buffer = {name: name, base: base, elem_size: elem_size, dims: dims, color: next_color()};
+  add_mapping(buffer);
+  return buffer;  
 }
 function clone_buffer(b) { return structuredClone(b); }
 function crop_dim(b, d, bounds) {
