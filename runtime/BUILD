@@ -36,6 +36,14 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "visualize",
+    srcs = ["visualize.cc"],
+    hdrs = ["visualize.h"],
+    deps = [":runtime"],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "arithmetic_test",
     srcs = ["arithmetic_test.cc"],
