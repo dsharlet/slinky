@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <immintrin.h>
+#include <iomanip>
 #include <iostream>
 
 namespace slinky {
@@ -80,7 +81,7 @@ int main(int argc, const char** argv) {
     std::cout << "| copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |" << std::endl;
     std::cout << "|----------------|-------------|----------------|-------|" << std::endl;
     for (int copy_size : copy_sizes) {
-      std::cout << "| " << copy_size << " | ";
+      std::cout << "| " << std::setw(14) << copy_size << " | ";
       copy_size *= 1024;
 
       if (total_size < copy_size) continue;
@@ -101,14 +102,14 @@ int main(int argc, const char** argv) {
       memset(out_buf.base(), 0, total_size);
       double loop_t = benchmark([&]() { loop.evaluate(inputs, outputs, ctx); });
       assert(memcmp(out_buf.base(), in_buf.base(), total_size) == 0);
-      std::cout << total_size / (loop_t * 1e9) << " | ";
+      std::cout << std::setw(11) << total_size / (loop_t * 1e9) << " | ";
 
       memset(out_buf.base(), 0, total_size);
       double no_loop_t = benchmark([&]() { no_loop.evaluate(inputs, outputs, ctx); });
       assert(memcmp(out_buf.base(), in_buf.base(), total_size) == 0);
-      std::cout << total_size / (no_loop_t * 1e9) << " | ";
+      std::cout << std::setw(14) << total_size / (no_loop_t * 1e9) << " | ";
 
-      std::cout << no_loop_t / loop_t << " | " << std::endl;
+      std::cout << std::setw(5) << std::setprecision(3) << std::fixed << no_loop_t / loop_t << " | " << std::endl;
     }
     std::cout << std::endl;
   }
