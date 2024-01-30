@@ -303,20 +303,30 @@ div.buffer {
   height:400px;
   display:inline-block;
   margin:3px;
+  position:relative;
 }
 div.mem_wrapper {
   width:100%;
   height:100%;
+  position:absolute;
+  top:0;
 }
 div.overlays {
   margin:auto;
   padding:3px;
+  position:absolute;
+  bottom:0;
+  right:0;
 }
 p.label {
   font-family:monospace;
-  margin:0;
+  margin:4px;
+  border-radius:5px;
+  background:black;
+  opacity:75%;
+  padding:3px;
 }
-div.sliderdiv {
+div.controls {
   position:fixed;
   bottom:0;
   left:0;
@@ -326,6 +336,7 @@ div.sliderdiv {
 }
 input.slider {
   width:300px;
+  margin:10px;
 }
 </style>
 </head>
@@ -335,11 +346,11 @@ var __current_t = 0;
 <body>
 <div width='100%' height='100%' id='buffers' class='buffers'>
   <div class='buffer' id='template' style='display:none;'>
-    <div class='overlays'></div>
     <div class='mem_wrapper'><canvas id='mem' style='width:100%; height:100%'></canvas></div>
+    <div class='overlays'></div>
   </div>
 </div>
-<div class='sliderdiv' width='100%'>
+<div class='controls' width='100%'>
   <input type='range' min='0' value='0' class='slider' id='event_slider' oninput='__current_t = this.value'>
 </div>
 <script>
