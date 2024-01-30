@@ -477,7 +477,7 @@ public:
       if (max >= min) {
         index_t offset = dim.flat_offset_bytes(min);
         // Crops can't span a folding boundary if they move the base pointer.
-        assert(offset == 0 || max / dim.fold_factor() == min / dim.fold_factor());
+        assert(offset == 0 || (max - old_min) / dim.fold_factor() == (min - old_min) / dim.fold_factor());
         buffer->base = offset_bytes(buffer->base, offset);
       }
 
@@ -507,7 +507,7 @@ public:
     if (max >= min) {
       buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
       // Crops can't span a folding boundary if they move the base pointer.
-      assert(buffer->base == old_base || max / dim.fold_factor() == min / dim.fold_factor());
+      assert(buffer->base == old_base || (max - old_min) / dim.fold_factor() == (min - old_min) / dim.fold_factor());
     }
 
     dim.set_bounds(min, max);
