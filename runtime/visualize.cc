@@ -466,7 +466,7 @@ function flat_allocate(size) {
   return result;
 }
 function next_color() {
-  const colors = [[255, 0, 0], [0, 255, 0], [64, 64, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]];
+  const colors = [[255, 0, 0], [0, 255, 0], [65, 105, 225], [255, 255, 0], [255, 0, 255], [0, 255, 255]];
   if (typeof next_color.next == 'undefined') {
     next_color.next = 0;
   }
