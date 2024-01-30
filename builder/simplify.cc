@@ -1445,9 +1445,8 @@ public:
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       body = substitute_bounds(body, op->sym, d, bounds_d);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (is_one(new_dim.fold_factor) || prove_true(new_dim.bounds.extent() == 1)) {
+      if (prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
-        new_dim.fold_factor = expr();
       }
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
