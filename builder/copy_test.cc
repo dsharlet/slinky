@@ -536,7 +536,7 @@ TEST(copy, batch_reshape) {
   box_expr bounds = {
       point(flat_out % in->dim(0).extent()),
       point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
-      point(flat_out / (in->dim(0).extent() * in->dim(1).extent())), 
+      point(flat_out / (in->dim(0).extent() * in->dim(1).extent())),
       point(w),
   };
   func crop = func::make_copy({in, bounds}, {out, {x, y, z, w}});
@@ -571,4 +571,4 @@ TEST(copy, batch_reshape) {
   }
 }
 
-}
+}  // namespace slinky

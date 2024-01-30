@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "runtime/expr.h"
 #include "builder/pipeline.h"
+#include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
 namespace slinky {
@@ -324,4 +324,4 @@ TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
 TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
 TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
 
-}
+}  // namespace slinky

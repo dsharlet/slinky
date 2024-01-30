@@ -16,7 +16,9 @@ namespace slinky {
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408
 template <typename T>
 T euclidean_div(T a, T b) {
-  if (b == 0) { return 0; }
+  if (b == 0) {
+    return 0;
+  }
   T q = a / b;
   T r = a - q * b;
   T bs = b >> (sizeof(T) * 8 - 1);
@@ -26,7 +28,9 @@ T euclidean_div(T a, T b) {
 
 template <typename T>
 T euclidean_mod(T a, T b) {
-  if (b == 0) { return 0; }
+  if (b == 0) {
+    return 0;
+  }
   T r = a % b;
   T sign_mask = r >> (sizeof(T) * 8 - 1);
   return r + (sign_mask & std::abs(b));
@@ -91,7 +95,9 @@ inline T saturate_negate(T x) {
 }
 
 template <typename T>
-inline int sign(T x) { return x >= 0 ? 1 : -1; }
+inline int sign(T x) {
+  return x >= 0 ? 1 : -1;
+}
 
 template <typename T>
 inline T saturate_mul(T a, T b) {

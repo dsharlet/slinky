@@ -4,11 +4,11 @@
 #include <iostream>
 
 #include "builder/simplify.h"
+#include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/print.h"
-#include "builder/substitute.h"
 
 namespace slinky {
 
@@ -146,7 +146,8 @@ TEST(simplify, if_then_else) {
 }
 
 TEST(simplify, bounds) {
-  test_simplify(loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, if_then_else::make(y - 2 <= x, check::make(z))),
+  test_simplify(
+      loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, if_then_else::make(y - 2 <= x, check::make(z))),
       loop::make(x.sym(), loop_mode::serial, bounds(y + -2, z), 2, check::make(z)));
   test_simplify(loop::make(x.sym(), loop_mode::serial, min_extent(x, z), z, check::make(y)), check::make(y));
 
@@ -409,4 +410,3 @@ TEST(simplify, fuzz) {
 }
 
 }  // namespace slinky
-

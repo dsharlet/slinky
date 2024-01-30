@@ -35,5 +35,13 @@ bazel-*
 # Visual Studio folder status
 .vs
 
+# Mac nonsense
+.DS_Store
+
 # perf outputs
 perf.data*
+
+# Local helper scripts used by some contributors
+run-clang-format.sh
+run-clang-tidy.sh
+

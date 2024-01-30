@@ -7,12 +7,12 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/depends_on.h"
-#include "runtime/expr.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
+#include "runtime/depends_on.h"
+#include "runtime/expr.h"
 #include "runtime/util.h"
 
 namespace slinky {

@@ -12,15 +12,15 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/evaluate.h"
-#include "runtime/expr.h"
 #include "builder/infer_bounds.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
-#include "runtime/pipeline.h"
-#include "runtime/print.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
+#include "runtime/evaluate.h"
+#include "runtime/expr.h"
+#include "runtime/pipeline.h"
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -416,8 +416,7 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants,
-    const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
   pipeline_builder builder(inputs, outputs, constants);
 
   stmt result;

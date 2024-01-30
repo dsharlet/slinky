@@ -447,7 +447,8 @@ expr simplify(const add* op, expr a, expr b) {
       {x + (x + y), y + x * 2},
       {x + (x - y), x * 2 - y},
       {x + (y - x), y},
-      //{x + x * y, x * (y + 1)},  // Needs x to be non-constant or it loops with c0 * (x + c1) -> c0 * x + c0 * c1... how?
+      //{x + x * y, x * (y + 1)},  // Needs x to be non-constant or it loops with c0 * (x + c1) -> c0 * x + c0 * c1...
+      // how?
       {x * y + x * z, x * (y + z)},
       {(x + y) + (x + z), x * 2 + (y + z)},
       {(x - y) + (x + z), x * 2 + (z - y)},
@@ -1444,9 +1445,8 @@ public:
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       body = substitute_bounds(body, op->sym, d, bounds_d);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (is_one(new_dim.fold_factor) || prove_true(new_dim.bounds.extent() == 1)) {
+      if (prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
-        new_dim.fold_factor = expr();
       }
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
@@ -1702,7 +1702,6 @@ public:
         return;
       }
     }
-
 
     if (const slice_dim* slice = body.as<slice_dim>()) {
       if (slice->sym == op->sym && slice->dim == op->dim) {
@@ -2065,7 +2064,9 @@ interval_expr where_true(const expr& condition, symbol_id var) {
 
     void visit(const variable* op) { leaves.push_back(op); }
     void visit(const constant* op) { leaves.push_back(op); }
-    void visit(const call* op) { if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op); }
+    void visit(const call* op) {
+      if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op);
+    }
   };
 
   initial_guesses v;
