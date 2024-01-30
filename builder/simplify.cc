@@ -447,7 +447,8 @@ expr simplify(const add* op, expr a, expr b) {
       {x + (x + y), y + x * 2},
       {x + (x - y), x * 2 - y},
       {x + (y - x), y},
-      //{x + x * y, x * (y + 1)},  // Needs x to be non-constant or it loops with c0 * (x + c1) -> c0 * x + c0 * c1... how?
+      //{x + x * y, x * (y + 1)},  // Needs x to be non-constant or it loops with c0 * (x + c1) -> c0 * x + c0 * c1...
+      // how?
       {x * y + x * z, x * (y + z)},
       {(x + y) + (x + z), x * 2 + (y + z)},
       {(x - y) + (x + z), x * 2 + (z - y)},
@@ -1703,7 +1704,6 @@ public:
       }
     }
 
-
     if (const slice_dim* slice = body.as<slice_dim>()) {
       if (slice->sym == op->sym && slice->dim == op->dim) {
         // This is a slice of the same dimension of the buffer we just cropped.
@@ -2065,7 +2065,9 @@ interval_expr where_true(const expr& condition, symbol_id var) {
 
     void visit(const variable* op) { leaves.push_back(op); }
     void visit(const constant* op) { leaves.push_back(op); }
-    void visit(const call* op) { if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op); }
+    void visit(const call* op) {
+      if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op);
+    }
   };
 
   initial_guesses v;

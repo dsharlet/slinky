@@ -1,6 +1,6 @@
 #include "apps/benchmark.h"
-#include "runtime/pipeline.h"
 #include "builder/pipeline.h"
+#include "runtime/pipeline.h"
 
 #include <algorithm>
 #include <cassert>
@@ -61,7 +61,7 @@ pipeline make_pipeline(bool explicit_y) {
   return p;
 }
 
-}
+}  // namespace slinky
 
 int main(int argc, const char** argv) {
   using namespace slinky;

@@ -3,8 +3,8 @@
 
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/util.h"
 #include "runtime/pipeline.h"
+#include "runtime/util.h"
 
 namespace slinky {
 

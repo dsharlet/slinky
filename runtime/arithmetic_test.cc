@@ -33,4 +33,4 @@ TEST(arithmetic, euclidean_div_mod) {
   }
 }
 
-}
+}  // namespace slinky

@@ -84,4 +84,4 @@ TEST(evaluate, loop) {
   }
 }
 
-}
+}  // namespace slinky
