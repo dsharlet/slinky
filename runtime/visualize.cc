@@ -310,10 +310,11 @@ div.mem_wrapper {
 }
 div.overlays {
   margin:auto;
+  padding:3px;
 }
-p#name, p#bounds {
+p.label {
   font-family:monospace;
-  margin:3px;
+  margin:0;
 }
 div.sliderdiv {
   position:fixed;
@@ -334,10 +335,7 @@ var __current_t = 0;
 <body>
 <div width='100%' height='100%' id='buffers' class='buffers'>
   <div class='buffer' id='template' style='display:none;'>
-    <div class='overlays'>
-      <p class='name' id='name'></p>
-      <p class='bounds' id='bounds'></p>
-    </div>
+    <div class='overlays'></div>
     <div class='mem_wrapper'><canvas id='mem' style='width:100%; height:100%'></canvas></div>
   </div>
 </div>
@@ -359,13 +357,20 @@ function unpack_dim(at, dim) {
     return Math.floor(at / dim.stride) % (dim.bounds.max - dim.bounds.min + 1);
   }
 }
+function add_label(buf, name, dims) {
+  let label = name + ': ' + dims.map(i => '[' + i.bounds.min + ',' + i.bounds.max + ']').toString();
+  let p = document.createElement('p');
+  p.classList.add('label');
+  p.appendChild(document.createTextNode(label));
+  buf.querySelector('.overlays').appendChild(p);
+}
+
 function define_mapping(name, base, size, elem_size, dims) {
   let buf = __template.cloneNode(true);
   buf.id = name;
   buf.style = '';
   buf.mem = buf.querySelector('canvas#mem');
-  buf.querySelector('p#name').innerText = name;
-  buf.querySelector('p#bounds').innerText = dims.map(i => '[' + i.bounds.min + ',' + i.bounds.max + ']').toString();
+  add_label(buf, name, dims);
   buf.mem.base = base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
@@ -388,6 +393,12 @@ function find_mapping(base) {
     }
   }
   return 0;
+}
+function add_mapping(name, base, elem_size, dims) {
+  let m = find_mapping(base);
+  if (m) {
+    add_label(m.element, name, dims);
+  }
 }
 function for_each_offset_dim(buf, at, dim, fn) {
   for (let i = buf.dims[dim].bounds.min; i <= buf.dims[dim].bounds.max; ++i) {
@@ -453,7 +464,7 @@ function next_color() {
   }
   return colors[(next_color.next++) % colors.length];
 }
-function allocate(name, elem_size, dims) {
+function allocate(name, elem_size, dims, hidden = false) {
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
@@ -463,16 +474,14 @@ function allocate(name, elem_size, dims) {
   }
   let size = flat_max - flat_min + elem_size;
   let base = flat_allocate(size);
-  define_mapping(name, base, size, elem_size, dims);
+  if (!hidden) {
+    define_mapping(name, base, size, elem_size, dims);
+  }
   return {base: base, elem_size: elem_size, dims: dims, color: next_color()};
 }
 function free(b) {}
 function make_buffer(name, base, elem_size, dims) { 
-  let m = find_mapping(base);
-  if (m) {
-    let title = m.element.querySelector('p#name');
-    title.innerText = title.innerText + " / " + name;
-  }
+  add_mapping(name, base, elem_size, dims);
   return {base: base, elem_size: elem_size, dims: dims, color: next_color()}; 
 }
 function clone_buffer(b) { return structuredClone(b); }
@@ -565,7 +574,7 @@ void visualize(const char* filename, const pipeline& p, pipeline::scalars args, 
     jsp << "let " << p.inputs()[i] << " = allocate('" << jsp.name(p.inputs()[i].sym()) << "', "
         << static_cast<index_t>(inputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(inputs[i]->dims, inputs[i]->rank));
-    jsp << "]);\n";
+    jsp << "], true);\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.outputs().size()); ++i) {
     jsp << "let " << p.outputs()[i] << " = allocate('" << jsp.name(p.outputs()[i].sym()) << "', "
