@@ -448,6 +448,14 @@ function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
 function buffer_base(b) { return b.base; }
 function buffer_elem_size(b) { return b.elem_size; }
+function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
+function buffer_at(b, ...at) {
+  let result = b.base;
+  for (let d = 0; d < at.length; ++d) {
+    result = result + flat_offset_dim(b.dims[d], at[d]);
+  }
+  return result;
+}
 function select(c, t, f) { return c ? t : f; }
 function flat_allocate(size) {
   if (typeof flat_allocate.heap == 'undefined') {
@@ -485,7 +493,6 @@ function make_buffer(name, base, elem_size, dims) {
   return {base: base, elem_size: elem_size, dims: dims, color: next_color()}; 
 }
 function clone_buffer(b) { return structuredClone(b); }
-function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
 function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
   let new_min = max(b.dims[d].bounds.min, bounds.min);
