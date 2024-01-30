@@ -51,12 +51,16 @@ public:
     return s;
   }
 
-  js_printer& operator<<(symbol_id sym) {
+  std::string name(symbol_id sym) const {
     if (context) {
-      os << sanitize(context->name(sym));
+      return context->name(sym);
     } else {
-      os << "_" << sym;
+      return "_" + std::to_string(sym);
     }
+  }
+
+  js_printer& operator<<(symbol_id sym) {
+    os << sanitize(name(sym));
     return *this;
   }
   js_printer& operator<<(const var& v) { return *this << v.sym(); }
@@ -211,8 +215,8 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << "{ let " << n->sym << " = allocate('" << n->sym << "', " << static_cast<index_t>(n->elem_size)
-          << ", [\n";
+    *this << indent() << "{ let " << n->sym << " = allocate('" << name(n->sym) << "', "
+          << static_cast<index_t>(n->elem_size) << ", [\n";
     *this << indent(2);
     print_vector(n->dims, ",\n" + indent(2));
     *this << "\n";
@@ -296,7 +300,7 @@ div.buffer {
   border:2px solid gray;
   width:400px;
   height:400px;
-  display: inline-block;
+  display:inline-block;
   margin:3px;
 }
 div.mem_wrapper {
@@ -307,8 +311,19 @@ div.overlays {
   margin:auto;
 }
 p#name, p#bounds {
-  font-family: monospace;
+  font-family:monospace;
   margin:3px;
+}
+div.sliderdiv {
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
+  width: 300px;
+  margin: auto;
+}
+input.slider {
+  width:300px;
 }
 </style>
 </head>
@@ -326,8 +341,7 @@ var __current_t = 0;
   </div>
 </div>
 <div class='sliderdiv' width='100%'>
-  <input type='range' min='0' value='0' class='slider' id='event_slider' width='100%' oninput='__current_t = "
-this.value'>
+  <input type='range' min='0' value='0' class='slider' id='event_slider' oninput='__current_t = this.value'>
 </div>
 <script>
 var __buffers = document.getElementById('buffers');
@@ -533,13 +547,13 @@ void visualize(const char* filename, const pipeline& p, pipeline::scalars args, 
     jsp << "let " << p.args()[i] << " = " << args[i] << ";\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.inputs().size()); ++i) {
-    jsp << "let " << p.inputs()[i] << " = allocate('" << p.inputs()[i] << "', "
+    jsp << "let " << p.inputs()[i] << " = allocate('" << jsp.name(p.inputs()[i].sym()) << "', "
         << static_cast<index_t>(inputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(inputs[i]->dims, inputs[i]->rank));
     jsp << "]);\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.outputs().size()); ++i) {
-    jsp << "let " << p.outputs()[i] << " = allocate('" << p.outputs()[i] << "', "
+    jsp << "let " << p.outputs()[i] << " = allocate('" << jsp.name(p.outputs()[i].sym()) << "', "
         << static_cast<index_t>(outputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(outputs[i]->dims, outputs[i]->rank));
     jsp << "]);\n";
