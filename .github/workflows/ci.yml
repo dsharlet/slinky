@@ -37,5 +37,8 @@ jobs:
       - name: Build and test
         run: bazel test -c opt ...
         
+      - name: Build and test with ASAN
+        run: bazel test -c opt --config=asan ...
+
       - name: Build and run performance app
         run: bazel run -c opt apps/performance
