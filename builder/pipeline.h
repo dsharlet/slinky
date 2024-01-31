@@ -91,9 +91,8 @@ public:
 // Represents a node of computation in a pipeline.
 class func {
 public:
-  using callable = call_stmt::callable;
   template <typename... T>
-  using user_callable = std::function<index_t(const buffer<T>&...)>;
+  using callable = std::function<index_t(const buffer<T>&...)>;
 
   // TODO(https://github.com/dsharlet/slinky/issues/7): There should be a separate descriptor
   // of a callable and the bounds/dims of inputs/outputs, which is constant over all the
@@ -130,7 +129,7 @@ public:
   };
 
 private:
-  callable impl_;
+  call_stmt::callable impl_;
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
@@ -144,7 +143,7 @@ private:
 
 public:
   func() {}
-  func(callable impl, std::vector<input> inputs, std::vector<output> outputs);
+  func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::vector<char> padding);
   func(func&&);
@@ -192,7 +191,7 @@ public:
   // Version for plain old function ptrs
   template <typename... T>
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
-    user_callable<T...> impl = std::move(fn);
+    callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;
@@ -210,8 +209,8 @@ public:
 
   // Version for std::function (usually )
   template <typename... T>
-  static func make(user_callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs) {
-    user_callable<T...> impl = std::move(fn);
+  static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs) {
+    callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;

@@ -237,10 +237,10 @@ TEST(pipeline, elementwise_1d) {
         var x(ctx, "x");
 
         // Here we explicitly use std::functions (in the form of a
-        // func::user_callable typedef) to wrap the local calls
+        // func::callable typedef) to wrap the local calls
         // purely to verify that the relevant func::make calls work correctly.
-        func::user_callable<const int, int> m2 = multiply_2<int>;
-        func::user_callable<const int, int> a1 = add_1<int>;
+        func::callable<const int, int> m2 = multiply_2<int>;
+        func::callable<const int, int> a1 = add_1<int>;
 
         func mul = func::make(std::move(m2), {{in, {point(x)}}}, {{intm, {x}}});
         func add = func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}});
@@ -302,10 +302,10 @@ TEST(pipeline, elementwise_2d) {
         // Here we explicitly use lambdas to wrap the local calls,
         // purely to test the mechanism needed to use them with func::make, which
         // is: they must be wrapped in a std::function (usually )
-        func::user_callable<const int, int> m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
+        func::callable<const int, int> m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
           return multiply_2<int>(a, b);
         };
-        func::user_callable<const int, int> a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
+        func::callable<const int, int> a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
           return add_1<int>(a, b);
         };
 
@@ -759,8 +759,8 @@ TEST(pipeline, multiple_outputs) {
       auto Y = in->dim(1).bounds;
 
       // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
-      func::user_callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
-                                                              const buffer<int>& sum_xy) -> index_t {
+      func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
+                                                         const buffer<int>& sum_xy) -> index_t {
         assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
         for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
           sum_xy(z) = 0;
