@@ -177,8 +177,8 @@ public:
 
 private:
   template <typename... T, std::size_t... Indices>
-  static inline index_t call_impl(
-      const func::callable<T...>& impl, eval_context& ctx, const symbol_id* symbols, std::index_sequence<Indices...>) {
+  static inline index_t call_impl(const func::callable<T...>& impl, eval_context& ctx,
+      const std::array<symbol_id, sizeof...(T)>& symbols, std::index_sequence<Indices...>) {
     return impl(ctx.lookup_buffer(symbols[Indices])->template cast<T>()...);
   }
 
@@ -190,7 +190,7 @@ public:
     assert(sizeof...(T) == inputs.size() + outputs.size());
 
     // TODO: if https://github.com/dsharlet/slinky/issues/13 lands, this needs attention, as the
-    // symol ids we capture may be invalid.
+    // symbol ids we capture may be invalid.
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;
     for (const auto& in : inputs)
@@ -199,7 +199,7 @@ public:
       symbols[i++] = out.sym();
 
     auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
-      return call_impl<T...>(impl, ctx, symbols.data(), std::make_index_sequence<sizeof...(T)>());
+      return call_impl<T...>(impl, ctx, symbols, std::make_index_sequence<sizeof...(T)>());
     };
 
     return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
