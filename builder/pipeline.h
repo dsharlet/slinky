@@ -176,8 +176,9 @@ public:
   const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
 private:
+  // Note that the recursion in this function is all unwound at compiletime into inlined code.
   template <typename First, typename... Rest>
-  static auto build_tuple(eval_context& ctx, const symbol_id* symbols, std::size_t index = 0) {
+  static constexpr auto build_tuple(eval_context& ctx, const symbol_id* symbols, std::size_t index = 0) {
     if constexpr (sizeof...(Rest) == 0) {
       // Don't use make_tuple() here; it will decay away the references, which we need
       const buffer<First>& b = ctx.lookup_buffer(symbols[index])->template cast<First>();
