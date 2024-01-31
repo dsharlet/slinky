@@ -388,11 +388,12 @@ function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
 function buffer_base(b) { return b.base; }
 function buffer_elem_size(b) { return b.elem_size; }
+function is_folded(d) { return d.fold_factor < (1 << 30); }
 function flat_offset_dim(d, x) { 
-  if (d.fold_factor > (1 << 30)) {
-    return x * d.stride; 
-  } else {
+  if (is_folded(d)) {
     return euclidean_mod(x, d.fold_factor) * d.stride; 
+  } else {
+    return x * d.stride; 
   }
 }
 function buffer_at(b, ...at) {
@@ -499,10 +500,10 @@ function allocate(name, elem_size, dims, hidden = false) {
   let flat_max = 0;
   let offset = 0;
   for (let i = 0; i < dims.length; ++i) {
-    let extent = dims[i].fold_factor > (1 << 30) ? dims[i].bounds.max - dims[i].bounds.min + 1 : dims[i].fold_factor;
+    let extent = is_folded(dims[i]) ? dims[i].fold_factor : dims[i].bounds.max - dims[i].bounds.min + 1;
     flat_min += (extent - 1) * min(0, dims[i].stride);
     flat_max += (extent - 1) * max(0, dims[i].stride);
-    if (dims[i].fold_factor > (1 << 30)) {
+    if (!is_folded(dims[i])) {
       offset -= dims[i].bounds.min * dims[i].stride;
     }
   }
