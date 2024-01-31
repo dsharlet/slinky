@@ -69,7 +69,7 @@ void buffer_expr::set_producer(func* f) {
   producer_ = f;
 }
 
-func::func(callable impl, std::vector<input> inputs, std::vector<output> outputs)
+func::func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs)
     : impl_(std::move(impl)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   add_this_to_buffers();
 }

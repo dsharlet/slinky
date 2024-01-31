@@ -26,7 +26,7 @@ TEST(pipeline, checks) {
 
   var x(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
+  func mul = func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
