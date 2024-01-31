@@ -5,7 +5,6 @@ run --copt=-fdiagnostics-color=always
 test --copt=-fdiagnostics-color=always
 
 # Allow us to run with --config=asan
-# (Note, this may assume that the system C++ compiler is Clang rather than GCC)
 build:asan --strip=never
 build:asan --copt -fsanitize=address
 build:asan --copt -DADDRESS_SANITIZER
