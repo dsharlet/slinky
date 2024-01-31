@@ -149,8 +149,8 @@ public:
   void visit(const add* op) override { visit_bin_op(op, " + "); }
   void visit(const sub* op) override { visit_bin_op(op, " - "); }
   void visit(const mul* op) override { visit_bin_op(op, " * "); }
-  void visit(const div* op) override { visit_bin_op(op, " / "); }
-  void visit(const mod* op) override { visit_bin_op(op, " % "); }
+  void visit(const div* op) override { *this << "euclidean_div(" << op->a << ", " << op->b << ")"; }
+  void visit(const mod* op) override { *this << "euclidean_mod(" << op->a << ", " << op->b << ")"; }
   void visit(const equal* op) override { visit_bin_op(op, " == "); }
   void visit(const not_equal* op) override { visit_bin_op(op, " != "); }
   void visit(const less* op) override { visit_bin_op(op, " < "); }
@@ -215,28 +215,31 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << "{ let " << n->sym << " = allocate('" << name(n->sym) << "', "
-          << static_cast<index_t>(n->elem_size) << ", [\n";
+    *this << indent() << "__dims = [\n";
     *this << indent(2);
     print_vector(n->dims, ",\n" + indent(2));
     *this << "\n";
-    *this << indent(1) << "]);\n";
+    *this << indent() << "];\n";
+    *this << indent() << "__elem_size = " << static_cast<index_t>(n->elem_size) << ";\n";
+    *this << indent() << "{ let " << n->sym << " = allocate('" << name(n->sym) << "', __elem_size, __dims);\n";
     *this << n->body;
     *this << indent(1) << "free(" << n->sym << ");\n";
     *this << indent() << "}\n";
   }
 
   void visit(const make_buffer* n) override {
-    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', " << n->base << ", "
-          << n->elem_size << ", [";
+    *this << indent() << "__dims = [";
     if (!n->dims.empty()) {
       *this << "\n";
       *this << indent(2);
       print_vector(n->dims, ",\n" + indent(2));
       *this << "\n";
-      *this << indent(1);
+      *this << indent();
     }
-    *this << "]);\n";
+    *this << "];\n";
+    *this << indent() << "__elem_size = " << n->elem_size << ";\n";
+    *this << indent() << "__base = " << n->base << ";\n";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
@@ -358,6 +361,8 @@ var __buffers = document.getElementById('buffers');
 let __template = document.getElementById('template');
 var __heap_map = [];
 var __event_t = 1;
+function euclidean_div(a, b) { return Math.floor(a / b); }
+function euclidean_mod(a, b) { return Math.round(a - b * euclidean_div(a, b)); }
 function min(a, b) { return Math.min(a, b); }
 function max(a, b) { return Math.max(a, b); }
 function clamp(x, a, b) { return min(max(x, a), b); }
@@ -372,9 +377,33 @@ function unpack_dim(at, dim) {
   if (dim.stride == 0) {
     return 0;
   } else {
-    return Math.floor(at / dim.stride) % (dim.bounds.max - dim.bounds.min + 1);
+    return euclidean_mod(euclidean_div(at, dim.stride), dim.bounds.max - dim.bounds.min + 1);
   }
 }
+function buffer_min(b, d) { return b.dims[d].bounds.min; }
+function buffer_max(b, d) { return b.dims[d].bounds.max; }
+function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
+function buffer_stride(b, d) { return b.dims[d].stride; }
+function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
+function buffer_rank(b) { return b.dims.length; }
+function buffer_base(b) { return b.base; }
+function buffer_elem_size(b) { return b.elem_size; }
+function is_folded(d) { return d.fold_factor < (1 << 30); }
+function flat_offset_dim(d, x) { 
+  if (is_folded(d)) {
+    return euclidean_mod(x, d.fold_factor) * d.stride; 
+  } else {
+    return x * d.stride; 
+  }
+}
+function buffer_at(b, ...at) {
+  let result = b.base;
+  for (let d = 0; d < at.length; ++d) {
+    result = result + flat_offset_dim(b.dims[d], at[d]);
+  }
+  return result;
+}
+function select(c, t, f) { return c ? t : f; }
 function add_label(buf, name, dims, color) {
   let label = name + ': ' + dims.map(i => '[' + i.bounds.min + ',' + i.bounds.max + ']').toString();
   let p = document.createElement('p');
@@ -398,35 +427,34 @@ function define_mapping(buffer) {
       return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
     }
   }
-  buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
+  buf.mem.mapping = closure(buffer.flat_begin, buffer.elem_size, buffer.dims);
   buf.mem.elem_size = buffer.elem_size;
   buf.mem.productions = [];
   __buffers.appendChild(buf);
-  __heap_map.push({begin: buffer.base, end: buffer.base + buffer.size, element: buf})
+  __heap_map.push({begin: buffer.flat_begin, end: buffer.flat_end, element: buf});
   window.requestAnimationFrame(function(t) { draw(buf.mem, __current_t); });
 }
-function find_mapping(base) {
+function find_mapping(addr) {
   for (let m of __heap_map) {
-    if (m.begin <= base && base < m.end) {
+    if (m.begin <= addr && addr < m.end) {
       return m;
     }
   }
   return 0;
 }
-function add_mapping(buffer) {
-  let m = find_mapping(buffer.base);
+function add_mapping(b) {
+  let m = find_mapping(buffer_at(b, ...b.dims.map(i => i.bounds.min)));
   if (m) {
-    add_label(m.element, buffer.name, buffer.dims, buffer.color);
+    add_label(m.element, b.name, b.dims, b.color);
   }
 }
 function for_each_offset_dim(buf, at, dim, fn) {
-  for (let i = buf.dims[dim].bounds.min; i <= buf.dims[dim].bounds.max; ++i) {
+  let d = buf.dims[dim];
+  for (let i = d.bounds.min; i <= d.bounds.max; ++i) {
     if (dim == 0) {
-      fn(at);
-      at += buf.dims[dim].stride;
+      fn(at + flat_offset_dim(d, i));
     } else {
-      for_each_offset_dim(buf, at, dim - 1, fn);
-      at += buf.dims[dim].stride;
+      for_each_offset_dim(buf, at + flat_offset_dim(d, i), dim - 1, fn);
     }
   }
 }
@@ -452,23 +480,6 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
-function buffer_min(b, d) { return b.dims[d].bounds.min; }
-function buffer_max(b, d) { return b.dims[d].bounds.max; }
-function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
-function buffer_stride(b, d) { return b.dims[d].stride; }
-function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
-function buffer_rank(b) { return b.dims.length; }
-function buffer_base(b) { return b.base; }
-function buffer_elem_size(b) { return b.elem_size; }
-function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
-function buffer_at(b, ...at) {
-  let result = b.base;
-  for (let d = 0; d < at.length; ++d) {
-    result = result + flat_offset_dim(b.dims[d], at[d]);
-  }
-  return result;
-}
-function select(c, t, f) { return c ? t : f; }
 function flat_allocate(size) {
   if (typeof flat_allocate.heap == 'undefined') {
     flat_allocate.heap = 0;
@@ -487,14 +498,19 @@ function next_color() {
 function allocate(name, elem_size, dims, hidden = false) {
   let flat_min = 0;
   let flat_max = 0;
+  let offset = 0;
   for (let i = 0; i < dims.length; ++i) {
-    let extent = min(dims[i].bounds.max - dims[i].bounds.min + 1, dims[i].fold_factor);
+    let extent = is_folded(dims[i]) ? dims[i].fold_factor : dims[i].bounds.max - dims[i].bounds.min + 1;
     flat_min += (extent - 1) * min(0, dims[i].stride);
     flat_max += (extent - 1) * max(0, dims[i].stride);
+    if (!is_folded(dims[i])) {
+      offset -= dims[i].bounds.min * dims[i].stride;
+    }
   }
   let size = flat_max - flat_min + elem_size;
-  let base = flat_allocate(size);
-  let buffer = {name: name, base: base, size: size, elem_size: elem_size, dims: dims, color: next_color()};
+  let allocation = flat_allocate(size);
+  let base = allocation + offset;
+  let buffer = {name: name, base: base, flat_begin: allocation, flat_end: allocation + size, elem_size: elem_size, dims: dims, color: next_color()};
   if (!hidden) {
     define_mapping(buffer);
   }
@@ -511,7 +527,6 @@ function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
   let new_min = max(b.dims[d].bounds.min, bounds.min);
   let new_max = min(b.dims[d].bounds.max, bounds.max);
-  b.base += flat_offset_dim(b.dims[d], new_min);
   b.dims[d].bounds.min = new_min;
   b.dims[d].bounds.max = new_max;
   return result;
@@ -542,7 +557,7 @@ function truncate_rank(b, rank) {
   return result;
 }
 function produce(b) {
-  m = find_mapping(b.base);
+  m = find_mapping(buffer_at(b, ...b.dims.map(i => i.bounds.min)));
   if (m) {
     m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
   }

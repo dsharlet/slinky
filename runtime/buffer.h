@@ -64,17 +64,13 @@ public:
   void set_stride(index_t stride) { stride_ = stride; }
   void set_fold_factor(index_t fold_factor) { fold_factor_ = fold_factor; }
 
-  void translate(index_t offset) { min_ += offset; }
-
   bool contains(index_t x) const { return min() <= x && x <= max(); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
-    assert(i >= min_);
-    assert(i <= max());
     if (fold_factor_ == unfolded) {
-      return (i - min_) * stride_;
+      return i * stride_;
     } else {
-      return euclidean_mod(i - min_, fold_factor_) * stride_;
+      return euclidean_mod(i, fold_factor_) * stride_;
     }
   }
 };
@@ -115,11 +111,14 @@ protected:
     return dims->contains(i0) && contains_impl(dims + 1, indices...);
   }
 
-  static void translate_impl(dim* dims, index_t o0) { dims->translate(o0); }
+  void translate_impl(dim* dim, index_t o0) { 
+    base = offset_bytes(base, -dim->flat_offset_bytes(o0));
+    dim->set_min_extent(dim->min() + o0, dim->extent());
+  }
 
   template <typename... Offsets>
-  static void translate_impl(dim* dims, index_t o0, Offsets... offsets) {
-    dims->translate(o0);
+  void translate_impl(dim* dims, index_t o0, Offsets... offsets) {
+    translate_impl(dims, o0);
     translate_impl(dims + 1, offsets...);
   }
 
@@ -192,11 +191,13 @@ public:
   void translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
-      dims[i].translate(offsets[i]);
+      translate_impl(&dims[i], offsets[i]);
     }
   }
 
   std::size_t size_bytes() const;
+  // This returns the offset that should be added to an allocation to get to the base pointer for this buffer.
+  std::ptrdiff_t allocation_offset_bytes() const;
 
   // Does not call constructor or destructor of T!
   void allocate();

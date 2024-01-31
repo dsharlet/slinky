@@ -196,8 +196,8 @@ public:
         at[d] = max(buffer_min(target_var, d) - at[d], op->dims[d].bounds.min);
         dims[d].bounds &= op->dims[d].bounds;
       }
-      stmt result = make_buffer::make(
-          op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size), std::move(dims), std::move(body));
+      stmt result = make_buffer::make(op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size),
+          std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       stmt pad_result = replace_copy_with_pad(op->sym, target.first).mutate(result);
       if (pad_result.same_as(result)) {
@@ -385,7 +385,7 @@ public:
           interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
           src_dims.push_back(
               {dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d)});
-          src_x[src_d] = max(buffer_min(dst_var, d) + offset, buffer_min(src_var, src_d));
+          src_x[src_d] = offset;
           handled = true;
         }
       }
