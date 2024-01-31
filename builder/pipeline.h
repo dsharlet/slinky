@@ -182,6 +182,16 @@ private:
     return impl(ctx.lookup_buffer(symbols[Indices])->template cast<T>()...);
   }
 
+  template <typename Lambda>
+  struct lambda_call_signature : lambda_call_signature<decltype(&Lambda::operator())> {};
+
+  template <typename ReturnType, typename ClassType, typename... Args>
+  struct lambda_call_signature<ReturnType (ClassType::*)(Args...) const> {
+    using ret_type = ReturnType;
+    using arg_types = std::tuple<Args...>;
+    using std_function_type = std::function<ReturnType(Args...)>;
+  };
+
 public:
   // Version for std::function
   template <typename... T>
@@ -203,6 +213,14 @@ public:
     };
 
     return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
+  }
+
+  // Version for lambdas
+  template <typename Lambda>
+  static func make(Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs) {
+    using std_function_type = typename lambda_call_signature<Lambda>::std_function_type;
+    std_function_type impl = std::move(lambda);
+    return make(std::move(impl), inputs, outputs);
   }
 
   // Version for plain old function ptrs
