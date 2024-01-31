@@ -220,14 +220,14 @@ public:
   static func make(Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs) {
     using std_function_type = typename lambda_call_signature<Lambda>::std_function_type;
     std_function_type impl = std::move(lambda);
-    return make(std::move(impl), inputs, outputs);
+    return make(std::move(impl), std::move(inputs), std::move(outputs));
   }
 
   // Version for plain old function ptrs
   template <typename... T>
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
     callable<T...> impl = fn;
-    return make<T...>(std::move(impl), inputs, outputs);
+    return make(std::move(impl), std::move(inputs), std::move(outputs));
   }
 
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
