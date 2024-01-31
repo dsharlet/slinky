@@ -300,12 +300,11 @@ TEST(pipeline, elementwise_2d) {
         var y(ctx, "y");
 
         // Here we explicitly use lambdas to wrap the local calls,
-        // purely to test the mechanism needed to use them with func::make, which
-        // is: they must be wrapped in a std::function (usually )
-        func::callable<const int, int> m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
+        // purely to verify that the relevant func::make calls work correctly.
+        auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
           return multiply_2<int>(a, b);
         };
-        func::callable<const int, int> a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
+        auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t {
           return add_1<int>(a, b);
         };
 
