@@ -21,18 +21,22 @@ std::size_t raw_buffer::size_bytes() const {
   return flat_max - flat_min + elem_size;
 }
 
-// Does not call constructor or destructor of T!
-void raw_buffer::allocate() {
-  assert(allocation == nullptr);
-
-  allocation = new char[size_bytes()];
-  index_t offset = 0;
+std::ptrdiff_t raw_buffer::allocation_offset_bytes() const {
+  std::ptrdiff_t offset = 0;
   for (std::size_t d = 0; d < rank; ++d) {
     if (dims[d].fold_factor() == dim::unfolded) {
       offset -= dims[d].flat_offset_bytes(dims[d].min());
     }
   }
-  base = allocation + offset;
+  return offset;
+}
+
+// Does not call constructor or destructor of T!
+void raw_buffer::allocate() {
+  assert(allocation == nullptr);
+
+  allocation = new char[size_bytes()];
+  base = allocation + allocation_offset_bytes();
 }
 
 void raw_buffer::free() {

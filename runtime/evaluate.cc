@@ -394,13 +394,7 @@ public:
 
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
-      index_t offset = 0;
-      for (std::size_t i = 0; i < rank; ++i) {
-        if (buffer->dim(i).fold_factor() == dim::unfolded) {
-          offset -= buffer->dim(i).flat_offset_bytes(buffer->dim(i).min());
-        }
-      }
-      buffer->base = offset_bytes(buffer->base, offset);
+      buffer->base = offset_bytes(buffer->base, buffer->allocation_offset_bytes());
     } else {
       assert(op->storage == memory_type::heap);
       buffer->allocation = nullptr;

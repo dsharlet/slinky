@@ -196,6 +196,8 @@ public:
   }
 
   std::size_t size_bytes() const;
+  // This returns the offset that should be added to an allocation to get to the base pointer for this buffer.
+  std::ptrdiff_t allocation_offset_bytes() const;
 
   // Does not call constructor or destructor of T!
   void allocate();
