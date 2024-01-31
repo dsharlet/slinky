@@ -191,7 +191,7 @@ public:
   // Version for plain old function ptrs
   template <typename... T>
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
-    callable<T...> impl = std::move(fn);
+    callable<T...> impl = fn;
     assert(sizeof...(T) == inputs.size() + outputs.size());
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;
