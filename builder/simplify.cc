@@ -951,7 +951,7 @@ expr simplify(const call* op, std::vector<expr> args) {
     // Trailing undefined indices can be removed.
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
       // buffer_at(b, 0) is equivalent to buffer_base(b)
-      if (args[d].defined() && match(args[d], 0)) {
+      if (args[d].defined() && is_zero(args[d])) {
         args[d] = expr();
         changed = true;
       }
