@@ -107,8 +107,8 @@ void copy_stmt_impl(eval_context& ctx, const raw_buffer& src, const raw_buffer& 
     memcpy(dst.base, src.base, dst.elem_size);
   } else {
     void* dst_base = dst.base;
-    for (int d = 0; d < dst.rank; ++d) {
-      dst_base += dst.dim(d).flat_offset_bytes(dst.dim(d).min());
+    for (std::size_t d = 0; d < dst.rank; ++d) {
+      dst_base = offset_bytes(dst_base, dst.dim(d).flat_offset_bytes(dst.dim(d).min()));
     }
     copy_stmt_impl(ctx, src, dst.dims, dst_base, c, dst.rank - 1);
   }

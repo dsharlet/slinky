@@ -95,13 +95,6 @@ bool is_copy(const copy_stmt* op, std::vector<expr>& offset) {
   return true;
 }
 
-expr buffer_base_for_min(expr buf, std::vector<expr> min) {
-  for (int d = 0; d < static_cast<int>(min.size()); ++d) {
-    min[d] -= buffer_min(buf, d);
-  }
-  return buffer_at(buf, min);
-}
-
 // Replaces `copy_stmt` with a call to `pad`.
 class replace_copy_with_pad : public node_mutator {
   symbol_id src;
