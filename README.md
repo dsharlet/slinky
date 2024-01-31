@@ -69,7 +69,7 @@ mul.compute_at({&stencil, x});
 ```
 
 ### Stencil example
-Here is an example of a pipeline that has a stage that is a stencil, such as a convlution:
+Here is an example of a pipeline that has a stage that is a stencil, such as a convolution:
 
 ```c++
 node_context ctx;
