@@ -457,7 +457,6 @@ class eval_context;
 // Call `target`.
 class call_stmt : public stmt_node<call_stmt> {
 public:
-  typedef index_t (*callable_t)(eval_context&);
   using callable = std::function<index_t(eval_context&)>;
   using symbol_list = std::vector<symbol_id>;
 
