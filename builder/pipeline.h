@@ -93,7 +93,7 @@ class func {
 public:
   using callable = call_stmt::callable;
   template <typename... T>
-  using callable_wrapper = std::function<index_t(const buffer<T>&...)>;
+  using user_callable = std::function<index_t(const buffer<T>&...)>;
 
   // TODO(https://github.com/dsharlet/slinky/issues/7): There should be a separate descriptor
   // of a callable and the bounds/dims of inputs/outputs, which is constant over all the
@@ -192,7 +192,7 @@ public:
   // Version for plain old function ptrs
   template <typename... T>
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
-    callable_wrapper<T...> impl = std::move(fn);
+    user_callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;
@@ -208,11 +208,10 @@ public:
     return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
   }
 
-  // Version for std::function and lambda
-  template <typename... T, typename LambdaType,
-      typename std::enable_if<std::is_convertible<LambdaType, callable_wrapper<T...>>::value>::type* = nullptr>
-  static func make(LambdaType&& fn, std::vector<input> inputs, std::vector<output> outputs) {
-    callable_wrapper<T...> impl = std::move(fn);
+  // Version for std::function (usually )
+  template <typename... T>
+  static func make(user_callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs) {
+    user_callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;

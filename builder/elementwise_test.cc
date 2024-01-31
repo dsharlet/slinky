@@ -73,13 +73,14 @@ public:
   }
 
   template <typename Impl>
-  void visit_binary(const char* fn, const buffer_expr_ptr& a, const buffer_expr_ptr& b, const Impl& impl) {
-    result = buffer_expr::make(ctx, name(a) + fn + name(b), sizeof(T), Rank);
-    auto f = [=](const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
+  void visit_binary(const char* fn_name, const buffer_expr_ptr& a, const buffer_expr_ptr& b, const Impl& impl) {
+    result = buffer_expr::make(ctx, name(a) + fn_name + name(b), sizeof(T), Rank);
+    func::user_callable<const T, const T, T> fn = [=](const buffer<const T>& a, const buffer<const T>& b,
+                                                      const buffer<T>& c) {
       for_each_index(c, [&](auto i) { c(i) = impl(a(i), b(i)); });
       return 0;
     };
-    func r = func::make<const T, const T, T>(std::move(f), {{a, bounds}, {b, bounds}}, {{result, dims}});
+    func r = func::make<const T, const T, T>(std::move(fn), {{a, bounds}, {b, bounds}}, {{result, dims}});
     result_funcs.push_back(std::move(r));
   }
 
@@ -110,8 +111,9 @@ public:
     buffer_expr_ptr t = visit_expr(op->true_value);
     buffer_expr_ptr f = visit_expr(op->false_value);
     result = buffer_expr::make(ctx, "select_" + name(c) + "_" + name(t) + "_" + name(f), sizeof(T), Rank);
-    auto fn = [](const buffer<const T>& c, const buffer<const T>& t, const buffer<const T>& f,
-                  const buffer<T>& r) -> index_t {
+    func::user_callable<const T, const T, const T, T> fn = [](const buffer<const T>& c, const buffer<const T>& t,
+                                                               const buffer<const T>& f,
+                                                               const buffer<T>& r) -> index_t {
       for_each_index(c, [&](auto i) { r(i) = c(i) != 0 ? t(i) : f(i); });
       return 0;
     };
