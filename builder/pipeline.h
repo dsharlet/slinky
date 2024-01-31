@@ -176,78 +176,56 @@ public:
   }
   const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
-  // TODO(https://github.com/dsharlet/slinky/issues/8): Try to do this with a variadic template implementation.
-  template <typename Out1>
-  static func make(callable_wrapper<Out1> impl, output out1) {
-    symbol_id out1_sym = out1.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(out1_buf->cast<Out1>());
-        },
-        {}, {std::move(out1)});
+private:
+  template <typename First, typename... Rest>
+  static auto build_tuple(eval_context& ctx, const symbol_id* symbols, std::size_t index = 0) {
+    if constexpr (sizeof...(Rest) == 0) {
+      // Don't use make_tuple() here; it will decay away the references, which we need
+      const buffer<First>& b = ctx.lookup_buffer(symbols[index])->template cast<First>();
+      return std::tuple<const buffer<First>&>(std::move(b));
+    } else {
+      return std::tuple_cat(build_tuple<First>(ctx, symbols, index), build_tuple<Rest...>(ctx, symbols, index + 1));
+    }
   }
 
-  template <typename In1, typename Out1>
-  static func make(callable_wrapper<const In1, Out1> impl, input in1, output out1) {
-    symbol_id in1_sym = in1.sym();
-    symbol_id out1_sym = out1.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>());
-        },
-        {std::move(in1)}, {std::move(out1)});
+public:
+  // Version for plain old function ptrs
+  template <typename... T>
+  static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
+    callable_wrapper<T...> impl = std::move(fn);
+    assert(sizeof...(T) == inputs.size() + outputs.size());
+    std::array<symbol_id, sizeof...(T)> symbols;
+    std::size_t i = 0;
+    for (const auto& in : inputs)
+      symbols[i++] = in.sym();
+    for (const auto& out : outputs)
+      symbols[i++] = out.sym();
+
+    const auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
+      return std::apply(impl, build_tuple<T...>(ctx, symbols.data()));
+    };
+
+    return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
   }
 
-  template <typename In1, typename In2, typename Out1>
-  static func make(callable_wrapper<const In1, const In2, Out1> impl, input in1, input in2, output out1) {
-    symbol_id in1_sym = in1.sym();
-    symbol_id in2_sym = in2.sym();
-    symbol_id out1_sym = out1.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), out1_buf->cast<Out1>());
-        },
-        {std::move(in1), std::move(in2)}, {std::move(out1)});
-  }
+  // Version for std::function and lambda
+  template <typename... T, typename LambdaType,
+      typename std::enable_if<std::is_convertible<LambdaType, callable_wrapper<T...>>::value>::type* = nullptr>
+  static func make(LambdaType&& fn, std::vector<input> inputs, std::vector<output> outputs) {
+    callable_wrapper<T...> impl = std::move(fn);
+    assert(sizeof...(T) == inputs.size() + outputs.size());
+    std::array<symbol_id, sizeof...(T)> symbols;
+    std::size_t i = 0;
+    for (const auto& in : inputs)
+      symbols[i++] = in.sym();
+    for (const auto& out : outputs)
+      symbols[i++] = out.sym();
 
-  template <typename In1, typename In2, typename In3, typename Out1>
-  static func make(
-      callable_wrapper<const In1, const In2, const In3, Out1> impl, input in1, input in2, input in3, output out1) {
-    symbol_id in1_sym = in1.sym();
-    symbol_id in2_sym = in2.sym();
-    symbol_id in3_sym = in3.sym();
-    symbol_id out1_sym = out1.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* in2_buf = ctx.lookup_buffer(in2_sym);
-          const raw_buffer* in3_buf = ctx.lookup_buffer(in3_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          return impl(in1_buf->cast<const In1>(), in2_buf->cast<const In2>(), in3_buf->cast<const In3>(),
-              out1_buf->cast<Out1>());
-        },
-        {std::move(in1), std::move(in2), std::move(in3)}, {std::move(out1)});
-  }
+    const auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
+      return std::apply(impl, build_tuple<T...>(ctx, symbols.data()));
+    };
 
-  template <typename In1, typename Out1, typename Out2>
-  static func make(callable_wrapper<const In1, Out1, Out2> impl, input in1, output out1, output out2) {
-    symbol_id in1_sym = in1.sym();
-    symbol_id out1_sym = out1.sym();
-    symbol_id out2_sym = out2.sym();
-    return func(
-        [=, impl = std::move(impl)](eval_context& ctx) -> index_t {
-          const raw_buffer* in1_buf = ctx.lookup_buffer(in1_sym);
-          const raw_buffer* out1_buf = ctx.lookup_buffer(out1_sym);
-          const raw_buffer* out2_buf = ctx.lookup_buffer(out2_sym);
-          return impl(in1_buf->cast<const In1>(), out1_buf->cast<Out1>(), out2_buf->cast<Out2>());
-        },
-        {std::move(in1)}, {std::move(out1), std::move(out2)});
+    return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
   }
 
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }

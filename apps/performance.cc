@@ -50,7 +50,7 @@ pipeline make_pipeline(bool explicit_y) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make<const char, char>(copy_2d<char>, {in, {point(x), point(y)}}, {out, {x, y}});
+  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (explicit_y) {
     copy.loops({y});
