@@ -111,7 +111,7 @@ protected:
     return dims->contains(i0) && contains_impl(dims + 1, indices...);
   }
 
-  void translate_impl(dim* dim, index_t o0) { 
+  void translate_impl(dim* dim, index_t o0) {
     base = offset_bytes(base, -dim->flat_offset_bytes(o0));
     dim->set_min_extent(dim->min() + o0, dim->extent());
   }

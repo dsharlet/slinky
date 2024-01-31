@@ -239,7 +239,8 @@ public:
     *this << "];\n";
     *this << indent() << "__elem_size = " << n->elem_size << ";\n";
     *this << indent() << "__base = " << n->base << ";\n";
-    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);\n";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym)
+          << "', __base, __elem_size, __dims);\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
