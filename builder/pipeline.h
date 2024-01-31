@@ -176,43 +176,21 @@ public:
   const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
 private:
-  // Note that the recursion in this function is all unwound at compiletime into inlined code.
-  template <typename First, typename... Rest>
-  static constexpr auto build_tuple(eval_context& ctx, const symbol_id* symbols, std::size_t index = 0) {
-    if constexpr (sizeof...(Rest) == 0) {
-      // Don't use make_tuple() here; it will decay away the references, which we need
-      const buffer<First>& b = ctx.lookup_buffer(symbols[index])->template cast<First>();
-      return std::tuple<const buffer<First>&>(std::move(b));
-    } else {
-      return std::tuple_cat(build_tuple<First>(ctx, symbols, index), build_tuple<Rest...>(ctx, symbols, index + 1));
-    }
+  template <typename... T, std::size_t... Indices>
+  static inline index_t call_impl(
+      const func::callable<T...>& impl, eval_context& ctx, const symbol_id* symbols, std::index_sequence<Indices...>) {
+    return impl(ctx.lookup_buffer(symbols[Indices])->template cast<T>()...);
   }
 
 public:
-  // Version for plain old function ptrs
-  template <typename... T>
-  static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
-    callable<T...> impl = fn;
-    assert(sizeof...(T) == inputs.size() + outputs.size());
-    std::array<symbol_id, sizeof...(T)> symbols;
-    std::size_t i = 0;
-    for (const auto& in : inputs)
-      symbols[i++] = in.sym();
-    for (const auto& out : outputs)
-      symbols[i++] = out.sym();
-
-    const auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
-      return std::apply(impl, build_tuple<T...>(ctx, symbols.data()));
-    };
-
-    return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
-  }
-
-  // Version for std::function (usually )
+  // Version for std::function
   template <typename... T>
   static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
+
+    // TODO: if https://github.com/dsharlet/slinky/issues/13 lands, this needs attention, as the
+    // symol ids we capture may be invalid.
     std::array<symbol_id, sizeof...(T)> symbols;
     std::size_t i = 0;
     for (const auto& in : inputs)
@@ -220,11 +198,18 @@ public:
     for (const auto& out : outputs)
       symbols[i++] = out.sym();
 
-    const auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
-      return std::apply(impl, build_tuple<T...>(ctx, symbols.data()));
+    auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
+      return call_impl<T...>(impl, ctx, symbols.data(), std::make_index_sequence<sizeof...(T)>());
     };
 
     return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
+  }
+
+  // Version for plain old function ptrs
+  template <typename... T>
+  static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
+    callable<T...> impl = fn;
+    return make<T...>(std::move(impl), inputs, outputs);
   }
 
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
