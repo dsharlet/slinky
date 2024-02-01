@@ -20,7 +20,7 @@ void memcpy_workaround(char* dst, const char* src, std::size_t size) {
   constexpr std::size_t chunk_size = 2048;
   for (std::size_t i = 0; i < size; i += chunk_size) {
     std::size_t size_i = std::min(size - i, chunk_size);
-    memcpy(dst, src, size_i);
+    memmove(dst, src, size_i);
     dst += chunk_size;
     src += chunk_size;
   }
@@ -47,14 +47,16 @@ pipeline make_pipeline(bool explicit_y) {
 
   auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
 
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{out, {x, y}}});
+  func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func copy_out = func::make(copy_2d<char>, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (explicit_y) {
-    copy.loops({y});
+    copy_out.loops({y});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_checks = true});
