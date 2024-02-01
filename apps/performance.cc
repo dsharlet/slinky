@@ -20,7 +20,7 @@ void memcpy_workaround(char* dst, const char* src, std::size_t size) {
   constexpr std::size_t chunk_size = 2048;
   for (std::size_t i = 0; i < size; i += chunk_size) {
     std::size_t size_i = std::min(size - i, chunk_size);
-    memcpy(dst, src, size_i);
+    memmove(dst, src, size_i);
     dst += chunk_size;
     src += chunk_size;
   }
