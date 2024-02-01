@@ -212,7 +212,7 @@ public:
       return call_impl<T...>(impl, ctx, symbols, std::make_index_sequence<sizeof...(T)>());
     };
 
-    return func(wrapper, {std::move(inputs)}, {std::move(outputs)});
+    return func(std::move(wrapper), std::move(inputs), std::move(outputs));
   }
 
   // Version for lambdas
