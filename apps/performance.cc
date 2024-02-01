@@ -47,14 +47,16 @@ pipeline make_pipeline(bool explicit_y) {
 
   auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
 
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{out, {x, y}}});
+  func copy1 = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func copy2 = func::make(copy_2d<char>, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (explicit_y) {
-    copy.loops({y});
+    copy2.loops({y});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_checks = true});
