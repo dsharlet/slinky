@@ -201,7 +201,11 @@ The inner dimension of size "copy size" is copied with `memcpy`, the outer dimen
 1. An "explicit loop" version, which has a loop in the pipeline for the outer dimension (interpreted by Slinky).
 2. An "implicit loop" version, which loops over the outer dimension in the callback.
 
-The difference in overhead between these two implementations is measuring the overhead of interpreting the pipeline at runtime.
+Two factors affect the performance of this pipeline:
+
+- Interpreter and dispatching overhead of slinky.
+- Locality of the copy operations.
+
 This is an extreme example, where `memcpy` is the fastest operation (per memory accessed) that could be performed in a pipeline.
 In other words, this is an upper bound on the overhead that could be expected for an operation on the same amount of memory.
 
@@ -258,7 +262,7 @@ On my machine, here are some data points from this pipeline:
 |             32 |      23.965 |         13.942 | 1.719 |
 
 ## Observations
-As we might expect, the observations vary depending on the total size of the copy:
+As we should expect, the observations vary depending on the total size of the copy:
 
 - When the total size is small enough to fit in L1 or L2 cache, the cost of the `memcpy` will be small, and the overhead will be relatively more expensive. This cost is as much as 40% when copying 1 KB at a time, according to the data above.
 - Even when the entire copy fits in the L1 cache, the overhead of dispatching 8KB at a time is negligible.
