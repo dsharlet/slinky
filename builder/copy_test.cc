@@ -171,7 +171,7 @@ TEST(copy, flip_x) {
   init_random(in_buf);
 
   buffer<int, 1> out_buf({W});
-  out_buf.dim(0).translate(-W + 1);
+  out_buf.translate(-W + 1);
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
@@ -212,7 +212,7 @@ TEST(copy, flip_y) {
     init_random(in_buf);
 
     buffer<int, 3> out_buf({W, H, D});
-    out_buf.dim(1).translate(-H + 1);
+    out_buf.translate(0, -H + 1);
     out_buf.allocate();
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
@@ -536,7 +536,7 @@ TEST(copy, batch_reshape) {
   box_expr bounds = {
       point(flat_out % in->dim(0).extent()),
       point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
-      point(flat_out / (in->dim(0).extent() * in->dim(1).extent())), 
+      point(flat_out / (in->dim(0).extent() * in->dim(1).extent())),
       point(w),
   };
   func crop = func::make_copy({in, bounds}, {out, {x, y, z, w}});
@@ -571,4 +571,4 @@ TEST(copy, batch_reshape) {
   }
 }
 
-}
+}  // namespace slinky

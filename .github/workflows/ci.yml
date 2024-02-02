@@ -7,6 +7,20 @@ on:
       - main
 
 jobs:
+  # We don't want to run clang-format as a presubmit requirement at this time,
+  # but here's all that's needed if that changes in the future:
+  #
+  # check_clang_format:
+  #   name: Check clang-format
+  #   runs-on: ubuntu-20.04
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: DoozyX/clang-format-lint-action@v0.17
+  #       with:
+  #         source: '.'
+  #         extensions: 'h,cc'
+  #         clangFormatVersion: 17
+
   build:
     runs-on: ubuntu-latest
 
@@ -23,5 +37,8 @@ jobs:
       - name: Build and test
         run: bazel test -c opt ...
         
+      - name: Build and test with ASAN
+        run: bazel test -c opt --config=asan ...
+
       - name: Build and run performance app
         run: bazel run -c opt apps/performance

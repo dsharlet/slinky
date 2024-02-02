@@ -2,9 +2,9 @@
 
 #include <cassert>
 
-#include "runtime/pipeline.h"
-#include "runtime/expr.h"
 #include "builder/pipeline.h"
+#include "runtime/expr.h"
+#include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
 
 namespace slinky {
@@ -50,7 +50,6 @@ public:
   }
 };
 
-
 // This file provides a number of toy funcs for test pipelines.
 
 // Copy from input to output.
@@ -86,7 +85,7 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
   return 0;
 }
 
@@ -190,7 +189,7 @@ TEST(pipeline, trivial) {
 
       var x(ctx, "x");
 
-      func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
+      func mul = func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}});
       if (split > 0) {
         mul.loops({{x, split, lm}});
       }
@@ -237,8 +236,14 @@ TEST(pipeline, elementwise_1d) {
 
         var x(ctx, "x");
 
-        func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
-        func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
+        // Here we explicitly use std::functions (in the form of a
+        // func::callable typedef) to wrap the local calls
+        // purely to verify that the relevant func::make calls work correctly.
+        func::callable<const int, int> m2 = multiply_2<int>;
+        func::callable<const int, int> a1 = add_1<int>;
+
+        func mul = func::make(std::move(m2), {{in, {point(x)}}}, {{intm, {x}}});
+        func add = func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}});
 
         if (split > 0) {
           add.loops({{x, split, lm}});
@@ -294,8 +299,13 @@ TEST(pipeline, elementwise_2d) {
         var x(ctx, "x");
         var y(ctx, "y");
 
-        func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x), point(y)}}, {intm, {x, y}});
-        func add = func::make<const int, int>(add_1<int>, {intm, {point(x), point(y)}}, {out, {x, y}});
+        // Here we explicitly use lambdas to wrap the local calls,
+        // purely to verify that the relevant func::make calls work correctly.
+        auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return multiply_2<int>(a, b); };
+        auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
+
+        func mul = func::make(std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+        func add = func::make(std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
         if (split > 0) {
           add.loops({{x, split, lm}, {y, split, lm}});
@@ -366,10 +376,8 @@ TEST(pipeline, matmuls) {
       auto K_abc = c->dim(0).bounds;
 
       // We use int for this pipeline so we can test for correctness exactly.
-      func matmul_ab = func::make<const int, const int, int>(
-          matmul<int>, {a, {point(i), K_ab}}, {b, {K_ab, point(j)}}, {ab, {i, j}});
-      func matmul_abc = func::make<const int, const int, int>(
-          matmul<int>, {ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}, {abc, {i, j}});
+      func matmul_ab = func::make(matmul<int>, {{a, {point(i), K_ab}}, {b, {K_ab, point(j)}}}, {{ab, {i, j}}});
+      func matmul_abc = func::make(matmul<int>, {{ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}}, {{abc, {i, j}}});
 
       a->dim(1).stride = a->elem_size();
       b->dim(1).stride = b->elem_size();
@@ -468,10 +476,9 @@ TEST(pipeline, pyramid) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func downsample =
-      func::make<const int, int>(downsample2x, {in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}, {intm, {x, y}});
-  func upsample = func::make<const int, const int, int>(pyramid_upsample2x, {in, {point(x), point(y)}},
-      {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}, {out, {x, y}});
+  func downsample = func::make(downsample2x, {{in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{intm, {x, y}}});
+  func upsample = func::make(pyramid_upsample2x,
+      {{in, {point(x), point(y)}}, {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
 
   upsample.loops({{y, 1}});
 
@@ -510,9 +517,8 @@ TEST(pipeline, stencil) {
       var x(ctx, "x");
       var y(ctx, "y");
 
-      func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
-      func stencil =
-          func::make<const short, short>(sum3x3<short>, {intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
+      func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+      func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
       if (split > 0) {
         stencil.loops({{y, split, lm}});
@@ -540,7 +546,7 @@ TEST(pipeline, stencil) {
       test_context eval_ctx;
       p.evaluate(inputs, outputs, eval_ctx);
       if (lm == loop_mode::serial && split > 0) {
-        ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
+        ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * (split + 2) * sizeof(short));
       }
       ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
 
@@ -574,11 +580,9 @@ TEST(pipeline, stencil_chain) {
       var x(ctx, "x");
       var y(ctx, "y");
 
-      func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
-      func stencil1 = func::make<const short, short>(
-          sum3x3<short>, {intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm2, {x, y}});
-      func stencil2 =
-          func::make<const short, short>(sum3x3<short>, {intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
+      func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+      func stencil1 = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm2, {x, y}}});
+      func stencil2 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
       if (split > 0) {
         stencil2.loops({{y, split, lm}});
@@ -647,8 +651,8 @@ TEST(pipeline, flip_y) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy = func::make<const char, char>(copy_2d<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
-  func flip = func::make<const char, char>(flip_y<char>, {intm, {point(x), point(-y)}}, {out, {x, y}});
+  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func flip = func::make(flip_y<char>, {{intm, {point(x), point(-y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -659,7 +663,7 @@ TEST(pipeline, flip_y) {
   init_random(in_buf);
 
   buffer<char, 2> out_buf({W, H});
-  out_buf.dim(1).translate(-H + 1);
+  out_buf.translate(0, -H + 1);
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
@@ -692,10 +696,10 @@ TEST(pipeline, padded_copy) {
   var h(ctx, "h");
 
   // Copy the input so we can measure the size of the buffer we think we need internally.
-  func copy = func::make<const char, char>(copy_2d<char>, {in, {point(x), point(y)}}, {intm, {x, y}});
+  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   // This is elementwise, but with a clamp to limit the bounds required of the input.
-  func crop = func::make<const char, char>(
-      zero_padded_copy<char>, {intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}, {out, {x, y}});
+  func crop = func::make(
+      zero_padded_copy<char>, {{intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}}, {{out, {x, y}}});
 
   crop.loops({y});
 
@@ -750,7 +754,8 @@ TEST(pipeline, multiple_outputs) {
       auto Y = in->dim(1).bounds;
 
       // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
-      auto sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x, const buffer<int>& sum_xy) -> index_t {
+      func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
+                                                         const buffer<int>& sum_xy) -> index_t {
         assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
         for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
           sum_xy(z) = 0;
@@ -764,7 +769,7 @@ TEST(pipeline, multiple_outputs) {
         }
         return 0;
       };
-      func sums = func::make<const int, int, int>(sum_x_xy, {in, {X, Y, point(z)}}, {sum_x, {y, z}}, {sum_xy, {z}});
+      func sums = func::make(std::move(sum_x_xy), {{in, {X, Y, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
 
       if (split > 0) {
         sums.loops({{z, split, lm}});
@@ -818,8 +823,7 @@ TEST(pipeline, outer_product) {
         var i(ctx, "i");
         var j(ctx, "j");
 
-        func outer =
-            func::make<const int, const int, int>(outer_product<int>, {a, {point(i)}}, {b, {point(j)}}, {out, {i, j}});
+        func outer = func::make(outer_product<int>, {{a, {point(i)}}, {b, {point(j)}}}, {{out, {i, j}}});
 
         std::vector<func::loop_info> loops;
         if (split_i > 0) loops.emplace_back(i, split_i, lm);
@@ -868,12 +872,11 @@ TEST(pipeline, unrelated) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func add1 = func::make<const short, short>(add_1<short>, {in1, {point(x), point(y)}}, {intm1, {x, y}});
-  func stencil1 =
-      func::make<const short, short>(sum3x3<short>, {intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out1, {x, y}});
+  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
 
-  func mul2 = func::make<const int, int>(multiply_2<int>, {in2, {point(x)}}, {intm2, {x}});
-  func add2 = func::make<const int, int>(add_1<int>, {intm2, {point(x)}}, {out2, {x}});
+  func mul2 = func::make(multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}});
+  func add2 = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}});
 
   stencil1.loops({{y, 2}});
 
@@ -939,8 +942,7 @@ TEST(pipeline, copied_result) {
     var y(ctx, "y");
 
     // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-    func stencil =
-        func::make<const short, short>(sum3x3<short>, {in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm, {x, y}});
+    func stencil = func::make(sum3x3<short>, {{in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm, {x, y}}});
     func padded = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
 
     switch (schedule) {
@@ -949,9 +951,7 @@ TEST(pipeline, copied_result) {
       padded.loops({y});
       stencil.compute_root();
       break;
-    case 2:
-      padded.loops({y});
-      break;
+    case 2: padded.loops({y}); break;
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
@@ -1005,8 +1005,8 @@ TEST(pipeline, concatenated_result) {
   var y(ctx, "y");
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-  func add1 = func::make<const short, short>(add_1<short>, {in1, {point(x), point(y)}}, {intm1, {x, y}});
-  func add2 = func::make<const short, short>(add_1<short>, {in2, {point(x), point(y)}}, {intm2, {x, y}});
+  func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
+  func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
   func concatenated = func::make_copy(
       {intm1, {point(x), point(y)}}, {intm2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
 
@@ -1057,10 +1057,9 @@ TEST(pipeline, padded_stencil) {
     var x(ctx, "x");
     var y(ctx, "y");
 
-    func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
+    func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
     func padded = func::make_copy({intm, {point(x), point(y)}}, {padded_intm, {x, y}}, {6, 0});
-    func stencil = func::make<const short, short>(
-        sum3x3<short>, {padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {out, {x, y}});
+    func stencil = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
     switch (schedule) {
     case 0: break;
@@ -1069,9 +1068,7 @@ TEST(pipeline, padded_stencil) {
       padded.compute_root();
       break;
     case 2: stencil.loops({y}); break;
-    case 3:
-      stencil.loops({y});
-      break;
+    case 3: stencil.loops({y}); break;
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
@@ -1091,7 +1088,7 @@ TEST(pipeline, padded_stencil) {
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
     if (schedule == 2) {
-      //ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
+      // ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
       ASSERT_EQ(eval_ctx.heap.total_count, 2);
     } else if (schedule == 3) {
       ASSERT_EQ(eval_ctx.heap.total_size, W * sizeof(short) + (W + 2) * 3 * sizeof(short));
@@ -1133,7 +1130,7 @@ TEST(pipeline, constant) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func add = func::make<const short, short>(add_1<short>, {constant, {point(x), point(y)}}, {out, {x, y}});
+  func add = func::make(add_1<short>, {{constant, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {}, {out});
 
@@ -1156,77 +1153,79 @@ TEST(pipeline, constant) {
 }
 
 TEST(pipeline, parallel_stencils) {
-  // Make the pipeline
-  node_context ctx;
+  for (int split : {0, 1, 2, 3}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
-  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
-  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+    auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
+    auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+    auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+    auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
+    auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
+    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  func add1 = func::make<const short, short>(add_1<short>, {in1, {point(x), point(y)}}, {intm1, {x, y}});
-  func add2 = func::make<const short, short>(multiply_2<short>, {in2, {point(x), point(y)}}, {intm2, {x, y}});
-  func stencil1 =
-      func::make<const short, short>(sum3x3<short>, {intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}, {intm3, {x, y}});
-  func stencil2 =
-      func::make<const short, short>(sum5x5<short>, {intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}, {intm4, {x, y}});
-  func diff = func::make<const short, const short, short>(
-      subtract<short>, {intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}, {out, {x, y}});
+    func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+    func add2 = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
+    func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+    func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
+    func diff =
+        func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-  diff.loops({{y, 2}});
+    if (split > 0) {
+      diff.loops({{y, split}});
+    }
 
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+    pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
-  // Run the pipeline.
-  const int W = 20;
-  const int H = 10;
-  buffer<short, 2> in1_buf({W + 2, H + 2});
-  buffer<short, 2> in2_buf({W + 4, H + 4});
-  in1_buf.translate(-1, -1);
-  in2_buf.translate(-2, -2);
-  buffer<short, 2> out_buf({W, H});
+    // Run the pipeline.
+    const int W = 20;
+    const int H = 10;
+    buffer<short, 2> in1_buf({W + 2, H + 2});
+    buffer<short, 2> in2_buf({W + 4, H + 4});
+    in1_buf.translate(-1, -1);
+    in2_buf.translate(-2, -2);
+    buffer<short, 2> out_buf({W, H});
 
-  init_random(in1_buf);
-  init_random(in2_buf);
-  out_buf.allocate();
+    init_random(in1_buf);
+    init_random(in2_buf);
+    out_buf.allocate();
 
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+    // Not having span(std::initializer_list<T>) is unfortunate.
+    const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
 
-  // Run the pipeline stages manually to get the reference result.
-  buffer<short, 2> ref_intm1({W + 2, H + 2});
-  buffer<short, 2> ref_intm2({W + 4, H + 4});
-  buffer<short, 2> ref_intm3({W, H});
-  buffer<short, 2> ref_intm4({W, H});
-  buffer<short, 2> ref_out({W, H});
-  ref_intm1.translate(-1, -1);
-  ref_intm2.translate(-2, -2);
-  ref_intm1.allocate();
-  ref_intm2.allocate();
-  ref_intm3.allocate();
-  ref_intm4.allocate();
-  ref_out.allocate();
+    // Run the pipeline stages manually to get the reference result.
+    buffer<short, 2> ref_intm1({W + 2, H + 2});
+    buffer<short, 2> ref_intm2({W + 4, H + 4});
+    buffer<short, 2> ref_intm3({W, H});
+    buffer<short, 2> ref_intm4({W, H});
+    buffer<short, 2> ref_out({W, H});
+    ref_intm1.translate(-1, -1);
+    ref_intm2.translate(-2, -2);
+    ref_intm1.allocate();
+    ref_intm2.allocate();
+    ref_intm3.allocate();
+    ref_intm4.allocate();
+    ref_out.allocate();
 
-  add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
-  multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
-  sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
-  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+    add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
+    multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
+    sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
+    sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+    subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+      }
     }
   }
 }
 
-}
+}  // namespace slinky

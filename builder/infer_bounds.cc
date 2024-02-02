@@ -7,12 +7,12 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/depends_on.h"
-#include "runtime/expr.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
+#include "runtime/depends_on.h"
+#include "runtime/expr.h"
 #include "runtime/util.h"
 
 namespace slinky {
@@ -370,8 +370,6 @@ public:
 
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {
-              // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-              fold_factor = simplify(align_up(fold_factor, loop_step));
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.

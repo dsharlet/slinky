@@ -69,7 +69,7 @@ mul.compute_at({&stencil, x});
 ```
 
 ### Stencil example
-Here is an example of a pipeline that has a stage that is a stencil, such as a convlution:
+Here is an example of a pipeline that has a stage that is a stencil, such as a convolution:
 
 ```c++
 node_context ctx;
@@ -195,14 +195,18 @@ We *think* Slinky's approach is a more easily solved problem, and will degrade m
 
 ## Data we have so far
 This [performance app](apps/performance.cc) attempts to measure the overhead of interpreting pipelines at runtime.
-The test performs a copy between two 2D buffers of "total size" bytes, and the inner dimension is "copy size" bytes
-The inner dimension is copied with `memcpy`, the outer dimension is a loop implemented in one of two ways:
+The test performs a copy between two 2D buffers of "total size" bytes twice: first to an intermediate buffer, and then to the output. 
+The inner dimension of size "copy size" is copied with `memcpy`, the outer dimension is a loop implemented in one of two ways:
 
 1. An "explicit loop" version, which has a loop in the pipeline for the outer dimension (interpreted by Slinky).
 2. An "implicit loop" version, which loops over the outer dimension in the callback.
 
-The difference in overhead between these two implementations is measuring the overhead of interpreting the pipeline at runtime.
-This is an extreme example, where `memcpy` is the fastest operation (per memory accessed) that could be performed in a data flow pipeline.
+Two factors affect the performance of this pipeline:
+
+- Interpreter and dispatching overhead of slinky.
+- Locality of the copy operations.
+
+This is an extreme example, where `memcpy` is the fastest operation (per memory accessed) that could be performed in a pipeline.
 In other words, this is an upper bound on the overhead that could be expected for an operation on the same amount of memory.
 
 On my machine, here are some data points from this pipeline:
@@ -210,60 +214,56 @@ On my machine, here are some data points from this pipeline:
 ### 32 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 27.9628 | 53.4015 | 0.523633 |
-| 2 | 38.0666 | 57.6909 | 0.659838 |
-| 4 | 45.7096 | 57.7501 | 0.791506 |
-| 8 | 49.5502 | 57.6375 | 0.859686 |
-| 16 | 51.2565 | 57.3557 | 0.893661 |
-| 32 | 53.9359 | 57.9311 | 0.931036 |
+|              1 |     13.0713 |        19.7616 | 0.661 |
+|              2 |      19.485 |         23.728 | 0.821 |
+|              4 |      24.254 |         25.221 | 0.962 |
+|              8 |      27.701 |         26.013 | 1.065 |
+|             16 |      26.428 |         25.919 | 1.020 |
+|             32 |      25.891 |         26.494 | 0.977 |
 
 ### 128 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 29.7561 | 60.5941 | 0.491073 |
-| 2 | 36.1747 | 53.0415 | 0.682008 |
-| 4 | 40.4246 | 50.2104 | 0.805104 |
-| 8 | 54.0319 | 61.5521 | 0.877823 |
-| 16 | 56.7812 | 60.7085 | 0.935309 |
-| 32 | 55.6005 | 58.1259 | 0.956552 |
+|              1 |      12.947 |         21.410 | 0.605 |
+|              2 |      20.459 |         25.705 | 0.796 |
+|              4 |      25.456 |         27.320 | 0.932 |
+|              8 |      30.462 |         27.514 | 1.107 |
+|             16 |      28.804 |         27.578 | 1.044 |
+|             32 |      28.480 |         28.026 | 1.016 |
 
 ### 512 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 27.2978 | 54.8118 | 0.498029 |
-| 2 | 33.9102 | 50.2715 | 0.674541 |
-| 4 | 42.3863 | 55.4505 | 0.7644 |
-| 8 | 44.1691 | 50.598 | 0.872941 |
-| 16 | 48.8631 | 54.0616 | 0.903842 |
-| 32 | 51.6951 | 54.2791 | 0.952394 |
+|              1 |      12.416 |         20.683 | 0.600 |
+|              2 |      19.230 |         24.026 | 0.800 |
+|              4 |      23.793 |         24.163 | 0.985 |
+|              8 |      27.807 |         24.075 | 1.155 |
+|             16 |      27.173 |         24.201 | 1.123 |
+|             32 |      26.199 |         24.155 | 1.085 |
 
 ### 2048 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 27.3521 | 55.3013 | 0.4946 |
-| 2 | 34.5357 | 51.6156 | 0.669095 |
-| 4 | 41.7187 | 54.2764 | 0.768634 |
-| 8 | 44.3024 | 52.6728 | 0.841088 |
-| 16 | 48.9075 | 53.0902 | 0.921215 |
-| 32 | 50.9568 | 54.01 | 0.94347 |
+|              1 |      12.229 |         20.616 | 0.593 |
+|              2 |      19.833 |         24.447 | 0.811 |
+|              4 |      24.303 |         24.761 | 0.982 |
+|              8 |      28.563 |         24.262 | 1.177 |
+|             16 |      27.951 |         24.104 | 1.160 |
+|             32 |      26.826 |         24.217 | 1.108 |
 
 ### 8192 KB
 | copy size (KB) | loop (GB/s) | no loop (GB/s) | ratio |
 |----------------|-------------|----------------|-------|
-| 1 | 23.2158 | 43.0015 | 0.539883 |
-| 2 | 23.3269 | 29.9594 | 0.778617 |
-| 4 | 27.2811 | 25.3637 | 1.0756 |
-| 8 | 28.3336 | 30.8823 | 0.917468 |
-| 16 | 29.5921 | 31.6358 | 0.935398 |
-| 32 | 30.7757 | 31.6981 | 0.970899 |
+|              1 |      11.978 |         12.023 | 0.996 |
+|              2 |      19.676 |         16.441 | 1.197 |
+|              4 |      21.588 |         14.013 | 1.541 |
+|              8 |      23.544 |         14.536 | 1.620 |
+|             16 |      23.892 |         13.440 | 1.778 |
+|             32 |      23.965 |         13.942 | 1.719 |
 
 ## Observations
-As we might expect, the observations vary depending on the total size of the copy.
+As we should expect, the observations vary depending on the total size of the copy:
 
-When the total size is small enough to fit in L1 or L2 cache, the cost of the `memcpy` will be small, and the overhead will be relatively more expensive.
-This cost is as much as 50% when copying 1 KB at a time, according to the data above.
-However, this is at an extreme case, included to understand where overhead becomes significant.
-A more realistic use case would be to take the L2 cache size (256KB), and divide it into a few buffers.
-8KB implies 20-30 buffers fitting in L2 cache, which is likely excessive.
-However, even at 8KB, the overhead is around 10%, and this is only for a `memcpy`.
-A more realistic workload will amortize the overhead much more than this by doing more work.
+- When the total size is small enough to fit in L1 or L2 cache, the cost of the `memcpy` will be small, and the overhead will be relatively more expensive. This cost is as much as 40% when copying 1 KB at a time, according to the data above.
+- Even when the entire copy fits in the L1 cache, the overhead of dispatching 8KB at a time is negligible.
+- When the copies are very large, dispatch overhead is insignificant relative to locality improvements.

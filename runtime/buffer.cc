@@ -14,11 +14,21 @@ std::size_t raw_buffer::size_bytes() const {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
-    index_t extent = std::min(dims[i].extent(), dims[i].fold_factor());
+    index_t extent = dims[i].fold_factor() == dim::unfolded ? dims[i].extent() : dims[i].fold_factor();
     flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
     flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
   }
   return flat_max - flat_min + elem_size;
+}
+
+std::ptrdiff_t raw_buffer::allocation_offset_bytes() const {
+  std::ptrdiff_t offset = 0;
+  for (std::size_t d = 0; d < rank; ++d) {
+    if (dims[d].fold_factor() == dim::unfolded) {
+      offset -= dims[d].flat_offset_bytes(dims[d].min());
+    }
+  }
+  return offset;
 }
 
 // Does not call constructor or destructor of T!
@@ -26,7 +36,7 @@ void raw_buffer::allocate() {
   assert(allocation == nullptr);
 
   allocation = new char[size_bytes()];
-  base = allocation;
+  base = allocation + allocation_offset_bytes();
 }
 
 void raw_buffer::free() {
@@ -58,7 +68,7 @@ raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> exten
   return result;
 }
 
-raw_buffer_ptr raw_buffer::make(const raw_buffer& src) { 
+raw_buffer_ptr raw_buffer::make(const raw_buffer& src) {
   raw_buffer_ptr result = make(src.rank, src.elem_size);
   for (std::size_t d = 0; d < src.rank; ++d) {
     result->dims[d] = src.dims[d];
@@ -180,7 +190,7 @@ void bubble_sort(It begin, It end) {
   }
 }
 
-void compute_padding(index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim) {
+void compute_padding(index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim, index_t src_fold_factor = dim::unfolded) {
   if (dst.end() <= src_begin || dst.begin() >= src_end) {
     // This dimension is all padding.
     dim.pad_before = dim.total_size;
@@ -189,6 +199,9 @@ void compute_padding(index_t src_begin, index_t src_end, const dim& dst, copy_di
   } else {
     index_t copy_begin = std::max(src_begin, dst.begin());
     index_t copy_end = std::min(src_end, dst.end());
+    // TODO(https://github.com/dsharlet/slinky/issues/41): Enable storage folding in copies.
+    assert(dst.min() / dst.fold_factor() == dst.max() / dst.fold_factor());
+    assert(copy_begin / src_fold_factor == (copy_end - 1) / src_fold_factor);
     dim.size = std::max<index_t>(0, copy_end - copy_begin);
     dim.pad_before = std::max<index_t>(0, copy_begin - dst.begin());
     dim.pad_after = std::max<index_t>(0, dst.end() - copy_end);
@@ -206,8 +219,7 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
   for (int d = 0; d + 1 < rank;) {
     copy_dim& a = dims[d];
     const copy_dim& b = dims[d + 1];
-    if (a.pad_before == 0 && a.pad_after == 0 &&
-        b.dst_stride == a.dst_stride * a.total_size &&
+    if (a.pad_before == 0 && a.pad_after == 0 && b.dst_stride == a.dst_stride * a.total_size &&
         b.src_stride == a.src_stride * a.total_size) {
       assert(a.size == a.total_size);
       a.pad_before = b.pad_before * a.size;
@@ -251,20 +263,23 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
 
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
-    if (dst.dims[i].max() < dst.dims[i].min()) return;
-    if (dst.dims[i].stride() == 0) {
+    const dim& dst_dim = dst.dims[i];
+    if (dst_dim.max() < dst_dim.min()) {
+      // Output is empty.
+      return;
+    }
+    const dim& src_dim = src.dims[i];
+    if (dst_dim.stride() == 0) {
       // Copying a broadcast to a broadcast is OK.
-      assert(src.dims[i].stride() == 0);
+      assert(src_dim.stride() == 0);
       continue;
     } else {
-      dims[rank].src_stride = src.dims[i].stride();
-      dims[rank].dst_stride = dst.dims[i].stride();
-      dims[rank].total_size = dst.dims[i].extent();
-      compute_padding(src.dims[i].begin(), src.dims[i].end(), dst.dims[i], dims[rank]);
-      if (src.dims[i].min() < dst.dims[i].min() && src.dims[i].contains(dst.dims[i].min())) {
-        src_base += src.dims[i].flat_offset_bytes(dst.dims[i].min());
-      }
-      assert(dst.dims[rank].extent() <= dst.dims[rank].fold_factor());
+      dims[rank].src_stride = src_dim.stride();
+      dims[rank].dst_stride = dst_dim.stride();
+      dims[rank].total_size = dst_dim.extent();
+      compute_padding(src_dim.begin(), src_dim.end(), dst_dim, dims[rank], src_dim.fold_factor());
+      src_base += src_dim.flat_offset_bytes(std::max(dst_dim.min(), src_dim.min()));
+      dst_base += dst_dim.flat_offset_bytes(dst_dim.min());
       ++rank;
     }
   }
@@ -287,13 +302,14 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   copy_dim* dims = ALLOC_COPY_DIMS_ON_STACK(dst.rank);
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
-    if (dst.dims[i].max() < dst.dims[i].min()) return;
-    if (dst.dims[i].stride() == 0) continue;
-    assert(dst.dims[rank].extent() <= dst.dims[rank].fold_factor());
+    const dim& dst_dim = dst.dims[i];
+    if (dst_dim.max() < dst_dim.min()) return;
+    if (dst_dim.stride() == 0) continue;
+    dst_base += dst_dim.flat_offset_bytes(dst_dim.min());
     dims[rank].src_stride = 0;
-    dims[rank].dst_stride = dst.dims[i].stride();
-    dims[rank].total_size = dst.dims[i].extent();
-    compute_padding(in_bounds[i].begin(), in_bounds[i].end(), dst.dims[i], dims[rank]);
+    dims[rank].dst_stride = dst_dim.stride();
+    dims[rank].total_size = dst_dim.extent();
+    compute_padding(in_bounds[i].begin(), in_bounds[i].end(), dst_dim, dims[rank]);
     ++rank;
   }
 
@@ -316,12 +332,13 @@ void fill(const raw_buffer& dst, const void* value) {
   copy_dim* dims = ALLOC_COPY_DIMS_ON_STACK(dst.rank);
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
-    if (dst.dims[i].max() < dst.dims[i].min()) return;
-    if (dst.dims[i].stride() == 0) continue;
-    assert(dst.dims[rank].extent() <= dst.dims[rank].fold_factor());
-    dims[rank].dst_stride = dst.dims[i].stride();
+    const dim& dst_dim = dst.dims[i];
+    if (dst_dim.max() < dst_dim.min()) return;
+    if (dst_dim.stride() == 0) continue;
+    dst_base += dst_dim.flat_offset_bytes(dst_dim.min());
+    dims[rank].dst_stride = dst_dim.stride();
     dims[rank].src_stride = 0;  // For optimize_copy_dims
-    dims[rank].total_size = dst.dims[i].extent();
+    dims[rank].total_size = dst_dim.extent();
 
     dims[rank].pad_before = dims[rank].total_size;
     dims[rank].size = 0;

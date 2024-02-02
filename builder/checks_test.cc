@@ -2,9 +2,9 @@
 
 #include <cassert>
 
+#include "builder/pipeline.h"
 #include "runtime/buffer.h"
 #include "runtime/expr.h"
-#include "builder/pipeline.h"
 #include "runtime/pipeline.h"
 
 namespace slinky {
@@ -12,7 +12,7 @@ namespace slinky {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
   return 0;
 }
 
@@ -26,7 +26,7 @@ TEST(pipeline, checks) {
 
   var x(ctx, "x");
 
-  func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {out, {x}});
+  func mul = func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -36,9 +36,7 @@ TEST(pipeline, checks) {
   int checks_failed = 0;
 
   eval_context eval_ctx;
-  eval_ctx.check_failed = [&](const expr& c) {
-    checks_failed++;
-  };
+  eval_ctx.check_failed = [&](const expr& c) { checks_failed++; };
 
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});
@@ -69,4 +67,4 @@ TEST(pipeline, checks) {
   ASSERT_EQ(checks_failed, 2);
 }
 
-}
+}  // namespace slinky

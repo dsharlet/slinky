@@ -106,7 +106,11 @@ void copy_stmt_impl(eval_context& ctx, const raw_buffer& src, const raw_buffer& 
     assert(src.rank == 0);
     memcpy(dst.base, src.base, dst.elem_size);
   } else {
-    copy_stmt_impl(ctx, src, dst.dims, dst.base, c, dst.rank - 1);
+    void* dst_base = dst.base;
+    for (std::size_t d = 0; d < dst.rank; ++d) {
+      dst_base = offset_bytes(dst_base, dst.dim(d).flat_offset_bytes(dst.dim(d).min()));
+    }
+    copy_stmt_impl(ctx, src, dst.dims, dst_base, c, dst.rank - 1);
   }
 }
 
@@ -390,6 +394,7 @@ public:
 
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
+      buffer->base = offset_bytes(buffer->base, buffer->allocation_offset_bytes());
     } else {
       assert(op->storage == memory_type::heap);
       buffer->allocation = nullptr;
@@ -452,7 +457,6 @@ public:
     std::size_t crop_rank = op->bounds.size();
     interval* old_bounds = reinterpret_cast<interval*>(alloca(sizeof(interval) * crop_rank));
 
-    void* old_base = buffer->base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       index_t old_min = dim.min();
@@ -476,7 +480,6 @@ public:
 
     visit(op->body);
 
-    buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       dim.set_bounds(old_bounds[d].min, old_bounds[d].max);
@@ -492,19 +495,10 @@ public:
 
     index_t min = std::max(old_min, eval_expr(op->bounds.min, old_min));
     index_t max = std::min(old_max, eval_expr(op->bounds.max, old_max));
-
-    void* old_base = buffer->base;
-    if (max >= min) {
-      buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-      // Crops can't span a folding boundary if they move the base pointer.
-      assert(buffer->base == old_base || max / dim.fold_factor() == min / dim.fold_factor());
-    }
-
     dim.set_bounds(min, max);
 
     visit(op->body);
 
-    buffer->base = old_base;
     dim.set_bounds(old_min, old_max);
   }
 
