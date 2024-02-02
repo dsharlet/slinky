@@ -47,8 +47,8 @@ void raw_buffer::free() {
 
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
   char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
-  raw_buffer* buf = new (buf_and_dims) raw_buffer(/*allocation*/nullptr, /*base*/nullptr, elem_size, rank,
-    reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer)));
+  raw_buffer* buf = new (buf_and_dims) raw_buffer(/*allocation*/ nullptr, /*base*/ nullptr, elem_size, rank,
+      reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer)));
   return buf;
 }
 
@@ -190,7 +190,8 @@ void bubble_sort(It begin, It end) {
   }
 }
 
-void compute_padding(index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim, index_t src_fold_factor = dim::unfolded) {
+void compute_padding(
+    index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim, index_t src_fold_factor = dim::unfolded) {
   if (dst.end() <= src_begin || dst.begin() >= src_end) {
     // This dimension is all padding.
     dim.pad_before = dim.total_size;
@@ -242,8 +243,7 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
 }  // namespace
 
 // Use a little macro helper here to make calls to alloca() less verbose
-#define ALLOC_COPY_DIMS_ON_STACK(RANK) \
-  (reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * (RANK))))
+#define ALLOC_COPY_DIMS_ON_STACK(RANK) (reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * (RANK))))
 
 void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
