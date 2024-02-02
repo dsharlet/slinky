@@ -533,38 +533,6 @@ public:
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     }
   }
-  void visit(const clone_buffer* op) override {
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(clone_buffer::make(op->sym, op->src, std::move(body)));
-    }
-  }
-  void visit(const crop_buffer* op) override {
-    std::vector<interval_expr> bounds;
-    bounds.reserve(op->bounds.size());
-    bool changed = false;
-    for (const interval_expr& i : op->bounds) {
-      bounds.push_back({mutate(i.min), mutate(i.max)});
-      changed = changed || !bounds.back().same_as(i);
-    }
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (!changed && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(crop_buffer::make(op->sym, std::move(bounds), std::move(body)));
-    }
-  }
-  void visit(const crop_dim* op) override {
-    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
-    }
-  }
   void visit(const slice_buffer* op) override {
     std::vector<expr> at;
     at.reserve(op->at.size());
@@ -589,6 +557,10 @@ public:
       set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
     }
   }
+  // truncate_rank, clone_buffer, crop_buffer, crop_dim not treated here because references to dimensions of these
+  // operations are still valid.
+  // TODO: This seems sketchy. Shadowed symbols are shadowed symbols. But the simplifier relies on this behavior
+  // currently...
 };
 
 template <typename T>
