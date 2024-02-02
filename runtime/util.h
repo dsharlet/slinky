@@ -11,6 +11,8 @@
 
 namespace slinky {
 
+#define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(alloca((N) * sizeof(T)))
+
 // Signed integer division in C/C++ is terrible. These implementations
 // of Euclidean division and mod are taken from:
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408

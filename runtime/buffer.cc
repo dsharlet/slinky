@@ -260,7 +260,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to copy.
-  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * dst.rank));
+  copy_dim* dims = SLINKY_ALLOCA(copy_dim, dst.rank);
 
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
@@ -300,7 +300,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to pad.
-  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * dst.rank));
+  copy_dim* dims = SLINKY_ALLOCA(copy_dim, dst.rank);
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
     const dim& dst_dim = dst.dims[i];
@@ -330,7 +330,7 @@ void fill(const raw_buffer& dst, const void* value) {
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to copy.
-  copy_dim* dims = reinterpret_cast<copy_dim*>(alloca(sizeof(copy_dim) * dst.rank));
+  copy_dim* dims = SLINKY_ALLOCA(copy_dim, dst.rank);
   int rank = 0;
   for (std::size_t i = 0; i < dst.rank; ++i) {
     const dim& dst_dim = dst.dims[i];
