@@ -48,7 +48,7 @@ void raw_buffer::free() {
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
   char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
   raw_buffer* buf = new (buf_and_dims) raw_buffer(/*allocation*/nullptr, /*base*/nullptr, elem_size, rank,
-    reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer)), /*dim_init_fn*/nullptr);
+    reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer)));
   return buf;
 }
 

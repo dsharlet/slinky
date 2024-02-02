@@ -376,21 +376,19 @@ public:
     copy_stmt_impl(context, *src, *dst, *op);
   }
 
-  template <typename OP>
-  void copy_dim_from(OP* op, std::size_t i, slinky::dim& dim) {
-    assert(i < op->dims.size());
-    dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
-    dim.set_stride(eval_expr(op->dims[i].stride));
-    dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
-  }
-
   void visit(const allocate* op) override {
     // Allocate a buffer with space for its dims on the stack.
     void* base = nullptr;
     std::size_t elem_size = op->elem_size;
     std::size_t rank = op->dims.size();
-    const auto dim_init_fn = [this, op](std::size_t i, slinky::dim& dim) { copy_dim_from(op, i, dim); };
-    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank, dim_init_fn)
+    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank)
+
+    for (std::size_t i = 0; i < rank; ++i) {
+      slinky::dim& dim = buffer->dim(i);
+      dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
+      dim.set_stride(eval_expr(op->dims[i].stride));
+      dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
+    }
 
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
@@ -424,8 +422,14 @@ public:
     void* base = reinterpret_cast<void*>(eval_expr(op->base));
     std::size_t elem_size = eval_expr(op->elem_size);
     std::size_t rank = op->dims.size();
-    const auto dim_init_fn = [this, op](std::size_t i, slinky::dim& dim) { copy_dim_from(op, i, dim); };
-    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank, dim_init_fn)
+    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank)
+
+    for (std::size_t i = 0; i < rank; ++i) {
+      slinky::dim& dim = buffer->dim(i);
+      dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
+      dim.set_stride(eval_expr(op->dims[i].stride));
+      dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
+    }
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
@@ -438,8 +442,9 @@ public:
     void* base = src->base;
     std::size_t elem_size = src->elem_size;
     std::size_t rank = src->rank;
-    const auto dim_init_fn = [src](std::size_t i, slinky::dim& dim) { dim = src->dim(i); };
-    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank, dim_init_fn)
+    ALLOC_RAW_BUFFER_ON_STACK(buffer, base, elem_size, rank)
+
+    memcpy(buffer->dims, src->dims, sizeof(dim) * src->rank);
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
     visit(op->body);
@@ -467,13 +472,6 @@ public:
       // Allow these expressions to be undefined, and if so, they default to their existing values.
       index_t min = std::max(old_min, eval_expr(op->bounds[d].min, old_min));
       index_t max = std::min(old_max, eval_expr(op->bounds[d].max, old_max));
-
-      if (max >= min) {
-        index_t offset = dim.flat_offset_bytes(min);
-        // Crops can't span a folding boundary if they move the base pointer.
-        assert(offset == 0 || max / dim.fold_factor() == min / dim.fold_factor());
-        buffer->base = offset_bytes(buffer->base, offset);
-      }
 
       dim.set_bounds(min, max);
     }
