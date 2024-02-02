@@ -560,7 +560,9 @@ public:
   // truncate_rank, clone_buffer, crop_buffer, crop_dim not treated here because references to dimensions of these
   // operations are still valid.
   // TODO: This seems sketchy. Shadowed symbols are shadowed symbols. But the simplifier relies on this behavior
-  // currently...
+  // currently... Another reason this is sketchy: we treat make_buffers as shadowing, but not crop_buffer. But the
+  // simplifier will rewrite some make_buffer to crop_buffer, so that means substitute will behave differently before
+  // vs. after simplification.
 };
 
 template <typename T>
