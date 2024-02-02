@@ -334,7 +334,7 @@ void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, 
 template <typename F>
 void for_each_index(span<const dim> dims, F&& f) {
   // Not using alloca for performance, but to avoid including <vector>
-  index_t* i = reinterpret_cast<index_t*>(alloca(dims.size() * sizeof(index_t)));
+  index_t* i = SLINKY_ALLOCA(index_t, dims.size());
   internal::for_each_index(dims, dims.size() - 1, i, dims.size(), f);
 }
 template <typename F>
