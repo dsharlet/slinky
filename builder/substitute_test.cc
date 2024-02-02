@@ -38,7 +38,7 @@ template <typename T>
 void test_substitute(const stmt& test, T target, const expr& replacement, const stmt& expected) {
   stmt result = substitute(test, target, replacement);
   if (!match(result, expected)) {
-    std::cout << "simplify failed" << std::endl;
+    std::cout << "substitute failed" << std::endl;
     std::cout << test << std::endl;
     std::cout << "got: " << std::endl;
     std::cout << result << std::endl;
