@@ -472,7 +472,6 @@ public:
       // Allow these expressions to be undefined, and if so, they default to their existing values.
       index_t min = std::max(old_min, eval_expr(op->bounds[d].min, old_min));
       index_t max = std::min(old_max, eval_expr(op->bounds[d].max, old_max));
-
       dim.set_bounds(min, max);
     }
 
