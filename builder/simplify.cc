@@ -1360,6 +1360,7 @@ public:
             stmt false_body = mutate(block::make({a_if->false_body, b_if->false_body}));
             stmt new_a = if_then_else::make(a_if->condition, std::move(true_body), std::move(false_body));
             stmts[i] = std::move(new_a);
+            stmts.erase(stmts.begin() + i + 1);
             // Try this one again, in case there are multiple consecutive ifs
             i--;
             changed = true;
