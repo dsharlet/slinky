@@ -141,8 +141,8 @@ TEST(simplify, buffer_intrinsics) {
 TEST(simplify, if_then_else) {
   test_simplify(if_then_else::make(x == x, check::make(y), check::make(z)), check::make(y));
   test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
-  test_simplify(block::make(if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))),
-      if_then_else::make(x, block::make(check::make(y), check::make(z))));
+  test_simplify(block::make({if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))}),
+      if_then_else::make(x, block::make({check::make(y), check::make(z)})));
 }
 
 TEST(simplify, bounds) {

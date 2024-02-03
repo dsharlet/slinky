@@ -321,11 +321,57 @@ stmt copy_stmt::make(
   return n;
 }
 
-stmt block::make(stmt a, stmt b) {
-  auto n = new block();
-  n->a = std::move(a);
-  n->b = std::move(b);
-  return n;
+namespace {
+
+// Flatten any blocks into inlined statements.
+//
+// Note that we don't need to recurse because no fully-constructed block stmt
+// should ever contain other block stmt (they should all already be flattened).
+void flatten_blocks(std::vector<stmt>& v) {
+  for (auto it = v.begin(); it != v.end();) {
+    if (it->defined()) {
+      if (const block* b = it->as<block>()) {
+        auto stmts = std::move(b->stmts);
+        it = v.erase(it);
+        it = v.insert(it, stmts.begin(), stmts.end());
+        it += stmts.size();
+        continue;
+      }
+    }
+    it++;
+  }
+}
+
+// Remove all empty statements.
+void erase_undefs(std::vector<stmt>& v) {
+  for (auto it = v.begin(); it != v.end();) {
+    if (!it->defined()) {
+      it = v.erase(it);
+    } else {
+      it++;
+    }
+  }
+}
+
+}  // namespace
+
+stmt block::make(std::vector<stmt> stmts) {
+  flatten_blocks(stmts);
+  erase_undefs(stmts);
+  if (stmts.empty()) {
+    return {};
+  } else if (stmts.size() == 1) {
+    return std::move(stmts[0]);
+  } else {
+    auto n = new block();
+    n->stmts = std::move(stmts);
+    return n;
+  }
+}
+
+stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
+  stmts.push_back(std::move(tail_stmt));
+  return make(std::move(stmts));
 }
 
 stmt loop::make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body) {

@@ -174,7 +174,7 @@ public:
     }
 
     stmt s = allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body);
-    set_result(block::make(block::make(checks), s));
+    set_result(block::make(std::move(checks), std::move(s)));
   }
 
   void visit(const call_stmt* op) override {
@@ -473,12 +473,19 @@ public:
 
   void visit(const block* op) override {
     // Visit blocks in reverse order. TODO: Is this really sufficient?
-    stmt b = mutate(op->b);
-    stmt a = mutate(op->a);
-    if (a.same_as(op->a) && b.same_as(op->b)) {
+    // TODO: is reverse order still necessary for a non-linked-list impl?
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (auto it = op->stmts.rbegin(); it != op->stmts.rend(); it++) {
+      stmts.push_back(mutate(*it));
+      changed = changed || !stmts.back().same_as(*it);
+    }
+    if (!changed) {
       set_result(op);
     } else {
-      set_result(block::make(a, b));
+      std::reverse(stmts.begin(), stmts.end());
+      set_result(block::make(std::move(stmts)));
     }
   }
 };
@@ -502,7 +509,7 @@ stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
       checks.push_back(check::make(bounds[d].extent() <= buffer_fold_factor(buf_var, d)));
     }
   }
-  return block::make(block::make(checks), result);
+  return block::make(std::move(checks), std::move(result));
 }
 
 }  // namespace

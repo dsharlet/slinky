@@ -309,23 +309,20 @@ public:
   }
 
   void visit(const block* op) override {
-    stmt a, b;
-    if (op->a.defined()) {
-      if (!op->a.as<check>() && !op->a.as<block>()) {
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (const stmt& s : op->stmts) {
+      if (!s.as<check>() && !s.as<block>()) {
         at_root_scope = false;
       }
-      a = mutate(op->a);
+      stmts.push_back(mutate(s));
+      changed = changed || !stmts.back().same_as(s);
     }
-    if (op->b.defined()) {
-      if (!op->b.as<check>() && !op->b.as<block>()) {
-        at_root_scope = false;
-      }
-      b = mutate(op->b);
-    }
-    if (a.same_as(op->a) && b.same_as(op->b)) {
+    if (!changed) {
       set_result(op);
     } else {
-      set_result(block::make(std::move(a), std::move(b)));
+      set_result(block::make(std::move(stmts)));
     }
   }
 };
@@ -446,8 +443,9 @@ namespace {
 template <typename Fn>
 void for_each_stmt_forward(const stmt& s, const Fn& fn) {
   if (const block* b = s.as<block>()) {
-    if (b->a.defined()) for_each_stmt_forward(b->a, fn);
-    if (b->b.defined()) for_each_stmt_forward(b->b, fn);
+    for (const stmt& s : b->stmts) {
+      fn(s);
+    }
   } else {
     fn(s);
   }
@@ -456,8 +454,9 @@ void for_each_stmt_forward(const stmt& s, const Fn& fn) {
 template <typename Fn>
 void for_each_stmt_backward(const stmt& s, const Fn& fn) {
   if (const block* b = s.as<block>()) {
-    if (b->b.defined()) for_each_stmt_backward(b->b, fn);
-    if (b->a.defined()) for_each_stmt_backward(b->a, fn);
+    for (auto it = b->stmts.rbegin(); it != b->stmts.rend(); it++) {
+      fn(*it);
+    }
   } else {
     fn(s);
   }
@@ -515,10 +514,10 @@ public:
       set_result(op);
     } else if (new_body.defined()) {
       stmt result = clone_with_new_body(op, std::move(new_body));
-      set_result(block::make({before, result, after}));
+      set_result(block::make({std::move(before), std::move(result), std::move(after)}));
     } else {
       // The op was dead...?
-      set_result(block::make({before, after}));
+      set_result(block::make({std::move(before), std::move(after)}));
     }
   }
 
