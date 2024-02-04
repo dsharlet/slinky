@@ -288,13 +288,11 @@ public:
 
 template <typename NewT>
 const buffer<NewT>& raw_buffer::cast() const {
-  assert(elem_size == sizeof(NewT));
   return *reinterpret_cast<const buffer<NewT>*>(this);
 }
 
 template <typename NewT>
 buffer<NewT>& raw_buffer::cast() {
-  assert(elem_size == sizeof(NewT));
   return *reinterpret_cast<buffer<NewT>*>(this);
 }
 
