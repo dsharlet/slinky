@@ -130,7 +130,11 @@ void test_copy() {
             }
             set_strides(src, src_permutation, src_padding, broadcast);
             src.allocate();
-            for_each_index(src, [&](auto i) { src(i) = rand(); });
+            for_each_slice(src, [&](void* base, index_t extent) {
+              for (index_t i = 0; i < extent; ++i) {
+                reinterpret_cast<T*>(base)[i] = rand();
+              }
+            });
 
             for (int dmin : {-1, 0, 1}) {
               for (int dmax : {-1, 0, 1}) {
@@ -150,7 +154,11 @@ void test_copy() {
                   }
                 });
 
-                for_each_index(src, [&](auto i) { src(i) += 1; });
+                for_each_slice(src, [&](void* base, index_t extent) {
+                  for (index_t i = 0; i < extent; ++i) {
+                    reinterpret_cast<T*>(base)[i] += 1;
+                  }
+                });
 
                 copy(src, dst, nullptr);
                 for_each_index(dst, [&](auto i) {
@@ -163,7 +171,11 @@ void test_copy() {
                   }
                 });
 
-                for_each_index(src, [&](auto i) { src(i) += -1; });
+                for_each_slice(src, [&](void* base, index_t extent) {
+                  for (index_t i = 0; i < extent; ++i) {
+                    reinterpret_cast<T*>(base)[i] += -1;
+                  }
+                });
 
                 T new_padding = 3;
                 pad(src.dims, dst, &new_padding);

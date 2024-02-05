@@ -323,9 +323,29 @@ void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, 
   }
 }
 
+template <typename F>
+void for_each_slice(void* base, const dim* dims, int d, index_t elem_size, F&& f, index_t slice_extent = 1) {
+  if (d == -1) {
+    // We've handled all the loops, call the function.
+    f(base, slice_extent);
+  } else if (dims[d].stride() == elem_size) {
+    // This is the dense dimension, pass this dimension through.
+    assert(slice_extent == 1);  // Two dimensions of stride == elem_size...?
+    assert(dims[d].min() / dims[d].fold_factor() == dims[d].max() / dims[d].fold_factor());
+    for_each_slice(base, dims, d - 1, elem_size, f, dims[d].extent());
+  } else {
+    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
+    // already points to the min.
+    for_each_slice(base, dims, d - 1, elem_size, f, slice_extent);
+    for (index_t i = dims[d].begin() + 1; i < dims[d].end(); ++i) {
+      for_each_slice(offset_bytes(base, dims[d].flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
+    }
+  }
+}
+
 }  // namespace internal
 
-// Call `f(span<index_t>)` for each index in the range of `dims`, or the dims of `buf`.
+// Call `f(span<index_t>)` for each index in the domain of `dims`, or the dims of `buf`.
 // This function is not fast, use it for non-performance critical code. It is useful for
 // making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
 template <typename F>
@@ -337,6 +357,13 @@ void for_each_index(span<const dim> dims, F&& f) {
 template <typename F>
 void for_each_index(const raw_buffer& buf, F&& f) {
   for_each_index({buf.dims, buf.rank}, f);
+}
+
+// Call `f(const void* base, index_t extent)` for each slice in the domain of `buf`.
+// This function attempts to be efficient to support production quality implementations of callbacks.
+template <typename F>
+void for_each_slice(const raw_buffer& buf, F&& f) {
+  internal::for_each_slice(buf.base, buf.dims, buf.rank - 1, buf.elem_size, f);
 }
 
 }  // namespace slinky
