@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <set>
@@ -309,23 +310,20 @@ public:
   }
 
   void visit(const block* op) override {
-    stmt a, b;
-    if (op->a.defined()) {
-      if (!op->a.as<check>() && !op->a.as<block>()) {
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (const stmt& s : op->stmts) {
+      if (!s.as<check>() && !s.as<block>()) {
         at_root_scope = false;
       }
-      a = mutate(op->a);
+      stmts.push_back(mutate(s));
+      changed = changed || !stmts.back().same_as(s);
     }
-    if (op->b.defined()) {
-      if (!op->b.as<check>() && !op->b.as<block>()) {
-        at_root_scope = false;
-      }
-      b = mutate(op->b);
-    }
-    if (a.same_as(op->a) && b.same_as(op->b)) {
+    if (!changed) {
       set_result(op);
     } else {
-      set_result(block::make(std::move(a), std::move(b)));
+      set_result(block::make(std::move(stmts)));
     }
   }
 };
@@ -442,59 +440,28 @@ stmt optimize_copies(const stmt& s, node_context& ctx) { return copy_optimizer(c
 
 namespace {
 
-// Traverse stmts in a block in order.
-template <typename Fn>
-void for_each_stmt_forward(const stmt& s, const Fn& fn) {
-  if (const block* b = s.as<block>()) {
-    if (b->a.defined()) for_each_stmt_forward(b->a, fn);
-    if (b->b.defined()) for_each_stmt_forward(b->b, fn);
-  } else {
-    fn(s);
-  }
-}
-
-template <typename Fn>
-void for_each_stmt_backward(const stmt& s, const Fn& fn) {
-  if (const block* b = s.as<block>()) {
-    if (b->b.defined()) for_each_stmt_backward(b->b, fn);
-    if (b->a.defined()) for_each_stmt_backward(b->a, fn);
-  } else {
-    fn(s);
-  }
-}
-
 // Split `body` into 3 parts:
 // - stmts that don't depend on `vars`
 // - stmts that do depend on `vars`
 // - stmts that don't depend on `vars`
 std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> vars) {
-  stmt before;
-  stmt new_body_after;
-  bool depended_on = false;
-  // First, split the body into the before, and the new body + after.
-  for_each_stmt_forward(body, [&](const stmt& s) {
-    if (depended_on || depends_on(s, vars)) {
-      new_body_after = block::make({new_body_after, s});
-      depended_on = true;
+  if (const block* b = body.as<block>()) {
+    const auto depends_on_stmt = [&](const stmt& s) { return depends_on(s, vars); };
+    auto end_before = std::find_if(b->stmts.begin(), b->stmts.end(), depends_on_stmt);
+    if (end_before != b->stmts.end()) {
+      std::vector<stmt> before = {b->stmts.begin(), end_before};
+      auto end_body = std::find_if(b->stmts.rbegin(), b->stmts.rend(), depends_on_stmt).base();
+      std::vector<stmt> new_body = {end_before, end_body};
+      std::vector<stmt> after = {end_body, b->stmts.end()};
+      return {block::make(std::move(before)), block::make(std::move(new_body)), block::make(std::move(after))};
     } else {
-      before = block::make({before, s});
+      return {body, stmt{}, stmt{}};
     }
-  });
-
-  // Now, split the new body + after into the new body and the after.
-  stmt new_body;
-  stmt after;
-  depended_on = false;
-  for_each_stmt_backward(new_body_after, [&](const stmt& s) {
-    if (!depended_on && !depends_on(s, vars)) {
-      after = block::make({s, after});
-    } else {
-      new_body = block::make({s, new_body});
-      depended_on = true;
-    }
-  });
-
-  return {before, new_body, after};
+  } else if (depends_on(body, vars)) {
+    return {stmt{}, body, stmt{}};
+  } else {
+    return {body, stmt{}, stmt{}};
+  }
 }
 
 std::tuple<stmt, stmt, stmt> split_body(const stmt& body, symbol_id var) {
@@ -515,10 +482,10 @@ public:
       set_result(op);
     } else if (new_body.defined()) {
       stmt result = clone_with_new_body(op, std::move(new_body));
-      set_result(block::make({before, result, after}));
+      set_result(block::make({std::move(before), std::move(result), std::move(after)}));
     } else {
       // The op was dead...?
-      set_result(block::make({before, after}));
+      set_result(block::make({std::move(before), std::move(after)}));
     }
   }
 

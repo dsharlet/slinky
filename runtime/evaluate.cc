@@ -274,8 +274,10 @@ public:
   }
 
   void visit(const block* op) override {
-    if (result == 0 && op->a.defined()) visit(op->a);
-    if (result == 0 && op->b.defined()) visit(op->b);
+    for (const auto& s : op->stmts) {
+      if (result != 0) break;
+      visit(s);
+    }
   }
 
   void visit(const loop* op) override {

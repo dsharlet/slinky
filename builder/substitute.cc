@@ -249,8 +249,7 @@ public:
     const block* bs = match_self_as(op);
     if (!bs) return;
 
-    if (!try_match(bs->a, op->a)) return;
-    if (!try_match(bs->b, op->b)) return;
+    if (!try_match(bs->stmts, op->stmts)) return;
   }
 
   void visit(const loop* op) override {

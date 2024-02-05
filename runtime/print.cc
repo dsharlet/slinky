@@ -165,11 +165,8 @@ public:
   void visit(const call* op) override { *this << op->intrinsic << "(" << op->args << ")"; }
 
   void visit(const block* b) override {
-    if (b->a.defined()) {
-      b->a.accept(this);
-    }
-    if (b->b.defined()) {
-      b->b.accept(this);
+    for (const auto& s : b->stmts) {
+      s.accept(this);
     }
   }
 

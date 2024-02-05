@@ -134,7 +134,7 @@ stmt func::make_call() const {
       }
       copies.push_back(copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_));
     }
-    return block::make(copies);
+    return block::make(std::move(copies));
   }
 }
 
@@ -343,7 +343,7 @@ public:
     if (const func* next = find_next_producer(at)) {
       stmt result = produce(next, at);
       result = add_input_crops(result, f);
-      result = block::make({make_producers(at, next), result});
+      result = block::make({make_producers(at, next), std::move(result)});
       return result;
     } else {
       return {};
@@ -434,7 +434,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
     stmt produce_f = builder.produce(f);
     produce_f = builder.make_allocations(produce_f);
-    result = block::make({result, produce_f});
+    result = block::make({std::move(result), std::move(produce_f)});
   }
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
@@ -444,7 +444,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   for (const buffer_expr_ptr& i : outputs) {
     add_buffer_checks(i, /*output=*/true, checks);
   }
-  result = block::make(block::make(checks), result);
+  result = block::make(std::move(checks), std::move(result));
 
   std::vector<symbol_id> input_syms;
   input_syms.reserve(inputs.size());
