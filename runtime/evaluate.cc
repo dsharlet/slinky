@@ -279,9 +279,8 @@ public:
 
   void visit(const block* op) override {
     for (const auto& s : op->stmts) {
-      if (result == 0) {
-        visit(s);
-      }
+      if (result != 0) break;
+      visit(s);
     }
   }
 
