@@ -176,18 +176,18 @@ public:
   void visit_let(const T* op) {
     // This is a bit ugly but we really want to avoid heap allocations here.
     const size_t size = op->lets.size();
-    using sv_type = std::pair<symbol_id, std::optional<index_t>>;
-    sv_type* old_values = SLINKY_ALLOCA(sv_type, size);
+    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
     (void) new (old_values) std::optional<index_t>[size];
 
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      old_values[i] = {let.first, context[let.first]};
+      old_values[i] = context[let.first];
       context[let.first] = eval_expr(let.second);
     }
     visit(op->body);
     for (size_t i = 0; i < size; ++i) {
-      context[old_values[i].first] = old_values[i].second;
+      const auto& let = op->lets[i];
+      context[let.first] = old_values[i];
     }
   }
 
