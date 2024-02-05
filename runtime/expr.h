@@ -503,16 +503,6 @@ public:
   static constexpr node_type static_type = node_type::let_stmt;
 };
 
-// A block is a list of (generally) two or more `stmts`.
-//
-// (TODO: a block with a single stmt should be uncommon but not sure if it should be illegal.)
-//
-// A block must never contain another block; attempting to construct a block
-// that contains other block(s) will flatten them into a single vector.
-//
-// A block must never contain undefined stmts (they will be stripped from inputs).
-//
-// It is illegal to have a block that contains no stmts.
 class block : public stmt_node<block> {
 public:
   std::vector<stmt> stmts;
@@ -520,7 +510,8 @@ public:
   void accept(node_visitor* v) const;
 
   // Create a single block to contain all of the `stmts`.
-  // This may not produce a block at all if `stmts` contains zero or one items.
+  // Nested block statements are flattened, and undef stmts are removed.
+  // Note that this may not produce a block at all if `stmts` contains < 2 items.
   static stmt make(std::vector<stmt> stmts);
 
   // Convenience for the not-uncommon case that we have a vector of stmts
