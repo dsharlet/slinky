@@ -31,13 +31,14 @@ void dump_context_for_expr(
     std::ostream& s, const symbol_map<index_t>& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
   for (symbol_id i = 0; i < ctx.size(); ++i) {
     std::string sym = symbols ? symbols->name(i) : "<" + std::to_string(i) + ">";
-    if (!deps_of.defined() || depends_on_variable(deps_of, i)) {
+    auto deps = depends_on(deps_of, i);
+    if (!deps_of.defined() || deps.var) {
       if (ctx.contains(i)) {
         s << "  " << sym << " = " << *ctx.lookup(i) << std::endl;
       } else {
         s << "  " << sym << " = <>" << std::endl;
       }
-    } else if (!deps_of.defined() || depends_on_buffer(deps_of, i)) {
+    } else if (!deps_of.defined() || deps.buffer) {
       if (ctx.contains(i)) {
         const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx.lookup(i));
         s << "  " << sym << " = {base=" << buf->base << ", elem_size=" << buf->elem_size << ", dims={";

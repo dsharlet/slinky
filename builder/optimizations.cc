@@ -364,7 +364,7 @@ public:
       int dep_count = 0;
       int src_d = -1;
       for (int sd = 0; sd < static_cast<int>(src_x.size()); ++sd) {
-        if (depends_on(src_x[sd], op->dst_x[d])) {
+        if (depends_on(src_x[sd], op->dst_x[d]).any()) {
           ++dep_count;
           src_d = sd;
         }
@@ -444,7 +444,7 @@ namespace {
 // - stmts that don't depend on `vars`
 std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> vars) {
   if (const block* b = body.as<block>()) {
-    const auto depends_on_stmt = [&](const stmt& s) { return depends_on(s, vars); };
+    const auto depends_on_stmt = [&](const stmt& s) { return depends_on(s, vars).any(); };
     auto end_before = std::find_if(b->stmts.begin(), b->stmts.end(), depends_on_stmt);
     if (end_before != b->stmts.end()) {
       std::vector<stmt> before = {b->stmts.begin(), end_before};
@@ -455,7 +455,7 @@ std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> 
     } else {
       return {body, stmt{}, stmt{}};
     }
-  } else if (depends_on(body, vars)) {
+  } else if (depends_on(body, vars).any()) {
     return {stmt{}, body, stmt{}};
   } else {
     return {body, stmt{}, stmt{}};

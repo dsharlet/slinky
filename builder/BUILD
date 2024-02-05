@@ -77,3 +77,13 @@ cc_test(
         "//runtime",
     ],
 )
+
+cc_test(
+    name = "substitute_test",
+    srcs = ["substitute_test.cc"],
+    deps = [
+        ":builder",
+        "@googletest//:gtest_main",
+        "//runtime",
+    ],
+)
