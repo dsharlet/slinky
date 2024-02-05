@@ -482,6 +482,12 @@ public:
     }
   }
 
+  template <typename T>
+  void visit_stmt(const T* op) {
+    symbol_id vars[] = {op->sym};
+    visit_stmt(op, vars);
+  }
+
   void visit(const let_stmt* op) override {
     std::vector<symbol_id> vars;
     vars.reserve(op->lets.size());
@@ -490,38 +496,14 @@ public:
     }
     visit_stmt(op, vars);
   }
-  void visit(const allocate* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const make_buffer* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const clone_buffer* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const crop_buffer* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const crop_dim* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const slice_buffer* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const slice_dim* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-  void visit(const truncate_rank* op) override {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
+  void visit(const allocate* op) override { visit_stmt(op); }
+  void visit(const make_buffer* op) override { visit_stmt(op); }
+  void visit(const clone_buffer* op) override { visit_stmt(op); }
+  void visit(const crop_buffer* op) override { visit_stmt(op); }
+  void visit(const crop_dim* op) override { visit_stmt(op); }
+  void visit(const slice_buffer* op) override { visit_stmt(op); }
+  void visit(const slice_dim* op) override { visit_stmt(op); }
+  void visit(const truncate_rank* op) override { visit_stmt(op); }
 };
 
 }  // namespace
