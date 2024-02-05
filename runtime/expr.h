@@ -503,32 +503,20 @@ public:
   static constexpr node_type static_type = node_type::let_stmt;
 };
 
-// A block is a set of two other `stmt`s. Recursively using blocks allows an arbitrarily large set of `stmt`s to be
-// defined in sequence.
 class block : public stmt_node<block> {
 public:
-  stmt a, b;
+  std::vector<stmt> stmts;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(stmt a, stmt b);
-  // Recursively create blocks to contain all of the `stmts`. This may not produce a block at all if `stmts` contains
-  // only one item.
-  static stmt make(span<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
-  static stmt make(std::initializer_list<stmt> stmts) { return make(stmts.begin(), stmts.end()); }
-  template <typename It>
-  static stmt make(It begin, It end) {
-    stmt result;
-    for (It i = begin; i != end; ++i) {
-      if (!i->defined()) continue;
-      if (result.defined()) {
-        result = block::make(result, *i);
-      } else {
-        result = *i;
-      }
-    }
-    return result;
-  }
+  // Create a single block to contain all of the `stmts`.
+  // Nested block statements are flattened, and undef stmts are removed.
+  // Note that this may not produce a block at all if `stmts` contains < 2 items.
+  static stmt make(std::vector<stmt> stmts);
+
+  // Convenience for the not-uncommon case that we have a vector of stmts
+  // (eg checks) followed by a result.
+  static stmt make(std::vector<stmt> stmts, stmt tail_stmt);
 
   static constexpr node_type static_type = node_type::block;
 };
@@ -808,8 +796,9 @@ public:
     if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const block* op) override {
-    if (op->a.defined()) op->a.accept(this);
-    if (op->b.defined()) op->b.accept(this);
+    for (const auto& s : op->stmts) {
+      s.accept(this);
+    }
   }
   virtual void visit(const loop* op) override {
     op->bounds.min.accept(this);

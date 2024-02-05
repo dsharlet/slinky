@@ -174,7 +174,7 @@ public:
     }
 
     stmt s = allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body);
-    set_result(block::make(block::make(checks), s));
+    set_result(block::make(std::move(checks), std::move(s)));
   }
 
   void visit(const call_stmt* op) override {
@@ -370,6 +370,8 @@ public:
 
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop_sym)) {
+              // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+              fold_factor = simplify(align_up(fold_factor, loop_step));
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -473,12 +475,16 @@ public:
 
   void visit(const block* op) override {
     // Visit blocks in reverse order. TODO: Is this really sufficient?
-    stmt b = mutate(op->b);
-    stmt a = mutate(op->a);
-    if (a.same_as(op->a) && b.same_as(op->b)) {
+    std::vector<stmt> stmts(op->stmts.size());
+    bool changed = false;
+    for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
+      stmts[i] = mutate(op->stmts[i]);
+      changed = changed || !stmts[i].same_as(op->stmts[i]);
+    }
+    if (!changed) {
       set_result(op);
     } else {
-      set_result(block::make(a, b));
+      set_result(block::make(std::move(stmts)));
     }
   }
 };
@@ -502,7 +508,7 @@ stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
       checks.push_back(check::make(bounds[d].extent() <= buffer_fold_factor(buf_var, d)));
     }
   }
-  return block::make(block::make(checks), result);
+  return block::make(std::move(checks), std::move(result));
 }
 
 }  // namespace

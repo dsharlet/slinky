@@ -141,14 +141,12 @@ TEST(simplify, buffer_intrinsics) {
 TEST(simplify, if_then_else) {
   test_simplify(if_then_else::make(x == x, check::make(y), check::make(z)), check::make(y));
   test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
-  test_simplify(block::make(if_then_else::make(x, check::make(y)), if_then_else::make(x, check::make(z))),
-      if_then_else::make(x, block::make(check::make(y), check::make(z))));
 }
 
 TEST(simplify, bounds) {
   test_simplify(
-      loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, if_then_else::make(y - 2 <= x, check::make(z))),
-      loop::make(x.sym(), loop_mode::serial, bounds(y + -2, z), 2, check::make(z)));
+      loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)),
+      stmt());
   test_simplify(loop::make(x.sym(), loop_mode::serial, min_extent(x, z), z, check::make(y)), check::make(y));
 
   test_simplify(

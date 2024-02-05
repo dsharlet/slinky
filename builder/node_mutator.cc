@@ -115,12 +115,17 @@ void node_mutator::visit(const call* op) {
 }
 
 void node_mutator::visit(const block* op) {
-  stmt a = mutate(op->a);
-  stmt b = mutate(op->b);
-  if (a.same_as(op->a) && b.same_as(op->b)) {
+  std::vector<stmt> stmts;
+  stmts.reserve(op->stmts.size());
+  bool changed = false;
+  for (const stmt& s : op->stmts) {
+    stmts.push_back(mutate(s));
+    changed = changed || !stmts.back().same_as(s);
+  }
+  if (!changed) {
     set_result(op);
   } else {
-    set_result(block::make(std::move(a), std::move(b)));
+    set_result(block::make(std::move(stmts)));
   }
 }
 void node_mutator::visit(const loop* op) {

@@ -106,11 +106,7 @@ void copy_stmt_impl(eval_context& ctx, const raw_buffer& src, const raw_buffer& 
     assert(src.rank == 0);
     memcpy(dst.base, src.base, dst.elem_size);
   } else {
-    void* dst_base = dst.base;
-    for (std::size_t d = 0; d < dst.rank; ++d) {
-      dst_base = offset_bytes(dst_base, dst.dim(d).flat_offset_bytes(dst.dim(d).min()));
-    }
-    copy_stmt_impl(ctx, src, dst.dims, dst_base, c, dst.rank - 1);
+    copy_stmt_impl(ctx, src, dst.dims, dst.base, c, dst.rank - 1);
   }
 }
 
@@ -278,8 +274,10 @@ public:
   }
 
   void visit(const block* op) override {
-    if (result == 0 && op->a.defined()) visit(op->a);
-    if (result == 0 && op->b.defined()) visit(op->b);
+    for (const auto& s : op->stmts) {
+      if (result != 0) break;
+      visit(s);
+    }
   }
 
   void visit(const loop* op) override {
@@ -378,12 +376,10 @@ public:
 
   void visit(const allocate* op) override {
     std::size_t rank = op->dims.size();
-    // Allocate a buffer with space for its dims on the stack.
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
+    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
     buffer->elem_size = op->elem_size;
     buffer->rank = rank;
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
+    buffer->dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
@@ -394,7 +390,6 @@ public:
 
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
-      buffer->base = offset_bytes(buffer->base, buffer->allocation_offset_bytes());
     } else {
       assert(op->storage == memory_type::heap);
       buffer->allocation = nullptr;
@@ -421,13 +416,11 @@ public:
 
   void visit(const make_buffer* op) override {
     std::size_t rank = op->dims.size();
-    // Allocate a buffer with space for its dims on the stack.
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * rank));
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
+    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
     buffer->elem_size = eval_expr(op->elem_size);
     buffer->base = reinterpret_cast<void*>(eval_expr(op->base));
     buffer->rank = rank;
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
+    buffer->dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
@@ -442,10 +435,9 @@ public:
 
   void visit(const clone_buffer* op) override {
     raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
-    char* storage = reinterpret_cast<char*>(alloca(sizeof(raw_buffer) + sizeof(dim) * src->rank));
 
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(&storage[0]);
-    buffer->dims = reinterpret_cast<dim*>(&storage[sizeof(raw_buffer)]);
+    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
+    buffer->dims = SLINKY_ALLOCA(dim, src->rank);
     buffer->elem_size = src->elem_size;
     buffer->base = src->base;
     buffer->rank = src->rank;
@@ -465,8 +457,9 @@ public:
     };
 
     std::size_t crop_rank = op->bounds.size();
-    interval* old_bounds = reinterpret_cast<interval*>(alloca(sizeof(interval) * crop_rank));
+    interval* old_bounds = SLINKY_ALLOCA(interval, crop_rank);
 
+    void* old_base = buffer->base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       index_t old_min = dim.min();
@@ -477,11 +470,20 @@ public:
       // Allow these expressions to be undefined, and if so, they default to their existing values.
       index_t min = std::max(old_min, eval_expr(op->bounds[d].min, old_min));
       index_t max = std::min(old_max, eval_expr(op->bounds[d].max, old_max));
+
+      if (max >= min) {
+        index_t offset = dim.flat_offset_bytes(min);
+        // Crops can't span a folding boundary if they move the base pointer.
+        assert(offset == 0 || (max - old_min) / dim.fold_factor() == (min - old_min) / dim.fold_factor());
+        buffer->base = offset_bytes(buffer->base, offset);
+      }
+
       dim.set_bounds(min, max);
     }
 
     visit(op->body);
 
+    buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       dim.set_bounds(old_bounds[d].min, old_bounds[d].max);
@@ -497,10 +499,19 @@ public:
 
     index_t min = std::max(old_min, eval_expr(op->bounds.min, old_min));
     index_t max = std::min(old_max, eval_expr(op->bounds.max, old_max));
+
+    void* old_base = buffer->base;
+    if (max >= min) {
+      buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
+      // Crops can't span a folding boundary if they move the base pointer.
+      assert(buffer->base == old_base || (max - old_min) / dim.fold_factor() == (min - old_min) / dim.fold_factor());
+    }
+
     dim.set_bounds(min, max);
 
     visit(op->body);
 
+    buffer->base = old_base;
     dim.set_bounds(old_min, old_max);
   }
 
@@ -509,7 +520,7 @@ public:
     assert(buffer);
 
     // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
-    dim* dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * buffer->rank));
+    dim* dims = SLINKY_ALLOCA(dim, buffer->rank);
 
     std::size_t rank = 0;
     index_t offset = 0;
@@ -540,7 +551,7 @@ public:
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     dim* old_dims = buffer->dims;
 
-    buffer->dims = reinterpret_cast<dim*>(alloca(sizeof(dim) * (buffer->rank - 1)));
+    buffer->dims = SLINKY_ALLOCA(dim, buffer->rank - 1);
 
     index_t at = eval_expr(op->at);
     index_t offset = old_dims[op->dim].flat_offset_bytes(at);

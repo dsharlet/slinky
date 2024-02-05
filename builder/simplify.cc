@@ -895,8 +895,8 @@ expr simplify(const call* op, std::vector<expr> args) {
   if (op->intrinsic == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
-      // buffer_at(b, 0) is equivalent to buffer_base(b)
-      if (args[d].defined() && is_zero(args[d])) {
+      // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_base(b)
+      if (args[d].defined() && match(args[d], buffer_min(args[0], d - 1))) {
         args[d] = expr();
         changed = true;
       }
@@ -1341,26 +1341,18 @@ public:
   }
 
   void visit(const block* op) override {
-    stmt a = mutate(op->a);
-    stmt b = mutate(op->b);
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (const stmt& s : op->stmts) {
+      stmts.push_back(mutate(s));
+      changed = changed || !stmts.back().same_as(s);
+    }
 
-    const if_then_else* a_if = a.as<if_then_else>();
-    const if_then_else* b_if = b.as<if_then_else>();
-
-    if (a_if && b_if && match(a_if->condition, b_if->condition)) {
-      stmt true_body = mutate(block::make({a_if->true_body, b_if->true_body}));
-      stmt false_body = mutate(block::make({a_if->false_body, b_if->false_body}));
-      set_result(if_then_else::make(a_if->condition, true_body, false_body));
-    } else if (!a.defined() && !b.defined()) {
-      set_result(stmt());
-    } else if (!a.defined()) {
-      set_result(b);
-    } else if (!b.defined()) {
-      set_result(a);
-    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+    if (!changed) {
       set_result(op);
     } else {
-      set_result(block::make(std::move(a), std::move(b)));
+      set_result(block::make(std::move(stmts)));
     }
   }
 
@@ -1438,46 +1430,35 @@ public:
     }
 
     if (const call* bc = base.as<call>()) {
-      // Check if this make_buffer is equivalent to a crop, truncate_rank, or clone.
-      if (bc->intrinsic == intrinsic::buffer_base && match(elem_size, buffer_elem_size(bc->args[0]))) {
-        expr buf = bc->args[0];
-        const symbol_id* buf_sym = as_variable(buf);
-        assert(buf_sym);
-        bool is_clone = true;
-        bool is_crop = true;
-        for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-          // To be a crop, the strides and fold factors must match.
-          is_crop = is_crop && match(dims[d].stride, buffer_stride(buf, d));
-          is_crop = is_crop && match(dims[d].stride, buffer_fold_factor(buf, d));
-          is_clone = is_clone && match(dims[d], buffer_dim(buf, d));
-        }
-        if (is_clone) {
-          stmt result = truncate_rank::make(op->sym, dims.size(), std::move(body));
-          if (op->sym != *buf_sym) {
-            result = clone_buffer::make(op->sym, *buf_sym, result);
+      if (bc->intrinsic == intrinsic::buffer_base) {
+        // Check if this make_buffer is truncate_rank, or a clone.
+        const symbol_id* src_buf = as_variable(bc->args[0]);
+        if (src_buf) {
+          var buf(*src_buf);
+          if (match(elem_size, buffer_elem_size(buf))) {
+            bool is_clone = true;
+            for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+              is_clone = is_clone && match(dims[d], buffer_dim(buf, d));
+            }
+            if (is_clone) {
+              if (*src_buf == op->sym) {
+                set_result(mutate(truncate_rank::make(op->sym, dims.size(), std::move(body))));
+                return;
+              }
+              const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
+              if (src_bounds && src_bounds->size() == dims.size()) {
+                // This is a clone of src_buf.
+                set_result(clone_buffer::make(op->sym, *src_buf, std::move(body)));
+                return;
+              }
+            }
           }
-          set_result(mutate(result));
-          return;
-        }
-        if (is_crop) {
-          box_expr crop_bounds(dims.size());
-          for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-            crop_bounds[d] = dims[d].bounds;
-          }
-          stmt result = crop_buffer::make(op->sym, std::move(crop_bounds), std::move(body));
-          if (op->sym != *buf_sym) {
-            result = clone_buffer::make(op->sym, *buf_sym, result);
-          }
-          set_result(mutate(result));
-          return;
         }
       }
 
-      // Check if this make_buffer is equivalent to slice_buffer
-      if (bc->intrinsic == intrinsic::buffer_at && match(elem_size, buffer_elem_size(bc->args[0]))) {
-        expr buf = bc->args[0];
-        const symbol_id* buf_sym = as_variable(buf);
-        assert(buf_sym);
+      // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
+      var buf(op->sym);
+      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
         std::size_t dim = 0;
@@ -1495,11 +1476,33 @@ public:
         }
         if (is_slice && slice_rank == dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          stmt result = slice_buffer::make(op->sym, std::move(at), std::move(body));
-          if (op->sym != *buf_sym) {
-            result = clone_buffer::make(op->sym, *buf_sym, result);
+          set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
+          return;
+        }
+
+        // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
+        bool is_crop = bc->args.size() <= dims.size() + 1;
+        box_expr crop_bounds(dims.size());
+        for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+          if (!match(dims[d].stride, buffer_stride(buf, d)) ||
+              !match(dims[d].fold_factor, buffer_fold_factor(buf, d))) {
+            is_crop = false;
+            break;
           }
-          set_result(mutate(result));
+
+          // If the argument is defined, we need the min to be the same as the argument.
+          // If it is not defined, it must be buffer_min(buf, d).
+          bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
+          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(buf, d);
+          if (match(dims[d].bounds.min, crop_min)) {
+            crop_bounds[d] = dims[d].bounds;
+          } else {
+            is_crop = false;
+            break;
+          }
+        }
+        if (is_crop) {
+          set_result(mutate(crop_buffer::make(op->sym, std::move(crop_bounds), std::move(body))));
           return;
         }
       }
@@ -1582,8 +1585,12 @@ public:
       // This crop was a no-op.
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
-      set_result(block::make(
-          mutate(crop_buffer::make(op->sym, new_bounds, b->a)), mutate(crop_buffer::make(op->sym, new_bounds, b->b))));
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(crop_buffer::make(op->sym, new_bounds, s)));
+      }
+      set_result(block::make(std::move(stmts)));
     } else if (dims_count == 1) {
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1653,8 +1660,12 @@ public:
     }
 
     if (const block* b = body.as<block>()) {
-      set_result(block::make(mutate(crop_dim::make(op->sym, op->dim, bounds, b->a)),
-          mutate(crop_dim::make(op->sym, op->dim, bounds, b->b))));
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(crop_dim::make(op->sym, op->dim, bounds, s)));
+      }
+      set_result(block::make(std::move(stmts)));
     } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1703,8 +1714,12 @@ public:
       // This slice was a no-op.
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
-      set_result(
-          block::make(mutate(slice_buffer::make(op->sym, at, b->a)), mutate(slice_buffer::make(op->sym, at, b->b))));
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(slice_buffer::make(op->sym, at, s)));
+      }
+      set_result(block::make(std::move(stmts)));
     } else if (dims_count == 1) {
       // This slice is of one dimension, replace it with slice_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1736,8 +1751,12 @@ public:
     if (!body.defined()) {
       set_result(stmt());
     } else if (const block* b = body.as<block>()) {
-      set_result(block::make(
-          mutate(slice_dim::make(op->sym, op->dim, at, b->a)), mutate(slice_dim::make(op->sym, op->dim, at, b->b))));
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(slice_dim::make(op->sym, op->dim, at, s)));
+      }
+      set_result(block::make(std::move(stmts)));
     } else if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1767,8 +1786,12 @@ public:
     if (!body.defined()) {
       set_result(stmt());
     } else if (const block* b = body.as<block>()) {
-      set_result(block::make(
-          mutate(truncate_rank::make(op->sym, op->rank, b->a)), mutate(truncate_rank::make(op->sym, op->rank, b->b))));
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(truncate_rank::make(op->sym, op->rank, s)));
+      }
+      set_result(block::make(std::move(stmts)));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -2032,86 +2055,5 @@ interval_expr where_true(const expr& condition, symbol_id var) {
   }
   return result;
 }
-
-namespace {
-
-class derivative : public node_mutator {
-  symbol_id dx;
-
-public:
-  derivative(symbol_id dx) : dx(dx) {}
-
-  template <typename T>
-  void visit_variable(const T* op) {
-    if (op->sym == dx) {
-      set_result(1);
-    } else {
-      set_result(expr(0));
-    }
-  }
-
-  void visit(const variable* op) override { visit_variable(op); }
-  void visit(const wildcard* op) override { visit_variable(op); }
-  void visit(const constant*) override { set_result(expr(0)); }
-
-  void visit(const mul* op) override {
-    if (depends_on(op->a, dx) && depends_on(op->b, dx)) {
-      expr da = mutate(op->a);
-      expr db = mutate(op->b);
-      set_result(simplify(op, op->a, db) + simplify(op, da, op->b));
-    } else if (depends_on(op->a, dx)) {
-      set_result(simplify(op, mutate(op->a), op->b));
-    } else if (depends_on(op->b, dx)) {
-      set_result(simplify(op, op->a, mutate(op->b)));
-    } else {
-      set_result(expr(0));
-    }
-  }
-  void visit(const div* op) override {
-    if (depends_on(op->a, dx) && depends_on(op->b, dx)) {
-      expr da = mutate(op->a);
-      expr db = mutate(op->b);
-      set_result((da * op->b - op->a * db) / (op->b * op->b));
-    } else if (depends_on(op->a, dx)) {
-      set_result(mutate(op->a) / op->b);
-    } else if (depends_on(op->b, dx)) {
-      expr db = mutate(op->b);
-      set_result(-op->a / (op->b * op->b));
-    } else {
-      set_result(expr(0));
-    }
-  }
-
-  virtual void visit(const mod* op) override { set_result(indeterminate()); }
-  virtual void visit(const class min* op) override { set_result(select(op->a < op->b, mutate(op->a), mutate(op->b))); }
-  virtual void visit(const class max* op) override { set_result(select(op->b < op->a, mutate(op->a), mutate(op->b))); }
-
-  template <typename T>
-  void visit_compare(const T* op) {
-    if (depends_on(op->a, dx) || depends_on(op->b, dx)) {
-      set_result(indeterminate());
-    } else {
-      set_result(expr(0));
-    }
-  }
-
-  virtual void visit(const equal* op) override { visit_compare(op); }
-  virtual void visit(const not_equal* op) override { visit_compare(op); }
-  virtual void visit(const less* op) override { visit_compare(op); }
-  virtual void visit(const less_equal* op) override { visit_compare(op); }
-  virtual void visit(const logical_and* op) override {}
-  virtual void visit(const logical_or* op) override {}
-  virtual void visit(const logical_not* op) override { set_result(-mutate(op->a)); }
-
-  virtual void visit(const class select* op) override {
-    set_result(select(op->condition, mutate(op->true_value), mutate(op->false_value)));
-  }
-
-  virtual void visit(const call* op) override { std::abort(); }
-};
-
-}  // namespace
-
-expr differentiate(const expr& f, symbol_id x) { return derivative(x).mutate(f); }
 
 }  // namespace slinky
