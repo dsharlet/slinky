@@ -1208,21 +1208,14 @@ public:
     interval_expr body_bounds;
     expr body = mutate(op->body, &body_bounds);
 
-    // First, prune any dead lets
+    // - Prune dead lets
+    // - Inline single-ref lets, along with lets that are just constants or vars
     for (auto it = lets.begin(); it != lets.end();) {
       int refs = *references[it->first];
       if (refs == 0) {
         it = lets.erase(it);
         values_changed = true;
-      } else {
-        it++;
-      }
-    }
-
-    // For any lets that have a single ref, or have a const-or-var value, just inline them
-    for (auto it = lets.begin(); it != lets.end();) {
-      int refs = *references[it->first];
-      if (refs == 1 || it->second.as<constant>() || it->second.as<variable>()) {
+      } else if (refs == 1 || it->second.as<constant>() || it->second.as<variable>()) {
         body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
         it = lets.erase(it);
         values_changed = true;
@@ -1232,7 +1225,7 @@ public:
     }
 
     if (lets.empty()) {
-      // All lets were pruned.
+      // All lets were removed.
       set_result(body, std::move(body_bounds));
     } else if (!values_changed && body.same_as(op->body)) {
       set_result(op, std::move(body_bounds));
