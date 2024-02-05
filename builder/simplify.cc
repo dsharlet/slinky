@@ -1349,26 +1349,6 @@ public:
       changed = changed || !stmts.back().same_as(s);
     }
 
-    // If any consecutive entries are if-then-elses with the same conditions,
-    // convert into a single if-then-else with combined blocks.
-    for (size_t i = 0; i < stmts.size(); i++) {
-      const if_then_else *a_if, *b_if;
-      if ((a_if = stmts[i].as<if_then_else>()) != nullptr) {
-        if (i + 1 < stmts.size() && (b_if = stmts[i + 1].as<if_then_else>()) != nullptr) {
-          if (match(a_if->condition, b_if->condition)) {
-            stmt true_body = mutate(block::make({a_if->true_body, b_if->true_body}));
-            stmt false_body = mutate(block::make({a_if->false_body, b_if->false_body}));
-            stmt new_a = if_then_else::make(a_if->condition, std::move(true_body), std::move(false_body));
-            stmts[i] = std::move(new_a);
-            stmts.erase(stmts.begin() + i + 1);
-            // Try this one again, in case there are multiple consecutive ifs
-            i--;
-            changed = true;
-          }
-        }
-      }
-    }
-
     if (!changed) {
       set_result(op);
     } else {
