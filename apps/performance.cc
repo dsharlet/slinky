@@ -16,27 +16,25 @@ namespace slinky {
 // certain size, `memcpy` uses a `rep movsb` sequence, which is apparently really bad on AMD Zen:
 // https://bugs.launchpad.net/ubuntu/+source/glibc/+bug/2030515
 // We can work around this by memcpying 2048 bytes or less at a time.
-void memcpy_workaround(char* dst, const char* src, std::size_t size) {
+void memcpy_workaround(void* dst, const void* src, std::size_t size) {
   constexpr std::size_t chunk_size = 2048;
   for (std::size_t i = 0; i < size; i += chunk_size) {
     std::size_t size_i = std::min(size - i, chunk_size);
     memmove(dst, src, size_i);
-    dst += chunk_size;
-    src += chunk_size;
+    dst = offset_bytes(dst, chunk_size);
+    src = offset_bytes(src, chunk_size);
   }
 }
 
 // Copy from input to output.
-// TODO: We should be able to just do this with raw_buffer and not make it a template.
-template <typename T>
-index_t copy_2d(const buffer<const T>& in, const buffer<T>& out) {
-  const T* src = &in(out.dim(0).min(), out.dim(1).min());
-  T* dst = &out(out.dim(0).min(), out.dim(1).min());
+index_t copy_2d(const buffer<const void>& in, const buffer<void>& out) {
+  const void* src = in.address_at(out.dim(0).min(), out.dim(1).min());
+  void* dst = out.address_at(out.dim(0).min(), out.dim(1).min());
   std::size_t size_bytes = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
-    memcpy_workaround((char*)dst, (const char*)src, size_bytes);
-    dst += out.dim(1).stride();
-    src += in.dim(1).stride();
+    memcpy_workaround(dst, src, size_bytes);
+    dst = offset_bytes(dst, out.dim(1).stride());
+    src = offset_bytes(src, in.dim(1).stride());
   }
   return 0;
 }
@@ -52,8 +50,8 @@ pipeline make_pipeline(bool explicit_y) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func copy_out = func::make(copy_2d<char>, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
+  func copy_in = func::make(copy_2d, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func copy_out = func::make(copy_2d, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (explicit_y) {
     copy_out.loops({y});
