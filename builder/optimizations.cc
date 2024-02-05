@@ -426,9 +426,7 @@ public:
       result = slice_dim::make(op->dst, d.second, var(d.first), result);
       result = loop::make(d.first, loop_mode::serial, buffer_bounds(dst_var, d.second), 1, result);
     }
-    for (const auto& i : lets) {
-      result = let_stmt::make(i.first, i.second, result);
-    }
+    result = let_stmt::make(std::move(lets), result);
 
     set_result(result);
   }
