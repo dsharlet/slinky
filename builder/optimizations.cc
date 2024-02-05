@@ -439,29 +439,6 @@ stmt optimize_copies(const stmt& s, node_context& ctx) { return copy_optimizer(c
 
 namespace {
 
-// Traverse stmts in a block in order.
-template <typename Fn>
-void for_each_stmt_forward(const stmt& s, const Fn& fn) {
-  if (const block* b = s.as<block>()) {
-    for (const stmt& s : b->stmts) {
-      fn(s);
-    }
-  } else {
-    fn(s);
-  }
-}
-
-template <typename Fn>
-void for_each_stmt_backward(const stmt& s, const Fn& fn) {
-  if (const block* b = s.as<block>()) {
-    for (auto it = b->stmts.rbegin(); it != b->stmts.rend(); it++) {
-      fn(*it);
-    }
-  } else {
-    fn(s);
-  }
-}
-
 // Split `body` into 3 parts:
 // - stmts that don't depend on `vars`
 // - stmts that do depend on `vars`
@@ -471,27 +448,41 @@ std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> 
   stmt new_body_after;
   bool depended_on = false;
   // First, split the body into the before, and the new body + after.
-  for_each_stmt_forward(body, [&](const stmt& s) {
+  const auto do_split_forward = [&](const stmt& s) {
     if (depended_on || depends_on(s, vars)) {
       new_body_after = block::make({new_body_after, s});
       depended_on = true;
     } else {
       before = block::make({before, s});
     }
-  });
+  };
+  if (const block* b = body.as<block>()) {
+    for (const stmt& s : b->stmts) {
+      do_split_forward(s);
+    }
+  } else {
+    do_split_forward(body);
+  }
 
   // Now, split the new body + after into the new body and the after.
   stmt new_body;
   stmt after;
   depended_on = false;
-  for_each_stmt_backward(new_body_after, [&](const stmt& s) {
+  const auto do_split_backward = [&](const stmt& s) {
     if (!depended_on && !depends_on(s, vars)) {
       after = block::make({s, after});
     } else {
       new_body = block::make({s, new_body});
       depended_on = true;
     }
-  });
+  };
+  if (const block* b = new_body_after.as<block>()) {
+    for (auto it = b->stmts.rbegin(); it != b->stmts.rend(); it++) {
+      do_split_backward(*it);
+    }
+  } else {
+    do_split_backward(new_body_after);
+  }
 
   return {before, new_body, after};
 }
