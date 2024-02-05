@@ -382,7 +382,7 @@ public:
           interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
           src_dims.push_back(
               {dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d)});
-          src_x[src_d] = offset;
+          src_x[src_d] = max(buffer_min(dst_var, d) + offset, buffer_min(src_var, src_d));
           handled = true;
         }
       }
