@@ -173,12 +173,21 @@ public:
 
   template <typename T>
   void visit_let(const T* op) {
-    std::vector<scoped_value_in_symbol_map<index_t>> scoped_values;
-    scoped_values.reserve(op->lets.size());
-    for (const auto& s : op->lets) {
-      scoped_values.push_back(set_value_in_scope(context, s.first, eval_expr(s.second)));
+    // This is a bit ugly but we really want to avoid heap allocations here.
+    const size_t size = op->lets.size();
+    using sv_type = std::pair<symbol_id, std::optional<index_t>>;
+    sv_type* old_values = SLINKY_ALLOCA(sv_type, size);
+    (void) new (old_values) std::optional<index_t>[size];
+
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      old_values[i] = {let.first, context[let.first]};
+      context[let.first] = eval_expr(let.second);
     }
     visit(op->body);
+    for (size_t i = 0; i < size; ++i) {
+      context[old_values[i].first] = old_values[i].second;
+    }
   }
 
   void visit(const let* op) override { visit_let(op); }
