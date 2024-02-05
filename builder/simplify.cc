@@ -1455,13 +1455,8 @@ public:
               }
               const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
               if (src_bounds && src_bounds->size() == dims.size()) {
-                if (!is_buffer_mutated(op->sym, body) && !is_buffer_mutated(*src_buf, body)) {
-                  // This is a clone of src_buf, and we never mutate either buffer, we can just re-use it.
-                  set_result(let_stmt::make(op->sym, buf, std::move(body)));
-                } else {
-                  // This is a clone of src_buf, but we've mutated one of them. Use clone_buffer instead.
-                  set_result(clone_buffer::make(op->sym, *src_buf, std::move(body)));
-                }
+                // This is a clone of src_buf.
+                set_result(clone_buffer::make(op->sym, *src_buf, std::move(body)));
                 return;
               }
             }
