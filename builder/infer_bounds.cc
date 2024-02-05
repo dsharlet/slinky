@@ -235,11 +235,11 @@ public:
         // We need to be careful of the case where min > max, such as when a pipeline
         // flips a dimension.
         // TODO: This seems janky/possibly not right.
-        if (depends_on(j.min, op->sym)) {
+        if (depends_on(j.min, op->sym).any()) {
           j.min = simplify(static_cast<const class min*>(nullptr), substitute(j.min, op->sym, op->bounds.min),
               substitute(j.min, op->sym, op->bounds.max));
         }
-        if (depends_on(j.max, op->sym)) {
+        if (depends_on(j.max, op->sym).any()) {
           j.max = simplify(static_cast<const class max*>(nullptr), substitute(j.max, op->sym, op->bounds.min),
               substitute(j.max, op->sym, op->bounds.max));
         }
@@ -329,7 +329,7 @@ public:
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
-          if (!depends_on(cur_bounds_d, loop_sym)) {
+          if (!depends_on(cur_bounds_d, loop_sym).any()) {
             // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
             // just compute it once.
             continue;
@@ -351,7 +351,7 @@ public:
             // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
-            if (!depends_on(fold_factor, loop_sym)) {
+            if (!depends_on(fold_factor, loop_sym).any()) {
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -369,7 +369,7 @@ public:
             expr new_min = simplify(prev_bounds_d.max + 1);
 
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
-            if (!depends_on(fold_factor, loop_sym)) {
+            if (!depends_on(fold_factor, loop_sym).any()) {
               // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
               fold_factor = simplify(align_up(fold_factor, loop_step));
               vector_at(fold_factors[output], d) = fold_factor;
@@ -459,7 +459,7 @@ public:
       loop_min = op->bounds.min;
     }
 
-    if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym())) {
+    if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym()).any()) {
       // We rewrote or used the loop min.
       stmt result = loop::make(op->sym, op->mode, {loop_min, op->bounds.max}, op->step, std::move(body));
       set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));

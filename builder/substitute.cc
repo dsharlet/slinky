@@ -464,7 +464,10 @@ public:
 
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {
-    if (target.defined() && depends_on(x, sym)) {
+    auto s = set_value_in_scope(shadowed, sym, true);
+    if (target.defined() && depends_on(target, sym).any()) {
+      // If the target expression depends on the symbol we're declaring, don't substitute it because it's a different
+      // expression now.
       return x;
     } else {
       return mutate(x);
@@ -474,7 +477,6 @@ public:
   template <typename T>
   auto mutate_let(const T* op) {
     expr value = mutate(op->value);
-    auto s = set_value_in_scope(shadowed, op->sym, true);
     auto body = mutate_decl_body(op->sym, op->body);
     if (value.same_as(op->value) && body.same_as(op->body)) {
       return decltype(body){op};
@@ -489,7 +491,6 @@ public:
   void visit(const loop* op) override {
     interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
     expr step = mutate(op->step);
-    auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
@@ -506,7 +507,6 @@ public:
       dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
       changed = changed || !dims.back().same_as(i);
     }
-    auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (!changed && body.same_as(op->body)) {
       set_result(op);
@@ -525,21 +525,11 @@ public:
       dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
       changed = changed || !dims.back().same_as(i);
     }
-    auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (!changed && base.same_as(op->base) && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
-    }
-  }
-  void visit(const clone_buffer* op) override {
-    auto s = set_value_in_scope(shadowed, op->sym, true);
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(clone_buffer::make(op->sym, op->src, std::move(body)));
     }
   }
   void visit(const slice_buffer* op) override {
@@ -550,7 +540,6 @@ public:
       at.push_back(mutate(i));
       changed = changed || !at.back().same_as(i);
     }
-    auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (!changed && body.same_as(op->body)) {
       set_result(op);
@@ -560,7 +549,6 @@ public:
   }
   void visit(const slice_dim* op) override {
     expr at = mutate(op->at);
-    auto s = set_value_in_scope(shadowed, op->sym, true);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
@@ -568,6 +556,12 @@ public:
       set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
     }
   }
+  // truncate_rank, clone_buffer, crop_buffer, crop_dim not treated here because references to dimensions of these
+  // operations are still valid.
+  // TODO: This seems sketchy. Shadowed symbols are shadowed symbols. But the simplifier relies on this behavior
+  // currently... Another reason this is sketchy: we treat make_buffers as shadowing, but not crop_buffer. But the
+  // simplifier will rewrite some make_buffer to crop_buffer, so that means substitute will behave differently before
+  // vs. after simplification.
 };
 
 template <typename T>
