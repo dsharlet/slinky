@@ -335,16 +335,18 @@ public:
   }
 };
 
-// Allows lifting a common subexpression `value` out of another expression `body`, by referencing the value by `sym`.
+// Allows lifting a list of common subexpressions (specified by symbol_id/expr pairs)
+// out of another expression.
 class let : public expr_node<let> {
 public:
-  symbol_id sym;
-  expr value;
+  std::vector<std::pair<symbol_id, expr>> lets;
   expr body;
 
   void accept(node_visitor* v) const;
 
-  static expr make(symbol_id sym, expr value, expr body);
+  static expr make(std::vector<std::pair<symbol_id, expr>> lets, expr body);
+
+  static expr make(symbol_id sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
   static constexpr node_type static_type = node_type::let;
 };
@@ -489,16 +491,18 @@ public:
   static constexpr node_type static_type = node_type::copy_stmt;
 };
 
-// Allows lifting a common subexpression `value` out of a statement `body`, by referencing the value by `sym`.
+// Allows lifting a list of common subexpressions (specified by symbol_id/stmt pairs)
+// out of another stmt.
 class let_stmt : public stmt_node<let_stmt> {
 public:
-  symbol_id sym;
-  expr value;
+  std::vector<std::pair<symbol_id, expr>> lets;
   stmt body;
 
   void accept(node_visitor* v) const;
 
-  static stmt make(symbol_id sym, expr value, stmt body);
+  static stmt make(std::vector<std::pair<symbol_id, expr>> lets, stmt body);
+
+  static stmt make(symbol_id sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
   static constexpr node_type static_type = node_type::let_stmt;
 };
@@ -756,7 +760,9 @@ public:
   virtual void visit(const wildcard*) override {}
   virtual void visit(const constant*) override {}
   virtual void visit(const let* op) override {
-    op->value.accept(this);
+    for (const auto& p : op->lets) {
+      p.second.accept(this);
+    }
     op->body.accept(this);
   }
 
@@ -792,7 +798,9 @@ public:
   }
 
   virtual void visit(const let_stmt* op) override {
-    op->value.accept(this);
+    for (const auto& p : op->lets) {
+      p.second.accept(this);
+    }
     if (op->body.defined()) op->body.accept(this);
   }
   virtual void visit(const block* op) override {
@@ -1092,18 +1100,18 @@ public:
   }
 
   scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
-      : context_(other.context), sym_(other.sym), old_value_(std::move(other.old_value_)) {
+      : context_(other.context_), sym_(other.sym_), old_value_(std::move(other.old_value_)) {
     // Don't let other.~scoped_value() unset this value.
-    other.context = nullptr;
+    other.context_ = nullptr;
   }
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
-    context_ = other.context;
-    sym_ = other.sym;
+    context_ = other.context_;
+    sym_ = other.sym_;
     old_value_ = std::move(other.old_value_);
     // Don't let other.~scoped_value_in_symbol_map() unset this value.
-    other.context = nullptr;
+    other.context_ = nullptr;
   }
 
   const std::optional<T>& old_value() const { return old_value_; }

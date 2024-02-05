@@ -173,7 +173,11 @@ public:
 
   template <typename T>
   void visit_let(const T* op) {
-    auto set_value = set_value_in_scope(context, op->sym, eval_expr(op->value));
+    std::vector<scoped_value_in_symbol_map<index_t>> scoped_values;
+    scoped_values.reserve(op->lets.size());
+    for (const auto& s : op->lets) {
+      scoped_values.push_back(set_value_in_scope(context, s.first, eval_expr(s.second)));
+    }
     visit(op->body);
   }
 

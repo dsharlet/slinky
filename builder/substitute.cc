@@ -97,6 +97,13 @@ public:
     return true;
   }
 
+  template <typename A, typename B>
+  bool try_match(const std::pair<A, B>& self, const std::pair<A, B>& op) {
+    if (!try_match(self.first, op.first)) return false;
+    if (!try_match(self.second, op.second)) return false;
+    return true;
+  }
+
   template <typename T>
   bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
     if (self.size() < op.size()) {
@@ -196,8 +203,7 @@ public:
     const T* el = match_self_as(op);
     if (!el) return;
 
-    if (!try_match(el->sym, op->sym)) return;
-    if (!try_match(el->value, op->value)) return;
+    if (!try_match(el->lets, op->lets)) return;
     if (!try_match(el->body, op->body)) return;
   }
 
@@ -473,13 +479,27 @@ public:
 
   template <typename T>
   auto mutate_let(const T* op) {
-    expr value = mutate(op->value);
-    auto s = set_value_in_scope(shadowed, op->sym, true);
-    auto body = mutate_decl_body(op->sym, op->body);
-    if (value.same_as(op->value) && body.same_as(op->body)) {
+    std::vector<std::pair<symbol_id, expr>> lets;
+    lets.reserve(op->lets.size());
+    std::vector<scoped_value_in_symbol_map<bool>> scoped_values;
+    scoped_values.reserve(op->lets.size());
+    bool changed = false;
+    for (const auto& s : op->lets) {
+      lets.emplace_back(s.first, mutate(s.second));
+      scoped_values.push_back(set_value_in_scope(shadowed, s.first, true));
+      changed = changed || !lets.back().second.same_as(s.second);
+    }
+
+    auto body = op->body;
+    for (const auto& s : lets) {
+      body = mutate_decl_body(s.first, body);
+    }
+    changed = changed || !body.same_as(op->body);
+
+    if (!changed) {
       return decltype(body){op};
     } else {
-      return T::make(op->sym, std::move(value), std::move(body));
+      return T::make(std::move(lets), std::move(body));
     }
   }
 

@@ -1187,51 +1187,103 @@ public:
   }
 
   void visit(const let* op) override {
-    interval_expr value_bounds;
-    expr value = mutate(op->value, &value_bounds);
+    std::vector<std::pair<symbol_id, expr>> lets;
+    lets.reserve(op->lets.size());
 
-    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, value_bounds);
-    auto ref_count = set_value_in_scope(references, op->sym, 0);
+    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<int>>;
+    std::vector<sv_type> scoped_values;
+    scoped_values.reserve(op->lets.size());
+
+    bool values_changed = false;
+    for (const auto& s : op->lets) {
+      interval_expr value_bounds;
+      lets.emplace_back(s.first, mutate(s.second, &value_bounds));
+      values_changed = values_changed || !lets.back().second.same_as(s.second);
+
+      auto vb = set_value_in_scope(expr_bounds, s.first, value_bounds);
+      auto rc = set_value_in_scope(references, s.first, 0);
+      scoped_values.emplace_back(std::move(vb), std::move(rc));
+    }
+
     interval_expr body_bounds;
     expr body = mutate(op->body, &body_bounds);
 
-    int refs = *references[op->sym];
-    if (refs == 0) {
-      // This let is dead
+    // First, prune any dead lets
+    for (auto it = lets.begin(); it != lets.end();) {
+      int refs = *references[it->first];
+      if (refs == 0) {
+        it = lets.erase(it);
+        values_changed = true;
+      } else {
+        it++;
+      }
+    }
+
+    // For any lets that have a single ref, or have a const-or-var value, just inline them
+    for (auto it = lets.begin(); it != lets.end();) {
+      int refs = *references[it->first];
+      if (refs == 1 || it->second.as<constant>() || it->second.as<variable>()) {
+        body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
+        it = lets.erase(it);
+        values_changed = true;
+      } else {
+        it++;
+      }
+    }
+
+    if (lets.empty()) {
+      // All lets were pruned.
       set_result(body, std::move(body_bounds));
-    } else if (refs == 1 || value.as<constant>() || value.as<variable>()) {
-      mutate_and_set_result(substitute(body, op->sym, value));
-    } else if (value.same_as(op->value) && body.same_as(op->body)) {
+    } else if (!values_changed && body.same_as(op->body)) {
       set_result(op, std::move(body_bounds));
     } else {
-      set_result(let::make(op->sym, std::move(value), std::move(body)), std::move(body_bounds));
+      set_result(let::make(std::move(lets), std::move(body)), std::move(body_bounds));
     }
   }
 
   void visit(const let_stmt* op) override {
-    interval_expr value_bounds;
-    expr value = mutate(op->value, &value_bounds);
+    std::vector<std::pair<symbol_id, expr>> lets;
+    lets.reserve(op->lets.size());
 
-    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, value_bounds);
-    auto ref_count = set_value_in_scope(references, op->sym, 0);
+    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<int>>;
+    std::vector<sv_type> scoped_values;
+    scoped_values.reserve(op->lets.size());
+
+    bool values_changed = false;
+    for (const auto& s : op->lets) {
+      interval_expr value_bounds;
+      lets.emplace_back(s.first, mutate(s.second, &value_bounds));
+      values_changed = values_changed || !lets.back().second.same_as(s.second);
+
+      auto vb = set_value_in_scope(expr_bounds, s.first, value_bounds);
+      auto rc = set_value_in_scope(references, s.first, 0);
+      scoped_values.emplace_back(std::move(vb), std::move(rc));
+    }
+
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
       return;
     }
 
-    int refs = *references[op->sym];
-    if (refs == 0) {
-      // This let is dead
+    // First, prune any dead lets, and any lets that are just vars
+    for (auto it = lets.begin(); it != lets.end();) {
+      int refs = *references[it->first];
+      if (refs == 0 || is_variable(it->second, it->first)) {
+        it = lets.erase(it);
+        values_changed = true;
+      } else {
+        it++;
+      }
+    }
+
+    if (lets.empty()) {
+      // All lets were pruned.
       set_result(body);
-    } else if (is_variable(value, op->sym)) {
-      set_result(body);
-      // TODO: We could try substituting lets used once, or for simple lets, but we need to be careful because we can't
-      // substitute values passed to call_stmt.
-    } else if (value.same_as(op->value) && body.same_as(op->body)) {
+    } else if (!values_changed && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(let_stmt::make(op->sym, std::move(value), std::move(body)));
+      set_result(let_stmt::make(std::move(lets), std::move(body)));
     }
   }
 

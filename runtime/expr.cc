@@ -56,19 +56,18 @@ const T* make_bin_op(expr a, expr b) {
   return n;
 }
 
-template <typename T, typename Body>
-const T* make_let(symbol_id sym, expr value, Body body) {
-  auto n = new T();
-  n->sym = sym;
-  n->value = std::move(value);
+expr let::make(std::vector<std::pair<symbol_id, expr>> lets, expr body) {
+  auto n = new let();
+  n->lets = std::move(lets);
   n->body = std::move(body);
   return n;
 }
 
-expr let::make(symbol_id sym, expr value, expr body) { return make_let<let>(sym, std::move(value), std::move(body)); }
-
-stmt let_stmt::make(symbol_id sym, expr value, stmt body) {
-  return make_let<let_stmt>(sym, std::move(value), std::move(body));
+stmt let_stmt::make(std::vector<std::pair<symbol_id, expr>> lets, stmt body) {
+  auto n = new let_stmt();
+  n->lets = std::move(lets);
+  n->body = std::move(body);
+  return n;
 }
 
 // TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user

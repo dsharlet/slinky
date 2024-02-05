@@ -133,10 +133,23 @@ public:
   void visit(const wildcard* w) override { *this << w->sym; }
   void visit(const constant* c) override { *this << c->value; }
 
-  void visit(const let* l) override { *this << "let " << l->sym << " = " << l->value << " in " << l->body; }
+  void visit(const let* l) override {
+    // TODO: this is wrong and needs attention
+    for (const auto& s : l->lets) {
+      *this << "(let " << s.first << " = " << s.second << "; \n";
+    }
+    *this << l->body;
+    for (const auto& s : l->lets) {
+      (void)s;
+      *this << ")\n";
+    }
+  }
 
   void visit(const let_stmt* l) override {
-    *this << indent() << "{ let " << l->sym << " = " << l->value << ";\n";
+    *this << indent() << "{\n";
+    for (const auto& s : l->lets) {
+      *this << "let " << s.first << " = " << s.second << ";\n";
+    }
     *this << l->body;
     *this << indent() << "}\n";
   }
