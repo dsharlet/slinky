@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <set>
@@ -444,47 +445,23 @@ namespace {
 // - stmts that do depend on `vars`
 // - stmts that don't depend on `vars`
 std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> vars) {
-  stmt before;
-  stmt new_body_after;
-  bool depended_on = false;
-  // First, split the body into the before, and the new body + after.
-  const auto do_split_forward = [&](const stmt& s) {
-    if (depended_on || depends_on(s, vars)) {
-      new_body_after = block::make({new_body_after, s});
-      depended_on = true;
-    } else {
-      before = block::make({before, s});
-    }
-  };
   if (const block* b = body.as<block>()) {
-    for (const stmt& s : b->stmts) {
-      do_split_forward(s);
-    }
-  } else {
-    do_split_forward(body);
-  }
-
-  // Now, split the new body + after into the new body and the after.
-  stmt new_body;
-  stmt after;
-  depended_on = false;
-  const auto do_split_backward = [&](const stmt& s) {
-    if (!depended_on && !depends_on(s, vars)) {
-      after = block::make({s, after});
+    const auto depends_on_stmt = [&](const stmt& s) { return depends_on(s, vars); };
+    auto end_before = std::find_if(b->stmts.begin(), b->stmts.end(), depends_on_stmt);
+    if (end_before != b->stmts.end()) {
+      std::vector<stmt> before = {b->stmts.begin(), end_before};
+      auto end_body = std::find_if(b->stmts.rbegin(), b->stmts.rend(), depends_on_stmt).base();
+      std::vector<stmt> new_body = {end_before, end_body};
+      std::vector<stmt> after = {end_body, b->stmts.end()};
+      return {block::make(std::move(before)), block::make(std::move(new_body)), block::make(std::move(after))};
     } else {
-      new_body = block::make({s, new_body});
-      depended_on = true;
+      return {body, stmt{}, stmt{}};
     }
-  };
-  if (const block* b = new_body_after.as<block>()) {
-    for (auto it = b->stmts.rbegin(); it != b->stmts.rend(); it++) {
-      do_split_backward(*it);
-    }
+  } else if (depends_on(body, vars)) {
+    return {stmt{}, body, stmt{}};
   } else {
-    do_split_backward(new_body_after);
+    return {body, stmt{}, stmt{}};
   }
-
-  return {before, new_body, after};
 }
 
 std::tuple<stmt, stmt, stmt> split_body(const stmt& body, symbol_id var) {
