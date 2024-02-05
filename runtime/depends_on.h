@@ -5,16 +5,24 @@
 
 namespace slinky {
 
-// Check if the node depends on a symbol or set of symbols.
-bool depends_on(const expr& e, symbol_id var);
-bool depends_on(const interval_expr& e, symbol_id var);
-bool depends_on(const stmt& s, symbol_id var);
-bool depends_on(const stmt& s, span<const symbol_id> vars);
+// The various ways a node might depend on a buffer or variable.
+struct depends_on_result {
+  // True if the node depends on the symbol as a variable.
+  bool var = false;
 
-// Check if `e` depends on a variable `var` or buffer `buf`. Only returns true if the symbol is used as a value or a
-// buffer repsectively.
-bool depends_on_variable(const expr& e, symbol_id var);
-bool depends_on_buffer(const expr& e, symbol_id buf);
+  // The remaining fields all indicate the symbol is used as a buffer.
+  bool buffer = false;
+  // True if the buffer's base pointer is used.
+  bool buffer_base = false;
+
+  bool any() const { return var || buffer; }
+};
+
+// Check if the node depends on a symbol or set of symbols.
+depends_on_result depends_on(const expr& e, symbol_id var);
+depends_on_result depends_on(const interval_expr& e, symbol_id var);
+depends_on_result depends_on(const stmt& s, symbol_id var);
+depends_on_result depends_on(const stmt& s, span<const symbol_id> vars);
 
 }  // namespace slinky
 

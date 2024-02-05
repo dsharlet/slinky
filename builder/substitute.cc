@@ -465,7 +465,7 @@ public:
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {
     auto s = set_value_in_scope(shadowed, sym, true);
-    if (target.defined() && depends_on(target, sym)) {
+    if (target.defined() && depends_on(target, sym).any()) {
       // If the target expression depends on the symbol we're declaring, don't substitute it because it's a different
       // expression now.
       return x;

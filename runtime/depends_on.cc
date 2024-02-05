@@ -12,23 +12,23 @@ namespace {
 class dependencies : public recursive_node_visitor {
 public:
   span<const symbol_id> vars;
-  bool found_var = false;
-  bool found_buf = false;
+  depends_on_result result;
 
   dependencies(span<const symbol_id> vars) : vars(vars) {}
 
-  void accept_buffer(const expr& e) {
-    bool old_found_var = found_var;
-    found_var = false;
+  void accept_buffer(const expr& e, bool uses_base) {
+    bool old_found_var = result.var;
+    result.var = false;
     e.accept(this);
-    found_buf = found_buf || found_var;
-    found_var = old_found_var;
+    result.buffer = result.buffer || result.var;
+    result.buffer_base = result.buffer_base || (uses_base && result.var);
+    result.var = old_found_var;
   }
 
   void visit_var(symbol_id sym) {
     for (symbol_id i : vars) {
       if (i == sym) {
-        found_var = true;
+        result.var = true;
         return;
       }
     }
@@ -37,7 +37,8 @@ public:
   void visit_buf(symbol_id sym) {
     for (symbol_id i : vars) {
       if (i == sym) {
-        found_buf = true;
+        result.buffer = true;
+        result.buffer_base = true;
         return;
       }
     }
@@ -48,7 +49,7 @@ public:
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
-      accept_buffer(op->args[0]);
+      accept_buffer(op->args[0], op->intrinsic == intrinsic::buffer_at || op->intrinsic == intrinsic::buffer_base);
 
       for (std::size_t i = 1; i < op->args.size(); ++i) {
         if (op->args[i].defined()) op->args[i].accept(this);
@@ -74,51 +75,33 @@ public:
 
 }  // namespace
 
-bool depends_on(const expr& e, symbol_id var) {
-  if (!e.defined()) return false;
+depends_on_result depends_on(const expr& e, symbol_id var) {
   symbol_id vars[] = {var};
   dependencies v(vars);
-  e.accept(&v);
-  return v.found_var || v.found_buf;
+  if (e.defined()) e.accept(&v);
+  return v.result;
 }
 
-bool depends_on(const interval_expr& e, symbol_id var) {
+depends_on_result depends_on(const interval_expr& e, symbol_id var) {
   symbol_id vars[] = {var};
   dependencies v(vars);
   if (e.min.defined()) e.min.accept(&v);
   if (e.max.defined()) e.max.accept(&v);
-  return v.found_var || v.found_buf;
+  return v.result;
 }
 
-bool depends_on(const stmt& s, symbol_id var) {
-  if (!s.defined()) return false;
+depends_on_result depends_on(const stmt& s, symbol_id var) {
   symbol_id vars[] = {var};
   dependencies v(vars);
-  s.accept(&v);
-  return v.found_var || v.found_buf;
+  if (s.defined()) s.accept(&v);
+  return v.result;
 }
 
-bool depends_on(const stmt& s, span<const symbol_id> vars) {
-  if (!s.defined()) return false;
+depends_on_result depends_on(const stmt& s, span<const symbol_id> vars) {
+  if (!s.defined()) return {};
   dependencies v(vars);
-  s.accept(&v);
-  return v.found_var || v.found_buf;
-}
-
-bool depends_on_variable(const expr& e, symbol_id var) {
-  if (!e.defined()) return false;
-  symbol_id vars[] = {var};
-  dependencies v(vars);
-  e.accept(&v);
-  return v.found_var;
-}
-
-bool depends_on_buffer(const expr& e, symbol_id buf) {
-  if (!e.defined()) return false;
-  symbol_id bufs[] = {buf};
-  dependencies v(bufs);
-  e.accept(&v);
-  return v.found_buf;
+  if (s.defined()) s.accept(&v);
+  return v.result;
 }
 
 }  // namespace slinky
