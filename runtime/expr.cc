@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "runtime/util.h"
 
@@ -56,18 +57,25 @@ const T* make_bin_op(expr a, expr b) {
   return n;
 }
 
-expr let::make(std::vector<std::pair<symbol_id, expr>> lets, expr body) {
-  auto n = new let();
+template <typename T, typename Body>
+const T* make_let(std::vector<std::pair<symbol_id, expr>> lets, Body body) {
+  auto n = new T();
   n->lets = std::move(lets);
-  n->body = std::move(body);
+  if (const T* l = body.template as<T>()) {
+    n->lets.insert(n->lets.end(), l->lets.begin(), l->lets.end());
+    n->body = l->body;
+  } else {
+    n->body = std::move(body);
+  }
   return n;
 }
 
+expr let::make(std::vector<std::pair<symbol_id, expr>> lets, expr body) {
+  return make_let<let>(std::move(lets), std::move(body));
+}
+
 stmt let_stmt::make(std::vector<std::pair<symbol_id, expr>> lets, stmt body) {
-  auto n = new let_stmt();
-  n->lets = std::move(lets);
-  n->body = std::move(body);
-  return n;
+  return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
 // TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user
