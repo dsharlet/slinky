@@ -473,18 +473,15 @@ public:
 
   void visit(const block* op) override {
     // Visit blocks in reverse order. TODO: Is this really sufficient?
-    // TODO: is reverse order still necessary for a non-linked-list impl?
-    std::vector<stmt> stmts;
-    stmts.reserve(op->stmts.size());
+    std::vector<stmt> stmts(op->stmts.size());
     bool changed = false;
-    for (auto it = op->stmts.rbegin(); it != op->stmts.rend(); it++) {
-      stmts.push_back(mutate(*it));
-      changed = changed || !stmts.back().same_as(*it);
+    for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
+      stmts[i] = mutate(op->stmts[i]);
+      changed = changed || !stmts[i].same_as(op->stmts[i]);
     }
     if (!changed) {
       set_result(op);
     } else {
-      std::reverse(stmts.begin(), stmts.end());
       set_result(block::make(std::move(stmts)));
     }
   }
