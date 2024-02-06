@@ -80,8 +80,8 @@ func::func(input input, output out, std::vector<char> padding) : func(nullptr, {
 
 func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
 
-func::func(func&& m) { *this = std::move(m); }
-func& func::operator=(func&& m) {
+func::func(func&& m) noexcept { *this = std::move(m); }
+func& func::operator=(func&& m) noexcept {
   if (this == &m) return *this;
   m.remove_this_from_buffers();
   impl_ = std::move(m.impl_);
@@ -488,7 +488,7 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
   std::vector<var> result;
   result.reserve(bufs.size());
   for (const buffer_expr_ptr& i : bufs) {
-    result.push_back(i->sym());
+    result.emplace_back(i->sym());
   }
   return result;
 }

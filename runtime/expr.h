@@ -244,7 +244,7 @@ expr max(span<expr> x);
 struct interval_expr {
   expr min, max;
 
-  interval_expr() {}
+  interval_expr() = default;
   explicit interval_expr(const expr& point) : min(point), max(point) {}
   interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
@@ -311,7 +311,7 @@ public:
   stmt(const base_stmt_node* n) : n_(n) {}
 
   stmt& operator=(const stmt&) = default;
-  stmt& operator=(stmt&&) = default;
+  stmt& operator=(stmt&&) noexcept = default;
 
   void accept(node_visitor* v) const {
     assert(defined());
@@ -702,7 +702,7 @@ public:
 
 class node_visitor {
 public:
-  virtual ~node_visitor() {}
+  virtual ~node_visitor() = default;
 
   virtual void visit(const variable*) = 0;
   virtual void visit(const wildcard*) = 0;
@@ -743,42 +743,42 @@ public:
 
 class recursive_node_visitor : public node_visitor {
 public:
-  virtual void visit(const variable*) override;
-  virtual void visit(const wildcard*) override;
-  virtual void visit(const constant*) override;
-  virtual void visit(const let* op) override;
+  void visit(const variable*) override;
+  void visit(const wildcard*) override;
+  void visit(const constant*) override;
+  void visit(const let* op) override;
 
-  virtual void visit(const add* op) override;
-  virtual void visit(const sub* op) override;
-  virtual void visit(const mul* op) override;
-  virtual void visit(const div* op) override;
-  virtual void visit(const mod* op) override;
-  virtual void visit(const class min* op) override;
-  virtual void visit(const class max* op) override;
-  virtual void visit(const equal* op) override;
-  virtual void visit(const not_equal* op) override;
-  virtual void visit(const less* op) override;
-  virtual void visit(const less_equal* op) override;
-  virtual void visit(const logical_and* op) override;
-  virtual void visit(const logical_or* op) override;
-  virtual void visit(const logical_not* op) override;
-  virtual void visit(const class select* op) override;
-  virtual void visit(const call* op) override;
+  void visit(const add* op) override;
+  void visit(const sub* op) override;
+  void visit(const mul* op) override;
+  void visit(const div* op) override;
+  void visit(const mod* op) override;
+  void visit(const class min* op) override;
+  void visit(const class max* op) override;
+  void visit(const equal* op) override;
+  void visit(const not_equal* op) override;
+  void visit(const less* op) override;
+  void visit(const less_equal* op) override;
+  void visit(const logical_and* op) override;
+  void visit(const logical_or* op) override;
+  void visit(const logical_not* op) override;
+  void visit(const class select* op) override;
+  void visit(const call* op) override;
 
-  virtual void visit(const let_stmt* op) override;
-  virtual void visit(const block* op) override;
-  virtual void visit(const loop* op) override;
-  virtual void visit(const call_stmt* op) override;
-  virtual void visit(const copy_stmt* op) override;
-  virtual void visit(const allocate* op) override;
-  virtual void visit(const make_buffer* op) override;
-  virtual void visit(const clone_buffer* op) override;
-  virtual void visit(const crop_buffer* op) override;
-  virtual void visit(const crop_dim* op) override;
-  virtual void visit(const slice_buffer* op) override;
-  virtual void visit(const slice_dim* op) override;
-  virtual void visit(const truncate_rank* op) override;
-  virtual void visit(const check* op) override;
+  void visit(const let_stmt* op) override;
+  void visit(const block* op) override;
+  void visit(const loop* op) override;
+  void visit(const call_stmt* op) override;
+  void visit(const copy_stmt* op) override;
+  void visit(const allocate* op) override;
+  void visit(const make_buffer* op) override;
+  void visit(const clone_buffer* op) override;
+  void visit(const crop_buffer* op) override;
+  void visit(const crop_dim* op) override;
+  void visit(const slice_buffer* op) override;
+  void visit(const slice_dim* op) override;
+  void visit(const truncate_rank* op) override;
+  void visit(const check* op) override;
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }
@@ -938,7 +938,7 @@ class symbol_map {
   }
 
 public:
-  symbol_map() {}
+  symbol_map() = default;
   symbol_map(std::initializer_list<std::pair<symbol_id, T>> init) {
     for (const std::pair<symbol_id, T>& i : init) {
       operator[](i.first) = i.second;
@@ -1005,14 +1005,14 @@ public:
     ctx_value = std::move(value);
   }
 
-  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
+  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other) noexcept
       : context_(other.context_), sym_(other.sym_), old_value_(std::move(other.old_value_)) {
     // Don't let other.~scoped_value() unset this value.
     other.context_ = nullptr;
   }
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
-  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
+  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) noexcept {
     context_ = other.context_;
     sym_ = other.sym_;
     old_value_ = std::move(other.old_value_);

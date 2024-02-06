@@ -176,7 +176,7 @@ public:
     }
   }
 
-  virtual ~ref_counted() {}
+  virtual ~ref_counted() = default;
 };
 
 // A smart pointer to a ref_counted base.
@@ -189,7 +189,7 @@ public:
     if (value) value->add_ref();
   }
   ref_count(const ref_count& other) : ref_count(other.value) {}
-  ref_count(ref_count&& other) : value(other.value) { other.value = nullptr; }
+  ref_count(ref_count&& other) noexcept : value(other.value) { other.value = nullptr; }
   ~ref_count() {
     if (value) value->release();
   }
@@ -205,7 +205,7 @@ public:
 
   ref_count& operator=(const ref_count& other) { return operator=(other.value); }
 
-  ref_count& operator=(ref_count&& other) {
+  ref_count& operator=(ref_count&& other) noexcept {
     std::swap(value, other.value);
     other = nullptr;
     return *this;

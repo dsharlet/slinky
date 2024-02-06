@@ -134,7 +134,6 @@ class buffer_aliaser : public node_mutator {
     std::map<symbol_id, buffer_alias> can_alias_;
     std::set<symbol_id> cannot_alias_;
 
-  public:
     const std::map<symbol_id, buffer_alias>& can_alias() const { return can_alias_; }
 
     void maybe_alias(symbol_id s, buffer_alias a) {
@@ -374,7 +373,7 @@ public:
         // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
         // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
         // dimensions than the output) or not.
-        src_dims.push_back({buffer_bounds(dst_var, d), 0, expr()});
+        src_dims.emplace_back(buffer_bounds(dst_var, d), 0, expr());
         handled = true;
       } else if (dep_count == 1) {
         expr offset;
@@ -409,7 +408,7 @@ public:
     auto do_substitute = [&](const expr& value) {
       stmt new_result = substitute(result, value, variable::make(let_id));
       if (!new_result.same_as(result)) {
-        lets.push_back({let_id, value});
+        lets.emplace_back(let_id, value);
         let_id = ctx.insert_unique();
         result = std::move(new_result);
       }

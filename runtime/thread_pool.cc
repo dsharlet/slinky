@@ -10,7 +10,7 @@ namespace slinky {
 thread_pool::thread_pool(int workers) : stop_(false) {
   auto worker = [this]() { wait_for([this]() -> bool { return stop_; }); };
   for (int i = 0; i < workers; ++i) {
-    workers_.push_back(std::thread(worker));
+    workers_.emplace_back(worker);
   }
 }
 

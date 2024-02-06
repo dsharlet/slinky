@@ -969,10 +969,10 @@ interval_expr where_true(const expr& condition, symbol_id var) {
   public:
     std::vector<expr> leaves;
 
-    void visit(const variable* op) override { leaves.push_back(op); }
-    void visit(const constant* op) override { leaves.push_back(op); }
+    void visit(const variable* op) override { leaves.emplace_back(op); }
+    void visit(const constant* op) override { leaves.emplace_back(op); }
     void visit(const call* op) override {
-      if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op);
+      if (is_buffer_intrinsic(op->intrinsic)) leaves.emplace_back(op);
     }
   };
 
@@ -982,7 +982,7 @@ interval_expr where_true(const expr& condition, symbol_id var) {
   std::vector<expr> offsets;
   offsets.push_back(negative_infinity());
   for (index_t i = -10; i <= 10; ++i) {
-    offsets.push_back(i);
+    offsets.emplace_back(i);
   }
   offsets.push_back(positive_infinity());
 

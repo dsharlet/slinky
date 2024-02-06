@@ -337,7 +337,7 @@ void flatten_blocks(std::vector<stmt>& v) {
   for (auto it = v.begin(); it != v.end();) {
     if (it->defined()) {
       if (const block* b = it->as<block>()) {
-        auto stmts = std::move(b->stmts);
+        const auto& stmts = b->stmts;
         it = v.erase(it);
         it = v.insert(it, stmts.begin(), stmts.end());
         it += stmts.size();

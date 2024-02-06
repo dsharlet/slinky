@@ -120,7 +120,7 @@ public:
     expr step;
     loop_mode mode;
 
-    loop_info() {}
+    loop_info() = default;
     loop_info(slinky::var var, expr step = 1, loop_mode mode = loop_mode::serial) : var(var), step(step), mode(mode) {}
 
     symbol_id sym() const { return var.sym(); }
@@ -142,12 +142,12 @@ private:
   void remove_this_from_buffers();
 
 public:
-  func() {}
+  func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::vector<char> padding);
-  func(func&&);
-  func& operator=(func&&);
+  func(func&&) noexcept;
+  func& operator=(func&&) noexcept;
   ~func();
   func(const func&) = delete;
   func& operator=(const func&) = delete;
@@ -219,7 +219,7 @@ public:
   template <typename Lambda>
   static func make(Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs) {
     using std_function_type = typename lambda_call_signature<Lambda>::std_function_type;
-    std_function_type impl = std::move(lambda);
+    std_function_type impl = std::forward(lambda);
     return make(std::move(impl), std::move(inputs), std::move(outputs));
   }
 

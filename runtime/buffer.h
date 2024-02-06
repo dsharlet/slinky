@@ -135,7 +135,7 @@ public:
   raw_buffer(raw_buffer&&) = delete;
   void operator=(const raw_buffer&) = delete;
   void operator=(raw_buffer&&) = delete;
-  ~raw_buffer() { free(); }
+  ~raw_buffer() override { free(); }
 
   slinky::dim& dim(std::size_t i) {
     assert(i < rank);
