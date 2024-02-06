@@ -177,7 +177,7 @@ public:
     // This is a bit ugly but we really want to avoid heap allocations here.
     const size_t size = op->lets.size();
     std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
-    (void) new (old_values) std::optional<index_t>[size];
+    (void)new (old_values) std::optional<index_t>[ size ];
 
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
