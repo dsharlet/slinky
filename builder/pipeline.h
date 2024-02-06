@@ -136,7 +136,7 @@ private:
   std::vector<loop_info> loops_;
   std::optional<loop_id> compute_at_;
 
-  std::vector<char> padding_;
+  std::optional<std::vector<char>> padding_;
 
   void add_this_to_buffers();
   void remove_this_from_buffers();
@@ -145,7 +145,7 @@ public:
   func() {}
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out);
-  func(input input, output out, std::vector<char> padding);
+  func(input input, output out, std::optional<std::vector<char>> padding);
   func(func&&);
   func& operator=(func&&);
   ~func();
@@ -231,7 +231,7 @@ public:
   }
 
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
-  static func make_copy(input in, output out, std::vector<char> padding = {}) {
+  static func make_copy(input in, output out, std::optional<std::vector<char>> padding = {}) {
     return func(std::move(in), {std::move(out)}, std::move(padding));
   }
   static func make_copy(input in1, input in2, output out) {
@@ -241,7 +241,7 @@ public:
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
-  const std::vector<char>& padding() const { return padding_; }
+  const std::optional<std::vector<char>>& padding() const { return padding_; }
 
   stmt make_call() const;
 };

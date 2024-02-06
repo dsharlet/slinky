@@ -106,11 +106,11 @@ public:
 
   void visit(const copy_stmt* op) {
     if (op->src == src && op->dst == dst) {
-      if (op->padding.empty()) {
+      if (!op->padding || op->padding->empty()) {
         set_result(stmt());
       } else {
         set_result(call_stmt::make(
-            [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
+            [src = op->src, dst = op->dst, padding = *op->padding](const eval_context& ctx) -> index_t {
               const raw_buffer* src_buf = ctx.lookup_buffer(src);
               const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
               pad(src_buf->dims, *dst_buf, padding.data());
@@ -346,7 +346,7 @@ public:
         [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
           const raw_buffer* src_buf = ctx.lookup_buffer(src);
           const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
-          copy(*src_buf, *dst_buf, padding.empty() ? nullptr : padding.data());
+          copy(*src_buf, *dst_buf, (!padding || padding->empty()) ? nullptr : padding->data());
           return 0;
         },
         {op->src}, {op->dst});

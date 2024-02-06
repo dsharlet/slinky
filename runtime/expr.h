@@ -482,12 +482,15 @@ public:
   std::vector<expr> src_x;
   symbol_id dst;
   std::vector<symbol_id> dst_x;
-  std::vector<char> padding;
+  // padding = nullopt => no padding
+  // padding = {} => padding is uninitialized
+  // padding = <elem_size bytes> => value to put in padding
+  std::optional<std::vector<char>> padding;
 
   void accept(node_visitor* v) const;
 
   static stmt make(
-      symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::vector<char> padding);
+      symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::optional<std::vector<char>> padding);
 
   static constexpr node_type static_type = node_type::copy_stmt;
 };
