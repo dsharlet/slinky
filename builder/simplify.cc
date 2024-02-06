@@ -171,7 +171,6 @@ public:
   void visit(const let_stmt* op) override { std::abort(); }
   void visit(const block* op) override { std::abort(); }
   void visit(const loop* op) override { std::abort(); }
-  void visit(const if_then_else* op) override { std::abort(); }
   void visit(const call_stmt* op) override { std::abort(); }
   void visit(const copy_stmt* op) override { std::abort(); }
   void visit(const allocate* op) override { std::abort(); }
@@ -1352,36 +1351,6 @@ public:
       set_result(op);
     } else {
       set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
-    }
-  }
-
-  void visit(const if_then_else* op) override {
-    interval_expr c_bounds;
-    expr c = mutate(op->condition, &c_bounds);
-    if (prove_true(c_bounds.min)) {
-      set_result(mutate(op->true_body));
-      return;
-    } else if (prove_false(c_bounds.max)) {
-      set_result(mutate(op->false_body));
-      return;
-    }
-
-    stmt t = mutate(op->true_body);
-    stmt f = mutate(op->false_body);
-
-    if (const logical_not* n = c.as<logical_not>()) {
-      c = n->a;
-      std::swap(t, f);
-    }
-
-    if (!t.defined() && !f.defined()) {
-      set_result(t);
-    } else if (t.defined() && f.defined() && match(t, f)) {
-      set_result(t);
-    } else if (c.same_as(op->condition) && t.same_as(op->true_body) && f.same_as(op->false_body)) {
-      set_result(op);
-    } else {
-      set_result(if_then_else::make(std::move(c), std::move(t), std::move(f)));
     }
   }
 

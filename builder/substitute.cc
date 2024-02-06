@@ -269,16 +269,6 @@ public:
     if (!try_match(ls->body, op->body)) return;
   }
 
-  void visit(const if_then_else* op) override {
-    if (match) return;
-    const if_then_else* is = match_self_as(op);
-    if (!is) return;
-
-    if (!try_match(is->condition, op->condition)) return;
-    if (!try_match(is->true_body, op->true_body)) return;
-    if (!try_match(is->false_body, op->false_body)) return;
-  }
-
   void visit(const call_stmt* op) override {
     if (match) return;
     const call_stmt* cs = match_self_as(op);

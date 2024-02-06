@@ -143,16 +143,6 @@ void node_mutator::visit(const loop* op) {
     set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
   }
 }
-void node_mutator::visit(const if_then_else* op) {
-  expr cond = mutate(op->condition);
-  stmt true_body = mutate(op->true_body);
-  stmt false_body = mutate(op->false_body);
-  if (cond.same_as(op->condition) && true_body.same_as(op->true_body) && false_body.same_as(op->false_body)) {
-    set_result(op);
-  } else {
-    set_result(if_then_else::make(std::move(cond), std::move(true_body), std::move(false_body)));
-  }
-}
 void node_mutator::visit(const call_stmt* op) { set_result(op); }
 void node_mutator::visit(const copy_stmt* op) {
   std::vector<expr> src_x;

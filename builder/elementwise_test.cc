@@ -129,7 +129,6 @@ public:
   void visit(const let_stmt*) override { std::abort(); }
   void visit(const block*) override { std::abort(); }
   void visit(const loop*) override { std::abort(); }
-  void visit(const if_then_else*) override { std::abort(); }
   void visit(const call_stmt*) override { std::abort(); }
   void visit(const copy_stmt*) override { std::abort(); }
   void visit(const allocate*) override { std::abort(); }
@@ -234,7 +233,6 @@ public:
   void visit(const let_stmt*) override { std::abort(); }
   void visit(const block*) override { std::abort(); }
   void visit(const loop*) override { std::abort(); }
-  void visit(const if_then_else*) override { std::abort(); }
   void visit(const call_stmt*) override { std::abort(); }
   void visit(const copy_stmt*) override { std::abort(); }
   void visit(const allocate*) override { std::abort(); }

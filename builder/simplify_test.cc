@@ -138,11 +138,6 @@ TEST(simplify, buffer_intrinsics) {
   test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
 }
 
-TEST(simplify, if_then_else) {
-  test_simplify(if_then_else::make(x == x, check::make(y), check::make(z)), check::make(y));
-  test_simplify(if_then_else::make(x != x, check::make(y), check::make(z)), check::make(z));
-}
-
 TEST(simplify, bounds) {
   test_simplify(
       loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)),

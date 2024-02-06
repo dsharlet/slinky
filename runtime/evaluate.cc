@@ -357,18 +357,6 @@ public:
     }
   }
 
-  void visit(const if_then_else* op) override {
-    if (eval_expr(op->condition)) {
-      if (op->true_body.defined()) {
-        visit(op->true_body);
-      }
-    } else {
-      if (op->false_body.defined()) {
-        visit(op->false_body);
-      }
-    }
-  }
-
   void visit(const call_stmt* op) override {
     result = op->target(context);
     if (result) {

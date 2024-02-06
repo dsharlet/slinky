@@ -390,14 +390,6 @@ stmt loop::make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, 
   return l;
 }
 
-stmt if_then_else::make(expr condition, stmt true_body, stmt false_body) {
-  auto n = new if_then_else();
-  n->condition = std::move(condition);
-  n->true_body = std::move(true_body);
-  n->false_body = std::move(false_body);
-  return n;
-}
-
 stmt allocate::make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
   n->sym = sym;

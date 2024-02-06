@@ -193,16 +193,6 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit(const if_then_else* n) override {
-    *this << indent() << "if(" << n->condition << ") {\n";
-    *this << n->true_body;
-    if (n->false_body.defined()) {
-      *this << indent() << "} else {\n";
-      *this << n->false_body;
-    }
-    *this << indent() << "}\n";
-  }
-
   void visit(const call_stmt* n) override {
     *this << indent() << "call(<fn>, {" << n->inputs << "}, {" << n->outputs << "})\n";
   }
