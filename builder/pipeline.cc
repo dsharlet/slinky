@@ -74,11 +74,14 @@ func::func(call_stmt::callable impl, std::vector<input> inputs, std::vector<outp
   add_this_to_buffers();
 }
 
-func::func(input input, output out, std::vector<char> padding) : func(nullptr, {std::move(input)}, {std::move(out)}) {
+func::func(input input, output out, std::optional<std::vector<char>> padding)
+    : func(nullptr, {std::move(input)}, {std::move(out)}) {
   padding_ = std::move(padding);
 }
 
-func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
+func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {
+  padding_ = std::vector<char>{};
+}
 
 func::func(func&& m) { *this = std::move(m); }
 func& func::operator=(func&& m) {
@@ -119,7 +122,8 @@ stmt func::make_call() const {
     }
     return call_stmt::make(impl_, std::move(inputs), std::move(outputs));
   } else {
-    assert(padding_.empty() || inputs_.size() == 1);
+    // Only copies that leave padding unmodified can have multiple inputs.
+    assert((padding_ && padding_->empty()) || inputs_.size() == 1);
     std::vector<stmt> copies;
     for (const func::input& input : inputs_) {
       assert(outputs_.size() == 1);

@@ -317,7 +317,7 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
 }
 
 stmt copy_stmt::make(
-    symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::vector<char> padding) {
+    symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::optional<std::vector<char>> padding) {
   auto n = new copy_stmt();
   n->src = src;
   n->src_x = std::move(src_x);

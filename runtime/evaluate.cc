@@ -85,8 +85,8 @@ void copy_stmt_impl(
       }
       if (src_base) {
         memcpy(dst_base, src_base, src.elem_size);
-      } else if (!c.padding.empty()) {
-        memcpy(dst_base, c.padding.data(), src.elem_size);
+      } else if (c.padding && !c.padding->empty()) {
+        memcpy(dst_base, c.padding->data(), src.elem_size);
       } else {
         // Leave unmodified.
       }
@@ -101,7 +101,7 @@ void copy_stmt_impl(eval_context& ctx, const raw_buffer& src, const raw_buffer& 
   assert(c.src_x.size() == src.rank);
   assert(c.dst_x.size() == dst.rank);
   assert(dst.elem_size == src.elem_size);
-  assert(c.padding.empty() || dst.elem_size == c.padding.size());
+  assert(!c.padding || c.padding->empty() || dst.elem_size == c.padding->size());
   if (dst.rank == 0) {
     // The buffer is scalar.
     assert(src.rank == 0);
