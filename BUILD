@@ -10,3 +10,9 @@ license(name = "license")
 licenses(["notice"])
 
 exports_files(["LICENSE"])
+
+filegroup(
+       name = "clang_tidy_config",
+       srcs = [".clang-tidy"],
+       visibility = ["//visibility:public"],
+)
