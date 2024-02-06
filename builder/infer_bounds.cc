@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "builder/node_mutator.h"
-#include "builder/optimizations.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"
@@ -528,17 +527,6 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // Unfortunately, we need the more aggressive incorrect crop removal here! This needs to be fixed, and this
   // should be removed completely.
   result = input_crop_remover().mutate(result);
-
-  // Now we can simplify.
-  result = simplify(result);
-  result = reduce_scopes(result);
-
-  // Try to reuse buffers and eliminate copies where possible.
-  result = alias_buffers(result);
-  result = optimize_copies(result, ctx);
-
-  result = simplify(result);
-  result = reduce_scopes(result);
 
   return result;
 }

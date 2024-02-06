@@ -249,6 +249,9 @@ public:
 struct build_options {
   // If true, removes bounds checks
   bool no_checks = false;
+
+  // Disable aliasing buffers.
+  bool no_alias_buffers = false;
 };
 
 // Constructs a body and a pipeline object for a graph described by input and output buffers.

@@ -68,7 +68,7 @@ public:
     if (e.defined()) {
       e.accept(this);
     } else {
-      os << "undef()";
+      os << "NaN";
     }
     return *this;
   }
@@ -146,9 +146,11 @@ public:
 
   void visit(const let_stmt* l) override {
     *this << indent() << "{\n";
+    ++depth;
     for (const auto& s : l->lets) {
-      *this << "let " << s.first << " = " << s.second << ";\n";
+      *this << indent() << "let " << s.first << " = " << s.second << ";\n";
     }
+    --depth;
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -226,17 +228,22 @@ public:
   }
 
   void visit(const make_buffer* n) override {
-    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', " << n->base << ", "
-          << n->elem_size << ", [";
+    *this << indent() << "{\n";
+    ++depth;
+    *this << indent() << "let __base = " << n->base << ";\n";
+    *this << indent() << "let __elem_size = " << n->elem_size << ";\n";
+    *this << indent() << "let __dims = [";
     if (!n->dims.empty()) {
       *this << "\n";
       *this << indent(2);
       print_vector(n->dims, ",\n" + indent(2));
       *this << "\n";
-      *this << indent(1);
     }
-    *this << "]);\n";
+    *this << indent() << "];\n";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);";
     *this << n->body;
+    *this << indent() << "}\n";
+    --depth;
     *this << indent() << "}\n";
   }
 
@@ -463,6 +470,7 @@ function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {
+    if (isNaN(at[d])) continue;
     result = result + flat_offset_dim(b.dims[d], at[d]);
   }
   return result;
@@ -554,7 +562,7 @@ let __event_slider = document.getElementById('event_slider');
 let __autoplay = true;
 __event_slider.max = __end_t - 1;
 document.addEventListener('keyup', event => { if (event.code === 'Space') __autoplay = !__autoplay; });
-let rate = 3000 / __end_t;
+let rate = Math.min(1000, 5000 / __end_t);
 setInterval(function() {
   if (__autoplay) {
     __current_t = (__current_t + 1) % __end_t;
@@ -566,9 +574,9 @@ setInterval(function() {
 
 }  // namespace
 
-void visualize(const char* filename, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
+void visualize(const std::string& filename, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
     pipeline::buffers outputs, const node_context* ctx) {
-  std::ofstream file(filename);
+  std::ofstream file(filename.c_str());
   file << header;
   js_printer jsp(file, ctx);
 
@@ -610,7 +618,7 @@ void visualize(const char* filename, const pipeline& p, pipeline::scalars args, 
   file << footer << std::endl;
 }
 
-void visualize(const char* filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
+void visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
     const node_context* ctx) {
   visualize(filename, p, {}, inputs, outputs, ctx);
 }
