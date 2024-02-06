@@ -13,7 +13,7 @@ namespace slinky {
 std::string viz_dir() {
   const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (outputs) {
-    return outputs;
+    return std::string(outputs) + "/";
   } else {
     return "";
   }
