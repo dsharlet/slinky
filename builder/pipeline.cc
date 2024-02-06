@@ -456,9 +456,19 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
   result = infer_bounds(result, ctx, input_syms);
 
-  result = fix_buffer_races(result);
+  result = simplify(result);
+  result = reduce_scopes(result);
+
+  // Try to reuse buffers and eliminate copies where possible.
+  if (!options.no_alias_buffers) {
+    result = alias_buffers(result);
+  }
+  result = optimize_copies(result, ctx);
 
   result = simplify(result);
+  result = reduce_scopes(result);
+
+  result = fix_buffer_races(result);
 
   if (options.no_checks) {
     class remove_checks : public node_mutator {
