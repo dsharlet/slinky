@@ -65,7 +65,6 @@ public:
 
   virtual void visit(const block*) override;
   virtual void visit(const loop*) override;
-  virtual void visit(const if_then_else*) override;
   virtual void visit(const call_stmt*) override;
   virtual void visit(const copy_stmt*) override;
   virtual void visit(const allocate*) override;

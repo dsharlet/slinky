@@ -60,7 +60,6 @@ enum class node_type {
   let_stmt,
   block,
   loop,
-  if_then_else,
   allocate,
   make_buffer,
   clone_buffer,
@@ -545,21 +544,6 @@ public:
   static constexpr node_type static_type = node_type::loop;
 };
 
-// Run `true_body` if `condition` is true, or `false_body` otherwise. Either body can be undefined, indicating that
-// nothing should happen in that case.
-class if_then_else : public stmt_node<if_then_else> {
-public:
-  expr condition;
-  stmt true_body;
-  stmt false_body;
-
-  void accept(node_visitor* v) const;
-
-  static stmt make(expr condition, stmt true_body, stmt false_body = stmt());
-
-  static constexpr node_type static_type = node_type::if_then_else;
-};
-
 // A helper containing sub-expressions that describe a dimension of a buffer, corresponding to `dim`.
 struct dim_expr {
   interval_expr bounds;
@@ -744,7 +728,6 @@ public:
   virtual void visit(const let_stmt*) = 0;
   virtual void visit(const block*) = 0;
   virtual void visit(const loop*) = 0;
-  virtual void visit(const if_then_else*) = 0;
   virtual void visit(const call_stmt*) = 0;
   virtual void visit(const copy_stmt*) = 0;
   virtual void visit(const allocate*) = 0;
@@ -817,11 +800,6 @@ public:
     op->bounds.max.accept(this);
     if (op->step.defined()) op->step.accept(this);
     if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const if_then_else* op) override {
-    op->condition.accept(this);
-    if (op->true_body.defined()) op->true_body.accept(this);
-    if (op->false_body.defined()) op->false_body.accept(this);
   }
   virtual void visit(const call_stmt* op) override {}
   virtual void visit(const copy_stmt* op) override {
@@ -902,7 +880,6 @@ inline void call::accept(node_visitor* v) const { v->visit(this); }
 inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void block::accept(node_visitor* v) const { v->visit(this); }
 inline void loop::accept(node_visitor* v) const { v->visit(this); }
-inline void if_then_else::accept(node_visitor* v) const { v->visit(this); }
 inline void call_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void copy_stmt::accept(node_visitor* v) const { v->visit(this); }
 inline void allocate::accept(node_visitor* v) const { v->visit(this); }
