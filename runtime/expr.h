@@ -743,117 +743,42 @@ public:
 
 class recursive_node_visitor : public node_visitor {
 public:
-  virtual void visit(const variable*) override {}
-  virtual void visit(const wildcard*) override {}
-  virtual void visit(const constant*) override {}
-  virtual void visit(const let* op) override {
-    for (const auto& p : op->lets) {
-      p.second.accept(this);
-    }
-    op->body.accept(this);
-  }
+  virtual void visit(const variable*) override;
+  virtual void visit(const wildcard*) override;
+  virtual void visit(const constant*) override;
+  virtual void visit(const let* op) override;
 
-  template <typename T>
-  void visit_binary(const T* op) {
-    op->a.accept(this);
-    op->b.accept(this);
-  }
+  virtual void visit(const add* op) override;
+  virtual void visit(const sub* op) override;
+  virtual void visit(const mul* op) override;
+  virtual void visit(const div* op) override;
+  virtual void visit(const mod* op) override;
+  virtual void visit(const class min* op) override;
+  virtual void visit(const class max* op) override;
+  virtual void visit(const equal* op) override;
+  virtual void visit(const not_equal* op) override;
+  virtual void visit(const less* op) override;
+  virtual void visit(const less_equal* op) override;
+  virtual void visit(const logical_and* op) override;
+  virtual void visit(const logical_or* op) override;
+  virtual void visit(const logical_not* op) override;
+  virtual void visit(const class select* op) override;
+  virtual void visit(const call* op) override;
 
-  virtual void visit(const add* op) override { visit_binary(op); }
-  virtual void visit(const sub* op) override { visit_binary(op); }
-  virtual void visit(const mul* op) override { visit_binary(op); }
-  virtual void visit(const div* op) override { visit_binary(op); }
-  virtual void visit(const mod* op) override { visit_binary(op); }
-  virtual void visit(const class min* op) override { visit_binary(op); }
-  virtual void visit(const class max* op) override { visit_binary(op); }
-  virtual void visit(const equal* op) override { visit_binary(op); }
-  virtual void visit(const not_equal* op) override { visit_binary(op); }
-  virtual void visit(const less* op) override { visit_binary(op); }
-  virtual void visit(const less_equal* op) override { visit_binary(op); }
-  virtual void visit(const logical_and* op) override { visit_binary(op); }
-  virtual void visit(const logical_or* op) override { visit_binary(op); }
-  virtual void visit(const logical_not* op) override { op->a.accept(this); }
-  virtual void visit(const class select* op) override {
-    op->condition.accept(this);
-    op->true_value.accept(this);
-    op->false_value.accept(this);
-  }
-  virtual void visit(const call* op) override {
-    for (const expr& i : op->args) {
-      if (i.defined()) i.accept(this);
-    }
-  }
-
-  virtual void visit(const let_stmt* op) override {
-    for (const auto& p : op->lets) {
-      p.second.accept(this);
-    }
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const block* op) override {
-    for (const auto& s : op->stmts) {
-      s.accept(this);
-    }
-  }
-  virtual void visit(const loop* op) override {
-    op->bounds.min.accept(this);
-    op->bounds.max.accept(this);
-    if (op->step.defined()) op->step.accept(this);
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const call_stmt* op) override {}
-  virtual void visit(const copy_stmt* op) override {
-    for (const expr& i : op->src_x) {
-      i.accept(this);
-    }
-  }
-  virtual void visit(const allocate* op) override {
-    for (const dim_expr& i : op->dims) {
-      i.bounds.min.accept(this);
-      i.bounds.max.accept(this);
-      i.stride.accept(this);
-      if (i.fold_factor.defined()) i.fold_factor.accept(this);
-    }
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const make_buffer* op) override {
-    op->base.accept(this);
-    op->elem_size.accept(this);
-    for (const dim_expr& i : op->dims) {
-      i.bounds.min.accept(this);
-      i.bounds.max.accept(this);
-      i.stride.accept(this);
-      if (i.fold_factor.defined()) i.fold_factor.accept(this);
-    }
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const clone_buffer* op) override {
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const crop_buffer* op) override {
-    for (const interval_expr& i : op->bounds) {
-      if (i.min.defined()) i.min.accept(this);
-      if (i.max.defined()) i.max.accept(this);
-    }
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const crop_dim* op) override {
-    if (op->bounds.min.defined()) op->bounds.min.accept(this);
-    if (op->bounds.max.defined()) op->bounds.max.accept(this);
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const slice_buffer* op) override {
-    for (const expr& i : op->at) {
-      if (i.defined()) i.accept(this);
-    }
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const slice_dim* op) override {
-    op->at.accept(this);
-    if (op->body.defined()) op->body.accept(this);
-  }
-  virtual void visit(const truncate_rank* op) override { op->body.accept(this); }
-  virtual void visit(const check* op) override { op->condition.accept(this); }
+  virtual void visit(const let_stmt* op) override;
+  virtual void visit(const block* op) override;
+  virtual void visit(const loop* op) override;
+  virtual void visit(const call_stmt* op) override;
+  virtual void visit(const copy_stmt* op) override;
+  virtual void visit(const allocate* op) override;
+  virtual void visit(const make_buffer* op) override;
+  virtual void visit(const clone_buffer* op) override;
+  virtual void visit(const crop_buffer* op) override;
+  virtual void visit(const crop_dim* op) override;
+  virtual void visit(const slice_buffer* op) override;
+  virtual void visit(const slice_dim* op) override;
+  virtual void visit(const truncate_rank* op) override;
+  virtual void visit(const check* op) override;
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }
