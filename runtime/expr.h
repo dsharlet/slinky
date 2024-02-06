@@ -343,7 +343,7 @@ public:
   std::vector<std::pair<symbol_id, expr>> lets;
   expr body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(std::vector<std::pair<symbol_id, expr>> lets, expr body);
 
@@ -356,7 +356,7 @@ class variable : public expr_node<variable> {
 public:
   symbol_id sym;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(symbol_id sym);
 
@@ -373,7 +373,7 @@ public:
   symbol_id sym;
   std::function<bool(const expr&)> matches;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(symbol_id sym, std::function<bool(const expr&)> matches);
 
@@ -384,7 +384,7 @@ class constant : public expr_node<constant> {
 public:
   index_t value;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(index_t value);
   static expr make(const void* value);
@@ -396,7 +396,7 @@ public:
   class op : public expr_node<class op> {                                                                              \
   public:                                                                                                              \
     expr a, b;                                                                                                         \
-    void accept(node_visitor* v) const;                                                                                \
+    void accept(node_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr node_type static_type = node_type::op;                                                            \
   };
@@ -421,7 +421,7 @@ class logical_not : public expr_node<logical_not> {
 public:
   expr a;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(expr a);
 
@@ -436,7 +436,7 @@ public:
   expr true_value;
   expr false_value;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(expr condition, expr true_value, expr false_value);
 
@@ -448,7 +448,7 @@ public:
   slinky::intrinsic intrinsic;
   std::vector<expr> args;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static expr make(slinky::intrinsic i, std::vector<expr> args);
 
@@ -469,7 +469,7 @@ public:
   symbol_list inputs;
   symbol_list outputs;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(callable target, symbol_list inputs, symbol_list outputs);
 
@@ -484,7 +484,7 @@ public:
   std::vector<symbol_id> dst_x;
   std::vector<char> padding;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(
       symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::vector<char> padding);
@@ -501,7 +501,7 @@ public:
   std::vector<std::pair<symbol_id, expr>> lets;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(std::vector<std::pair<symbol_id, expr>> lets, stmt body);
 
@@ -514,7 +514,7 @@ class block : public stmt_node<block> {
 public:
   std::vector<stmt> stmts;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   // Create a single block to contain all of the `stmts`.
   // Nested block statements are flattened, and undef stmts are removed.
@@ -537,7 +537,7 @@ public:
   expr step;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body);
 
@@ -570,7 +570,7 @@ public:
   std::vector<dim_expr> dims;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
@@ -587,7 +587,7 @@ public:
   std::vector<dim_expr> dims;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
@@ -603,7 +603,7 @@ public:
   symbol_id src;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, symbol_id src, stmt body);
 
@@ -619,7 +619,7 @@ public:
   std::vector<interval_expr> bounds;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, std::vector<interval_expr> bounds, stmt body);
 
@@ -634,7 +634,7 @@ public:
   interval_expr bounds;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, int dim, interval_expr bounds, stmt body);
 
@@ -651,7 +651,7 @@ public:
   std::vector<expr> at;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, std::vector<expr> at, stmt body);
 
@@ -667,7 +667,7 @@ public:
   expr at;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, int dim, expr at, stmt body);
 
@@ -681,7 +681,7 @@ public:
   int rank;
   stmt body;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(symbol_id sym, int rank, stmt body);
 
@@ -693,7 +693,7 @@ class check : public stmt_node<check> {
 public:
   expr condition;
 
-  void accept(node_visitor* v) const;
+  void accept(node_visitor* v) const override;
 
   static stmt make(expr condition);
 

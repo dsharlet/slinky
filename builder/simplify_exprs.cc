@@ -61,14 +61,14 @@ public:
     op->b.accept(this);
   }
 
-  void visit(const add* op) { check(op); };
-  void visit(const mul* op) { check(op); };
-  void visit(const class min* op) { check(op); };
-  void visit(const class max* op) { check(op); };
-  void visit(const equal* op) { check(op); };
-  void visit(const not_equal* op) { check(op); };
-  void visit(const logical_and* op) { check(op); };
-  void visit(const logical_or* op) { check(op); };
+  void visit(const add* op) override { check(op); };
+  void visit(const mul* op) override { check(op); };
+  void visit(const class min* op) override { check(op); };
+  void visit(const class max* op) override { check(op); };
+  void visit(const equal* op) override { check(op); };
+  void visit(const not_equal* op) override { check(op); };
+  void visit(const logical_and* op) override { check(op); };
+  void visit(const logical_or* op) override { check(op); };
 };
 
 // We need to generate a lot of rules that are equivalent except for commutation.

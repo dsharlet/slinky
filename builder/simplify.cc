@@ -969,9 +969,9 @@ interval_expr where_true(const expr& condition, symbol_id var) {
   public:
     std::vector<expr> leaves;
 
-    void visit(const variable* op) { leaves.push_back(op); }
-    void visit(const constant* op) { leaves.push_back(op); }
-    void visit(const call* op) {
+    void visit(const variable* op) override { leaves.push_back(op); }
+    void visit(const constant* op) override { leaves.push_back(op); }
+    void visit(const call* op) override {
       if (is_buffer_intrinsic(op->intrinsic)) leaves.push_back(op);
     }
   };
