@@ -146,9 +146,11 @@ public:
 
   void visit(const let_stmt* l) override {
     *this << indent() << "{\n";
+    ++depth;
     for (const auto& s : l->lets) {
-      *this << "let " << s.first << " = " << s.second << ";\n";
+      *this << indent() << "let " << s.first << " = " << s.second << ";\n";
     }
+    --depth;
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -226,17 +228,22 @@ public:
   }
 
   void visit(const make_buffer* n) override {
-    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', " << n->base << ", "
-          << n->elem_size << ", [";
+    *this << indent() << "{\n";
+    ++depth;
+    *this << indent() << "let __base = " << n->base << ";\n";
+    *this << indent() << "let __elem_size = " << n->elem_size << ";\n";
+    *this << indent() << "let __dims = [";
     if (!n->dims.empty()) {
       *this << "\n";
       *this << indent(2);
       print_vector(n->dims, ",\n" + indent(2));
       *this << "\n";
-      *this << indent(1);
     }
-    *this << "]);\n";
+    *this << indent() << "];\n";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);";
     *this << n->body;
+    *this << indent() << "}\n";
+    --depth;
     *this << indent() << "}\n";
   }
 
