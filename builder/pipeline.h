@@ -230,12 +230,14 @@ public:
     return make(std::move(impl), std::move(inputs), std::move(outputs));
   }
 
+  // Make a copy from multiple inputs with undefined padding.
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
-  static func make_copy(input in, output out, std::optional<std::vector<char>> padding = {}) {
-    return func(std::move(in), {std::move(out)}, std::move(padding));
-  }
   static func make_copy(input in1, input in2, output out) {
     return func({std::move(in1), std::move(in2)}, {std::move(out)});
+  }
+  // Make a copy from a single input to a single output, with no padding by default.
+  static func make_copy(input in, output out, std::optional<std::vector<char>> padding = {}) {
+    return func(std::move(in), {std::move(out)}, std::move(padding));
   }
 
   const call_stmt::callable& impl() const { return impl_; }
