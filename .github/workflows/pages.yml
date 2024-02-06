@@ -32,6 +32,11 @@ jobs:
         run: |
           rm -rf /tmp/slinky_viz
           mkdir /tmp/slinky_viz
+          ls -l
+          ls -l bazel-testlogs/
+          ls -l bazel-testlogs/builder/
+          ls -l bazel-testlogs/builder/pipeline_test/
+          ls -l bazel-testlogs/builder/pipeline_test/test.outputs
           unzip bazel-testlogs/builder/pipeline_test/test.outputs/outputs.zip -d /tmp/slinky_viz
           ls -l  /tmp/slinky_viz
 
