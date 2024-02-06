@@ -10,8 +10,6 @@
 
 namespace slinky {
 
-// TODO: This seems like a bazel hack that won't be reliable. Find a better way to
-// write to visualizations/ when running bazel run (it's hopeless with bazel test).
 std::string viz_dir() {
   const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (outputs) {
