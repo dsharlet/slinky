@@ -65,6 +65,7 @@ cc_test(
         "@googletest//:gtest_main",
         "//runtime",
         "//runtime:thread_pool",
+        "//runtime:visualize",
     ],
 )
 

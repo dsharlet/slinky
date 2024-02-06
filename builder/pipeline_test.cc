@@ -6,8 +6,20 @@
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
+#include "runtime/visualize.h"
 
 namespace slinky {
+
+// TODO: This seems like a bazel hack that won't be reliable. Find a better way to
+// write to visualizations/ when running bazel run (it's hopeless with bazel test).
+std::string viz_dir() {
+  const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
+  if (outputs) {
+    return outputs;
+  } else {
+    return "";
+  }
+}
 
 thread_pool threads;
 
@@ -85,7 +97,7 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
   return 0;
 }
 
@@ -598,7 +610,7 @@ TEST(pipeline, stencil_chain) {
 
       // Run the pipeline.
       const int W = 20;
-      const int H = 10;
+      const int H = 30;
       buffer<short, 2> in_buf({W + 4, H + 4});
       in_buf.translate(-2, -2);
       buffer<short, 2> out_buf({W, H});
@@ -635,6 +647,11 @@ TEST(pipeline, stencil_chain) {
         for (int x = 0; x < W; ++x) {
           ASSERT_EQ(ref_out(x, y), out_buf(x, y));
         }
+      }
+
+      // Also visualize this pipeline.
+      if (lm == loop_mode::serial) {
+        visualize(viz_dir() + "stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
       }
     }
   }
@@ -988,60 +1005,68 @@ TEST(pipeline, copied_result) {
 }
 
 TEST(pipeline, concatenated_result) {
-  // Make the pipeline
-  node_context ctx;
+  for (bool no_alias_buffers : {false, true}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+    auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
+    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+    auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+    auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
 
-  intm1->dim(1).bounds = in1->dim(1).bounds;
-  intm2->dim(1).bounds = in2->dim(1).bounds;
+    intm1->dim(1).bounds = in1->dim(1).bounds;
+    intm2->dim(1).bounds = in2->dim(1).bounds;
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-  func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
-  func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-  func concatenated = func::make_copy(
-      {intm1, {point(x), point(y)}}, {intm2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
+    // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+    func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
+    func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
+    func concatenated = func::make_copy(
+        {intm1, {point(x), point(y)}}, {intm2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+    // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case.
+    // We shouldn't need to disable checks.
+    pipeline p =
+        build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true, .no_alias_buffers = no_alias_buffers});
 
-  // Run the pipeline.
-  const int W = 20;
-  const int H1 = 4;
-  const int H2 = 7;
-  buffer<short, 2> in1_buf({W, H1});
-  buffer<short, 2> in2_buf({W, H2});
-  init_random(in1_buf);
-  init_random(in2_buf);
+    // Run the pipeline.
+    const int W = 20;
+    const int H1 = 4;
+    const int H2 = 7;
+    buffer<short, 2> in1_buf({W, H1});
+    buffer<short, 2> in2_buf({W, H2});
+    init_random(in1_buf);
+    init_random(in2_buf);
 
-  buffer<short, 2> out_buf({W, H1 + H2});
-  out_buf.allocate();
+    buffer<short, 2> out_buf({W, H1 + H2});
+    out_buf.allocate();
 
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
-
-  for (int y = 0; y < H1 + H2; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
+    // Not having span(std::initializer_list<T>) is unfortunate.
+    const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+    if (!no_alias_buffers) {
+      ASSERT_EQ(eval_ctx.heap.total_count, 0);
     }
+
+    for (int y = 0; y < H1 + H2; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
+      }
+    }
+
+    // Also visualize this pipeline.
+    visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
   }
 }
 
 TEST(pipeline, padded_stencil) {
-  for (int schedule : {0, 1, 2, 3}) {
+  for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
 
@@ -1068,14 +1093,13 @@ TEST(pipeline, padded_stencil) {
       padded.compute_root();
       break;
     case 2: stencil.loops({y}); break;
-    case 3: stencil.loops({y}); break;
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
     const int W = 20;
-    const int H = 10;
+    const int H = 30;
     buffer<short, 2> in_buf({W, H});
     buffer<short, 2> out_buf({W, H});
 
@@ -1110,6 +1134,9 @@ TEST(pipeline, padded_stencil) {
         ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
       }
     }
+
+    // Also visualize this pipeline.
+    visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
   }
 }
 
@@ -1180,7 +1207,7 @@ TEST(pipeline, parallel_stencils) {
 
   // Run the pipeline.
   const int W = 20;
-  const int H = 10;
+  const int H = 30;
   buffer<short, 2> in1_buf({W + 2, H + 2});
   buffer<short, 2> in2_buf({W + 4, H + 4});
   in1_buf.translate(-1, -1);
@@ -1222,6 +1249,9 @@ TEST(pipeline, parallel_stencils) {
       ASSERT_EQ(ref_out(x, y), out_buf(x, y));
     }
   }
+
+  // Also visualize this pipeline
+  visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
 }
 
 }  // namespace slinky

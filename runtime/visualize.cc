@@ -68,7 +68,7 @@ public:
     if (e.defined()) {
       e.accept(this);
     } else {
-      os << "undef()";
+      os << "NaN";
     }
     return *this;
   }
@@ -470,6 +470,7 @@ function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {
+    if (isNaN(at[d])) continue;
     result = result + flat_offset_dim(b.dims[d], at[d]);
   }
   return result;
@@ -561,7 +562,7 @@ let __event_slider = document.getElementById('event_slider');
 let __autoplay = true;
 __event_slider.max = __end_t - 1;
 document.addEventListener('keyup', event => { if (event.code === 'Space') __autoplay = !__autoplay; });
-let rate = 3000 / __end_t;
+let rate = Math.min(1000, 5000 / __end_t);
 setInterval(function() {
   if (__autoplay) {
     __current_t = (__current_t + 1) % __end_t;
@@ -573,9 +574,9 @@ setInterval(function() {
 
 }  // namespace
 
-void visualize(const char* filename, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
+void visualize(const std::string& filename, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
     pipeline::buffers outputs, const node_context* ctx) {
-  std::ofstream file(filename);
+  std::ofstream file(filename.c_str());
   file << header;
   js_printer jsp(file, ctx);
 
@@ -617,7 +618,7 @@ void visualize(const char* filename, const pipeline& p, pipeline::scalars args, 
   file << footer << std::endl;
 }
 
-void visualize(const char* filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
+void visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
     const node_context* ctx) {
   visualize(filename, p, {}, inputs, outputs, ctx);
 }
