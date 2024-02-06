@@ -339,6 +339,8 @@ public:
 // out of another expression.
 class let : public expr_node<let> {
 public:
+  // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
+  // list can use the values defined by earlier lets in the list.
   std::vector<std::pair<symbol_id, expr>> lets;
   expr body;
 
@@ -495,6 +497,8 @@ public:
 // out of another stmt.
 class let_stmt : public stmt_node<let_stmt> {
 public:
+  // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
+  // list can use the values defined by earlier lets in the list.
   std::vector<std::pair<symbol_id, expr>> lets;
   stmt body;
 

@@ -87,6 +87,8 @@ public:
     return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
   }
 
+  printer& operator<<(const std::pair<symbol_id, expr>& let) { return *this << let.first << " = " << let.second; }
+
   template <typename T>
   void print_vector(const std::vector<T>& v, const std::string& sep = ", ") {
     for (std::size_t i = 0; i < v.size(); ++i) {
@@ -130,21 +132,20 @@ public:
   void visit(const constant* c) override { *this << c->value; }
 
   void visit(const let* l) override {
-    *this << "let [";
-    for (const auto& s : l->lets) {
-      *this << s.first << " = " << s.second << "; ";
-    }
-    *this << "] in " << l->body;
+    *this << "let {";
+    print_vector(l->lets);
+    *this << "} in " << l->body;
   }
 
   void visit(const let_stmt* l) override {
-    *this << indent() << "let [\n";
-    ++depth;
-    for (const auto& s : l->lets) {
-      *this << indent() << s.first << " = " << s.second << ";\n";
+    if (l->lets.size() == 1) {
+      *this << indent() << "let " << l->lets.front().first << " = " << l->lets.front().second << " in {\n";
+    } else {
+      *this << indent() << "let {\n";
+      *this << indent(2);
+      print_vector(l->lets, ",\n" + indent(2));
+      *this << "\n" << indent() << "} in {\n";
     }
-    --depth;
-    *this << indent() << "] in {\n";
     *this << l->body;
     *this << indent() << "}\n";
   }
