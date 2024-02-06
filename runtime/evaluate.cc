@@ -174,8 +174,21 @@ public:
 
   template <typename T>
   void visit_let(const T* op) {
-    auto set_value = set_value_in_scope(context, op->sym, eval_expr(op->value));
+    // This is a bit ugly but we really want to avoid heap allocations here.
+    const size_t size = op->lets.size();
+    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
+    (void) new (old_values) std::optional<index_t>[size];
+
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      old_values[i] = context[let.first];
+      context[let.first] = eval_expr(let.second);
+    }
     visit(op->body);
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      context[let.first] = old_values[i];
+    }
   }
 
   void visit(const let* op) override { visit_let(op); }

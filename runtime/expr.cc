@@ -57,18 +57,24 @@ const T* make_bin_op(expr a, expr b) {
 }
 
 template <typename T, typename Body>
-const T* make_let(symbol_id sym, expr value, Body body) {
+const T* make_let(std::vector<std::pair<symbol_id, expr>> lets, Body body) {
   auto n = new T();
-  n->sym = sym;
-  n->value = std::move(value);
-  n->body = std::move(body);
+  n->lets = std::move(lets);
+  if (const T* l = body.template as<T>()) {
+    n->lets.insert(n->lets.end(), l->lets.begin(), l->lets.end());
+    n->body = l->body;
+  } else {
+    n->body = std::move(body);
+  }
   return n;
 }
 
-expr let::make(symbol_id sym, expr value, expr body) { return make_let<let>(sym, std::move(value), std::move(body)); }
+expr let::make(std::vector<std::pair<symbol_id, expr>> lets, expr body) {
+  return make_let<let>(std::move(lets), std::move(body));
+}
 
-stmt let_stmt::make(symbol_id sym, expr value, stmt body) {
-  return make_let<let_stmt>(sym, std::move(value), std::move(body));
+stmt let_stmt::make(std::vector<std::pair<symbol_id, expr>> lets, stmt body) {
+  return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
 // TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user

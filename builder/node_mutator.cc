@@ -11,12 +11,19 @@ namespace {
 
 template <typename T>
 auto mutate_let(node_mutator* this_, const T* op) {
-  expr value = this_->mutate(op->value);
+  std::vector<std::pair<symbol_id, expr>> lets;
+  lets.reserve(op->lets.size());
+  bool changed = false;
+  for (const auto& s : op->lets) {
+    lets.emplace_back(s.first, this_->mutate(s.second));
+    changed = changed || !lets.back().second.same_as(s.second);
+  }
   auto body = this_->mutate(op->body);
-  if (value.same_as(op->value) && body.same_as(op->body)) {
+  changed = changed || !body.same_as(op->body);
+  if (!changed) {
     return decltype(body){op};
   } else {
-    return T::make(op->sym, std::move(value), std::move(body));
+    return T::make(std::move(lets), std::move(body));
   }
 }
 
@@ -36,9 +43,7 @@ expr mutate_binary(node_mutator* this_, const T* op) {
 stmt clone_with_new_body(const loop* op, stmt new_body) {
   return loop::make(op->sym, op->mode, op->bounds, op->step, std::move(new_body));
 }
-stmt clone_with_new_body(const let_stmt* op, stmt new_body) {
-  return let_stmt::make(op->sym, op->value, std::move(new_body));
-}
+stmt clone_with_new_body(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body)); }
 stmt clone_with_new_body(const allocate* op, stmt new_body) {
   return allocate::make(op->sym, op->storage, op->elem_size, op->dims, std::move(new_body));
 }

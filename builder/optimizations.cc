@@ -426,9 +426,7 @@ public:
       result = slice_dim::make(op->dst, d.second, var(d.first), result);
       result = loop::make(d.first, loop_mode::serial, buffer_bounds(dst_var, d.second), 1, result);
     }
-    for (const auto& i : lets) {
-      result = let_stmt::make(i.first, i.second, result);
-    }
+    result = let_stmt::make(std::move(lets), result);
 
     set_result(result);
   }
@@ -464,19 +462,14 @@ std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> 
   }
 }
 
-std::tuple<stmt, stmt, stmt> split_body(const stmt& body, symbol_id var) {
-  symbol_id vars[] = {var};
-  return split_body(body, vars);
-}
-
 class scope_reducer : public node_mutator {
 public:
   template <typename T>
-  void visit_stmt(const T* op) {
+  void visit_stmt(const T* op, span<const symbol_id> vars) {
     stmt body = mutate(op->body);
 
     stmt before, new_body, after;
-    std::tie(before, new_body, after) = split_body(body, op->sym);
+    std::tie(before, new_body, after) = split_body(body, vars);
 
     if (body.same_as(op->body) && !before.defined() && !after.defined()) {
       set_result(op);
@@ -489,7 +482,20 @@ public:
     }
   }
 
-  void visit(const let_stmt* op) override { visit_stmt(op); }
+  template <typename T>
+  void visit_stmt(const T* op) {
+    symbol_id vars[] = {op->sym};
+    visit_stmt(op, vars);
+  }
+
+  void visit(const let_stmt* op) override {
+    std::vector<symbol_id> vars;
+    vars.reserve(op->lets.size());
+    for (const auto& s : op->lets) {
+      vars.push_back(s.first);
+    }
+    visit_stmt(op, vars);
+  }
   void visit(const allocate* op) override { visit_stmt(op); }
   void visit(const make_buffer* op) override { visit_stmt(op); }
   void visit(const clone_buffer* op) override { visit_stmt(op); }
