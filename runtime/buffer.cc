@@ -185,7 +185,8 @@ void bubble_sort(It begin, It end) {
   }
 }
 
-void compute_padding(index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim, index_t src_fold_factor = dim::unfolded) {
+void compute_padding(
+    index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim, index_t src_fold_factor = dim::unfolded) {
   if (dst.end() <= src_begin || dst.begin() >= src_end) {
     // This dimension is all padding.
     dim.pad_before = dim.total_size;
