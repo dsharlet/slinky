@@ -104,7 +104,7 @@ class replace_copy_with_pad : public node_mutator {
 public:
   replace_copy_with_pad(symbol_id src, symbol_id dst) : src(src), dst(dst) {}
 
-  void visit(const copy_stmt* op) {
+  void visit(const copy_stmt* op) override {
     if (op->src == src && op->dst == dst) {
       if (op->padding.empty()) {
         set_result(stmt());

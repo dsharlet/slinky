@@ -593,7 +593,6 @@ var::operator expr() const {
   return expr(variable::make(sym_));
 }
 
-
 void recursive_node_visitor::visit(const variable*) {}
 void recursive_node_visitor::visit(const wildcard*) {}
 void recursive_node_visitor::visit(const constant*) {}

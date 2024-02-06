@@ -54,13 +54,13 @@ class input_crop_remover : public node_mutator {
   symbol_map<bool> used_as_output;
 
 public:
-  void visit(const call_stmt* op) {
+  void visit(const call_stmt* op) override {
     for (symbol_id i : op->outputs) {
       used_as_output[i] = true;
     }
     set_result(op);
   }
-  void visit(const copy_stmt* op) {
+  void visit(const copy_stmt* op) override {
     used_as_output[op->dst] = true;
     set_result(op);
   }
@@ -85,8 +85,8 @@ public:
     }
   }
 
-  void visit(const crop_buffer* op) { visit_crop(op); }
-  void visit(const crop_dim* op) { visit_crop(op); }
+  void visit(const crop_buffer* op) override { visit_crop(op); }
+  void visit(const crop_dim* op) override { visit_crop(op); }
 };
 
 // Keep substituting substitutions until nothing happens.
