@@ -13,6 +13,8 @@ cc_library(
         "node_mutator.cc",
         "optimizations.cc",
         "simplify.cc",
+        "simplify_bounds.cc",
+        "simplify_exprs.cc",
         "substitute.cc",
     ],
     hdrs = [

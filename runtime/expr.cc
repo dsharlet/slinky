@@ -593,4 +593,122 @@ var::operator expr() const {
   return expr(variable::make(sym_));
 }
 
+
+void recursive_node_visitor::visit(const variable*) {}
+void recursive_node_visitor::visit(const wildcard*) {}
+void recursive_node_visitor::visit(const constant*) {}
+
+void recursive_node_visitor::visit(const let* op) {
+  for (const auto& p : op->lets) {
+    p.second.accept(this);
+  }
+  op->body.accept(this);
+}
+
+namespace {
+
+template <typename T>
+void visit_binary(recursive_node_visitor* _this, const T* op) {
+  op->a.accept(_this);
+  op->b.accept(_this);
+}
+
+}  // namespace
+
+void recursive_node_visitor::visit(const add* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const sub* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const mul* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const div* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const mod* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const class min* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const class max* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const equal* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const not_equal* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const less* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const less_equal* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const logical_and* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const logical_or* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const logical_not* op) { op->a.accept(this); }
+void recursive_node_visitor::visit(const class select* op) {
+  op->condition.accept(this);
+  op->true_value.accept(this);
+  op->false_value.accept(this);
+}
+void recursive_node_visitor::visit(const call* op) {
+  for (const expr& i : op->args) {
+    if (i.defined()) i.accept(this);
+  }
+}
+
+void recursive_node_visitor::visit(const let_stmt* op) {
+  for (const auto& p : op->lets) {
+    p.second.accept(this);
+  }
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const block* op) {
+  for (const auto& s : op->stmts) {
+    s.accept(this);
+  }
+}
+void recursive_node_visitor::visit(const loop* op) {
+  op->bounds.min.accept(this);
+  op->bounds.max.accept(this);
+  if (op->step.defined()) op->step.accept(this);
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const call_stmt* op) {}
+void recursive_node_visitor::visit(const copy_stmt* op) {
+  for (const expr& i : op->src_x) {
+    i.accept(this);
+  }
+}
+void recursive_node_visitor::visit(const allocate* op) {
+  for (const dim_expr& i : op->dims) {
+    i.bounds.min.accept(this);
+    i.bounds.max.accept(this);
+    i.stride.accept(this);
+    if (i.fold_factor.defined()) i.fold_factor.accept(this);
+  }
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const make_buffer* op) {
+  op->base.accept(this);
+  op->elem_size.accept(this);
+  for (const dim_expr& i : op->dims) {
+    i.bounds.min.accept(this);
+    i.bounds.max.accept(this);
+    i.stride.accept(this);
+    if (i.fold_factor.defined()) i.fold_factor.accept(this);
+  }
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const clone_buffer* op) {
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const crop_buffer* op) {
+  for (const interval_expr& i : op->bounds) {
+    if (i.min.defined()) i.min.accept(this);
+    if (i.max.defined()) i.max.accept(this);
+  }
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const crop_dim* op) {
+  if (op->bounds.min.defined()) op->bounds.min.accept(this);
+  if (op->bounds.max.defined()) op->bounds.max.accept(this);
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const slice_buffer* op) {
+  for (const expr& i : op->at) {
+    if (i.defined()) i.accept(this);
+  }
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const slice_dim* op) {
+  op->at.accept(this);
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const truncate_rank* op) { op->body.accept(this); }
+void recursive_node_visitor::visit(const check* op) { op->condition.accept(this); }
+
 }  // namespace slinky
