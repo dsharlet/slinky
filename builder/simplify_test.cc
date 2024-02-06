@@ -139,9 +139,7 @@ TEST(simplify, buffer_intrinsics) {
 }
 
 TEST(simplify, bounds) {
-  test_simplify(
-      loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)),
-      stmt());
+  test_simplify(loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)), stmt());
   test_simplify(loop::make(x.sym(), loop_mode::serial, min_extent(x, z), z, check::make(y)), check::make(y));
 
   test_simplify(
