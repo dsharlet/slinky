@@ -254,6 +254,7 @@ public:
   // dimension is "innermost".
   buffer(span<const index_t> extents) : buffer() {
     assert(extents.size() <= rank);
+    rank = extents.size();
     index_t stride = elem_size;
     slinky::dim* d = dims;
     for (index_t extent : extents) {

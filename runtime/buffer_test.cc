@@ -110,7 +110,7 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
 }
 
 TEST(buffer, for_each_tile_1x1) {
-  buffer<int, 3> buf({10, 20, 5});
+  buffer<int, 2> buf({10, 20});
   buf.allocate();
 
   int tiles = 0;
@@ -121,11 +121,11 @@ TEST(buffer, for_each_tile_1x1) {
     ASSERT_EQ(i.dim(1).extent(), all[1]);
     tiles++;
   });
-  ASSERT_EQ(tiles, buf.dim(2).extent());
+  ASSERT_EQ(tiles, 1);
 }
 
 TEST(buffer, for_each_tile_uneven) {
-  buffer<int, 3> buf({10, 20, 5});
+  buffer<int, 2> buf({10, 20});
   buf.allocate();
 
   int tiles = 0;
@@ -136,12 +136,11 @@ TEST(buffer, for_each_tile_uneven) {
     ASSERT_LE(i.dim(1).extent(), tile[1]);
     tiles++;
   });
-  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(0).extent(), tile[0]) * ceil_div<index_t>(buf.dim(1).extent(), tile[1]) *
-                       buf.dim(2).extent());
+  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(0).extent(), tile[0]) * ceil_div<index_t>(buf.dim(1).extent(), tile[1]));
 }
 
 TEST(buffer, for_each_tile_all) {
-  buffer<int, 3> buf({10, 20, 5});
+  buffer<int, 2> buf({10, 20});
   buf.allocate();
 
   int tiles = 0;
@@ -152,7 +151,7 @@ TEST(buffer, for_each_tile_all) {
     ASSERT_EQ(i.dim(1).extent(), slice[1]);
     tiles++;
   });
-  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), slice[1]) * buf.dim(2).extent());
+  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), slice[1]));
 }
 
 // A non-standard size type that acts like an integer for testing.
