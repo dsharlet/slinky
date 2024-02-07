@@ -71,3 +71,12 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_binary(
+    name = "buffer_benchmark",
+    srcs = ["buffer_benchmark.cc"],
+    deps = [
+        ":runtime",
+        "@google_benchmark//:benchmark_main",
+    ],
+)
