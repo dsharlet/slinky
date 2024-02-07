@@ -30,9 +30,7 @@ TEST(copy, trivial_1d) {
   // This copy should be implemented as a single call to copy.
   func copy = func::make_copy({in, {point(x + dx)}}, {out, {x}}, padding);
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {dx}, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {dx}, {in}, {out});
 
   const int W = 10;
   buffer<int, 1> out_buf({W});
@@ -78,9 +76,7 @@ TEST(copy, trivial_2d) {
   // This copy should be implemented as a single call to copy.
   func copy = func::make_copy({in, {point(x), point(y + dy)}}, {out, {x, y}}, padding);
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {dy}, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {dy}, {in}, {out});
 
   // Run the pipeline.
   const int H = 20;
@@ -424,9 +420,7 @@ TEST(copy, concatenate) {
   func concat =
       func::make_copy({in1, {point(x), point(y)}}, {in2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   const int W = 8;
   const int H1 = 5;

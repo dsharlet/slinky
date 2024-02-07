@@ -164,17 +164,20 @@ class pipeline_builder {
   std::set<buffer_expr_ptr> produced, consumed;
   std::set<buffer_expr_ptr> allocated;
 
+  const std::vector<buffer_expr_ptr>& pipeline_inputs;
+  const std::vector<buffer_expr_ptr>& pipeline_outputs;
+  std::set<buffer_expr_ptr>& pipeline_constants;
   stmt result;
 
 public:
-  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-      std::set<buffer_expr_ptr>& constants) {
+  pipeline_builder(const std::vector<buffer_expr_ptr>& i, const std::vector<buffer_expr_ptr>& o,
+      std::set<buffer_expr_ptr>& c) : pipeline_inputs(i), pipeline_outputs(o), pipeline_constants(c) {
     // To start with, we need to produce the outputs.
-    for (auto& i : outputs) {
+    for (auto& i : pipeline_outputs) {
       to_produce.insert(i);
       allocated.insert(i);
     }
-    for (auto& i : inputs) {
+    for (auto& i : pipeline_inputs) {
       produced.insert(i);
     }
 
@@ -190,7 +193,7 @@ public:
         for (const func::input& j : i->producer()->inputs()) {
           if (!to_produce.count(j.buffer)) {
             if (j.buffer->constant()) {
-              constants.insert(j.buffer);
+              pipeline_constants.insert(j.buffer);
             } else {
               produce_next.insert(j.buffer);
             }
@@ -287,11 +290,23 @@ public:
     // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
     for (const func::input& i : f->inputs()) {
       box_expr crop(i.buffer->rank());
+      bool is_pipeline_input = false;
+      if (!f->defined() && f->padding()) {
+        for (const auto& pipeline_input: pipeline_inputs) {
+          is_pipeline_input = is_pipeline_input || (i.sym() == pipeline_input->sym());
+        }
+      }
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-        // TODO (https://github.com/dsharlet/slinky/issues/21): We may have been given bounds on the input that are
-        // smaller than the bounds implied by the output, e.g. in the case of copy with padding.
-        expr min = substitute(i.bounds[d].min, output_mins);
-        expr max = substitute(i.bounds[d].max, output_maxs);
+        expr min, max;
+        // If the function is copy and has padding applied to it then
+        // any input will satisfy it, so we just use input buffer dims as bounds.
+        if (!f->defined() && f->padding() && is_pipeline_input) {
+          min = i.buffer->dim(d).min();
+          max = i.buffer->dim(d).min();
+        } else {
+          min = substitute(i.bounds[d].min, output_mins);
+          max = substitute(i.bounds[d].max, output_maxs);
+        }
         // The bounds may have been negated.
         crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
