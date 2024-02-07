@@ -368,8 +368,7 @@ void for_each_contiguous_slice(
     // already points to the min.
     for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
     for (index_t i = begin + 1; i < end; ++i) {
-      for_each_contiguous_slice(
-          offset_bytes(base, dim.flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
+      for_each_contiguous_slice(offset_bytes(base, dim.flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
     }
   }
 }
@@ -460,20 +459,16 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, F&& f) 
   }
 }
 
-// Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a tuple, where each
-// element can be an integer (or `std::integral_constant`), or `all`, indicating that the dimension
-// should be passed unmodified to `f`. Dimensions after the size of the tuple are sliced.
+// Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
+// dimension.
 template <typename F>
 void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
   std::size_t tile_rank = tile.size();
-  assert(buf.rank >= tile_rank);
+  assert(buf.rank == tile_rank);
   // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
   // also restore it to its original state... not thread safe though in case buf is being shared
   // with another thread.
-  for_each_slice(tile_rank, buf, [&f, tile = tile.data()](const raw_buffer& buf) {
-    // GCC struggles with capturing constexprs.
-    internal::for_each_tile(tile, const_cast<raw_buffer&>(buf), buf.rank - 1, f);
-  });
+  internal::for_each_tile(tile, const_cast<raw_buffer&>(buf), buf.rank - 1, f);
 }
 
 }  // namespace slinky
