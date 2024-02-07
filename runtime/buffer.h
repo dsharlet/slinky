@@ -364,13 +364,6 @@ void for_each_slice(std::size_t slice_rank, raw_buffer& buf, const F& f) {
   buf.rank += 1;
 }
 
-inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
-    return false;
-  }
-  return inner.stride() * inner.extent() == outer.stride();
-}
-
 struct for_each_contiguous_slice_dim {
   union {
     // For loop_folded to call flat_offset_bytes

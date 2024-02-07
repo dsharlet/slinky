@@ -345,6 +345,17 @@ void fill(const raw_buffer& dst, const void* value) {
 
 namespace internal {
 
+namespace {
+
+bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+}  // namespace
+
 void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contiguous_slice_dim* dims) {
   for_each_contiguous_slice_dim* next = dims;
   index_t slice_extent = 1;
