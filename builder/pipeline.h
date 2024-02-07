@@ -146,8 +146,8 @@ public:
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::optional<std::vector<char>> padding);
-  func(func&&);
-  func& operator=(func&&);
+  func(func&&) noexcept;
+  func& operator=(func&&) noexcept;
   ~func();
   func(const func&) = delete;
   func& operator=(const func&) = delete;

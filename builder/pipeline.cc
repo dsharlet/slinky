@@ -83,8 +83,8 @@ func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inpu
   padding_ = std::vector<char>{};
 }
 
-func::func(func&& m) { *this = std::move(m); }
-func& func::operator=(func&& m) {
+func::func(func&& m) noexcept { *this = std::move(m); }
+func& func::operator=(func&& m) noexcept {
   if (this == &m) return *this;
   m.remove_this_from_buffers();
   impl_ = std::move(m.impl_);

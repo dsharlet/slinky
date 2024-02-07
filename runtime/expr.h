@@ -311,7 +311,7 @@ public:
   stmt(const base_stmt_node* n) : n_(n) {}
 
   stmt& operator=(const stmt&) = default;
-  stmt& operator=(stmt&&) = default;
+  stmt& operator=(stmt&&) noexcept = default;
 
   void accept(node_visitor* v) const {
     assert(defined());
@@ -1008,14 +1008,14 @@ public:
     ctx_value = std::move(value);
   }
 
-  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
+  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other) noexcept
       : context_(other.context_), sym_(other.sym_), old_value_(std::move(other.old_value_)) {
     // Don't let other.~scoped_value() unset this value.
     other.context_ = nullptr;
   }
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
-  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
+  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) noexcept {
     context_ = other.context_;
     sym_ = other.sym_;
     old_value_ = std::move(other.old_value_);
