@@ -344,25 +344,25 @@ struct for_each_contiguous_slice_dim {
   index_t begin;
   index_t extent;
   enum {
-    call_f,
-    loop_linear,
-    loop_folded,
+    call_f,  // Uses extent
+    loop_linear,  // Uses stride, extent
+    loop_folded,  // Uses dim, begin, extent
   } impl;
 };
 
 template <typename F>
-void for_each_contiguous_slice(void* base, const for_each_contiguous_slice_dim* dim, const F& f) {
-  if (dim->impl == for_each_contiguous_slice_dim::call_f) {
-    f(base, dim->extent);
-  } else if (dim->impl == for_each_contiguous_slice_dim::loop_linear) {
-    for (index_t i = 0; i < dim->extent; ++i, base = offset_bytes(base, dim->stride)) {
-      for_each_contiguous_slice(base, dim + 1, f);
+void for_each_contiguous_slice(void* base, const for_each_contiguous_slice_dim* slice_dim, const F& f) {
+  if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
+    f(base, slice_dim->extent);
+  } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
+    for (index_t i = 0; i < slice_dim->extent; ++i, base = offset_bytes(base, slice_dim->stride)) {
+      for_each_contiguous_slice(base, slice_dim + 1, f);
     }
   } else {
-    assert(dim->impl == for_each_contiguous_slice_dim::loop_folded);
-    index_t end = dim->begin + dim->extent;
-    for (index_t i = dim->begin; i < end; ++i) {
-      for_each_contiguous_slice(offset_bytes(base, dim->dim->flat_offset_bytes(i)), dim + 1, f);
+    assert(slice_dim->impl == for_each_contiguous_slice_dim::loop_folded);
+    index_t end = slice_dim->begin + slice_dim->extent;
+    for (index_t i = slice_dim->begin; i < end; ++i) {
+      for_each_contiguous_slice(offset_bytes(base, slice_dim->dim->flat_offset_bytes(i)), slice_dim + 1, f);
     }
   }
 }
@@ -427,6 +427,7 @@ void for_each_index(const raw_buffer& buf, const F& f) {
 // This function attempts to be efficient to support production quality implementations of callbacks.
 template <typename F>
 void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
+  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
   internal::for_each_contiguous_slice_dim* dims = SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, buf.rank + 1);
   internal::make_for_each_contiguous_slice_dims(buf, dims);
 
