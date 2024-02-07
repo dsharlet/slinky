@@ -473,9 +473,17 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, const F
   // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
   // base already points to the min.
   for_each_slice(slice_rank, buf, f);
-  for (index_t i = min + 1; i <= max; ++i) {
-    buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
-    for_each_slice(slice_rank, buf, f);
+  if (dim.fold_factor() == dim::unfolded) {
+    index_t stride = dim.stride();
+    for (index_t i = min + 1; i <= max; ++i) {
+      buf.base = offset_bytes(buf.base, stride);
+      for_each_slice(slice_rank, buf, f);
+    }
+  } else {
+    for (index_t i = min + 1; i <= max; ++i) {
+      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
+      for_each_slice(slice_rank, buf, f);
+    }
   }
   buf.base = old_base;
   buf.rank += 1;
