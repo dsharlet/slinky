@@ -307,7 +307,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 void fill(const raw_buffer& dst, const void* value);
 
 // Value for use in tile tuples indicating the dimension should be passed unmodified.
-using all = std::integral_constant<index_t, std::numeric_limits<index_t>::max()>;
+static constexpr index_t all = std::numeric_limits<index_t>::max();
 
 namespace internal {
 
@@ -375,21 +375,16 @@ void for_each_contiguous_slice(
 }
 
 // Implements the cropping part of a loop over tiles.
-template <int D, typename Tile, typename F>
-void for_each_tile(const Tile& tile, raw_buffer& buf, F&& f) {
-  if constexpr (D == -1) {
+template <typename F>
+void for_each_tile(const index_t* tile, raw_buffer& buf, int d, F&& f) {
+  if (d == -1) {
     f(buf);
-  } else if constexpr (std::is_same_v<std::tuple_element<D, Tile>, all>) {
-    // Don't want to tile this dimension.
-    for_each_tile<D - 1>(tile, buf, f);
   } else {
-    slinky::dim& dim = buf.dim(D);
-
-    // Get the tile size in this dimension.
-    index_t step = std::get<D>(tile);
+    slinky::dim& dim = buf.dim(d);
+    index_t step = tile[d];
     if (dim.extent() <= step) {
-      // There's nothing to crop here, just move on.
-      for_each_tile<D - 1>(tile, buf, f);
+      // Don't need to tile this dimension.
+      for_each_tile(tile, buf, d - 1, f);
     } else {
       // TODO: Supporting folding here should be possible.
       assert(dim.fold_factor() == dim::unfolded);
@@ -402,11 +397,11 @@ void for_each_tile(const Tile& tile, raw_buffer& buf, F&& f) {
 
       // Handle the first tile.
       dim.set_bounds(old_min, std::min(old_max, old_min + step - 1));
-      for_each_tile<D - 1>(tile, buf, f);
+      for_each_tile(tile, buf, d - 1, f);
       for (index_t i = old_min + step; i <= old_max; i += step) {
         buf.base = offset_bytes(buf.base, stride);
         dim.set_bounds(i, std::min(old_max, i + step - 1));
-        for_each_tile<D - 1>(tile, buf, f);
+        for_each_tile(tile, buf, d - 1, f);
       }
 
       // Restore the old base and bounds.
@@ -468,17 +463,16 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, F&& f) 
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a tuple, where each
 // element can be an integer (or `std::integral_constant`), or `all`, indicating that the dimension
 // should be passed unmodified to `f`. Dimensions after the size of the tuple are sliced.
-template <typename Tile, typename F>
-void for_each_tile(const Tile& tile, const raw_buffer& buf, const F& f) {
-  constexpr int tile_rank = std::tuple_size_v<Tile>;
+template <typename F>
+void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
+  std::size_t tile_rank = tile.size();
   assert(buf.rank >= tile_rank);
   // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
   // also restore it to its original state... not thread safe though in case buf is being shared
   // with another thread.
-  for_each_slice(tile_rank, buf, [&f, &tile](const raw_buffer& buf) {
+  for_each_slice(tile_rank, buf, [&f, tile = tile.data()](const raw_buffer& buf) {
     // GCC struggles with capturing constexprs.
-    constexpr int tile_rank = std::tuple_size_v<Tile>;
-    internal::for_each_tile<tile_rank - 1>(tile, const_cast<raw_buffer&>(buf), f);
+    internal::for_each_tile(tile, const_cast<raw_buffer&>(buf), buf.rank - 1, f);
   });
 }
 

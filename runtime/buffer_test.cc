@@ -92,9 +92,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
     buffer<char, 3> buf({10, 20, 30});
     buf.allocate();
     buf.dim(padded_dim).set_bounds(0, 8);
-    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
-      memset(slice, 7, slice_extent);
-    });
+    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) { memset(slice, 7, slice_extent); });
     for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   }
 }
@@ -116,11 +114,11 @@ TEST(buffer, for_each_tile_1x1) {
   buf.allocate();
 
   int tiles = 0;
-  const auto all = std::make_tuple(buf.dim(0).extent(), buf.dim(1).extent());
+  const index_t all[] = {buf.dim(0).extent(), buf.dim(1).extent()};
   for_each_tile(all, buf, [&](const raw_buffer& i) {
     ASSERT_EQ(i.rank, 2);
-    ASSERT_EQ(i.dim(0).extent(), std::get<0>(all));
-    ASSERT_EQ(i.dim(1).extent(), std::get<1>(all));
+    ASSERT_EQ(i.dim(0).extent(), all[0]);
+    ASSERT_EQ(i.dim(1).extent(), all[1]);
     tiles++;
   });
   ASSERT_EQ(tiles, buf.dim(2).extent());
@@ -131,15 +129,15 @@ TEST(buffer, for_each_tile_uneven) {
   buf.allocate();
 
   int tiles = 0;
-  const auto tile = std::make_tuple(3, 6);
+  const index_t tile[] = {3, 6};
   for_each_tile(tile, buf, [&](const raw_buffer& i) {
     ASSERT_EQ(i.rank, 2);
-    ASSERT_LE(i.dim(0).extent(), std::get<0>(tile));
-    ASSERT_LE(i.dim(1).extent(), std::get<1>(tile));
+    ASSERT_LE(i.dim(0).extent(), tile[0]);
+    ASSERT_LE(i.dim(1).extent(), tile[1]);
     tiles++;
   });
-  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(0).extent(), std::get<0>(tile)) *
-                       ceil_div<index_t>(buf.dim(1).extent(), std::get<1>(tile)) * buf.dim(2).extent());
+  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(0).extent(), tile[0]) * ceil_div<index_t>(buf.dim(1).extent(), tile[1]) *
+                       buf.dim(2).extent());
 }
 
 TEST(buffer, for_each_tile_all) {
@@ -147,14 +145,14 @@ TEST(buffer, for_each_tile_all) {
   buf.allocate();
 
   int tiles = 0;
-  const auto slice = std::tuple<slinky::all, std::integral_constant<int, 5>>();
+  const index_t slice[] = {slinky::all, 5};
   for_each_tile(slice, buf, [&](const raw_buffer& i) {
     ASSERT_EQ(i.rank, 2);
     ASSERT_EQ(i.dim(0).extent(), buf.dim(0).extent());
-    ASSERT_EQ(i.dim(1).extent(), std::get<1>(slice));
+    ASSERT_EQ(i.dim(1).extent(), slice[1]);
     tiles++;
   });
-  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), std::get<1>(slice)) * buf.dim(2).extent());
+  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), slice[1]) * buf.dim(2).extent());
 }
 
 // A non-standard size type that acts like an integer for testing.
