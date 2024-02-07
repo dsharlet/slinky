@@ -172,7 +172,7 @@ TEST(buffer, for_each_slice) {
         fill(slice, &seven);
         slices++;
         int elements_slice = 1;
-        for (int d = 0; d < slice.rank; ++d) {
+        for (std::size_t d = 0; d < slice.rank; ++d) {
           elements_slice *= slice.dim(d).extent();
         }
         elements += elements_slice;
