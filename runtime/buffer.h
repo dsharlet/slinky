@@ -364,12 +364,7 @@ void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_
     // This dimension can be fused with the next dimension.
     for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent, extent);
   } else if (dim.fold_factor() == dim::unfolded) {
-    // We can traverse this dimension with pointer arithmetic.
-    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
-    // already points to begin.
-    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
-    for (index_t i = 1; i < extent; ++i) {
-      base = offset_bytes(base, stride);
+    for (index_t i = 0; i < extent; ++i, base = offset_bytes(base, stride)) {
       for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
     }
   } else {
