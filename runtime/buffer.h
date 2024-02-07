@@ -492,8 +492,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f) {
 // dimension.
 template <typename F>
 void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
-  std::size_t tile_rank = tile.size();
-  assert(buf.rank == tile_rank);
+  assert(buf.rank == tile.size());
 
   // Copy the buffer so we can mutate it.
   // TODO: We restore the buffer to its original state, so if we can guarantee that this thread has its own copy, it
