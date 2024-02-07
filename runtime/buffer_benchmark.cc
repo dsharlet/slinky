@@ -7,7 +7,7 @@
 
 namespace slinky {
 
-__attribute__((noinline)) void no_op_slice(void* base, index_t extent) {  }
+__attribute__((noinline)) void no_op_slice(void* base, index_t extent) {}
 __attribute__((noinline)) void memset_slice(void* base, index_t extent) { memset(base, 0, extent); }
 
 template <typename Fn>
@@ -25,6 +25,8 @@ void BM_for_each_contiguous_slice(benchmark::State& state, Fn fn) {
   }
 }
 
+// The difference between these two benchmarks on the same size buffer gives an indication of how much time is spent in
+// overhead inside for_each_contiguous_slice.
 void BM_for_each_contiguous_slice_no_op(benchmark::State& state) { BM_for_each_contiguous_slice(state, no_op_slice); }
 void BM_for_each_contiguous_slice_memset(benchmark::State& state) { BM_for_each_contiguous_slice(state, memset_slice); }
 
