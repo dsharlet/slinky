@@ -334,50 +334,40 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   return inner.stride() * inner.extent() == outer.stride();
 }
 
+struct for_each_contiguous_slice_dim {
+  union {
+    // For loop_folded to call flat_offset_bytes
+    const slinky::dim* dim;
+    // For loop_linear to offset the base.
+    index_t stride;
+  };
+  index_t begin;
+  index_t extent;
+  enum {
+    call_f,
+    loop_linear,
+    loop_folded,
+  } impl;
+};
+
 template <typename F>
-void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_size, const F& f,
-    index_t slice_extent = 1, index_t extent = 1) {
-  if (d == -1) {
-    // We've handled all the loops, call the function.
-    f(base, slice_extent);
-    return;
-  }
-
-  const slinky::dim& dim = dims[d];
-  extent *= dim.extent();
-  if (extent <= 0) {
-    // Don't want to worry about empty dimensions in the cases below.
-    return;
-  }
-
-  index_t stride = dim.stride();
-  if (stride == elem_size) {
-    // This is the dense dimension, pass this dimension through.
-    assert(slice_extent == 1);  // Two dimensions of stride == elem_size...?
-    assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
-    if (d > 0) {
-      for_each_contiguous_slice(base, dims, d - 1, elem_size, f, extent);
-    } else {
-      f(base, extent);
-    }
-  } else if (d > 0 && can_fuse(dims[d - 1], dim)) {
-    // This dimension can be fused with the next dimension.
-    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent, extent);
-  } else if (dim.fold_factor() == dim::unfolded) {
-    for (index_t i = 0; i < extent; ++i, base = offset_bytes(base, stride)) {
-      for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
+void for_each_contiguous_slice(void* base, const for_each_contiguous_slice_dim* dim, const F& f) {
+  if (dim->impl == for_each_contiguous_slice_dim::call_f) {
+    f(base, dim->extent);
+  } else if (dim->impl == for_each_contiguous_slice_dim::loop_linear) {
+    for (index_t i = 0; i < dim->extent; ++i, base = offset_bytes(base, dim->stride)) {
+      for_each_contiguous_slice(base, dim + 1, f);
     }
   } else {
-    index_t begin = dim.begin();
-    index_t end = begin + extent;
-    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
-    // already points to begin.
-    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
-    for (index_t i = begin + 1; i < end; ++i) {
-      for_each_contiguous_slice(offset_bytes(base, dim.flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
+    assert(dim->impl == for_each_contiguous_slice_dim::loop_folded);
+    index_t end = dim->begin + dim->extent;
+    for (index_t i = dim->begin; i < end; ++i) {
+      for_each_contiguous_slice(offset_bytes(base, dim->dim->flat_offset_bytes(i)), dim + 1, f);
     }
   }
 }
+
+void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contiguous_slice_dim* dims);
 
 // Implements the cropping part of a loop over tiles.
 template <typename F>
@@ -437,7 +427,10 @@ void for_each_index(const raw_buffer& buf, const F& f) {
 // This function attempts to be efficient to support production quality implementations of callbacks.
 template <typename F>
 void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
-  internal::for_each_contiguous_slice(buf.base, buf.dims, buf.rank - 1, buf.elem_size, f);
+  internal::for_each_contiguous_slice_dim* dims = SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, buf.rank + 1);
+  internal::make_for_each_contiguous_slice_dims(buf, dims);
+
+  internal::for_each_contiguous_slice(buf.base, dims, f);
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of buf.

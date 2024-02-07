@@ -343,4 +343,40 @@ void fill(const raw_buffer& dst, const void* value) {
   fill(dst_base, dims, dst.elem_size, value, rank - 1);
 }
 
+namespace internal {
+
+void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contiguous_slice_dim* dims) {
+  for_each_contiguous_slice_dim* next = dims;
+  index_t slice_extent = 1;
+  index_t extent = 1;
+  for (int d = buf.rank - 1; d >= 0; --d) {
+    extent *= buf.dim(d).extent();
+    if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
+      // This is the slice dimension.
+      slice_extent = extent;
+      extent = 1;
+    } else if (extent == 1) {
+      // base already points to the min, we don't need to do anything.
+    } else if (d > 0 && internal::can_fuse(buf.dim(d - 1), buf.dim(d))) {
+      // Let this dimension fuse with the next dimension.
+    } else if (buf.dim(d).fold_factor() == dim::unfolded) {
+      next->impl = for_each_contiguous_slice_dim::loop_linear;
+      next->stride = buf.dim(d).stride();
+      next->extent = extent;
+      extent = 1;
+      ++next;
+    } else {
+      next->impl = for_each_contiguous_slice_dim::loop_folded;
+      next->dim = &buf.dim(d);
+      next->begin = buf.dim(d).begin();
+      next->extent = extent;
+      ++next;
+    }
+  }
+  next->impl = for_each_contiguous_slice_dim::call_f;
+  next->extent = slice_extent;
+}
+
+}  // namespace internal
+
 }  // namespace slinky
