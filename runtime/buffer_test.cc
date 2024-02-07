@@ -62,6 +62,101 @@ TEST(buffer, rank0) {
   ASSERT_EQ(buf(), 3);
 }
 
+TEST(buffer, for_each_contiguous_slice) {
+  buffer<char, 3> buf({10, 20, 30});
+  buf.allocate();
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+    memset(slice, 7, slice_extent);
+    slices++;
+  });
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_non_zero_min) {
+  buffer<char, 3> buf({10, 20, 30});
+  buf.allocate();
+  buf.translate(1, 2, 3);
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+    memset(slice, 7, slice_extent);
+    slices++;
+  });
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_padded) {
+  for (int padded_dim = 0; padded_dim < 2; ++padded_dim) {
+    buffer<char, 3> buf({10, 20, 30});
+    buf.allocate();
+    buf.dim(padded_dim).set_bounds(0, 8);
+    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+      memset(slice, 7, slice_extent);
+    });
+    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  }
+}
+
+TEST(buffer, for_each_contiguous_slice_non_innermost) {
+  buffer<int, 3> buf({10, 20, 30});
+  buf.allocate();
+  std::swap(buf.dim(0), buf.dim(1));
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+    ASSERT_EQ(slice_extent, 10);
+    slices++;
+  });
+  ASSERT_EQ(slices, buf.dim(0).extent() * buf.dim(2).extent());
+}
+
+TEST(buffer, for_each_tile_1x1) {
+  buffer<int, 3> buf({10, 20, 5});
+  buf.allocate();
+
+  int tiles = 0;
+  const auto all = std::make_tuple(buf.dim(0).extent(), buf.dim(1).extent());
+  for_each_tile(all, buf, [&](const raw_buffer& i) {
+    ASSERT_EQ(i.rank, 2);
+    ASSERT_EQ(i.dim(0).extent(), std::get<0>(all));
+    ASSERT_EQ(i.dim(1).extent(), std::get<1>(all));
+    tiles++;
+  });
+  ASSERT_EQ(tiles, buf.dim(2).extent());
+}
+
+TEST(buffer, for_each_tile_uneven) {
+  buffer<int, 3> buf({10, 20, 5});
+  buf.allocate();
+
+  int tiles = 0;
+  const auto tile = std::make_tuple(3, 6);
+  for_each_tile(tile, buf, [&](const raw_buffer& i) {
+    ASSERT_EQ(i.rank, 2);
+    ASSERT_LE(i.dim(0).extent(), std::get<0>(tile));
+    ASSERT_LE(i.dim(1).extent(), std::get<1>(tile));
+    tiles++;
+  });
+  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(0).extent(), std::get<0>(tile)) *
+                       ceil_div<index_t>(buf.dim(1).extent(), std::get<1>(tile)) * buf.dim(2).extent());
+}
+
+TEST(buffer, for_each_tile_all) {
+  buffer<int, 3> buf({10, 20, 5});
+  buf.allocate();
+
+  int tiles = 0;
+  const auto slice = std::tuple<slinky::all, std::integral_constant<int, 5>>();
+  for_each_tile(slice, buf, [&](const raw_buffer& i) {
+    ASSERT_EQ(i.rank, 2);
+    ASSERT_EQ(i.dim(0).extent(), buf.dim(0).extent());
+    ASSERT_EQ(i.dim(1).extent(), std::get<1>(slice));
+    tiles++;
+  });
+  ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), std::get<1>(slice)) * buf.dim(2).extent());
+}
+
 // A non-standard size type that acts like an integer for testing.
 struct big {
   uint64_t a, b;
@@ -130,7 +225,11 @@ void test_copy() {
             }
             set_strides(src, src_permutation, src_padding, broadcast);
             src.allocate();
-            for_each_index(src, [&](auto i) { src(i) = rand(); });
+            for_each_contiguous_slice(src, [&](void* base, index_t extent) {
+              for (index_t i = 0; i < extent; ++i) {
+                reinterpret_cast<T*>(base)[i] = rand();
+              }
+            });
 
             for (int dmin : {-1, 0, 1}) {
               for (int dmax : {-1, 0, 1}) {
@@ -150,7 +249,11 @@ void test_copy() {
                   }
                 });
 
-                for_each_index(src, [&](auto i) { src(i) += 1; });
+                for_each_contiguous_slice(src, [&](void* base, index_t extent) {
+                  for (index_t i = 0; i < extent; ++i) {
+                    reinterpret_cast<T*>(base)[i] += 1;
+                  }
+                });
 
                 copy(src, dst, nullptr);
                 for_each_index(dst, [&](auto i) {
@@ -163,7 +266,11 @@ void test_copy() {
                   }
                 });
 
-                for_each_index(src, [&](auto i) { src(i) += -1; });
+                for_each_contiguous_slice(src, [&](void* base, index_t extent) {
+                  for (index_t i = 0; i < extent; ++i) {
+                    reinterpret_cast<T*>(base)[i] += -1;
+                  }
+                });
 
                 T new_padding = 3;
                 pad(src.dims, dst, &new_padding);

@@ -306,6 +306,9 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
 
+// Value for use in tile tuples indicating the dimension should be passed unmodified.
+using all = std::integral_constant<index_t, std::numeric_limits<index_t>::max()>;
+
 namespace internal {
 
 template <typename F>
@@ -323,9 +326,99 @@ void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, 
   }
 }
 
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+template <typename F>
+void for_each_contiguous_slice(
+    void* base, const dim* dims, int d, index_t elem_size, F&& f, index_t slice_extent = 1, index_t outer_extent = 1) {
+  const slinky::dim& dim = dims[d];
+  if (d == -1) {
+    // We've handled all the loops, call the function.
+    f(base, slice_extent);
+  } else if (dim.stride() == elem_size) {
+    // This is the dense dimension, pass this dimension through.
+    assert(slice_extent == 1);  // Two dimensions of stride == elem_size...?
+    assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, dim.extent() * outer_extent);
+  } else if (d > 0 && can_fuse(dims[d - 1], dim)) {
+    // This dimension can be fused with the next dimension.
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent, outer_extent * dim.extent());
+  } else if (dim.fold_factor() == dim::unfolded) {
+    // We can traverse this dimension with pointer arithmetic.
+    index_t begin = dim.begin() * outer_extent;
+    index_t end = dim.end() * outer_extent;
+    index_t stride = dim.stride();
+    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
+    // already points to the min.
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
+    for (index_t i = begin + 1; i < end; ++i) {
+      base = offset_bytes(base, stride);
+      for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
+    }
+  } else {
+    assert(outer_extent == 1);
+    index_t begin = dim.begin();
+    index_t end = dim.end();
+    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
+    // already points to the min.
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
+    for (index_t i = begin + 1; i < end; ++i) {
+      for_each_contiguous_slice(
+          offset_bytes(base, dim.flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
+    }
+  }
+}
+
+// Implements the cropping part of a loop over tiles.
+template <int D, typename Tile, typename F>
+void for_each_tile(const Tile& tile, raw_buffer& buf, F&& f) {
+  if constexpr (D == -1) {
+    f(buf);
+  } else if constexpr (std::is_same_v<std::tuple_element<D, Tile>, all>) {
+    // Don't want to tile this dimension.
+    for_each_tile<D - 1>(tile, buf, f);
+  } else {
+    slinky::dim& dim = buf.dim(D);
+
+    // Get the tile size in this dimension.
+    index_t step = std::get<D>(tile);
+    if (dim.extent() <= step) {
+      // There's nothing to crop here, just move on.
+      for_each_tile<D - 1>(tile, buf, f);
+    } else {
+      // TODO: Supporting folding here should be possible.
+      assert(dim.fold_factor() == dim::unfolded);
+      index_t stride = dim.stride() * step;
+
+      // Save the old base and bounds.
+      void* old_base = buf.base;
+      index_t old_min = dim.min();
+      index_t old_max = dim.max();
+
+      // Handle the first tile.
+      dim.set_bounds(old_min, std::min(old_max, old_min + step - 1));
+      for_each_tile<D - 1>(tile, buf, f);
+      for (index_t i = old_min + step; i <= old_max; i += step) {
+        buf.base = offset_bytes(buf.base, stride);
+        dim.set_bounds(i, std::min(old_max, i + step - 1));
+        for_each_tile<D - 1>(tile, buf, f);
+      }
+
+      // Restore the old base and bounds.
+      buf.base = old_base;
+      dim.set_bounds(old_min, old_max);
+    }
+  }
+}
+
 }  // namespace internal
 
-// Call `f(span<index_t>)` for each index in the range of `dims`, or the dims of `buf`.
+// Call `f(span<index_t>)` for each index in the domain of `dims`, or the dims of `buf`.
 // This function is not fast, use it for non-performance critical code. It is useful for
 // making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
 template <typename F>
@@ -337,6 +430,56 @@ void for_each_index(span<const dim> dims, F&& f) {
 template <typename F>
 void for_each_index(const raw_buffer& buf, F&& f) {
   for_each_index({buf.dims, buf.rank}, f);
+}
+
+// Call `f(void* base, index_t extent)` for each contiguous slice in the domain of `buf`.
+// This function attempts to be efficient to support production quality implementations of callbacks.
+template <typename F>
+void for_each_contiguous_slice(const raw_buffer& buf, F&& f) {
+  internal::for_each_contiguous_slice(buf.base, buf.dims, buf.rank - 1, buf.elem_size, f);
+}
+
+// Call `f` for each slice of the first `slice_rank` dimensions of buf.
+template <typename F>
+void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, F&& f) {
+  // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
+  // also restore it to its original state... not thread safe though in case buf is being shared
+  // with another thread.
+  raw_buffer& buf = const_cast<raw_buffer&>(const_buf);
+  if (buf.rank <= slice_rank) {
+    f(buf);
+  } else {
+    const slinky::dim& dim = buf.dim(buf.rank - 1);
+    buf.rank -= 1;
+
+    void* old_base = buf.base;
+    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
+    // already points to the min.
+    for_each_slice(slice_rank, buf, f);
+    for (index_t i = dim.begin() + 1; i < dim.end(); ++i) {
+      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
+      for_each_slice(slice_rank, buf, f);
+    }
+    buf.base = old_base;
+    buf.rank += 1;
+  }
+}
+
+// Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a tuple, where each
+// element can be an integer (or `std::integral_constant`), or `all`, indicating that the dimension
+// should be passed unmodified to `f`. Dimensions after the size of the tuple are sliced.
+template <typename Tile, typename F>
+void for_each_tile(const Tile& tile, const raw_buffer& buf, const F& f) {
+  constexpr int tile_rank = std::tuple_size_v<Tile>;
+  assert(buf.rank >= tile_rank);
+  // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
+  // also restore it to its original state... not thread safe though in case buf is being shared
+  // with another thread.
+  for_each_slice(tile_rank, buf, [&f, &tile](const raw_buffer& buf) {
+    // GCC struggles with capturing constexprs.
+    constexpr int tile_rank = std::tuple_size_v<Tile>;
+    internal::for_each_tile<tile_rank - 1>(tile, const_cast<raw_buffer&>(buf), f);
+  });
 }
 
 }  // namespace slinky

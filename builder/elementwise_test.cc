@@ -16,7 +16,11 @@ namespace slinky {
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_index(x, [&](auto i) { x(i) = (rand() % 20) - 10; });
+  for_each_contiguous_slice(x, [&](void* base, index_t extent) {
+    for (index_t i = 0; i < extent; ++i) {
+      reinterpret_cast<T*>(base)[i] = (rand() % 20) - 10;
+    }
+  });
 }
 
 // (Ab)use our expression mechanism to make an elementwise "calculator", for the purposes of testing.
