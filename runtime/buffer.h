@@ -327,6 +327,43 @@ void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, 
   }
 }
 
+template <typename F>
+void for_each_slice(std::size_t slice_rank, raw_buffer& buf, const F& f) {
+  if (buf.rank <= slice_rank) {
+    // We're done slicing.
+    f(buf);
+    return;
+  }
+
+  const slinky::dim& dim = buf.dim(buf.rank - 1);
+
+  index_t min = dim.min();
+  index_t max = dim.max();
+  if (min > max) {
+    // Dimension (and the buffer) is empty.
+    return;
+  }
+
+  buf.rank -= 1;
+  void* old_base = buf.base;
+  if (dim.fold_factor() == dim::unfolded) {
+    index_t stride = dim.stride();
+    for (index_t i = min; i <= max; ++i, buf.base = offset_bytes(buf.base, stride)) {
+      for_each_slice(slice_rank, buf, f);
+    }
+  } else {
+    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
+    // base already points to the min.
+    for_each_slice(slice_rank, buf, f);
+    for (index_t i = min + 1; i <= max; ++i) {
+      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
+      for_each_slice(slice_rank, buf, f);
+    }
+  }
+  buf.base = old_base;
+  buf.rank += 1;
+}
+
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
     return false;
@@ -447,44 +484,15 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
 
 // Call `f` for each slice of the first `slice_rank` dimensions of buf.
 template <typename F>
-void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, const F& f) {
-  // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
-  // also restore it to its original state... not thread safe though in case buf is being shared
-  // with another thread.
-  raw_buffer& buf = const_cast<raw_buffer&>(const_buf);
-  if (buf.rank <= slice_rank) {
-    // We're done slicing.
-    f(buf);
-    return;
-  }
+void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f) {
+  raw_buffer buf_;
+  buf_.allocation = nullptr;
+  buf_.base = buf.base;
+  buf_.elem_size = buf.elem_size;
+  buf_.rank = buf.rank;
+  buf_.dims = buf.dims;  // Shallow copy is OK here, we don't modify dims.
 
-  const slinky::dim& dim = buf.dim(buf.rank - 1);
-
-  index_t min = dim.min();
-  index_t max = dim.max();
-  if (min > max) {
-    // Dimension (and the buffer) is empty.
-    return;
-  }
-
-  buf.rank -= 1;
-  void* old_base = buf.base;
-  if (dim.fold_factor() == dim::unfolded) {
-    index_t stride = dim.stride();
-    for (index_t i = min; i <= max; ++i, buf.base = offset_bytes(buf.base, stride)) {
-      for_each_slice(slice_rank, buf, f);
-    }
-  } else {
-    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
-    // base already points to the min.
-    for_each_slice(slice_rank, buf, f);
-    for (index_t i = min + 1; i <= max; ++i) {
-      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
-      for_each_slice(slice_rank, buf, f);
-    }
-  }
-  buf.base = old_base;
-  buf.rank += 1;
+  internal::for_each_slice(slice_rank, buf_, f);
 }
 
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
@@ -493,10 +501,19 @@ template <typename F>
 void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
   std::size_t tile_rank = tile.size();
   assert(buf.rank == tile_rank);
-  // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
-  // also restore it to its original state... not thread safe though in case buf is being shared
-  // with another thread.
-  internal::for_each_tile(tile.data(), const_cast<raw_buffer&>(buf), buf.rank - 1, f);
+
+  // Copy the buffer so we can mutate it.
+  // TODO: We restore the buffer to its original state, so if we can guarantee that this thread has its own copy, it
+  // should be OK to just const_cast it.
+  raw_buffer buf_;
+  buf_.allocation = nullptr;
+  buf_.base = buf.base;
+  buf_.elem_size = buf.elem_size;
+  buf_.rank = buf.rank;
+  buf_.dims = SLINKY_ALLOCA(dim, buf.rank);
+  memcpy(buf_.dims, buf.dims, sizeof(dim) * buf.rank);
+
+  internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
 }
 
 }  // namespace slinky
