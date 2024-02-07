@@ -176,7 +176,7 @@ public:
     }
   }
 
-  virtual ~ref_counted() {}
+  virtual ~ref_counted() = default;
 };
 
 // A smart pointer to a ref_counted base.

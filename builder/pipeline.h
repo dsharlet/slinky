@@ -120,7 +120,7 @@ public:
     expr step;
     loop_mode mode;
 
-    loop_info() {}
+    loop_info() = default;
     loop_info(slinky::var var, expr step = 1, loop_mode mode = loop_mode::serial) : var(var), step(step), mode(mode) {}
 
     symbol_id sym() const { return var.sym(); }
@@ -142,7 +142,7 @@ private:
   void remove_this_from_buffers();
 
 public:
-  func() {}
+  func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::optional<std::vector<char>> padding);

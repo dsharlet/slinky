@@ -244,7 +244,7 @@ expr max(span<expr> x);
 struct interval_expr {
   expr min, max;
 
-  interval_expr() {}
+  interval_expr() = default;
   explicit interval_expr(const expr& point) : min(point), max(point) {}
   interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
@@ -705,7 +705,7 @@ public:
 
 class node_visitor {
 public:
-  virtual ~node_visitor() {}
+  virtual ~node_visitor() = default;
 
   virtual void visit(const variable*) = 0;
   virtual void visit(const wildcard*) = 0;
@@ -941,7 +941,7 @@ class symbol_map {
   }
 
 public:
-  symbol_map() {}
+  symbol_map() = default;
   symbol_map(std::initializer_list<std::pair<symbol_id, T>> init) {
     for (const std::pair<symbol_id, T>& i : init) {
       operator[](i.first) = i.second;
