@@ -335,21 +335,21 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
 }
 
 template <typename F>
-void for_each_contiguous_slice(
-    void* base, const dim* dims, int d, index_t elem_size, const F& f, index_t slice_extent = 1, index_t outer_extent = 1) {
+void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_size, const F& f,
+    index_t slice_extent = 1, index_t outer_extent = 1) {
   if (d == -1) {
     // We've handled all the loops, call the function.
     f(base, slice_extent);
     return;
   }
-  
+
   const slinky::dim& dim = dims[d];
   index_t extent = dim.extent() * outer_extent;
   if (extent <= 0) {
     // Don't want to worry about empty dimensions in the cases below.
     return;
   }
-  
+
   index_t stride = dim.stride();
   if (stride == elem_size) {
     // This is the dense dimension, pass this dimension through.

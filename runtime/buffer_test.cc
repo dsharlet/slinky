@@ -160,7 +160,7 @@ TEST(buffer, for_each_slice) {
     buf.allocate();
     int slices = 0;
     int elements = 0;
-    for_each_slice(slice_rank, buf, [&](const raw_buffer& slice) { 
+    for_each_slice(slice_rank, buf, [&](const raw_buffer& slice) {
       const int seven = 7;
       fill(slice, &seven);
       slices++;
