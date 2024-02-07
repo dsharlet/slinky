@@ -7,7 +7,7 @@
 
 namespace slinky {
 
-__attribute__((noinline)) void no_op_slice(void* base, index_t extent) {}
+__attribute__((noinline)) void no_op_slice(void*, index_t) {}
 __attribute__((noinline)) void memset_slice(void* base, index_t extent) { memset(base, 0, extent); }
 
 template <typename Fn>

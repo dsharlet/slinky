@@ -313,7 +313,7 @@ static constexpr index_t all = std::numeric_limits<index_t>::max();
 namespace internal {
 
 template <typename F>
-void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, F&& f) {
+void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, const F& f) {
   if (d == 0) {
     for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
       is[0] = i;
@@ -336,37 +336,48 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
 
 template <typename F>
 void for_each_contiguous_slice(
-    void* base, const dim* dims, int d, index_t elem_size, F&& f, index_t slice_extent = 1, index_t outer_extent = 1) {
-  const slinky::dim& dim = dims[d];
+    void* base, const dim* dims, int d, index_t elem_size, const F& f, index_t slice_extent = 1, index_t outer_extent = 1) {
   if (d == -1) {
     // We've handled all the loops, call the function.
     f(base, slice_extent);
-  } else if (dim.stride() == elem_size) {
+    return;
+  }
+  
+  const slinky::dim& dim = dims[d];
+  index_t extent = dim.extent() * outer_extent;
+  if (extent <= 0) {
+    // Don't want to worry about empty dimensions in the cases below.
+    return;
+  }
+  
+  index_t stride = dim.stride();
+  if (stride == elem_size) {
     // This is the dense dimension, pass this dimension through.
     assert(slice_extent == 1);  // Two dimensions of stride == elem_size...?
     assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
-    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, dim.extent() * outer_extent);
+    if (d > 0) {
+      for_each_contiguous_slice(base, dims, d - 1, elem_size, f, extent);
+    } else {
+      f(base, extent);
+    }
   } else if (d > 0 && can_fuse(dims[d - 1], dim)) {
     // This dimension can be fused with the next dimension.
-    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent, outer_extent * dim.extent());
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent, extent);
   } else if (dim.fold_factor() == dim::unfolded) {
     // We can traverse this dimension with pointer arithmetic.
-    index_t begin = dim.begin() * outer_extent;
-    index_t end = dim.end() * outer_extent;
-    index_t stride = dim.stride();
     // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
-    // already points to the min.
+    // already points to begin.
     for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
-    for (index_t i = begin + 1; i < end; ++i) {
+    for (index_t i = 1; i < extent; ++i) {
       base = offset_bytes(base, stride);
       for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
     }
   } else {
     assert(outer_extent == 1);
     index_t begin = dim.begin();
-    index_t end = dim.end();
+    index_t end = begin + extent;
     // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
-    // already points to the min.
+    // already points to begin.
     for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
     for (index_t i = begin + 1; i < end; ++i) {
       for_each_contiguous_slice(offset_bytes(base, dim.flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
@@ -376,38 +387,39 @@ void for_each_contiguous_slice(
 
 // Implements the cropping part of a loop over tiles.
 template <typename F>
-void for_each_tile(const index_t* tile, raw_buffer& buf, int d, F&& f) {
+void for_each_tile(const index_t* tile, raw_buffer& buf, int d, const F& f) {
   if (d == -1) {
     f(buf);
+    return;
+  }
+
+  slinky::dim& dim = buf.dim(d);
+  index_t step = tile[d];
+  if (dim.extent() <= step) {
+    // Don't need to tile this dimension.
+    for_each_tile(tile, buf, d - 1, f);
   } else {
-    slinky::dim& dim = buf.dim(d);
-    index_t step = tile[d];
-    if (dim.extent() <= step) {
-      // Don't need to tile this dimension.
+    // TODO: Supporting folding here should be possible.
+    assert(dim.fold_factor() == dim::unfolded);
+    index_t stride = dim.stride() * step;
+
+    // Save the old base and bounds.
+    void* old_base = buf.base;
+    index_t old_min = dim.min();
+    index_t old_max = dim.max();
+
+    // Handle the first tile.
+    dim.set_bounds(old_min, old_min + step - 1);
+    for_each_tile(tile, buf, d - 1, f);
+    for (index_t i = old_min + step; i <= old_max; i += step) {
+      buf.base = offset_bytes(buf.base, stride);
+      dim.set_bounds(i, std::min(old_max, i + step - 1));
       for_each_tile(tile, buf, d - 1, f);
-    } else {
-      // TODO: Supporting folding here should be possible.
-      assert(dim.fold_factor() == dim::unfolded);
-      index_t stride = dim.stride() * step;
-
-      // Save the old base and bounds.
-      void* old_base = buf.base;
-      index_t old_min = dim.min();
-      index_t old_max = dim.max();
-
-      // Handle the first tile.
-      dim.set_bounds(old_min, std::min(old_max, old_min + step - 1));
-      for_each_tile(tile, buf, d - 1, f);
-      for (index_t i = old_min + step; i <= old_max; i += step) {
-        buf.base = offset_bytes(buf.base, stride);
-        dim.set_bounds(i, std::min(old_max, i + step - 1));
-        for_each_tile(tile, buf, d - 1, f);
-      }
-
-      // Restore the old base and bounds.
-      buf.base = old_base;
-      dim.set_bounds(old_min, old_max);
     }
+
+    // Restore the old base and bounds.
+    buf.base = old_base;
+    dim.set_bounds(old_min, old_max);
   }
 }
 
@@ -417,47 +429,56 @@ void for_each_tile(const index_t* tile, raw_buffer& buf, int d, F&& f) {
 // This function is not fast, use it for non-performance critical code. It is useful for
 // making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
 template <typename F>
-void for_each_index(span<const dim> dims, F&& f) {
+void for_each_index(span<const dim> dims, const F& f) {
   // Not using alloca for performance, but to avoid including <vector>
   index_t* i = SLINKY_ALLOCA(index_t, dims.size());
   internal::for_each_index(dims, dims.size() - 1, i, dims.size(), f);
 }
 template <typename F>
-void for_each_index(const raw_buffer& buf, F&& f) {
+void for_each_index(const raw_buffer& buf, const F& f) {
   for_each_index({buf.dims, buf.rank}, f);
 }
 
 // Call `f(void* base, index_t extent)` for each contiguous slice in the domain of `buf`.
 // This function attempts to be efficient to support production quality implementations of callbacks.
 template <typename F>
-void for_each_contiguous_slice(const raw_buffer& buf, F&& f) {
+void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
   internal::for_each_contiguous_slice(buf.base, buf.dims, buf.rank - 1, buf.elem_size, f);
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of buf.
 template <typename F>
-void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, F&& f) {
+void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, const F& f) {
   // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
   // also restore it to its original state... not thread safe though in case buf is being shared
   // with another thread.
   raw_buffer& buf = const_cast<raw_buffer&>(const_buf);
   if (buf.rank <= slice_rank) {
+    // We're done slicing.
     f(buf);
-  } else {
-    const slinky::dim& dim = buf.dim(buf.rank - 1);
-    buf.rank -= 1;
-
-    void* old_base = buf.base;
-    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
-    // already points to the min.
-    for_each_slice(slice_rank, buf, f);
-    for (index_t i = dim.begin() + 1; i < dim.end(); ++i) {
-      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
-      for_each_slice(slice_rank, buf, f);
-    }
-    buf.base = old_base;
-    buf.rank += 1;
+    return;
   }
+
+  const slinky::dim& dim = buf.dim(buf.rank - 1);
+
+  index_t min = dim.min();
+  index_t max = dim.max();
+  if (min > max) {
+    // Dimension (and the buffer) is empty.
+    return;
+  }
+
+  buf.rank -= 1;
+  void* old_base = buf.base;
+  // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
+  // base already points to the min.
+  for_each_slice(slice_rank, buf, f);
+  for (index_t i = min + 1; i <= max; ++i) {
+    buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
+    for_each_slice(slice_rank, buf, f);
+  }
+  buf.base = old_base;
+  buf.rank += 1;
 }
 
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
