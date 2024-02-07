@@ -336,7 +336,7 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
 
 template <typename F>
 void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_size, const F& f,
-    index_t slice_extent = 1, index_t outer_extent = 1) {
+    index_t slice_extent = 1, index_t extent = 1) {
   if (d == -1) {
     // We've handled all the loops, call the function.
     f(base, slice_extent);
@@ -344,7 +344,7 @@ void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_
   }
 
   const slinky::dim& dim = dims[d];
-  index_t extent = dim.extent() * outer_extent;
+  extent *= dim.extent();
   if (extent <= 0) {
     // Don't want to worry about empty dimensions in the cases below.
     return;
@@ -368,7 +368,6 @@ void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_
       for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
     }
   } else {
-    assert(outer_extent == 1);
     index_t begin = dim.begin();
     index_t end = begin + extent;
     // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
