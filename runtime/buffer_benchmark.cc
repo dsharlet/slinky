@@ -46,12 +46,12 @@ void BM_for_each_slice_hardcoded(benchmark::State& state, Fn fn) {
 
 // The difference between these two benchmarks on the same size buffer gives an indication of how much time is spent in
 // overhead inside for_each_contiguous_slice.
-void BM_for_each_contiguous_slice_memset(benchmark::State& state) { BM_for_each_contiguous_slice(state, memset_slice); }
-void BM_for_each_slice_hardcoded_memset(benchmark::State& state) { BM_for_each_slice_hardcoded(state, memset_slice); }
+void BM_for_each_contiguous_slice(benchmark::State& state) { BM_for_each_contiguous_slice(state, memset_slice); }
+void BM_for_each_slice_hardcoded(benchmark::State& state) { BM_for_each_slice_hardcoded(state, memset_slice); }
 
-BENCHMARK(BM_for_each_contiguous_slice_memset)->Args({1024, 16, 1});
-BENCHMARK(BM_for_each_slice_hardcoded_memset)->Args({1024, 16, 1});
-BENCHMARK(BM_for_each_contiguous_slice_memset)->Args({1024, 4, 4});
-BENCHMARK(BM_for_each_slice_hardcoded_memset)->Args({1024, 4, 4});
+BENCHMARK(BM_for_each_contiguous_slice)->Args({1024, 16, 1});
+BENCHMARK(BM_for_each_slice_hardcoded)->Args({1024, 16, 1});
+BENCHMARK(BM_for_each_contiguous_slice)->Args({1024, 4, 4});
+BENCHMARK(BM_for_each_slice_hardcoded)->Args({1024, 4, 4});
 
 }  // namespace slinky
