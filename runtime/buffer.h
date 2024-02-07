@@ -344,7 +344,7 @@ struct for_each_contiguous_slice_dim {
   index_t begin;
   index_t extent;
   enum {
-    call_f,  // Uses extent
+    call_f,       // Uses extent
     loop_linear,  // Uses stride, extent
     loop_folded,  // Uses dim, begin, extent
   } impl;
@@ -355,8 +355,19 @@ void for_each_contiguous_slice(void* base, const for_each_contiguous_slice_dim* 
   if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
     f(base, slice_dim->extent);
   } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
-    for (index_t i = 0; i < slice_dim->extent; ++i, base = offset_bytes(base, slice_dim->stride)) {
-      for_each_contiguous_slice(base, slice_dim + 1, f);
+    const for_each_contiguous_slice_dim* next = slice_dim + 1;
+    if (next->impl == for_each_contiguous_slice_dim::call_f) {
+      // If the next step is to call f, do that eagerly here to avoid an extra call.
+      // TODO: This could be implemented by changing `impl` to be flags: folded or not, and call_f or not.
+      // Then we wouldn't need to peek at the next slice_dim to see if we should do this, and it would eliminate the
+      // need for an extra for_each_contiguous_slice_dim instance on the stack.
+      for (index_t i = 0; i < slice_dim->extent; ++i, base = offset_bytes(base, slice_dim->stride)) {
+        f(base, next->extent);
+      }
+    } else {
+      for (index_t i = 0; i < slice_dim->extent; ++i, base = offset_bytes(base, slice_dim->stride)) {
+        for_each_contiguous_slice(base, slice_dim + 1, f);
+      }
     }
   } else {
     assert(slice_dim->impl == for_each_contiguous_slice_dim::loop_folded);
