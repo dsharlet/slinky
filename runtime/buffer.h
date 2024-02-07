@@ -468,7 +468,7 @@ void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) 
   // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
   // also restore it to its original state... not thread safe though in case buf is being shared
   // with another thread.
-  internal::for_each_tile(tile, const_cast<raw_buffer&>(buf), buf.rank - 1, f);
+  internal::for_each_tile(tile.data(), const_cast<raw_buffer&>(buf), buf.rank - 1, f);
 }
 
 }  // namespace slinky
