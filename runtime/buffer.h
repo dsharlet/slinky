@@ -326,23 +326,50 @@ void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, 
   }
 }
 
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
 template <typename F>
-void for_each_contiguous_slice(void* base, const dim* dims, int d, index_t elem_size, F&& f, index_t slice_extent = 1) {
+void for_each_contiguous_slice(
+    void* base, const dim* dims, int d, index_t elem_size, F&& f, index_t slice_extent = 1, index_t outer_extent = 1) {
+  const slinky::dim& dim = dims[d];
   if (d == -1) {
     // We've handled all the loops, call the function.
     f(base, slice_extent);
-  } else if (dims[d].stride() == elem_size) {
+  } else if (dim.stride() == elem_size) {
     // This is the dense dimension, pass this dimension through.
     assert(slice_extent == 1);  // Two dimensions of stride == elem_size...?
-    assert(dims[d].min() / dims[d].fold_factor() == dims[d].max() / dims[d].fold_factor());
-    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, dims[d].extent());
-  } else {
+    assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, dim.extent() * outer_extent);
+  } else if (d > 0 && can_fuse(dims[d - 1], dim)) {
+    // This dimension can be fused with the next dimension.
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent, outer_extent * dim.extent());
+  } else if (dim.fold_factor() == dim::unfolded) {
+    // We can traverse this dimension with pointer arithmetic.
+    index_t begin = dim.begin() * outer_extent;
+    index_t end = dim.end() * outer_extent;
+    index_t stride = dim.stride();
     // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
     // already points to the min.
     for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
-    for (index_t i = dims[d].begin() + 1; i < dims[d].end(); ++i) {
+    for (index_t i = begin + 1; i < end; ++i) {
+      base = offset_bytes(base, stride);
+      for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
+    }
+  } else {
+    assert(outer_extent == 1);
+    index_t begin = dim.begin();
+    index_t end = dim.end();
+    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the base
+    // already points to the min.
+    for_each_contiguous_slice(base, dims, d - 1, elem_size, f, slice_extent);
+    for (index_t i = begin + 1; i < end; ++i) {
       for_each_contiguous_slice(
-          offset_bytes(base, dims[d].flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
+          offset_bytes(base, dim.flat_offset_bytes(i)), dims, d - 1, elem_size, f, slice_extent);
     }
   }
 }
@@ -414,7 +441,7 @@ void for_each_contiguous_slice(const raw_buffer& buf, F&& f) {
 
 // Call `f` for each slice of the first `slice_rank` dimensions of buf.
 template <typename F>
-void for_each_slice(int slice_rank, const raw_buffer& const_buf, F&& f) {
+void for_each_slice(std::size_t slice_rank, const raw_buffer& const_buf, F&& f) {
   // TODO: Should we make a copy of the buffer here? We const_cast it so we can modify it, but we
   // also restore it to its original state... not thread safe though in case buf is being shared
   // with another thread.

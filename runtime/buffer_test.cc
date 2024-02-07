@@ -63,14 +63,40 @@ TEST(buffer, rank0) {
 }
 
 TEST(buffer, for_each_contiguous_slice) {
-  buffer<int, 3> buf({10, 20, 30});
+  buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
   int slices = 0;
   for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
-    ASSERT_EQ(slice_extent, 10);
+    memset(slice, 7, slice_extent);
     slices++;
   });
-  ASSERT_EQ(slices, buf.dim(1).extent() * buf.dim(2).extent());
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_non_zero_min) {
+  buffer<char, 3> buf({10, 20, 30});
+  buf.allocate();
+  buf.translate(1, 2, 3);
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+    memset(slice, 7, slice_extent);
+    slices++;
+  });
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_padded) {
+  for (int padded_dim = 0; padded_dim < 2; ++padded_dim) {
+    buffer<char, 3> buf({10, 20, 30});
+    buf.allocate();
+    buf.dim(padded_dim).set_bounds(0, 8);
+    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+      memset(slice, 7, slice_extent);
+    });
+    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  }
 }
 
 TEST(buffer, for_each_contiguous_slice_non_innermost) {
