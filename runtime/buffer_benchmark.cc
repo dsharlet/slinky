@@ -33,13 +33,11 @@ void BM_for_each_slice_hardcoded(benchmark::State& state, Fn fn) {
 
   for (auto _ : state) {
     char* base_i = buf.base();
-    for (index_t i = 0; i < buf.dim(2).extent(); ++i) {
+    for (index_t i = 0; i < buf.dim(2).extent(); ++i, base_i += buf.dim(2).stride()) {
       char* base_j = base_i;
-      for (index_t j = 0; j < buf.dim(1).extent(); ++j) {
+      for (index_t j = 0; j < buf.dim(1).extent(); ++j, base_j += buf.dim(1).stride()) {
         fn(base_j, buf.dim(0).extent());
-        base_j += buf.dim(1).stride();
       }
-      base_i += buf.dim(2).stride();
     }
   }
 }
