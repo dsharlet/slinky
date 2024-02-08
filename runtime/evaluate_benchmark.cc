@@ -12,6 +12,7 @@ namespace slinky {
 
 node_context ctx;
 var buf(ctx, "buf");
+var buf2(ctx, "buf2");
 var x(ctx, "x");
 var y(ctx, "y");
 var z(ctx, "z");
@@ -91,6 +92,21 @@ void BM_make_buffer(benchmark::State& state) {
 }
 
 BENCHMARK(BM_make_buffer);
+
+void BM_make_buffer_clone(benchmark::State& state) {
+  std::atomic<int> calls = 0;
+  std::vector<dim_expr> dims = {buffer_dim(buf, 0), buffer_dim(buf, 1), buffer_dim(buf, 2)};
+  stmt clone = make_buffer::make(buf2.sym(), buffer_base(buf), buffer_elem_size(buf), dims, make_call_counter(calls));
+  stmt body = make_buf(3, make_loop(clone));
+
+  for (auto _ : state) {
+    evaluate(body);
+  }
+
+  state.SetItemsProcessed(calls);
+}
+
+BENCHMARK(BM_make_buffer_clone);
 
 void BM_crop_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
