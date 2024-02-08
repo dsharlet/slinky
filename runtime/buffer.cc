@@ -379,7 +379,6 @@ void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contigu
     } else {
       next->impl = for_each_contiguous_slice_dim::loop_folded;
       next->dim = &buf.dim(d);
-      next->begin = buf.dim(d).begin();
       next->extent = extent;
       ++next;
     }
