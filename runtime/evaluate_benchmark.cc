@@ -93,7 +93,7 @@ void BM_make_buffer(benchmark::State& state) {
 
 BENCHMARK(BM_make_buffer);
 
-void BM_make_buffer_clone(benchmark::State& state) {
+void BM_buffer_metadata(benchmark::State& state) {
   std::atomic<int> calls = 0;
   std::vector<dim_expr> dims = {buffer_dim(buf, 0), buffer_dim(buf, 1), buffer_dim(buf, 2)};
   stmt clone = make_buffer::make(buf2.sym(), buffer_base(buf), buffer_elem_size(buf), dims, make_call_counter(calls));
