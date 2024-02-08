@@ -106,7 +106,7 @@ void BM_buffer_metadata(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_make_buffer_clone);
+BENCHMARK(BM_buffer_metadata);
 
 void BM_crop_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
