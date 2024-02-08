@@ -371,12 +371,11 @@ struct for_each_contiguous_slice_dim {
     // For loop_linear to offset the base.
     index_t stride;
   };
-  index_t begin;
   index_t extent;
   enum {
     call_f,       // Uses extent
     loop_linear,  // Uses stride, extent
-    loop_folded,  // Uses dim, begin, extent
+    loop_folded,  // Uses dim, extent
   } impl;
 };
 
@@ -401,8 +400,9 @@ void for_each_contiguous_slice(void* base, const for_each_contiguous_slice_dim* 
     }
   } else {
     assert(slice_dim->impl == for_each_contiguous_slice_dim::loop_folded);
-    index_t end = slice_dim->begin + slice_dim->extent;
-    for (index_t i = slice_dim->begin; i < end; ++i) {
+    index_t begin = slice_dim->dim->begin();
+    index_t end = begin + slice_dim->extent;
+    for (index_t i = begin; i < end; ++i) {
       for_each_contiguous_slice(offset_bytes(base, slice_dim->dim->flat_offset_bytes(i)), slice_dim + 1, f);
     }
   }
