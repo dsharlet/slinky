@@ -16,6 +16,7 @@ var buf2(ctx, "buf2");
 var x(ctx, "x");
 var y(ctx, "y");
 var z(ctx, "z");
+var w(ctx, "w");
 
 constexpr index_t iterations = 100000;
 
@@ -55,7 +56,9 @@ BENCHMARK(BM_call);
 
 void BM_let(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt body = make_loop(let_stmt::make({{y.sym(), 0}, {z.sym(), y}}, make_call_counter(calls)));
+  std::vector<std::pair<symbol_id, expr>> values = {{y.sym(), 0}, {z.sym(), y}, {w.sym(), z}};
+  values.resize(state.range(0));
+  stmt body = make_loop(let_stmt::make(values, make_call_counter(calls)));
 
   for (auto _ : state) {
     evaluate(body);
@@ -64,7 +67,7 @@ void BM_let(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_let);
+BENCHMARK(BM_let)->DenseRange(1, 3);
 
 void BM_block(benchmark::State& state) {
   std::atomic<int> calls = 0;
