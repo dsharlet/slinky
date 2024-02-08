@@ -80,34 +80,6 @@ void BM_block(benchmark::State& state) {
 
 BENCHMARK(BM_block)->RangeMultiplier(2)->Range(2, 16);
 
-void BM_make_buffer(benchmark::State& state) {
-  std::atomic<int> calls = 0;
-  stmt body = make_loop(make_buf(3, make_call_counter(calls)));
-
-  for (auto _ : state) {
-    evaluate(body);
-  }
-
-  state.SetItemsProcessed(calls);
-}
-
-BENCHMARK(BM_make_buffer);
-
-void BM_buffer_metadata(benchmark::State& state) {
-  std::atomic<int> calls = 0;
-  std::vector<dim_expr> dims = {buffer_dim(buf, 0), buffer_dim(buf, 1), buffer_dim(buf, 2)};
-  stmt clone = make_buffer::make(buf2.sym(), buffer_base(buf), buffer_elem_size(buf), dims, make_call_counter(calls));
-  stmt body = make_buf(3, make_loop(clone));
-
-  for (auto _ : state) {
-    evaluate(body);
-  }
-
-  state.SetItemsProcessed(calls);
-}
-
-BENCHMARK(BM_buffer_metadata);
-
 void BM_crop_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
   stmt c = crop_dim::make(buf.sym(), 0, {1, 10}, make_call_counter(calls));
@@ -181,6 +153,34 @@ void BM_allocate(benchmark::State& state) {
 }
 
 BENCHMARK(BM_allocate);
+
+void BM_make_buffer(benchmark::State& state) {
+  std::atomic<int> calls = 0;
+  stmt body = make_loop(make_buf(3, make_call_counter(calls)));
+
+  for (auto _ : state) {
+    evaluate(body);
+  }
+
+  state.SetItemsProcessed(calls);
+}
+
+BENCHMARK(BM_make_buffer);
+
+void BM_buffer_metadata(benchmark::State& state) {
+  std::atomic<int> calls = 0;
+  std::vector<dim_expr> dims = {buffer_dim(buf, 0), buffer_dim(buf, 1), buffer_dim(buf, 2)};
+  stmt clone = make_buffer::make(buf2.sym(), buffer_base(buf), buffer_elem_size(buf), dims, make_call_counter(calls));
+  stmt body = make_buf(3, make_loop(clone));
+
+  for (auto _ : state) {
+    evaluate(body);
+  }
+
+  state.SetItemsProcessed(calls);
+}
+
+BENCHMARK(BM_buffer_metadata);
 
 void BM_parallel_loop(benchmark::State& state) {
   std::atomic<int> calls = 0;
