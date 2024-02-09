@@ -7,6 +7,17 @@
 
 namespace slinky {
 
+std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::State& state) {
+  std::vector<index_t> vec(max_size);
+  for (std::size_t i = 0; i < max_size; ++i) {
+    vec[i] = state.range(i);
+  }
+  while (vec.back() == -1) {
+    vec.pop_back();
+  }
+  return vec;
+}
+
 void BM_memcpy(benchmark::State& state) {
   std::size_t size = state.range(0);
   char* src = new char[size];
@@ -23,17 +34,6 @@ void BM_memcpy(benchmark::State& state) {
 }
 
 BENCHMARK(BM_memcpy)->Arg(1024 * 1024);
-
-std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::State& state) {
-  std::vector<index_t> vec(max_size);
-  for (std::size_t i = 0; i < max_size; ++i) {
-    vec[i] = state.range(i);
-  }
-  while (vec.back() == -1) {
-    vec.pop_back();
-  }
-  return vec;
-}
 
 void BM_copy(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
@@ -65,6 +65,19 @@ void BM_copy_padded(benchmark::State& state) {
 
 BENCHMARK(BM_copy_padded)->Args({1024, 256, 4, -1});
 BENCHMARK(BM_copy_padded)->Args({32, 32, 256, 4});
+
+void BM_memset(benchmark::State& state) {
+  std::size_t size = state.range(0);
+  char* dst = new char[size];
+
+  for (auto _ : state) {
+    memset(dst, 0, size);
+  }
+
+  delete[] dst;
+}
+
+BENCHMARK(BM_memset)->Arg(1024 * 1024);
 
 void BM_fill(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
