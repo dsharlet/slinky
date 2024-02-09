@@ -4,6 +4,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
+
+inline bool is_bazel_test() {
+  const char* bazel_test = getenv("BAZEL_TEST");
+  return bazel_test && strcmp(bazel_test, "1") == 0;
+}
 
 // Benchmark a call.
 template <class F>
@@ -11,7 +17,7 @@ double benchmark(F op) {
   op();
 
   const int max_trials = 10;
-  const double min_time_s = 0.5;
+  const double min_time_s = is_bazel_test() ? 0.0 : 0.5;
   double time_per_iteration_s = 0;
   long iterations = 1;
   for (int trials = 0; trials < max_trials; trials++) {
