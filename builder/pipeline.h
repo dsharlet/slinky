@@ -108,6 +108,9 @@ public:
     // A region to crop the output to while consuming this input. Only used by copies.
     box_expr output_crop;
 
+    // Slices to apply to the output while consuming this input. Only used by copies.
+    std::vector<expr> output_slice;
+
     symbol_id sym() const { return buffer->sym(); }
   };
 
@@ -247,7 +250,10 @@ public:
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
   // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
   static func make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t dim, std::vector<expr> bounds);
-  // TODO: We should also have `make_stack`. This requires slices instead of crops.
+  // Make a stack copy. This is a helper function for `make_copy`, where the crop for input i is a `slice_dim` of
+  // dimension `dim` at i. If `dim` is greater than the rank of `out` (the default), the new stack dimension will be the
+  // last dimension of the output.
+  static func make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t dim = -1);
 
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }

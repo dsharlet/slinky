@@ -142,7 +142,11 @@ stmt func::make_call() const {
       for (const var& i : outputs_[0].dims) {
         dst_x.push_back(i.sym());
       }
-      copies.push_back(copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_));
+      stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+      if (!input.output_slice.empty()) {
+        copy = slice_buffer::make(outputs_[0].sym(), input.output_slice, copy);
+      }
+      copies.push_back(copy);
     }
     return block::make(std::move(copies));
   }
@@ -173,6 +177,33 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
     // output in those dimensions.
     input.output_crop.resize(dim + 1);
     input.output_crop[dim] = range(bounds[i], bounds[i + 1]);
+
+    inputs.push_back(std::move(input));
+  }
+  return make_copy(std::move(inputs), std::move(out));
+}
+
+func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t dim) {
+  std::size_t rank = out.buffer->rank();
+  assert(rank > 0);
+  dim = std::min(rank - 1, dim);
+
+  std::vector<box_expr> crops;
+  std::vector<func::input> inputs;
+  for (std::size_t i = 0; i < in.size(); ++i) {
+    // Prepare the input.
+    assert(in[i]->rank() + 1 == rank);
+    func::input input;
+    input.buffer = in[i];
+    input.bounds.resize(rank);
+    for (std::size_t d = 0; d < rank; ++d) {
+      input.bounds[d] = point(out.dims[d]);
+    }
+
+    // Remove the stack dimension of the output from the input bounds, and slice the output at this point.
+    input.bounds.erase(input.bounds.begin() + dim);
+    input.output_slice.resize(dim + 1);
+    input.output_slice[dim] = static_cast<index_t>(i);
 
     inputs.push_back(std::move(input));
   }

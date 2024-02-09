@@ -209,8 +209,36 @@ public:
   }
 
   // TODO: Need to handle this?
-  void visit(const slice_buffer*) override { std::abort(); }
-  void visit(const slice_dim*) override { std::abort(); }
+  void visit(const slice_buffer* op) override {
+    std::optional<box_expr> bounds = crops[op->sym];
+    for (int d = 0; d < static_cast<int>(op->at.size()); ++d) {
+      if (!op->at[d].defined()) continue;
+      interval_expr& bounds_d = vector_at(bounds, d);
+      bounds_d |= point(op->at[d]);
+    }
+
+    std::optional<box_expr> sliced = bounds;
+    if (sliced) {
+      for (int d = op->at.size() - 1; d >= 0; --d) {
+        if (!op->at[d].defined()) continue;
+        sliced->erase(sliced->begin() + d);
+      }
+    }
+
+    auto set_bounds = set_value_in_scope(crops, op->sym, sliced);
+    node_mutator::visit(op);
+  }
+  void visit(const slice_dim* op) override {
+    std::optional<box_expr> bounds = crops[op->sym];
+    interval_expr& bounds_d = vector_at(bounds, op->dim);
+    bounds_d |= point(op->at);
+
+    std::optional<box_expr> sliced = bounds;
+    sliced->erase(sliced->begin() + op->dim);
+
+    auto set_bounds = set_value_in_scope(crops, op->sym, sliced);
+    node_mutator::visit(op);
+  }
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* op) override {
@@ -414,6 +442,7 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     stmt body = mutate(op->body);
     if (buffer_bounds[op->sym]) {
+      // If we folded something, the bounds required may have shrank, update the crop.
       box_expr new_bounds = *buffer_bounds[op->sym];
       set_result(crop_buffer::make(op->sym, std::move(new_bounds), std::move(body)));
     } else {
@@ -436,9 +465,39 @@ public:
     }
   }
 
-  // TODO: Need to handle this?
-  void visit(const slice_buffer*) override { std::abort(); }
-  void visit(const slice_dim*) override { std::abort(); }
+  void visit(const slice_buffer* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    if (bounds) {
+      for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
+        if (!op->at[d].defined()) continue;
+        bounds->erase(bounds->begin() + d);
+      }
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    stmt body = mutate(op->body);
+    // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_with_new_body(op, std::move(body)));
+    }
+  }
+  void visit(const slice_dim* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    if (bounds && op->dim < static_cast<int>(bounds->size())) {
+      bounds->erase(bounds->begin() + op->dim);
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    stmt body = mutate(op->body);
+    // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_with_new_body(op, std::move(body)));
+    }
+  }
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* op) override {
