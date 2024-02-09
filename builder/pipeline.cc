@@ -332,6 +332,8 @@ public:
       symbol_map<expr> output_maxs_in = output_maxs;
       if (i < f->output_crops().size()) {
         // We have an output crop for this input. Apply it to our bounds.
+        // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
+        // difficult to do because it could be used in several places, each with a different output crop to apply.
         const box_expr& crop = f->output_crops()[i];
         assert(f->outputs().size() == 1);
         const func::output& o = f->outputs().front();
