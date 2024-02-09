@@ -370,16 +370,13 @@ void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contigu
       // base already points to the min, we don't need to do anything.
     } else if (d > 0 && internal::can_fuse(buf.dim(d - 1), buf.dim(d))) {
       // Let this dimension fuse with the next dimension.
-    } else if (buf.dim(d).fold_factor() == dim::unfolded) {
-      next->impl = for_each_contiguous_slice_dim::loop_linear;
+    } else {
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
+      next->impl = for_each_contiguous_slice_dim::linear;
       next->stride = buf.dim(d).stride();
       next->extent = extent;
       extent = 1;
-      ++next;
-    } else {
-      next->impl = for_each_contiguous_slice_dim::loop_folded;
-      next->dim = &buf.dim(d);
-      next->extent = extent;
       ++next;
     }
   }
