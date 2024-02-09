@@ -1014,22 +1014,17 @@ TEST(pipeline, concatenated_result) {
     auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
     auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
 
-    intm1->dim(1).bounds = in1->dim(1).bounds;
-    intm2->dim(1).bounds = in2->dim(1).bounds;
-
     var x(ctx, "x");
     var y(ctx, "y");
 
     // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
     func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
     func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-    func concatenated = func::make_copy(
-        {intm1, {point(x), point(y)}}, {intm2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
+    func concatenated =
+        func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
-    // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case.
-    // We shouldn't need to disable checks.
     pipeline p =
-        build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true, .no_alias_buffers = no_alias_buffers});
+        build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
     // Run the pipeline.
     const int W = 20;
@@ -1074,14 +1069,11 @@ TEST(pipeline, padded_stencil) {
     auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
     auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(short), 2);
 
-    intm->dim(0).bounds = out->dim(0).bounds;
-    intm->dim(1).bounds = out->dim(1).bounds;
-
     var x(ctx, "x");
     var y(ctx, "y");
 
     func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-    func padded = func::make_copy({intm, {point(x), point(y)}}, {padded_intm, {x, y}}, {{6, 0}});
+    func padded = func::make_copy({intm, {point(x), point(y)}, out->bounds()}, {padded_intm, {x, y}}, {{6, 0}});
     func stencil = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
     switch (schedule) {
