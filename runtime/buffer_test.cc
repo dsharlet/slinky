@@ -48,6 +48,16 @@ TEST(buffer, buffer) {
   }
 }
 
+TEST(buffer, folded) {
+  buffer<char, 2> buf({10, 20});
+  ASSERT_EQ(buf.size_bytes(), 10 * 20);
+  buf.dim(1).set_fold_factor(2);
+  ASSERT_EQ(buf.size_bytes(), 10 * 2);
+  buf.allocate();
+
+  ASSERT_EQ(&buf(0, 0), &buf(0, 2));
+}
+
 TEST(buffer, rank0) {
   buffer<int> buf;
   ASSERT_EQ(buf.rank, 0);
@@ -85,6 +95,22 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
   });
   ASSERT_EQ(slices, 1);
   for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_folded) {
+  buffer<char, 3> buf({10, 20, 30});
+  buf.dim(1).set_fold_factor(4);
+  buf.allocate();
+  for (int crop_extent : {1, 2, 3, 4}) {
+    buf.dim(1).set_min_extent(8, crop_extent);
+    int slices = 0;
+    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+      memset(slice, 7, slice_extent);
+      slices++;
+    });
+    ASSERT_EQ(slices, crop_extent * 30);
+    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  }
 }
 
 TEST(buffer, for_each_contiguous_slice_padded) {
