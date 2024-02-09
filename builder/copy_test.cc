@@ -31,7 +31,7 @@ TEST(copy, trivial_1d) {
   std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x)}}, {out, {x}}, in->bounds() & out->bounds(), padding);
+  func copy = func::make_copy({in, {point(x)}, in->bounds() & out->bounds()}, {out, {x}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -73,7 +73,7 @@ TEST(copy, trivial_2d) {
   std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x), point(y)}}, {out, {x, y}}, in->bounds() & out->bounds(), padding);
+  func copy = func::make_copy({in, {point(x), point(y)}, in->bounds() & out->bounds()}, {out, {x, y}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

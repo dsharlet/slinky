@@ -82,17 +82,13 @@ func::func(call_stmt::callable impl, std::vector<input> inputs, std::vector<outp
   add_this_to_buffers();
 }
 
-func::func(input input, output out, box_expr crop, std::vector<char> padding)
+func::func(input input, output out, std::optional<std::vector<char>> padding)
     : func(nullptr, {std::move(input)}, {std::move(out)}) {
-  output_crops_.push_back(std::move(crop));
   padding_ = std::move(padding);
 }
 
-func::func(input input, output out) : func(nullptr, {std::move(input)}, {std::move(out)}) {}
-
-func::func(std::vector<input> inputs, output out, std::vector<box_expr> out_crops)
+func::func(std::vector<input> inputs, output out)
     : func(nullptr, std::move(inputs), {std::move(out)}) {
-  output_crops_ = std::move(out_crops);
 }
 
 func::func(func&& m) noexcept { *this = std::move(m); }
@@ -159,17 +155,10 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
   std::vector<box_expr> crops;
   std::vector<func::input> inputs;
   for (std::size_t i = 0; i < in.size(); ++i) {
-    // Translate the bounds into the crop needed by make_copy.
-    // We leave the dimensions not concatenated undefined so infer_bounds will require each input to provide the full
-    // output in those dimensions.
-    box_expr crop;
-    crop.resize(dim + 1);
-    crop[dim] = range(bounds[i], bounds[i + 1]);
-    crops.push_back(crop);
-
     // Prepare the input.
     assert(in[i]->rank() == rank);
     func::input input;
+
     input.buffer = in[i];
     input.bounds.resize(rank);
     for (std::size_t d = 0; d < rank; ++d) {
@@ -178,9 +167,16 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
     // We translate the input by the bounds to make concatenation a bit more natural (the concatenated buffers will
     // start at index 0 in the concatenated dimension).
     input.bounds[dim] -= bounds[i];
+
+    // Translate the bounds into the crop needed by make_copy.
+    // We leave the dimensions not concatenated undefined so infer_bounds will require each input to provide the full
+    // output in those dimensions.
+    input.output_crop.resize(dim + 1);
+    input.output_crop[dim] = range(bounds[i], bounds[i + 1]);
+
     inputs.push_back(std::move(input));
   }
-  return make_copy(std::move(inputs), std::move(out), std::move(crops));
+  return make_copy(std::move(inputs), std::move(out));
 }
 
 namespace {
@@ -327,19 +323,19 @@ public:
       }
     }
     // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
-    for (std::size_t i = 0; i < f->inputs().size(); ++i) {
-      symbol_map<expr> output_mins_in = output_mins;
-      symbol_map<expr> output_maxs_in = output_maxs;
-      if (i < f->output_crops().size()) {
+    for (const func::input& i : f->inputs()) {
+      symbol_map<expr> output_mins_i = output_mins;
+      symbol_map<expr> output_maxs_i = output_maxs;
+      if (!i.output_crop.empty()) {
+        const box_expr& crop = i.output_crop;
+        assert(f->outputs().size() == 1);
+        const func::output& o = f->outputs()[0];
         // We have an output crop for this input. Apply it to our bounds.
         // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
         // difficult to do because it could be used in several places, each with a different output crop to apply.
-        const box_expr& crop = f->output_crops()[i];
-        assert(f->outputs().size() == 1);
-        const func::output& o = f->outputs().front();
         for (std::size_t d = 0; d < o.dims.size(); ++d) {
-          std::optional<expr>& min = output_mins_in[o.dims[d]];
-          std::optional<expr>& max = output_maxs_in[o.dims[d]];
+          std::optional<expr>& min = output_mins_i[o.dims[d]];
+          std::optional<expr>& max = output_maxs_i[o.dims[d]];
           assert(min);
           assert(max);
           if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
@@ -347,15 +343,14 @@ public:
         }
       }
 
-      const func::input& in = f->inputs()[i];
-      box_expr crop(in.buffer->rank());
+      box_expr crop(i.buffer->rank());
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-        expr min = substitute(in.bounds[d].min, output_mins_in);
-        expr max = substitute(in.bounds[d].max, output_maxs_in);
+        expr min = substitute(i.bounds[d].min, output_mins_i);
+        expr max = substitute(i.bounds[d].max, output_maxs_i);
         // The bounds may have been negated.
         crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
-      result = crop_buffer::make(in.sym(), crop, result);
+      result = crop_buffer::make(i.sym(), crop, result);
     }
     return result;
   }

@@ -105,6 +105,9 @@ public:
     // These intervals should be a function of the expressions found in the output dims.
     box_expr bounds;
 
+    // A region to crop the output to while consuming this input. Only used by copies.
+    box_expr output_crop;
+
     symbol_id sym() const { return buffer->sym(); }
   };
 
@@ -133,7 +136,6 @@ private:
   call_stmt::callable impl_;
   std::vector<input> inputs_;
   std::vector<output> outputs_;
-  std::vector<box_expr> output_crops_;
 
   std::vector<loop_info> loops_;
   std::optional<loop_id> compute_at_;
@@ -146,9 +148,8 @@ private:
 public:
   func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
-  func(std::vector<input> inputs, output out, std::vector<box_expr> crops);
-  func(input input, output out, box_expr crop, std::vector<char> padding = {});
-  func(input input, output out);
+  func(std::vector<input> inputs, output out);
+  func(input input, output out, std::optional<std::vector<char>> padding = std::nullopt);
   func(func&&) noexcept;
   func& operator=(func&&) noexcept;
   ~func();
@@ -236,13 +237,12 @@ public:
   // Make a copy from a single input to a single output.
   static func make_copy(input in, output out) { return func(std::move(in), {std::move(out)}); }
   // Make a copy from a single input to a single output, with padding outside the output crop.
-  static func make_copy(input in, output out, box_expr crop, std::vector<char> padding) {
-    return func({std::move(in)}, std::move(out), {std::move(crop)}, std::move(padding));
+  static func make_copy(input in, output out, std::vector<char> padding) {
+    return func({std::move(in)}, std::move(out), std::move(padding));
   }
-  // Make a copy from multiple inputs with undefined padding. `crops` are crops applied to `out` before performing the
-  // corresponding copy.
-  static func make_copy(std::vector<input> in, output out, std::vector<box_expr> crops) {
-    return func(std::move(in), {std::move(out)}, std::move(crops));
+  // Make a copy from multiple inputs with undefined padding.
+  static func make_copy(std::vector<input> in, output out) {
+    return func(std::move(in), {std::move(out)});
   }
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
   // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
@@ -253,7 +253,6 @@ public:
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
   const std::optional<std::vector<char>>& padding() const { return padding_; }
-  const std::vector<box_expr>& output_crops() const { return output_crops_; }
 
   stmt make_call() const;
 };

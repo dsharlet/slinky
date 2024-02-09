@@ -1073,7 +1073,7 @@ TEST(pipeline, padded_stencil) {
     var y(ctx, "y");
 
     func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-    func padded = func::make_copy({intm, {point(x), point(y)}}, {padded_intm, {x, y}}, out->bounds(), {{6, 0}});
+    func padded = func::make_copy({intm, {point(x), point(y)}, out->bounds()}, {padded_intm, {x, y}}, {{6, 0}});
     func stencil = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
     switch (schedule) {
