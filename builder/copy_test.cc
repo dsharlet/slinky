@@ -27,40 +27,34 @@ TEST(copy, trivial_1d) {
   auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
 
   var x(ctx, "x");
-  var dx(ctx, "dx");
 
   std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x + dx)}}, {out, {x}}, padding);
+  func copy = func::make_copy({in, {point(x)}}, {out, {x}}, in->bounds() & out->bounds(), padding);
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {dx}, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   const int W = 10;
   buffer<int, 1> out_buf({W});
   out_buf.allocate();
 
   for (int offset : {0, 2, -2}) {
-    for (int in_offset : {0, offset}) {
-      // Run the pipeline.
-      buffer<int, 1> in_buf({W});
-      in_buf.translate(in_offset);
-      init_random(in_buf);
+    // Run the pipeline.
+    buffer<int, 1> in_buf({W});
+    in_buf.translate(offset);
+    init_random(in_buf);
 
-      const index_t args[] = {offset};
-      const raw_buffer* inputs[] = {&in_buf};
-      const raw_buffer* outputs[] = {&out_buf};
-      eval_context eval_ctx;
-      p.evaluate(args, inputs, outputs, eval_ctx);
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
 
-      for (int x = 0; x < W; ++x) {
-        if (in_buf.contains(x + offset)) {
-          ASSERT_EQ(out_buf(x), in_buf(x + offset));
-        } else {
-          ASSERT_EQ(out_buf(x), 0);
-        }
+    for (int x = 0; x < W; ++x) {
+      if (in_buf.contains(x)) {
+        ASSERT_EQ(out_buf(x), in_buf(x));
+      } else {
+        ASSERT_EQ(out_buf(x), 0);
       }
     }
   }
@@ -75,16 +69,13 @@ TEST(copy, trivial_2d) {
 
   var x(ctx, "x");
   var y(ctx, "y");
-  var dy(ctx, "dy");
 
   std::vector<char> padding(sizeof(int), 0);
 
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x), point(y + dy)}}, {out, {x, y}}, padding);
+  func copy = func::make_copy({in, {point(x), point(y)}}, {out, {x, y}}, in->bounds() & out->bounds(), padding);
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {dy}, {in}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int H = 20;
@@ -93,24 +84,21 @@ TEST(copy, trivial_2d) {
   out_buf.allocate();
 
   for (int offset : {0, -4, 3}) {
-    for (int in_offset : {0, offset}) {
-      buffer<int, 2> in_buf({W, H});
-      in_buf.translate(0, in_offset);
-      init_random(in_buf);
+    buffer<int, 2> in_buf({W, H});
+    in_buf.translate(0, offset);
+    init_random(in_buf);
 
-      const index_t args[] = {offset};
-      const raw_buffer* inputs[] = {&in_buf};
-      const raw_buffer* outputs[] = {&out_buf};
-      eval_context eval_ctx;
-      p.evaluate(args, inputs, outputs, eval_ctx);
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    eval_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
 
-      for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-          if (in_buf.contains(x, y + offset)) {
-            ASSERT_EQ(out_buf(x, y), in_buf(x, y + offset));
-          } else {
-            ASSERT_EQ(out_buf(x, y), 0);
-          }
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        if (in_buf.contains(x, y)) {
+          ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+        } else {
+          ASSERT_EQ(out_buf(x, y), 0);
         }
       }
     }
@@ -423,14 +411,10 @@ TEST(copy, concatenate) {
 
   var x(ctx, "x");
   var y(ctx, "y");
-  var z(ctx, "z");
 
-  func concat =
-      func::make_copy({in1, {point(x), point(y)}}, {in2, {point(x), point(y - in1->dim(1).extent())}}, {out, {x, y}});
+  func concat = func::make_concat({in1, in2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case. We
-  // shouldn't need to disable checks.
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_checks = true});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   const int W = 8;
   const int H1 = 5;
