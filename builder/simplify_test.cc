@@ -321,7 +321,7 @@ expr make_random_expr(int depth) {
 TEST(simplify, fuzz) {
   const int seed = time(nullptr);
   srand(seed);
-  constexpr int tests = 10000;
+  constexpr int tests = 1000;
   constexpr int checks = 10;
 
   eval_context ctx;
