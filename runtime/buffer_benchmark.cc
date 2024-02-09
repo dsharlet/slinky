@@ -18,15 +18,19 @@ std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::Stat
   return vec;
 }
 
+template <typename Fn>
+__attribute__((noinline)) void no_inline(Fn&& fn) { fn(); }
+
 void BM_memcpy(benchmark::State& state) {
   std::size_t size = state.range(0);
   char* src = new char[size];
   char* dst = new char[size];
 
   memset(src, 0, size);
+  memset(dst, 0, size);
 
   for (auto _ : state) {
-    memcpy(dst, src, size);
+    no_inline([=]() { memcpy(dst, src, size); });
   }
 
   delete[] src;
@@ -71,7 +75,7 @@ void BM_memset(benchmark::State& state) {
   char* dst = new char[size];
 
   for (auto _ : state) {
-    memset(dst, 0, size);
+    no_inline([=]() { memset(dst, 0, size); });
   }
 
   delete[] dst;
