@@ -430,7 +430,6 @@ TEST(copy, concatenate) {
   init_random(in1_buf);
   init_random(in2_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 2> out_buf({W, H1 + H2});
   out_buf.allocate();
 
@@ -471,7 +470,6 @@ TEST(copy, stack) {
   init_random(in1_buf);
   init_random(in2_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 3> out_buf({W, H, 2});
   out_buf.allocate();
 
