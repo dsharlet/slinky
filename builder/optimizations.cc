@@ -135,6 +135,7 @@ class buffer_aliaser : public node_mutator {
     std::set<symbol_id> cannot_alias_;
 
   public:
+    std::map<symbol_id, buffer_alias>& can_alias() { return can_alias_; }
     const std::map<symbol_id, buffer_alias>& can_alias() const { return can_alias_; }
 
     void maybe_alias(symbol_id s, buffer_alias a) {
@@ -190,12 +191,13 @@ public:
       // buffer_at call that is out of bounds.
       std::vector<expr> at = target.second.offset;
       std::vector<dim_expr> dims = buffer_dims(target_var, op->dims.size());
-      assert(at.size() <= dims.size());
-      at.resize(dims.size());
-      for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
+      at.resize(std::max(at.size(), dims.size()));
+      for (int d = 0; d < static_cast<int>(at.size()); ++d) {
         if (!at[d].defined()) at[d] = 0;
-        at[d] = max(buffer_min(target_var, d) - at[d], op->dims[d].bounds.min);
-        dims[d].bounds &= op->dims[d].bounds;
+        if (d < static_cast<int>(op->dims.size())) {
+          at[d] = max(buffer_min(target_var, d) - at[d], op->dims[d].bounds.min);
+          dims[d].bounds &= op->dims[d].bounds;
+        }
       }
       stmt result = make_buffer::make(
           op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size), std::move(dims), std::move(body));
@@ -238,6 +240,8 @@ public:
         std::optional<std::size_t> elem_size_i = elem_sizes[i];
         if (!elem_size_i) continue;
 
+        // TODO: `is_elementwise` should be replaced by op->metadata.can_be_computed_in_place or the like. Then, we
+        // don't need to track bounds at all in this visitor.
         if (!in_x || *elem_size_o != *elem_size_i || !is_elementwise(*in_x, o)) {
           info->do_not_alias(o);
           return;
@@ -283,9 +287,90 @@ public:
     node_mutator::visit(op);
   }
 
-  // TODO: Need to handle this?
-  void visit(const slice_buffer*) override { std::abort(); }
-  void visit(const slice_dim*) override { std::abort(); }
+  void merge_alias_info(symbol_map<buffer_info> add) {
+    for (symbol_id i = 0; i < add.size(); ++i) {
+      if (!add[i]) continue;
+      std::optional<buffer_info>& info = alias_info[i];
+      if (!info) {
+        info = std::move(add[i]);
+      } else {
+        for (auto& j : add[i]->can_alias()) {
+          info->maybe_alias(j.first, std::move(j.second));
+        }
+      }
+    }
+  }
+
+  void visit(const slice_buffer* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    if (bounds) {
+      for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
+        if (!op->at[d].defined()) continue;
+        bounds->erase(bounds->begin() + d);
+      }
+    }
+
+    // We need to know which alias candidates are added inside this slice.
+    symbol_map<buffer_info> old_alias_info;
+    std::swap(old_alias_info, alias_info);
+    for (symbol_id i = 0; i < old_alias_info.size(); ++i) {
+      if (old_alias_info[i]) {
+        alias_info[i] = buffer_info();
+      }
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    node_mutator::visit(op);
+
+    // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
+    for (std::optional<buffer_info>& i : alias_info) {
+      if (!i) continue;
+      auto j = i->can_alias().find(op->sym);
+      if (j != i->can_alias().end()) {
+        std::vector<expr>& offset = j->second.offset;
+        for (std::size_t d = 0; d < op->at.size(); ++d) {
+          if (!op->at[d].defined()) continue;
+          offset.insert(offset.begin() + d, op->at[d]);
+        }
+      }
+    }
+
+    // Add the old alias candidates back to the alias info.
+    merge_alias_info(std::move(old_alias_info));
+  }
+
+  void visit(const slice_dim* op) override {
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    if (bounds && op->dim < static_cast<int>(bounds->size())) {
+      bounds->erase(bounds->begin() + op->dim);
+    }
+
+    // We need to know which alias candidates are added inside this slice.
+    symbol_map<buffer_info> old_alias_info;
+    std::swap(old_alias_info, alias_info);
+    for (symbol_id i = 0; i < old_alias_info.size(); ++i) {
+      if (old_alias_info[i]) {
+        alias_info[i] = buffer_info();
+      }
+    }
+
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    node_mutator::visit(op);
+
+    // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
+    for (std::optional<buffer_info>& i : alias_info) {
+      if (!i) continue;
+      auto j = i->can_alias().find(op->sym);
+      if (j != i->can_alias().end()) {
+        std::vector<expr>& offset = j->second.offset;
+        offset.insert(offset.begin() + op->dim, op->at);
+      }
+    }
+
+    // Add the old alias candidates back to the alias info.
+    merge_alias_info(std::move(old_alias_info));
+  }
+
   void visit(const truncate_rank*) override { std::abort(); }
 
   // We need a better way to do this. `check` doesn't have a scope, so we need to be careful to only learn information
