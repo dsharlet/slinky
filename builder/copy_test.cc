@@ -30,8 +30,10 @@ TEST(copy, trivial_1d) {
 
   std::vector<char> padding(sizeof(int), 0);
 
+  // Crop the output to the intersection of the input and output buffer.
+  box_expr output_crop = in->bounds() & out->bounds();
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x)}, in->bounds() & out->bounds()}, {out, {x}}, padding);
+  func copy = func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -72,8 +74,10 @@ TEST(copy, trivial_2d) {
 
   std::vector<char> padding(sizeof(int), 0);
 
+  // Crop the output to the intersection of the input and output buffer.
+  box_expr output_crop = in->bounds() & out->bounds();
   // This copy should be implemented as a single call to copy.
-  func copy = func::make_copy({in, {point(x), point(y)}, in->bounds() & out->bounds()}, {out, {x, y}}, padding);
+  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
