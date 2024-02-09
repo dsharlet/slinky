@@ -47,8 +47,8 @@ void BM_copy(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_copy)->Args({1024, 256, -1, -1});
-BENCHMARK(BM_copy)->Args({32, 32, 256, -1});
+BENCHMARK(BM_copy)->Args({1024, 256, 4, -1});
+BENCHMARK(BM_copy)->Args({32, 32, 256, 4});
 
 void BM_copy_padded(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
@@ -78,8 +78,8 @@ void BM_fill(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_fill)->Args({1024, 256, -1, -1});
-BENCHMARK(BM_fill)->Args({32, 32, 256, -1});
+BENCHMARK(BM_fill)->Args({1024, 256, 4, -1});
+BENCHMARK(BM_fill)->Args({32, 32, 256, 4});
 
 void BM_fill_padded(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
@@ -94,8 +94,8 @@ void BM_fill_padded(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_fill_padded)->Args({1024, 256, -1, -1});
-BENCHMARK(BM_fill_padded)->Args({32, 32, 256, -1});
+BENCHMARK(BM_fill_padded)->Args({1024, 256, 4, -1});
+BENCHMARK(BM_fill_padded)->Args({32, 32, 256, 4});
 
 void BM_pad(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
@@ -114,8 +114,8 @@ void BM_pad(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_pad)->Args({1024, 256, -1, -1});
-BENCHMARK(BM_pad)->Args({32, 32, 256, -1});
+BENCHMARK(BM_pad)->Args({1024, 256, 4, -1});
+BENCHMARK(BM_pad)->Args({32, 32, 256, 4});
 
 void memset_slice(void* base, index_t extent) { memset(base, 0, extent); }
 
