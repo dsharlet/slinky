@@ -456,8 +456,9 @@ TEST(copy, stack) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  var z(ctx, "z");
 
-  func concat = func::make_stack({in1, in2}, {out, {x, y}});
+  func concat = func::make_stack({in1, in2}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 

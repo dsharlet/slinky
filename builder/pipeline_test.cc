@@ -1070,12 +1070,13 @@ TEST(pipeline, stacked_result) {
 
   var x(ctx, "x");
   var y(ctx, "y");
+  var z(ctx, "z");
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
   func stacked =
-      func::make_stack({intm1, intm2}, {out, {x, y}}, 2);
+      func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 

@@ -185,6 +185,7 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
 
 func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t dim) {
   std::size_t rank = out.buffer->rank();
+  assert(out.dims.size() == rank);
   assert(rank > 0);
   dim = std::min(rank - 1, dim);
 
@@ -207,6 +208,8 @@ func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t d
 
     inputs.push_back(std::move(input));
   }
+  // Also apply the slice to the output dimensions.
+  out.dims.erase(out.dims.begin() + dim);
   return make_copy(std::move(inputs), std::move(out));
 }
 
