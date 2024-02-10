@@ -240,7 +240,6 @@ public:
     elem_size = sizeof(T);
     if (DimsSize > 0) {
       dims = &dims_storage[0];
-      new (dims) slinky::dim[rank];
     } else {
       dims = nullptr;
     }
