@@ -251,6 +251,11 @@ public:
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
   ~buffer() { free(); }
 
+  buffer(const buffer&) = delete;
+  buffer(buffer&& m) = delete;
+  void operator=(const buffer&) = delete;
+  void operator=(buffer&& m) = delete;
+
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
 
   // These accessors are not designed to be fast. They exist to facilitate testing,
