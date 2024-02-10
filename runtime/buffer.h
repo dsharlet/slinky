@@ -210,9 +210,6 @@ public:
   // Make a buffer and space for dims in the same object.
   static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
 
-  // Make a new buffer of rank extents.size(), with dim d having extent extents[d].
-  static raw_buffer_ptr make(std::size_t elem_size, span<const index_t> extents);
-
   // Make a deep copy of another buffer, including allocating and copying the data if src is allocated.
   static raw_buffer_ptr make(const raw_buffer& src);
 

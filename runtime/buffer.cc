@@ -52,17 +52,6 @@ void raw_buffer::destroy(raw_buffer* buf) {
   delete[] (char*)buf;
 }
 
-raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> extents) {
-  raw_buffer_ptr result = make(extents.size(), elem_size);
-  index_t stride = elem_size;
-  for (std::size_t d = 0; d < extents.size(); ++d) {
-    result->dims[d].set_min_extent(0, extents[d]);
-    result->dims[d].set_stride(stride);
-    stride *= extents[d];
-  }
-  return result;
-}
-
 raw_buffer_ptr raw_buffer::make(const raw_buffer& src) {
   raw_buffer_ptr result = make(src.rank, src.elem_size);
   for (std::size_t d = 0; d < src.rank; ++d) {
