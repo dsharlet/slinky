@@ -369,4 +369,157 @@ TEST(buffer, copy) {
   test_copy<big>();
 }
 
+TEST(buffer, for_each_contiguous_slice_multi) {
+  buffer<char, 3> buf({10, 20, 30});
+  buffer<char, 3> buf2({10, 20, 30});
+  buf.allocate();
+  buf2.allocate();
+  int slices = 0;
+  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
+    memset(slice, 7, slice_extent);
+    memset(slice2, 7, slice_extent);
+    slices++;
+  }, buf2);
+  ASSERT_EQ(slices, 600);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_folded_main_buffer) {
+  buffer<char, 3> buf({10, 20, 30});
+  buf.dim(1).set_fold_factor(4);
+  buf.allocate();
+  buffer<char, 3> buf2({10, 20, 30});
+  buf2.allocate();
+  char xx = 42;
+  fill(buf2, &xx);
+  for (int crop_extent : {1, 2, 3, 4}) {
+    buf.dim(1).set_min_extent(8, crop_extent);
+    int slices = 0;
+    for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
+      memset(slice, 7, slice_extent);
+      memset(slice2, 7, slice_extent);
+      slices++;
+    }, buf2);
+    ASSERT_EQ(slices, crop_extent * 30);
+    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+    for (int c = 0; c < 30; c++) {
+      for (int y = 0; y < 20; y++) {
+        for (int x = 0; x < 10; x++) {
+          const char value = (y >= 8 && y < 8 + crop_extent) ? 7 : 42;
+          ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
+        }
+      }
+    }
+  }
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_padded) {
+  for (int padded_dim = 0; padded_dim < 2; ++padded_dim) {
+    buffer<int, 3> buf({10, 20, 30});
+    buf.allocate();
+    buf.dim(padded_dim).set_min_extent(0, 8);
+    buffer<int, 3> buf2({10, 20, 30});
+    buf2.allocate();
+    int value = 0;
+    for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
+      int* s = reinterpret_cast<int*>(slice);
+      int* s2 = reinterpret_cast<int*>(slice2);
+      for (int i = 0; i < slice_extent; i++) {
+        *s++ = value;
+        *s2++ = value;
+        value++;
+      }
+    }, buf2);
+    value = 0;
+    for (int c = 0; c < (padded_dim == 2 ? 8 : 30); c++) {
+      for (int y = 0; y < (padded_dim == 1 ? 8 : 20); y++) {
+        for (int x = 0; x < (padded_dim == 0 ? 8 : 10); x++) {
+          ASSERT_EQ(buf(x, y, c), value) << x << " " << y << " " << c;
+          ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
+          value++;
+        }
+      }
+    }
+  }
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_non_innermost) {
+  buffer<int, 3> buf({10, 20, 30});
+  buf.allocate();
+  std::swap(buf.dim(0), buf.dim(1));
+  buffer<int, 3> buf2({10, 20, 30});
+  buf2.allocate();
+  std::swap(buf2.dim(0), buf2.dim(1));
+  int value = 0;
+  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
+    int* s = reinterpret_cast<int*>(slice);
+    int* s2 = reinterpret_cast<int*>(slice2);
+    for (int i = 0; i < slice_extent; i++) {
+      *s++ = value;
+      *s2++ = value;
+      value++;
+    }
+  }, buf2);
+  value = 0;
+  for (int c = 0; c < 30; c++) {
+    for (int y = 0; y < 20; y++) {
+      for (int x = 0; x < 10; x++) {
+        ASSERT_EQ(buf(y, x, c), value) << x << " " << y << " " << c;
+        ASSERT_EQ(buf2(y, x, c), value) << x << " " << y << " " << c;
+        value++;
+      }
+    }
+  }
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_both_non_zero_min) {
+  buffer<char, 3> buf({10, 20, 30});
+  buffer<char, 3> buf2({10, 20, 30});
+  buf.allocate();
+  buf.translate(1, 2, 3);
+  buf2.allocate();
+  buf2.translate(1, 2, 3);
+  int slices = 0;
+  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
+    memset(slice, 7, slice_extent);
+    memset(slice2, 7, slice_extent);
+    slices++;
+  }, buf2);
+  ASSERT_EQ(slices, 600);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_extra_buf_offset_negative) {
+  buffer<int, 3> buf({10, 20, 30});
+  buffer<int, 3> buf2({11, 21, 31});
+  buf.allocate();
+  buf2.allocate();
+  buf2.translate(-1, -1, -1);
+  int slices = 0;
+  int value = 0;
+  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
+    int* s = reinterpret_cast<int*>(slice);
+    int* s2 = reinterpret_cast<int*>(slice2);
+    for (int i = 0; i < slice_extent; i++) {
+      *s++ = value;
+      *s2++ = value;
+      value++;
+    }
+    slices++;
+  }, buf2);
+  ASSERT_EQ(slices, 600);
+  value = 0;
+  for (int c = 0; c < 30; c++) {
+    for (int y = 0; y < 20; y++) {
+      for (int x = 0; x < 10; x++) {
+        ASSERT_EQ(buf(x, y, c), value) << x << " " << y << " " << c;
+        ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
+        value++;
+      }
+    }
+  }
+}
+
 }  // namespace slinky

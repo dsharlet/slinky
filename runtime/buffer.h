@@ -7,6 +7,8 @@
 #include <cstring>
 #include <memory>
 
+#include <iostream>
+
 #include "runtime/util.h"
 
 namespace slinky {
@@ -493,6 +495,201 @@ void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) 
   memcpy(buf_.dims, buf.dims, sizeof(dim) * buf.rank);
 
   internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
+}
+
+namespace internal {
+
+class SinkPrinter {
+public:
+    SinkPrinter() {
+    }
+};
+template<typename T>
+SinkPrinter operator<<(const SinkPrinter &s, T) {
+    return s;
+}
+
+#if 1
+#define sink SinkPrinter()
+#else
+#define sink std::cerr
+#endif
+
+struct per_buf_info {
+  union {
+    // For loop_folded to call flat_offset_bytes
+    const slinky::dim* dim;
+    // For loop_linear to offset the base.
+    index_t stride;
+  };
+};
+
+template<int N>
+struct for_each_contiguous_slice_multi_dim {
+  per_buf_info info[N];
+  index_t extent;
+  enum {
+    call_f,       // Uses extent
+    loop_linear,  // Uses stride, extent
+    loop_folded,  // Uses dim, extent
+  } impl;
+};
+
+inline bool can_fuse_multi(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+inline bool can_fuse_multi(const raw_buffer& buf, int d) {
+  assert(d > 0);
+  return can_fuse_multi(buf.dim(d - 1), buf.dim(d));
+}
+
+inline void assign_stride(int, per_buf_info*) {
+  // nothing
+}
+
+template<typename First, typename... Rest>
+inline void assign_stride(int d, per_buf_info* info, const First& first, const Rest&... rest) {
+    info->stride = first.dim(d).stride();
+    assign_stride(d, info + 1, rest...);
+}
+
+inline void assign_dim(int, per_buf_info*) {
+  // nothing
+}
+
+template<typename First, typename... Rest>
+inline void assign_dim(int d, per_buf_info* info, const First& first, const Rest&... rest) {
+    info->dim = &first.dim(d);
+    assign_dim(d, info + 1, rest...);
+}
+
+inline void add_stride_to_bases(const per_buf_info*) {
+  // nothing
+}
+
+template<typename First, typename... Rest>
+inline void add_stride_to_bases(const per_buf_info* info, First& first, Rest&... rest) {
+  first = offset_bytes(first, info->stride);
+  add_stride_to_bases(info + 1, rest...);
+}
+
+template<typename... Args>
+inline bool others_can_fuse_with(const raw_buffer& buf, int d) {
+  return true;
+}
+
+template<typename First, typename... Rest>
+inline bool others_can_fuse_with(const raw_buffer& buf, int d, const First& first, const Rest&... rest) {
+  const bool can = false;  // TODO
+  return can && others_can_fuse_with(buf, d, rest...);
+}
+
+template<int N, typename... Args>
+void make_for_each_contiguous_slice_multi_dims(const raw_buffer& buf, for_each_contiguous_slice_multi_dim<N>* slice_dims, const Args&... other_bufs) {
+  auto* next = slice_dims;
+  index_t slice_extent = 1;
+  index_t extent = 1;
+  sink << "\nFECS rank="<<buf.rank<<"\n";
+  for (int d = buf.rank - 1; d >= 0; --d) {
+    extent *= buf.dim(d).extent();
+    sink << "d="<<d<<" extent="<<extent<<"\n";
+    const bool any_others_folded = (... || (other_bufs.dim(d).fold_factor() != dim::unfolded));
+    if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
+      sink << "slice_extent="<<slice_extent<<"\n";
+      // This is the slice dimension.
+      slice_extent = extent;
+      extent = 1;
+    } else if (any_others_folded) {
+      sink << "folded\n";
+      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_folded;
+      assign_dim(d, next->info, buf, other_bufs...);
+      next->extent = extent;
+      ++next;
+    } else if (extent == 1) {
+      sink << "base already points to the min\n";
+      // base already points to the min, we don't need to do anything.
+    } else if (d > 0 && can_fuse_multi(buf, d) && others_can_fuse_with(buf, d, other_bufs...)) {
+      sink << "fuse\n";
+      // Let this dimension fuse with the next dimension.
+    } else {
+      sink << "linear\n";
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
+      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_linear;
+      assign_stride(d, next->info, buf, other_bufs...);
+      next->extent = extent;
+      extent = 1;
+      ++next;
+    }
+  }
+  next->impl = for_each_contiguous_slice_multi_dim<N>::call_f;
+  next->extent = slice_extent;
+  sink << "call_f slice_extent="<<slice_extent<<"\n\n";
+}
+
+template <typename... Args, std::size_t... Indices>
+inline void offset_folded_bases(int i, const per_buf_info* info, std::array<void*, sizeof...(Args)>& offset_bases, std::index_sequence<Indices...>, const Args&... other_bases) {
+  ((offset_bases[Indices] = offset_bytes(other_bases..., info[Indices+1].dim->flat_offset_bytes(i))), ...);
+}
+
+template <int N, typename F, std::size_t... Indices>
+void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f,
+  const std::array<void*, sizeof...(Indices)>& other_bases, std::index_sequence<Indices...>) {
+  for_each_contiguous_slice_multi_impl(base, slice_dim, f, other_bases[Indices]...);
+}
+
+template <int N, typename F, typename... Args>
+void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f, Args... other_bases) {
+  if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::call_f) {
+    f(base, slice_dim->extent, static_cast<void*>(other_bases)...);
+  } else if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_linear) {
+    for (index_t i = 0; i < slice_dim->extent; ++i) {
+      for_each_contiguous_slice_multi_impl(base, slice_dim + 1, f, static_cast<void*>(other_bases)...);
+      add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
+    }
+  } else {
+    // TODO: this template code is ugly and should be refactored; the idea
+    // is we use this array as a temporary to hold the offset version of
+    // other_bases... and then call a variant of this func that unpacks the array
+    // back into a variadic. Could be streamlined into something less awkward.
+    std::array<void*, sizeof...(Args)> offset_bases;
+
+    // We always treat the 'main' buffer as linear, but if any of the 'other' buffers are folded in this
+    // dimension, we treat them all as though they might be folded.
+    assert(slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_folded);
+    index_t begin = slice_dim->info[0].dim->begin();
+    index_t end = begin + slice_dim->extent;
+    for (index_t i = begin; i < end; ++i) {
+      offset_folded_bases<Args...>(i, slice_dim->info, offset_bases, std::make_index_sequence<sizeof...(Args)>(), other_bases...);
+      for_each_contiguous_slice_multi_impl(base, slice_dim + 1, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
+    }
+  }
+}
+
+bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
+void* offset_base_of(const raw_buffer& buf, const raw_buffer& other_buf);
+
+}  // namespace internal
+
+// Like `for_each_contiguous_slice`, but allows for passing an arbitrary number of additional buffers,
+// which will be sliced in tandem with the 'main' buffer. All additional buffers must be of identical
+// rank to the main, and must cover (at least) the same area in each dimension.
+template <typename F, typename... Args>
+void for_each_contiguous_slice_multi(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
+  assert(... && internal::other_bufs_ok(buf, other_bufs));
+
+  constexpr int N = sizeof...(Args) + 1;
+
+  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
+  internal::for_each_contiguous_slice_multi_dim<N>* dims =
+      SLINKY_ALLOCA(internal::for_each_contiguous_slice_multi_dim<N>, buf.rank + 1);
+  internal::make_for_each_contiguous_slice_multi_dims<N>(buf, dims, other_bufs...);
+
+  internal::for_each_contiguous_slice_multi_impl(buf.base, dims, f, internal::offset_base_of(buf, other_bufs)...);
 }
 
 }  // namespace slinky

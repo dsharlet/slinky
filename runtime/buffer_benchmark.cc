@@ -178,4 +178,30 @@ BENCHMARK(BM_for_each_slice_hardcoded)->Args({64, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice)->Args({64, 4, 4});
 BENCHMARK(BM_for_each_slice_hardcoded)->Args({64, 4, 4});
 
+void memset_slices_multi(void* slice, index_t extent, void* slice2) {
+  memset(slice, 0, extent);
+  memset(slice2, 0, extent);
+}
+
+template <typename Fn>
+void BM_for_each_contiguous_slice_multi(benchmark::State& state, Fn fn) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  extents[0] += 64;  // Insert padding after the first dimension.
+  buffer<char, 3> buf(extents);
+  buf.allocate();
+  buf.dim(0).set_extent(state.range(0));
+  buffer<char, 3> buf2(extents);
+  buf2.allocate();
+  buf2.dim(0).set_extent(state.range(0));
+
+  for (auto _ : state) {
+    for_each_contiguous_slice_multi(buf, fn, buf2);
+  }
+}
+
+void BM_for_each_contiguous_slice_multi(benchmark::State& state) { BM_for_each_contiguous_slice_multi(state, memset_slices_multi); }
+
+BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({64, 16, 1});
+BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({64, 4, 4});
+
 }  // namespace slinky

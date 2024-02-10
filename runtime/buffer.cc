@@ -384,6 +384,23 @@ void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contigu
   next->extent = slice_extent;
 }
 
+bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf) {
+  if (other_buf.rank != buf.rank) return false;
+  for (int d = 0; d < buf.rank; d++) {
+    if (other_buf.dims[d].min() > buf.dims[d].min()) return false;
+    if (other_buf.dims[d].max() < buf.dims[d].max()) return false;
+  }
+  return true;
+}
+
+void* offset_base_of(const raw_buffer& buf, const raw_buffer& other_buf) {
+  void* other_base = other_buf.base;
+  for (int d = 0; d < buf.rank; d++) {
+    other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
+  }
+  return other_base;
+}
+
 }  // namespace internal
 
 }  // namespace slinky
