@@ -128,18 +128,10 @@ protected:
   }
 
 public:
-  char* allocation;
   void* base;
   std::size_t elem_size;
   std::size_t rank;
   slinky::dim* dims;
-
-  raw_buffer() = default;
-  raw_buffer(const raw_buffer&) = delete;
-  raw_buffer(raw_buffer&&) = delete;
-  void operator=(const raw_buffer&) = delete;
-  void operator=(raw_buffer&&) = delete;
-  ~raw_buffer() { free(); }
 
   slinky::dim& dim(std::size_t i) {
     assert(i < rank);
@@ -201,41 +193,37 @@ public:
   }
 
   std::size_t size_bytes() const;
-  void allocate();
-  void free();
+
+  // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
+  // be deallocated with `free`.
+  void* allocate();
 
   template <typename NewT>
   const buffer<NewT>& cast() const;
 
-  // Make a pointer to a buffer with an allocation for the buffer in the same allocation. The buffer can be freed with
-  // `free`.
+  // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
   static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
 
-  // Make a deep copy of another buffer, including allocating and copying the data if src is allocated. The buffer can
-  // be freed with `free`.
+  // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);
 };
 
 template <typename T, std::size_t DimsSize>
 class buffer : public raw_buffer {
 private:
-  // TODO: When DimsSize is 0, this still makes sizeof(buffer) bigger than sizeof(raw_buffer).
-  // This might be a problem because we can cast raw_buffer to buffer<T>. When DimsSize is 0,
-  // we shouldn't actually access this, so it might be harmless, but it still seems ugly.
+  void* to_free;
   slinky::dim dims_storage[DimsSize];
 
 public:
-  using raw_buffer::allocate;
   using raw_buffer::cast;
   using raw_buffer::dim;
   using raw_buffer::elem_size;
   using raw_buffer::flat_offset_bytes;
-  using raw_buffer::free;
   using raw_buffer::rank;
 
   buffer() {
     raw_buffer::base = nullptr;
-    allocation = nullptr;
+    to_free = nullptr;
     rank = DimsSize;
     elem_size = sizeof(T);
     if (DimsSize > 0) {
@@ -261,6 +249,7 @@ public:
     }
   }
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
+  ~buffer() { free(); }
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
 
@@ -280,6 +269,16 @@ public:
 
   auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
+
+  void allocate() {
+    assert(!to_free);
+    to_free = raw_buffer::allocate();
+  }
+
+  void free() {
+    ::free(to_free);
+    to_free = nullptr;
+  }
 };
 
 template <typename NewT>
@@ -439,7 +438,7 @@ void for_each_index(span<const dim> dims, const F& f) {
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, const F& f) {
-  for_each_index({buf.dims, buf.rank}, f);
+  for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
 // Call `f(void* base, index_t extent)` for each contiguous slice in the domain of `buf`.
@@ -456,12 +455,8 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
 // Call `f` for each slice of the first `slice_rank` dimensions of buf.
 template <typename F>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f) {
-  raw_buffer buf_;
-  buf_.allocation = nullptr;
-  buf_.base = buf.base;
-  buf_.elem_size = buf.elem_size;
-  buf_.rank = buf.rank;
-  buf_.dims = buf.dims;  // Shallow copy is OK here, we don't modify dims.
+  // Shallow copy is OK here, we don't modify dims.
+  raw_buffer buf_ = buf;
 
   internal::for_each_slice(slice_rank, buf_, f);
 }
@@ -476,7 +471,6 @@ void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) 
   // TODO: We restore the buffer to its original state, so if we can guarantee that this thread has its own copy, it
   // should be OK to just const_cast it.
   raw_buffer buf_;
-  buf_.allocation = nullptr;
   buf_.base = buf.base;
   buf_.elem_size = buf.elem_size;
   buf_.rank = buf.rank;

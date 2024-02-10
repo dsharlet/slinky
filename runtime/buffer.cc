@@ -27,26 +27,11 @@ std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims)
 
 std::size_t raw_buffer::size_bytes() const { return alloc_size(elem_size, rank, dims); }
 
-// Does not call constructor or destructor of T!
-void raw_buffer::allocate() {
-  assert(allocation == nullptr);
-
-  allocation = new char[size_bytes()];
-  base = allocation;
-}
-
-void raw_buffer::free() {
-  delete[] allocation;
-  allocation = nullptr;
-  base = nullptr;
-}
-
 raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims) {
   char* mem = reinterpret_cast<char*>(
       malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
-  buf->allocation = nullptr;
   buf->rank = rank;
   buf->elem_size = elem_size;
   buf->dims = reinterpret_cast<slinky::dim*>(mem);
@@ -60,6 +45,12 @@ raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
   auto buf = make_allocated(src.elem_size, src.rank, src.dims);
   copy(src, *buf);
   return buf;
+}
+
+void* raw_buffer::allocate() {
+  void* allocation = malloc(size_bytes());
+  base = allocation;
+  return allocation;
 }
 
 namespace {

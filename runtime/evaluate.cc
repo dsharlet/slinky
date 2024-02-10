@@ -390,16 +390,16 @@ public:
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 
+    void* heap_allocation = nullptr;
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
     } else {
       assert(op->storage == memory_type::heap);
-      buffer->allocation = nullptr;
       if (context.allocate) {
         assert(context.free);
-        context.allocate(op->sym, buffer);
+        heap_allocation = context.allocate(op->sym, buffer);
       } else {
-        buffer->allocate();
+        heap_allocation = buffer->allocate();
       }
     }
 
@@ -409,9 +409,9 @@ public:
     if (op->storage == memory_type::heap) {
       if (context.free) {
         assert(context.allocate);
-        context.free(op->sym, buffer);
+        context.free(op->sym, buffer, heap_allocation);
       } else {
-        buffer->free();
+        free(heap_allocation);
       }
     }
   }
