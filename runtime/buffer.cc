@@ -46,7 +46,6 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
       malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
-  buf->base = nullptr;
   buf->allocation = nullptr;
   buf->rank = rank;
   buf->elem_size = elem_size;
@@ -58,7 +57,6 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
 }
 
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
-  assert(src.base);
   auto buf = make_allocated(src.elem_size, src.rank, src.dims);
   copy(src, *buf);
   return buf;
