@@ -1150,10 +1150,7 @@ TEST(pipeline, padded_stencil) {
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
     if (schedule == 2) {
-      // ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
-      ASSERT_EQ(eval_ctx.heap.total_count, 2);
-    } else if (schedule == 3) {
-      ASSERT_EQ(eval_ctx.heap.total_size, W * sizeof(short) + (W + 2) * 3 * sizeof(short));
+      ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
       ASSERT_EQ(eval_ctx.heap.total_count, 2);
     }
 
