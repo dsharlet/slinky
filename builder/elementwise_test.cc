@@ -150,7 +150,7 @@ template <typename T, std::size_t Rank>
 class elementwise_pipeline_evaluator : public node_visitor {
 public:
   std::vector<index_t> extents;
-  symbol_map<buffer<T>*> vars;
+  symbol_map<buffer<T, Rank>*> vars;
 
   buffer<T, Rank> result;
 
@@ -166,7 +166,7 @@ public:
   }
 
   void visit(const variable* v) override {
-    const std::optional<buffer<T>*>& i = vars[v->sym];
+    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
     assert(i);
     result.free();
     index_t stride = sizeof(T);
@@ -289,7 +289,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_evaluator<T, Rank> eval;
   eval.extents = extents;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    eval.vars[p.inputs()[i]] = &input_bufs[i].template cast<T>();
+    eval.vars[p.inputs()[i]] = &input_bufs[i];
   }
   e.accept(&eval);
 

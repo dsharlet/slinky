@@ -202,8 +202,6 @@ public:
 
   template <typename NewT>
   const buffer<NewT>& cast() const;
-  template <typename NewT>
-  buffer<NewT>& cast();
 
   // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
   static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
@@ -282,11 +280,6 @@ public:
 template <typename NewT>
 const buffer<NewT>& raw_buffer::cast() const {
   return *reinterpret_cast<const buffer<NewT>*>(this);
-}
-
-template <typename NewT>
-buffer<NewT>& raw_buffer::cast() {
-  return *reinterpret_cast<buffer<NewT>*>(this);
 }
 
 // Copy the contents of `src` to `dst`. When the `src` is out of bounds of `dst`, fill with `padding`.
