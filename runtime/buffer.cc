@@ -41,14 +41,9 @@ void raw_buffer::free() {
   base = nullptr;
 }
 
-namespace {
-
-void delete_raw_buffer(raw_buffer* p) { delete[] reinterpret_cast<char*>(p); }
-
-}  // namespace
-
 raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims) {
-  char* mem = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)];
+  char* mem = reinterpret_cast<char*>(
+      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
   buf->base = nullptr;
@@ -59,7 +54,7 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
   memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
   mem += sizeof(slinky::dim) * rank;
   buf->base = mem;
-  return {buf, delete_raw_buffer};
+  return raw_buffer_ptr(buf);
 }
 
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
