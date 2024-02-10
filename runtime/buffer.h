@@ -84,7 +84,7 @@ class buffer;
 
 class raw_buffer;
 
-using raw_buffer_ptr = ref_count<raw_buffer>;
+using raw_buffer_ptr = std::unique_ptr<raw_buffer, void(*)(raw_buffer*)>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -99,7 +99,7 @@ using raw_buffer_ptr = ref_count<raw_buffer>;
 // And a class buffer<T, DimsSize>:
 // - Has a type, can be accessed via operator() and at.
 // - Provides storage for DimsSize dims (default is 0).
-class raw_buffer : public ref_counted<raw_buffer> {
+class raw_buffer {
 protected:
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
 
@@ -135,7 +135,7 @@ public:
   raw_buffer(raw_buffer&&) = delete;
   void operator=(const raw_buffer&) = delete;
   void operator=(raw_buffer&&) = delete;
-  ~raw_buffer() override { free(); }
+  ~raw_buffer() { free(); }
 
   slinky::dim& dim(std::size_t i) {
     assert(i < rank);
@@ -197,8 +197,6 @@ public:
   }
 
   std::size_t size_bytes() const;
-
-  // Does not call constructor or destructor of T!
   void allocate();
   void free();
 
@@ -207,13 +205,11 @@ public:
   template <typename NewT>
   buffer<NewT>& cast();
 
-  // Make a buffer and space for dims in the same object.
-  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
+  // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
+  static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
 
   // Make a deep copy of another buffer, including allocating and copying the data if src is allocated.
-  static raw_buffer_ptr make(const raw_buffer& src);
-
-  static void destroy(raw_buffer* buf);
+  static raw_buffer_ptr make_copy(const raw_buffer& src);
 };
 
 template <typename T, std::size_t DimsSize>

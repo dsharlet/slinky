@@ -326,12 +326,9 @@ TEST(simplify, fuzz) {
 
   eval_context ctx;
 
-  std::vector<raw_buffer_ptr> buffers;
+  std::vector<buffer<int, max_rank>> buffers(bufs.size());
   for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    buffers.emplace_back(raw_buffer::make(max_rank, 4));
-  }
-  for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    ctx[bufs[i]] = reinterpret_cast<index_t>(&*buffers[i]);
+    ctx[bufs[i]] = reinterpret_cast<index_t>(&buffers[i]);
   }
 
   symbol_map<interval_expr> var_bounds;
@@ -356,7 +353,7 @@ TEST(simplify, fuzz) {
           // correct in the case of empty buffers. But do we need to handle empty buffers...?
           index_t min = random_constant();
           index_t max = std::max(min + 1, random_constant());
-          b->dim(d).set_bounds(min, max);
+          b.dim(d).set_bounds(min, max);
         }
       }
       index_t eval_test = evaluate(test, ctx);
