@@ -299,16 +299,16 @@ static constexpr index_t all = std::numeric_limits<index_t>::max();
 namespace internal {
 
 template <typename F>
-void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, const F& f) {
+void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   if (d == 0) {
     for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
       is[0] = i;
-      f(span<const index_t>(is, is + rank));
+      f(span<const index_t>(is, is + dims.size()));
     }
   } else {
     for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
       is[d] = i;
-      for_each_index(dims, d - 1, is, rank, f);
+      for_each_index(dims, d - 1, is, f);
     }
   }
 }
@@ -430,7 +430,7 @@ template <typename F>
 void for_each_index(span<const dim> dims, const F& f) {
   // Not using alloca for performance, but to avoid including <vector>
   index_t* i = SLINKY_ALLOCA(index_t, dims.size());
-  internal::for_each_index(dims, dims.size() - 1, i, dims.size(), f);
+  internal::for_each_index(dims, dims.size() - 1, i, f);
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, const F& f) {
