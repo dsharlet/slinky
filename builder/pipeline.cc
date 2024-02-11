@@ -556,6 +556,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   if (!options.no_alias_buffers) {
     result = alias_buffers(result);
   }
+
+  // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
 
   result = simplify(result);
