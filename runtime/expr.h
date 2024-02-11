@@ -36,7 +36,6 @@ enum class node_type {
 
   variable,
   wildcard,
-  constant,
   let,
   add,
   sub,
@@ -54,6 +53,7 @@ enum class node_type {
   logical_not,
   select,
   call,
+  constant,
 
   call_stmt,
   copy_stmt,
@@ -151,6 +151,11 @@ public:
 };
 
 class expr;
+
+// Check if a and b should be commuted.
+bool should_commute(const expr& a, const expr& b);
+// Check that a and b can be commuted.
+bool can_commute(const expr& a, const expr& b);
 
 expr operator+(expr a, expr b);
 expr operator-(expr a, expr b);
@@ -392,28 +397,29 @@ public:
   static constexpr node_type static_type = node_type::constant;
 };
 
-#define DECLARE_BINARY_OP(op)                                                                                          \
+#define DECLARE_BINARY_OP(op, c)                                                                                       \
   class op : public expr_node<class op> {                                                                              \
   public:                                                                                                              \
     expr a, b;                                                                                                         \
     void accept(node_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr node_type static_type = node_type::op;                                                            \
+    using commutative = c;                                                                                             \
   };
 
-DECLARE_BINARY_OP(add)
-DECLARE_BINARY_OP(sub)
-DECLARE_BINARY_OP(mul)
-DECLARE_BINARY_OP(div)
-DECLARE_BINARY_OP(mod)
-DECLARE_BINARY_OP(min)
-DECLARE_BINARY_OP(max)
-DECLARE_BINARY_OP(equal)
-DECLARE_BINARY_OP(not_equal)
-DECLARE_BINARY_OP(less)
-DECLARE_BINARY_OP(less_equal)
-DECLARE_BINARY_OP(logical_and)
-DECLARE_BINARY_OP(logical_or)
+DECLARE_BINARY_OP(add, std::true_type)
+DECLARE_BINARY_OP(sub, std::false_type)
+DECLARE_BINARY_OP(mul, std::true_type)
+DECLARE_BINARY_OP(div, std::false_type)
+DECLARE_BINARY_OP(mod, std::false_type)
+DECLARE_BINARY_OP(min, std::true_type)
+DECLARE_BINARY_OP(max, std::true_type)
+DECLARE_BINARY_OP(equal, std::true_type)
+DECLARE_BINARY_OP(not_equal, std::true_type)
+DECLARE_BINARY_OP(less, std::false_type)
+DECLARE_BINARY_OP(less_equal, std::false_type)
+DECLARE_BINARY_OP(logical_and, std::true_type)
+DECLARE_BINARY_OP(logical_or, std::true_type)
 
 #undef DECLARE_BINARY_OP
 
@@ -489,8 +495,8 @@ public:
 
   void accept(node_visitor* v) const override;
 
-  static stmt make(
-      symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::optional<std::vector<char>> padding);
+  static stmt make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
+      std::optional<std::vector<char>> padding);
 
   static constexpr node_type static_type = node_type::copy_stmt;
 };

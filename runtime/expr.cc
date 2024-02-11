@@ -48,9 +48,26 @@ std::optional<symbol_id> node_context::lookup(const std::string& name) const {
   return {};
 }
 
+bool should_commute(const expr& a, const expr& b) {
+  if (a.type() > b.type()) return true;
+
+  const call* call_a = a.as<call>();
+  const call* call_b = b.as<call>();
+  if (call_a && call_b && call_a->intrinsic > call_b->intrinsic) return true;
+
+  return false;
+}
+
+bool can_commute(const expr& a, const expr& b) {
+  return !should_commute(b, a);
+}
+
 template <typename T>
 const T* make_bin_op(expr a, expr b) {
   auto n = new T();
+  if (typename T::commutative() && should_commute(a, b)) {
+    std::swap(a, b);
+  }
   n->a = std::move(a);
   n->b = std::move(b);
   return n;
