@@ -322,15 +322,25 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   }
 }
 
-template <typename F>
-void for_each_slice(std::size_t slice_rank, raw_buffer& buf, const F& f) {
-  if (buf.rank <= slice_rank) {
+inline void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src) {
+  *dst = src;
+}
+
+template <typename... Bufs>
+void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src, const Bufs&... bufs) {
+  *dst = src;
+  shallow_copy_bufs(dst + 1, bufs...);
+}
+
+template <size_t N, typename F>
+void for_each_slice(std::size_t slice_rank, std::array<raw_buffer, N>& bufs, const F& f) {
+  if (bufs[0].rank <= slice_rank) {
     // We're done slicing.
-    f(buf);
+    std::apply(f, bufs);
     return;
   }
 
-  const slinky::dim& dim = buf.dim(buf.rank - 1);
+  const slinky::dim& dim = bufs[0].dim(bufs[0].rank - 1);
 
   index_t min = dim.min();
   index_t max = dim.max();
@@ -339,24 +349,31 @@ void for_each_slice(std::size_t slice_rank, raw_buffer& buf, const F& f) {
     return;
   }
 
-  buf.rank -= 1;
-  void* old_base = buf.base;
-  if (dim.fold_factor() == dim::unfolded) {
-    index_t stride = dim.stride();
-    for (index_t i = min; i <= max; ++i, buf.base = offset_bytes(buf.base, stride)) {
-      for_each_slice(slice_rank, buf, f);
-    }
-  } else {
-    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
-    // base already points to the min.
-    for_each_slice(slice_rank, buf, f);
-    for (index_t i = min + 1; i <= max; ++i) {
-      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
-      for_each_slice(slice_rank, buf, f);
-    }
+  std::array<void*, N> old_bases;
+  for (std::size_t n = 0; n < N; ++n) {
+    old_bases[n] = bufs[n].base;
+    bufs[n].rank -= 1;
   }
-  buf.base = old_base;
-  buf.rank += 1;
+
+  // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
+  // base already points to the min.
+  for_each_slice(slice_rank, bufs, f);
+  index_t stride = dim.stride();
+  assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
+  for (index_t i = min + 1; i <= max; ++i) {
+    bufs[0].base = offset_bytes(bufs[0].base, stride);
+    for (std::size_t n = 1; n < N; ++n) {
+      const slinky::dim& dim_n = bufs[n].dims[bufs[0].rank];
+      bufs[n].base = offset_bytes(old_bases[n], dim_n.flat_offset_bytes(i));
+    }
+    for_each_slice(slice_rank, bufs, f);
+  }
+
+  // Restore the buffers' base and rank.
+  for (std::size_t n = 0; n < N; ++n) {
+    bufs[n].base = old_bases[n];
+    bufs[n].rank += 1;
+  }
 }
 
 struct for_each_contiguous_slice_dim {
@@ -457,13 +474,14 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
   internal::for_each_contiguous_slice(buf.base, dims, f);
 }
 
-// Call `f` for each slice of the first `slice_rank` dimensions of buf.
-template <typename F>
-void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f) {
-  // Shallow copy is OK here, we don't modify dims.
-  raw_buffer buf_ = buf;
+// Call `f` for each slice of the first `slice_rank` dimensions of buf. `bufs` will also be sliced at the same indices as `buf`.
+template <typename F, typename... Bufs>
+void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
+  std::array<raw_buffer, sizeof...(Bufs) + 1> bufs_;
+  // Shallow copy is OK because we don't modify the dims.
+  internal::shallow_copy_bufs(bufs_.data(), buf, bufs...);
 
-  internal::for_each_slice(slice_rank, buf_, f);
+  internal::for_each_slice(slice_rank, bufs_, f);
 }
 
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
