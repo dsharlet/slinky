@@ -113,7 +113,11 @@ public:
             [src = op->src, dst = op->dst, padding = *op->padding](const eval_context& ctx) -> index_t {
               const raw_buffer* src_buf = ctx.lookup_buffer(src);
               const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
-              pad(src_buf->dims, *dst_buf, padding.data());
+              if (ctx.pad) {
+                ctx.pad(src_buf->dims, *dst_buf, padding.data());
+              } else {
+                pad(src_buf->dims, *dst_buf, padding.data());
+              }
               return 0;
             },
             {src}, {dst}));
@@ -431,7 +435,12 @@ public:
         [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
           const raw_buffer* src_buf = ctx.lookup_buffer(src);
           const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
-          copy(*src_buf, *dst_buf, (!padding || padding->empty()) ? nullptr : padding->data());
+          const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
+          if (ctx.copy) {
+            ctx.copy(*src_buf, *dst_buf, pad_value);
+          } else {
+            copy(*src_buf, *dst_buf, pad_value);
+          }
           return 0;
         },
         {op->src}, {op->dst});
