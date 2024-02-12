@@ -27,7 +27,7 @@ SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_conte
   return p.same_as(x);
 }
 SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& ctx) { return p; }
-SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& ctx) { return p; }
+SLINKY_ALWAYS_INLINE inline const expr& substitute(const expr& p, const match_context& ctx) { return p; }
 
 SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::constant; }
 SLINKY_ALWAYS_INLINE inline node_type pattern_type(const expr& e) { return e.type(); }
@@ -52,7 +52,7 @@ inline bool match(const pattern_wildcard& p, const expr& x, match_context& ctx) 
   }
 }
 
-inline expr substitute(const pattern_wildcard& p, const match_context& ctx) {
+inline const base_expr_node* substitute(const pattern_wildcard& p, const match_context& ctx) {
   assert(ctx.vars[p.idx]);
   return ctx.vars[p.idx];
 }
@@ -77,7 +77,7 @@ inline bool match(const pattern_constant& p, const expr& x, match_context& ctx) 
   return false;
 }
 
-expr substitute(const pattern_constant& p, const match_context& ctx) {
+index_t substitute(const pattern_constant& p, const match_context& ctx) {
   assert(ctx.constants[p.idx]);
   return *ctx.constants[p.idx];
 }
