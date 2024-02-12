@@ -22,15 +22,25 @@ struct match_context {
 };
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& ctx) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& ctx) {
-  // We can use same_as here because expressions used in patterns should be canonical constants.
-  return p.same_as(x);
-}
 SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& ctx) { return p; }
-SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& ctx) { return p; }
-
 SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::constant; }
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const expr& e) { return e.type(); }
+
+class pattern_expr {
+public:
+  using is_pattern = std::true_type;
+  const expr& e;
+};
+
+SLINKY_ALWAYS_INLINE inline bool match(const pattern_expr& p, const expr& x, match_context& ctx) {
+  // Assume that exprs in patterns are canonical constants.
+  return p.e.same_as(x);
+}
+SLINKY_ALWAYS_INLINE inline const expr& substitute(const pattern_expr& p, const match_context& ctx) { return p.e; }
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_expr& p) { return p.e.type(); }
+
+const pattern_expr& positive_infinity();
+const pattern_expr& negative_infinity();
+const pattern_expr& indeterminate();
 
 class pattern_wildcard {
 public:
@@ -52,7 +62,7 @@ inline bool match(const pattern_wildcard& p, const expr& x, match_context& ctx) 
   }
 }
 
-inline expr substitute(const pattern_wildcard& p, const match_context& ctx) {
+inline const base_expr_node* substitute(const pattern_wildcard& p, const match_context& ctx) {
   assert(ctx.vars[p.idx]);
   return ctx.vars[p.idx];
 }
@@ -77,7 +87,7 @@ inline bool match(const pattern_constant& p, const expr& x, match_context& ctx) 
   return false;
 }
 
-expr substitute(const pattern_constant& p, const match_context& ctx) {
+inline index_t substitute(const pattern_constant& p, const match_context& ctx) {
   assert(ctx.constants[p.idx]);
   return *ctx.constants[p.idx];
 }
@@ -406,15 +416,6 @@ public:
     return true;
   }
 };
-
-static pattern_wildcard x{0};
-static pattern_wildcard y{1};
-static pattern_wildcard z{2};
-static pattern_wildcard w{3};
-
-static pattern_constant c0{0};
-static pattern_constant c1{1};
-static pattern_constant c2{2};
 
 }  // namespace rewrite
 }  // namespace slinky

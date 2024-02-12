@@ -12,6 +12,7 @@ cc_library(
         "infer_bounds.cc",
         "node_mutator.cc",
         "optimizations.cc",
+        "rewrite.cc",
         "rewrite.h",
         "simplify.cc",
         "simplify_bounds.cc",
