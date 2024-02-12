@@ -280,18 +280,17 @@ public:
     expr step;
   };
   std::vector<loop_info> loops;
-  std::vector<symbol_map<box_expr>> buffer_bounds;
+  std::vector<std::unique_ptr<symbol_map<box_expr>>> buffer_bounds;
 
   // We need an unknown to make equations of.
   var x;
 
   symbol_map<box_expr>& current_buffer_bounds() {
-    return buffer_bounds.back();
+    return *buffer_bounds.back();
   }
 
   slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    buffer_bounds.reserve(1024);
-    buffer_bounds.push_back(symbol_map<box_expr>());
+    buffer_bounds.push_back(std::make_unique<symbol_map<box_expr>>());
   }
 
   void visit(const allocate* op) override {
@@ -334,7 +333,7 @@ public:
     for (symbol_id output : outputs) {
       std::cout << "visit_call_or_copy - " << output << std::endl;
       for (std::size_t loop_index = 0; loop_index < loops.size(); ++loop_index) {
-        std::optional<box_expr>& bounds = buffer_bounds[loop_index + 1][output];
+        std::optional<box_expr>& bounds = (*buffer_bounds[loop_index + 1])[output];
         if (!bounds) continue;
 
         symbol_id loop_sym = loops[loop_index].sym;
@@ -472,7 +471,7 @@ public:
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     auto last_buffer_bounds = current_buffer_bounds();
-    buffer_bounds.push_back(symbol_map<box_expr>());
+    buffer_bounds.push_back(std::make_unique<symbol_map<box_expr>>());
     loops.push_back({op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step});
     for (int ix = 0; ix < (int)last_buffer_bounds.size(); ix++) {
       if (last_buffer_bounds[ix]) {
