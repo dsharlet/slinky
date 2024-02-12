@@ -690,16 +690,15 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   return e;
 }
 
-expr simplify(const call* op, std::vector<expr> args) {
+expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   bool constant = true;
-  bool changed = false;
-  assert(op->args.size() == args.size());
+  bool changed = op == nullptr;
   for (std::size_t i = 0; i < args.size(); ++i) {
     constant = constant && as_constant(args[i]);
     changed = changed || !args[i].same_as(op->args[i]);
   }
 
-  if (op->intrinsic == intrinsic::buffer_at) {
+  if (fn == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
       // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_base(b)
@@ -720,13 +719,14 @@ expr simplify(const call* op, std::vector<expr> args) {
   }
 
   expr e;
-  if (op && !changed) {
+  if (!changed) {
+    assert(op);
     e = op;
   } else {
-    e = call::make(op->intrinsic, std::move(args));
+    e = call::make(fn, std::move(args));
   }
 
-  if (can_evaluate(op->intrinsic) && constant) {
+  if (can_evaluate(fn) && constant) {
     return evaluate(e);
   }
 
