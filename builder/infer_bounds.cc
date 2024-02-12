@@ -272,19 +272,26 @@ public:
     expr orig_min;
     interval_expr bounds;
     expr step;
+    std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
+
+    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step)
+      : sym(sym),
+        orig_min(orig_min),
+        bounds(bounds),
+        step(step),
+        buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
   std::vector<loop_info> loops;
-  std::vector<std::unique_ptr<symbol_map<box_expr>>> buffer_bounds;
 
   // We need an unknown to make equations of.
   var x;
 
   symbol_map<box_expr>& current_buffer_bounds() {
-    return *buffer_bounds.back();
+    return *loops.back().buffer_bounds;
   }
 
   slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    buffer_bounds.push_back(std::make_unique<symbol_map<box_expr>>());
+    loops.emplace_back(0, expr(), interval_expr::none(), expr());
   }
 
   void visit(const allocate* op) override {
@@ -324,8 +331,9 @@ public:
   void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
     set_result(op);
     for (symbol_id output : outputs) {
-      for (std::size_t loop_index = 0; loop_index < loops.size(); ++loop_index) {
-        std::optional<box_expr>& bounds = (*buffer_bounds[loop_index + 1])[output];
+      // Start from 1 to skip the 'outermost' loop.
+      for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
+        std::optional<box_expr>& bounds = (*loops[loop_index].buffer_bounds)[output];
         if (!bounds) continue;
 
         symbol_id loop_sym = loops[loop_index].sym;
@@ -456,8 +464,7 @@ public:
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     auto last_buffer_bounds = current_buffer_bounds();
-    buffer_bounds.push_back(std::make_unique<symbol_map<box_expr>>());
-    loops.push_back({op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step});
+    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);
     for (int ix = 0; ix < (int)last_buffer_bounds.size(); ix++) {
       if (last_buffer_bounds[ix]) {
         current_buffer_bounds()[ix] = last_buffer_bounds[ix];
@@ -467,7 +474,6 @@ public:
     stmt body = mutate(op->body);
     expr loop_min = loops.back().bounds.min;
     loops.pop_back();
-    buffer_bounds.pop_back();
 
     if (loop_min.same_as(orig_min)) {
       loop_min = op->bounds.min;
