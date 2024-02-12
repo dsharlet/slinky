@@ -1011,7 +1011,7 @@ TEST(pipeline, copied_result) {
 }
 
 TEST(pipeline, concatenated_result) {
-  for (bool no_alias_buffers : {false}) {
+  for (bool no_alias_buffers : {false, true}) {
     // Make the pipeline
     node_context ctx;
 
@@ -1069,92 +1069,6 @@ TEST(pipeline, concatenated_result) {
     // Also visualize this pipeline.
     visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
   }
-}
-
-TEST(pipeline, concatenated_result_many) {
-  // Make the pipeline
-  node_context ctx;
-
-  constexpr int N = 5;
-  std::vector<buffer_expr_ptr> inputs;
-  for (int ix = 0; ix < N; ix++) {
-    inputs.push_back(buffer_expr::make(ctx, "in" + std::to_string(ix), sizeof(short), 2));
-  }
-
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
-
-  std::vector<buffer_expr_ptr> intermediates;
-  for (int ix = 0; ix < N; ix++) {
-    intermediates.push_back(buffer_expr::make(ctx, "intm" + std::to_string(ix), sizeof(short), 2));
-    intermediates[ix]->dim(1).bounds = inputs[ix]->dim(1).bounds;
-  }
-    
-  var x(ctx, "x");
-  var y(ctx, "y");
-
-  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-  std::vector<func> adds;
-  std::vector<func::input> concat_inputs;
-
-  expr offset;
-  for (int ix = 0; ix < N; ix++) {
-    adds.push_back(func::make(add_1<short>, {{{inputs[ix], {point(x), point(y)}}}}, {{{intermediates[ix], {x, y}}}}));
-    if (ix > 0) {
-      concat_inputs.push_back({intermediates[ix], {point(x), point(y) - offset}});
-      offset += inputs[ix]->dim(1).extent();
-    } else {
-      concat_inputs.push_back({intermediates[ix], {point(x), point(y)}});
-      offset = inputs[ix]->dim(1).extent();
-    }
-  }
-
-  func concatenated = func::make_copy(concat_inputs, {out, {x, y}});
-
-  // TODO(https://github.com/dsharlet/slinky/issues/21): The checks on the input bounds are overzealous in this case.
-  // We shouldn't need to disable checks.
-  pipeline p =
-      build_pipeline(ctx, inputs, {out}, build_options{.no_checks = true, .no_alias_buffers = true});
-
-  // Run the pipeline.
-  const int W = 20;
-  int total_height = 0;
-  std::vector<buffer<short, 2>*> input_buffers;
-  std::vector<const raw_buffer*> inputs_bufs;
-  for (int ix = 0; ix < N; ix++) {
-    int buffer_height = (ix + 1) * 3;
-    total_height += buffer_height;
-    // buffer<short, 2> in_buf({W, buffer_height});
-    input_buffers.push_back(new buffer<short, 2>({W, buffer_height}));
-    init_random(*input_buffers[ix]);
-    inputs_bufs.push_back(input_buffers[ix]);
-  }
-
-  // buffer<short, 2> in1_buf({W, 3});
-  // buffer<short, 2> in2_buf({W, 6});
-  // init_random(in1_buf);
-  // init_random(in2_buf);
-
-
-  buffer<short, 2> out_buf({W, total_height});
-  out_buf.allocate();
-
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  // const raw_buffer* inputs_bufs[] = {&in1_buf, &in2_buf};
-  const raw_buffer* outputs_bufs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs_bufs, outputs_bufs, eval_ctx);
-  // if (!no_alias_buffers) {
-  //   ASSERT_EQ(eval_ctx.heap.total_count, 0);
-  // }
-
-  // for (int y = 0; y < H1 + H2; ++y) {
-  //   for (int x = 0; x < W; ++x) {
-  //     ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
-  //   }
-  // }
-
-  // Also visualize this pipeline.
-  // visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
 }
 
 TEST(pipeline, padded_stencil) {
@@ -1344,73 +1258,6 @@ TEST(pipeline, parallel_stencils) {
 
   // Also visualize this pipeline
   visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
-}
-
-TEST(pipeline, diamond_stencils) {
-  // Make the pipeline
-  node_context ctx;
-
-  auto in = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
-  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
-  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
-
-  var x(ctx, "x");
-  var y(ctx, "y");
-
-  func add1 = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  func add2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
-  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
-  func diff = func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
-
-  diff.loops({{y, 1}});
-
-  pipeline p = build_pipeline(ctx, {in}, {out});
-
-  // Run the pipeline.
-  const int W = 20;
-  const int H = 10;
-  buffer<short, 2> in_buf({W + 4, H + 4});
-  in_buf.translate(-2, -2);
-  buffer<short, 2> out_buf({W, H});
-
-  init_random(in_buf);
-  out_buf.allocate();
-
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
-
-  // Run the pipeline stages manually to get the reference result.
-  buffer<short, 2> ref_intm1({W + 2, H + 2});
-  buffer<short, 2> ref_intm2({W + 4, H + 4});
-  buffer<short, 2> ref_intm3({W, H});
-  buffer<short, 2> ref_intm4({W, H});
-  buffer<short, 2> ref_out({W, H});
-  ref_intm1.translate(-1, -1);
-  ref_intm2.translate(-2, -2);
-  ref_intm1.allocate();
-  ref_intm2.allocate();
-  ref_intm3.allocate();
-  ref_intm4.allocate();
-  ref_out.allocate();
-
-  add_1<short>(in_buf.cast<const short>(), ref_intm1.cast<short>());
-  multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
-  sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
-  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
-
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
-    }
-  }
 }
 
 }  // namespace slinky

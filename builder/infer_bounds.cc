@@ -3,7 +3,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <iostream>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -539,6 +538,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
+
   // At this point, crops of input buffers are unnecessary.
   // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
   // be the case.
