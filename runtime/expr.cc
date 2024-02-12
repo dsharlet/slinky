@@ -459,20 +459,17 @@ stmt check::make(expr condition) {
   return n;
 }
 
-const expr& positive_infinity() {
-  static expr e = call::make(intrinsic::positive_infinity, {});
-  return e;
-}
+namespace {
 
-const expr& negative_infinity() {
-  static expr e = call::make(intrinsic::negative_infinity, {});
-  return e;
-}
+expr global_positive_infinity = call::make(intrinsic::positive_infinity, {});
+expr global_negative_infinity = call::make(intrinsic::negative_infinity, {});
+expr global_indeterminate = call::make(intrinsic::indeterminate, {});
 
-const expr& indeterminate() {
-  static expr e = call::make(intrinsic::indeterminate, {});
-  return e;
-}
+}  // namespace
+
+const expr& positive_infinity() { return global_positive_infinity; }
+const expr& negative_infinity() { return global_negative_infinity; }
+const expr& indeterminate() { return global_indeterminate; }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 
