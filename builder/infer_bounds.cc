@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "builder/node_mutator.h"
-#include "runtime/print.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"
@@ -537,13 +536,9 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   stmt result = s;
 
   result = infer_bounds(s, inputs);
-  // std::cout << "After inferring bounds: \n" << std::tie(result, ctx) << std::endl;
-  std::cout << "After inferring bounds: \n" << result << std::endl;
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
-  // std::cout << "After storage folding: \n" << std::tie(result, ctx) << std::endl;
-  std::cout << "After storage folding: \n" << result << std::endl;
   // At this point, crops of input buffers are unnecessary.
   // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
   // be the case.
