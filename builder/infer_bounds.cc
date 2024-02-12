@@ -179,7 +179,6 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    std::cout << ">>>>> call_stmt: " << std::endl;
     // Record the bounds we currently have from the crops.
     for (symbol_id input : op->inputs) {
       if (infer.contains(input)) {
@@ -190,7 +189,6 @@ public:
   }
 
   void visit(const copy_stmt* op) override {
-    std::cout << ">>>>> copy_stmt: " << std::endl;
     // Record the bounds we currently have from the crops.
     if (infer.contains(op->src)) {
       infer[op->src] = crops[op->src];
@@ -218,7 +216,6 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* op) override {
-    std::cout << ">>>>> loop: <" << op->sym << ">" << std::endl;
     stmt body = mutate(op->body);
 
     stmt result;
@@ -228,7 +225,6 @@ public:
       // We rewrote the loop min.
       result = loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body));
     }
-    std::cout << "----- loop: \n" << result << std::endl;
     // We're leaving the body of op. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
     for (symbol_id buf = 0; buf < infer.size(); ++buf) {
@@ -250,9 +246,7 @@ public:
       }
       result = crop_buffer::make(buf, *inferring, result);
     }
-    std::cout << "+++++ loop: \n" << result << std::endl;
     set_result(result);
-    std::cout << "<<<<< loop: <" << op->sym << ">" << std::endl;
   }
 };
 
@@ -329,9 +323,7 @@ public:
   template <typename T>
   void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
     set_result(op);
-    std::cout << "visit_call_or_copy [0] " << std::endl;
     for (symbol_id output : outputs) {
-      std::cout << "visit_call_or_copy - " << output << std::endl;
       for (std::size_t loop_index = 0; loop_index < loops.size(); ++loop_index) {
         std::optional<box_expr>& bounds = (*buffer_bounds[loop_index + 1])[output];
         if (!bounds) continue;
@@ -361,7 +353,6 @@ public:
           auto ignore_loop_max = [=](const expr& e) { return substitute(e, loop_max, positive_infinity()); };
 
           interval_expr overlap = prev_bounds_d & cur_bounds_d;
-          std::cout << "overlap = " << d << " " << overlap << std::endl;
           if (prove_true(ignore_loop_max(overlap.empty()))) {
             // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
             // can fold the storage.
@@ -373,12 +364,10 @@ public:
             }
             continue;
           }
-          std::cout << "There is an overlap" << std::endl;
           // Allowing the leading edge to not change means that some calls may ask for empty buffers.
           expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
           expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
           if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
-            std::cout << "It's monotonically increasing" << std::endl;
             // The bounds for each loop iteration overlap and are monotonically increasing,
             // so we can incrementally compute only the newly required bounds.
             expr old_min = cur_bounds_d.min;
@@ -439,12 +428,10 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    std::cout << "crop_dim - " << std::endl;
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->dim, op->bounds);
     substitute_bounds(*bounds, current_buffer_bounds());
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
-    // std::cout << "crop_dim body - \n" << op->body << " " << (int)op->body.type() << std::endl;
     stmt body = mutate(op->body);
     interval_expr new_bounds = (*current_buffer_bounds()[op->sym])[op->dim];
 
@@ -461,8 +448,6 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* op) override {
-    std::cout << "Storage folding for loop: <" <<  op->sym << ">" << std::endl;
-    std::cout << "loop body - \n" << op->body << std::endl;
     if (op->mode == loop_mode::parallel) {
       // Don't try sliding window or storage folding on parallel loops.
       node_mutator::visit(op);
@@ -476,11 +461,8 @@ public:
     for (int ix = 0; ix < (int)last_buffer_bounds.size(); ix++) {
       if (last_buffer_bounds[ix]) {
         current_buffer_bounds()[ix] = last_buffer_bounds[ix];
-        // std::cout << "Setting a bound " << loops.size(); ix++) {
       }
     }
-
-    // std::cout << last_buffer_bounds.size() << " " << current_buffer_bounds().size() << std::endl;
 
     stmt body = mutate(op->body);
     expr loop_min = loops.back().bounds.min;
@@ -534,7 +516,6 @@ stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
   for (symbol_id i : inputs) {
     expr buf_var = variable::make(i);
     const box_expr& bounds = *infer.infer[i];
-    std::cout << "$$$$ bounds: " << bounds << std::endl;
     for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
       checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
       checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));
