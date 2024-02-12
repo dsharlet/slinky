@@ -101,12 +101,13 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_binary<T, A, B>&
 
 template <typename T, typename A, typename B>
 bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
-  int this_bit = -1; 
+  int this_bit = -1;
   if (T::commutative) {
     node_type ta = static_type(p.a);
     node_type tb = static_type(p.b);
     if (ta == node_type::none || tb == node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
+      // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
       this_bit = m.variant_bit++;
     }
   }
@@ -356,13 +357,15 @@ class rewriter {
 
   template <typename Pattern>
   bool variant_match(const Pattern& p, const expr& x, match_context& m) {
-    for (int variant = 0; ; ++variant) {
+    for (int variant = 0;; ++variant) {
       m.variant = variant;
       m.variant_bit = 0;
       m.clear();
       if (match(p, x, m)) {
         return true;
       }
+      // variant_bit *should* be constant across all variants. We're done when
+      // there are no more bits in the variant index to flip.
       if (variant >= (1 << m.variant_bit)) {
         break;
       }
@@ -389,7 +392,7 @@ public:
     match_context m;
     if (!variant_match(p, x, m)) return false;
 
-    if (!substitute(eval(pr), m)) return false;
+    if (!substitute(pr, m)) return false;
 
     result = substitute(r, m);
     return true;

@@ -476,8 +476,8 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(x <= c1 - y, x + y <= c1) ||
       r.rewrite(x + c0 <= y + c1, x - y <= eval(c1 - c0)) ||
 
-      r.rewrite((x + c0) / c1 <= x / c1, c0 <= 0) ||
-      r.rewrite(x / c1 <= (x + c0) / c1, 0 <= c0) ||
+      r.rewrite((x + c0) / c1 <= x / c1, eval(c0 <= 0)) ||
+      r.rewrite(x / c1 <= (x + c0) / c1, eval(0 <= c0)) ||
 
       r.rewrite(x <= x + y, 0 <= y) ||
       r.rewrite(x + y <= x, y <= 0) ||
@@ -495,13 +495,13 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(min(x, y) <= max(x, y), true) ||
       r.rewrite(max(x, y) <= min(x, y), x == y) ||
 
-      r.rewrite(c0 <= max(x, c1), c0 <= x || c0 <= c1) ||
-      r.rewrite(c0 <= min(x, c1), c0 <= x && c0 <= c1) ||
-      r.rewrite(max(x, c0) <= c1, x <= c1 && c0 <= c1) ||
-      r.rewrite(min(x, c0) <= c1, x <= c1 || c0 <= c1) ||
+      r.rewrite(c0 <= max(x, c1), c0 <= x || eval(c0 <= c1)) ||
+      r.rewrite(c0 <= min(x, c1), c0 <= x && eval(c0 <= c1)) ||
+      r.rewrite(max(x, c0) <= c1, x <= c1 && eval(c0 <= c1)) ||
+      r.rewrite(min(x, c0) <= c1, x <= c1 || eval(c0 <= c1)) ||
 
-      r.rewrite(buffer_extent(x, y) <= c0, false, c0 <= 0) ||
-      r.rewrite(c0 <= buffer_extent(x, y), true, c0 <= 0) ||
+      r.rewrite(buffer_extent(x, y) <= c0, false, eval(c0 <= 0)) ||
+      r.rewrite(c0 <= buffer_extent(x, y), true, eval(c0 <= 0)) ||
       false) {
     return r.result;
   }
@@ -528,7 +528,7 @@ expr simplify(const equal* op, expr a, expr b) {
   rewriter r(e);
   if (r.rewrite(x == x, true) ||
       r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
-      r.rewrite(c0 - x == c1, -x == eval(c1 - c0), c0 != 0) ||
+      r.rewrite(c0 - x == c1, -x == eval(c1 - c0), eval(c0 != 0)) ||
       false) {
     return r.result;
   }
@@ -555,7 +555,7 @@ expr simplify(const not_equal* op, expr a, expr b) {
   rewriter r(e);
   if (r.rewrite(x != x, false) ||
       r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
-      r.rewrite(c0 - x != c1, -x != eval(c1 - c0), c0 != 0) ||
+      r.rewrite(c0 - x != c1, -x != eval(c1 - c0), eval(c0 != 0)) ||
       false) {
     return r.result;
   }
