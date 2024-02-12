@@ -514,62 +514,63 @@ TEST(pipeline, pyramid) {
 }
 
 TEST(pipeline, stencil) {
-  for (int split : {3}) {
-    for (loop_mode lm : {loop_mode::serial}) {
-      // Make the pipeline
-      node_context ctx;
+  for (int split : {0, 1, 2, 3}) {
+    for (int split_intermediate : {0, 1, 2, 3}) {
+      for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
+        // Make the pipeline
+        node_context ctx;
 
-      auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-      auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+        auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+        auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-      auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+        auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
 
-      var x(ctx, "x");
-      var y(ctx, "y");
+        var x(ctx, "x");
+        var y(ctx, "y");
 
-      var s(ctx, "s");
-      var t(ctx, "t");
+        func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+        func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
-      // func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-      func add = func::make(add_1<short>, {{in, {point(s), point(t)}}}, {{intm, {s, t}}});
-      func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+        if (split > 0) {
+          stencil.loops({{y, split, lm}});
+        }
 
-      if (split > 0) {
-        stencil.loops({{y, 1, lm}});
-        add.loops({{t, 1, lm}});
-      }
+        if (split_intermediate > 0) {
+          add.loops({{y, split_intermediate, lm}});
+        }
 
-      pipeline p = build_pipeline(ctx, {in}, {out});
+        pipeline p = build_pipeline(ctx, {in}, {out});
 
-      // Run the pipeline.
-      const int W = 20;
-      const int H = 10;
-      buffer<short, 2> in_buf({W + 2, H + 2});
-      in_buf.translate(-1, -1);
-      buffer<short, 2> out_buf({W, H});
+        // Run the pipeline.
+        const int W = 20;
+        const int H = 10;
+        buffer<short, 2> in_buf({W + 2, H + 2});
+        in_buf.translate(-1, -1);
+        buffer<short, 2> out_buf({W, H});
 
-      init_random(in_buf);
-      out_buf.allocate();
+        init_random(in_buf);
+        out_buf.allocate();
 
-      // Not having span(std::initializer_list<T>) is unfortunate.
-      const raw_buffer* inputs[] = {&in_buf};
-      const raw_buffer* outputs[] = {&out_buf};
-      test_context eval_ctx;
-      p.evaluate(inputs, outputs, eval_ctx);
-      // if (lm == loop_mode::serial && split > 0) {
-      //   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
-      // }
-      // ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
+        // Not having span(std::initializer_list<T>) is unfortunate.
+        const raw_buffer* inputs[] = {&in_buf};
+        const raw_buffer* outputs[] = {&out_buf};
+        test_context eval_ctx;
+        p.evaluate(inputs, outputs, eval_ctx);
+        if (lm == loop_mode::serial && split > 0) {
+          ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
+        }
+        ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
 
-      for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-          int correct = 0;
-          for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-              correct += in_buf(x + dx, y + dy) + 1;
+        for (int y = 0; y < H; ++y) {
+          for (int x = 0; x < W; ++x) {
+            int correct = 0;
+            for (int dy = -1; dy <= 1; ++dy) {
+              for (int dx = -1; dx <= 1; ++dx) {
+                correct += in_buf(x + dx, y + dy) + 1;
+              }
             }
+            ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
           }
-          ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
         }
       }
     }
