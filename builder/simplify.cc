@@ -267,7 +267,7 @@ public:
       args_bounds.push_back(std::move(i_bounds));
     }
 
-    expr e = simplify(op, std::move(args));
+    expr e = simplify(op, op->intrinsic, std::move(args));
     if (e.same_as(op)) {
       set_result(e, bounds_of(op, std::move(args_bounds)));
     } else {

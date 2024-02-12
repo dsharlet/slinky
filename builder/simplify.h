@@ -40,7 +40,7 @@ expr simplify(const logical_and* op, expr a, expr b);
 expr simplify(const logical_or* op, expr a, expr b);
 expr simplify(const logical_not* op, expr a);
 expr simplify(const class select* op, expr c, expr t, expr f);
-expr simplify(const call* op, std::vector<expr> args);
+expr simplify(const call* op, intrinsic fn, std::vector<expr> args);
 
 // Helpers for producing the bounds of ops.
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b);

@@ -129,7 +129,6 @@ public:
   std::string indent(int extra = 0) const { return std::string((depth + extra) * 2, ' '); }
 
   void visit(const variable* v) override { *this << v->sym; }
-  void visit(const wildcard* w) override { *this << w->sym; }
   void visit(const constant* c) override { *this << c->value; }
 
   void visit(const let* l) override {

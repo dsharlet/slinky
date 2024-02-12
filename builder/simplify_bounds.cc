@@ -100,7 +100,11 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
     return a | -a;
   }
 }
-interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) { return {0, max(abs(b.min), abs(b.max))}; }
+interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
+  return {0, simplify(static_cast<const class max*>(nullptr),
+                 simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
+                 simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}))};
+  }
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
   return bounds_of_linear(op, std::move(a), std::move(b));
@@ -153,8 +157,8 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
     if (is_positive(args[0].min)) {
       return {args[0].min, args[0].max};
     } else {
-      expr abs_min = simplify(op, {args[0].min});
-      expr abs_max = simplify(op, {args[0].max});
+      expr abs_min = simplify(op, intrinsic::abs, {args[0].min});
+      expr abs_max = simplify(op, intrinsic::abs, {args[0].max});
       return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
     }
   default: return {op, op};

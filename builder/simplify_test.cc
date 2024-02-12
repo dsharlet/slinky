@@ -64,10 +64,13 @@ void test_simplify(const stmt& test, const stmt& expected) {
 }
 
 TEST(simplify, basic) {
+  test_simplify(expr() == 1, expr() == 1);
   test_simplify(expr(1) + 2, 3);
   test_simplify(expr(1) - 2, -1);
   test_simplify(expr(1) < 2, 1);
   test_simplify(expr(1) > 2, 0);
+  test_simplify(negative_infinity() + 3, negative_infinity());
+  test_simplify(3 + negative_infinity(), negative_infinity());
 
   test_simplify(min(1, 2), 1);
   test_simplify(max(1, 2), 2);
@@ -135,6 +138,7 @@ TEST(simplify, let) {
 
 TEST(simplify, buffer_intrinsics) {
   test_simplify(buffer_extent(x, y) >= 0, true);
+  test_simplify((buffer_max(x, y) - buffer_min(x, y) + 1) * 4, buffer_extent(x, y) * 4);
   test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
 }
 
@@ -321,7 +325,7 @@ expr make_random_expr(int depth) {
 TEST(simplify, fuzz) {
   const int seed = time(nullptr);
   srand(seed);
-  constexpr int tests = 1000;
+  constexpr int tests = 10000;
   constexpr int checks = 10;
 
   eval_context ctx;

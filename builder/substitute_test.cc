@@ -50,7 +50,7 @@ void test_substitute(const stmt& test, T target, const expr& replacement, const 
 
 TEST(substitute, basic) {
   test_substitute(x + y, x.sym(), z, z + y);
-  test_substitute(check::make(buffer_min(x, 3) == y), buffer_min(x, 3), z, check::make(z == y));
+  test_substitute(check::make(y == buffer_min(x, 3)), buffer_min(x, 3), z, check::make(y == z));
 }
 
 TEST(substitute, shadowed) {
