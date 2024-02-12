@@ -353,6 +353,8 @@ void for_each_slice(std::size_t slice_rank, std::array<raw_buffer, N>& bufs, con
     bufs[n].rank -= 1;
   }
 
+  // TODO: If performance is an issue here, we can make a plan (like `for_each_contiguous_slice` does) that avoids
+  // folding overhead.
   index_t stride = dim.stride();
   assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
   for (index_t i = min; i <= max; ++i, bufs[0].base = offset_bytes(bufs[0].base, stride)) {
