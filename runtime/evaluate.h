@@ -9,11 +9,13 @@ namespace slinky {
 class eval_context : public symbol_map<index_t> {
 public:
   // These two functions implement allocation. `allocate` is called before
-  // running the body, and `free` is called after.
+  // running the body, and should assign `base` of the buffer to the address
+  // of the min in each dimension. `free` is called after running the body,
+  // passing the result of `allocate` in addition to the buffer.
   // If these functions are not defined, the default handler will call
-  // raw_buffer::allocate and raw_buffer::free.
-  std::function<void(symbol_id, raw_buffer*)> allocate;
-  std::function<void(symbol_id, raw_buffer*)> free;
+  // `raw_buffer::allocate` and `::free`.
+  std::function<void*(symbol_id, raw_buffer*)> allocate;
+  std::function<void(symbol_id, raw_buffer*, void*)> free;
 
   // Functions called when there is a failure in the pipeline.
   // If these functions are not defined, the default handler will write a
@@ -31,6 +33,12 @@ public:
   std::function<void(const task&)> enqueue_many;
   std::function<void(task)> enqueue_one;
   std::function<void(std::function<bool()>)> wait_for;
+
+  // Functions implementing buffer data movement:
+  // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.
+  // - `pad` should fill the area out of bounds of `src_dims` with `padding` in `dst`.
+  std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy = slinky::copy;
+  std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad = slinky::pad;
 
   const raw_buffer* lookup_buffer(symbol_id id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };

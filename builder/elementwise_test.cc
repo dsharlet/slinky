@@ -16,7 +16,11 @@ namespace slinky {
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_index(x, [&](auto i) { x(i) = (rand() % 20) - 10; });
+  for_each_contiguous_slice(x, [&](void* base, index_t extent) {
+    for (index_t i = 0; i < extent; ++i) {
+      reinterpret_cast<T*>(base)[i] = (rand() % 20) - 10;
+    }
+  });
 }
 
 // (Ab)use our expression mechanism to make an elementwise "calculator", for the purposes of testing.
@@ -121,7 +125,6 @@ public:
     result_funcs.push_back(std::move(r));
   }
 
-  void visit(const wildcard*) override { std::abort(); }
   void visit(const let*) override { std::abort(); }
   void visit(const call*) override { std::abort(); }
   void visit(const logical_not*) override { std::abort(); }
@@ -146,7 +149,7 @@ template <typename T, std::size_t Rank>
 class elementwise_pipeline_evaluator : public node_visitor {
 public:
   std::vector<index_t> extents;
-  symbol_map<buffer<T>*> vars;
+  symbol_map<buffer<T, Rank>*> vars;
 
   buffer<T, Rank> result;
 
@@ -162,7 +165,7 @@ public:
   }
 
   void visit(const variable* v) override {
-    const std::optional<buffer<T>*>& i = vars[v->sym];
+    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
     assert(i);
     result.free();
     index_t stride = sizeof(T);
@@ -225,7 +228,6 @@ public:
     for_each_index(result, [&](auto i) { result(i) = c_buf(i) ? t_buf(i) : result(i); });
   }
 
-  void visit(const wildcard*) override { std::abort(); }
   void visit(const let*) override { std::abort(); }
   void visit(const call*) override { std::abort(); }
   void visit(const logical_not*) override { std::abort(); }
@@ -285,7 +287,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_evaluator<T, Rank> eval;
   eval.extents = extents;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    eval.vars[p.inputs()[i]] = &input_bufs[i].template cast<T>();
+    eval.vars[p.inputs()[i]] = &input_bufs[i];
   }
   e.accept(&eval);
 

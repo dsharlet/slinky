@@ -60,6 +60,7 @@ public:
   const std::vector<dim_expr>& dims() const { return dims_; }
   dim_expr& dim(int i) { return dims_[i]; }
   const dim_expr& dim(int i) const { return dims_[i]; }
+  box_expr bounds() const;
 
   buffer_expr& store_in(memory_type type) {
     storage_ = type;
@@ -102,7 +103,13 @@ public:
     buffer_expr_ptr buffer;
 
     // These intervals should be a function of the expressions found in the output dims.
-    std::vector<interval_expr> bounds;
+    box_expr bounds;
+
+    // A region to crop the output to while consuming this input. Only used by copies.
+    box_expr output_crop;
+
+    // Slices to apply to the output while consuming this input. Only used by copies.
+    std::vector<expr> output_slice;
 
     symbol_id sym() const { return buffer->sym(); }
   };
@@ -120,7 +127,7 @@ public:
     expr step;
     loop_mode mode;
 
-    loop_info() {}
+    loop_info() = default;
     loop_info(slinky::var var, expr step = 1, loop_mode mode = loop_mode::serial) : var(var), step(step), mode(mode) {}
 
     symbol_id sym() const { return var.sym(); }
@@ -142,12 +149,12 @@ private:
   void remove_this_from_buffers();
 
 public:
-  func() {}
+  func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
   func(std::vector<input> inputs, output out);
-  func(input input, output out, std::optional<std::vector<char>> padding);
-  func(func&&);
-  func& operator=(func&&);
+  func(input input, output out, std::optional<std::vector<char>> padding = std::nullopt);
+  func(func&&) noexcept;
+  func& operator=(func&&) noexcept;
   ~func();
   func(const func&) = delete;
   func& operator=(const func&) = delete;
@@ -230,15 +237,23 @@ public:
     return make(std::move(impl), std::move(inputs), std::move(outputs));
   }
 
+  // Make a copy from a single input to a single output.
+  static func make_copy(input in, output out) { return func(std::move(in), {std::move(out)}); }
+  // Make a copy from a single input to a single output, with padding outside the output crop.
+  static func make_copy(input in, output out, std::vector<char> padding) {
+    return func({std::move(in)}, std::move(out), std::move(padding));
+  }
   // Make a copy from multiple inputs with undefined padding.
-  static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
-  static func make_copy(input in1, input in2, output out) {
-    return func({std::move(in1), std::move(in2)}, {std::move(out)});
+  static func make_copy(std::vector<input> in, output out) {
+    return func(std::move(in), {std::move(out)});
   }
-  // Make a copy from a single input to a single output, with no padding by default.
-  static func make_copy(input in, output out, std::optional<std::vector<char>> padding = {}) {
-    return func(std::move(in), {std::move(out)}, std::move(padding));
-  }
+  // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
+  // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
+  static func make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t dim, std::vector<expr> bounds);
+  // Make a stack copy. This is a helper function for `make_copy`, where the crop for input i is a `slice_dim` of
+  // dimension `dim` at i. If `dim` is greater than the rank of `out` (the default), the new stack dimension will be the
+  // last dimension of the output.
+  static func make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t dim = -1);
 
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }

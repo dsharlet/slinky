@@ -10,7 +10,9 @@
 
 namespace slinky {
 
-std::size_t raw_buffer::size_bytes() const {
+namespace {
+
+std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
@@ -21,58 +23,34 @@ std::size_t raw_buffer::size_bytes() const {
   return flat_max - flat_min + elem_size;
 }
 
-// Does not call constructor or destructor of T!
-void raw_buffer::allocate() {
-  assert(allocation == nullptr);
+}  // namespace
 
-  allocation = new char[size_bytes()];
-  base = allocation;
-}
+std::size_t raw_buffer::size_bytes() const { return alloc_size(elem_size, rank, dims); }
 
-void raw_buffer::free() {
-  delete[] allocation;
-  allocation = nullptr;
-  base = nullptr;
-}
-
-raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
-  char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
-  raw_buffer* buf = new (buf_and_dims) raw_buffer();
-  buf->base = nullptr;
-  buf->allocation = nullptr;
+raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims) {
+  char* mem = reinterpret_cast<char*>(
+      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
+  raw_buffer* buf = new (mem) raw_buffer();
+  mem += sizeof(raw_buffer);
   buf->rank = rank;
   buf->elem_size = elem_size;
-  buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
-  new (buf->dims) slinky::dim[rank];
+  buf->dims = reinterpret_cast<slinky::dim*>(mem);
+  memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
+  mem += sizeof(slinky::dim) * rank;
+  buf->base = mem;
+  return raw_buffer_ptr(buf);
+}
+
+raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
+  auto buf = make_allocated(src.elem_size, src.rank, src.dims);
+  copy(src, *buf);
   return buf;
 }
 
-void raw_buffer::destroy(raw_buffer* buf) {
-  buf->~raw_buffer();
-  delete[] (char*)buf;
-}
-
-raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> extents) {
-  raw_buffer_ptr result = make(extents.size(), elem_size);
-  index_t stride = elem_size;
-  for (std::size_t d = 0; d < extents.size(); ++d) {
-    result->dims[d].set_min_extent(0, extents[d]);
-    result->dims[d].set_stride(stride);
-    stride *= extents[d];
-  }
-  return result;
-}
-
-raw_buffer_ptr raw_buffer::make(const raw_buffer& src) {
-  raw_buffer_ptr result = make(src.rank, src.elem_size);
-  for (std::size_t d = 0; d < src.rank; ++d) {
-    result->dims[d] = src.dims[d];
-  }
-  if (src.base) {
-    result->allocate();
-    copy(src, *result);
-  }
-  return result;
+void* raw_buffer::allocate() {
+  void* allocation = malloc(size_bytes());
+  base = allocation;
+  return allocation;
 }
 
 namespace {
@@ -342,5 +320,48 @@ void fill(const raw_buffer& dst, const void* value) {
 
   fill(dst_base, dims, dst.elem_size, value, rank - 1);
 }
+
+namespace internal {
+
+namespace {
+
+bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+}  // namespace
+
+void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contiguous_slice_dim* dims) {
+  for_each_contiguous_slice_dim* next = dims;
+  index_t slice_extent = 1;
+  index_t extent = 1;
+  for (int d = buf.rank - 1; d >= 0; --d) {
+    extent *= buf.dim(d).extent();
+    if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
+      // This is the slice dimension.
+      slice_extent = extent;
+      extent = 1;
+    } else if (extent == 1) {
+      // base already points to the min, we don't need to do anything.
+    } else if (d > 0 && internal::can_fuse(buf.dim(d - 1), buf.dim(d))) {
+      // Let this dimension fuse with the next dimension.
+    } else {
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
+      next->impl = for_each_contiguous_slice_dim::linear;
+      next->stride = buf.dim(d).stride();
+      next->extent = extent;
+      extent = 1;
+      ++next;
+    }
+  }
+  next->impl = for_each_contiguous_slice_dim::call_f;
+  next->extent = slice_extent;
+}
+
+}  // namespace internal
 
 }  // namespace slinky

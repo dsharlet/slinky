@@ -35,8 +35,6 @@ enum class node_type {
   none,
 
   variable,
-  wildcard,
-  constant,
   let,
   add,
   sub,
@@ -54,6 +52,7 @@ enum class node_type {
   logical_not,
   select,
   call,
+  constant,
 
   call_stmt,
   copy_stmt,
@@ -181,19 +180,19 @@ public:
   // Make an `expr` referencing an existing node.
   expr(const base_expr_node* n) : n_(n) {}
 
-  void accept(node_visitor* v) const {
+  SLINKY_ALWAYS_INLINE void accept(node_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
 
-  bool defined() const { return n_ != nullptr; }
-  bool same_as(const expr& other) const { return n_ == other.n_; }
-  bool same_as(const base_expr_node* other) const { return n_ == other; }
-  node_type type() const { return n_ ? n_->type : node_type::none; }
-  const base_expr_node* get() const { return n_; }
+  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_ALWAYS_INLINE bool same_as(const expr& other) const { return n_ == other.n_; }
+  SLINKY_ALWAYS_INLINE bool same_as(const base_expr_node* other) const { return n_ == other; }
+  SLINKY_ALWAYS_INLINE node_type type() const { return n_ ? n_->type : node_type::none; }
+  SLINKY_ALWAYS_INLINE const base_expr_node* get() const { return n_; }
 
   template <typename T>
-  const T* as() const {
+  SLINKY_ALWAYS_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
@@ -241,10 +240,14 @@ expr select(expr c, expr t, expr f);
 expr min(span<expr> x);
 expr max(span<expr> x);
 
+// Check if a and b should be commuted.
+SLINKY_ALWAYS_INLINE inline bool should_commute(node_type a, node_type b) { return a > b; }
+inline bool should_commute(const expr& a, const expr& b) { return should_commute(a.type(), b.type()); }
+
 struct interval_expr {
   expr min, max;
 
-  interval_expr() {}
+  interval_expr() = default;
   explicit interval_expr(const expr& point) : min(point), max(point) {}
   interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
@@ -311,21 +314,21 @@ public:
   stmt(const base_stmt_node* n) : n_(n) {}
 
   stmt& operator=(const stmt&) = default;
-  stmt& operator=(stmt&&) = default;
+  stmt& operator=(stmt&&) noexcept = default;
 
-  void accept(node_visitor* v) const {
+  SLINKY_ALWAYS_INLINE void accept(node_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
 
-  bool defined() const { return n_ != nullptr; }
-  bool same_as(const stmt& other) const { return n_ == other.n_; }
-  bool same_as(const base_stmt_node* other) const { return n_ == other; }
-  node_type type() const { return n_ ? n_->type : node_type::none; }
-  const base_stmt_node* get() const { return n_; }
+  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_ALWAYS_INLINE bool same_as(const stmt& other) const { return n_ == other.n_; }
+  SLINKY_ALWAYS_INLINE bool same_as(const base_stmt_node* other) const { return n_ == other; }
+  SLINKY_ALWAYS_INLINE node_type type() const { return n_ ? n_->type : node_type::none; }
+  SLINKY_ALWAYS_INLINE const base_stmt_node* get() const { return n_; }
 
   template <typename T>
-  const T* as() const {
+  SLINKY_ALWAYS_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
@@ -363,23 +366,6 @@ public:
   static constexpr node_type static_type = node_type::variable;
 };
 
-// Similar to a variable, designed for use in pattern matching. A match with x is only
-// accepted if matches(x) returns true.
-// TODO(https://github.com/dsharlet/slinky/issues/6): This is pretty ugly. We should be
-// able to contain this kind of logic to pattern matching only, it shouldn't be polluting
-// the expression mechanism.
-class wildcard : public expr_node<wildcard> {
-public:
-  symbol_id sym;
-  std::function<bool(const expr&)> matches;
-
-  void accept(node_visitor* v) const override;
-
-  static expr make(symbol_id sym, std::function<bool(const expr&)> matches);
-
-  static constexpr node_type static_type = node_type::wildcard;
-};
-
 class constant : public expr_node<constant> {
 public:
   index_t value;
@@ -392,28 +378,29 @@ public:
   static constexpr node_type static_type = node_type::constant;
 };
 
-#define DECLARE_BINARY_OP(op)                                                                                          \
+#define DECLARE_BINARY_OP(op, c)                                                                                       \
   class op : public expr_node<class op> {                                                                              \
   public:                                                                                                              \
     expr a, b;                                                                                                         \
     void accept(node_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr node_type static_type = node_type::op;                                                            \
+    static constexpr bool commutative = c;                                                                             \
   };
 
-DECLARE_BINARY_OP(add)
-DECLARE_BINARY_OP(sub)
-DECLARE_BINARY_OP(mul)
-DECLARE_BINARY_OP(div)
-DECLARE_BINARY_OP(mod)
-DECLARE_BINARY_OP(min)
-DECLARE_BINARY_OP(max)
-DECLARE_BINARY_OP(equal)
-DECLARE_BINARY_OP(not_equal)
-DECLARE_BINARY_OP(less)
-DECLARE_BINARY_OP(less_equal)
-DECLARE_BINARY_OP(logical_and)
-DECLARE_BINARY_OP(logical_or)
+DECLARE_BINARY_OP(add, true)
+DECLARE_BINARY_OP(sub, false)
+DECLARE_BINARY_OP(mul, true)
+DECLARE_BINARY_OP(div, false)
+DECLARE_BINARY_OP(mod, false)
+DECLARE_BINARY_OP(min, true)
+DECLARE_BINARY_OP(max, true)
+DECLARE_BINARY_OP(equal, true)
+DECLARE_BINARY_OP(not_equal, true)
+DECLARE_BINARY_OP(less, false)
+DECLARE_BINARY_OP(less_equal, false)
+DECLARE_BINARY_OP(logical_and, false)
+DECLARE_BINARY_OP(logical_or, false)
 
 #undef DECLARE_BINARY_OP
 
@@ -489,8 +476,8 @@ public:
 
   void accept(node_visitor* v) const override;
 
-  static stmt make(
-      symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::optional<std::vector<char>> padding);
+  static stmt make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
+      std::optional<std::vector<char>> padding);
 
   static constexpr node_type static_type = node_type::copy_stmt;
 };
@@ -705,10 +692,9 @@ public:
 
 class node_visitor {
 public:
-  virtual ~node_visitor() {}
+  virtual ~node_visitor() = default;
 
   virtual void visit(const variable*) = 0;
-  virtual void visit(const wildcard*) = 0;
   virtual void visit(const constant*) = 0;
   virtual void visit(const let*) = 0;
   virtual void visit(const add*) = 0;
@@ -746,46 +732,44 @@ public:
 
 class recursive_node_visitor : public node_visitor {
 public:
-  virtual void visit(const variable*) override;
-  virtual void visit(const wildcard*) override;
-  virtual void visit(const constant*) override;
-  virtual void visit(const let* op) override;
+  void visit(const variable*) override;
+  void visit(const constant*) override;
+  void visit(const let* op) override;
 
-  virtual void visit(const add* op) override;
-  virtual void visit(const sub* op) override;
-  virtual void visit(const mul* op) override;
-  virtual void visit(const div* op) override;
-  virtual void visit(const mod* op) override;
-  virtual void visit(const class min* op) override;
-  virtual void visit(const class max* op) override;
-  virtual void visit(const equal* op) override;
-  virtual void visit(const not_equal* op) override;
-  virtual void visit(const less* op) override;
-  virtual void visit(const less_equal* op) override;
-  virtual void visit(const logical_and* op) override;
-  virtual void visit(const logical_or* op) override;
-  virtual void visit(const logical_not* op) override;
-  virtual void visit(const class select* op) override;
-  virtual void visit(const call* op) override;
+  void visit(const add* op) override;
+  void visit(const sub* op) override;
+  void visit(const mul* op) override;
+  void visit(const div* op) override;
+  void visit(const mod* op) override;
+  void visit(const class min* op) override;
+  void visit(const class max* op) override;
+  void visit(const equal* op) override;
+  void visit(const not_equal* op) override;
+  void visit(const less* op) override;
+  void visit(const less_equal* op) override;
+  void visit(const logical_and* op) override;
+  void visit(const logical_or* op) override;
+  void visit(const logical_not* op) override;
+  void visit(const class select* op) override;
+  void visit(const call* op) override;
 
-  virtual void visit(const let_stmt* op) override;
-  virtual void visit(const block* op) override;
-  virtual void visit(const loop* op) override;
-  virtual void visit(const call_stmt* op) override;
-  virtual void visit(const copy_stmt* op) override;
-  virtual void visit(const allocate* op) override;
-  virtual void visit(const make_buffer* op) override;
-  virtual void visit(const clone_buffer* op) override;
-  virtual void visit(const crop_buffer* op) override;
-  virtual void visit(const crop_dim* op) override;
-  virtual void visit(const slice_buffer* op) override;
-  virtual void visit(const slice_dim* op) override;
-  virtual void visit(const truncate_rank* op) override;
-  virtual void visit(const check* op) override;
+  void visit(const let_stmt* op) override;
+  void visit(const block* op) override;
+  void visit(const loop* op) override;
+  void visit(const call_stmt* op) override;
+  void visit(const copy_stmt* op) override;
+  void visit(const allocate* op) override;
+  void visit(const make_buffer* op) override;
+  void visit(const clone_buffer* op) override;
+  void visit(const crop_buffer* op) override;
+  void visit(const crop_dim* op) override;
+  void visit(const slice_buffer* op) override;
+  void visit(const slice_dim* op) override;
+  void visit(const truncate_rank* op) override;
+  void visit(const check* op) override;
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }
-inline void wildcard::accept(node_visitor* v) const { v->visit(this); }
 inline void constant::accept(node_visitor* v) const { v->visit(this); }
 inline void let::accept(node_visitor* v) const { v->visit(this); }
 inline void add::accept(node_visitor* v) const { v->visit(this); }
@@ -821,35 +805,35 @@ inline void truncate_rank::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 // If `x` is a constant, returns the value of the constant, otherwise `nullptr`.
-inline const index_t* as_constant(const expr& x) {
+SLINKY_ALWAYS_INLINE inline const index_t* as_constant(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? &cx->value : nullptr;
 }
 
 // If `x` is a variable, returns the `symbol_id` of the variable, otherwise `nullptr`.
-inline const symbol_id* as_variable(const expr& x) {
+SLINKY_ALWAYS_INLINE inline const symbol_id* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->sym : nullptr;
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-inline bool is_variable(const expr& x, symbol_id sym) {
+SLINKY_ALWAYS_INLINE inline bool is_variable(const expr& x, symbol_id sym) {
   const variable* vx = x.as<variable>();
   return vx ? vx->sym == sym : false;
 }
 
 // Check if `x` is equal to the constant `value`.
-inline bool is_constant(const expr& x, index_t value) {
+SLINKY_ALWAYS_INLINE inline bool is_constant(const expr& x, index_t value) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value == value : false;
 }
-inline bool is_zero(const expr& x) { return is_constant(x, 0); }
-inline bool is_one(const expr& x) { return is_constant(x, 1); }
+SLINKY_ALWAYS_INLINE inline bool is_zero(const expr& x) { return is_constant(x, 0); }
+SLINKY_ALWAYS_INLINE inline bool is_one(const expr& x) { return is_constant(x, 1); }
 inline bool is_true(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value != 0 : false;
 }
-inline bool is_false(const expr& x) { return is_zero(x); }
+SLINKY_ALWAYS_INLINE inline bool is_false(const expr& x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
 inline bool is_intrinsic(const expr& x, intrinsic fn) {
@@ -941,7 +925,7 @@ class symbol_map {
   }
 
 public:
-  symbol_map() {}
+  symbol_map() = default;
   symbol_map(std::initializer_list<std::pair<symbol_id, T>> init) {
     for (const std::pair<symbol_id, T>& i : init) {
       operator[](i.first) = i.second;
@@ -1008,14 +992,14 @@ public:
     ctx_value = std::move(value);
   }
 
-  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other)
+  scoped_value_in_symbol_map(scoped_value_in_symbol_map&& other) noexcept
       : context_(other.context_), sym_(other.sym_), old_value_(std::move(other.old_value_)) {
     // Don't let other.~scoped_value() unset this value.
     other.context_ = nullptr;
   }
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
-  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) {
+  scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) noexcept {
     context_ = other.context_;
     sym_ = other.sym_;
     old_value_ = std::move(other.old_value_);

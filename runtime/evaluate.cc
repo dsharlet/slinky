@@ -62,55 +62,6 @@ void dump_context_for_expr(
 
 namespace {
 
-// This is a very slow implementation of copy_stmt. The expectation is that copies will have been lowered to aliases or
-// calls to `copy` in buffer.h/cc instead of relying on this implementation.
-void copy_stmt_impl(
-    eval_context& ctx, const raw_buffer& src, const dim* dst_dims, void* dst_base, const copy_stmt& c, int dim) {
-  const class dim& dst_dim = dst_dims[dim];
-  index_t dst_stride = dst_dim.stride();
-  for (index_t dst_x = dst_dim.begin(); dst_x < dst_dim.end(); ++dst_x) {
-    auto s = set_value_in_scope(ctx, c.dst_x[dim], dst_x);
-    if (dim == 0) {
-      const void* src_base = src.base;
-      for (std::size_t d = 0; d < src.rank; ++d) {
-        const class dim& src_dim = src.dims[d];
-
-        index_t src_x = evaluate(c.src_x[d], ctx);
-        if (src_dim.contains(src_x)) {
-          src_base = offset_bytes(src_base, src_dim.flat_offset_bytes(src_x));
-        } else {
-          src_base = nullptr;
-          break;
-        }
-      }
-      if (src_base) {
-        memcpy(dst_base, src_base, src.elem_size);
-      } else if (c.padding && !c.padding->empty()) {
-        memcpy(dst_base, c.padding->data(), src.elem_size);
-      } else {
-        // Leave unmodified.
-      }
-    } else {
-      copy_stmt_impl(ctx, src, dst_dims, dst_base, c, dim - 1);
-    }
-    dst_base = offset_bytes(dst_base, dst_stride);
-  }
-}
-
-void copy_stmt_impl(eval_context& ctx, const raw_buffer& src, const raw_buffer& dst, const copy_stmt& c) {
-  assert(c.src_x.size() == src.rank);
-  assert(c.dst_x.size() == dst.rank);
-  assert(dst.elem_size == src.elem_size);
-  assert(!c.padding || c.padding->empty() || dst.elem_size == c.padding->size());
-  if (dst.rank == 0) {
-    // The buffer is scalar.
-    assert(src.rank == 0);
-    memcpy(dst.base, src.base, dst.elem_size);
-  } else {
-    copy_stmt_impl(ctx, src, dst.dims, dst.base, c, dst.rank - 1);
-  }
-}
-
 // TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/node_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.
@@ -158,13 +109,6 @@ public:
   }
 
   void visit(const variable* op) override {
-    auto value = context.lookup(op->sym);
-    assert(value);
-    result = *value;
-  }
-
-  void visit(const wildcard* op) override {
-    // Maybe evaluating this should just be an error.
     auto value = context.lookup(op->sym);
     assert(value);
     result = *value;
@@ -370,10 +314,8 @@ public:
   }
 
   void visit(const copy_stmt* op) override {
-    const raw_buffer* src = reinterpret_cast<raw_buffer*>(context.lookup(op->src, 0));
-    const raw_buffer* dst = reinterpret_cast<raw_buffer*>(context.lookup(op->dst, 0));
-
-    copy_stmt_impl(context, *src, *dst, *op);
+    std::cerr << "copy_stmt should have been implemented by calls to copy/pad." << std::endl;
+    std::abort();
   }
 
   void visit(const allocate* op) override {
@@ -390,16 +332,16 @@ public:
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 
+    void* heap_allocation = nullptr;
     if (op->storage == memory_type::stack) {
       buffer->base = alloca(buffer->size_bytes());
     } else {
       assert(op->storage == memory_type::heap);
-      buffer->allocation = nullptr;
       if (context.allocate) {
         assert(context.free);
-        context.allocate(op->sym, buffer);
+        heap_allocation = context.allocate(op->sym, buffer);
       } else {
-        buffer->allocate();
+        heap_allocation = buffer->allocate();
       }
     }
 
@@ -409,9 +351,9 @@ public:
     if (op->storage == memory_type::heap) {
       if (context.free) {
         assert(context.allocate);
-        context.free(op->sym, buffer);
+        context.free(op->sym, buffer, heap_allocation);
       } else {
-        buffer->free();
+        free(heap_allocation);
       }
     }
   }

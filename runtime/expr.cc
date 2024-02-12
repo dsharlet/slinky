@@ -51,6 +51,10 @@ std::optional<symbol_id> node_context::lookup(const std::string& name) const {
 template <typename T>
 const T* make_bin_op(expr a, expr b) {
   auto n = new T();
+  if (T::commutative && should_commute(a, b)) {
+    // Aggressively canonicalizing the order is a big speedup by avoiding unnecessary simplifier rewrites.
+    std::swap(a, b);
+  }
   n->a = std::move(a);
   n->b = std::move(b);
   return n;
@@ -77,9 +81,6 @@ stmt let_stmt::make(std::vector<std::pair<symbol_id, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
-// TODO(https://github.com/dsharlet/slinky/issues/4): At this time, the top CPU user
-// of simplify_fuzz is malloc/free. Perhaps caching common values of variables (yes
-// we can cache variables!) would be worth doing.
 const variable* make_variable(symbol_id sym) {
   auto n = new variable();
   n->sym = sym;
@@ -95,13 +96,6 @@ const constant* make_constant(index_t value) {
 expr::expr(index_t x) : expr(make_constant(x)) {}
 
 expr variable::make(symbol_id sym) { return make_variable(sym); }
-
-expr wildcard::make(symbol_id sym, std::function<bool(const expr&)> matches) {
-  auto n = new wildcard();
-  n->sym = sym;
-  n->matches = std::move(matches);
-  return n;
-}
 
 expr constant::make(index_t value) { return make_constant(value); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
@@ -316,8 +310,8 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   return n;
 }
 
-stmt copy_stmt::make(
-    symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x, std::optional<std::vector<char>> padding) {
+stmt copy_stmt::make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
+    std::optional<std::vector<char>> padding) {
   auto n = new copy_stmt();
   n->src = src;
   n->src_x = std::move(src_x);
@@ -337,10 +331,9 @@ void flatten_blocks(std::vector<stmt>& v) {
   for (auto it = v.begin(); it != v.end();) {
     if (it->defined()) {
       if (const block* b = it->as<block>()) {
-        auto stmts = std::move(b->stmts);
+        const auto& stmts = b->stmts;
+        it = v.insert(it, stmts.begin(), stmts.end()) + stmts.size();
         it = v.erase(it);
-        it = v.insert(it, stmts.begin(), stmts.end());
-        it += stmts.size();
         continue;
       }
     }
@@ -466,20 +459,17 @@ stmt check::make(expr condition) {
   return n;
 }
 
-const expr& positive_infinity() {
-  static expr e = call::make(intrinsic::positive_infinity, {});
-  return e;
-}
+namespace {
 
-const expr& negative_infinity() {
-  static expr e = call::make(intrinsic::negative_infinity, {});
-  return e;
-}
+expr global_positive_infinity = call::make(intrinsic::positive_infinity, {});
+expr global_negative_infinity = call::make(intrinsic::negative_infinity, {});
+expr global_indeterminate = call::make(intrinsic::indeterminate, {});
 
-const expr& indeterminate() {
-  static expr e = call::make(intrinsic::indeterminate, {});
-  return e;
-}
+}  // namespace
+
+const expr& positive_infinity() { return global_positive_infinity; }
+const expr& negative_infinity() { return global_negative_infinity; }
+const expr& indeterminate() { return global_indeterminate; }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 
@@ -594,7 +584,6 @@ var::operator expr() const {
 }
 
 void recursive_node_visitor::visit(const variable*) {}
-void recursive_node_visitor::visit(const wildcard*) {}
 void recursive_node_visitor::visit(const constant*) {}
 
 void recursive_node_visitor::visit(const let* op) {
