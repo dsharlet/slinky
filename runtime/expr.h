@@ -805,35 +805,35 @@ inline void truncate_rank::accept(node_visitor* v) const { v->visit(this); }
 inline void check::accept(node_visitor* v) const { v->visit(this); }
 
 // If `x` is a constant, returns the value of the constant, otherwise `nullptr`.
-inline const index_t* as_constant(const expr& x) {
+SLINKY_ALWAYS_INLINE inline const index_t* as_constant(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? &cx->value : nullptr;
 }
 
 // If `x` is a variable, returns the `symbol_id` of the variable, otherwise `nullptr`.
-inline const symbol_id* as_variable(const expr& x) {
+SLINKY_ALWAYS_INLINE inline const symbol_id* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->sym : nullptr;
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-inline bool is_variable(const expr& x, symbol_id sym) {
+SLINKY_ALWAYS_INLINE inline bool is_variable(const expr& x, symbol_id sym) {
   const variable* vx = x.as<variable>();
   return vx ? vx->sym == sym : false;
 }
 
 // Check if `x` is equal to the constant `value`.
-inline bool is_constant(const expr& x, index_t value) {
+SLINKY_ALWAYS_INLINE inline bool is_constant(const expr& x, index_t value) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value == value : false;
 }
-inline bool is_zero(const expr& x) { return is_constant(x, 0); }
-inline bool is_one(const expr& x) { return is_constant(x, 1); }
+SLINKY_ALWAYS_INLINE inline bool is_zero(const expr& x) { return is_constant(x, 0); }
+SLINKY_ALWAYS_INLINE inline bool is_one(const expr& x) { return is_constant(x, 1); }
 inline bool is_true(const expr& x) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value != 0 : false;
 }
-inline bool is_false(const expr& x) { return is_zero(x); }
+SLINKY_ALWAYS_INLINE inline bool is_false(const expr& x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
 inline bool is_intrinsic(const expr& x, intrinsic fn) {

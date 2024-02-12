@@ -25,13 +25,13 @@ struct match_context {
   }
 };
 
-inline bool match(index_t p, const expr& x, match_context& m) { return is_constant(x, p); }
-inline bool match(const expr& p, const expr& x, match_context& m) { return p.same_as(x); }
-inline expr substitute(int p, const match_context& m) { return p; }
-inline expr substitute(const expr& p, const match_context& m) { return p; }
+SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& m) { return is_constant(x, p); }
+SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& m) { return p.same_as(x); }
+SLINKY_ALWAYS_INLINE inline expr substitute(int p, const match_context& m) { return p; }
+SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& m) { return p; }
 
-inline node_type static_type(index_t) { return node_type::constant; }
-inline node_type static_type(const expr& e) { return e.type(); }
+SLINKY_ALWAYS_INLINE inline node_type static_type(index_t) { return node_type::constant; }
+SLINKY_ALWAYS_INLINE inline node_type static_type(const expr& e) { return e.type(); }
 
 class pattern_wildcard {
 public:
