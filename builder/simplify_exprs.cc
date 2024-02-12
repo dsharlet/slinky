@@ -730,7 +730,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 
   rewriter r(e);
-  if (r.rewrite(abs(negative_infinity()), positive_infinity()) || 
+  if (r.rewrite(rewrite::abs(negative_infinity()), positive_infinity()) || 
       r.rewrite(abs(-x), abs(x)) ||
       r.rewrite(abs(abs(x)), abs(x)) ||
       false) {

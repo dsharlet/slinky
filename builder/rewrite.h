@@ -405,6 +405,15 @@ public:
     result = substitute(r, ctx);
     return true;
   }
+
+  template <typename Replacement>
+  bool rewrite(const expr&, const Replacement&) {
+    using error = typename Replacement::error_not_pattern;
+  }
+  template <typename Replacement, typename Predicate>
+  bool rewrite(const expr&, const Replacement&, const Predicate&) {
+    using error = typename Replacement::error_not_pattern;
+  }
 };
 
 static pattern_wildcard x{0};
