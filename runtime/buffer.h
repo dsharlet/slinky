@@ -322,9 +322,7 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   }
 }
 
-inline void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src) {
-  *dst = src;
-}
+inline void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src) { *dst = src; }
 
 template <typename... Bufs>
 void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src, const Bufs&... bufs) {
@@ -474,7 +472,8 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
   internal::for_each_contiguous_slice(buf.base, dims, f);
 }
 
-// Call `f` for each slice of the first `slice_rank` dimensions of buf. `bufs` will also be sliced at the same indices as `buf`.
+// Call `f` for each slice of the first `slice_rank` dimensions of buf. `bufs` will also be sliced at the same indices
+// as `buf`. Assumes that all of the sliced dimensions of `buf` are in bounds in `bufs...`.
 template <typename F, typename... Bufs>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
   std::array<raw_buffer, sizeof...(Bufs) + 1> bufs_;
