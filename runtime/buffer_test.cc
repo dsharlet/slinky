@@ -7,14 +7,25 @@
 
 namespace slinky {
 
-TEST(buffer, make) {
-  auto buf = raw_buffer::make(2, 4);
-  buf->dim(0).set_min_extent(0, 10);
-  buf->dim(0).set_stride(4);
-  buf->dim(1).set_min_extent(0, 20);
-  buf->dim(1).set_stride(buf->dim(0).extent() * buf->dim(0).stride());
+TEST(raw_buffer, make_copy) {
+  buffer<int, 2> src({10, 20});
+  src.allocate();
+  for_each_contiguous_slice(src, [&](void* base, index_t extent) {
+    for (index_t i = 0; i < extent; ++i) {
+      reinterpret_cast<int*>(base)[i] = rand();
+    }
+  });
 
-  ASSERT_EQ(buf->size_bytes(), buf->dim(0).extent() * buf->dim(1).extent() * buf->elem_size);
+  auto dst = raw_buffer::make_copy(src);
+  ASSERT_EQ(src.rank, dst->rank);
+  ASSERT_EQ(src.dim(0).min(), dst->dim(0).min());
+  ASSERT_EQ(src.dim(0).extent(), dst->dim(0).extent());
+  ASSERT_EQ(src.dim(1).min(), dst->dim(1).min());
+  ASSERT_EQ(src.dim(1).extent(), dst->dim(1).extent());
+  ASSERT_EQ(src.size_bytes(), dst->size_bytes());
+  ASSERT_NE(src.base(), dst->base);
+
+  for_each_index(src, [&](auto i) { ASSERT_EQ(src(i), *reinterpret_cast<int*>(dst->address_at(i))); });
 }
 
 TEST(buffer, buffer) {

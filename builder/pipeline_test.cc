@@ -46,11 +46,12 @@ public:
 
   test_context() {
     allocate = [this](symbol_id, raw_buffer* b) {
-      b->allocate();
+      void* allocation = b->allocate();
       heap.track_allocate(b->size_bytes());
+      return allocation;
     };
-    free = [this](symbol_id, raw_buffer* b) {
-      b->free();
+    free = [this](symbol_id, raw_buffer* b, void* allocation) {
+      ::free(allocation);
       heap.track_free(b->size_bytes());
     };
 
