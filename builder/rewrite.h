@@ -44,7 +44,7 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_wildcard&) { ret
 inline bool match(const pattern_wildcard& p, const expr& x, match_context& m) {
   if (m.vars[p.sym]) {
     // Try pointer comparison first to short circuit the full match.
-    return x.get() == m.vars[p.sym] || slinky::match(x, m.vars[p.sym]);
+    return x.get() == m.vars[p.sym] || slinky::compare(x, m.vars[p.sym]) == 0;
   } else if (x.get()) {
     m.vars[p.sym] = x.get();
     return true;

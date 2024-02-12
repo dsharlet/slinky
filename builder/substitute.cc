@@ -31,8 +31,7 @@ class matcher : public node_visitor {
 public:
   int match = 0;
 
-  matcher(const expr& e, symbol_map<expr>* matches = nullptr) : self(e.get()), matches(matches) {}
-  matcher(const stmt& s, symbol_map<expr>* matches = nullptr) : self(s.get()), matches(matches) {}
+  matcher(const base_node* n, symbol_map<expr>* matches = nullptr) : self(n), matches(matches) {}
 
   template <typename T>
   bool try_match(T self, T op) {
@@ -366,7 +365,7 @@ public:
 };
 
 bool match(const expr& p, const expr& e, symbol_map<expr>& matches) {
-  matcher m(e, &matches);
+  matcher m(e.get(), &matches);
   p.accept(&m);
   return m.match == 0;
 }
@@ -378,12 +377,14 @@ bool match(const dim_expr& a, const dim_expr& b) {
   return match(a.bounds, b.bounds) && match(a.stride, b.stride) && match(a.fold_factor, b.fold_factor);
 }
 
-int compare(const expr& a, const expr& b) {
+int compare(const expr& a, const expr& b) { return compare(a.get(), b.get()); }
+
+int compare(const base_expr_node* a, const base_expr_node* b) {
   // This should match the behavior of matcher::try_match.
   // TODO: It would be nice if we didn't need to duplicate this tricky logic.
-  if (!b.defined()) return a.defined() ? 1 : 0;
+  if (!b) return a ? 1 : 0;
   matcher m(a);
-  b.accept(&m);
+  b->accept(&m);
   return m.match;
 }
 
@@ -391,7 +392,7 @@ int compare(const stmt& a, const stmt& b) {
   // This should match the behavior of matcher::try_match.
   // TODO: It would be nice if we didn't need to duplicate this tricky logic.
   if (!b.defined()) return a.defined() ? 1 : 0;
-  matcher m(a);
+  matcher m(a.get());
   b.accept(&m);
   return m.match;
 }
