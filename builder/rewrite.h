@@ -407,11 +407,11 @@ public:
   }
 
   template <typename Replacement>
-  bool rewrite(const expr&, const Replacement&) {
+  void rewrite(const expr&, const Replacement&) {
     using error = typename Replacement::error_not_pattern;
   }
   template <typename Replacement, typename Predicate>
-  bool rewrite(const expr&, const Replacement&, const Predicate&) {
+  void rewrite(const expr&, const Replacement&, const Predicate&) {
     using error = typename Replacement::error_not_pattern;
   }
 };
