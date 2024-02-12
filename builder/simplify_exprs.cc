@@ -36,10 +36,10 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, positive_infinity()), x) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
       r.rewrite(min(x, negative_infinity()), negative_infinity()) ||
-      r.rewrite(min(min(x, c0), c1), min(x, min(c0, c1))) ||
-      r.rewrite(min(x, x + c0), x, c0 > 0) ||
-      r.rewrite(min(x, x + c0), x + c0, c0 < 0) ||
-      r.rewrite(min(x + c0, c1), min(x, c1 - c0) + c0) ||
+      r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
+      r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
+      r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
+      r.rewrite(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
       r.rewrite(min(c0 - x, c0 - y), c0 - max(x, y)) ||
       r.rewrite(min(x, -x), -abs(x)) ||
       r.rewrite(min(x + c0, c0 - x), c0 - abs(x)) ||
@@ -56,10 +56,10 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
       r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
       r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
-      r.rewrite(min(x / z, y / z), min(x, y) / z, z > 0) ||
-      r.rewrite(min(x / z, y / z), max(x, y) / z, z < 0) ||
-      r.rewrite(min(x * z, y * z), z * min(x, y), z > 0) ||
-      r.rewrite(min(x * z, y * z), z * max(x, y), z < 0) ||
+      r.rewrite(min(x / c0, y / c0), min(x, y) / c0, eval(c0 > 0)) ||
+      r.rewrite(min(x / c0, y / c0), max(x, y) / c0, eval(c0 < 0)) ||
+      r.rewrite(min(x * c0, y * c0), min(x, y) * c0, eval(c0 > 0)) ||
+      r.rewrite(min(x * c0, y * c0), max(x, y) * c0, eval(c0 < 0)) ||
       r.rewrite(min(x + z, y + z), z + min(x, y)) ||
       r.rewrite(min(x - z, y - z), min(x, y) - z) ||
       r.rewrite(min(z - x, z - y), z - max(x, y)) ||
@@ -69,9 +69,9 @@ expr simplify(const class min* op, expr a, expr b) {
       // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
       // is true if we disallow empty buffers...
       r.rewrite(min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), c0 > 0) ||
-      r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, c0 < 0) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, c0 > c1) || 
+      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), eval(c0 > 0)) ||
+      r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, eval(c0 < 0)) ||
+      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || 
       false) {
     return r.result;
   }
@@ -101,10 +101,10 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, negative_infinity()), x) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
       r.rewrite(max(x, positive_infinity()), positive_infinity()) ||
-      r.rewrite(max(max(x, c0), c1), max(x, max(c0, c1))) ||
-      r.rewrite(max(x, x + c0), x + c0, c0 > 0) ||
-      r.rewrite(max(x, x + c0), x, c0 < 0) ||
-      r.rewrite(max(x + c0, c1), max(x, c1 - c0) + c0) ||
+      r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
+      r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
+      r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
+      r.rewrite(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
       r.rewrite(max(c0 - x, c0 - y), c0 - min(x, y)) ||
       r.rewrite(max(x, -x), abs(x)) ||
       r.rewrite(max(x + c0, c0 - x), abs(x) + c0) ||
@@ -120,19 +120,19 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
       r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
       r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
-      r.rewrite(max(x / z, y / z), max(x, y) / z, z > 0) ||
-      r.rewrite(max(x / z, y / z), min(x, y) / z, z < 0) ||
-      r.rewrite(max(x * z, y * z), z * max(x, y), z > 0) ||
-      r.rewrite(max(x * z, y * z), z * min(x, y), z < 0) ||
+      r.rewrite(max(x / c0, y / c0), max(x, y) / c0, eval(c0 > 0)) ||
+      r.rewrite(max(x / c0, y / c0), min(x, y) / c0, eval(c0 < 0)) ||
+      r.rewrite(max(x * c0, y * c0), max(x, y) * c0, eval(c0 > 0)) ||
+      r.rewrite(max(x * c0, y * c0), min(x, y) * c0, eval(c0 < 0)) ||
       r.rewrite(max(x + z, y + z), z + max(x, y)) ||
       r.rewrite(max(x - z, y - z), max(x, y) - z) ||
       r.rewrite(max(z - x, z - y), z - min(x, y)) ||
 
       // Buffer meta simplifications
       r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, c0 > 0) ||
-      r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), c0 < 0) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, c0 > c1) || 
+      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, eval(c0 > 0)) ||
+      r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), eval(c0 < 0)) ||
+      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || 
       false) {
     return r.result;
   }
@@ -179,33 +179,33 @@ expr simplify(const add* op, expr a, expr b) {
       r.rewrite((x - y) + (z - x), z - y) ||
       r.rewrite((y - x) + (z - x), (y + z) + x * -2) ||
 
-      r.rewrite((x + c0) + c1, x + (c0 + c1)) ||
-      r.rewrite((c0 - x) + c1, (c0 + c1) - x) ||
+      r.rewrite((x + c0) + c1, x + eval(c0 + c1)) ||
+      r.rewrite((c0 - x) + c1, eval(c0 + c1) - x) ||
       r.rewrite(x + (c0 - y), (x - y) + c0) ||
       r.rewrite(x + (y + c0), (x + y) + c0) ||
-      r.rewrite((x + c0) + (y + c1), (x + y) + (c0 + c1)) ||
+      r.rewrite((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
 
       r.rewrite(z + min(x, y - z), min(y, x + z)) ||
       r.rewrite(z + max(x, y - z), max(y, x + z)) ||
 
-      r.rewrite(min(x + c0, y + c1) + c2, min(x + (c0 + c2), y + (c1 + c2))) ||
-      r.rewrite(max(x + c0, y + c1) + c2, max(x + (c0 + c2), y + (c1 + c2))) ||
-      r.rewrite(min(y + c1, c0 - x) + c2, min(y + (c1 + c2), (c0 + c2) - x)) ||
-      r.rewrite(max(y + c1, c0 - x) + c2, max(y + (c1 + c2), (c0 + c2) - x)) ||
-      r.rewrite(min(c0 - x, c1 - y) + c2, min((c0 + c2) - x, (c1 + c2) - y)) ||
-      r.rewrite(max(c0 - x, c1 - y) + c2, max((c0 + c2) - x, (c1 + c2) - y)) ||
-      r.rewrite(min(x, y + c0) + c1, min(x + c1, y + (c0 + c1))) ||
-      r.rewrite(max(x, y + c0) + c1, max(x + c1, y + (c0 + c1))) ||
+      r.rewrite(min(x + c0, y + c1) + c2, min(x + eval(c0 + c2), y + eval(c1 + c2))) ||
+      r.rewrite(max(x + c0, y + c1) + c2, max(x + eval(c0 + c2), y + eval(c1 + c2))) ||
+      r.rewrite(min(y + c1, c0 - x) + c2, min(y + eval(c1 + c2), eval(c0 + c2) - x)) ||
+      r.rewrite(max(y + c1, c0 - x) + c2, max(y + eval(c1 + c2), eval(c0 + c2) - x)) ||
+      r.rewrite(min(c0 - x, c1 - y) + c2, min(eval(c0 + c2) - x, eval(c1 + c2) - y)) ||
+      r.rewrite(max(c0 - x, c1 - y) + c2, max(eval(c0 + c2) - x, eval(c1 + c2) - y)) ||
+      r.rewrite(min(x, y + c0) + c1, min(x + c1, y + eval(c0 + c1))) ||
+      r.rewrite(max(x, y + c0) + c1, max(x + c1, y + eval(c0 + c1))) ||
 
-      r.rewrite(select(x, c0, c1) + c2, select(x, c0 + c2, c1 + c2)) ||
-      r.rewrite(select(x, y + c0, c1) + c2, select(x, y + (c0 + c2), c1 + c2)) ||
-      r.rewrite(select(x, c0 - y, c1) + c2, select(x, (c0 + c2) - y, c1 + c2)) ||
-      r.rewrite(select(x, c0, y + c1) + c2, select(x, c0 + c2, y + (c1 + c2))) ||
-      r.rewrite(select(x, c0, c1 - y) + c2, select(x, c0 + c2, (c1 + c2) - y)) ||
-      r.rewrite(select(x, y + c0, z + c1) + c2, select(x, y + (c0 + c2), z + (c1 + c2))) ||
-      r.rewrite(select(x, c0 - y, z + c1) + c2, select(x, (c0 + c2) - y, z + (c1 + c2))) ||
-      r.rewrite(select(x, y + c0, c1 - z) + c2, select(x, y + (c0 + c2), (c1 + c2) - z)) ||
-      r.rewrite(select(x, c0 - y, c1 - z) + c2, select(x, (c0 + c2) - y, (c1 + c2) - z)) ||
+      r.rewrite(select(x, c0, c1) + c2, select(x, eval(c0 + c2), eval(c1 + c2))) ||
+      r.rewrite(select(x, y + c0, c1) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2))) ||
+      r.rewrite(select(x, c0 - y, c1) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2))) ||
+      r.rewrite(select(x, c0, y + c1) + c2, select(x, eval(c0 + c2), y + eval(c1 + c2))) ||
+      r.rewrite(select(x, c0, c1 - y) + c2, select(x, eval(c0 + c2), eval(c1 + c2) - y)) ||
+      r.rewrite(select(x, y + c0, z + c1) + c2, select(x, y + eval(c0 + c2), z + eval(c1 + c2))) ||
+      r.rewrite(select(x, c0 - y, z + c1) + c2, select(x, eval(c0 + c2) - y, z + eval(c1 + c2))) ||
+      r.rewrite(select(x, y + c0, c1 - z) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2) - z)) ||
+      r.rewrite(select(x, c0 - y, c1 - z) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2) - z)) ||
 
       r.rewrite(buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1) ||
       r.rewrite((z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1) ||
@@ -260,22 +260,22 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite((x - y) - (z - y), x - z) ||
       r.rewrite((x - y) - (x - z), z - y) ||
       r.rewrite((c0 - x) - (y - z), ((z - x) - y) + c0) ||
-      r.rewrite((x + c0) - (y + c1), (x - y) + (c0 - c1)) ||
+      r.rewrite((x + c0) - (y + c1), (x - y) + eval(c0 - c1)) ||
 
-      r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, c0 > 0) ||
+      r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, eval(c0 > 0)) ||
 
       r.rewrite(min(x, y + z) - z, min(y, x - z)) ||
       r.rewrite(max(x, y + z) - z, max(y, x - z)) ||
 
-      r.rewrite(c2 - select(x, c0, c1), select(x, c2 - c0, c2 - c1)) ||
-      r.rewrite(c2 - select(x, y + c0, c1), select(x, (c2 - c0) - y, c2 - c1)) ||
-      r.rewrite(c2 - select(x, c0 - y, c1), select(x, y + (c2 - c0), c2 - c1)) ||
-      r.rewrite(c2 - select(x, c0, y + c1), select(x, c2 - c0, (c2 - c1) - y)) ||
-      r.rewrite(c2 - select(x, c0, c1 - y), select(x, c2 - c0, y + (c2 - c1))) ||
-      r.rewrite(c2 - select(x, y + c0, z + c1), select(x, (c2 - c0) - y, (c2 - c1) - z)) ||
-      r.rewrite(c2 - select(x, c0 - y, z + c1), select(x, y + (c2 - c0), (c2 - c1) - z)) ||
-      r.rewrite(c2 - select(x, y + c0, c1 - z), select(x, (c2 - c0) - y, z + (c2 - c1))) ||
-      r.rewrite(c2 - select(x, c0 - y, c1 - z), select(x, y + (c2 - c0), z + (c2 - c1))) ||
+      r.rewrite(c2 - select(x, c0, c1), select(x, eval(c2 - c0), eval(c2 - c1))) ||
+      r.rewrite(c2 - select(x, y + c0, c1), select(x, eval(c2 - c0) - y, eval(c2 - c1))) ||
+      r.rewrite(c2 - select(x, c0 - y, c1), select(x, y + eval(c2 - c0), eval(c2 - c1))) ||
+      r.rewrite(c2 - select(x, c0, y + c1), select(x, eval(c2 - c0), eval(c2 - c1) - y)) ||
+      r.rewrite(c2 - select(x, c0, c1 - y), select(x, eval(c2 - c0), y + eval(c2 - c1))) ||
+      r.rewrite(c2 - select(x, y + c0, z + c1), select(x, eval(c2 - c0) - y, eval(c2 - c1) - z)) ||
+      r.rewrite(c2 - select(x, c0 - y, z + c1), select(x, y + eval(c2 - c0), eval(c2 - c1) - z)) ||
+      r.rewrite(c2 - select(x, y + c0, c1 - z), select(x, eval(c2 - c0) - y, z + eval(c2 - c1))) ||
+      r.rewrite(c2 - select(x, c0 - y, c1 - z), select(x, y + eval(c2 - c0), z + eval(c2 - c1))) ||
 
       r.rewrite(buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) + -1) ||
       r.rewrite(buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) + -1) ||
@@ -307,16 +307,16 @@ expr simplify(const mul* op, expr a, expr b) {
       r.rewrite(positive_infinity() * positive_infinity(), positive_infinity()) ||
       r.rewrite(negative_infinity() * positive_infinity(), negative_infinity()) ||
       r.rewrite(negative_infinity() * negative_infinity(), positive_infinity()) ||
-      r.rewrite(positive_infinity() * c0, positive_infinity(), c0 > 0) ||
-      r.rewrite(negative_infinity() * c0, negative_infinity(), c0 > 0) ||
-      r.rewrite(positive_infinity() * c0, negative_infinity(), c0 < 0) ||
-      r.rewrite(negative_infinity() * c0, positive_infinity(), c0 < 0) ||
+      r.rewrite(positive_infinity() * c0, positive_infinity(), eval(c0 > 0)) ||
+      r.rewrite(negative_infinity() * c0, negative_infinity(), eval(c0 > 0)) ||
+      r.rewrite(positive_infinity() * c0, negative_infinity(), eval(c0 < 0)) ||
+      r.rewrite(negative_infinity() * c0, positive_infinity(), eval(c0 < 0)) ||
       r.rewrite(x * 0, 0) ||
       r.rewrite(x * 1, x) ||
       r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
-      r.rewrite((x + c0) * c1, x * c1 + c0 * c1) ||
-      r.rewrite((0 - x) * c1, x * (-c1)) ||
-      r.rewrite((c0 - x) * c1, c0 * c1 - x * c1) ||
+      r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) ||
+      r.rewrite((0 - x) * c1, x * eval(-c1)) ||
+      r.rewrite((c0 - x) * c1, eval(c0 * c1) - x * c1) ||
       false) {
     return r.result;
   }
@@ -345,22 +345,22 @@ expr simplify(const div* op, expr a, expr b) {
       r.rewrite(negative_infinity() / negative_infinity(), indeterminate()) ||
       r.rewrite(x / positive_infinity(), 0, is_finite(x)) ||
       r.rewrite(x / negative_infinity(), 0, is_finite(x)) ||
-      r.rewrite(positive_infinity() / c0, positive_infinity(), c0 > 0) ||
-      r.rewrite(negative_infinity() / c0, negative_infinity(), c0 > 0) ||
-      r.rewrite(positive_infinity() / c0, negative_infinity(), c0 < 0) ||
-      r.rewrite(negative_infinity() / c0, positive_infinity(), c0 < 0) ||
+      r.rewrite(positive_infinity() / c0, positive_infinity(), eval(c0 > 0)) ||
+      r.rewrite(negative_infinity() / c0, negative_infinity(), eval(c0 > 0)) ||
+      r.rewrite(positive_infinity() / c0, negative_infinity(), eval(c0 < 0)) ||
+      r.rewrite(negative_infinity() / c0, positive_infinity(), eval(c0 < 0)) ||
       r.rewrite(x / 0, 0) ||
       r.rewrite(0 / x, 0) ||
       r.rewrite(x / 1, x) ||
       r.rewrite(x / -1, -x) ||
       r.rewrite(x / x, x != 0) ||
 
-      r.rewrite((x / c0) / c1, x / eval(c0 * c1), c0 > 0 && c1 > 0) ||
-      r.rewrite((x / c0 + c1) / c2, (x + eval(c1 * c0)) / eval(c0 * c2), c0 > 0 && c2 > 0) ||
-      r.rewrite((x * c0) / c1, x * eval(c0 / c1), c0 % c1 == 0 && c1 > 0) ||
+      r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
+      r.rewrite((x / c0 + c1) / c2, (x + eval(c1 * c0)) / eval(c0 * c2), eval(c0 > 0 && c2 > 0)) ||
+      r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0 && c0 % c1 == 0)) ||
 
-      r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), c0 % c1 == 0) ||
-      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), c0 % c1 == 0 && c0 != 0) ||
+      r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), eval(c0 % c1 == 0)) ||
+      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
       false) {
     return r.result;
   }
@@ -410,13 +410,13 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
-      r.rewrite(x + c0 < c1, x < c1 - c0) ||
+      r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
       r.rewrite(0 - x < c0, -c0 < x) ||
-      r.rewrite(c0 - x < c1, c0 - c1 < x) ||
-      r.rewrite(c0 < c1 - x, x < c1 - c0) ||
+      r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
+      r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
 
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
@@ -435,13 +435,13 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(max(x, y) < min(x, y), false) ||
       r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
 
-      r.rewrite(c0 < max(x, c1), c0 < x || c0 < c1) ||
-      r.rewrite(c0 < min(x, c1), c0 < x && c0 < c1) ||
-      r.rewrite(max(x, c0) < c1, x < c1 && c0 < c1) ||
-      r.rewrite(min(x, c0) < c1, x < c1 || c0 < c1) ||
+      r.rewrite(c0 < max(x, c1), c0 < x || eval(c0 < c1)) ||
+      r.rewrite(c0 < min(x, c1), c0 < x && eval(c0 < c1)) ||
+      r.rewrite(max(x, c0) < c1, x < c1 && eval(c0 < c1)) ||
+      r.rewrite(min(x, c0) < c1, x < c1 || eval(c0 < c1)) ||
 
-      r.rewrite(buffer_extent(x, y) < c0, false, c0 < 0) ||
-      r.rewrite(c0 < buffer_extent(x, y), true, c0 < 0) ||
+      r.rewrite(buffer_extent(x, y) < c0, false, eval(c0 < 0)) ||
+      r.rewrite(c0 < buffer_extent(x, y), true, eval(c0 < 0)) ||
       false) {
     return r.result;
   }
@@ -474,7 +474,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(0 - x <= c0, -c0 <= x) ||
       r.rewrite(c0 - x <= y, c0 <= y + x) ||
       r.rewrite(x <= c1 - y, x + y <= c1) ||
-      r.rewrite(x + c0 <= y + c1, x - y <= c1 - c0) ||
+      r.rewrite(x + c0 <= y + c1, x - y <= eval(c1 - c0)) ||
 
       r.rewrite((x + c0) / c1 <= x / c1, c0 <= 0) ||
       r.rewrite(x / c1 <= (x + c0) / c1, 0 <= c0) ||
@@ -527,8 +527,8 @@ expr simplify(const equal* op, expr a, expr b) {
   
   rewriter r(e);
   if (r.rewrite(x == x, true) ||
-      r.rewrite(x + c0 == c1, x == c1 - c0) ||
-      r.rewrite(c0 - x == c1, -x == c1 - c0, c0 != 0) ||
+      r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
+      r.rewrite(c0 - x == c1, -x == eval(c1 - c0), c0 != 0) ||
       false) {
     return r.result;
   }
@@ -554,8 +554,8 @@ expr simplify(const not_equal* op, expr a, expr b) {
 
   rewriter r(e);
   if (r.rewrite(x != x, false) ||
-      r.rewrite(x + c0 != c1, x != c1 - c0) ||
-      r.rewrite(c0 - x != c1, -x != c1 - c0, c0 != 0) ||
+      r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
+      r.rewrite(c0 - x != c1, -x != eval(c1 - c0), c0 != 0) ||
       false) {
     return r.result;
   }
@@ -585,9 +585,12 @@ expr simplify(const logical_and* op, expr a, expr b) {
   rewriter r(e);
   if (r.rewrite(x && x, x) ||
       r.rewrite(x && !x, false) ||
+      r.rewrite(!x && x, false) ||
       r.rewrite(!x && !y, !(x || y)) ||
       r.rewrite(x && (x && y), x && y) ||
+      r.rewrite((x && y) && x, x && y) ||
       r.rewrite(x && (x || y), x) ||
+      r.rewrite((x || y) && x, x) ||
       false) {
     return r.result;
   }
@@ -617,9 +620,12 @@ expr simplify(const logical_or* op, expr a, expr b) {
   rewriter r(e);
   if (r.rewrite(x || x, x) ||
       r.rewrite(x || !x, true) ||
+      r.rewrite(!x || x, true) ||
       r.rewrite(!x || !y, !(x && y)) ||
       r.rewrite(x || (x && y), x) ||
+      r.rewrite((x && y) || x, x) ||
       r.rewrite(x || (x || y), x || y) ||
+      r.rewrite((x || y) || x, x || y) ||
       false) {
     return r.result;
   };

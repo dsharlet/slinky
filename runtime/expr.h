@@ -418,8 +418,8 @@ DECLARE_BINARY_OP(equal, std::true_type)
 DECLARE_BINARY_OP(not_equal, std::true_type)
 DECLARE_BINARY_OP(less, std::false_type)
 DECLARE_BINARY_OP(less_equal, std::false_type)
-DECLARE_BINARY_OP(logical_and, std::true_type)
-DECLARE_BINARY_OP(logical_or, std::true_type)
+DECLARE_BINARY_OP(logical_and, std::false_type)
+DECLARE_BINARY_OP(logical_or, std::false_type)
 
 #undef DECLARE_BINARY_OP
 
