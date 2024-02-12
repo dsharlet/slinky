@@ -540,9 +540,10 @@ TEST(pipeline, stencil) {
             intm->store_at({&stencil, y});
             intm->store_in(memory_type::stack);
           }
-          if (split_intermediate > 0) {
-            add.loops({{t, split_intermediate, lm}});
-          }
+        }
+
+        if (split_intermediate > 0) {
+          add.loops({{t, split_intermediate, loop_mode::serial}});
         }
 
         pipeline p = build_pipeline(ctx, {in}, {out});
