@@ -125,7 +125,6 @@ public:
     result_funcs.push_back(std::move(r));
   }
 
-  void visit(const wildcard*) override { std::abort(); }
   void visit(const let*) override { std::abort(); }
   void visit(const call*) override { std::abort(); }
   void visit(const logical_not*) override { std::abort(); }
@@ -229,7 +228,6 @@ public:
     for_each_index(result, [&](auto i) { result(i) = c_buf(i) ? t_buf(i) : result(i); });
   }
 
-  void visit(const wildcard*) override { std::abort(); }
   void visit(const let*) override { std::abort(); }
   void visit(const call*) override { std::abort(); }
   void visit(const logical_not*) override { std::abort(); }

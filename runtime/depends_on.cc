@@ -45,7 +45,6 @@ public:
   }
 
   void visit(const variable* op) override { visit_var(op->sym); }
-  void visit(const wildcard* op) override { visit_var(op->sym); }
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);

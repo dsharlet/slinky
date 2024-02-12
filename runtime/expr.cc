@@ -99,13 +99,6 @@ expr::expr(index_t x) : expr(make_constant(x)) {}
 
 expr variable::make(symbol_id sym) { return make_variable(sym); }
 
-expr wildcard::make(symbol_id sym, std::function<bool(const expr&)> matches) {
-  auto n = new wildcard();
-  n->sym = sym;
-  n->matches = std::move(matches);
-  return n;
-}
-
 expr constant::make(index_t value) { return make_constant(value); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
@@ -596,7 +589,6 @@ var::operator expr() const {
 }
 
 void recursive_node_visitor::visit(const variable*) {}
-void recursive_node_visitor::visit(const wildcard*) {}
 void recursive_node_visitor::visit(const constant*) {}
 
 void recursive_node_visitor::visit(const let* op) {

@@ -144,46 +144,27 @@ public:
     if (!try_match(ex->b, op->b)) return;
   }
 
-  void match_wildcard(symbol_id sym, std::function<bool(const expr&)> predicate) {
-    if (match) return;
-
-    std::optional<expr>& matched = (*matches)[sym];
-    if (matched) {
-      // We already matched this variable. The expression must match.
-      if (!matched->same_as(static_cast<const base_expr_node*>(self))) {
-        symbol_map<expr>* old_matches = matches;
-        matches = nullptr;
-        matched->accept(this);
-        matches = old_matches;
-      }
-    } else if (!predicate || predicate(static_cast<const base_expr_node*>(self))) {
-      // This is a new match.
-      matched = static_cast<const base_expr_node*>(self);
-      match = 0;
-    } else {
-      // The predicate failed, we can't match this.
-      match = 1;
-    }
-  }
-
   void visit(const variable* op) override {
+    if (match) return;
     if (matches) {
-      match_wildcard(op->sym, nullptr);
+      std::optional<expr>& matched = (*matches)[op->sym];
+      if (matched) {
+        // We already matched this variable. The expression must match.
+        if (!matched->same_as(static_cast<const base_expr_node*>(self))) {
+          symbol_map<expr>* old_matches = matches;
+          matches = nullptr;
+          matched->accept(this);
+          matches = old_matches;
+        }
+      } else {
+        // This is a new match.
+        matched = static_cast<const base_expr_node*>(self);
+        match = 0;
+      }
     } else {
       const variable* ev = match_self_as(op);
       if (ev) {
         try_match(ev->sym, op->sym);
-      }
-    }
-  }
-
-  void visit(const wildcard* op) override {
-    if (matches) {
-      match_wildcard(op->sym, op->matches);
-    } else {
-      const wildcard* ew = match_self_as(op);
-      if (ew) {
-        try_match(ew->sym, op->sym);
       }
     }
   }
@@ -442,8 +423,7 @@ public:
   }
   using node_mutator::mutate;
 
-  template <typename T>
-  void visit_variable(const T* v) {
+  void visit(const variable* v) override {
     if (shadowed.contains(v->sym)) {
       // This variable has been shadowed, don't substitute it.
       set_result(v);
@@ -455,8 +435,6 @@ public:
     }
   }
 
-  void visit(const variable* v) override { visit_variable(v); }
-  void visit(const wildcard* v) override { visit_variable(v); }
 
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {

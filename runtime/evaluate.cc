@@ -163,13 +163,6 @@ public:
     result = *value;
   }
 
-  void visit(const wildcard* op) override {
-    // Maybe evaluating this should just be an error.
-    auto value = context.lookup(op->sym);
-    assert(value);
-    result = *value;
-  }
-
   void visit(const constant* op) override { result = op->value; }
 
   template <typename T>

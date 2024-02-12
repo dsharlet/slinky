@@ -35,7 +35,6 @@ enum class node_type {
   none,
 
   variable,
-  wildcard,
   let,
   add,
   sub,
@@ -367,23 +366,6 @@ public:
   static constexpr node_type static_type = node_type::variable;
 };
 
-// Similar to a variable, designed for use in pattern matching. A match with x is only
-// accepted if matches(x) returns true.
-// TODO(https://github.com/dsharlet/slinky/issues/6): This is pretty ugly. We should be
-// able to contain this kind of logic to pattern matching only, it shouldn't be polluting
-// the expression mechanism.
-class wildcard : public expr_node<wildcard> {
-public:
-  symbol_id sym;
-  std::function<bool(const expr&)> matches;
-
-  void accept(node_visitor* v) const override;
-
-  static expr make(symbol_id sym, std::function<bool(const expr&)> matches);
-
-  static constexpr node_type static_type = node_type::wildcard;
-};
-
 class constant : public expr_node<constant> {
 public:
   index_t value;
@@ -713,7 +695,6 @@ public:
   virtual ~node_visitor() = default;
 
   virtual void visit(const variable*) = 0;
-  virtual void visit(const wildcard*) = 0;
   virtual void visit(const constant*) = 0;
   virtual void visit(const let*) = 0;
   virtual void visit(const add*) = 0;
@@ -752,7 +733,6 @@ public:
 class recursive_node_visitor : public node_visitor {
 public:
   void visit(const variable*) override;
-  void visit(const wildcard*) override;
   void visit(const constant*) override;
   void visit(const let* op) override;
 
@@ -790,7 +770,6 @@ public:
 };
 
 inline void variable::accept(node_visitor* v) const { v->visit(this); }
-inline void wildcard::accept(node_visitor* v) const { v->visit(this); }
 inline void constant::accept(node_visitor* v) const { v->visit(this); }
 inline void let::accept(node_visitor* v) const { v->visit(this); }
 inline void add::accept(node_visitor* v) const { v->visit(this); }
