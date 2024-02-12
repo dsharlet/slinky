@@ -204,4 +204,23 @@ void BM_for_each_contiguous_slice_multi(benchmark::State& state) { BM_for_each_c
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({64, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({64, 4, 4});
 
+template <typename Fn>
+void BM_for_each_contiguous_slice_multi_single(benchmark::State& state, Fn fn) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  extents[0] += 64;  // Insert padding after the first dimension.
+  buffer<char, 3> buf(extents);
+  buf.allocate();
+  buf.dim(0).set_extent(state.range(0));
+
+  for (auto _ : state) {
+    for_each_contiguous_slice_multi(buf, fn);
+  }
+}
+
+void BM_for_each_contiguous_slice_multi_single(benchmark::State& state) { BM_for_each_contiguous_slice_multi_single(state, memset_slice); }
+
+// These benchmarks are meant to inform how much overhead BM_for_each_contiguous_slice_multi has over the non-multi variant
+BENCHMARK(BM_for_each_contiguous_slice_multi_single)->Args({64, 16, 1});
+BENCHMARK(BM_for_each_contiguous_slice_multi_single)->Args({64, 4, 4});
+
 }  // namespace slinky
