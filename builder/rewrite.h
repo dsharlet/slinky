@@ -27,12 +27,15 @@ struct match_context {
 };
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& ctx) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& ctx) { return p.same_as(x); }
+SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& ctx) { 
+  // We can use same_as here because expressions used in patterns should be canonical constants.
+  return p.same_as(x); 
+}
 SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& ctx) { return p; }
 SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& ctx) { return p; }
 
-SLINKY_ALWAYS_INLINE inline node_type static_type(index_t) { return node_type::constant; }
-SLINKY_ALWAYS_INLINE inline node_type static_type(const expr& e) { return e.type(); }
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::constant; }
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const expr& e) { return e.type(); }
 
 class pattern_wildcard {
 public:
@@ -40,12 +43,12 @@ public:
   int idx;
 };
 
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_wildcard&) { return node_type::none; }
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_wildcard&) { return node_type::none; }
 
 inline bool match(const pattern_wildcard& p, const expr& x, match_context& ctx) {
   if (ctx.vars[p.idx]) {
     // Try pointer comparison first to short circuit the full match.
-    return x.get() == ctx.vars[p.idx] || slinky::compare(x, ctx.vars[p.idx]) == 0;
+    return x.get() == ctx.vars[p.idx] || slinky::compare(x.get(), ctx.vars[p.idx]) == 0;
   } else if (x.get()) {
     ctx.vars[p.idx] = x.get();
     return true;
@@ -65,7 +68,7 @@ public:
   int idx;
 };
 
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_constant&) { return node_type::constant; }
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_constant&) { return node_type::constant; }
 
 inline bool match(const pattern_constant& p, const expr& x, match_context& ctx) {
   if (const constant* c = x.as<constant>()) {
@@ -92,12 +95,12 @@ public:
   B b;
 
   pattern_binary(A a, B b) : a(a), b(b) {
-    assert(!T::commutative || !should_commute(static_type(this->a), static_type(this->b)));
+    assert(!T::commutative || !should_commute(pattern_type(this->a), pattern_type(this->b)));
   }
 };
 
 template <typename T, typename A, typename B>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_binary<T, A, B>&) {
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_binary<T, A, B>&) {
   return T::static_type;
 }
 
@@ -105,8 +108,8 @@ template <typename T, typename A, typename B>
 bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
-    node_type ta = static_type(p.a);
-    node_type tb = static_type(p.b);
+    node_type ta = pattern_type(p.a);
+    node_type tb = pattern_type(p.b);
     if (ta == node_type::none || tb == node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
@@ -138,7 +141,7 @@ public:
 };
 
 template <typename T, typename A>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_unary<T, A>&) {
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_unary<T, A>&) {
   return T::static_type;
 }
 
@@ -166,7 +169,7 @@ public:
 };
 
 template <typename C, typename T, typename F>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_select<C, T, F>&) {
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_select<C, T, F>&) {
   return node_type::select;
 }
 
@@ -193,7 +196,7 @@ public:
 };
 
 template <typename... Args>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_call<Args...>&) {
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_call<Args...>&) {
   return node_type::call;
 }
 
@@ -231,7 +234,7 @@ public:
 };
 
 template <typename T, typename Fn>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_predicate<T, Fn>&) {
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const replacement_predicate<T, Fn>&) {
   return node_type::none;
 }
 
@@ -252,7 +255,7 @@ public:
 };
 
 template <typename T>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_eval<T>&) {
+SLINKY_ALWAYS_INLINE inline node_type pattern_type(const replacement_eval<T>&) {
   return node_type::call;
 }
 
