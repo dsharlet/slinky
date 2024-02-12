@@ -5,8 +5,6 @@
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 
-#include "runtime/print.h"
-
 // This pattern matching engine is heavily inspired by https://github.com/halide/Halide/blob/main/src/IRMatch.h.
 
 namespace slinky {

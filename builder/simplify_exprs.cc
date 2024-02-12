@@ -7,7 +7,6 @@
 #include "builder/rewrite.h"
 #include "builder/substitute.h"
 #include "runtime/evaluate.h"
-#include "runtime/print.h"
 
 namespace slinky {
 
