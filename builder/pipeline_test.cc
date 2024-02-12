@@ -528,15 +528,21 @@ TEST(pipeline, stencil) {
         var x(ctx, "x");
         var y(ctx, "y");
 
-        func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+        var s(ctx, "s");
+        var t(ctx, "t");
+
+        func add = func::make(add_1<short>, {{in, {point(s), point(t)}}}, {{intm, {s, t}}});
         func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
         if (split > 0) {
           stencil.loops({{y, split, lm}});
-        }
-
-        if (split_intermediate > 0) {
-          add.loops({{y, split_intermediate, lm}});
+          if (lm == loop_mode::parallel) {
+            intm->store_at({&stencil, y});
+            intm->store_in(memory_type::stack);
+          }
+          if (split_intermediate > 0) {
+            add.loops({{t, split_intermediate, lm}});
+          }
         }
 
         pipeline p = build_pipeline(ctx, {in}, {out});
