@@ -380,6 +380,19 @@ TEST(buffer, copy) {
   test_copy<big>();
 }
 
+TEST(buffer, for_each_contiguous_slice_multi_single) {
+  buffer<char, 3> buf({10, 20, 30});
+  buf.allocate();
+
+  int slices = 0;
+  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent) {
+    memset(slice, 7, slice_extent);
+    slices++;
+  });
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
 TEST(buffer, for_each_contiguous_slice_multi) {
   buffer<char, 3> buf({10, 20, 30});
   buffer<char, 3> buf2({10, 20, 30});

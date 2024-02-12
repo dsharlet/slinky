@@ -513,15 +513,17 @@ struct per_buf_info {
   };
 };
 
+enum class loop_type {
+  call_f,       // Uses extent
+  loop_linear,  // Uses stride, extent
+  loop_folded,  // Uses dim, extent
+};
+
 template<int N>
 struct for_each_contiguous_slice_multi_dim {
-  per_buf_info info[N];
-  index_t extent_here;
-  enum {
-    call_f,       // Uses extent
-    loop_linear,  // Uses stride, extent
-    loop_folded,  // Uses dim, extent
-  } impl;
+  loop_type    impl;
+  index_t      extent_here;
+  per_buf_info info[N];  // 0 = main; 1...N-1 = others
 };
 
 inline bool can_fuse_multi(const dim& inner, const dim& outer) {
@@ -587,18 +589,19 @@ void make_for_each_contiguous_slice_multi_dims(const raw_buffer& buf, for_each_c
     extent *= buf.dim(d).extent();
     sink << "d="<<d<<" extent="<<extent<<"\n";
     const bool any_others_folded = (... || (other_bufs.dim(d).fold_factor() != dim::unfolded));
-    if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
+    const bool any_folded = buf.dim(d).fold_factor() != dim::unfolded || any_others_folded;
+    if (any_folded) {
+      sink << "folded\n";
+      next->impl = loop_type::loop_folded;
+      assign_dim(d, next->info, buf, other_bufs...);
+      next->extent_here = extent;
+      extent = 1;  // TODO(srj)
+      ++next;
+    } else if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
       sink << "slice_extent="<<slice_extent<<"\n";
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
-    } else if (any_others_folded) {
-      sink << "folded\n";
-      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_folded;
-      assign_dim(d, next->info, buf, other_bufs...);
-      next->extent_here = extent;
-      extent = 1;
-      ++next;
     } else if (extent == 1) {
       sink << "base already points to the min\n";
       // base already points to the min, we don't need to do anything.
@@ -609,14 +612,14 @@ void make_for_each_contiguous_slice_multi_dims(const raw_buffer& buf, for_each_c
       sink << "linear\n";
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
-      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_linear;
+      next->impl = loop_type::loop_linear;
       assign_stride(d, next->info, buf, other_bufs...);
       next->extent_here = extent;
       extent = 1;
       ++next;
     }
   }
-  next->impl = for_each_contiguous_slice_multi_dim<N>::call_f;
+  next->impl = loop_type::call_f;
   next->extent_here = slice_extent;
   sink << "call_f slice_extent="<<slice_extent<<"\n\n";
 }
@@ -635,15 +638,24 @@ void for_each_contiguous_slice_multi_array(void* base, const for_each_contiguous
 
 template <int N, typename F, typename... Args>
 void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f, Args... other_bases) {
-  if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::call_f) {
+  if (slice_dim->impl == loop_type::call_f) {
     f(base, slice_dim->extent_here, static_cast<void*>(other_bases)...);
-  } else if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_linear) {
-    for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-      for_each_contiguous_slice_multi_impl(base, slice_dim + 1, f, static_cast<void*>(other_bases)...);
-      add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
+  } else if (slice_dim->impl == loop_type::loop_linear) {
+    const auto* next = slice_dim + 1;
+    if (next->impl == loop_type::call_f) {
+      // If the next step is to call f, do that eagerly here to avoid an extra call.
+      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
+        f(base, next->extent_here, static_cast<void*>(other_bases)...);
+        add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
+      }
+    } else {
+      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
+        for_each_contiguous_slice_multi_impl(base, slice_dim + 1, f, static_cast<void*>(other_bases)...);
+        add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
+      }
     }
   } else {
-    assert(slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_folded);
+    assert(slice_dim->impl == loop_type::loop_folded);
 
     std::array<void*, sizeof...(Args)> offset_bases;
 
@@ -669,7 +681,7 @@ inline void* offset_base_unfolded(const raw_buffer& buf,
                                   const raw_buffer& other_buf) {
   void* other_base = other_buf.base;
   for (int d = 0; d < buf.rank; d++) {
-    if (slice_dim[d].impl != for_each_contiguous_slice_multi_dim<N>::loop_folded) {
+    if (slice_dim[d].impl != loop_type::loop_folded) {
       other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
     }
   }
