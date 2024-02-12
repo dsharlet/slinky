@@ -156,8 +156,9 @@ expr simplify(const add* op, expr a, expr b) {
 
   rewriter r(e);
   if (r.rewrite(x + indeterminate(), indeterminate()) ||
-      r.rewrite(positive_infinity() + indeterminate(), indeterminate()) ||
-      r.rewrite(negative_infinity() + positive_infinity(), indeterminate()) ||
+      r.rewrite(rewrite::operator+(positive_infinity(), positive_infinity()), positive_infinity()) ||
+      r.rewrite(rewrite::operator+(negative_infinity(), negative_infinity()), negative_infinity()) ||
+      r.rewrite(rewrite::operator+(negative_infinity(), positive_infinity()), indeterminate()) ||
       r.rewrite(x + positive_infinity(), positive_infinity(), is_finite(x)) ||
       r.rewrite(x + negative_infinity(), negative_infinity(), is_finite(x)) ||
       r.rewrite(x + 0, x) ||
@@ -236,10 +237,10 @@ expr simplify(const sub* op, expr a, expr b) {
   rewriter r(e);
   if (r.rewrite(x - indeterminate(), indeterminate()) ||
       r.rewrite(indeterminate() - x, indeterminate()) ||
-      r.rewrite(positive_infinity() - positive_infinity(), indeterminate()) ||
-      r.rewrite(positive_infinity() - negative_infinity(), positive_infinity()) ||
-      r.rewrite(negative_infinity() - negative_infinity(), indeterminate()) ||
-      r.rewrite(negative_infinity() - positive_infinity(), negative_infinity()) ||
+      r.rewrite(rewrite::operator-(positive_infinity(), positive_infinity()), indeterminate()) ||
+      r.rewrite(rewrite::operator-(positive_infinity(), negative_infinity()), positive_infinity()) ||
+      r.rewrite(rewrite::operator-(negative_infinity(), negative_infinity()), indeterminate()) ||
+      r.rewrite(rewrite::operator-(negative_infinity(), positive_infinity()), negative_infinity()) ||
       r.rewrite(x - positive_infinity(), negative_infinity(), is_finite(x)) ||
       r.rewrite(x - negative_infinity(), positive_infinity(), is_finite(x)) ||
       r.rewrite(x - x, 0) ||
@@ -302,9 +303,9 @@ expr simplify(const mul* op, expr a, expr b) {
 
   rewriter r(e);
   if (r.rewrite(x * indeterminate(), indeterminate()) ||
-      r.rewrite(positive_infinity() * positive_infinity(), positive_infinity()) ||
-      r.rewrite(negative_infinity() * positive_infinity(), negative_infinity()) ||
-      r.rewrite(negative_infinity() * negative_infinity(), positive_infinity()) ||
+      r.rewrite(rewrite::operator*(positive_infinity(), positive_infinity()), positive_infinity()) ||
+      r.rewrite(rewrite::operator*(negative_infinity(), positive_infinity()), negative_infinity()) ||
+      r.rewrite(rewrite::operator*(negative_infinity(), negative_infinity()), positive_infinity()) ||
       r.rewrite(positive_infinity() * c0, positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(negative_infinity() * c0, negative_infinity(), eval(c0 > 0)) ||
       r.rewrite(positive_infinity() * c0, negative_infinity(), eval(c0 < 0)) ||
@@ -337,10 +338,10 @@ expr simplify(const div* op, expr a, expr b) {
   rewriter r(e);
   if (r.rewrite(x / indeterminate(), indeterminate()) ||
       r.rewrite(indeterminate() / x, indeterminate()) ||
-      r.rewrite(positive_infinity() / positive_infinity(), indeterminate()) ||
-      r.rewrite(positive_infinity() / negative_infinity(), indeterminate()) ||
-      r.rewrite(negative_infinity() / positive_infinity(), indeterminate()) ||
-      r.rewrite(negative_infinity() / negative_infinity(), indeterminate()) ||
+      r.rewrite(rewrite::operator/(positive_infinity(), positive_infinity()), indeterminate()) ||
+      r.rewrite(rewrite::operator/(positive_infinity(), negative_infinity()), indeterminate()) ||
+      r.rewrite(rewrite::operator/(negative_infinity(), positive_infinity()), indeterminate()) ||
+      r.rewrite(rewrite::operator/(negative_infinity(), negative_infinity()), indeterminate()) ||
       r.rewrite(x / positive_infinity(), 0, is_finite(x)) ||
       r.rewrite(x / negative_infinity(), 0, is_finite(x)) ||
       r.rewrite(positive_infinity() / c0, positive_infinity(), eval(c0 > 0)) ||
