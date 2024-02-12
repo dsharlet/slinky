@@ -84,10 +84,10 @@ template <typename T, typename A, typename B>
 class pattern_binary {
 public:
   using is_pattern = std::true_type;
-  const A& a;
-  const B& b;
+  A a;
+  B b;
 
-  pattern_binary(const A& a, const B& b) : a(a), b(b) {
+  pattern_binary(A a, B b) : a(a), b(b) {
     if (T::commutative) {
       assert(!should_commute(static_type(this->a), static_type(this->b)));
     }
@@ -116,7 +116,8 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
       // We should commute in this variant.
       return match(p.a, t->b, m) && match(p.b, t->a, m);
     }
-    return match(p.a, t->a, m) && match(p.b, t->b, m);
+    if (!match(p.a, t->a, m)) return false;
+    return match(p.b, t->b, m);
   } else {
     return false;
   }
@@ -131,7 +132,7 @@ template <typename T, typename A>
 class pattern_unary {
 public:
   using is_pattern = std::true_type;
-  const A& a;
+  A a;
 };
 
 template <typename T, typename A>
@@ -157,9 +158,9 @@ template <typename C, typename T, typename F>
 class pattern_select {
 public:
   using is_pattern = std::true_type;
-  const C& c;
-  const T& t;
-  const F& f;
+  C c;
+  T t;
+  F f;
 };
 
 template <typename C, typename T, typename F>
@@ -223,7 +224,7 @@ expr substitute(const pattern_call<Args...>& p, const match_context& m) {
 template <typename T>
 class replacement_is_finite {
 public:
-  const T& a;
+  T a;
 };
 
 template <typename T>
@@ -239,7 +240,7 @@ bool substitute(const replacement_is_finite<T>& r, const match_context& m) {
 template <typename T>
 class replacement_eval {
 public:
-  const T& a;
+  T a;
 };
 
 template <typename T>
