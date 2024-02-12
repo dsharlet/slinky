@@ -408,11 +408,11 @@ public:
 
   template <typename Replacement>
   void rewrite(const expr&, const Replacement&) {
-    using error = typename Replacement::error_not_pattern;
+    return Replacement::error_not_pattern();
   }
   template <typename Replacement, typename Predicate>
   void rewrite(const expr&, const Replacement&, const Predicate&) {
-    using error = typename Replacement::error_not_pattern;
+    return Replacement::error_not_pattern();
   }
 };
 
