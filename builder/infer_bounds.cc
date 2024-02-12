@@ -478,7 +478,7 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     if (bounds) {
       for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
         if (!op->at[d].defined()) continue;
@@ -486,7 +486,7 @@ public:
       }
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
     // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
     if (body.same_as(op->body)) {
@@ -496,12 +496,12 @@ public:
     }
   }
   void visit(const slice_dim* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     if (bounds && op->dim < static_cast<int>(bounds->size())) {
       bounds->erase(bounds->begin() + op->dim);
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
     // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
     if (body.same_as(op->body)) {
