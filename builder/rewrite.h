@@ -27,7 +27,7 @@ struct match_context {
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& m) { return is_constant(x, p); }
 SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& m) { return p.same_as(x); }
-SLINKY_ALWAYS_INLINE inline expr substitute(int p, const match_context& m) { return p; }
+SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& m) { return p; }
 SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& m) { return p; }
 
 SLINKY_ALWAYS_INLINE inline node_type static_type(index_t) { return node_type::constant; }
