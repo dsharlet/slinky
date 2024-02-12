@@ -10,13 +10,14 @@
 namespace slinky {
 namespace rewrite {
 
-constexpr int max_symbol = 4;
+constexpr int symbol_count = 4;
+constexpr int constant_count = 3;
 
 struct match_context {
-  const base_expr_node* vars[max_symbol];
-  const index_t* constants[max_symbol];
+  const base_expr_node* vars[symbol_count];
+  const index_t* constants[constant_count];
   int variant;
-  int variant_bit;
+  int variant_bits;
 
   void clear() {
     // Memset initializing these makes debug builds significantly faster.
@@ -25,10 +26,10 @@ struct match_context {
   }
 };
 
-SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& m) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& m) { return p.same_as(x); }
-SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& m) { return p; }
-SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& m) { return p; }
+SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& ctx) { return is_constant(x, p); }
+SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& ctx) { return p.same_as(x); }
+SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& ctx) { return p; }
+SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& ctx) { return p; }
 
 SLINKY_ALWAYS_INLINE inline node_type static_type(index_t) { return node_type::constant; }
 SLINKY_ALWAYS_INLINE inline node_type static_type(const expr& e) { return e.type(); }
@@ -36,48 +37,51 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const expr& e) { return e.type
 class pattern_wildcard {
 public:
   using is_pattern = std::true_type;
-  int sym;
+  int idx;
 };
 
 SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_wildcard&) { return node_type::none; }
 
-inline bool match(const pattern_wildcard& p, const expr& x, match_context& m) {
-  if (m.vars[p.sym]) {
+inline bool match(const pattern_wildcard& p, const expr& x, match_context& ctx) {
+  if (ctx.vars[p.idx]) {
     // Try pointer comparison first to short circuit the full match.
-    return x.get() == m.vars[p.sym] || slinky::compare(x, m.vars[p.sym]) == 0;
+    return x.get() == ctx.vars[p.idx] || slinky::compare(x, ctx.vars[p.idx]) == 0;
   } else if (x.get()) {
-    m.vars[p.sym] = x.get();
+    ctx.vars[p.idx] = x.get();
     return true;
   } else {
     return false;
   }
 }
 
-inline expr substitute(const pattern_wildcard& p, const match_context& m) { return m.vars[p.sym]; }
+inline expr substitute(const pattern_wildcard& p, const match_context& ctx) {
+  assert(ctx.vars[p.idx]);
+  return ctx.vars[p.idx]; 
+}
 
 class pattern_constant {
 public:
   using is_pattern = std::true_type;
-  int sym;
+  int idx;
 };
 
 SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_constant&) { return node_type::constant; }
 
-inline bool match(const pattern_constant& p, const expr& x, match_context& m) {
+inline bool match(const pattern_constant& p, const expr& x, match_context& ctx) {
   if (const constant* c = x.as<constant>()) {
-    if (m.constants[p.sym]) {
-      return *m.constants[p.sym] == c->value;
+    if (ctx.constants[p.idx]) {
+      return *ctx.constants[p.idx] == c->value;
     } else {
-      m.constants[p.sym] = &c->value;
+      ctx.constants[p.idx] = &c->value;
       return true;
     }
   }
   return false;
 }
 
-expr substitute(const pattern_constant& p, const match_context& m) {
-  assert(m.constants[p.sym]);
-  return *m.constants[p.sym];
+expr substitute(const pattern_constant& p, const match_context& ctx) {
+  assert(ctx.constants[p.idx]);
+  return *ctx.constants[p.idx];
 }
 
 template <typename T, typename A, typename B>
@@ -88,9 +92,7 @@ public:
   B b;
 
   pattern_binary(A a, B b) : a(a), b(b) {
-    if (T::commutative) {
-      assert(!should_commute(static_type(this->a), static_type(this->b)));
-    }
+    assert(!T::commutative || !should_commute(static_type(this->a), static_type(this->b)));
   }
 };
 
@@ -100,7 +102,7 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_binary<T, A, B>&
 }
 
 template <typename T, typename A, typename B>
-bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
+bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
     node_type ta = static_type(p.a);
@@ -108,25 +110,24 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
     if (ta == node_type::none || tb == node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
-      this_bit = m.variant_bit++;
+      this_bit = ctx.variant_bits++;
     }
   }
 
   if (const T* t = x.as<T>()) {
-    if (this_bit >= 0 && (m.variant & (1 << this_bit)) != 0) {
+    if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
       // We should commute in this variant.
-      return match(p.a, t->b, m) && match(p.b, t->a, m);
+      return match(p.a, t->b, ctx) && match(p.b, t->a, ctx);
     }
-    if (!match(p.a, t->a, m)) return false;
-    return match(p.b, t->b, m);
+    return match(p.a, t->a, ctx) && match(p.b, t->b, ctx);
   } else {
     return false;
   }
 }
 
 template <typename T, typename A, typename B>
-expr substitute(const pattern_binary<T, A, B>& p, const match_context& m) {
-  return T::make(substitute(p.a, m), substitute(p.b, m));
+expr substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
+  return T::make(substitute(p.a, ctx), substitute(p.b, ctx));
 }
 
 template <typename T, typename A>
@@ -142,17 +143,17 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_unary<T, A>&) {
 }
 
 template <typename T, typename A>
-bool match(const pattern_unary<T, A>& p, const expr& x, match_context& m) {
+bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
   if (const T* t = x.as<T>()) {
-    return match(p.a, t->a, m);
+    return match(p.a, t->a, ctx);
   } else {
     return false;
   }
 }
 
 template <typename T, typename A>
-expr substitute(const pattern_unary<T, A>& p, const match_context& m) {
-  return T::make(substitute(p.a, m));
+expr substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
+  return T::make(substitute(p.a, ctx));
 }
 
 template <typename C, typename T, typename F>
@@ -170,17 +171,17 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_select<C, T, F>&
 }
 
 template <typename C, typename T, typename F>
-bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& m) {
+bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) {
   if (const class select* s = x.as<class select>()) {
-    return match(p.c, s->condition, m) && match(p.t, s->true_value, m) && match(p.f, s->false_value, m);
+    return match(p.c, s->condition, ctx) && match(p.t, s->true_value, ctx) && match(p.f, s->false_value, ctx);
   } else {
     return false;
   }
 }
 
 template <typename C, typename T, typename F>
-expr substitute(const pattern_select<C, T, F>& p, const match_context& m) {
-  return select::make(substitute(p.c, m), substitute(p.t, m), substitute(p.f, m));
+expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
+  return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
 }
 
 template <typename... Args>
@@ -197,29 +198,29 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_call<Args...>&) 
 }
 
 template <typename T, std::size_t... Is>
-bool match_tuple(const T& t, const std::vector<expr>& x, match_context& m, std::index_sequence<Is...>) {
-  return (... && match(std::get<Is>(t), x[Is], m));
+bool match_tuple(const T& t, const std::vector<expr>& x, match_context& ctx, std::index_sequence<Is...>) {
+  return (... && match(std::get<Is>(t), x[Is], ctx));
 }
 
 template <typename T, std::size_t... Is>
-std::vector<expr> substitute_tuple(const T& t, const match_context& m, std::index_sequence<Is...>) {
-  return {substitute(std::get<Is>(t), m)...};
+std::vector<expr> substitute_tuple(const T& t, const match_context& ctx, std::index_sequence<Is...>) {
+  return {substitute(std::get<Is>(t), ctx)...};
 }
 
 template <typename... Args>
-bool match(const pattern_call<Args...>& p, const expr& x, match_context& m) {
+bool match(const pattern_call<Args...>& p, const expr& x, match_context& ctx) {
   if (const call* c = x.as<call>()) {
     if (c->intrinsic == p.fn) {
       assert(c->args.size() == sizeof...(Args));
-      return match_tuple(p.args, c->args, m, std::make_index_sequence<sizeof...(Args)>());
+      return match_tuple(p.args, c->args, ctx, std::make_index_sequence<sizeof...(Args)>());
     }
   }
   return false;
 }
 
 template <typename... Args>
-expr substitute(const pattern_call<Args...>& p, const match_context& m) {
-  return call::make(p.fn, substitute_tuple(p.args, m, std::make_index_sequence<sizeof...(Args)>()));
+expr substitute(const pattern_call<Args...>& p, const match_context& ctx) {
+  return call::make(p.fn, substitute_tuple(p.args, ctx, std::make_index_sequence<sizeof...(Args)>()));
 }
 
 template <typename T, typename Fn>
@@ -235,8 +236,8 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_predicate<T,
 }
 
 template <typename T, typename Fn>
-bool substitute(const replacement_predicate<T, Fn>& r, const match_context& m) {
-  return r.fn(substitute(r.a, m));
+bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
+  return r.fn(substitute(r.a, ctx));
 }
 
 template <typename T, typename Fn>
@@ -256,8 +257,8 @@ SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_eval<T>&) {
 }
 
 template <typename T>
-index_t substitute(const replacement_eval<T>& r, const match_context& m) {
-  return evaluate(substitute(r.a, m));
+index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
+  return evaluate(substitute(r.a, ctx));
 }
 
 template <typename A>
@@ -366,17 +367,17 @@ class rewriter {
   const expr& x;
 
   template <typename Pattern>
-  bool variant_match(const Pattern& p, const expr& x, match_context& m) {
+  bool variant_match(const Pattern& p, const expr& x, match_context& ctx) {
     for (int variant = 0;; ++variant) {
-      m.variant = variant;
-      m.variant_bit = 0;
-      m.clear();
-      if (match(p, x, m)) {
+      ctx.variant = variant;
+      ctx.variant_bits = 0;
+      ctx.clear();
+      if (match(p, x, ctx)) {
         return true;
       }
-      // variant_bit *should* be constant across all variants. We're done when
+      // variant_bits *should* be constant across all variants. We're done when
       // there are no more bits in the variant index to flip.
-      if (variant >= (1 << m.variant_bit)) {
+      if (variant >= (1 << ctx.variant_bits)) {
         break;
       }
     }
@@ -390,21 +391,21 @@ public:
 
   template <typename Pattern, typename Replacement>
   bool rewrite(const Pattern& p, const Replacement& r) {
-    match_context m;
-    if (!variant_match(p, x, m)) return false;
+    match_context ctx;
+    if (!variant_match(p, x, ctx)) return false;
 
-    result = substitute(r, m);
+    result = substitute(r, ctx);
     return true;
   }
 
   template <typename Pattern, typename Replacement, typename Predicate>
   bool rewrite(const Pattern& p, const Replacement& r, const Predicate& pr) {
-    match_context m;
-    if (!variant_match(p, x, m)) return false;
+    match_context ctx;
+    if (!variant_match(p, x, ctx)) return false;
 
-    if (!substitute(pr, m)) return false;
+    if (!substitute(pr, ctx)) return false;
 
-    result = substitute(r, m);
+    result = substitute(r, ctx);
     return true;
   }
 };
