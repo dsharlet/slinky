@@ -370,7 +370,7 @@ class rewriter {
   const expr& x;
 
   template <typename Pattern>
-  bool variant_match(const Pattern& p, const expr& x, match_context& ctx) {
+  bool variant_match(const Pattern& p, match_context& ctx) {
     for (int variant = 0;; ++variant) {
       ctx.variant = variant;
       ctx.variant_bits = 0;
@@ -395,7 +395,7 @@ public:
   template <typename Pattern, typename Replacement>
   bool rewrite(const Pattern& p, const Replacement& r) {
     match_context ctx;
-    if (!variant_match(p, x, ctx)) return false;
+    if (!variant_match(p, ctx)) return false;
 
     result = substitute(r, ctx);
     return true;
@@ -404,7 +404,7 @@ public:
   template <typename Pattern, typename Replacement, typename Predicate>
   bool rewrite(const Pattern& p, const Replacement& r, const Predicate& pr) {
     match_context ctx;
-    if (!variant_match(p, x, ctx)) return false;
+    if (!variant_match(p, ctx)) return false;
 
     if (!substitute(pr, ctx)) return false;
 
