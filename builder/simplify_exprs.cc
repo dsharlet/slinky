@@ -166,8 +166,7 @@ expr simplify(const add* op, expr a, expr b) {
       r.rewrite(x + (x + y), y + x * 2) ||
       r.rewrite(x + (x - y), x * 2 - y) ||
       r.rewrite(x + (y - x), y) ||
-      //r.rewrite(x + x * y, x * (y + 1)) ||  // Needs x to be non-constant or it loops with c0 * (x + c1) -> c0 * x + c0 * c1...
-      // how?
+      r.rewrite(x + x * y, x * (y + 1), eval(!is_constant(x))) ||
       r.rewrite(x * y + x * z, x * (y + z)) ||
       r.rewrite((x + y) + (x + z), (y + z) + x * 2) ||
       r.rewrite((x + z) + (x - y), (z - y) + x * 2) ||

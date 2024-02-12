@@ -224,20 +224,26 @@ expr substitute(const pattern_call<Args...>& p, const match_context& m) {
   return call::make(p.fn, substitute_tuple(p.args, m, std::make_index_sequence<sizeof...(Args)>()));
 }
 
-template <typename T>
-class replacement_is_finite {
+template <typename T, typename Fn>
+class replacement_predicate {
 public:
   T a;
+  Fn fn;
 };
 
-template <typename T>
-SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_is_finite<T>&) {
-  return node_type::call;
+template <typename T, typename Fn>
+SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_predicate<T, Fn>&) {
+  return node_type::none;
 }
 
-template <typename T>
-bool substitute(const replacement_is_finite<T>& r, const match_context& m) {
-  return is_finite(substitute(r.a, m));
+template <typename T, typename Fn>
+bool substitute(const replacement_predicate<T, Fn>& r, const match_context& m) {
+  return r.fn(substitute(r.a, m));
+}
+
+template <typename T, typename Fn>
+replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
+  return {t, fn};
 }
 
 template <typename T>
@@ -334,7 +340,11 @@ auto abs(const T& x) {
 }
 template <typename T>
 auto is_finite(const T& x) {
-  return replacement_is_finite<T>{x};
+  return make_predicate(x, slinky::is_finite);
+}
+template <typename T>
+auto is_constant(const T& x) {
+  return make_predicate(x, slinky::as_constant);
 }
 
 using buffer_dim_meta = pattern_call<pattern_wildcard, pattern_wildcard>;
