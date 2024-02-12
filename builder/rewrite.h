@@ -15,6 +15,15 @@ constexpr int max_symbol = 4;
 struct match_context {
   std::array<expr, max_symbol> vars;
   std::array<std::optional<index_t>, max_symbol> constants;
+  int variant;
+  int variant_bit;
+
+  void clear() {
+    for (int i = 0; i < max_symbol; ++i) {
+      vars[i] = expr();
+      constants[i] = {};
+    }
+  }
 };
 
 inline bool match(index_t p, const expr& x, match_context& m) { return is_constant(x, p); }
@@ -91,6 +100,13 @@ inline node_type static_type(const pattern_binary<T, A, B>&) {
 template <typename T, typename A, typename B>
 bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
   if (const T* t = x.as<T>()) {
+    if (typename T::commutative()) {
+      int this_bit = m.variant_bit++;
+      if ((m.variant & (1 << this_bit)) != 0) {
+        // We should commute in this variant.
+        return match(p.a, t->b, m) && match(p.b, t->a, m);
+      }
+    }
     return match(p.a, t->a, m) && match(p.b, t->b, m);
   } else {
     return false;
@@ -328,6 +344,22 @@ auto eval(const T& x) {
 class rewriter {
   const expr& x;
 
+  template <typename Pattern>
+  bool variant_match(const Pattern& p, const expr& x, match_context& m) {
+    for (int variant = 0; ; ++variant) {
+      m.variant = variant;
+      m.variant_bit = 0;
+      if (match(p, x, m)) {
+        return true;
+      }
+      if (variant >= (1 << m.variant_bit)) {
+        break;
+      }
+      m.clear();
+    }
+    return false;
+  }
+
 public:
   expr result;
 
@@ -336,7 +368,7 @@ public:
   template <typename Pattern, typename Replacement>
   bool rewrite(const Pattern& p, const Replacement& r) {
     match_context m;
-    if (!match(p, x, m)) return false;
+    if (!variant_match(p, x, m)) return false;
 
     result = substitute(r, m);
     return true;
@@ -345,7 +377,7 @@ public:
   template <typename Pattern, typename Replacement, typename Predicate>
   bool rewrite(const Pattern& p, const Replacement& r, const Predicate& pr) {
     match_context m;
-    if (!match(p, x, m)) return false;
+    if (!variant_match(p, x, m)) return false;
 
     if (!substitute(eval(pr), m)) return false;
 
