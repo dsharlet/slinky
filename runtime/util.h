@@ -12,6 +12,7 @@
 namespace slinky {
 
 #define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(alloca((N) * sizeof(T)))
+#define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
 
 // Signed integer division in C/C++ is terrible. These implementations
 // of Euclidean division and mod are taken from:
@@ -211,13 +212,13 @@ public:
     return *this;
   }
 
-  T& operator*() { return *value; }
-  const T& operator*() const { return *value; }
-  T* operator->() { return value; }
-  const T* operator->() const { return value; }
+  SLINKY_ALWAYS_INLINE T& operator*() { return *value; }
+  SLINKY_ALWAYS_INLINE const T& operator*() const { return *value; }
+  SLINKY_ALWAYS_INLINE T* operator->() { return value; }
+  SLINKY_ALWAYS_INLINE const T* operator->() const { return value; }
 
-  operator T*() { return value; }
-  operator const T*() const { return value; }
+  SLINKY_ALWAYS_INLINE operator T*() { return value; }
+  SLINKY_ALWAYS_INLINE operator const T*() const { return value; }
 };
 
 }  // namespace slinky

@@ -13,16 +13,15 @@ namespace rewrite {
 constexpr int max_symbol = 4;
 
 struct match_context {
-  std::array<expr, max_symbol> vars;
-  std::array<std::optional<index_t>, max_symbol> constants;
+  const base_expr_node* vars[max_symbol];
+  const index_t* constants[max_symbol];
   int variant;
   int variant_bit;
 
   void clear() {
-    for (int i = 0; i < max_symbol; ++i) {
-      vars[i] = expr();
-      constants[i] = {};
-    }
+    // Memset initializing these makes debug builds significantly faster.
+    memset(vars, 0, sizeof(vars));
+    memset(constants, 0, sizeof(constants));
   }
 };
 
@@ -40,14 +39,17 @@ public:
   int sym;
 };
 
-inline node_type static_type(const pattern_variable&) { return node_type::variable; }
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_variable&) { return node_type::variable; }
 
 inline bool match(const pattern_variable& p, const expr& x, match_context& m) {
-  if (m.vars[p.sym].defined()) {
-    return slinky::match(x, m.vars[p.sym]);
-  } else {
-    m.vars[p.sym] = x;
+  if (m.vars[p.sym]) {
+    // Try pointer comparison first to short circuit the full match.
+    return x.get() == m.vars[p.sym] || slinky::match(x, m.vars[p.sym]);
+  } else if (x.get()) {
+    m.vars[p.sym] = x.get();
     return true;
+  } else {
+    return false;
   }
 }
 
@@ -59,14 +61,14 @@ public:
   int sym;
 };
 
-inline node_type static_type(const pattern_constant&) { return node_type::constant; }
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_constant&) { return node_type::constant; }
 
 inline bool match(const pattern_constant& p, const expr& x, match_context& m) {
   if (const constant* c = x.as<constant>()) {
     if (m.constants[p.sym]) {
       return *m.constants[p.sym] == c->value;
     } else {
-      m.constants[p.sym] = c->value;
+      m.constants[p.sym] = &c->value;
       return true;
     }
   }
@@ -82,30 +84,37 @@ template <typename T, typename A, typename B>
 class pattern_binary {
 public:
   using is_pattern = std::true_type;
-  A a;
-  B b;
+  const A& a;
+  const B& b;
 
-  pattern_binary(A a, B b) : a(std::move(a)), b(std::move(b)) {
-    if (typename T::commutative()) {
-      assert(static_type(this->a) <= static_type(this->b));
+  pattern_binary(const A& a, const B& b) : a(a), b(b) {
+    if (T::commutative) {
+      assert(!should_commute(static_type(this->a), static_type(this->b)));
     }
   }
 };
 
 template <typename T, typename A, typename B>
-inline node_type static_type(const pattern_binary<T, A, B>&) {
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_binary<T, A, B>&) {
   return T::static_type;
 }
 
 template <typename T, typename A, typename B>
 bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
+  int this_bit = -1; 
+  if (T::commutative) {
+    node_type ta = static_type(p.a);
+    node_type tb = static_type(p.b);
+    if (ta == node_type::variable || tb == node_type::variable || ta == tb) {
+      // This is a commutative operation and we can't canonicalize the ordering.
+      this_bit = m.variant_bit++;
+    }
+  }
+
   if (const T* t = x.as<T>()) {
-    if (typename T::commutative()) {
-      int this_bit = m.variant_bit++;
-      if ((m.variant & (1 << this_bit)) != 0) {
-        // We should commute in this variant.
-        return match(p.a, t->b, m) && match(p.b, t->a, m);
-      }
+    if (this_bit >= 0 && (m.variant & (1 << this_bit)) != 0) {
+      // We should commute in this variant.
+      return match(p.a, t->b, m) && match(p.b, t->a, m);
     }
     return match(p.a, t->a, m) && match(p.b, t->b, m);
   } else {
@@ -122,11 +131,11 @@ template <typename T, typename A>
 class pattern_unary {
 public:
   using is_pattern = std::true_type;
-  A a;
+  const A& a;
 };
 
 template <typename T, typename A>
-inline node_type static_type(const pattern_unary<T, A>&) {
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_unary<T, A>&) {
   return T::static_type;
 }
 
@@ -148,13 +157,13 @@ template <typename C, typename T, typename F>
 class pattern_select {
 public:
   using is_pattern = std::true_type;
-  C c;
-  T t;
-  F f;
+  const C& c;
+  const T& t;
+  const F& f;
 };
 
 template <typename C, typename T, typename F>
-inline node_type static_type(const pattern_select<C, T, F>&) {
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_select<C, T, F>&) {
   return node_type::select;
 }
 
@@ -181,7 +190,7 @@ public:
 };
 
 template <typename... Args>
-inline node_type static_type(const pattern_call<Args...>&) {
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_call<Args...>&) {
   return node_type::call;
 }
 
@@ -214,11 +223,11 @@ expr substitute(const pattern_call<Args...>& p, const match_context& m) {
 template <typename T>
 class replacement_is_finite {
 public:
-  T a;
+  const T& a;
 };
 
 template <typename T>
-inline node_type static_type(const replacement_is_finite<T>&) {
+SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_is_finite<T>&) {
   return node_type::call;
 }
 
@@ -230,11 +239,11 @@ bool substitute(const replacement_is_finite<T>& r, const match_context& m) {
 template <typename T>
 class replacement_eval {
 public:
-  T a;
+  const T& a;
 };
 
 template <typename T>
-inline node_type static_type(const replacement_eval<T>&) {
+SLINKY_ALWAYS_INLINE inline node_type static_type(const replacement_eval<T>&) {
   return node_type::call;
 }
 
@@ -349,13 +358,13 @@ class rewriter {
     for (int variant = 0; ; ++variant) {
       m.variant = variant;
       m.variant_bit = 0;
+      m.clear();
       if (match(p, x, m)) {
         return true;
       }
       if (variant >= (1 << m.variant_bit)) {
         break;
       }
-      m.clear();
     }
     return false;
   }

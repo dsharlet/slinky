@@ -152,11 +152,6 @@ public:
 
 class expr;
 
-// Check if a and b should be commuted.
-bool should_commute(const expr& a, const expr& b);
-// Check that a and b can be commuted.
-bool can_commute(const expr& a, const expr& b);
-
 expr operator+(expr a, expr b);
 expr operator-(expr a, expr b);
 expr operator*(expr a, expr b);
@@ -186,19 +181,19 @@ public:
   // Make an `expr` referencing an existing node.
   expr(const base_expr_node* n) : n_(n) {}
 
-  void accept(node_visitor* v) const {
+  SLINKY_ALWAYS_INLINE void accept(node_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
 
-  bool defined() const { return n_ != nullptr; }
-  bool same_as(const expr& other) const { return n_ == other.n_; }
-  bool same_as(const base_expr_node* other) const { return n_ == other; }
-  node_type type() const { return n_ ? n_->type : node_type::none; }
-  const base_expr_node* get() const { return n_; }
+  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_ALWAYS_INLINE bool same_as(const expr& other) const { return n_ == other.n_; }
+  SLINKY_ALWAYS_INLINE bool same_as(const base_expr_node* other) const { return n_ == other; }
+  SLINKY_ALWAYS_INLINE node_type type() const { return n_ ? n_->type : node_type::none; }
+  SLINKY_ALWAYS_INLINE const base_expr_node* get() const { return n_; }
 
   template <typename T>
-  const T* as() const {
+  SLINKY_ALWAYS_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
@@ -245,6 +240,10 @@ expr clamp(expr x, expr a, expr b);
 expr select(expr c, expr t, expr f);
 expr min(span<expr> x);
 expr max(span<expr> x);
+
+// Check if a and b should be commuted.
+SLINKY_ALWAYS_INLINE inline bool should_commute(node_type a, node_type b) { return a > b; }
+inline bool should_commute(const expr& a, const expr& b) { return should_commute(a.type(), b.type()); }
 
 struct interval_expr {
   expr min, max;
@@ -318,19 +317,19 @@ public:
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) noexcept = default;
 
-  void accept(node_visitor* v) const {
+  SLINKY_ALWAYS_INLINE void accept(node_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
 
-  bool defined() const { return n_ != nullptr; }
-  bool same_as(const stmt& other) const { return n_ == other.n_; }
-  bool same_as(const base_stmt_node* other) const { return n_ == other; }
-  node_type type() const { return n_ ? n_->type : node_type::none; }
-  const base_stmt_node* get() const { return n_; }
+  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_ALWAYS_INLINE bool same_as(const stmt& other) const { return n_ == other.n_; }
+  SLINKY_ALWAYS_INLINE bool same_as(const base_stmt_node* other) const { return n_ == other; }
+  SLINKY_ALWAYS_INLINE node_type type() const { return n_ ? n_->type : node_type::none; }
+  SLINKY_ALWAYS_INLINE const base_stmt_node* get() const { return n_; }
 
   template <typename T>
-  const T* as() const {
+  SLINKY_ALWAYS_INLINE const T* as() const {
     if (n_ && type() == T::static_type) {
       return reinterpret_cast<const T*>(&*n_);
     } else {
@@ -404,22 +403,22 @@ public:
     void accept(node_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr node_type static_type = node_type::op;                                                            \
-    using commutative = c;                                                                                             \
+    static constexpr bool commutative = c;                                                                             \
   };
 
-DECLARE_BINARY_OP(add, std::true_type)
-DECLARE_BINARY_OP(sub, std::false_type)
-DECLARE_BINARY_OP(mul, std::true_type)
-DECLARE_BINARY_OP(div, std::false_type)
-DECLARE_BINARY_OP(mod, std::false_type)
-DECLARE_BINARY_OP(min, std::true_type)
-DECLARE_BINARY_OP(max, std::true_type)
-DECLARE_BINARY_OP(equal, std::true_type)
-DECLARE_BINARY_OP(not_equal, std::true_type)
-DECLARE_BINARY_OP(less, std::false_type)
-DECLARE_BINARY_OP(less_equal, std::false_type)
-DECLARE_BINARY_OP(logical_and, std::false_type)
-DECLARE_BINARY_OP(logical_or, std::false_type)
+DECLARE_BINARY_OP(add, true)
+DECLARE_BINARY_OP(sub, false)
+DECLARE_BINARY_OP(mul, true)
+DECLARE_BINARY_OP(div, false)
+DECLARE_BINARY_OP(mod, false)
+DECLARE_BINARY_OP(min, true)
+DECLARE_BINARY_OP(max, true)
+DECLARE_BINARY_OP(equal, true)
+DECLARE_BINARY_OP(not_equal, true)
+DECLARE_BINARY_OP(less, false)
+DECLARE_BINARY_OP(less_equal, false)
+DECLARE_BINARY_OP(logical_and, false)
+DECLARE_BINARY_OP(logical_or, false)
 
 #undef DECLARE_BINARY_OP
 
