@@ -353,13 +353,9 @@ void for_each_slice(std::size_t slice_rank, std::array<raw_buffer, N>& bufs, con
     bufs[n].rank -= 1;
   }
 
-  // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
-  // base already points to the min.
-  for_each_slice(slice_rank, bufs, f);
   index_t stride = dim.stride();
   assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
-  for (index_t i = min + 1; i <= max; ++i) {
-    bufs[0].base = offset_bytes(bufs[0].base, stride);
+  for (index_t i = min; i <= max; ++i, bufs[0].base = offset_bytes(bufs[0].base, stride)) {
     for (std::size_t n = 1; n < N; ++n) {
       const slinky::dim& dim_n = bufs[n].dims[bufs[0].rank];
       bufs[n].base = offset_bytes(old_bases[n], dim_n.flat_offset_bytes(i));
