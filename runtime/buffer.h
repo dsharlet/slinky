@@ -86,7 +86,11 @@ class buffer;
 
 class raw_buffer;
 
-using raw_buffer_ptr = ref_count<raw_buffer>;
+struct free_deleter {
+  void operator()(void* p) { free(p); }
+};
+
+using raw_buffer_ptr = std::unique_ptr<raw_buffer, free_deleter>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -101,7 +105,7 @@ using raw_buffer_ptr = ref_count<raw_buffer>;
 // And a class buffer<T, DimsSize>:
 // - Has a type, can be accessed via operator() and at.
 // - Provides storage for DimsSize dims (default is 0).
-class raw_buffer : public ref_counted<raw_buffer> {
+class raw_buffer {
 protected:
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
 
@@ -126,18 +130,10 @@ protected:
   }
 
 public:
-  char* allocation;
   void* base;
   std::size_t elem_size;
   std::size_t rank;
   slinky::dim* dims;
-
-  raw_buffer() = default;
-  raw_buffer(const raw_buffer&) = delete;
-  raw_buffer(raw_buffer&&) = delete;
-  void operator=(const raw_buffer&) = delete;
-  void operator=(raw_buffer&&) = delete;
-  ~raw_buffer() override { free(); }
 
   slinky::dim& dim(std::size_t i) {
     assert(i < rank);
@@ -200,52 +196,40 @@ public:
 
   std::size_t size_bytes() const;
 
-  // Does not call constructor or destructor of T!
-  void allocate();
-  void free();
+  // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
+  // be deallocated with `free`.
+  void* allocate();
 
   template <typename NewT>
   const buffer<NewT>& cast() const;
-  template <typename NewT>
-  buffer<NewT>& cast();
 
-  // Make a buffer and space for dims in the same object.
-  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
+  // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
+  static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
 
-  // Make a new buffer of rank extents.size(), with dim d having extent extents[d].
-  static raw_buffer_ptr make(std::size_t elem_size, span<const index_t> extents);
-
-  // Make a deep copy of another buffer, including allocating and copying the data if src is allocated.
-  static raw_buffer_ptr make(const raw_buffer& src);
-
-  static void destroy(raw_buffer* buf);
+  // Make a deep copy of another buffer, including allocating and copying the data.
+  static raw_buffer_ptr make_copy(const raw_buffer& src);
 };
 
 template <typename T, std::size_t DimsSize>
 class buffer : public raw_buffer {
 private:
-  // TODO: When DimsSize is 0, this still makes sizeof(buffer) bigger than sizeof(raw_buffer).
-  // This might be a problem because we can cast raw_buffer to buffer<T>. When DimsSize is 0,
-  // we shouldn't actually access this, so it might be harmless, but it still seems ugly.
+  void* to_free;
   slinky::dim dims_storage[DimsSize];
 
 public:
-  using raw_buffer::allocate;
   using raw_buffer::cast;
   using raw_buffer::dim;
   using raw_buffer::elem_size;
   using raw_buffer::flat_offset_bytes;
-  using raw_buffer::free;
   using raw_buffer::rank;
 
   buffer() {
     raw_buffer::base = nullptr;
-    allocation = nullptr;
+    to_free = nullptr;
     rank = DimsSize;
     elem_size = sizeof(T);
     if (DimsSize > 0) {
       dims = &dims_storage[0];
-      new (dims) slinky::dim[rank];
     } else {
       dims = nullptr;
     }
@@ -267,6 +251,12 @@ public:
     }
   }
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
+  ~buffer() { free(); }
+
+  buffer(const buffer&) = delete;
+  buffer(buffer&& m) = delete;
+  void operator=(const buffer&) = delete;
+  void operator=(buffer&& m) = delete;
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
 
@@ -286,16 +276,21 @@ public:
 
   auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
+
+  void allocate() {
+    assert(!to_free);
+    to_free = raw_buffer::allocate();
+  }
+
+  void free() {
+    ::free(to_free);
+    to_free = nullptr;
+  }
 };
 
 template <typename NewT>
 const buffer<NewT>& raw_buffer::cast() const {
   return *reinterpret_cast<const buffer<NewT>*>(this);
-}
-
-template <typename NewT>
-buffer<NewT>& raw_buffer::cast() {
-  return *reinterpret_cast<buffer<NewT>*>(this);
 }
 
 // Copy the contents of `src` to `dst`. When the `src` is out of bounds of `dst`, fill with `padding`.
@@ -315,16 +310,16 @@ static constexpr index_t all = std::numeric_limits<index_t>::max();
 namespace internal {
 
 template <typename F>
-void for_each_index(span<const dim> dims, int d, index_t* is, std::size_t rank, const F& f) {
+void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   if (d == 0) {
     for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
       is[0] = i;
-      f(span<const index_t>(is, is + rank));
+      f(span<const index_t>(is, is + dims.size()));
     }
   } else {
     for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
       is[d] = i;
-      for_each_index(dims, d - 1, is, rank, f);
+      for_each_index(dims, d - 1, is, f);
     }
   }
 }
@@ -446,11 +441,11 @@ template <typename F>
 void for_each_index(span<const dim> dims, const F& f) {
   // Not using alloca for performance, but to avoid including <vector>
   index_t* i = SLINKY_ALLOCA(index_t, dims.size());
-  internal::for_each_index(dims, dims.size() - 1, i, dims.size(), f);
+  internal::for_each_index(dims, dims.size() - 1, i, f);
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, const F& f) {
-  for_each_index({buf.dims, buf.rank}, f);
+  for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
 // Call `f(void* base, index_t extent)` for each contiguous slice in the domain of `buf`.
@@ -467,12 +462,8 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
 // Call `f` for each slice of the first `slice_rank` dimensions of buf.
 template <typename F>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f) {
-  raw_buffer buf_;
-  buf_.allocation = nullptr;
-  buf_.base = buf.base;
-  buf_.elem_size = buf.elem_size;
-  buf_.rank = buf.rank;
-  buf_.dims = buf.dims;  // Shallow copy is OK here, we don't modify dims.
+  // Shallow copy is OK here, we don't modify dims.
+  raw_buffer buf_ = buf;
 
   internal::for_each_slice(slice_rank, buf_, f);
 }
@@ -487,7 +478,6 @@ void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) 
   // TODO: We restore the buffer to its original state, so if we can guarantee that this thread has its own copy, it
   // should be OK to just const_cast it.
   raw_buffer buf_;
-  buf_.allocation = nullptr;
   buf_.base = buf.base;
   buf_.elem_size = buf.elem_size;
   buf_.rank = buf.rank;

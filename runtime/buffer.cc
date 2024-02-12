@@ -10,7 +10,9 @@
 
 namespace slinky {
 
-std::size_t raw_buffer::size_bytes() const {
+namespace {
+
+std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
@@ -21,58 +23,34 @@ std::size_t raw_buffer::size_bytes() const {
   return flat_max - flat_min + elem_size;
 }
 
-// Does not call constructor or destructor of T!
-void raw_buffer::allocate() {
-  assert(allocation == nullptr);
+}  // namespace
 
-  allocation = new char[size_bytes()];
-  base = allocation;
-}
+std::size_t raw_buffer::size_bytes() const { return alloc_size(elem_size, rank, dims); }
 
-void raw_buffer::free() {
-  delete[] allocation;
-  allocation = nullptr;
-  base = nullptr;
-}
-
-raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
-  char* buf_and_dims = new char[sizeof(raw_buffer) + sizeof(slinky::dim) * rank];
-  raw_buffer* buf = new (buf_and_dims) raw_buffer();
-  buf->base = nullptr;
-  buf->allocation = nullptr;
+raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims) {
+  char* mem = reinterpret_cast<char*>(
+      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
+  raw_buffer* buf = new (mem) raw_buffer();
+  mem += sizeof(raw_buffer);
   buf->rank = rank;
   buf->elem_size = elem_size;
-  buf->dims = reinterpret_cast<slinky::dim*>(buf_and_dims + sizeof(raw_buffer));
-  new (buf->dims) slinky::dim[rank];
+  buf->dims = reinterpret_cast<slinky::dim*>(mem);
+  memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
+  mem += sizeof(slinky::dim) * rank;
+  buf->base = mem;
+  return raw_buffer_ptr(buf);
+}
+
+raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
+  auto buf = make_allocated(src.elem_size, src.rank, src.dims);
+  copy(src, *buf);
   return buf;
 }
 
-void raw_buffer::destroy(raw_buffer* buf) {
-  buf->~raw_buffer();
-  delete[] (char*)buf;
-}
-
-raw_buffer_ptr raw_buffer::make(std::size_t elem_size, span<const index_t> extents) {
-  raw_buffer_ptr result = make(extents.size(), elem_size);
-  index_t stride = elem_size;
-  for (std::size_t d = 0; d < extents.size(); ++d) {
-    result->dims[d].set_min_extent(0, extents[d]);
-    result->dims[d].set_stride(stride);
-    stride *= extents[d];
-  }
-  return result;
-}
-
-raw_buffer_ptr raw_buffer::make(const raw_buffer& src) {
-  raw_buffer_ptr result = make(src.rank, src.elem_size);
-  for (std::size_t d = 0; d < src.rank; ++d) {
-    result->dims[d] = src.dims[d];
-  }
-  if (src.base) {
-    result->allocate();
-    copy(src, *result);
-  }
-  return result;
+void* raw_buffer::allocate() {
+  void* allocation = malloc(size_bytes());
+  base = allocation;
+  return allocation;
 }
 
 namespace {

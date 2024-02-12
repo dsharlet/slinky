@@ -41,7 +41,6 @@ public:
   }
 
   void visit(const variable* op) override { set_result(op); }
-  void visit(const wildcard* op) override { set_result(op); }
   void visit(const constant* op) override { set_result(op); }
 
   void visit(const let*) override;

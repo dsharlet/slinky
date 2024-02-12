@@ -64,10 +64,17 @@ void test_simplify(const stmt& test, const stmt& expected) {
 }
 
 TEST(simplify, basic) {
+  test_simplify(expr() == 1, expr() == 1);
   test_simplify(expr(1) + 2, 3);
   test_simplify(expr(1) - 2, -1);
   test_simplify(expr(1) < 2, 1);
   test_simplify(expr(1) > 2, 0);
+  test_simplify(negative_infinity() + 3, negative_infinity());
+  test_simplify(3 + negative_infinity(), negative_infinity());
+  test_simplify(positive_infinity() + positive_infinity(), positive_infinity());
+  test_simplify(positive_infinity() + negative_infinity(), indeterminate());
+  test_simplify(positive_infinity() * positive_infinity(), positive_infinity());
+  test_simplify(positive_infinity() * negative_infinity(), negative_infinity());
 
   test_simplify(min(1, 2), 1);
   test_simplify(max(1, 2), 2);
@@ -135,6 +142,7 @@ TEST(simplify, let) {
 
 TEST(simplify, buffer_intrinsics) {
   test_simplify(buffer_extent(x, y) >= 0, true);
+  test_simplify((buffer_max(x, y) - buffer_min(x, y) + 1) * 4, buffer_extent(x, y) * 4);
   test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
 }
 
@@ -326,12 +334,9 @@ TEST(simplify, fuzz) {
 
   eval_context ctx;
 
-  std::vector<raw_buffer_ptr> buffers;
+  std::vector<buffer<int, max_rank>> buffers(bufs.size());
   for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    buffers.emplace_back(raw_buffer::make(max_rank, 4));
-  }
-  for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    ctx[bufs[i]] = reinterpret_cast<index_t>(&*buffers[i]);
+    ctx[bufs[i]] = reinterpret_cast<index_t>(&buffers[i]);
   }
 
   symbol_map<interval_expr> var_bounds;
@@ -356,7 +361,7 @@ TEST(simplify, fuzz) {
           // correct in the case of empty buffers. But do we need to handle empty buffers...?
           index_t min = random_constant();
           index_t max = std::max(min + 1, random_constant());
-          b->dim(d).set_bounds(min, max);
+          b.dim(d).set_bounds(min, max);
         }
       }
       index_t eval_test = evaluate(test, ctx);

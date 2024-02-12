@@ -46,11 +46,12 @@ public:
 
   test_context() {
     allocate = [this](symbol_id, raw_buffer* b) {
-      b->allocate();
+      void* allocation = b->allocate();
       heap.track_allocate(b->size_bytes());
+      return allocation;
     };
-    free = [this](symbol_id, raw_buffer* b) {
-      b->free();
+    free = [this](symbol_id, raw_buffer* b, void* allocation) {
+      ::free(allocation);
       heap.track_free(b->size_bytes());
     };
 
@@ -1023,8 +1024,7 @@ TEST(pipeline, concatenated_result) {
     func concatenated =
         func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
-    pipeline p =
-        build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+    pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
     // Run the pipeline.
     const int W = 20;
@@ -1055,6 +1055,55 @@ TEST(pipeline, concatenated_result) {
 
     // Also visualize this pipeline.
     visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
+  }
+}
+
+TEST(pipeline, stacked_result) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 3);
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
+  func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
+  func stacked =
+      func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 8;
+  buffer<short, 2> in1_buf({W, H});
+  buffer<short, 2> in2_buf({W, H});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 3> out_buf({W, H, 2});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y, 0), in1_buf(x, y) + 1);
+      ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y) + 1);
+    }
   }
 }
 
@@ -1102,10 +1151,7 @@ TEST(pipeline, padded_stencil) {
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
     if (schedule == 2) {
-      // ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(short) + (W + 2) * 3 * sizeof(short));
-      ASSERT_EQ(eval_ctx.heap.total_count, 2);
-    } else if (schedule == 3) {
-      ASSERT_EQ(eval_ctx.heap.total_size, W * sizeof(short) + (W + 2) * 3 * sizeof(short));
+      ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
       ASSERT_EQ(eval_ctx.heap.total_count, 2);
     }
 

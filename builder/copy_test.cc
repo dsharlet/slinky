@@ -430,7 +430,6 @@ TEST(copy, concatenate) {
   init_random(in1_buf);
   init_random(in2_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 2> out_buf({W, H1 + H2});
   out_buf.allocate();
 
@@ -442,6 +441,47 @@ TEST(copy, concatenate) {
   for (int y = 0; y < H1 + H2; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1));
+    }
+  }
+}
+
+TEST(copy, stack) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(int), 2);
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  func concat = func::make_stack({in1, in2}, {out, {x, y, z}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+
+  const int W = 8;
+  const int H = 5;
+
+  // Run the pipeline.
+  buffer<int, 2> in1_buf({W, H});
+  buffer<int, 2> in2_buf({W, H});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<int, 3> out_buf({W, H, 2});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  eval_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y, 0), in1_buf(x, y));
+      ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y));
     }
   }
 }

@@ -27,6 +27,7 @@ stmt substitute_bounds(const stmt& s, symbol_id buffer, int dim, const interval_
 
 // Compute a sort ordering of two nodes based on their structure (not their values).
 int compare(const expr& a, const expr& b);
+int compare(const base_expr_node* a, const base_expr_node* b);
 int compare(const stmt& a, const stmt& b);
 
 // A comparator suitable for using expr/stmt as keys in an std::map/std::set.
