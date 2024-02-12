@@ -33,15 +33,15 @@ inline expr substitute(const expr& p, const match_context& m) { return p; }
 inline node_type static_type(index_t) { return node_type::constant; }
 inline node_type static_type(const expr& e) { return e.type(); }
 
-class pattern_variable {
+class pattern_wildcard {
 public:
   using is_pattern = std::true_type;
   int sym;
 };
 
-SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_variable&) { return node_type::variable; }
+SLINKY_ALWAYS_INLINE inline node_type static_type(const pattern_wildcard&) { return node_type::none; }
 
-inline bool match(const pattern_variable& p, const expr& x, match_context& m) {
+inline bool match(const pattern_wildcard& p, const expr& x, match_context& m) {
   if (m.vars[p.sym]) {
     // Try pointer comparison first to short circuit the full match.
     return x.get() == m.vars[p.sym] || slinky::match(x, m.vars[p.sym]);
@@ -53,7 +53,7 @@ inline bool match(const pattern_variable& p, const expr& x, match_context& m) {
   }
 }
 
-inline expr substitute(const pattern_variable& p, const match_context& m) { return m.vars[p.sym]; }
+inline expr substitute(const pattern_wildcard& p, const match_context& m) { return m.vars[p.sym]; }
 
 class pattern_constant {
 public:
@@ -105,7 +105,7 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& m) {
   if (T::commutative) {
     node_type ta = static_type(p.a);
     node_type tb = static_type(p.b);
-    if (ta == node_type::variable || tb == node_type::variable || ta == tb) {
+    if (ta == node_type::none || tb == node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       this_bit = m.variant_bit++;
     }
@@ -333,15 +333,15 @@ auto is_finite(const T& x) {
   return replacement_is_finite<T>{x};
 }
 
-using buffer_dim_meta = pattern_call<pattern_variable, pattern_variable>;
+using buffer_dim_meta = pattern_call<pattern_wildcard, pattern_wildcard>;
 
-inline auto buffer_min(const pattern_variable& buf, const pattern_variable& dim) {
+inline auto buffer_min(const pattern_wildcard& buf, const pattern_wildcard& dim) {
   return buffer_dim_meta{intrinsic::buffer_min, {buf, dim}};
 }
-inline auto buffer_max(const pattern_variable& buf, const pattern_variable& dim) {
+inline auto buffer_max(const pattern_wildcard& buf, const pattern_wildcard& dim) {
   return buffer_dim_meta{intrinsic::buffer_max, {buf, dim}};
 }
-inline auto buffer_extent(const pattern_variable& buf, const pattern_variable& dim) {
+inline auto buffer_extent(const pattern_wildcard& buf, const pattern_wildcard& dim) {
   return buffer_dim_meta{intrinsic::buffer_extent, {buf, dim}};
 }
 
@@ -395,10 +395,10 @@ public:
   }
 };
 
-static pattern_variable x{0};
-static pattern_variable y{1};
-static pattern_variable z{2};
-static pattern_variable w{3};
+static pattern_wildcard x{0};
+static pattern_wildcard y{1};
+static pattern_wildcard z{2};
+static pattern_wildcard w{3};
 
 static pattern_constant c0{0};
 static pattern_constant c1{1};
