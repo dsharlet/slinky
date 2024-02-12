@@ -10,6 +10,7 @@
 namespace slinky {
 namespace rewrite {
 
+// The maximum number of values pattern_wildcard::idx and pattern_constant::idx can have, starting from 0.
 constexpr int symbol_count = 4;
 constexpr int constant_count = 3;
 
@@ -18,18 +19,12 @@ struct match_context {
   const index_t* constants[constant_count];
   int variant;
   int variant_bits;
-
-  void clear() {
-    // Memset initializing these makes debug builds significantly faster.
-    memset(vars, 0, sizeof(vars));
-    memset(constants, 0, sizeof(constants));
-  }
 };
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& ctx) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& ctx) { 
+SLINKY_ALWAYS_INLINE inline bool match(const expr& p, const expr& x, match_context& ctx) {
   // We can use same_as here because expressions used in patterns should be canonical constants.
-  return p.same_as(x); 
+  return p.same_as(x);
 }
 SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& ctx) { return p; }
 SLINKY_ALWAYS_INLINE inline expr substitute(const expr& p, const match_context& ctx) { return p; }
@@ -59,7 +54,7 @@ inline bool match(const pattern_wildcard& p, const expr& x, match_context& ctx) 
 
 inline expr substitute(const pattern_wildcard& p, const match_context& ctx) {
   assert(ctx.vars[p.idx]);
-  return ctx.vars[p.idx]; 
+  return ctx.vars[p.idx];
 }
 
 class pattern_constant {
@@ -372,9 +367,8 @@ class rewriter {
   template <typename Pattern>
   bool variant_match(const Pattern& p, match_context& ctx) {
     for (int variant = 0;; ++variant) {
+      memset(&ctx, 0, sizeof(ctx));
       ctx.variant = variant;
-      ctx.variant_bits = 0;
-      ctx.clear();
       if (match(p, x, ctx)) {
         return true;
       }
