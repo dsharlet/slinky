@@ -89,6 +89,26 @@ stmt clone_with_new_body(const slice_buffer* op, stmt new_body);
 stmt clone_with_new_body(const slice_dim* op, stmt new_body);
 stmt clone_with_new_body(const truncate_rank* op, stmt new_body);
 
+// Helper for single statement mutators.
+template <typename T>
+stmt recursive_mutate(const stmt& s, const std::function<stmt(const T*)>& mutator) {
+  using mutator_fn = std::function<stmt(const T*)>;
+  class impl : public node_mutator {
+  public:
+    const mutator_fn& mutator;
+    impl(const mutator_fn& mutator) : mutator(mutator) {}
+    stmt mutate(const stmt& s) override {
+      if (const T* t = s.as<T>()) {
+        return mutator(t);
+      } else {
+        return node_mutator::mutate(s);
+      }
+    }
+  };
+
+  return impl(mutator).mutate(s);
+}
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_NODE_MUTATOR_H

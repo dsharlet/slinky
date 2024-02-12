@@ -34,6 +34,12 @@ public:
   std::function<void(task)> enqueue_one;
   std::function<void(std::function<bool()>)> wait_for;
 
+  // Functions implementing buffer data movement:
+  // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.
+  // - `pad` should fill the area out of bounds of `src_dims` with `padding` in `dst`.
+  std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy = slinky::copy;
+  std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad = slinky::pad;
+
   const raw_buffer* lookup_buffer(symbol_id id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
 

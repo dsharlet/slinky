@@ -8,8 +8,12 @@ namespace slinky {
 // Where possible, rewrite copies as buffer metadata rewrites.
 stmt alias_buffers(const stmt& s);
 
-// Find copy operations that can be implemented with calls to copy.
-stmt optimize_copies(const stmt& s, node_context& ctx);
+// Given a copy_stmt, produce an implementation that calls `slinky::copy`, possibly inside loops that implement copy
+// operations that `slinky::copy` cannot express.
+stmt implement_copy(const copy_stmt* c, node_context& ctx);
+
+// Replace every `copy_stmt` with the result of `implement_copy`
+stmt implement_copies(const stmt& s, node_context& ctx);
 
 // Attempt to reduce the scope of statements to only the operations required.
 stmt reduce_scopes(const stmt& s);

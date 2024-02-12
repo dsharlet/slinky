@@ -9,6 +9,23 @@
 
 namespace slinky {
 
+class test_context : public eval_context {
+public:
+  int copy_calls = 0;
+  int pad_calls = 0;
+
+  test_context() {
+    copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+      ++copy_calls;
+      slinky::copy(src, dst, padding);
+    };
+    pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
+      ++pad_calls;
+      slinky::pad(in_bounds, dst, padding);
+    };
+  }
+};
+
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
@@ -49,8 +66,9 @@ TEST(copy, trivial_1d) {
 
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
+    test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
 
     for (int x = 0; x < W; ++x) {
       if (in_buf.contains(x)) {
@@ -94,8 +112,9 @@ TEST(copy, trivial_2d) {
 
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
+    test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
 
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
@@ -136,8 +155,9 @@ TEST(copy, trivial_3d) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -171,8 +191,9 @@ TEST(copy, flip_x) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, W);
 
   for (int x = 0; x < W; ++x) {
     ASSERT_EQ(out_buf(-x), in_buf(x));
@@ -212,8 +233,9 @@ TEST(copy, flip_y) {
     out_buf.allocate();
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
+    test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.copy_calls, H);
 
     for (int z = 0; z < D; ++z) {
       for (int y = 0; y < H; ++y) {
@@ -256,8 +278,9 @@ TEST(copy, upsample_y) {
     out_buf.allocate();
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
+    test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.copy_calls, H);
 
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
@@ -296,8 +319,9 @@ TEST(copy, transpose) {
   out_buf.allocate();
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -341,8 +365,9 @@ TEST(copy, broadcast) {
 
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
+    test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
 
     for (int z = 0; z < D; ++z) {
       for (int y = 0; y < H; ++y) {
@@ -390,8 +415,10 @@ TEST(copy, broadcast_sliced) {
 
     const raw_buffer* inputs[] = {&in_buf};
     const raw_buffer* outputs[] = {&out_buf};
-    eval_context eval_ctx;
+    test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
+
 
     for (int z = 0; z < D; ++z) {
       for (int y = 0; y < H; ++y) {
@@ -435,8 +462,9 @@ TEST(copy, concatenate) {
 
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
 
   for (int y = 0; y < H1 + H2; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -475,8 +503,9 @@ TEST(copy, stack) {
 
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -532,8 +561,9 @@ TEST(copy, reshape) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
 
   // This should have been a "flat" copy.
   for (int i = 0; i < W * H * D; ++i) {
@@ -590,8 +620,9 @@ TEST(copy, batch_reshape) {
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
 
   // This should have been a "flat" copy.
   for (int n = 0; n < N; ++n) {

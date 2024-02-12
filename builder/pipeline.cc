@@ -556,7 +556,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   if (!options.no_alias_buffers) {
     result = alias_buffers(result);
   }
-  result = optimize_copies(result, ctx);
+
+  // `evaluate` currently can't handle `copy_stmt`, so this is required.
+  result = implement_copies(result, ctx);
 
   result = simplify(result);
   result = reduce_scopes(result);
@@ -564,12 +566,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = fix_buffer_races(result);
 
   if (options.no_checks) {
-    class remove_checks : public node_mutator {
-    public:
-      void visit(const check* op) override { set_result(stmt()); }
-    };
-
-    result = remove_checks().mutate(result);
+    result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
   }
 
   std::cout << std::tie(result, ctx) << std::endl;
