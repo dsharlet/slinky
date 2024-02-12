@@ -357,7 +357,7 @@ void for_each_slice(std::size_t slice_rank, std::array<raw_buffer, N>& bufs, con
   assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
   for (index_t i = min; i <= max; ++i, bufs[0].base = offset_bytes(bufs[0].base, stride)) {
     for (std::size_t n = 1; n < N; ++n) {
-      const slinky::dim& dim_n = bufs[n].dims[bufs[0].rank];
+      const slinky::dim& dim_n = bufs[n].dims[bufs[n].rank];
       bufs[n].base = offset_bytes(old_bases[n], dim_n.flat_offset_bytes(i));
     }
     for_each_slice(slice_rank, bufs, f);
@@ -468,8 +468,8 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
   internal::for_each_contiguous_slice(buf.base, dims, f);
 }
 
-// Call `f` for each slice of the first `slice_rank` dimensions of buf. `bufs` will also be sliced at the same indices
-// as `buf`. Assumes that all of the sliced dimensions of `buf` are in bounds in `bufs...`.
+// Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
+// sliced at the same indices as `buf`. Assumes that all of the sliced dimensions of `buf` are in bounds in `bufs...`.
 template <typename F, typename... Bufs>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
   std::array<raw_buffer, sizeof...(Bufs) + 1> bufs_;

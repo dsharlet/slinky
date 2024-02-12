@@ -237,14 +237,46 @@ TEST(buffer, for_each_slice_copy_folded) {
   dst.allocate();
 
   int slices = 0;
-  for_each_slice(1, dst, [&](const raw_buffer& dst_slice, const raw_buffer& src_slice) {
-    copy(src_slice, dst_slice);
-    slices++;
-  }, src);
+  for_each_slice(
+      1, dst,
+      [&](const raw_buffer& dst_slice, const raw_buffer& src_slice) {
+        copy(src_slice, dst_slice);
+        slices++;
+      },
+      src);
   int expected_slices = dst.dim(1).extent();
   ASSERT_EQ(slices, expected_slices);
 
   for_each_index(dst, [&](auto i) { ASSERT_EQ(dst(i), src(i)); });
+}
+
+TEST(buffer, for_each_slice_sum) {
+  buffer<short, 3> src({3, 10, 5});
+  init_random(src);
+
+  buffer<int, 2> dst({10, 5});
+  dst.allocate();
+
+  for_each_slice(
+      1, dst,
+      [&](const raw_buffer& dst_slice, const raw_buffer& src_slice) {
+        ASSERT_EQ(src_slice.rank, 2);
+        ASSERT_EQ(dst_slice.rank, 1);
+        auto& dst_t = dst_slice.cast<int>();
+        auto& src_t = src_slice.cast<short>();
+        for (index_t i = dst_t.dim(0).begin(); i < dst_t.dim(0).end(); ++i) {
+          dst_t(i) = 0;
+          for (index_t j = src_t.dim(0).begin(); j < src_t.dim(0).end(); ++j) {
+            dst_t(i) += src_t(j, i);
+          }
+        }
+      },
+      src);
+
+  for_each_index(dst, [&](auto i) {
+    int correct = src(0, i[0], i[1]) + src(1, i[0], i[1]) + src(2, i[0], i[1]);
+    ASSERT_EQ(dst(i), correct);
+  });
 }
 
 // A non-standard size type that acts like an integer for testing.
