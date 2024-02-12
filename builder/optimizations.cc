@@ -188,11 +188,7 @@ public:
             [src, dst, padding = *op->padding](const eval_context& ctx) -> index_t {
               const raw_buffer* src_buf = ctx.lookup_buffer(src);
               const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
-              if (ctx.pad) {
-                ctx.pad(src_buf->dims, *dst_buf, padding.data());
-              } else {
-                pad(src_buf->dims, *dst_buf, padding.data());
-              }
+              ctx.pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
             {src}, {dst});
@@ -419,11 +415,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         const raw_buffer* src_buf = ctx.lookup_buffer(src);
         const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
         const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
-        if (ctx.copy) {
-          ctx.copy(*src_buf, *dst_buf, pad_value);
-        } else {
-          copy(*src_buf, *dst_buf, pad_value);
-        }
+        ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
       {op->src}, {op->dst});
