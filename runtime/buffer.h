@@ -322,43 +322,6 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   }
 }
 
-template <typename F>
-void for_each_slice(std::size_t slice_rank, raw_buffer& buf, const F& f) {
-  if (buf.rank <= slice_rank) {
-    // We're done slicing.
-    f(buf);
-    return;
-  }
-
-  const slinky::dim& dim = buf.dim(buf.rank - 1);
-
-  index_t min = dim.min();
-  index_t max = dim.max();
-  if (min > max) {
-    // Dimension (and the buffer) is empty.
-    return;
-  }
-
-  buf.rank -= 1;
-  void* old_base = buf.base;
-  if (dim.fold_factor() == dim::unfolded) {
-    index_t stride = dim.stride();
-    for (index_t i = min; i <= max; ++i, buf.base = offset_bytes(buf.base, stride)) {
-      for_each_slice(slice_rank, buf, f);
-    }
-  } else {
-    // Extent 1 dimensions are likely very common here. We can handle that case more efficiently first because the
-    // base already points to the min.
-    for_each_slice(slice_rank, buf, f);
-    for (index_t i = min + 1; i <= max; ++i) {
-      buf.base = offset_bytes(old_base, dim.flat_offset_bytes(i));
-      for_each_slice(slice_rank, buf, f);
-    }
-  }
-  buf.base = old_base;
-  buf.rank += 1;
-}
-
 struct for_each_contiguous_slice_dim {
   index_t stride;
   index_t extent;
@@ -455,15 +418,6 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
   internal::make_for_each_contiguous_slice_dims(buf, dims);
 
   internal::for_each_contiguous_slice(buf.base, dims, f);
-}
-
-// Call `f` for each slice of the first `slice_rank` dimensions of buf.
-template <typename F>
-void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f) {
-  // Shallow copy is OK here, we don't modify dims.
-  raw_buffer buf_ = buf;
-
-  internal::for_each_slice(slice_rank, buf_, f);
 }
 
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each

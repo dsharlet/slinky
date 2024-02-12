@@ -191,45 +191,6 @@ TEST(buffer, for_each_tile_all) {
   ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), slice[1]));
 }
 
-TEST(buffer, for_each_slice) {
-  for (std::size_t slice_rank : {0, 1, 2}) {
-    for (index_t fold_factor : {dim::unfolded, static_cast<index_t>(4)}) {
-      buffer<int, 2> buf({10, 20});
-      if (slice_rank <= 0) {
-        buf.dim(0).set_fold_factor(fold_factor);
-      }
-      if (slice_rank <= 1) {
-        buf.dim(1).set_fold_factor(fold_factor);
-      }
-      buf.allocate();
-      int slices = 0;
-      int elements = 0;
-      for_each_slice(slice_rank, buf, [&](const raw_buffer& slice) {
-        const int seven = 7;
-        fill(slice, &seven);
-        slices++;
-        int elements_slice = 1;
-        for (std::size_t d = 0; d < slice.rank; ++d) {
-          elements_slice *= slice.dim(d).extent();
-        }
-        elements += elements_slice;
-      });
-      int expected_slices = 1;
-      int expected_elements = 1;
-      for (std::size_t d = 0; d < buf.rank; ++d) {
-        if (d >= slice_rank) {
-          expected_slices *= buf.dim(d).extent();
-        }
-        expected_elements *= buf.dim(d).extent();
-      }
-      ASSERT_EQ(slices, expected_slices);
-      ASSERT_EQ(elements, expected_elements);
-
-      for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-    }
-  }
-}
-
 // A non-standard size type that acts like an integer for testing.
 struct big {
   uint64_t a, b;
