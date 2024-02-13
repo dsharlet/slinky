@@ -424,26 +424,13 @@ TEST(buffer, copy) {
   test_copy<big>();
 }
 
-TEST(buffer, for_each_contiguous_slice_multi_single) {
-  buffer<char, 3> buf({10, 20, 30});
-  buf.allocate();
-
-  int slices = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent) {
-    memset(slice, 7, slice_extent);
-    slices++;
-  });
-  ASSERT_EQ(slices, 1);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-}
-
 TEST(buffer, for_each_contiguous_slice_multi) {
   buffer<char, 3> buf({10, 20, 30});
   buffer<char, 3> buf2({10, 20, 30});
   buf.allocate();
   buf2.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2) {
         memset(slice, 7, slice_extent);
@@ -464,7 +451,7 @@ TEST(buffer, for_each_contiguous_slice_multi_padded) {
     buffer<int, 3> buf2({10, 20, 30});
     buf2.allocate();
     int value = 0;
-    for_each_contiguous_slice_multi(
+    for_each_contiguous_slice(
         buf,
         [&](void* slice, index_t slice_extent, void* slice2) {
           int* s = reinterpret_cast<int*>(slice);
@@ -497,7 +484,7 @@ TEST(buffer, for_each_contiguous_slice_multi_non_innermost) {
   buf2.allocate();
   std::swap(buf2.dim(0), buf2.dim(1));
   int value = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2) {
         int* s = reinterpret_cast<int*>(slice);
@@ -529,7 +516,7 @@ TEST(buffer, for_each_contiguous_slice_multi_both_non_zero_min) {
   buf2.allocate();
   buf2.translate(1, 2, 3);
   int slices = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2) {
         memset(slice, 7, slice_extent);
@@ -564,7 +551,7 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
   buf8.allocate();
   buf9.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf1,
       [&](void* slice1, index_t slice_extent, void* slice2, void* slice3, void* slice4, void* slice5, void* slice6,
           void* slice7, void* slice8, void* slice9) {
@@ -601,7 +588,7 @@ TEST(buffer, for_each_contiguous_slice_multi_extra_buf_offset_negative) {
   buf2.translate(-1, -1, -1);
   int slices = 0;
   int value = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2) {
         int* s = reinterpret_cast<int*>(slice);
@@ -638,7 +625,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_main_buffer) {
   for (int crop_extent : {1, 2, 3, 4}) {
     buf.dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
-    for_each_contiguous_slice_multi(
+    for_each_contiguous_slice(
         buf,
         [&](void* slice, index_t slice_extent, void* slice2) {
           memset(slice, 7, slice_extent);
@@ -667,7 +654,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_other_buffer) {
   buf2.dim(1).set_fold_factor(4);
   buf2.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2) {
         memset(slice, 7, slice_extent);
@@ -699,7 +686,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_all) {
   buf3.dim(1).set_fold_factor(5);
   buf3.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
         memset(slice, 7, slice_extent);
@@ -748,7 +735,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_all_with_offset) {
   buf3.translate(-1, -1, -1);
   fill_slow(buf3, 43);
   int slices = 0;
-  for_each_contiguous_slice_multi(
+  for_each_contiguous_slice(
       buf,
       [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
         memset(slice, 7, slice_extent);

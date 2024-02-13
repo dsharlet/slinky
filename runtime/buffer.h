@@ -372,38 +372,198 @@ void for_each_slice(std::size_t slice_rank, std::array<raw_buffer, N>& bufs, con
   }
 }
 
-struct for_each_contiguous_slice_dim {
-  index_t stride;
-  index_t extent;
-  enum {
-    call_f,  // Uses extent
-    linear,  // Uses stride, extent
-  } impl;
+struct per_buf_info {
+  union {
+    // For loop_folded to call flat_offset_bytes
+    const slinky::dim* dim;
+    // For loop_linear to offset the base.
+    index_t stride;
+  };
 };
 
-template <typename F>
-void for_each_contiguous_slice(void* base, const for_each_contiguous_slice_dim* slice_dim, const F& f) {
-  if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
-    f(base, slice_dim->extent);
-  } else {
-    const for_each_contiguous_slice_dim* next = slice_dim + 1;
-    if (next->impl == for_each_contiguous_slice_dim::call_f) {
+template <int N>
+struct for_each_contiguous_slice_dim {
+  enum {
+    call_f,       // Uses extent
+    loop_linear,  // Uses stride, extent
+    loop_folded,  // Uses dim, extent
+  } impl;
+  index_t extent_here;
+  per_buf_info info[N];  // 0 = main; 1...N-1 = others
+};
+
+inline void assign_stride(int, per_buf_info*) {
+  // nothing
+}
+
+template <typename First, typename... Rest>
+inline void assign_stride(int d, per_buf_info* info, const First& first, const Rest&... rest) {
+  info->stride = first.dim(d).stride();
+  assign_stride(d, info + 1, rest...);
+}
+
+inline void assign_dim(int, per_buf_info*) {
+  // nothing
+}
+
+template <typename First, typename... Rest>
+inline void assign_dim(int d, per_buf_info* info, const First& first, const Rest&... rest) {
+  info->dim = &first.dim(d);
+  assign_dim(d, info + 1, rest...);
+}
+
+inline void add_stride_to_bases(const per_buf_info*) {
+  // nothing
+}
+
+template <typename First, typename... Rest>
+inline void add_stride_to_bases(const per_buf_info* info, First& first, Rest&... rest) {
+  first = offset_bytes(first, info->stride);
+  add_stride_to_bases(info + 1, rest...);
+}
+
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+inline bool can_fuse(const raw_buffer& buf, int d) {
+  assert(d > 0);
+  return can_fuse(buf.dim(d - 1), buf.dim(d));
+}
+
+template <typename... Args>
+inline bool others_can_fuse_with(const raw_buffer& buf, int d) {
+  return true;
+}
+
+template <typename First, typename... Rest>
+inline bool others_can_fuse_with(const raw_buffer& buf, int d, const First& first, const Rest&... rest) {
+  assert(d > 0);
+  // Our caller should have filtered out any dim at d that are folded,
+  // but it might not have done so for d-1, so we must do so here:
+  const auto& inner_other = first.dim(d - 1);
+  if (inner_other.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  assert(buf.dim(d - 1).fold_factor() == dim::unfolded && buf.dim(d).fold_factor() == dim::unfolded &&
+         first.dim(d - 1).fold_factor() == dim::unfolded && first.dim(d).fold_factor() == dim::unfolded);
+  // I think this is sufficient:
+  const bool can = inner_other.stride() * inner_other.extent() == buf.dim(d).stride();
+  return can && others_can_fuse_with(buf, d, rest...);
+}
+
+template <int N, typename... Args>
+void make_for_each_contiguous_slice_dims(
+    const raw_buffer& buf, for_each_contiguous_slice_dim<N>* slice_dims, const Args&... other_bufs) {
+  auto* next = slice_dims;
+  index_t slice_extent = 1;
+  index_t extent = 1;
+  for (int d = buf.rank - 1; d >= 0; --d) {
+    extent *= buf.dim(d).extent();
+    const bool any_others_folded = (... || (other_bufs.dim(d).fold_factor() != dim::unfolded));
+    const bool any_folded = buf.dim(d).fold_factor() != dim::unfolded || any_others_folded;
+    if (any_folded) {
+      next->impl = for_each_contiguous_slice_dim<N>::loop_folded;
+      assign_dim(d, next->info, buf, other_bufs...);
+      next->extent_here = extent;
+      extent = 1;  // TODO(srj)
+      ++next;
+    } else if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
+      // This is the slice dimension.
+      slice_extent = extent;
+      extent = 1;
+    } else if (extent == 1) {
+      // base already points to the min, we don't need to do anything.
+    } else if (d > 0 && can_fuse(buf, d) && others_can_fuse_with(buf, d, other_bufs...)) {
+      // Let this dimension fuse with the next dimension.
+    } else {
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
+      next->impl = for_each_contiguous_slice_dim<N>::loop_linear;
+      assign_stride(d, next->info, buf, other_bufs...);
+      next->extent_here = extent;
+      extent = 1;
+      ++next;
+    }
+  }
+  next->impl = for_each_contiguous_slice_dim<N>::call_f;
+  next->extent_here = slice_extent;
+}
+
+template <typename... Args, std::size_t... Indices>
+inline void offset_folded_bases(int i, const per_buf_info* info, std::array<void*, sizeof...(Args)>& offset_bases,
+    std::index_sequence<Indices...>, const Args&... other_bases) {
+  ((offset_bases[Indices] = offset_bytes(other_bases, info[Indices].dim->flat_offset_bytes(i))), ...);
+}
+
+template <int N, typename F, std::size_t... Indices>
+void for_each_contiguous_slice_array(void* base, const for_each_contiguous_slice_dim<N>* slice_dim, const F& f,
+    const std::array<void*, sizeof...(Indices)>& other_bases, std::index_sequence<Indices...>) {
+  for_each_contiguous_slice_impl(base, slice_dim, f, other_bases[Indices]...);
+}
+
+template <int N, typename F, typename... Args>
+void for_each_contiguous_slice_impl(
+    void* base, const for_each_contiguous_slice_dim<N>* slice_dim, const F& f, Args... other_bases) {
+  if (slice_dim->impl == for_each_contiguous_slice_dim<N>::call_f) {
+    f(base, slice_dim->extent_here, static_cast<void*>(other_bases)...);
+  } else if (slice_dim->impl == for_each_contiguous_slice_dim<N>::loop_linear) {
+    const auto* next = slice_dim + 1;
+    if (next->impl == for_each_contiguous_slice_dim<N>::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
-      // TODO: This could be implemented by changing `impl` to be flags: folded or not, and call_f or not.
-      // Then we wouldn't need to peek at the next slice_dim to see if we should do this, and it would eliminate the
-      // need for an extra for_each_contiguous_slice_dim instance on the stack.
-      for (index_t i = 0; i < slice_dim->extent; ++i, base = offset_bytes(base, slice_dim->stride)) {
-        f(base, next->extent);
+      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
+        f(base, next->extent_here, static_cast<void*>(other_bases)...);
+        add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
       }
     } else {
-      for (index_t i = 0; i < slice_dim->extent; ++i, base = offset_bytes(base, slice_dim->stride)) {
-        for_each_contiguous_slice(base, slice_dim + 1, f);
+      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
+        for_each_contiguous_slice_impl(base, slice_dim + 1, f, static_cast<void*>(other_bases)...);
+        add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
       }
+    }
+  } else {
+    assert(slice_dim->impl == for_each_contiguous_slice_dim<N>::loop_folded);
+
+    std::array<void*, sizeof...(Args)> offset_bases;
+
+    // TODO: If any buffer if folded in a given dimension, we just take the slow path
+    // that handles either folded or unfolded for *all* the buffers in that dimension.
+    // It's possible we could special-case and improve the situation somewhat if we
+    // see common cases (eg main buffer never folded and one 'other' buffer that is folded).
+    index_t begin = slice_dim->info[0].dim->begin();
+    index_t end = begin + slice_dim->extent_here;
+    for (index_t i = begin; i < end; ++i) {
+      offset_folded_bases<Args...>(
+          i, slice_dim->info + 1, offset_bases, std::make_index_sequence<sizeof...(Args)>(), other_bases...);
+      for_each_contiguous_slice_array(offset_bytes(base, slice_dim->info[0].dim->flat_offset_bytes(i)), slice_dim + 1,
+          f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
     }
   }
 }
 
-void make_for_each_contiguous_slice_dims(const raw_buffer& buf, for_each_contiguous_slice_dim* dims);
+bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
+
+template <int N>
+inline void* offset_base_unfolded(
+    const raw_buffer& buf, const for_each_contiguous_slice_dim<N>* slice_dim, const raw_buffer& other_buf) {
+  void* other_base = other_buf.base;
+  for (int d = 0; d < buf.rank; d++) {
+    if (slice_dim[d].impl != for_each_contiguous_slice_dim<N>::loop_folded) {
+      other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
+    }
+  }
+  return other_base;
+}
+
+template <int N, typename... Args, std::size_t... Indices>
+void offset_unfolded_dimensions(const raw_buffer& buf, const for_each_contiguous_slice_dim<N>* slice_dim,
+    const std::array<const raw_buffer*, sizeof...(Indices)>& other_bufs,
+    std::array<void*, sizeof...(Indices)>& offset_bases, std::index_sequence<Indices...>) {
+  ((offset_bases[Indices] = offset_base_unfolded(buf, slice_dim, *other_bufs[Indices])), ...);
+}
 
 // Implements the cropping part of a loop over tiles.
 template <typename F>
@@ -459,15 +619,31 @@ void for_each_index(const raw_buffer& buf, const F& f) {
   for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
-// Call `f(void* base, index_t extent)` for each contiguous slice in the domain of `buf`.
-// This function attempts to be efficient to support production quality implementations of callbacks.
-template <typename F>
-void for_each_contiguous_slice(const raw_buffer& buf, const F& f) {
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  internal::for_each_contiguous_slice_dim* dims = SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, buf.rank + 1);
-  internal::make_for_each_contiguous_slice_dims(buf, dims);
+// Call `f(void* base, index_t extent[, void* other_bases, ...])` for each contiguous slice in the domain of `buf[,
+// other_bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
+//
+// When additional buffers are passed, they will be sliced in tandem with the 'main' buffer.
+//
+// All additional buffers must be of identical rank to the main, and must cover (at least) the same area in each
+// dimension.
+template <typename F, typename... Args>
+void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
+  assert(... && internal::other_bufs_ok(buf, other_bufs));
 
-  internal::for_each_contiguous_slice(buf.base, dims, f);
+  // +1 to include buf
+  constexpr int N = sizeof...(Args) + 1;
+
+  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
+  internal::for_each_contiguous_slice_dim<N>* dims =
+      SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim<N>, buf.rank + 1);
+  internal::make_for_each_contiguous_slice_dims<N>(buf, dims, other_bufs...);
+
+  std::array<void*, sizeof...(Args)> offset_bases;
+  internal::offset_unfolded_dimensions<N>(
+      buf, dims, {&other_bufs...}, offset_bases, std::make_index_sequence<sizeof...(Args)>());
+
+  internal::for_each_contiguous_slice_array(
+      buf.base, dims, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
@@ -498,228 +674,6 @@ void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) 
   memcpy(buf_.dims, buf.dims, sizeof(dim) * buf.rank);
 
   internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
-}
-
-namespace internal {
-
-struct per_buf_info {
-  union {
-    // For loop_folded to call flat_offset_bytes
-    const slinky::dim* dim;
-    // For loop_linear to offset the base.
-    index_t stride;
-  };
-};
-
-template <int N>
-struct for_each_contiguous_slice_multi_dim {
-  enum {
-    call_f,       // Uses extent
-    loop_linear,  // Uses stride, extent
-    loop_folded,  // Uses dim, extent
-  } impl;
-  index_t extent_here;
-  per_buf_info info[N];  // 0 = main; 1...N-1 = others
-};
-
-inline void assign_stride(int, per_buf_info*) {
-  // nothing
-}
-
-template <typename First, typename... Rest>
-inline void assign_stride(int d, per_buf_info* info, const First& first, const Rest&... rest) {
-  info->stride = first.dim(d).stride();
-  assign_stride(d, info + 1, rest...);
-}
-
-inline void assign_dim(int, per_buf_info*) {
-  // nothing
-}
-
-template <typename First, typename... Rest>
-inline void assign_dim(int d, per_buf_info* info, const First& first, const Rest&... rest) {
-  info->dim = &first.dim(d);
-  assign_dim(d, info + 1, rest...);
-}
-
-inline void add_stride_to_bases(const per_buf_info*) {
-  // nothing
-}
-
-template <typename First, typename... Rest>
-inline void add_stride_to_bases(const per_buf_info* info, First& first, Rest&... rest) {
-  first = offset_bytes(first, info->stride);
-  add_stride_to_bases(info + 1, rest...);
-}
-
-inline bool can_fuse_multi(const dim& inner, const dim& outer) {
-  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
-    return false;
-  }
-  return inner.stride() * inner.extent() == outer.stride();
-}
-
-inline bool can_fuse_multi(const raw_buffer& buf, int d) {
-  assert(d > 0);
-  return can_fuse_multi(buf.dim(d - 1), buf.dim(d));
-}
-
-template <typename... Args>
-inline bool others_can_fuse_with(const raw_buffer& buf, int d) {
-  return true;
-}
-
-template <typename First, typename... Rest>
-inline bool others_can_fuse_with(const raw_buffer& buf, int d, const First& first, const Rest&... rest) {
-  assert(d > 0);
-  // Our caller should have filtered out any dim at d that are folded,
-  // but it might not have done so for d-1, so we must do so here:
-  const auto& inner_other = first.dim(d - 1);
-  if (inner_other.fold_factor() != dim::unfolded) {
-    return false;
-  }
-  assert(buf.dim(d - 1).fold_factor() == dim::unfolded && buf.dim(d).fold_factor() == dim::unfolded &&
-         first.dim(d - 1).fold_factor() == dim::unfolded && first.dim(d).fold_factor() == dim::unfolded);
-  // I think this is sufficient:
-  const bool can = inner_other.stride() * inner_other.extent() == buf.dim(d).stride();
-  return can && others_can_fuse_with(buf, d, rest...);
-}
-
-template <int N, typename... Args>
-void make_for_each_contiguous_slice_multi_dims(
-    const raw_buffer& buf, for_each_contiguous_slice_multi_dim<N>* slice_dims, const Args&... other_bufs) {
-  auto* next = slice_dims;
-  index_t slice_extent = 1;
-  index_t extent = 1;
-  for (int d = buf.rank - 1; d >= 0; --d) {
-    extent *= buf.dim(d).extent();
-    const bool any_others_folded = (... || (other_bufs.dim(d).fold_factor() != dim::unfolded));
-    const bool any_folded = buf.dim(d).fold_factor() != dim::unfolded || any_others_folded;
-    if (any_folded) {
-      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_folded;
-      assign_dim(d, next->info, buf, other_bufs...);
-      next->extent_here = extent;
-      extent = 1;  // TODO(srj)
-      ++next;
-    } else if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
-      // This is the slice dimension.
-      slice_extent = extent;
-      extent = 1;
-    } else if (extent == 1) {
-      // base already points to the min, we don't need to do anything.
-    } else if (d > 0 && can_fuse_multi(buf, d) && others_can_fuse_with(buf, d, other_bufs...)) {
-      // Let this dimension fuse with the next dimension.
-    } else {
-      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
-      assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
-      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_linear;
-      assign_stride(d, next->info, buf, other_bufs...);
-      next->extent_here = extent;
-      extent = 1;
-      ++next;
-    }
-  }
-  next->impl = for_each_contiguous_slice_multi_dim<N>::call_f;
-  next->extent_here = slice_extent;
-}
-
-template <typename... Args, std::size_t... Indices>
-inline void offset_folded_bases(int i, const per_buf_info* info, std::array<void*, sizeof...(Args)>& offset_bases,
-    std::index_sequence<Indices...>, const Args&... other_bases) {
-  ((offset_bases[Indices] = offset_bytes(other_bases, info[Indices].dim->flat_offset_bytes(i))), ...);
-}
-
-template <int N, typename F, std::size_t... Indices>
-void for_each_contiguous_slice_multi_array(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim,
-    const F& f, const std::array<void*, sizeof...(Indices)>& other_bases, std::index_sequence<Indices...>) {
-  for_each_contiguous_slice_multi_impl(base, slice_dim, f, other_bases[Indices]...);
-}
-
-template <int N, typename F, typename... Args>
-void for_each_contiguous_slice_multi_impl(
-    void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f, Args... other_bases) {
-  if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::call_f) {
-    f(base, slice_dim->extent_here, static_cast<void*>(other_bases)...);
-  } else if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_linear) {
-    const auto* next = slice_dim + 1;
-    if (next->impl == for_each_contiguous_slice_multi_dim<N>::call_f) {
-      // If the next step is to call f, do that eagerly here to avoid an extra call.
-      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-        f(base, next->extent_here, static_cast<void*>(other_bases)...);
-        add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
-      }
-    } else {
-      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-        for_each_contiguous_slice_multi_impl(base, slice_dim + 1, f, static_cast<void*>(other_bases)...);
-        add_stride_to_bases(slice_dim->info, base, static_cast<void*&>(other_bases)...);
-      }
-    }
-  } else {
-    assert(slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_folded);
-
-    std::array<void*, sizeof...(Args)> offset_bases;
-
-    // TODO: If any buffer if folded in a given dimension, we just take the slow path
-    // that handles either folded or unfolded for *all* the buffers in that dimension.
-    // It's possible we could special-case and improve the situation somewhat if we
-    // see common cases (eg main buffer never folded and one 'other' buffer that is folded).
-    index_t begin = slice_dim->info[0].dim->begin();
-    index_t end = begin + slice_dim->extent_here;
-    for (index_t i = begin; i < end; ++i) {
-      offset_folded_bases<Args...>(
-          i, slice_dim->info + 1, offset_bases, std::make_index_sequence<sizeof...(Args)>(), other_bases...);
-      for_each_contiguous_slice_multi_array(offset_bytes(base, slice_dim->info[0].dim->flat_offset_bytes(i)),
-          slice_dim + 1, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
-    }
-  }
-}
-
-bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
-
-template <int N>
-inline void* offset_base_unfolded(
-    const raw_buffer& buf, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const raw_buffer& other_buf) {
-  void* other_base = other_buf.base;
-  for (int d = 0; d < buf.rank; d++) {
-    if (slice_dim[d].impl != for_each_contiguous_slice_multi_dim<N>::loop_folded) {
-      other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
-    }
-  }
-  return other_base;
-}
-
-template <int N, typename... Args, std::size_t... Indices>
-void offset_unfolded_dimensions(const raw_buffer& buf, const for_each_contiguous_slice_multi_dim<N>* slice_dim,
-    const std::array<const raw_buffer*, sizeof...(Indices)>& other_bufs,
-    std::array<void*, sizeof...(Indices)>& offset_bases, std::index_sequence<Indices...>) {
-  ((offset_bases[Indices] = offset_base_unfolded(buf, slice_dim, *other_bufs[Indices])), ...);
-}
-
-}  // namespace internal
-
-// Like `for_each_contiguous_slice`, but allows for passing an arbitrary number of additional buffers,
-// which will be sliced in tandem with the 'main' buffer. All additional buffers must be of identical
-// rank to the main, and must cover (at least) the same area in each dimension.
-//
-// TODO: should we also offer a variant that takes std::array<const raw_buffer&, N> instead of variadic?
-template <typename F, typename... Args>
-void for_each_contiguous_slice_multi(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
-  assert(... && internal::other_bufs_ok(buf, other_bufs));
-
-  // +1 to include buf
-  constexpr int N = sizeof...(Args) + 1;
-
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  internal::for_each_contiguous_slice_multi_dim<N>* dims =
-      SLINKY_ALLOCA(internal::for_each_contiguous_slice_multi_dim<N>, buf.rank + 1);
-  internal::make_for_each_contiguous_slice_multi_dims<N>(buf, dims, other_bufs...);
-
-  std::array<void*, sizeof...(Args)> offset_bases;
-  internal::offset_unfolded_dimensions<N>(
-      buf, dims, {&other_bufs...}, offset_bases, std::make_index_sequence<sizeof...(Args)>());
-
-  internal::for_each_contiguous_slice_multi_array(
-      buf.base, dims, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
 }
 
 }  // namespace slinky
