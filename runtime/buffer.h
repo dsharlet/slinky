@@ -440,7 +440,7 @@ void make_for_each_contiguous_slice_dims(
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
-    } else if (d > 0 && can_fuse<NumBufs>(bufs, d)) {
+    } else if (d > 0 && can_fuse(bufs, d)) {
       // Let this dimension fuse with the next dimension.
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
@@ -476,7 +476,7 @@ void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
       }
     } else {
       for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-        for_each_contiguous_slice_impl<F, NumBufs>(bases, slice_dim + 1, dims + NumBufs, f);
+        for_each_contiguous_slice_impl(bases, slice_dim + 1, dims + NumBufs, f);
         for (std::size_t n = 0; n < NumBufs; n++) {
           bases[n] = offset_bytes(bases[n], dims[n].stride);
         }
@@ -497,7 +497,7 @@ void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
       for (std::size_t n = 0; n < NumBufs; n++) {
         offset_bases[n] = offset_bytes(bases[n], dims[n].dim->flat_offset_bytes(i));
       }
-      for_each_contiguous_slice_impl<F, NumBufs>(offset_bases, slice_dim + 1, dims + NumBufs, f);
+      for_each_contiguous_slice_impl(offset_bases, slice_dim + 1, dims + NumBufs, f);
     }
   }
 }
@@ -596,7 +596,7 @@ void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&...
     bases[n] = offset_base_unfolded(*bufs[0], slice_dims, *bufs[n]);
   }
 
-  internal::for_each_contiguous_slice_impl<F, NumBufs>(bases, slice_dims, dims, f);
+  internal::for_each_contiguous_slice_impl(bases, slice_dims, dims, f);
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
