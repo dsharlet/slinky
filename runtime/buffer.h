@@ -713,6 +713,8 @@ void offset_unfolded_dimensions(const raw_buffer& buf,
 // Like `for_each_contiguous_slice`, but allows for passing an arbitrary number of additional buffers,
 // which will be sliced in tandem with the 'main' buffer. All additional buffers must be of identical
 // rank to the main, and must cover (at least) the same area in each dimension.
+//
+// TODO: should we also offer a variant that takes std::array<const raw_buffer&, N> instead of variadic?
 template <typename F, typename... Args>
 void for_each_contiguous_slice_multi(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   assert(... && internal::other_bufs_ok(buf, other_bufs));
