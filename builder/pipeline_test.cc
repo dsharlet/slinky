@@ -1299,4 +1299,71 @@ TEST(pipeline, parallel_stencils) {
   visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
 }
 
+TEST(pipeline, diamond_stencils) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
+  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add1 = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  func add2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
+  func diff = func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  diff.loops({{y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // Run the pipeline stages manually to get the reference result.
+  buffer<short, 2> ref_intm1({W + 2, H + 2});
+  buffer<short, 2> ref_intm2({W + 4, H + 4});
+  buffer<short, 2> ref_intm3({W, H});
+  buffer<short, 2> ref_intm4({W, H});
+  buffer<short, 2> ref_out({W, H});
+  ref_intm1.translate(-1, -1);
+  ref_intm2.translate(-2, -2);
+  ref_intm1.allocate();
+  ref_intm2.allocate();
+  ref_intm3.allocate();
+  ref_intm4.allocate();
+  ref_out.allocate();
+
+  add_1<short>(in_buf.cast<const short>(), ref_intm1.cast<short>());
+  multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
+  sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
+  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    }
+  }
+}
+
 }  // namespace slinky
