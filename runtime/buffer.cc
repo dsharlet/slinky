@@ -323,11 +323,11 @@ void fill(const raw_buffer& dst, const void* value) {
 
 namespace internal {
 
-bool other_bufs_ok(const raw_buffer* buf, const raw_buffer* other_buf) {
-  if (other_buf->rank != buf->rank) return false;
-  for (std::size_t d = 0; d < buf->rank; d++) {
-    if (other_buf->dims[d].min() > buf->dims[d].min()) return false;
-    if (other_buf->dims[d].max() < buf->dims[d].max()) return false;
+bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf) {
+  if (other_buf.rank != buf.rank) return false;
+  for (std::size_t d = 0; d < buf.rank; d++) {
+    if (other_buf.dims[d].min() > buf.dims[d].min()) return false;
+    if (other_buf.dims[d].max() < buf.dims[d].max()) return false;
   }
   return true;
 }
