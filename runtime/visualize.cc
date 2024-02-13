@@ -463,7 +463,6 @@ function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.mi
 function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
-function buffer_base(b) { return b.base; }
 function buffer_elem_size(b) { return b.elem_size; }
 function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
 function buffer_at(b, ...at) {

@@ -533,7 +533,7 @@ public:
     }
 
     if (const call* bc = base.as<call>()) {
-      if (bc->intrinsic == intrinsic::buffer_base) {
+      if (bc->intrinsic == intrinsic::buffer_at && bc->args.size() == 1) {
         // Check if this make_buffer is truncate_rank, or a clone.
         const symbol_id* src_buf = as_variable(bc->args[0]);
         if (src_buf) {

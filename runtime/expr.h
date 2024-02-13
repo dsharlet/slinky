@@ -87,7 +87,6 @@ enum class intrinsic {
   abs,
 
   buffer_rank,
-  buffer_base,
   buffer_elem_size,
   buffer_size_bytes,
 
@@ -903,7 +902,6 @@ public:
 expr abs(expr x);
 
 expr buffer_rank(expr buf);
-expr buffer_base(expr buf);
 expr buffer_elem_size(expr buf);
 expr buffer_min(expr buf, expr dim);
 expr buffer_max(expr buf, expr dim);
@@ -912,6 +910,7 @@ expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 expr buffer_at(expr buf, span<const expr> at);
 expr buffer_at(expr buf, span<const var> at);
+expr buffer_at(expr buf);
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
