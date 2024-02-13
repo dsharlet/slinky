@@ -715,6 +715,7 @@ template <typename F, typename... Args>
 void for_each_contiguous_slice_multi(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   assert(... && internal::other_bufs_ok(buf, other_bufs));
 
+  // +1 to include buf
   constexpr int N = sizeof...(Args) + 1;
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
