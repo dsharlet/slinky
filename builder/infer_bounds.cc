@@ -251,7 +251,6 @@ public:
       // We rewrote the loop min.
       result = loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body));
     }
-
     // We're leaving the body of op. If any of the bounds used that loop variable, we need
     // to replace those uses with the bounds of the loop.
     for (symbol_id buf = 0; buf < infer.size(); ++buf) {
@@ -293,20 +292,28 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
 class slide_and_fold_storage : public node_mutator {
 public:
   node_context& ctx;
-  symbol_map<box_expr> buffer_bounds;
   symbol_map<std::vector<expr>> fold_factors;
   struct loop_info {
     symbol_id sym;
     expr orig_min;
     interval_expr bounds;
     expr step;
+    std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
+
+    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step)
+        : sym(sym), orig_min(orig_min), bounds(bounds), step(step),
+          buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
   std::vector<loop_info> loops;
 
   // We need an unknown to make equations of.
   var x;
 
-  slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {}
+  symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
+
+  slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
+    loops.emplace_back(0, expr(), interval_expr::none(), expr());
+  }
 
   void visit(const allocate* op) override {
     box_expr bounds;
@@ -314,7 +321,7 @@ public:
     for (const dim_expr& d : op->dims) {
       bounds.push_back(d.bounds);
     }
-    auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_buffer_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     // Initialize the fold factors to infinity.
     auto set_fold_factors =
         set_value_in_scope(fold_factors, op->sym, std::vector<expr>(op->dims.size(), positive_infinity()));
@@ -345,14 +352,15 @@ public:
   void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
     set_result(op);
     for (symbol_id output : outputs) {
-      std::optional<box_expr>& bounds = buffer_bounds[output];
-      if (!bounds) continue;
+      // Start from 1 to skip the 'outermost' loop.
+      for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
+        std::optional<box_expr>& bounds = (*loops[loop_index].buffer_bounds)[output];
+        if (!bounds) continue;
 
-      for (std::size_t op = 0; op < loops.size(); ++op) {
-        symbol_id loop_sym = loops[op].sym;
+        symbol_id loop_sym = loops[loop_index].sym;
         expr loop_var = variable::make(loop_sym);
-        const expr& loop_max = loops[op].bounds.max;
-        const expr& loop_step = loops[op].step;
+        const expr& loop_max = loops[loop_index].bounds.max;
+        const expr& loop_step = loops[loop_index].step;
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
@@ -385,7 +393,6 @@ public:
             }
             continue;
           }
-
           // Allowing the leading edge to not change means that some calls may ask for empty buffers.
           expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
           expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
@@ -407,18 +414,18 @@ public:
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region.
             expr new_min_at_new_loop_min = substitute(new_min, loop_sym, x);
-            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[op].bounds.min);
+            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[loop_index].bounds.min);
             expr new_loop_min =
                 where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
             if (!is_negative_infinity(new_loop_min)) {
-              loops[op].bounds.min = new_loop_min;
+              loops[loop_index].bounds.min = new_loop_min;
 
               (*bounds)[d].min = new_min;
             } else {
               // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
               // TODO: If another loop or func adjusts the loop min, we're going to run before the original min... that
               // seems like it might be fine anyways here, but pretty janky.
-              (*bounds)[d].min = select(loop_var == loops[op].orig_min, old_min, new_min);
+              (*bounds)[d].min = select(loop_var == loops[loop_index].orig_min, old_min, new_min);
             }
             break;
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
@@ -434,16 +441,16 @@ public:
   void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->dst, 1}); }
 
   void visit(const crop_buffer* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->bounds);
     if (bounds) {
-      substitute_bounds(*bounds, buffer_bounds);
+      substitute_bounds(*bounds, current_buffer_bounds());
     }
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
-    if (buffer_bounds[op->sym]) {
+    if (current_buffer_bounds()[op->sym]) {
       // If we folded something, the bounds required may have shrank, update the crop.
-      box_expr new_bounds = *buffer_bounds[op->sym];
+      box_expr new_bounds = *current_buffer_bounds()[op->sym];
       set_result(crop_buffer::make(op->sym, std::move(new_bounds), std::move(body)));
     } else {
       set_result(crop_buffer::make(op->sym, op->bounds, std::move(body)));
@@ -451,12 +458,12 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->dim, op->bounds);
-    substitute_bounds(*bounds, buffer_bounds);
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    substitute_bounds(*bounds, current_buffer_bounds());
+    auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
-    interval_expr new_bounds = (*buffer_bounds[op->sym])[op->dim];
+    interval_expr new_bounds = (*current_buffer_bounds()[op->sym])[op->dim];
 
     if (body.same_as(op->body) && new_bounds.same_as(op->bounds)) {
       set_result(op);
@@ -466,7 +473,7 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     if (bounds) {
       for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
         if (!op->at[d].defined()) continue;
@@ -474,7 +481,7 @@ public:
       }
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
     // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
     if (body.same_as(op->body)) {
@@ -484,12 +491,12 @@ public:
     }
   }
   void visit(const slice_dim* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     if (bounds && op->dim < static_cast<int>(bounds->size())) {
       bounds->erase(bounds->begin() + op->dim);
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+    auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
     // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
     if (body.same_as(op->body)) {
@@ -508,7 +515,10 @@ public:
     }
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
-    loops.push_back({op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step});
+    symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
+    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);
+    current_buffer_bounds() = last_buffer_bounds;
+
     stmt body = mutate(op->body);
     expr loop_min = loops.back().bounds.min;
     loops.pop_back();
