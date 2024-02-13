@@ -138,7 +138,7 @@ BENCHMARK(BM_pad)->Args({32, 32, 256, 4});
 
 constexpr index_t slice_extent = 64;
 
-void memset_slice(void* base, index_t extent) { memset(base, 0, slice_extent); }
+void memset_slice(index_t, void* base) { memset(base, 0, slice_extent); }
 
 template <typename Fn>
 void BM_for_each_slice_impl(benchmark::State& state, Fn fn) {
@@ -148,7 +148,7 @@ void BM_for_each_slice_impl(benchmark::State& state, Fn fn) {
   buf.allocate();
   buf.dim(0).set_extent(state.range(0));
 
-  auto fn_wrapper = [fn = std::move(fn)](const raw_buffer& buf) { fn(buf.base, slice_extent); };
+  auto fn_wrapper = [fn = std::move(fn)](const raw_buffer& buf) { fn(slice_extent, buf.base); };
 
   for (auto _ : state) {
     for_each_slice(1, buf, fn_wrapper);
@@ -182,7 +182,7 @@ void BM_for_each_slice_hardcoded_impl(benchmark::State& state, Fn fn) {
     for (index_t i = 0; i < buf.dim(2).extent(); ++i, base_i += buf.dim(2).stride()) {
       char* base_j = base_i;
       for (index_t j = 0; j < buf.dim(1).extent(); ++j, base_j += buf.dim(1).stride()) {
-        fn(base_j, buf.dim(0).extent());
+        fn(buf.dim(0).extent(), base_j);
       }
     }
   }
@@ -202,7 +202,7 @@ BENCHMARK(BM_for_each_slice)->Args({slice_extent, 4, 4});
 BENCHMARK(BM_for_each_contiguous_slice)->Args({slice_extent, 4, 4});
 BENCHMARK(BM_for_each_slice_hardcoded)->Args({slice_extent, 4, 4});
 
-void memcpy_slices(void* dst, index_t extent, void* src) { memcpy(dst, src, extent); }
+void memcpy_slices(index_t extent, void* dst, void* src) { memcpy(dst, src, extent); }
 
 template <typename Fn>
 void BM_for_each_contiguous_slice_multi_impl(benchmark::State& state, Fn fn) {
@@ -232,7 +232,7 @@ void BM_for_each_contiguous_slice_multi(benchmark::State& state) {
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({slice_extent, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({slice_extent, 4, 4});
 
-void add_slices(void* dst, index_t extent, void* src1, void* src2) {
+void add_slices(index_t extent, void* dst, void* src1, void* src2) {
   const char* s1 = reinterpret_cast<const char*>(src1);
   const char* s2 = reinterpret_cast<const char*>(src2);
   char* d = reinterpret_cast<char*>(dst);
