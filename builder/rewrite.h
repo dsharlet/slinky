@@ -210,6 +210,12 @@ bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) 
 }
 
 template <typename C, typename T, typename F>
+bool match(const pattern_select<C, T, F>& p, const pattern_select<pattern_expr, pattern_expr, pattern_expr>& x,
+    match_context& ctx) {
+  return match(p.c, x.c.e, ctx) && match(p.t, x.t.e, ctx) && match(p.f, x.f.e, ctx);
+}
+
+template <typename C, typename T, typename F>
 expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
   return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
 }

@@ -643,17 +643,9 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
     }
   }
 
-  expr e;
-  if (match(t, f)) {
-    return t;
-  } else if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-    e = op;
-  } else {
-    e = select::make(std::move(c), std::move(t), std::move(f));
-  }
-
-  rewriter r(e);
-  if (r.rewrite(select(!x, y, z), select(x, z, y)) ||
+  auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
+  if (r.rewrite(select(x, y, y), y) ||
+      r.rewrite(select(!x, y, z), select(x, z, y)) ||
 
       // Pull common expressions out
       r.rewrite(select(x, y, y + z), y + select(x, 0, z)) ||
@@ -663,7 +655,11 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    return op;
+  } else {
+    return select::make(std::move(c), std::move(t), std::move(f));
+  }
 }
 
 expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
