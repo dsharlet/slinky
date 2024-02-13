@@ -406,14 +406,6 @@ inline bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) 
 }
 
 template <std::size_t NumBufs>
-bool any_folded(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
-  for (const auto& buf : bufs) {
-    if (buf->dim(d).fold_factor() != dim::unfolded) return true;
-  }
-  return false;
-}
-
-template <std::size_t NumBufs>
 void make_for_each_contiguous_slice_dims(
     const std::array<const raw_buffer*, NumBufs>& bufs, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
   const auto* buf = bufs[0];
