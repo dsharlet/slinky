@@ -239,11 +239,6 @@ public:
 };
 
 template <typename T, typename Fn>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const replacement_predicate<T, Fn>&) {
-  return node_type::none;
-}
-
-template <typename T, typename Fn>
 bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
   return r.fn(substitute(r.a, ctx));
 }
