@@ -425,22 +425,25 @@ TEST(buffer, copy) {
 }
 
 TEST(buffer, for_each_contiguous_slice_multi) {
-  buffer<char, 3> buf({10, 20, 30});
-  buffer<char, 3> buf2({10, 20, 30});
-  buf.allocate();
-  buf2.allocate();
+  buffer<char, 3> dst({10, 20, 30});
+  buffer<char, 3> src({10, 20, 30});
+  dst.allocate();
+  src.allocate();
+  char x = 42;
+  fill(src, &x);
   int slices = 0;
   for_each_contiguous_slice(
-      buf,
-      [&](void* slice, index_t slice_extent, void* slice2) {
-        memset(slice, 7, slice_extent);
-        memset(slice2, 7, slice_extent);
+      dst,
+      [&](void* dst, index_t slice_extent, void* src) {
+        const char* s = reinterpret_cast<const char*>(src);
+        char* d = reinterpret_cast<char*>(dst);
+        memcpy(d, s, slice_extent);
         slices++;
       },
-      buf2);
+      src);
   ASSERT_EQ(slices, 1);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 7); });
+  for_each_index(dst, [&](auto i) { ASSERT_EQ(dst(i), 42); });
+  for_each_index(src, [&](auto i) { ASSERT_EQ(src(i), 42); });
 }
 
 TEST(buffer, for_each_contiguous_slice_multi_padded) {

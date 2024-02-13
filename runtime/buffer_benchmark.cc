@@ -202,33 +202,77 @@ BENCHMARK(BM_for_each_slice)->Args({slice_extent, 4, 4});
 BENCHMARK(BM_for_each_contiguous_slice)->Args({slice_extent, 4, 4});
 BENCHMARK(BM_for_each_slice_hardcoded)->Args({slice_extent, 4, 4});
 
-void memset_slices_multi(void* slice, index_t extent, void* slice2) {
-  memset(slice, 0, extent);
-  memset(slice2, 0, extent);
-}
+void memcpy_slices(void* dst, index_t extent, void* src) { memcpy(dst, src, extent); }
 
 template <typename Fn>
 void BM_for_each_contiguous_slice_multi(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
   extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> buf(extents);
-  buf.allocate();
-  buf.dim(0).set_extent(state.range(0));
-  buffer<char, 3> buf2(extents);
-  buf2.allocate();
-  buf2.dim(0).set_extent(state.range(0));
+  buffer<char, 3> dst(extents);
+  dst.allocate();
+  dst.dim(0).set_extent(state.range(0));
+
+  buffer<char, 3> src(extents);
+  src.allocate();
+  src.dim(0).set_extent(state.range(0));
+
+  char x = 42;
+  fill(src, &x);
 
   for (auto _ : state) {
-    for_each_contiguous_slice(buf, fn, buf2);
+    for_each_contiguous_slice(dst, fn, src);
   }
-  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * (buf.size_bytes() + buf2.size_bytes()));
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * (dst.size_bytes() + src.size_bytes()));
 }
 
 void BM_for_each_contiguous_slice_multi(benchmark::State& state) {
-  BM_for_each_contiguous_slice_multi(state, memset_slices_multi);
+  BM_for_each_contiguous_slice_multi(state, memcpy_slices);
 }
 
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({slice_extent, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({slice_extent, 4, 4});
+
+void add_slices(void* dst, index_t extent, void* src1, void* src2) {
+  const char* s1 = reinterpret_cast<const char*>(src1);
+  const char* s2 = reinterpret_cast<const char*>(src2);
+  char* d = reinterpret_cast<char*>(dst);
+  for (index_t i = 0; i < extent; i++) {
+    d[i] = s1[i] + s2[i];
+  }
+}
+
+template <typename Fn>
+void BM_for_each_contiguous_slice_multi3(benchmark::State& state, Fn fn) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  extents[0] += 64;  // Insert padding after the first dimension.
+
+  buffer<char, 3> dst(extents);
+  dst.allocate();
+  dst.dim(0).set_extent(state.range(0));
+
+  buffer<char, 3> src1(extents);
+  src1.allocate();
+  src1.dim(0).set_extent(state.range(0));
+  buffer<char, 3> src2(extents);
+  src2.allocate();
+  src2.dim(0).set_extent(state.range(0));
+
+  char x = 42;
+  fill(src1, &x);
+  fill(src2, &x);
+
+  for (auto _ : state) {
+    for_each_contiguous_slice(dst, fn, src1, src2);
+  }
+  state.SetBytesProcessed(
+      static_cast<int64_t>(state.iterations()) * (dst.size_bytes() + src1.size_bytes() + src2.size_bytes()));
+}
+
+void BM_for_each_contiguous_slice_multi3(benchmark::State& state) {
+  BM_for_each_contiguous_slice_multi3(state, add_slices);
+}
+
+BENCHMARK(BM_for_each_contiguous_slice_multi3)->Args({slice_extent, 16, 1});
+BENCHMARK(BM_for_each_contiguous_slice_multi3)->Args({slice_extent, 4, 4});
 
 }  // namespace slinky
