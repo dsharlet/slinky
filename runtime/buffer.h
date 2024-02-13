@@ -385,7 +385,7 @@ struct for_each_contiguous_slice_dim {
     loop_linear,  // Uses stride, extent
     loop_folded,  // Uses dim, extent
   } impl;
-  index_t extent_here;
+  index_t extent;
 };
 
 template <std::size_t NumBufs>
@@ -429,7 +429,7 @@ void make_for_each_contiguous_slice_dims(
     extent *= buf->dim(d).extent();
     if (any_folded(bufs, d)) {
       next->impl = for_each_contiguous_slice_dim::loop_folded;
-      next->extent_here = extent;
+      next->extent = extent;
       ++next;
       for (std::size_t n = 0; n < NumBufs; n++) {
         next_dims->dim = &bufs[n]->dim(d);
@@ -446,7 +446,7 @@ void make_for_each_contiguous_slice_dims(
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf->dim(d).min() / buf->dim(d).fold_factor() == buf->dim(d).max() / buf->dim(d).fold_factor());
       next->impl = for_each_contiguous_slice_dim::loop_linear;
-      next->extent_here = extent;
+      next->extent = extent;
       ++next;
       for (std::size_t n = 0; n < NumBufs; n++) {
         next_dims->stride = bufs[n]->dim(d).stride();
@@ -456,26 +456,26 @@ void make_for_each_contiguous_slice_dims(
     }
   }
   next->impl = for_each_contiguous_slice_dim::call_f;
-  next->extent_here = slice_extent;
+  next->extent = slice_extent;
 }
 
 template <typename F, std::size_t NumBufs>
 void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
     const for_each_contiguous_slice_dim* slice_dim, const dim_or_stride* dims, const F& f) {
   if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
-    std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent_here), bases));
+    std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent), bases));
   } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
     const auto* next = slice_dim + 1;
     if (next->impl == for_each_contiguous_slice_dim::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
-      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-        std::apply(f, std::tuple_cat(std::make_tuple(next->extent_here), bases));
+      for (index_t i = 0; i < slice_dim->extent; ++i) {
+        std::apply(f, std::tuple_cat(std::make_tuple(next->extent), bases));
         for (std::size_t n = 0; n < NumBufs; n++) {
           bases[n] = offset_bytes(bases[n], dims[n].stride);
         }
       }
     } else {
-      for (index_t i = 0; i < slice_dim->extent_here; ++i) {
+      for (index_t i = 0; i < slice_dim->extent; ++i) {
         for_each_contiguous_slice_impl(bases, slice_dim + 1, dims + NumBufs, f);
         for (std::size_t n = 0; n < NumBufs; n++) {
           bases[n] = offset_bytes(bases[n], dims[n].stride);
@@ -492,7 +492,7 @@ void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
     // It's possible we could special-case and improve the situation somewhat if we
     // see common cases (eg main buffer never folded and one 'other' buffer that is folded).
     index_t begin = dims[0].dim->begin();
-    index_t end = begin + slice_dim->extent_here;
+    index_t end = begin + slice_dim->extent;
     for (index_t i = begin; i < end; ++i) {
       for (std::size_t n = 0; n < NumBufs; n++) {
         offset_bases[n] = offset_bytes(bases[n], dims[n].dim->flat_offset_bytes(i));
