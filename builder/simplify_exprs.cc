@@ -23,7 +23,7 @@ pattern_constant c0{0};
 pattern_constant c1{1};
 pattern_constant c2{2};
 
-} // namespace
+}  // namespace
 
 expr simplify(const class min* op, expr a, expr b) {
   if (should_commute(a, b)) {
@@ -42,27 +42,20 @@ expr simplify(const class min* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (// Constant simplifications
+  if (  // Constant simplifications
       r.rewrite(min(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
-      r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) ||
-      r.rewrite(min(x, rewrite::positive_infinity()), x) ||
+      r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) || r.rewrite(min(x, rewrite::positive_infinity()), x) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
       r.rewrite(min(x, rewrite::negative_infinity()), rewrite::negative_infinity()) ||
-      r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
-      r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
-      r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
-      r.rewrite(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
-      r.rewrite(min(c0 - x, c0 - y), c0 - max(x, y)) ||
-      r.rewrite(min(x, -x), -abs(x)) ||
+      r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) || r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
+      r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) || r.rewrite(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
+      r.rewrite(min(c0 - x, c0 - y), c0 - max(x, y)) || r.rewrite(min(x, -x), -abs(x)) ||
       r.rewrite(min(x + c0, c0 - x), c0 - abs(x)) ||
 
       // Algebraic simplifications
-      r.rewrite(min(x, x), x) ||
-      r.rewrite(min(x, max(x, y)), x) ||
-      r.rewrite(min(x, min(x, y)), min(x, y)) ||
+      r.rewrite(min(x, x), x) || r.rewrite(min(x, max(x, y)), x) || r.rewrite(min(x, min(x, y)), min(x, y)) ||
       r.rewrite(min(y + c0, min(x, y)), min(x, min(y, y + c0))) ||
-      r.rewrite(min(y, min(x, y + c0)), min(x, min(y, y + c0))) ||
-      r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
+      r.rewrite(min(y, min(x, y + c0)), min(x, min(y, y + c0))) || r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
       r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
       r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
       r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
@@ -71,10 +64,8 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x / c0, y / c0), min(x, y) / c0, eval(c0 > 0)) ||
       r.rewrite(min(x / c0, y / c0), max(x, y) / c0, eval(c0 < 0)) ||
       r.rewrite(min(x * c0, y * c0), min(x, y) * c0, eval(c0 > 0)) ||
-      r.rewrite(min(x * c0, y * c0), max(x, y) * c0, eval(c0 < 0)) ||
-      r.rewrite(min(x + z, y + z), z + min(x, y)) ||
-      r.rewrite(min(x - z, y - z), min(x, y) - z) ||
-      r.rewrite(min(z - x, z - y), z - max(x, y)) ||
+      r.rewrite(min(x * c0, y * c0), max(x, y) * c0, eval(c0 < 0)) || r.rewrite(min(x + z, y + z), z + min(x, y)) ||
+      r.rewrite(min(x - z, y - z), min(x, y) - z) || r.rewrite(min(z - x, z - y), z - max(x, y)) ||
       r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
 
       // Buffer meta simplifications
@@ -83,8 +74,7 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)) ||
       r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), eval(c0 > 0)) ||
       r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, eval(c0 < 0)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || 
-      false) {
+      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || false) {
     return r.result;
   }
   return e;
@@ -107,27 +97,20 @@ expr simplify(const class max* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (// Constant simplifications
+  if (  // Constant simplifications
       r.rewrite(max(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
-      r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) ||
-      r.rewrite(max(x, rewrite::negative_infinity()), x) ||
+      r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) || r.rewrite(max(x, rewrite::negative_infinity()), x) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
       r.rewrite(max(x, rewrite::positive_infinity()), rewrite::positive_infinity()) ||
-      r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
-      r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
-      r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
-      r.rewrite(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
-      r.rewrite(max(c0 - x, c0 - y), c0 - min(x, y)) ||
-      r.rewrite(max(x, -x), abs(x)) ||
+      r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) || r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
+      r.rewrite(max(x, x + c0), x, eval(c0 < 0)) || r.rewrite(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
+      r.rewrite(max(c0 - x, c0 - y), c0 - min(x, y)) || r.rewrite(max(x, -x), abs(x)) ||
       r.rewrite(max(x + c0, c0 - x), abs(x) + c0) ||
 
       // Algebraic simplifications
-      r.rewrite(max(x, x), x) ||
-      r.rewrite(max(x, min(x, y)), x) ||
-      r.rewrite(max(x, max(x, y)), max(x, y)) ||
+      r.rewrite(max(x, x), x) || r.rewrite(max(x, min(x, y)), x) || r.rewrite(max(x, max(x, y)), max(x, y)) ||
       r.rewrite(max(y + c0, max(x, y)), max(x, max(y, y + c0))) ||
-      r.rewrite(max(y, max(x, y + c0)), max(x, max(y, y + c0))) ||
-      r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
+      r.rewrite(max(y, max(x, y + c0)), max(x, max(y, y + c0))) || r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
       r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
       r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
       r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
@@ -135,17 +118,14 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x / c0, y / c0), max(x, y) / c0, eval(c0 > 0)) ||
       r.rewrite(max(x / c0, y / c0), min(x, y) / c0, eval(c0 < 0)) ||
       r.rewrite(max(x * c0, y * c0), max(x, y) * c0, eval(c0 > 0)) ||
-      r.rewrite(max(x * c0, y * c0), min(x, y) * c0, eval(c0 < 0)) ||
-      r.rewrite(max(x + z, y + z), z + max(x, y)) ||
-      r.rewrite(max(x - z, y - z), max(x, y) - z) ||
-      r.rewrite(max(z - x, z - y), z - min(x, y)) ||
+      r.rewrite(max(x * c0, y * c0), min(x, y) * c0, eval(c0 < 0)) || r.rewrite(max(x + z, y + z), z + max(x, y)) ||
+      r.rewrite(max(x - z, y - z), max(x, y) - z) || r.rewrite(max(z - x, z - y), z - min(x, y)) ||
 
       // Buffer meta simplifications
       r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)) ||
       r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, eval(c0 > 0)) ||
       r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), eval(c0 < 0)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || 
-      false) {
+      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || false) {
     return r.result;
   }
   return e;
@@ -173,32 +153,20 @@ expr simplify(const add* op, expr a, expr b) {
       r.rewrite(rewrite::negative_infinity() + rewrite::negative_infinity(), rewrite::negative_infinity()) ||
       r.rewrite(rewrite::negative_infinity() + rewrite::positive_infinity(), rewrite::indeterminate()) ||
       r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      r.rewrite(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
-      r.rewrite(x + 0, x) ||
-      r.rewrite(x + x, x * 2) ||
-      r.rewrite(x + (x + y), y + x * 2) ||
-      r.rewrite(x + (x - y), x * 2 - y) ||
-      r.rewrite(x + (y - x), y) ||
-      r.rewrite(x + x * y, x * (y + 1), eval(!is_constant(x))) ||
-      r.rewrite(x * y + x * z, x * (y + z)) ||
-      r.rewrite((x + y) + (x + z), (y + z) + x * 2) ||
-      r.rewrite((x + z) + (x - y), (z - y) + x * 2) ||
-      r.rewrite((x + z) + (y - x), y + z) ||
-      r.rewrite((x + y) + (x - z), (y - z) + x * 2) ||
-      r.rewrite((x + y) + (z - x), y + z) ||
-      r.rewrite((x - y) + (x - z), x * 2 - (y + z)) ||
-      r.rewrite((y - x) + (x - z), y - z) ||
-      r.rewrite((x - y) + (z - x), z - y) ||
-      r.rewrite((y - x) + (z - x), (y + z) + x * -2) ||
+      r.rewrite(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) || r.rewrite(x + 0, x) ||
+      r.rewrite(x + x, x * 2) || r.rewrite(x + (x + y), y + x * 2) || r.rewrite(x + (x - y), x * 2 - y) ||
+      r.rewrite(x + (y - x), y) || r.rewrite(x + x * y, x * (y + 1), eval(!is_constant(x))) ||
+      r.rewrite(x * y + x * z, x * (y + z)) || r.rewrite((x + y) + (x + z), (y + z) + x * 2) ||
+      r.rewrite((x + z) + (x - y), (z - y) + x * 2) || r.rewrite((x + z) + (y - x), y + z) ||
+      r.rewrite((x + y) + (x - z), (y - z) + x * 2) || r.rewrite((x + y) + (z - x), y + z) ||
+      r.rewrite((x - y) + (x - z), x * 2 - (y + z)) || r.rewrite((y - x) + (x - z), y - z) ||
+      r.rewrite((x - y) + (z - x), z - y) || r.rewrite((y - x) + (z - x), (y + z) + x * -2) ||
 
-      r.rewrite((x + c0) + c1, x + eval(c0 + c1)) ||
-      r.rewrite((c0 - x) + c1, eval(c0 + c1) - x) ||
-      r.rewrite(x + (c0 - y), (x - y) + c0) ||
-      r.rewrite(x + (y + c0), (x + y) + c0) ||
+      r.rewrite((x + c0) + c1, x + eval(c0 + c1)) || r.rewrite((c0 - x) + c1, eval(c0 + c1) - x) ||
+      r.rewrite(x + (c0 - y), (x - y) + c0) || r.rewrite(x + (y + c0), (x + y) + c0) ||
       r.rewrite((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
 
-      r.rewrite(z + min(x, y - z), min(y, x + z)) ||
-      r.rewrite(z + max(x, y - z), max(y, x + z)) ||
+      r.rewrite(z + min(x, y - z), min(y, x + z)) || r.rewrite(z + max(x, y - z), max(y, x + z)) ||
 
       r.rewrite(min(x + c0, y + c1) + c2, min(x + eval(c0 + c2), y + eval(c1 + c2))) ||
       r.rewrite(max(x + c0, y + c1) + c2, max(x + eval(c0 + c2), y + eval(c1 + c2))) ||
@@ -221,8 +189,7 @@ expr simplify(const add* op, expr a, expr b) {
 
       r.rewrite(buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1) ||
       r.rewrite((z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1) ||
-      r.rewrite((z - buffer_min(x, y)) + buffer_max(x, y), (z + buffer_extent(x, y)) + -1) || 
-      false) {
+      r.rewrite((z - buffer_min(x, y)) + buffer_max(x, y), (z + buffer_extent(x, y)) + -1) || false) {
     return r.result;
   }
   return e;
@@ -255,29 +222,18 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite(rewrite::negative_infinity() - rewrite::negative_infinity(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::negative_infinity() - rewrite::positive_infinity(), rewrite::negative_infinity()) ||
       r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
-      r.rewrite(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      r.rewrite(x - x, 0) ||
-      r.rewrite(x - 0, x) ||
-      r.rewrite(x - y * c0, x + y * (-c0)) ||
-      r.rewrite(x - (c0 - y), (x + y) - c0) ||
-      r.rewrite(c0 - (x - y), (y - x) + c0) ||
-      r.rewrite(x - (y + c0), (x - y) - c0) ||
-      r.rewrite((c0 - x) - y, c0 - (x + y)) ||
-      r.rewrite((x + c0) - y, (x - y) + c0) ||
-      r.rewrite((x + y) - x, y) ||
-      r.rewrite((x - y) - x, -y) ||
-      r.rewrite(x - (x + y), -y) ||
-      r.rewrite(x - (x - y), y) ||
-      r.rewrite((x + y) - (x + z), y - z) ||
-      r.rewrite((x - y) - (z - y), x - z) ||
-      r.rewrite((x - y) - (x - z), z - y) ||
-      r.rewrite((c0 - x) - (y - z), ((z - x) - y) + c0) ||
+      r.rewrite(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) || r.rewrite(x - x, 0) ||
+      r.rewrite(x - 0, x) || r.rewrite(x - y * c0, x + y * (-c0)) || r.rewrite(x - (c0 - y), (x + y) - c0) ||
+      r.rewrite(c0 - (x - y), (y - x) + c0) || r.rewrite(x - (y + c0), (x - y) - c0) ||
+      r.rewrite((c0 - x) - y, c0 - (x + y)) || r.rewrite((x + c0) - y, (x - y) + c0) || r.rewrite((x + y) - x, y) ||
+      r.rewrite((x - y) - x, -y) || r.rewrite(x - (x + y), -y) || r.rewrite(x - (x - y), y) ||
+      r.rewrite((x + y) - (x + z), y - z) || r.rewrite((x - y) - (z - y), x - z) ||
+      r.rewrite((x - y) - (x - z), z - y) || r.rewrite((c0 - x) - (y - z), ((z - x) - y) + c0) ||
       r.rewrite((x + c0) - (y + c1), (x - y) + eval(c0 - c1)) ||
 
       r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, eval(c0 > 0)) ||
 
-      r.rewrite(min(x, y + z) - z, min(y, x - z)) ||
-      r.rewrite(max(x, y + z) - z, max(y, x - z)) ||
+      r.rewrite(min(x, y + z) - z, min(y, x - z)) || r.rewrite(max(x, y + z) - z, max(y, x - z)) ||
 
       r.rewrite(c2 - select(x, c0, c1), select(x, eval(c2 - c0), eval(c2 - c1))) ||
       r.rewrite(c2 - select(x, y + c0, c1), select(x, eval(c2 - c0) - y, eval(c2 - c1))) ||
@@ -291,8 +247,7 @@ expr simplify(const sub* op, expr a, expr b) {
 
       r.rewrite(buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) + -1) ||
       r.rewrite(buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) + -1) ||
-      r.rewrite((z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) + -1) ||
-      false) {
+      r.rewrite((z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) + -1) || false) {
     return r.result;
   }
   return e;
@@ -322,14 +277,10 @@ expr simplify(const mul* op, expr a, expr b) {
       r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::negative_infinity() * c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::positive_infinity() * c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
-      r.rewrite(rewrite::negative_infinity() * c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
-      r.rewrite(x * 0, 0) ||
-      r.rewrite(x * 1, x) ||
-      r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
-      r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) ||
-      r.rewrite((0 - x) * c1, x * eval(-c1)) ||
-      r.rewrite((c0 - x) * c1, eval(c0 * c1) - x * c1) ||
-      false) {
+      r.rewrite(rewrite::negative_infinity() * c0, rewrite::positive_infinity(), eval(c0 < 0)) || r.rewrite(x * 0, 0) ||
+      r.rewrite(x * 1, x) || r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
+      r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) || r.rewrite((0 - x) * c1, x * eval(-c1)) ||
+      r.rewrite((c0 - x) * c1, eval(c0 * c1) - x * c1) || false) {
     return r.result;
   }
   return e;
@@ -360,20 +311,15 @@ expr simplify(const div* op, expr a, expr b) {
       r.rewrite(rewrite::positive_infinity() / c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::negative_infinity() / c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::positive_infinity() / c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
-      r.rewrite(rewrite::negative_infinity() / c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
-      r.rewrite(x / 0, 0) ||
-      r.rewrite(0 / x, 0) ||
-      r.rewrite(x / 1, x) ||
-      r.rewrite(x / -1, -x) ||
-      r.rewrite(x / x, x != 0) ||
+      r.rewrite(rewrite::negative_infinity() / c0, rewrite::positive_infinity(), eval(c0 < 0)) || r.rewrite(x / 0, 0) ||
+      r.rewrite(0 / x, 0) || r.rewrite(x / 1, x) || r.rewrite(x / -1, -x) || r.rewrite(x / x, x != 0) ||
 
       r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
       r.rewrite((x / c0 + c1) / c2, (x + eval(c1 * c0)) / eval(c0 * c2), eval(c0 > 0 && c2 > 0)) ||
       r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0 && c0 % c1 == 0)) ||
 
       r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), eval(c0 % c1 == 0)) ||
-      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
-      false) {
+      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 != 0 && c0 % c1 == 0)) || false) {
     return r.result;
   }
   return e;
@@ -393,10 +339,7 @@ expr simplify(const mod* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x % 1, 0) || 
-      r.rewrite(x % 0, 0) || 
-      r.rewrite(x % x, 0) ||
-      false) {
+  if (r.rewrite(x % 1, 0) || r.rewrite(x % 0, 0) || r.rewrite(x % x, 0) || false) {
     return r.result;
   }
   return e;
@@ -420,41 +363,25 @@ expr simplify(const less* op, expr a, expr b) {
   if (r.rewrite(rewrite::positive_infinity() < x, false, is_finite(x)) ||
       r.rewrite(rewrite::negative_infinity() < x, true, is_finite(x)) ||
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
-      r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
-      r.rewrite(x < x, false) ||
-      r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x - y < x, 0 < y) ||
-      r.rewrite(0 - x < c0, -c0 < x) ||
-      r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
+      r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) || r.rewrite(x < x, false) ||
+      r.rewrite(x + c0 < c1, x < eval(c1 - c0)) || r.rewrite(x < x + y, 0 < y) || r.rewrite(x + y < x, y < 0) ||
+      r.rewrite(x - y < x, 0 < y) || r.rewrite(0 - x < c0, -c0 < x) || r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
 
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x < x - y, y < 0) ||
-      r.rewrite(x - y < x, 0 < y) ||
-      r.rewrite(x + y < x + z, y < z) ||
-      r.rewrite(x - y < x - z, z < y) ||
+      r.rewrite(x < x + y, 0 < y) || r.rewrite(x + y < x, y < 0) || r.rewrite(x < x - y, y < 0) ||
+      r.rewrite(x - y < x, 0 < y) || r.rewrite(x + y < x + z, y < z) || r.rewrite(x - y < x - z, z < y) ||
       r.rewrite(x - y < z - y, x < z) ||
 
-      r.rewrite(min(x, y) < x, y < x) ||
-      r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
-      r.rewrite(max(x, y) < x, false) ||
-      r.rewrite(x < max(x, y), x < y) ||
-      r.rewrite(x < min(x, y), false) ||
-      r.rewrite(min(x, y) < max(x, y), x != y) ||
-      r.rewrite(max(x, y) < min(x, y), false) ||
+      r.rewrite(min(x, y) < x, y < x) || r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
+      r.rewrite(max(x, y) < x, false) || r.rewrite(x < max(x, y), x < y) || r.rewrite(x < min(x, y), false) ||
+      r.rewrite(min(x, y) < max(x, y), x != y) || r.rewrite(max(x, y) < min(x, y), false) ||
       r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
 
-      r.rewrite(c0 < max(x, c1), c0 < x || eval(c0 < c1)) ||
-      r.rewrite(c0 < min(x, c1), c0 < x && eval(c0 < c1)) ||
-      r.rewrite(max(x, c0) < c1, x < c1 && eval(c0 < c1)) ||
-      r.rewrite(min(x, c0) < c1, x < c1 || eval(c0 < c1)) ||
+      r.rewrite(c0 < max(x, c1), c0 < x || eval(c0 < c1)) || r.rewrite(c0 < min(x, c1), c0 < x && eval(c0 < c1)) ||
+      r.rewrite(max(x, c0) < c1, x < c1 && eval(c0 < c1)) || r.rewrite(min(x, c0) < c1, x < c1 || eval(c0 < c1)) ||
 
       r.rewrite(buffer_extent(x, y) < c0, false, eval(c0 < 0)) ||
-      r.rewrite(c0 < buffer_extent(x, y), true, eval(c0 < 0)) ||
-      false) {
+      r.rewrite(c0 < buffer_extent(x, y), true, eval(c0 < 0)) || false) {
     return r.result;
   }
   return e;
@@ -478,33 +405,19 @@ expr simplify(const less_equal* op, expr a, expr b) {
   if (r.rewrite(rewrite::positive_infinity() <= x, false, is_finite(x)) ||
       r.rewrite(rewrite::negative_infinity() <= x, true, is_finite(x)) ||
       r.rewrite(x <= rewrite::positive_infinity(), true, is_finite(x)) ||
-      r.rewrite(x <= rewrite::negative_infinity(), false, is_finite(x)) ||
-      r.rewrite(x <= x, true) ||
-      r.rewrite(x <= x + y, 0 <= y) ||
-      r.rewrite(x + y <= x, y <= 0) ||
-      r.rewrite(x - y <= x, 0 <= y) ||
-      r.rewrite(0 - x <= c0, -c0 <= x) ||
-      r.rewrite(c0 - x <= y, c0 <= y + x) ||
-      r.rewrite(x <= c1 - y, x + y <= c1) ||
+      r.rewrite(x <= rewrite::negative_infinity(), false, is_finite(x)) || r.rewrite(x <= x, true) ||
+      r.rewrite(x <= x + y, 0 <= y) || r.rewrite(x + y <= x, y <= 0) || r.rewrite(x - y <= x, 0 <= y) ||
+      r.rewrite(0 - x <= c0, -c0 <= x) || r.rewrite(c0 - x <= y, c0 <= y + x) || r.rewrite(x <= c1 - y, x + y <= c1) ||
       r.rewrite(x + c0 <= y + c1, x - y <= eval(c1 - c0)) ||
 
-      r.rewrite((x + c0) / c1 <= x / c1, eval(c0 <= 0)) ||
-      r.rewrite(x / c1 <= (x + c0) / c1, eval(0 <= c0)) ||
+      r.rewrite((x + c0) / c1 <= x / c1, eval(c0 <= 0)) || r.rewrite(x / c1 <= (x + c0) / c1, eval(0 <= c0)) ||
 
-      r.rewrite(x <= x + y, 0 <= y) ||
-      r.rewrite(x + y <= x, y <= 0) ||
-      r.rewrite(x <= x - y, y <= 0) ||
-      r.rewrite(x - y <= x, 0 <= y) ||
-      r.rewrite(x + y <= x + z, y <= z) ||
-      r.rewrite(x - y <= x - z, z <= y) ||
+      r.rewrite(x <= x + y, 0 <= y) || r.rewrite(x + y <= x, y <= 0) || r.rewrite(x <= x - y, y <= 0) ||
+      r.rewrite(x - y <= x, 0 <= y) || r.rewrite(x + y <= x + z, y <= z) || r.rewrite(x - y <= x - z, z <= y) ||
       r.rewrite(x - y <= z - y, x <= z) ||
 
-      r.rewrite(min(x, y) <= x, true) ||
-      r.rewrite(min(x, min(y, z)) <= y, true) ||
-      r.rewrite(max(x, y) <= x, y <= x) ||
-      r.rewrite(x <= max(x, y), true) ||
-      r.rewrite(x <= min(x, y), x <= y) ||
-      r.rewrite(min(x, y) <= max(x, y), true) ||
+      r.rewrite(min(x, y) <= x, true) || r.rewrite(min(x, min(y, z)) <= y, true) || r.rewrite(max(x, y) <= x, y <= x) ||
+      r.rewrite(x <= max(x, y), true) || r.rewrite(x <= min(x, y), x <= y) || r.rewrite(min(x, y) <= max(x, y), true) ||
       r.rewrite(max(x, y) <= min(x, y), x == y) ||
 
       r.rewrite(c0 <= max(x, c1), c0 <= x || eval(c0 <= c1)) ||
@@ -513,8 +426,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(min(x, c0) <= c1, x <= c1 || eval(c0 <= c1)) ||
 
       r.rewrite(buffer_extent(x, y) <= c0, false, eval(c0 <= 0)) ||
-      r.rewrite(c0 <= buffer_extent(x, y), true, eval(c0 <= 0)) ||
-      false) {
+      r.rewrite(c0 <= buffer_extent(x, y), true, eval(c0 <= 0)) || false) {
     return r.result;
   }
   return e;
@@ -536,12 +448,10 @@ expr simplify(const equal* op, expr a, expr b) {
   } else {
     e = equal::make(std::move(a), std::move(b));
   }
-  
+
   rewriter r(e);
-  if (r.rewrite(x == x, true) ||
-      r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
-      r.rewrite(c0 - x == c1, -x == eval(c1 - c0), eval(c0 != 0)) ||
-      false) {
+  if (r.rewrite(x == x, true) || r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
+      r.rewrite(c0 - x == c1, -x == eval(c1 - c0), eval(c0 != 0)) || false) {
     return r.result;
   }
   return e;
@@ -565,10 +475,8 @@ expr simplify(const not_equal* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x != x, false) ||
-      r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
-      r.rewrite(c0 - x != c1, -x != eval(c1 - c0), eval(c0 != 0)) ||
-      false) {
+  if (r.rewrite(x != x, false) || r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
+      r.rewrite(c0 - x != c1, -x != eval(c1 - c0), eval(c0 != 0)) || false) {
     return r.result;
   }
   return e;
@@ -595,15 +503,9 @@ expr simplify(const logical_and* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x && x, x) ||
-      r.rewrite(x && !x, false) ||
-      r.rewrite(!x && x, false) ||
-      r.rewrite(!x && !y, !(x || y)) ||
-      r.rewrite(x && (x && y), x && y) ||
-      r.rewrite((x && y) && x, x && y) ||
-      r.rewrite(x && (x || y), x) ||
-      r.rewrite((x || y) && x, x) ||
-      false) {
+  if (r.rewrite(x && x, x) || r.rewrite(x && !x, false) || r.rewrite(!x && x, false) ||
+      r.rewrite(!x && !y, !(x || y)) || r.rewrite(x && (x && y), x && y) || r.rewrite((x && y) && x, x && y) ||
+      r.rewrite(x && (x || y), x) || r.rewrite((x || y) && x, x) || false) {
     return r.result;
   }
   return e;
@@ -630,15 +532,9 @@ expr simplify(const logical_or* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x || x, x) ||
-      r.rewrite(x || !x, true) ||
-      r.rewrite(!x || x, true) ||
-      r.rewrite(!x || !y, !(x && y)) ||
-      r.rewrite(x || (x && y), x) ||
-      r.rewrite((x && y) || x, x) ||
-      r.rewrite(x || (x || y), x || y) ||
-      r.rewrite((x || y) || x, x || y) ||
-      false) {
+  if (r.rewrite(x || x, x) || r.rewrite(x || !x, true) || r.rewrite(!x || x, true) || r.rewrite(!x || !y, !(x && y)) ||
+      r.rewrite(x || (x && y), x) || r.rewrite((x && y) || x, x) || r.rewrite(x || (x || y), x || y) ||
+      r.rewrite((x || y) || x, x || y) || false) {
     return r.result;
   };
   return e;
@@ -658,12 +554,8 @@ expr simplify(const logical_not* op, expr a) {
   }
 
   rewriter r(e);
-  if (r.rewrite(!!x, x) ||
-      r.rewrite(!(x == y), x != y) ||
-      r.rewrite(!(x != y), x == y) ||
-      r.rewrite(!(x < y), y <= x) ||
-      r.rewrite(!(x <= y), y < x) ||
-      false) {
+  if (r.rewrite(!!x, x) || r.rewrite(!(x == y), x != y) || r.rewrite(!(x != y), x == y) ||
+      r.rewrite(!(x < y), y <= x) || r.rewrite(!(x <= y), y < x) || false) {
     return r.result;
   }
   return e;
@@ -692,11 +584,9 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   if (r.rewrite(select(!x, y, z), select(x, z, y)) ||
 
       // Pull common expressions out
-      r.rewrite(select(x, y, y + z), y + select(x, 0, z)) ||
-      r.rewrite(select(x, y + z, y), y + select(x, z, 0)) ||
+      r.rewrite(select(x, y, y + z), y + select(x, 0, z)) || r.rewrite(select(x, y + z, y), y + select(x, z, 0)) ||
       r.rewrite(select(x, y + z, y + w), y + select(x, z, w)) ||
-      r.rewrite(select(x, z - y, w - y), select(x, z, w) - y) ||
-      false) {
+      r.rewrite(select(x, z - y, w - y), select(x, z, w) - y) || false) {
     return r.result;
   }
   return e;
@@ -743,10 +633,8 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
-      r.rewrite(abs(-x), abs(x)) ||
-      r.rewrite(abs(abs(x)), abs(x)) ||
-      false) {
+  if (r.rewrite(rewrite::abs(rewrite::negative_infinity()), rewrite::positive_infinity()) ||
+      r.rewrite(abs(-x), abs(x)) || r.rewrite(abs(abs(x)), abs(x)) || false) {
     return r.result;
   }
   return e;

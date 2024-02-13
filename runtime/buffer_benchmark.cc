@@ -19,7 +19,9 @@ std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::Stat
 }
 
 template <typename Fn>
-__attribute__((noinline)) void no_inline(Fn&& fn) { fn(); }
+__attribute__((noinline)) void no_inline(Fn&& fn) {
+  fn();
+}
 
 void BM_memcpy(benchmark::State& state) {
   std::size_t size = state.range(0);

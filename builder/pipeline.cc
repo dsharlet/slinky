@@ -87,9 +87,7 @@ func::func(input input, output out, std::optional<std::vector<char>> padding)
   padding_ = std::move(padding);
 }
 
-func::func(std::vector<input> inputs, output out)
-    : func(nullptr, std::move(inputs), {std::move(out)}) {
-}
+func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
 
 func::func(func&& m) noexcept { *this = std::move(m); }
 func& func::operator=(func&& m) noexcept {

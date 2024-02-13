@@ -104,7 +104,7 @@ interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   return {0, simplify(static_cast<const class max*>(nullptr),
                  simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
                  simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}))};
-  }
+}
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
   return bounds_of_linear(op, std::move(a), std::move(b));

@@ -436,7 +436,6 @@ public:
     }
   }
 
-
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {
     auto s = set_value_in_scope(shadowed, sym, true);

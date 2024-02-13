@@ -419,7 +419,6 @@ TEST(copy, broadcast_sliced) {
     p.evaluate(inputs, outputs, eval_ctx);
     ASSERT_EQ(eval_ctx.copy_calls, 1);
 
-
     for (int z = 0; z < D; ++z) {
       for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {

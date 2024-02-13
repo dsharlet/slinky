@@ -193,7 +193,7 @@ public:
             },
             {src}, {dst});
       });
-      
+
       if (pad_result.same_as(result)) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.

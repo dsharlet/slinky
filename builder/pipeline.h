@@ -244,9 +244,7 @@ public:
     return func({std::move(in)}, std::move(out), std::move(padding));
   }
   // Make a copy from multiple inputs with undefined padding.
-  static func make_copy(std::vector<input> in, output out) {
-    return func(std::move(in), {std::move(out)});
-  }
+  static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
   // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
   static func make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t dim, std::vector<expr> bounds);

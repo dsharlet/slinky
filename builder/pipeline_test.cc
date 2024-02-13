@@ -96,7 +96,7 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i)*2; });
+  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
   return 0;
 }
 
@@ -1085,8 +1085,7 @@ TEST(pipeline, stacked_result) {
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-  func stacked =
-      func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
+  func stacked = func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
