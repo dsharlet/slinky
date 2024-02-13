@@ -547,7 +547,7 @@ template <int NumBufs>
 inline void* offset_base_unfolded(
     const raw_buffer& buf, const for_each_contiguous_slice_dim<NumBufs>* slice_dim, const raw_buffer& other_buf) {
   void* other_base = other_buf.base;
-  for (int d = 0; d < buf.rank; d++) {
+  for (std::size_t d = 0; d < buf.rank; d++) {
     if (slice_dim[d].impl != for_each_contiguous_slice_dim<NumBufs>::loop_folded) {
       other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
     }
