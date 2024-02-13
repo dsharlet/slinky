@@ -323,6 +323,44 @@ void fill(const raw_buffer& dst, const void* value) {
 
 namespace internal {
 
+namespace {
+
+bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+}
+
+bool can_fuse(const raw_buffer* buf, int d) {
+  assert(d > 0);
+  return can_fuse(buf->dim(d - 1), buf->dim(d));
+}
+
+bool others_can_fuse_with(span<const raw_buffer*> bufs, int d) {
+  assert(d > 0);
+  const auto* buf = bufs[0];
+  for (int n = 1; n < bufs.size(); n++) {
+    const auto* other = bufs[n];
+
+    // Our caller should have filtered out any dim at d that are folded,
+    // but it might not have done so for d-1, so we must do so here:
+    const auto& inner_other = other->dim(d - 1);
+    if (inner_other.fold_factor() != dim::unfolded) {
+      return false;
+    }
+    assert(buf->dim(d - 1).fold_factor() == dim::unfolded && buf->dim(d).fold_factor() == dim::unfolded &&
+           other->dim(d - 1).fold_factor() == dim::unfolded && other->dim(d).fold_factor() == dim::unfolded);
+
+    // I think this is sufficient:
+    const bool can = inner_other.stride() * inner_other.extent() == buf->dim(d).stride();
+    if (!can) return false;
+  }
+  return true;
+}
+
 bool other_bufs_ok(const raw_buffer* buf, const raw_buffer* other_buf) {
   if (other_buf->rank != buf->rank) return false;
   for (int d = 0; d < buf->rank; d++) {
@@ -330,6 +368,52 @@ bool other_bufs_ok(const raw_buffer* buf, const raw_buffer* other_buf) {
     if (other_buf->dims[d].max() < buf->dims[d].max()) return false;
   }
   return true;
+}
+
+void make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, for_each_contiguous_slice_dim* slice_dims) {
+  const auto* buf = bufs[0];
+  auto* next = slice_dims;
+  index_t slice_extent = 1;
+  index_t extent = 1;
+  for (int d = buf->rank - 1; d >= 0; --d) {
+    extent *= buf->dim(d).extent();
+    bool any_folded = false;
+    for (const auto* buf : bufs) {
+      if (buf->dim(d).fold_factor() != dim::unfolded) {
+        any_folded = true;
+        break;
+      }
+    }
+    if (any_folded) {
+      next->impl = for_each_contiguous_slice_dim::loop_folded;
+      for (int n = 0; n < bufs.size(); n++) {
+        next->info[n].dim = &bufs[n]->dim(d);
+      }
+      next->extent_here = extent;
+      extent = 1;
+      ++next;
+    } else if (buf->dim(d).stride() == static_cast<index_t>(buf->elem_size)) {
+      // This is the slice dimension.
+      slice_extent = extent;
+      extent = 1;
+    } else if (extent == 1) {
+      // base already points to the min, we don't need to do anything.
+    } else if (d > 0 && internal::can_fuse(buf, d) && internal::others_can_fuse_with(bufs, d)) {
+      // Let this dimension fuse with the next dimension.
+    } else {
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(buf->dim(d).min() / buf->dim(d).fold_factor() == buf->dim(d).max() / buf->dim(d).fold_factor());
+      next->impl = for_each_contiguous_slice_dim::loop_linear;
+      for (int n = 0; n < bufs.size(); n++) {
+        next->info[n].stride = bufs[n]->dim(d).stride();
+      }
+      next->extent_here = extent;
+      extent = 1;
+      ++next;
+    }
+  }
+  next->impl = for_each_contiguous_slice_dim::call_f;
+  next->extent_here = slice_extent;
 }
 
 }  // namespace internal
