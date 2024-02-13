@@ -422,35 +422,37 @@ void make_for_each_contiguous_slice_dims(
   index_t slice_extent = 1;
   index_t extent = 1;
   for (int d = buf->rank - 1; d >= 0; --d) {
+    if (buf->dim(d).extent() == 1) {
+      // base already points to the min, we don't need to do anything.
+      continue;
+    }
     extent *= buf->dim(d).extent();
     if (any_folded(bufs, d)) {
       next->impl = for_each_contiguous_slice_dim::loop_folded;
-      for (std::size_t n = 0; n < NumBufs; n++) {
-        next_dims[n].dim = &bufs[n]->dim(d);
-      }
       next->extent_here = extent;
-      extent = 1;
       ++next;
-      next_dims += NumBufs;
+      for (std::size_t n = 0; n < NumBufs; n++) {
+        next_dims->dim = &bufs[n]->dim(d);
+        ++next_dims;
+      }
+      extent = 1;
     } else if (buf->dim(d).stride() == static_cast<index_t>(buf->elem_size)) {
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
-    } else if (extent == 1) {
-      // base already points to the min, we don't need to do anything.
     } else if (d > 0 && can_fuse<NumBufs>(bufs, d)) {
       // Let this dimension fuse with the next dimension.
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf->dim(d).min() / buf->dim(d).fold_factor() == buf->dim(d).max() / buf->dim(d).fold_factor());
       next->impl = for_each_contiguous_slice_dim::loop_linear;
-      for (std::size_t n = 0; n < NumBufs; n++) {
-        next_dims[n].stride = bufs[n]->dim(d).stride();
-      }
       next->extent_here = extent;
-      extent = 1;
       ++next;
-      next_dims += NumBufs;
+      for (std::size_t n = 0; n < NumBufs; n++) {
+        next_dims->stride = bufs[n]->dim(d).stride();
+        ++next_dims;
+      }
+      extent = 1;
     }
   }
   next->impl = for_each_contiguous_slice_dim::call_f;
