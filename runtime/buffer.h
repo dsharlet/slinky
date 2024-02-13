@@ -7,8 +7,6 @@
 #include <cstring>
 #include <memory>
 
-#include <iostream>
-
 #include "runtime/util.h"
 
 namespace slinky {
