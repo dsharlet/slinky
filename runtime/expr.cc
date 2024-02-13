@@ -472,6 +472,10 @@ const expr& negative_infinity() {
   static expr e = call::make(intrinsic::negative_infinity, {});
   return e;
 }
+const expr& infinity(int sign) {
+  assert(sign != 0);
+  return sign < 0 ? negative_infinity() : positive_infinity();
+}
 const expr& indeterminate() {
   static expr e = call::make(intrinsic::indeterminate, {});
   return e;

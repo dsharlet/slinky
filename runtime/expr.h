@@ -847,12 +847,17 @@ bool is_buffer_intrinsic(intrinsic fn);
 inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
 inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
 inline bool is_indeterminate(const expr& x) { return is_intrinsic(x, intrinsic::indeterminate); }
-inline bool is_infinity(const expr& x) { return is_positive_infinity(x) || is_negative_infinity(x); }
+inline int is_infinity(const expr& x) {
+  if (is_positive_infinity(x)) return 1;
+  if (is_negative_infinity(x)) return -1;
+  return 0;
+}
 bool is_finite(const expr& x);
 
 // Get an expression representing non-numerical constants.
 const expr& positive_infinity();
 const expr& negative_infinity();
+const expr& infinity(int sign = 1);
 const expr& indeterminate();
 
 inline bool is_positive(const expr& x) {

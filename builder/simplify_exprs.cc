@@ -172,6 +172,9 @@ expr simplify(const add* op, expr a, expr b) {
 
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
+  int inf_a = is_infinity(a);
+  int inf_b = is_infinity(b);
+  if (inf_a && inf_b) return inf_a == inf_b ? a : slinky::indeterminate();
 
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
@@ -181,10 +184,7 @@ expr simplify(const add* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::positive_infinity() + rewrite::positive_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() + rewrite::negative_infinity(), rewrite::negative_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() + rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
+  if (r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       r.rewrite(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       r.rewrite(x + 0, x) ||
       r.rewrite(x + x, x * 2) ||
@@ -252,6 +252,9 @@ expr simplify(const sub* op, expr a, expr b) {
 
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
+  int inf_a = is_infinity(a);
+  int inf_b = is_infinity(b);
+  if (inf_a && inf_b) return inf_a == inf_b ? slinky::indeterminate() : a;
 
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
@@ -261,11 +264,7 @@ expr simplify(const sub* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::positive_infinity() - rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() - rewrite::negative_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() - rewrite::negative_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::negative_infinity() - rewrite::positive_infinity(), rewrite::negative_infinity()) ||
-      r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
+  if (r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       r.rewrite(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       r.rewrite(x - x, 0) ||
       r.rewrite(x - 0, x) ||
@@ -322,6 +321,9 @@ expr simplify(const mul* op, expr a, expr b) {
 
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
+  int inf_a = is_infinity(a);
+  int inf_b = is_infinity(b);
+  if (inf_a && inf_b) return infinity(inf_a * inf_b);
 
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
@@ -331,10 +333,7 @@ expr simplify(const mul* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::positive_infinity() * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() * rewrite::positive_infinity(), rewrite::negative_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() * rewrite::negative_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
+  if (r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::negative_infinity() * c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::positive_infinity() * c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
       r.rewrite(rewrite::negative_infinity() * c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
@@ -359,6 +358,7 @@ expr simplify(const div* op, expr a, expr b) {
 
   if (is_indeterminate(a)) return a;
   if (is_indeterminate(b)) return b;
+  if (is_infinity(a) && is_infinity(b)) return slinky::indeterminate();
 
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
@@ -368,11 +368,7 @@ expr simplify(const div* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::positive_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() / rewrite::negative_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::negative_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::negative_infinity() / rewrite::negative_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(x / rewrite::positive_infinity(), 0, is_finite(x)) ||
+  if (r.rewrite(x / rewrite::positive_infinity(), 0, is_finite(x)) ||
       r.rewrite(x / rewrite::negative_infinity(), 0, is_finite(x)) ||
       r.rewrite(rewrite::positive_infinity() / c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::negative_infinity() / c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
