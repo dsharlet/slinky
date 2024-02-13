@@ -301,20 +301,15 @@ public:
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
     loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step)
-      : sym(sym),
-        orig_min(orig_min),
-        bounds(bounds),
-        step(step),
-        buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
+        : sym(sym), orig_min(orig_min), bounds(bounds), step(step),
+          buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
   std::vector<loop_info> loops;
 
   // We need an unknown to make equations of.
   var x;
 
-  symbol_map<box_expr>& current_buffer_bounds() {
-    return *loops.back().buffer_bounds;
-  }
+  symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
     loops.emplace_back(0, expr(), interval_expr::none(), expr());
