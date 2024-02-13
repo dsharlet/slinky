@@ -471,29 +471,27 @@ inline void call_fn(const F& f, index_t slice_extent, const std::array<void*, Nu
 }
 
 template <typename F, std::size_t NumBufs>
-void for_each_contiguous_slice_impl(const std::array<void*, NumBufs>& bases,
+void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
     const for_each_contiguous_slice_dim* slice_dim, dim_or_stride* dims, const F& f) {
   if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
 
     call_fn<F, NumBufs>(f, slice_dim->extent_here, bases);
 
   } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
-    std::array<void*, NumBufs> offset_bases = bases;
-
     const auto* next = slice_dim + 1;
     if (next->impl == for_each_contiguous_slice_dim::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-        call_fn<F, NumBufs>(f, next->extent_here, offset_bases);
+        call_fn<F, NumBufs>(f, next->extent_here, bases);
         for (std::size_t n = 0; n < NumBufs; n++) {
-          offset_bases[n] = offset_bytes(offset_bases[n], dims[n].stride);
+          bases[n] = offset_bytes(bases[n], dims[n].stride);
         }
       }
     } else {
       for (index_t i = 0; i < slice_dim->extent_here; ++i) {
-        for_each_contiguous_slice_impl<F, NumBufs>(offset_bases, slice_dim + 1, dims + NumBufs, f);
+        for_each_contiguous_slice_impl<F, NumBufs>(bases, slice_dim + 1, dims + NumBufs, f);
         for (std::size_t n = 0; n < NumBufs; n++) {
-          offset_bases[n] = offset_bytes(offset_bases[n], dims[n].stride);
+          bases[n] = offset_bytes(bases[n], dims[n].stride);
         }
       }
     }
