@@ -392,16 +392,6 @@ struct for_each_contiguous_slice_dim {
   per_buf_info info[NumBufs];  // 0 = main; 1...NumBufs-1 = others
 };
 
-inline void add_stride_to_bases(const per_buf_info*) {
-  // nothing
-}
-
-template <typename First, typename... Rest>
-inline void add_stride_to_bases(const per_buf_info* info, First& first, Rest&... rest) {
-  first = offset_bytes(first, info->stride);
-  add_stride_to_bases(info + 1, rest...);
-}
-
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
     return false;
