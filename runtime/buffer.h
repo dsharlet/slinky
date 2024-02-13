@@ -389,6 +389,14 @@ struct for_each_contiguous_slice_dim {
 };
 
 template <std::size_t NumBufs>
+bool any_folded(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
+  for (const auto& buf : bufs) {
+    if (buf->dim(d).fold_factor() != dim::unfolded) return true;
+  }
+  return false;
+}
+
+template <std::size_t NumBufs>
 inline bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
   assert(d > 0);
   const auto* buf = bufs[0];
@@ -584,13 +592,13 @@ void for_each_index(const raw_buffer& buf, const F& f) {
 template <typename F, typename... Args>
 void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   std::array<const raw_buffer*, sizeof...(Args) + 1> bufs = {&buf, &other_bufs...};
-  return for_each_contiguous_slice<F, sizeof...(Args)+1>(std::move(bufs), f);
+  return for_each_contiguous_slice<F, sizeof...(Args)+1>(bufs, f);
 }
 
 // A non-variadic version of for_each_contiguous_slice() that takes the optional other_bufs
 // as a std::array<> rather than as variadic args.
 template <typename F, int NumBufs>
-void for_each_contiguous_slice(std::array<const raw_buffer*, NumBufs> bufs, const F& f) {
+void for_each_contiguous_slice(const std::array<const raw_buffer*, NumBufs>& bufs, const F& f) {
   if (bufs.empty()) return;
 
   for (int n = 1; n < NumBufs; n++) {
@@ -609,7 +617,7 @@ void for_each_contiguous_slice(std::array<const raw_buffer*, NumBufs> bufs, cons
     bases[n] = offset_base_unfolded(*bufs[0], slice_dims, *bufs[n]);
   }
 
-  internal::for_each_contiguous_slice_impl<F, NumBufs>(std::move(bases), slice_dims, dims, f);
+  internal::for_each_contiguous_slice_impl<F, NumBufs>(bases, slice_dims, dims, f);
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
