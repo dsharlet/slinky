@@ -422,18 +422,19 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
+    
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x - y < x, 0 < y) ||
-      r.rewrite(0 - x < c0, -c0 < x) ||
       r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
+      r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x < x - y, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
+      r.rewrite(x < x - y, y < 0) ||
+      r.rewrite(x - y < y, x < y * 2) ||
+      r.rewrite(y < x - y, y * 2 < x) ||
+
       r.rewrite(x + y < x + z, y < z) ||
       r.rewrite(x - y < x - z, z < y) ||
       r.rewrite(x - y < z - y, x < z) ||
@@ -483,18 +484,22 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(x <= x + y, 0 <= y) ||
       r.rewrite(x + y <= x, y <= 0) ||
       r.rewrite(x - y <= x, 0 <= y) ||
-      r.rewrite(0 - x <= c0, -c0 <= x) ||
-      r.rewrite(c0 - x <= y, c0 <= y + x) ||
-      r.rewrite(x <= c1 - y, x + y <= c1) ||
-      r.rewrite(x + c0 <= y + c1, x - y <= eval(c1 - c0)) ||
+
+      r.rewrite(x + c0 <= c1, x <= eval(c1 - c0)) ||
+      r.rewrite(c0 - x <= c1, eval(c0 - c1) <= x) ||
+      r.rewrite(c0 <= c1 - x, x <= eval(c1 - c0)) ||
+      r.rewrite(c0 <= x + c1, eval(c0 - c1) <= x) ||
 
       r.rewrite((x + c0) / c1 <= x / c1, eval(c0 <= 0)) ||
       r.rewrite(x / c1 <= (x + c0) / c1, eval(0 <= c0)) ||
-
+    
       r.rewrite(x <= x + y, 0 <= y) ||
       r.rewrite(x + y <= x, y <= 0) ||
-      r.rewrite(x <= x - y, y <= 0) ||
       r.rewrite(x - y <= x, 0 <= y) ||
+      r.rewrite(x <= x - y, y <= 0) ||
+      r.rewrite(x - y <= y, x <= y * 2) ||
+      r.rewrite(y <= x - y, y * 2 <= x) ||
+    
       r.rewrite(x + y <= x + z, y <= z) ||
       r.rewrite(x - y <= x - z, z <= y) ||
       r.rewrite(x - y <= z - y, x <= z) ||
