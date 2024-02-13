@@ -221,7 +221,7 @@ void BM_for_each_contiguous_slice_multi(benchmark::State& state, Fn fn) {
   for (auto _ : state) {
     for_each_contiguous_slice(buf, fn, buf2);
   }
-  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * buf.size_bytes() * 2);
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * (buf.size_bytes() + buf2.size_bytes()));
 }
 
 void BM_for_each_contiguous_slice_multi(benchmark::State& state) {
