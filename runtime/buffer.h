@@ -489,20 +489,6 @@ void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) 
 
 namespace internal {
 
-#if 0
-#define sink std::cerr
-#else
-class SinkPrinter {
-public:
-  SinkPrinter() {}
-};
-template <typename T>
-SinkPrinter operator<<(const SinkPrinter& s, T) {
-  return s;
-}
-#define sink slinky::internal::SinkPrinter()
-#endif
-
 struct per_buf_info {
   union {
     // For loop_folded to call flat_offset_bytes
@@ -592,32 +578,25 @@ void make_for_each_contiguous_slice_multi_dims(
   auto* next = slice_dims;
   index_t slice_extent = 1;
   index_t extent = 1;
-  sink << "\nFECS rank=" << buf.rank << "\n";
   for (int d = buf.rank - 1; d >= 0; --d) {
     extent *= buf.dim(d).extent();
-    sink << "d=" << d << " extent=" << extent << "\n";
     const bool any_others_folded = (... || (other_bufs.dim(d).fold_factor() != dim::unfolded));
     const bool any_folded = buf.dim(d).fold_factor() != dim::unfolded || any_others_folded;
     if (any_folded) {
-      sink << "folded\n";
       next->impl = for_each_contiguous_slice_multi_dim<N>::loop_folded;
       assign_dim(d, next->info, buf, other_bufs...);
       next->extent_here = extent;
       extent = 1;  // TODO(srj)
       ++next;
     } else if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
-      sink << "slice_extent=" << slice_extent << "\n";
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
     } else if (extent == 1) {
-      sink << "base already points to the min\n";
       // base already points to the min, we don't need to do anything.
     } else if (d > 0 && can_fuse_multi(buf, d) && others_can_fuse_with(buf, d, other_bufs...)) {
-      sink << "fuse\n";
       // Let this dimension fuse with the next dimension.
     } else {
-      sink << "linear\n";
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
       next->impl = for_each_contiguous_slice_multi_dim<N>::loop_linear;
@@ -629,7 +608,6 @@ void make_for_each_contiguous_slice_multi_dims(
   }
   next->impl = for_each_contiguous_slice_multi_dim<N>::call_f;
   next->extent_here = slice_extent;
-  sink << "call_f slice_extent=" << slice_extent << "\n\n";
 }
 
 template <typename... Args, std::size_t... Indices>

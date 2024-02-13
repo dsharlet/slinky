@@ -19,7 +19,9 @@ std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::Stat
 }
 
 template <typename Fn>
-__attribute__((noinline)) void no_inline(Fn&& fn) { fn(); }
+__attribute__((noinline)) void no_inline(Fn&& fn) {
+  fn();
+}
 
 void BM_memcpy(benchmark::State& state) {
   std::size_t size = state.range(0);
@@ -147,6 +149,7 @@ void BM_for_each_contiguous_slice(benchmark::State& state, Fn fn) {
   for (auto _ : state) {
     for_each_contiguous_slice(buf, fn);
   }
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * buf.size_bytes());
 }
 
 template <typename Fn>
@@ -166,6 +169,7 @@ void BM_for_each_slice_hardcoded(benchmark::State& state, Fn fn) {
       }
     }
   }
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * buf.size_bytes());
 }
 
 // The difference between these two benchmarks on the same size buffer gives an indication of how much time is spent in
@@ -177,6 +181,8 @@ BENCHMARK(BM_for_each_contiguous_slice)->Args({64, 16, 1});
 BENCHMARK(BM_for_each_slice_hardcoded)->Args({64, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice)->Args({64, 4, 4});
 BENCHMARK(BM_for_each_slice_hardcoded)->Args({64, 4, 4});
+BENCHMARK(BM_for_each_contiguous_slice)->Args({1024, 256, 4});
+BENCHMARK(BM_for_each_slice_hardcoded)->Args({1024, 256, 4});
 
 void memset_slices_multi(void* slice, index_t extent, void* slice2) {
   memset(slice, 0, extent);
@@ -197,12 +203,16 @@ void BM_for_each_contiguous_slice_multi(benchmark::State& state, Fn fn) {
   for (auto _ : state) {
     for_each_contiguous_slice_multi(buf, fn, buf2);
   }
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * buf.size_bytes() * 2);
 }
 
-void BM_for_each_contiguous_slice_multi(benchmark::State& state) { BM_for_each_contiguous_slice_multi(state, memset_slices_multi); }
+void BM_for_each_contiguous_slice_multi(benchmark::State& state) {
+  BM_for_each_contiguous_slice_multi(state, memset_slices_multi);
+}
 
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({64, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({64, 4, 4});
+BENCHMARK(BM_for_each_contiguous_slice_multi)->Args({1024, 256, 4});
 
 template <typename Fn>
 void BM_for_each_contiguous_slice_multi_single(benchmark::State& state, Fn fn) {
@@ -215,12 +225,17 @@ void BM_for_each_contiguous_slice_multi_single(benchmark::State& state, Fn fn) {
   for (auto _ : state) {
     for_each_contiguous_slice_multi(buf, fn);
   }
+  state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * buf.size_bytes());
 }
 
-void BM_for_each_contiguous_slice_multi_single(benchmark::State& state) { BM_for_each_contiguous_slice_multi_single(state, memset_slice); }
+void BM_for_each_contiguous_slice_multi_single(benchmark::State& state) {
+  BM_for_each_contiguous_slice_multi_single(state, memset_slice);
+}
 
-// These benchmarks are meant to inform how much overhead BM_for_each_contiguous_slice_multi has over the non-multi variant
+// These benchmarks are meant to inform how much overhead BM_for_each_contiguous_slice_multi has over the non-multi
+// variant
 BENCHMARK(BM_for_each_contiguous_slice_multi_single)->Args({64, 16, 1});
 BENCHMARK(BM_for_each_contiguous_slice_multi_single)->Args({64, 4, 4});
+BENCHMARK(BM_for_each_contiguous_slice_multi_single)->Args({1024, 256, 4});
 
 }  // namespace slinky
