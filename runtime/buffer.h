@@ -392,37 +392,19 @@ struct for_each_contiguous_slice_dim {
   per_buf_info info[NumBufs];  // 0 = main; 1...NumBufs-1 = others
 };
 
-inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
-    return false;
-  }
-  return inner.stride() * inner.extent() == outer.stride();
-}
-
-inline bool can_fuse(const raw_buffer* buf, int d) {
-  assert(d > 0);
-  return can_fuse(buf->dim(d - 1), buf->dim(d));
-}
-
 template <int NumBufs>
-inline bool others_can_fuse_with(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
+inline bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
   assert(d > 0);
   const auto* buf = bufs[0];
-  for (int n = 1; n < NumBufs; n++) {
-    const auto* other = bufs[n];
+  const dim& outer = buf->dim(d);
+  const index_t buf_dim_d_stride = outer.stride();
 
-    // Our caller should have filtered out any dim at d that are folded,
-    // but it might not have done so for d-1, so we must do so here:
-    const auto& inner_other = other->dim(d - 1);
-    if (inner_other.fold_factor() != dim::unfolded) {
-      return false;
-    }
-    assert(buf->dim(d - 1).fold_factor() == dim::unfolded && buf->dim(d).fold_factor() == dim::unfolded &&
-           other->dim(d - 1).fold_factor() == dim::unfolded && other->dim(d).fold_factor() == dim::unfolded);
-
-    // I think this is sufficient:
-    const bool can = inner_other.stride() * inner_other.extent() == buf->dim(d).stride();
-    if (!can) return false;
+  for (int n = 0; n < NumBufs; n++) {
+    // Our caller should have ensured this
+    assert(bufs[n]->dim(d).fold_factor() == dim::unfolded);
+    const auto& inner_other = bufs[n]->dim(d - 1);
+    if (inner_other.fold_factor() != dim::unfolded) return false;
+    if (inner_other.stride() * inner_other.extent() != buf_dim_d_stride) return false;
   }
   return true;
 }
@@ -444,14 +426,7 @@ void make_for_each_contiguous_slice_dims(
   index_t extent = 1;
   for (int d = buf->rank - 1; d >= 0; --d) {
     extent *= buf->dim(d).extent();
-    bool any_folded = false;
-    for (const auto* buf : bufs) {
-      if (buf->dim(d).fold_factor() != dim::unfolded) {
-        any_folded = true;
-        break;
-      }
-    }
-    if (any_folded) {
+    if (any_folded<NumBufs>(bufs, d)) {
       next->impl = for_each_contiguous_slice_dim<NumBufs>::loop_folded;
       for (int n = 0; n < NumBufs; n++) {
         next->info[n].dim = &bufs[n]->dim(d);
@@ -465,7 +440,7 @@ void make_for_each_contiguous_slice_dims(
       extent = 1;
     } else if (extent == 1) {
       // base already points to the min, we don't need to do anything.
-    } else if (d > 0 && can_fuse(buf, d) && others_can_fuse_with<NumBufs>(bufs, d)) {
+    } else if (d > 0 && can_fuse<NumBufs>(bufs, d)) {
       // Let this dimension fuse with the next dimension.
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
