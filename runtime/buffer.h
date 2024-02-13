@@ -494,12 +494,11 @@ namespace internal {
 #else
 class SinkPrinter {
 public:
-    SinkPrinter() {
-    }
+  SinkPrinter() {}
 };
-template<typename T>
-SinkPrinter operator<<(const SinkPrinter &s, T) {
-    return s;
+template <typename T>
+SinkPrinter operator<<(const SinkPrinter& s, T) {
+  return s;
 }
 #define sink slinky::internal::SinkPrinter()
 #endif
@@ -513,16 +512,14 @@ struct per_buf_info {
   };
 };
 
-enum class loop_type {
-  call_f,       // Uses extent
-  loop_linear,  // Uses stride, extent
-  loop_folded,  // Uses dim, extent
-};
-
-template<int N>
+template <int N>
 struct for_each_contiguous_slice_multi_dim {
-  loop_type    impl;
-  index_t      extent_here;
+  enum {
+    call_f,       // Uses extent
+    loop_linear,  // Uses stride, extent
+    loop_folded,  // Uses dim, extent
+  } impl;
+  index_t extent_here;
   per_buf_info info[N];  // 0 = main; 1...N-1 = others
 };
 
@@ -530,27 +527,27 @@ inline void assign_stride(int, per_buf_info*) {
   // nothing
 }
 
-template<typename First, typename... Rest>
+template <typename First, typename... Rest>
 inline void assign_stride(int d, per_buf_info* info, const First& first, const Rest&... rest) {
-    info->stride = first.dim(d).stride();
-    assign_stride(d, info + 1, rest...);
+  info->stride = first.dim(d).stride();
+  assign_stride(d, info + 1, rest...);
 }
 
 inline void assign_dim(int, per_buf_info*) {
   // nothing
 }
 
-template<typename First, typename... Rest>
+template <typename First, typename... Rest>
 inline void assign_dim(int d, per_buf_info* info, const First& first, const Rest&... rest) {
-    info->dim = &first.dim(d);
-    assign_dim(d, info + 1, rest...);
+  info->dim = &first.dim(d);
+  assign_dim(d, info + 1, rest...);
 }
 
 inline void add_stride_to_bases(const per_buf_info*) {
   // nothing
 }
 
-template<typename First, typename... Rest>
+template <typename First, typename... Rest>
 inline void add_stride_to_bases(const per_buf_info* info, First& first, Rest&... rest) {
   first = offset_bytes(first, info->stride);
   add_stride_to_bases(info + 1, rest...);
@@ -568,12 +565,12 @@ inline bool can_fuse_multi(const raw_buffer& buf, int d) {
   return can_fuse_multi(buf.dim(d - 1), buf.dim(d));
 }
 
-template<typename... Args>
+template <typename... Args>
 inline bool others_can_fuse_with(const raw_buffer& buf, int d) {
   return true;
 }
 
-template<typename First, typename... Rest>
+template <typename First, typename... Rest>
 inline bool others_can_fuse_with(const raw_buffer& buf, int d, const First& first, const Rest&... rest) {
   assert(d > 0);
   // Our caller should have filtered out any dim at d that are folded,
@@ -589,26 +586,27 @@ inline bool others_can_fuse_with(const raw_buffer& buf, int d, const First& firs
   return can && others_can_fuse_with(buf, d, rest...);
 }
 
-template<int N, typename... Args>
-void make_for_each_contiguous_slice_multi_dims(const raw_buffer& buf, for_each_contiguous_slice_multi_dim<N>* slice_dims, const Args&... other_bufs) {
+template <int N, typename... Args>
+void make_for_each_contiguous_slice_multi_dims(
+    const raw_buffer& buf, for_each_contiguous_slice_multi_dim<N>* slice_dims, const Args&... other_bufs) {
   auto* next = slice_dims;
   index_t slice_extent = 1;
   index_t extent = 1;
-  sink << "\nFECS rank="<<buf.rank<<"\n";
+  sink << "\nFECS rank=" << buf.rank << "\n";
   for (int d = buf.rank - 1; d >= 0; --d) {
     extent *= buf.dim(d).extent();
-    sink << "d="<<d<<" extent="<<extent<<"\n";
+    sink << "d=" << d << " extent=" << extent << "\n";
     const bool any_others_folded = (... || (other_bufs.dim(d).fold_factor() != dim::unfolded));
     const bool any_folded = buf.dim(d).fold_factor() != dim::unfolded || any_others_folded;
     if (any_folded) {
       sink << "folded\n";
-      next->impl = loop_type::loop_folded;
+      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_folded;
       assign_dim(d, next->info, buf, other_bufs...);
       next->extent_here = extent;
       extent = 1;  // TODO(srj)
       ++next;
     } else if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
-      sink << "slice_extent="<<slice_extent<<"\n";
+      sink << "slice_extent=" << slice_extent << "\n";
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
@@ -622,37 +620,38 @@ void make_for_each_contiguous_slice_multi_dims(const raw_buffer& buf, for_each_c
       sink << "linear\n";
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf.dim(d).min() / buf.dim(d).fold_factor() == buf.dim(d).max() / buf.dim(d).fold_factor());
-      next->impl = loop_type::loop_linear;
+      next->impl = for_each_contiguous_slice_multi_dim<N>::loop_linear;
       assign_stride(d, next->info, buf, other_bufs...);
       next->extent_here = extent;
       extent = 1;
       ++next;
     }
   }
-  next->impl = loop_type::call_f;
+  next->impl = for_each_contiguous_slice_multi_dim<N>::call_f;
   next->extent_here = slice_extent;
-  sink << "call_f slice_extent="<<slice_extent<<"\n\n";
+  sink << "call_f slice_extent=" << slice_extent << "\n\n";
 }
 
 template <typename... Args, std::size_t... Indices>
-inline void offset_folded_bases(int i, const per_buf_info* info, std::array<void*, sizeof...(Args)>& offset_bases, std::index_sequence<Indices...>, const Args&... other_bases) {
+inline void offset_folded_bases(int i, const per_buf_info* info, std::array<void*, sizeof...(Args)>& offset_bases,
+    std::index_sequence<Indices...>, const Args&... other_bases) {
   ((offset_bases[Indices] = offset_bytes(other_bases, info[Indices].dim->flat_offset_bytes(i))), ...);
 }
 
 template <int N, typename F, std::size_t... Indices>
-void for_each_contiguous_slice_multi_array(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f,
-  const std::array<void*, sizeof...(Indices)>& other_bases, std::index_sequence<Indices...>) {
+void for_each_contiguous_slice_multi_array(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim,
+    const F& f, const std::array<void*, sizeof...(Indices)>& other_bases, std::index_sequence<Indices...>) {
   for_each_contiguous_slice_multi_impl(base, slice_dim, f, other_bases[Indices]...);
 }
 
-
 template <int N, typename F, typename... Args>
-void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f, Args... other_bases) {
-  if (slice_dim->impl == loop_type::call_f) {
+void for_each_contiguous_slice_multi_impl(
+    void* base, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const F& f, Args... other_bases) {
+  if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::call_f) {
     f(base, slice_dim->extent_here, static_cast<void*>(other_bases)...);
-  } else if (slice_dim->impl == loop_type::loop_linear) {
+  } else if (slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_linear) {
     const auto* next = slice_dim + 1;
-    if (next->impl == loop_type::call_f) {
+    if (next->impl == for_each_contiguous_slice_multi_dim<N>::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = 0; i < slice_dim->extent_here; ++i) {
         f(base, next->extent_here, static_cast<void*>(other_bases)...);
@@ -665,7 +664,7 @@ void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_
       }
     }
   } else {
-    assert(slice_dim->impl == loop_type::loop_folded);
+    assert(slice_dim->impl == for_each_contiguous_slice_multi_dim<N>::loop_folded);
 
     std::array<void*, sizeof...(Args)> offset_bases;
 
@@ -676,9 +675,10 @@ void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_
     index_t begin = slice_dim->info[0].dim->begin();
     index_t end = begin + slice_dim->extent_here;
     for (index_t i = begin; i < end; ++i) {
-      offset_folded_bases<Args...>(i, slice_dim->info + 1, offset_bases, std::make_index_sequence<sizeof...(Args)>(), other_bases...);
+      offset_folded_bases<Args...>(
+          i, slice_dim->info + 1, offset_bases, std::make_index_sequence<sizeof...(Args)>(), other_bases...);
       for_each_contiguous_slice_multi_array(offset_bytes(base, slice_dim->info[0].dim->flat_offset_bytes(i)),
-                                            slice_dim + 1, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
+          slice_dim + 1, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
     }
   }
 }
@@ -686,12 +686,11 @@ void for_each_contiguous_slice_multi_impl(void* base, const for_each_contiguous_
 bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
 
 template <int N>
-inline void* offset_base_unfolded(const raw_buffer& buf,
-                                  const for_each_contiguous_slice_multi_dim<N>* slice_dim,
-                                  const raw_buffer& other_buf) {
+inline void* offset_base_unfolded(
+    const raw_buffer& buf, const for_each_contiguous_slice_multi_dim<N>* slice_dim, const raw_buffer& other_buf) {
   void* other_base = other_buf.base;
   for (int d = 0; d < buf.rank; d++) {
-    if (slice_dim[d].impl != loop_type::loop_folded) {
+    if (slice_dim[d].impl != for_each_contiguous_slice_multi_dim<N>::loop_folded) {
       other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
     }
   }
@@ -699,14 +698,11 @@ inline void* offset_base_unfolded(const raw_buffer& buf,
 }
 
 template <int N, typename... Args, std::size_t... Indices>
-void offset_unfolded_dimensions(const raw_buffer& buf,
-                                 const for_each_contiguous_slice_multi_dim<N>* slice_dim,
-                                 const std::array<const raw_buffer*, sizeof...(Indices)>& other_bufs,
-                                 std::array<void*, sizeof...(Indices)>& offset_bases,
-                                 std::index_sequence<Indices...>) {
+void offset_unfolded_dimensions(const raw_buffer& buf, const for_each_contiguous_slice_multi_dim<N>* slice_dim,
+    const std::array<const raw_buffer*, sizeof...(Indices)>& other_bufs,
+    std::array<void*, sizeof...(Indices)>& offset_bases, std::index_sequence<Indices...>) {
   ((offset_bases[Indices] = offset_base_unfolded(buf, slice_dim, *other_bufs[Indices])), ...);
 }
-
 
 }  // namespace internal
 
@@ -727,9 +723,11 @@ void for_each_contiguous_slice_multi(const raw_buffer& buf, const F& f, const Ar
   internal::make_for_each_contiguous_slice_multi_dims<N>(buf, dims, other_bufs...);
 
   std::array<void*, sizeof...(Args)> offset_bases;
-  internal::offset_unfolded_dimensions<N>(buf, dims, { &other_bufs... }, offset_bases, std::make_index_sequence<sizeof...(Args)>());
+  internal::offset_unfolded_dimensions<N>(
+      buf, dims, {&other_bufs...}, offset_bases, std::make_index_sequence<sizeof...(Args)>());
 
-  internal::for_each_contiguous_slice_multi_array(buf.base, dims, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
+  internal::for_each_contiguous_slice_multi_array(
+      buf.base, dims, f, offset_bases, std::make_index_sequence<sizeof...(Args)>());
 }
 
 }  // namespace slinky
