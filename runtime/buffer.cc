@@ -366,7 +366,7 @@ void make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, std
   auto* next_dims = dims;
   index_t slice_extent = 1;
   index_t extent = 1;
-  for (int d = buf->rank - 1; d >= 0; --d) {
+  for (int d = static_cast<int>(buf->rank) - 1; d >= 0; --d) {
     if (buf->dim(d).extent() == 1) {
       // base already points to the min, we don't need to do anything.
       continue;
