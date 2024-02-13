@@ -469,7 +469,7 @@ void make_for_each_contiguous_slice_dims(
       next->impl = for_each_contiguous_slice_dim<N>::loop_folded;
       assign_dim(d, next->info, buf, other_bufs...);
       next->extent_here = extent;
-      extent = 1;  // TODO(srj)
+      extent = 1;
       ++next;
     } else if (buf.dim(d).stride() == static_cast<index_t>(buf.elem_size)) {
       // This is the slice dimension.
