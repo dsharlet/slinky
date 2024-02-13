@@ -526,18 +526,6 @@ struct for_each_contiguous_slice_multi_dim {
   per_buf_info info[N];  // 0 = main; 1...N-1 = others
 };
 
-inline bool can_fuse_multi(const dim& inner, const dim& outer) {
-  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
-    return false;
-  }
-  return inner.stride() * inner.extent() == outer.stride();
-}
-
-inline bool can_fuse_multi(const raw_buffer& buf, int d) {
-  assert(d > 0);
-  return can_fuse_multi(buf.dim(d - 1), buf.dim(d));
-}
-
 inline void assign_stride(int, per_buf_info*) {
   // nothing
 }
@@ -568,6 +556,18 @@ inline void add_stride_to_bases(const per_buf_info* info, First& first, Rest&...
   add_stride_to_bases(info + 1, rest...);
 }
 
+inline bool can_fuse_multi(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  return inner.stride() * inner.extent() == outer.stride();
+}
+
+inline bool can_fuse_multi(const raw_buffer& buf, int d) {
+  assert(d > 0);
+  return can_fuse_multi(buf.dim(d - 1), buf.dim(d));
+}
+
 template<typename... Args>
 inline bool others_can_fuse_with(const raw_buffer& buf, int d) {
   return true;
@@ -575,7 +575,17 @@ inline bool others_can_fuse_with(const raw_buffer& buf, int d) {
 
 template<typename First, typename... Rest>
 inline bool others_can_fuse_with(const raw_buffer& buf, int d, const First& first, const Rest&... rest) {
-  const bool can = false;  // TODO
+  assert(d > 0);
+  // Our caller should have filtered out any dim at d that are folded,
+  // but it might not have done so for d-1, so we must do so here:
+  const auto& inner_other = first.dim(d - 1);
+  if (inner_other.fold_factor() != dim::unfolded) {
+    return false;
+  }
+  assert(buf.dim(d - 1).fold_factor() == dim::unfolded && buf.dim(d).fold_factor() == dim::unfolded &&
+         first.dim(d - 1).fold_factor() == dim::unfolded && first.dim(d).fold_factor() == dim::unfolded);
+  // I think this is sufficient:
+  const bool can = inner_other.stride() * inner_other.extent() == buf.dim(d).stride();
   return can && others_can_fuse_with(buf, d, rest...);
 }
 

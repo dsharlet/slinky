@@ -399,12 +399,15 @@ TEST(buffer, for_each_contiguous_slice_multi) {
   buf.allocate();
   buf2.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-    memset(slice, 7, slice_extent);
-    memset(slice2, 7, slice_extent);
-    slices++;
-  }, buf2);
-  ASSERT_EQ(slices, 600);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2) {
+        memset(slice, 7, slice_extent);
+        memset(slice2, 7, slice_extent);
+        slices++;
+      },
+      buf2);
+  ASSERT_EQ(slices, 1);
   for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 7); });
 }
@@ -417,15 +420,18 @@ TEST(buffer, for_each_contiguous_slice_multi_padded) {
     buffer<int, 3> buf2({10, 20, 30});
     buf2.allocate();
     int value = 0;
-    for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-      int* s = reinterpret_cast<int*>(slice);
-      int* s2 = reinterpret_cast<int*>(slice2);
-      for (int i = 0; i < slice_extent; i++) {
-        *s++ = value;
-        *s2++ = value;
-        value++;
-      }
-    }, buf2);
+    for_each_contiguous_slice_multi(
+        buf,
+        [&](void* slice, index_t slice_extent, void* slice2) {
+          int* s = reinterpret_cast<int*>(slice);
+          int* s2 = reinterpret_cast<int*>(slice2);
+          for (int i = 0; i < slice_extent; i++) {
+            *s++ = value;
+            *s2++ = value;
+            value++;
+          }
+        },
+        buf2);
     value = 0;
     for (int c = 0; c < (padded_dim == 2 ? 8 : 30); c++) {
       for (int y = 0; y < (padded_dim == 1 ? 8 : 20); y++) {
@@ -447,15 +453,18 @@ TEST(buffer, for_each_contiguous_slice_multi_non_innermost) {
   buf2.allocate();
   std::swap(buf2.dim(0), buf2.dim(1));
   int value = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-    int* s = reinterpret_cast<int*>(slice);
-    int* s2 = reinterpret_cast<int*>(slice2);
-    for (int i = 0; i < slice_extent; i++) {
-      *s++ = value;
-      *s2++ = value;
-      value++;
-    }
-  }, buf2);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2) {
+        int* s = reinterpret_cast<int*>(slice);
+        int* s2 = reinterpret_cast<int*>(slice2);
+        for (int i = 0; i < slice_extent; i++) {
+          *s++ = value;
+          *s2++ = value;
+          value++;
+        }
+      },
+      buf2);
   value = 0;
   for (int c = 0; c < 30; c++) {
     for (int y = 0; y < 20; y++) {
@@ -476,14 +485,68 @@ TEST(buffer, for_each_contiguous_slice_multi_both_non_zero_min) {
   buf2.allocate();
   buf2.translate(1, 2, 3);
   int slices = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-    memset(slice, 7, slice_extent);
-    memset(slice2, 7, slice_extent);
-    slices++;
-  }, buf2);
-  ASSERT_EQ(slices, 600);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2) {
+        memset(slice, 7, slice_extent);
+        memset(slice2, 7, slice_extent);
+        slices++;
+      },
+      buf2);
+  // These should fuse into a single slice
+  ASSERT_EQ(slices, 1);
   for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
+  // TODO: if/when buffer<> gets a move ctor, do this in a vector<>
+  buffer<char, 3> buf1({10, 20, 30});
+  buffer<char, 3> buf2({10, 20, 30});
+  buffer<char, 3> buf3({10, 20, 30});
+  buffer<char, 3> buf4({10, 20, 30});
+  buffer<char, 3> buf5({10, 20, 30});
+  buffer<char, 3> buf6({10, 20, 30});
+  buffer<char, 3> buf7({10, 20, 30});
+  buffer<char, 3> buf8({10, 20, 30});
+  buffer<char, 3> buf9({10, 20, 30});
+  buf1.allocate();
+  buf2.allocate();
+  buf3.allocate();
+  buf4.allocate();
+  buf5.allocate();
+  buf6.allocate();
+  buf7.allocate();
+  buf8.allocate();
+  buf9.allocate();
+  int slices = 0;
+  for_each_contiguous_slice_multi(
+      buf1,
+      [&](void* slice1, index_t slice_extent, void* slice2, void* slice3, void* slice4, void* slice5, void* slice6,
+          void* slice7, void* slice8, void* slice9) {
+        memset(slice1, 1, slice_extent);
+        memset(slice2, 2, slice_extent);
+        memset(slice3, 3, slice_extent);
+        memset(slice4, 4, slice_extent);
+        memset(slice5, 5, slice_extent);
+        memset(slice6, 6, slice_extent);
+        memset(slice7, 7, slice_extent);
+        memset(slice8, 8, slice_extent);
+        memset(slice9, 9, slice_extent);
+        slices++;
+      },
+      buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);
+  // These should fuse into a single slice
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf1, [&](auto i) { ASSERT_EQ(buf1(i), 1); });
+  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 2); });
+  for_each_index(buf3, [&](auto i) { ASSERT_EQ(buf3(i), 3); });
+  for_each_index(buf4, [&](auto i) { ASSERT_EQ(buf4(i), 4); });
+  for_each_index(buf5, [&](auto i) { ASSERT_EQ(buf5(i), 5); });
+  for_each_index(buf6, [&](auto i) { ASSERT_EQ(buf6(i), 6); });
+  for_each_index(buf7, [&](auto i) { ASSERT_EQ(buf7(i), 7); });
+  for_each_index(buf8, [&](auto i) { ASSERT_EQ(buf8(i), 8); });
+  for_each_index(buf9, [&](auto i) { ASSERT_EQ(buf9(i), 9); });
 }
 
 TEST(buffer, for_each_contiguous_slice_multi_extra_buf_offset_negative) {
@@ -494,16 +557,19 @@ TEST(buffer, for_each_contiguous_slice_multi_extra_buf_offset_negative) {
   buf2.translate(-1, -1, -1);
   int slices = 0;
   int value = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-    int* s = reinterpret_cast<int*>(slice);
-    int* s2 = reinterpret_cast<int*>(slice2);
-    for (int i = 0; i < slice_extent; i++) {
-      *s++ = value;
-      *s2++ = value;
-      value++;
-    }
-    slices++;
-  }, buf2);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2) {
+        int* s = reinterpret_cast<int*>(slice);
+        int* s2 = reinterpret_cast<int*>(slice2);
+        for (int i = 0; i < slice_extent; i++) {
+          *s++ = value;
+          *s2++ = value;
+          value++;
+        }
+        slices++;
+      },
+      buf2);
   ASSERT_EQ(slices, 600);
   value = 0;
   for (int c = 0; c < 30; c++) {
@@ -528,11 +594,14 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_main_buffer) {
   for (int crop_extent : {1, 2, 3, 4}) {
     buf.dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
-    for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-      memset(slice, 7, slice_extent);
-      memset(slice2, 7, slice_extent);
-      slices++;
-    }, buf2);
+    for_each_contiguous_slice_multi(
+        buf,
+        [&](void* slice, index_t slice_extent, void* slice2) {
+          memset(slice, 7, slice_extent);
+          memset(slice2, 7, slice_extent);
+          slices++;
+        },
+        buf2);
     ASSERT_EQ(slices, crop_extent * 30);
     for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
     for (int c = 0; c < 30; c++) {
@@ -554,11 +623,14 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_other_buffer) {
   buf2.dim(1).set_fold_factor(4);
   buf2.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2) {
-    memset(slice, 7, slice_extent);
-    memset(slice2, 7, slice_extent);
-    slices++;
-  }, buf2);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2) {
+        memset(slice, 7, slice_extent);
+        memset(slice2, 7, slice_extent);
+        slices++;
+      },
+      buf2);
   ASSERT_EQ(slices, 600);
   for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   for (int c = 0; c < C; c++) {
@@ -583,12 +655,15 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_all) {
   buf3.dim(1).set_fold_factor(5);
   buf3.allocate();
   int slices = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
-    memset(slice, 7, slice_extent);
-    memset(slice2, 8, slice_extent);
-    memset(slice3, 9, slice_extent);
-    slices++;
-  }, buf2, buf3);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
+        memset(slice, 7, slice_extent);
+        memset(slice2, 8, slice_extent);
+        memset(slice3, 9, slice_extent);
+        slices++;
+      },
+      buf2, buf3);
   ASSERT_EQ(slices, 900);
   for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   for (int c = 0; c < C; c++) {
@@ -629,12 +704,15 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_all_with_offset) {
   buf3.translate(-1, -1, -1);
   fill_slow(buf3, 43);
   int slices = 0;
-  for_each_contiguous_slice_multi(buf, [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
-    memset(slice, 7, slice_extent);
-    memset(slice2, 8, slice_extent);
-    memset(slice3, 9, slice_extent);
-    slices++;
-  }, buf2, buf3);
+  for_each_contiguous_slice_multi(
+      buf,
+      [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
+        memset(slice, 7, slice_extent);
+        memset(slice2, 8, slice_extent);
+        memset(slice3, 9, slice_extent);
+        slices++;
+      },
+      buf2, buf3);
   ASSERT_EQ(slices, 900);
   ASSERT_EQ(buf2(-1, -1, -1), 42);
   ASSERT_EQ(buf3(-1, -1, -1), 43);
