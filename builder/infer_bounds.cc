@@ -520,13 +520,9 @@ public:
     }
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
-    auto last_buffer_bounds = current_buffer_bounds();
+    symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
     loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);
-    for (int ix = 0; ix < (int)last_buffer_bounds.size(); ix++) {
-      if (last_buffer_bounds[ix]) {
-        current_buffer_bounds()[ix] = last_buffer_bounds[ix];
-      }
-    }
+    current_buffer_bounds() = last_buffer_bounds;
 
     stmt body = mutate(op->body);
     expr loop_min = loops.back().bounds.min;
