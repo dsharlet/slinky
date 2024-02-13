@@ -388,80 +388,12 @@ struct for_each_contiguous_slice_dim {
   index_t extent;
 };
 
-template <std::size_t NumBufs>
-bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
-  assert(d > 0);
-  const auto* buf = bufs[0];
-  const dim& outer = buf->dim(d);
-  const index_t buf_dim_d_stride = outer.stride();
-
-  for (std::size_t n = 0; n < NumBufs; n++) {
-    // Our caller should have ensured this
-    assert(bufs[n]->dim(d).fold_factor() == dim::unfolded);
-    const auto& inner_other = bufs[n]->dim(d - 1);
-    if (inner_other.fold_factor() != dim::unfolded) return false;
-    if (inner_other.stride() * inner_other.extent() != buf_dim_d_stride) return false;
-  }
-  return true;
-}
-
-template <std::size_t NumBufs>
-bool any_folded(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
-  for (const auto& buf : bufs) {
-    if (buf->dim(d).fold_factor() != dim::unfolded) return true;
-  }
-  return false;
-}
-
-template <std::size_t NumBufs>
 void make_for_each_contiguous_slice_dims(
-    const std::array<const raw_buffer*, NumBufs>& bufs, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
-  const auto* buf = bufs[0];
-  auto* next = slice_dims;
-  auto* next_dims = dims;
-  index_t slice_extent = 1;
-  index_t extent = 1;
-  for (int d = buf->rank - 1; d >= 0; --d) {
-    if (buf->dim(d).extent() == 1) {
-      // base already points to the min, we don't need to do anything.
-      continue;
-    }
-    extent *= buf->dim(d).extent();
-    if (any_folded(bufs, d)) {
-      next->impl = for_each_contiguous_slice_dim::loop_folded;
-      next->extent = extent;
-      ++next;
-      for (std::size_t n = 0; n < NumBufs; n++) {
-        next_dims->dim = &bufs[n]->dim(d);
-        ++next_dims;
-      }
-      extent = 1;
-    } else if (buf->dim(d).stride() == static_cast<index_t>(buf->elem_size)) {
-      // This is the slice dimension.
-      slice_extent = extent;
-      extent = 1;
-    } else if (d > 0 && can_fuse(bufs, d)) {
-      // Let this dimension fuse with the next dimension.
-    } else {
-      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
-      assert(buf->dim(d).min() / buf->dim(d).fold_factor() == buf->dim(d).max() / buf->dim(d).fold_factor());
-      next->impl = for_each_contiguous_slice_dim::loop_linear;
-      next->extent = extent;
-      ++next;
-      for (std::size_t n = 0; n < NumBufs; n++) {
-        next_dims->stride = bufs[n]->dim(d).stride();
-        ++next_dims;
-      }
-      extent = 1;
-    }
-  }
-  next->impl = for_each_contiguous_slice_dim::call_f;
-  next->extent = slice_extent;
-}
+    span<const raw_buffer*> bufs, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
-void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
-    const for_each_contiguous_slice_dim* slice_dim, const dim_or_stride* dims, const F& f) {
+void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_each_contiguous_slice_dim* slice_dim,
+    const dim_or_stride* dims, const F& f) {
   if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
     std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent), bases));
   } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {

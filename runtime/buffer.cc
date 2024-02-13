@@ -332,6 +332,92 @@ bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf) {
   return true;
 }
 
-}  // namespace internal
+namespace {
 
+bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
+  assert(d > 0);
+  const raw_buffer* buf = bufs[0];
+  const dim& outer = buf->dim(d);
+  const index_t buf_dim_d_stride = outer.stride();
+
+  for (std::size_t n = 0; n < size; n++) {
+    // Our caller should have ensured this
+    assert(bufs[n]->dim(d).fold_factor() == dim::unfolded);
+    const auto& inner_other = bufs[n]->dim(d - 1);
+    if (inner_other.fold_factor() != dim::unfolded) return false;
+    if (inner_other.stride() * inner_other.extent() != buf_dim_d_stride) return false;
+  }
+  return true;
+}
+
+bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
+  for (std::size_t i = 0; i < size; ++i) {
+    if (bufs[i]->dim(d).fold_factor() != dim::unfolded) return true;
+  }
+  return false;
+}
+
+template <std::size_t BufsSize>
+void make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, std::size_t bufs_size_dynamic,
+    for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+  std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
+  const auto* buf = bufs[0];
+  auto* next = slice_dims;
+  auto* next_dims = dims;
+  index_t slice_extent = 1;
+  index_t extent = 1;
+  for (int d = buf->rank - 1; d >= 0; --d) {
+    if (buf->dim(d).extent() == 1) {
+      // base already points to the min, we don't need to do anything.
+      continue;
+    }
+    extent *= buf->dim(d).extent();
+    if (any_folded(bufs, bufs_size, d)) {
+      next->impl = for_each_contiguous_slice_dim::loop_folded;
+      next->extent = extent;
+      ++next;
+      for (std::size_t n = 0; n < bufs_size; n++) {
+        next_dims->dim = &bufs[n]->dim(d);
+        ++next_dims;
+      }
+      extent = 1;
+    } else if (buf->dim(d).stride() == static_cast<index_t>(buf->elem_size)) {
+      // This is the slice dimension.
+      slice_extent = extent;
+      extent = 1;
+    } else if (d > 0 && can_fuse(bufs, bufs_size, d)) {
+      // Let this dimension fuse with the next dimension.
+    } else {
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(buf->dim(d).min() / buf->dim(d).fold_factor() == buf->dim(d).max() / buf->dim(d).fold_factor());
+      next->impl = for_each_contiguous_slice_dim::loop_linear;
+      next->extent = extent;
+      ++next;
+      for (std::size_t n = 0; n < bufs_size; n++) {
+        next_dims->stride = bufs[n]->dim(d).stride();
+        ++next_dims;
+      }
+      extent = 1;
+    }
+  }
+  next->impl = for_each_contiguous_slice_dim::call_f;
+  next->extent = slice_extent;
+}
+
+}  // namespace
+
+void make_for_each_contiguous_slice_dims(
+    span<const raw_buffer*> bufs, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+  // The implementation of this function benefits from knowing the size of the bufs span is constant.
+  // By far the common case of this function is implementing elementwise unary or binary operations.
+  // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
+  switch (bufs.size()) {
+  case 1: make_for_each_contiguous_slice_dims_impl<1>(bufs.data(), 0, slice_dims, dims); return;
+  case 2: make_for_each_contiguous_slice_dims_impl<2>(bufs.data(), 0, slice_dims, dims); return;
+  case 3: make_for_each_contiguous_slice_dims_impl<3>(bufs.data(), 0, slice_dims, dims); return;
+  default: make_for_each_contiguous_slice_dims_impl<0>(bufs.data(), bufs.size(), slice_dims, dims); return;
+  }
+}
+
+}  // namespace internal
 }  // namespace slinky
