@@ -389,15 +389,7 @@ struct for_each_contiguous_slice_dim {
 };
 
 template <std::size_t NumBufs>
-bool any_folded(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
-  for (const auto& buf : bufs) {
-    if (buf->dim(d).fold_factor() != dim::unfolded) return true;
-  }
-  return false;
-}
-
-template <std::size_t NumBufs>
-inline bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
+bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
   assert(d > 0);
   const auto* buf = bufs[0];
   const dim& outer = buf->dim(d);
@@ -411,6 +403,14 @@ inline bool can_fuse(const std::array<const raw_buffer*, NumBufs>& bufs, int d) 
     if (inner_other.stride() * inner_other.extent() != buf_dim_d_stride) return false;
   }
   return true;
+}
+
+template <std::size_t NumBufs>
+bool any_folded(const std::array<const raw_buffer*, NumBufs>& bufs, int d) {
+  for (const auto& buf : bufs) {
+    if (buf->dim(d).fold_factor() != dim::unfolded) return true;
+  }
+  return false;
 }
 
 template <std::size_t NumBufs>
