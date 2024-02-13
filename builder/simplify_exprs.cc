@@ -617,7 +617,7 @@ expr simplify(const class logical_not* op, expr a) {
     return *cv == 0;
   }
 
-  auto r = make_rewriter(rewrite::operator!(a));
+  auto r = make_rewriter(!pattern_expr{a});
   if (r.rewrite(!!x, x) ||
       r.rewrite(!(x == y), x != y) ||
       r.rewrite(!(x != y), x == y) ||
@@ -703,7 +703,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
+  if (r.rewrite(abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
       r.rewrite(abs(-x), abs(x)) ||
       r.rewrite(abs(abs(x)), abs(x)) ||
       false) {

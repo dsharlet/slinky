@@ -177,8 +177,8 @@ bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
 }
 
 template <typename T, typename A>
-bool match(const pattern_unary<T, A>& p, const pattern_unary<T, expr>& x, match_context& ctx) {
-  return match(p.a, x.a, ctx);
+bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x, match_context& ctx) {
+  return match(p.a, x.a.e, ctx);
 }
 
 template <typename T, typename A>
