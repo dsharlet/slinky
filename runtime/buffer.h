@@ -461,7 +461,7 @@ void make_for_each_contiguous_slice_dims(
 
 template <typename F, std::size_t NumBufs>
 void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases,
-    const for_each_contiguous_slice_dim* slice_dim, dim_or_stride* dims, const F& f) {
+    const for_each_contiguous_slice_dim* slice_dim, const dim_or_stride* dims, const F& f) {
   if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
     std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent_here), bases));
   } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
