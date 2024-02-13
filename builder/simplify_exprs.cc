@@ -34,14 +34,8 @@ expr simplify(const class min* op, expr a, expr b) {
   if (ca && cb) {
     return std::min(*ca, *cb);
   }
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = min::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  
+  auto r = make_rewriter(min(pattern_expr{a}, pattern_expr{b}));
   if (// Constant simplifications
       r.rewrite(min(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) ||
@@ -87,7 +81,11 @@ expr simplify(const class min* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return min::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const class max* op, expr a, expr b) {
@@ -99,14 +97,8 @@ expr simplify(const class max* op, expr a, expr b) {
   if (ca && cb) {
     return std::max(*ca, *cb);
   }
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = max::make(std::move(a), std::move(b));
-  }
 
-  rewriter r(e);
+  auto r = make_rewriter(max(pattern_expr{a}, pattern_expr{b}));
   if (// Constant simplifications
       r.rewrite(max(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) ||
@@ -148,7 +140,11 @@ expr simplify(const class max* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return max::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const add* op, expr a, expr b) {
@@ -160,14 +156,8 @@ expr simplify(const add* op, expr a, expr b) {
   if (ca && cb) {
     return *ca + *cb;
   }
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = add::make(std::move(a), std::move(b));
-  }
 
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} + pattern_expr{b});
   if (r.rewrite(x + rewrite::indeterminate(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::positive_infinity() + rewrite::positive_infinity(), rewrite::positive_infinity()) ||
       r.rewrite(rewrite::negative_infinity() + rewrite::negative_infinity(), rewrite::negative_infinity()) ||
@@ -225,7 +215,11 @@ expr simplify(const add* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return add::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const sub* op, expr a, expr b) {
@@ -240,14 +234,7 @@ expr simplify(const sub* op, expr a, expr b) {
     return simplify(static_cast<add*>(nullptr), a, -*cb);
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = sub::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} - pattern_expr{b});
   if (r.rewrite(x - rewrite::indeterminate(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::indeterminate() - x, rewrite::indeterminate()) ||
       r.rewrite(rewrite::positive_infinity() - rewrite::positive_infinity(), rewrite::indeterminate()) ||
@@ -295,7 +282,11 @@ expr simplify(const sub* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return sub::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const mul* op, expr a, expr b) {
@@ -307,14 +298,8 @@ expr simplify(const mul* op, expr a, expr b) {
   if (ca && cb) {
     return *ca * *cb;
   }
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = mul::make(std::move(a), std::move(b));
-  }
 
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} * pattern_expr{b});
   if (r.rewrite(x * rewrite::indeterminate(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::positive_infinity() * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
       r.rewrite(rewrite::negative_infinity() * rewrite::positive_infinity(), rewrite::negative_infinity()) ||
@@ -332,7 +317,11 @@ expr simplify(const mul* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return mul::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const div* op, expr a, expr b) {
@@ -341,14 +330,8 @@ expr simplify(const div* op, expr a, expr b) {
   if (ca && cb) {
     return euclidean_div(*ca, *cb);
   }
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = div::make(std::move(a), std::move(b));
-  }
 
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} / pattern_expr{b});
   if (r.rewrite(x / rewrite::indeterminate(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::indeterminate() / x, rewrite::indeterminate()) ||
       r.rewrite(rewrite::positive_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
@@ -376,7 +359,11 @@ expr simplify(const div* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return div::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const mod* op, expr a, expr b) {
@@ -385,21 +372,19 @@ expr simplify(const mod* op, expr a, expr b) {
   if (ca && cb) {
     return euclidean_mod(*ca, *cb);
   }
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = mod::make(std::move(a), std::move(b));
-  }
 
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} % pattern_expr{b});
   if (r.rewrite(x % 1, 0) || 
       r.rewrite(x % 0, 0) || 
       r.rewrite(x % x, 0) ||
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return mod::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const less* op, expr a, expr b) {
@@ -409,14 +394,7 @@ expr simplify(const less* op, expr a, expr b) {
     return *ca < *cb;
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = less::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} < pattern_expr{b});
   if (r.rewrite(rewrite::positive_infinity() < x, false, is_finite(x)) ||
       r.rewrite(rewrite::negative_infinity() < x, true, is_finite(x)) ||
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
@@ -457,7 +435,11 @@ expr simplify(const less* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return less::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const less_equal* op, expr a, expr b) {
@@ -467,14 +449,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
     return *ca <= *cb;
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = less_equal::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} <= pattern_expr{b});
   if (r.rewrite(rewrite::positive_infinity() <= x, false, is_finite(x)) ||
       r.rewrite(rewrite::negative_infinity() <= x, true, is_finite(x)) ||
       r.rewrite(x <= rewrite::positive_infinity(), true, is_finite(x)) ||
@@ -517,7 +492,11 @@ expr simplify(const less_equal* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return less_equal::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const equal* op, expr a, expr b) {
@@ -530,21 +509,18 @@ expr simplify(const equal* op, expr a, expr b) {
     return *ca == *cb;
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = equal::make(std::move(a), std::move(b));
-  }
-  
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} == pattern_expr{b});
   if (r.rewrite(x == x, true) ||
       r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
       r.rewrite(c0 - x == c1, -x == eval(c1 - c0), eval(c0 != 0)) ||
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return equal::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const not_equal* op, expr a, expr b) {
@@ -557,21 +533,18 @@ expr simplify(const not_equal* op, expr a, expr b) {
     return *ca != *cb;
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = not_equal::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} != pattern_expr{b});
   if (r.rewrite(x != x, false) ||
       r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
       r.rewrite(c0 - x != c1, -x != eval(c1 - c0), eval(c0 != 0)) ||
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return not_equal::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const logical_and* op, expr a, expr b) {
@@ -587,14 +560,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
     return *cb ? a : b;
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = logical_and::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
   if (r.rewrite(x && x, x) ||
       r.rewrite(x && !x, false) ||
       r.rewrite(!x && x, false) ||
@@ -606,7 +572,11 @@ expr simplify(const logical_and* op, expr a, expr b) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return logical_and::make(std::move(a), std::move(b));
+  }
 }
 
 expr simplify(const logical_or* op, expr a, expr b) {
@@ -622,14 +592,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
     return *cb ? b : a;
   }
 
-  expr e;
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    e = op;
-  } else {
-    e = logical_or::make(std::move(a), std::move(b));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
   if (r.rewrite(x || x, x) ||
       r.rewrite(x || !x, true) ||
       r.rewrite(!x || x, true) ||
@@ -641,23 +604,20 @@ expr simplify(const logical_or* op, expr a, expr b) {
       false) {
     return r.result;
   };
-  return e;
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return op;
+  } else {
+    return logical_or::make(std::move(a), std::move(b));
+  }
 }
 
-expr simplify(const logical_not* op, expr a) {
+expr simplify(const class logical_not* op, expr a) {
   const index_t* cv = as_constant(a);
   if (cv) {
     return *cv == 0;
   }
 
-  expr e;
-  if (op && a.same_as(op->a)) {
-    e = op;
-  } else {
-    e = logical_not::make(std::move(a));
-  }
-
-  rewriter r(e);
+  auto r = make_rewriter(!pattern_expr{a});
   if (r.rewrite(!!x, x) ||
       r.rewrite(!(x == y), x != y) ||
       r.rewrite(!(x != y), x == y) ||
@@ -666,7 +626,11 @@ expr simplify(const logical_not* op, expr a) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && a.same_as(op->a)) {
+    return op;
+  } else {
+    return logical_not::make(std::move(a));
+  }
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
@@ -679,17 +643,9 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
     }
   }
 
-  expr e;
-  if (match(t, f)) {
-    return t;
-  } else if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-    e = op;
-  } else {
-    e = select::make(std::move(c), std::move(t), std::move(f));
-  }
-
-  rewriter r(e);
-  if (r.rewrite(select(!x, y, z), select(x, z, y)) ||
+  auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
+  if (r.rewrite(select(x, y, y), y) ||
+      r.rewrite(select(!x, y, z), select(x, z, y)) ||
 
       // Pull common expressions out
       r.rewrite(select(x, y, y + z), y + select(x, 0, z)) ||
@@ -699,7 +655,11 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
       false) {
     return r.result;
   }
-  return e;
+  if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    return op;
+  } else {
+    return select::make(std::move(c), std::move(t), std::move(f));
+  }
 }
 
 expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
@@ -743,7 +703,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 
   rewriter r(e);
-  if (r.rewrite(rewrite::abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
+  if (r.rewrite(abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
       r.rewrite(abs(-x), abs(x)) ||
       r.rewrite(abs(abs(x)), abs(x)) ||
       false) {

@@ -110,7 +110,7 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_binary<T, A, B>
 }
 
 template <typename T, typename A, typename B>
-bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
+int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
     node_type ta = pattern_type(p.a);
@@ -121,16 +121,33 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) 
       this_bit = ctx.variant_bits++;
     }
   }
+  return this_bit;
+}
+
+template <typename T, typename A, typename B>
+bool match(const pattern_binary<T, A, B>& p, int this_bit, const expr& a, const expr& b, match_context& ctx) {
+  if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
+    // We should commute in this variant.
+    return match(p.a, b, ctx) && match(p.b, a, ctx);
+  } else {
+    return match(p.a, a, ctx) && match(p.b, b, ctx);
+  }
+}
+
+template <typename T, typename A, typename B>
+bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
+  int this_bit = commute_bit(p, ctx);
 
   if (const T* t = x.as<T>()) {
-    if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
-      // We should commute in this variant.
-      return match(p.a, t->b, ctx) && match(p.b, t->a, ctx);
-    }
-    return match(p.a, t->a, ctx) && match(p.b, t->b, ctx);
+    return match(p, this_bit, t->a, t->b, ctx);
   } else {
     return false;
   }
+}
+
+template <typename T, typename A, typename B>
+bool match(const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
+  return match(p, commute_bit(p, ctx), x.a.e, x.b.e, ctx);
 }
 
 template <typename T, typename A, typename B>
@@ -160,6 +177,11 @@ bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
 }
 
 template <typename T, typename A>
+bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x, match_context& ctx) {
+  return match(p.a, x.a.e, ctx);
+}
+
+template <typename T, typename A>
 expr substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
   return T::make(substitute(p.a, ctx));
 }
@@ -185,6 +207,12 @@ bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) 
   } else {
     return false;
   }
+}
+
+template <typename C, typename T, typename F>
+bool match(const pattern_select<C, T, F>& p, const pattern_select<pattern_expr, pattern_expr, pattern_expr>& x,
+    match_context& ctx) {
+  return match(p.c, x.c.e, ctx) && match(p.t, x.t.e, ctx) && match(p.f, x.f.e, ctx);
 }
 
 template <typename C, typename T, typename F>
@@ -371,8 +399,9 @@ auto eval(const T& x) {
   return replacement_eval<T>{x};
 }
 
-class rewriter {
-  const expr& x;
+template <typename T>
+class base_rewriter {
+  T x;
 
   template <typename Pattern>
   bool variant_match(const Pattern& p, match_context& ctx) {
@@ -394,7 +423,7 @@ class rewriter {
 public:
   expr result;
 
-  rewriter(const expr& x) : x(x) {}
+  base_rewriter(T x) : x(std::move(x)) {}
 
   template <typename Pattern, typename Replacement>
   bool rewrite(const Pattern& p, const Replacement& r) {
@@ -416,6 +445,18 @@ public:
     return true;
   }
 };
+
+class rewriter : public base_rewriter<const expr&> {
+public:
+  rewriter(const expr& x) : base_rewriter(x) {}
+  using base_rewriter::result;
+  using base_rewriter::rewrite;
+};
+
+template <typename T>
+base_rewriter<T> make_rewriter(T x) {
+  return base_rewriter<T>(std::move(x));
+}
 
 }  // namespace rewrite
 }  // namespace slinky
