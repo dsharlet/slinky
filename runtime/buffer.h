@@ -493,20 +493,15 @@ void make_for_each_contiguous_slice_dims(
   next->extent_here = slice_extent;
 }
 
-template <typename F, typename First, typename... Rest>
-inline void call_fn3(const F& f, index_t slice_extent, const First& first, const Rest&... rest) {
-  f(static_cast<void*>(first), slice_extent, rest...);
-}
-
 template <typename F, int NumBufs, std::size_t... Indices>
-inline void call_fn2(const F& f, index_t slice_extent, const std::array<void*, NumBufs>& bases, std::index_sequence<Indices...>) {
+inline void call_fn(const F& f, index_t slice_extent, const std::array<void*, NumBufs>& bases, std::index_sequence<Indices...>) {
   static_assert(sizeof...(Indices) == NumBufs - 1);
-  call_fn3<F>(f, slice_extent, bases[0], bases[Indices + 1]...);
+  f(bases[0], slice_extent, bases[Indices + 1]...);
 }
 
 template <typename F, int NumBufs>
 inline void call_fn(const F& f, index_t slice_extent, const std::array<void*, NumBufs>& bases) {
-  call_fn2<F, NumBufs>(f, slice_extent, bases, std::make_index_sequence<NumBufs - 1>());
+  call_fn<F, NumBufs>(f, slice_extent, bases, std::make_index_sequence<NumBufs - 1>());
 }
 
 template <typename F, int NumBufs>
