@@ -126,8 +126,9 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) 
     if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
       // We should commute in this variant.
       return match(p.a, t->b, ctx) && match(p.b, t->a, ctx);
+    } else {
+      return match(p.a, t->a, ctx) && match(p.b, t->b, ctx);
     }
-    return match(p.a, t->a, ctx) && match(p.b, t->b, ctx);
   } else {
     return false;
   }
