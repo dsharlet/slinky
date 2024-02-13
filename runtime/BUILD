@@ -79,6 +79,7 @@ cc_binary(
         ":runtime",
         "@google_benchmark//:benchmark_main",
     ],
+    testonly = 1,
 )
 
 cc_binary(
@@ -89,4 +90,5 @@ cc_binary(
         ":thread_pool",
         "@google_benchmark//:benchmark_main",
     ],
+    testonly = 1,
 )
