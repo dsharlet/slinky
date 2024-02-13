@@ -29,7 +29,7 @@ public:
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_contiguous_slice(x, [&](void* base, index_t extent) {
+  for_each_contiguous_slice(x, [&](index_t extent, void* base) {
     for (index_t i = 0; i < extent; ++i) {
       reinterpret_cast<T*>(base)[i] = (rand() % 20) - 10;
     }
