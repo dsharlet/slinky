@@ -29,11 +29,16 @@ expr simplify(const class min* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return std::min(*ca, *cb);
   }
+
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -43,7 +48,6 @@ expr simplify(const class min* op, expr a, expr b) {
 
   rewriter r(e);
   if (// Constant simplifications
-      r.rewrite(min(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) ||
       r.rewrite(min(x, rewrite::positive_infinity()), x) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
@@ -94,11 +98,16 @@ expr simplify(const class max* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return std::max(*ca, *cb);
   }
+
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -108,7 +117,6 @@ expr simplify(const class max* op, expr a, expr b) {
 
   rewriter r(e);
   if (// Constant simplifications
-      r.rewrite(max(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) ||
       r.rewrite(max(x, rewrite::negative_infinity()), x) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
@@ -155,11 +163,16 @@ expr simplify(const add* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return *ca + *cb;
   }
+
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -168,8 +181,7 @@ expr simplify(const add* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x + rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() + rewrite::positive_infinity(), rewrite::positive_infinity()) ||
+  if (r.rewrite(rewrite::positive_infinity() + rewrite::positive_infinity(), rewrite::positive_infinity()) ||
       r.rewrite(rewrite::negative_infinity() + rewrite::negative_infinity(), rewrite::negative_infinity()) ||
       r.rewrite(rewrite::negative_infinity() + rewrite::positive_infinity(), rewrite::indeterminate()) ||
       r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
@@ -229,8 +241,6 @@ expr simplify(const add* op, expr a, expr b) {
 }
 
 expr simplify(const sub* op, expr a, expr b) {
-  assert(a.defined());
-  assert(b.defined());
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
@@ -240,6 +250,9 @@ expr simplify(const sub* op, expr a, expr b) {
     return simplify(static_cast<add*>(nullptr), a, -*cb);
   }
 
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -248,9 +261,7 @@ expr simplify(const sub* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x - rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::indeterminate() - x, rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() - rewrite::positive_infinity(), rewrite::indeterminate()) ||
+  if (r.rewrite(rewrite::positive_infinity() - rewrite::positive_infinity(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::positive_infinity() - rewrite::negative_infinity(), rewrite::positive_infinity()) ||
       r.rewrite(rewrite::negative_infinity() - rewrite::negative_infinity(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::negative_infinity() - rewrite::positive_infinity(), rewrite::negative_infinity()) ||
@@ -302,11 +313,16 @@ expr simplify(const mul* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return *ca * *cb;
   }
+
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -315,8 +331,7 @@ expr simplify(const mul* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x * rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
+  if (r.rewrite(rewrite::positive_infinity() * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
       r.rewrite(rewrite::negative_infinity() * rewrite::positive_infinity(), rewrite::negative_infinity()) ||
       r.rewrite(rewrite::negative_infinity() * rewrite::negative_infinity(), rewrite::positive_infinity()) ||
       r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
@@ -341,6 +356,10 @@ expr simplify(const div* op, expr a, expr b) {
   if (ca && cb) {
     return euclidean_div(*ca, *cb);
   }
+
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   expr e;
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     e = op;
@@ -349,9 +368,7 @@ expr simplify(const div* op, expr a, expr b) {
   }
 
   rewriter r(e);
-  if (r.rewrite(x / rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::indeterminate() / x, rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
+  if (r.rewrite(rewrite::positive_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::positive_infinity() / rewrite::negative_infinity(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::negative_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
       r.rewrite(rewrite::negative_infinity() / rewrite::negative_infinity(), rewrite::indeterminate()) ||
@@ -529,6 +546,7 @@ expr simplify(const equal* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
