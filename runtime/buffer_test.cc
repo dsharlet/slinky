@@ -7,14 +7,18 @@
 
 namespace slinky {
 
+template <typename T, std::size_t N>
+void init_random(buffer<T, N>& buf) {
+  buf.allocate();
+  std::size_t flat_size = buf.size_bytes() / sizeof(T);
+  for (std::size_t i = 0; i < flat_size; ++i) {
+    buf.base()[i] = rand();
+  }
+}
+
 TEST(raw_buffer, make_copy) {
   buffer<int, 2> src({10, 20});
-  src.allocate();
-  for_each_contiguous_slice(src, [&](void* base, index_t extent) {
-    for (index_t i = 0; i < extent; ++i) {
-      reinterpret_cast<int*>(base)[i] = rand();
-    }
-  });
+  init_random(src);
 
   auto dst = raw_buffer::make_copy(src);
   ASSERT_EQ(src.rank, dst->rank);
@@ -193,41 +197,86 @@ TEST(buffer, for_each_tile_all) {
 
 TEST(buffer, for_each_slice) {
   for (std::size_t slice_rank : {0, 1, 2}) {
-    for (index_t fold_factor : {dim::unfolded, static_cast<index_t>(4)}) {
-      buffer<int, 2> buf({10, 20});
-      if (slice_rank <= 0) {
-        buf.dim(0).set_fold_factor(fold_factor);
+    buffer<int, 2> buf({10, 20});
+    buf.allocate();
+    int slices = 0;
+    int elements = 0;
+    for_each_slice(slice_rank, buf, [&](const raw_buffer& slice) {
+      ASSERT_EQ(slice.rank, slice_rank);
+      const int seven = 7;
+      fill(slice, &seven);
+      slices++;
+      int elements_slice = 1;
+      for (std::size_t d = 0; d < slice.rank; ++d) {
+        elements_slice *= slice.dim(d).extent();
       }
-      if (slice_rank <= 1) {
-        buf.dim(1).set_fold_factor(fold_factor);
+      elements += elements_slice;
+    });
+    int expected_slices = 1;
+    int expected_elements = 1;
+    for (std::size_t d = 0; d < buf.rank; ++d) {
+      if (d >= slice_rank) {
+        expected_slices *= buf.dim(d).extent();
       }
-      buf.allocate();
-      int slices = 0;
-      int elements = 0;
-      for_each_slice(slice_rank, buf, [&](const raw_buffer& slice) {
-        const int seven = 7;
-        fill(slice, &seven);
-        slices++;
-        int elements_slice = 1;
-        for (std::size_t d = 0; d < slice.rank; ++d) {
-          elements_slice *= slice.dim(d).extent();
-        }
-        elements += elements_slice;
-      });
-      int expected_slices = 1;
-      int expected_elements = 1;
-      for (std::size_t d = 0; d < buf.rank; ++d) {
-        if (d >= slice_rank) {
-          expected_slices *= buf.dim(d).extent();
-        }
-        expected_elements *= buf.dim(d).extent();
-      }
-      ASSERT_EQ(slices, expected_slices);
-      ASSERT_EQ(elements, expected_elements);
-
-      for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+      expected_elements *= buf.dim(d).extent();
     }
+    ASSERT_EQ(slices, expected_slices);
+    ASSERT_EQ(elements, expected_elements);
+
+    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   }
+}
+
+TEST(buffer, for_each_slice_copy_folded) {
+  buffer<uint8_t, 2> src({20, 30});
+  src.dim(1).set_fold_factor(2);
+  init_random(src);
+
+  buffer<uint8_t, 2> dst({10, 20});
+  dst.dim(1).set_min_extent(3, 20);
+  dst.allocate();
+
+  int slices = 0;
+  for_each_slice(
+      1, dst,
+      [&](const raw_buffer& dst_slice, const raw_buffer& src_slice) {
+        copy(src_slice, dst_slice);
+        slices++;
+      },
+      src);
+  int expected_slices = dst.dim(1).extent();
+  ASSERT_EQ(slices, expected_slices);
+
+  for_each_index(dst, [&](auto i) { ASSERT_EQ(dst(i), src(i)); });
+}
+
+TEST(buffer, for_each_slice_sum) {
+  buffer<short, 3> src({3, 10, 5});
+  init_random(src);
+
+  buffer<int, 2> dst({10, 5});
+  dst.allocate();
+
+  for_each_slice(
+      1, dst,
+      [&](const raw_buffer& dst_slice, const raw_buffer& src_slice) {
+        ASSERT_EQ(src_slice.rank, 2);
+        ASSERT_EQ(dst_slice.rank, 1);
+        auto& dst_t = dst_slice.cast<int>();
+        auto& src_t = src_slice.cast<short>();
+        for (index_t i = dst_t.dim(0).begin(); i < dst_t.dim(0).end(); ++i) {
+          dst_t(i) = 0;
+          for (index_t j = src_t.dim(0).begin(); j < src_t.dim(0).end(); ++j) {
+            dst_t(i) += src_t(j, i);
+          }
+        }
+      },
+      src);
+
+  for_each_index(dst, [&](auto i) {
+    int correct = src(0, i[0], i[1]) + src(1, i[0], i[1]) + src(2, i[0], i[1]);
+    ASSERT_EQ(dst(i), correct);
+  });
 }
 
 // A non-standard size type that acts like an integer for testing.
@@ -297,12 +346,7 @@ void test_copy() {
               src.dim(d).set_min_extent(d - Rank / 2, d + 10);
             }
             set_strides(src, src_permutation, src_padding, broadcast);
-            src.allocate();
-            for_each_contiguous_slice(src, [&](void* base, index_t extent) {
-              for (index_t i = 0; i < extent; ++i) {
-                reinterpret_cast<T*>(base)[i] = rand();
-              }
-            });
+            init_random(src);
 
             for (int dmin : {-1, 0, 1}) {
               for (int dmax : {-1, 0, 1}) {
