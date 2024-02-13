@@ -461,13 +461,13 @@ void make_for_each_contiguous_slice_dims(
 
 template <typename F, std::size_t NumBufs, std::size_t... Indices>
 inline void call_fn(const F& f, index_t slice_extent, const std::array<void*, NumBufs>& bases, std::index_sequence<Indices...>) {
-  static_assert(sizeof...(Indices) == NumBufs - 1);
-  f(bases[0], slice_extent, bases[Indices + 1]...);
+  static_assert(sizeof...(Indices) == NumBufs);
+  f(slice_extent, bases[Indices]...);
 }
 
 template <typename F, std::size_t NumBufs>
 inline void call_fn(const F& f, index_t slice_extent, const std::array<void*, NumBufs>& bases) {
-  call_fn<F, NumBufs>(f, slice_extent, bases, std::make_index_sequence<NumBufs - 1>());
+  call_fn<F, NumBufs>(f, slice_extent, bases, std::make_index_sequence<NumBufs>());
 }
 
 template <typename F, std::size_t NumBufs>

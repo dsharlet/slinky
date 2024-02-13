@@ -91,7 +91,7 @@ TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
   int slices = 0;
-  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, void* slice) {
     memset(slice, 7, slice_extent);
     slices++;
   });
@@ -104,7 +104,7 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
   buf.allocate();
   buf.translate(1, 2, 3);
   int slices = 0;
-  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, void* slice) {
     memset(slice, 7, slice_extent);
     slices++;
   });
@@ -119,7 +119,7 @@ TEST(buffer, for_each_contiguous_folded) {
   for (int crop_extent : {1, 2, 3, 4}) {
     buf.dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
-    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+    for_each_contiguous_slice(buf, [&](index_t slice_extent, void* slice) {
       memset(slice, 7, slice_extent);
       slices++;
     });
@@ -133,7 +133,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
     buffer<char, 3> buf({10, 20, 30});
     buf.allocate();
     buf.dim(padded_dim).set_bounds(0, 8);
-    for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) { memset(slice, 7, slice_extent); });
+    for_each_contiguous_slice(buf, [&](index_t slice_extent, void* slice) { memset(slice, 7, slice_extent); });
     for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
   }
 }
@@ -143,7 +143,7 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
   buf.allocate();
   std::swap(buf.dim(0), buf.dim(1));
   int slices = 0;
-  for_each_contiguous_slice(buf, [&](void* slice, index_t slice_extent) {
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, void* slice) {
     ASSERT_EQ(slice_extent, 10);
     slices++;
   });
@@ -366,7 +366,7 @@ void test_copy() {
                   }
                 });
 
-                for_each_contiguous_slice(src, [&](void* base, index_t extent) {
+                for_each_contiguous_slice(src, [&](index_t extent, void* base) {
                   for (index_t i = 0; i < extent; ++i) {
                     reinterpret_cast<T*>(base)[i] += 1;
                   }
@@ -383,7 +383,7 @@ void test_copy() {
                   }
                 });
 
-                for_each_contiguous_slice(src, [&](void* base, index_t extent) {
+                for_each_contiguous_slice(src, [&](index_t extent, void* base) {
                   for (index_t i = 0; i < extent; ++i) {
                     reinterpret_cast<T*>(base)[i] += -1;
                   }
@@ -434,7 +434,7 @@ TEST(buffer, for_each_contiguous_slice_multi) {
   int slices = 0;
   for_each_contiguous_slice(
       dst,
-      [&](void* dst, index_t slice_extent, void* src) {
+      [&](index_t slice_extent, void* dst, void* src) {
         const char* s = reinterpret_cast<const char*>(src);
         char* d = reinterpret_cast<char*>(dst);
         memcpy(d, s, slice_extent);
@@ -456,7 +456,7 @@ TEST(buffer, for_each_contiguous_slice_multi_padded) {
     int value = 0;
     for_each_contiguous_slice(
         buf,
-        [&](void* slice, index_t slice_extent, void* slice2) {
+        [&](index_t slice_extent, void* slice, void* slice2) {
           int* s = reinterpret_cast<int*>(slice);
           int* s2 = reinterpret_cast<int*>(slice2);
           for (int i = 0; i < slice_extent; i++) {
@@ -489,7 +489,7 @@ TEST(buffer, for_each_contiguous_slice_multi_non_innermost) {
   int value = 0;
   for_each_contiguous_slice(
       buf,
-      [&](void* slice, index_t slice_extent, void* slice2) {
+      [&](index_t slice_extent, void* slice, void* slice2) {
         int* s = reinterpret_cast<int*>(slice);
         int* s2 = reinterpret_cast<int*>(slice2);
         for (int i = 0; i < slice_extent; i++) {
@@ -521,7 +521,7 @@ TEST(buffer, for_each_contiguous_slice_multi_both_non_zero_min) {
   int slices = 0;
   for_each_contiguous_slice(
       buf,
-      [&](void* slice, index_t slice_extent, void* slice2) {
+      [&](index_t slice_extent, void* slice, void* slice2) {
         memset(slice, 7, slice_extent);
         memset(slice2, 7, slice_extent);
         slices++;
@@ -556,7 +556,7 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
   int slices = 0;
   for_each_contiguous_slice(
       buf1,
-      [&](void* slice1, index_t slice_extent, void* slice2, void* slice3, void* slice4, void* slice5, void* slice6,
+      [&](index_t slice_extent, void* slice1, void* slice2, void* slice3, void* slice4, void* slice5, void* slice6,
           void* slice7, void* slice8, void* slice9) {
         memset(slice1, 1, slice_extent);
         memset(slice2, 2, slice_extent);
@@ -593,7 +593,7 @@ TEST(buffer, for_each_contiguous_slice_multi_extra_buf_offset_negative) {
   int value = 0;
   for_each_contiguous_slice(
       buf,
-      [&](void* slice, index_t slice_extent, void* slice2) {
+      [&](index_t slice_extent, void* slice, void* slice2) {
         int* s = reinterpret_cast<int*>(slice);
         int* s2 = reinterpret_cast<int*>(slice2);
         for (int i = 0; i < slice_extent; i++) {
@@ -630,7 +630,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_main_buffer) {
     int slices = 0;
     for_each_contiguous_slice(
         buf,
-        [&](void* slice, index_t slice_extent, void* slice2) {
+        [&](index_t slice_extent, void* slice, void* slice2) {
           memset(slice, 7, slice_extent);
           memset(slice2, 7, slice_extent);
           slices++;
@@ -659,7 +659,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_other_buffer) {
   int slices = 0;
   for_each_contiguous_slice(
       buf,
-      [&](void* slice, index_t slice_extent, void* slice2) {
+      [&](index_t slice_extent, void* slice, void* slice2) {
         memset(slice, 7, slice_extent);
         memset(slice2, 7, slice_extent);
         slices++;
@@ -691,7 +691,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_all) {
   int slices = 0;
   for_each_contiguous_slice(
       buf,
-      [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
+      [&](index_t slice_extent, void* slice, void* slice2, void* slice3) {
         memset(slice, 7, slice_extent);
         memset(slice2, 8, slice_extent);
         memset(slice3, 9, slice_extent);
@@ -740,7 +740,7 @@ TEST(buffer, for_each_contiguous_slice_multi_folded_all_with_offset) {
   int slices = 0;
   for_each_contiguous_slice(
       buf,
-      [&](void* slice, index_t slice_extent, void* slice2, void* slice3) {
+      [&](index_t slice_extent, void* slice, void* slice2, void* slice3) {
         memset(slice, 7, slice_extent);
         memset(slice2, 8, slice_extent);
         memset(slice3, 9, slice_extent);
