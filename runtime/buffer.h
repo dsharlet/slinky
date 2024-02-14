@@ -398,7 +398,7 @@ struct for_each_contiguous_slice_dim {
 };
 
 void make_for_each_contiguous_slice_dims(
-    span<const raw_buffer*> bufs, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims);
+    span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
 void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_each_contiguous_slice_dim* slice_dim,
@@ -444,17 +444,6 @@ void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_
 }
 
 bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
-
-inline void* offset_base_unfolded(
-    const raw_buffer& buf, const for_each_contiguous_slice_dim* slice_dim, const raw_buffer& other_buf) {
-  void* other_base = other_buf.base;
-  for (std::size_t d = 0; d < buf.rank; d++) {
-    if (slice_dim[d].impl != for_each_contiguous_slice_dim::loop_folded) {
-      other_base = offset_bytes(other_base, (buf.dim(d).min() - other_buf.dim(d).min()) * other_buf.dim(d).stride());
-    }
-  }
-  return other_base;
-}
 
 // Implements the cropping part of a loop over tiles.
 template <typename F>
@@ -529,13 +518,8 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
   internal::for_each_contiguous_slice_dim* slice_dims =
       SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, bufs[0]->rank + 1);
   internal::dim_or_stride* dims = SLINKY_ALLOCA(internal::dim_or_stride, bufs[0]->rank * NumBufs);
-  internal::make_for_each_contiguous_slice_dims(bufs, slice_dims, dims);
-
   std::array<void*, NumBufs> bases;
-  bases[0] = bufs[0]->base;
-  for (std::size_t n = 1; n < NumBufs; n++) {
-    bases[n] = offset_base_unfolded(*bufs[0], slice_dims, *bufs[n]);
-  }
+  internal::make_for_each_contiguous_slice_dims(bufs, bases.data(), slice_dims, dims);
 
   internal::for_each_contiguous_slice_impl(bases, slice_dims, dims, f);
 }
