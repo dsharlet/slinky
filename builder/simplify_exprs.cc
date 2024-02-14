@@ -331,8 +331,7 @@ expr simplify(const mul* op, expr a, expr b) {
       r.rewrite(x * 1, x) ||
       r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
       r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) ||
-      r.rewrite((0 - x) * c1, x * eval(-c1)) ||
-      r.rewrite((c0 - x) * c1, eval(c0 * c1) - x * c1) ||
+      r.rewrite((c0 - x) * c1, eval(c0 * c1) + x * eval(-c1)) ||
       false) {
     return r.result;
   }
