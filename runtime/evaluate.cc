@@ -168,7 +168,6 @@ public:
     switch (op->intrinsic) {
     case intrinsic::buffer_rank: return buf->rank;
     case intrinsic::buffer_elem_size: return buf->elem_size;
-    case intrinsic::buffer_base: return reinterpret_cast<index_t>(buf->base);
     case intrinsic::buffer_size_bytes: return buf->size_bytes();
     default: std::abort();
     }
@@ -217,7 +216,6 @@ public:
 
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:
-    case intrinsic::buffer_base:
     case intrinsic::buffer_size_bytes: result = eval_buffer_metadata(op); return;
 
     case intrinsic::buffer_min:

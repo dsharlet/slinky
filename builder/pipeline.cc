@@ -494,7 +494,7 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
   checks.push_back(check::make(buf_var != 0));
   // TODO: Maybe this check is overzealous (https://github.com/dsharlet/slinky/issues/17).
   checks.push_back(check::make(buffer_rank(buf_var) == rank));
-  checks.push_back(check::make(buffer_base(buf_var) != 0));
+  checks.push_back(check::make(buffer_at(buf_var) != 0));
   checks.push_back(check::make(buffer_elem_size(buf_var) == b->elem_size()));
   for (int d = 0; d < rank; ++d) {
     expr fold_factor = buffer_fold_factor(buf_var, d);

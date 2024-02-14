@@ -31,7 +31,6 @@ std::ostream& operator<<(std::ostream& os, intrinsic fn) {
   case intrinsic::indeterminate: return os << "indeterminate";
   case intrinsic::abs: return os << "abs";
   case intrinsic::buffer_rank: return os << "buffer_rank";
-  case intrinsic::buffer_base: return os << "buffer_base";
   case intrinsic::buffer_elem_size: return os << "buffer_elem_size";
   case intrinsic::buffer_size_bytes: return os << "buffer_size_bytes";
   case intrinsic::buffer_min: return os << "buffer_min";

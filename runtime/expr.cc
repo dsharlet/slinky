@@ -461,20 +461,29 @@ stmt check::make(expr condition) {
 
 namespace {
 
-expr global_positive_infinity = call::make(intrinsic::positive_infinity, {});
-expr global_negative_infinity = call::make(intrinsic::negative_infinity, {});
-expr global_indeterminate = call::make(intrinsic::indeterminate, {});
 
 }  // namespace
 
-const expr& positive_infinity() { return global_positive_infinity; }
-const expr& negative_infinity() { return global_negative_infinity; }
-const expr& indeterminate() { return global_indeterminate; }
+const expr& positive_infinity() {
+  static expr e = call::make(intrinsic::positive_infinity, {});
+  return e;
+}
+const expr& negative_infinity() {
+  static expr e = call::make(intrinsic::negative_infinity, {});
+  return e;
+}
+const expr& infinity(int sign) {
+  assert(sign != 0);
+  return sign < 0 ? negative_infinity() : positive_infinity();
+}
+const expr& indeterminate() {
+  static expr e = call::make(intrinsic::indeterminate, {});
+  return e;
+}
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 
 expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::move(buf)}); }
-expr buffer_base(expr buf) { return call::make(intrinsic::buffer_base, {std::move(buf)}); }
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
 expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
@@ -500,6 +509,8 @@ expr buffer_at(expr buf, span<const var> at) {
   return call::make(intrinsic::buffer_at, std::move(args));
 }
 
+expr buffer_at(expr buf) { return call::make(intrinsic::buffer_at, {std::move(buf)}); }
+
 interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
 dim_expr buffer_dim(const expr& buf, const expr& dim) {
   return {buffer_bounds(buf, dim), buffer_stride(buf, dim), buffer_fold_factor(buf, dim)};
@@ -524,7 +535,6 @@ box_expr dims_bounds(span<const dim_expr> dims) {
 bool is_buffer_intrinsic(intrinsic fn) {
   switch (fn) {
   case intrinsic::buffer_rank:
-  case intrinsic::buffer_base:
   case intrinsic::buffer_elem_size:
   case intrinsic::buffer_size_bytes:
   case intrinsic::buffer_min:

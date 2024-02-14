@@ -87,7 +87,6 @@ enum class intrinsic {
   abs,
 
   buffer_rank,
-  buffer_base,
   buffer_elem_size,
   buffer_size_bytes,
 
@@ -847,12 +846,17 @@ bool is_buffer_intrinsic(intrinsic fn);
 inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
 inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
 inline bool is_indeterminate(const expr& x) { return is_intrinsic(x, intrinsic::indeterminate); }
-inline bool is_infinity(const expr& x) { return is_positive_infinity(x) || is_negative_infinity(x); }
+inline int is_infinity(const expr& x) {
+  if (is_positive_infinity(x)) return 1;
+  if (is_negative_infinity(x)) return -1;
+  return 0;
+}
 bool is_finite(const expr& x);
 
 // Get an expression representing non-numerical constants.
 const expr& positive_infinity();
 const expr& negative_infinity();
+const expr& infinity(int sign = 1);
 const expr& indeterminate();
 
 inline bool is_positive(const expr& x) {
@@ -898,7 +902,6 @@ public:
 expr abs(expr x);
 
 expr buffer_rank(expr buf);
-expr buffer_base(expr buf);
 expr buffer_elem_size(expr buf);
 expr buffer_min(expr buf, expr dim);
 expr buffer_max(expr buf, expr dim);
@@ -907,6 +910,7 @@ expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 expr buffer_at(expr buf, span<const expr> at);
 expr buffer_at(expr buf, span<const var> at);
+expr buffer_at(expr buf);
 
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);

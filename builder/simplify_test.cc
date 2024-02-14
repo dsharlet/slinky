@@ -282,7 +282,7 @@ expr random_buffer_intrinsic() {
   case 0: return buffer_min(random_pick(bufs), rand() % max_rank);
   case 1: return buffer_extent(random_pick(bufs), rand() % max_rank);
   case 2: return buffer_max(random_pick(bufs), rand() % max_rank);
-  default: return buffer_base(random_pick(bufs));
+  default: return buffer_at(random_pick(bufs));
   }
 }
 

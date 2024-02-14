@@ -16,72 +16,77 @@ namespace slinky {
 
 class matcher : public node_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
-  const base_node* self;
+  const base_node* self = nullptr;
   symbol_map<expr>* matches;
-
-  template <typename T>
-  const T* self_as() const {
-    if (self && self->type == T::static_type) {
-      return static_cast<const T*>(self);
-    } else {
-      return nullptr;
-    }
-  }
 
 public:
   int match = 0;
 
-  matcher(const base_node* n, symbol_map<expr>* matches = nullptr) : self(n), matches(matches) {}
+  matcher(symbol_map<expr>* matches = nullptr) : matches(matches) {}
 
   template <typename T>
   bool try_match(T self, T op) {
-    if (self == op) {
-      match = 0;
-    } else if (self < op) {
+    assert(match == 0);
+    if (self < op) {
       match = -1;
-    } else {
+    } else if (self > op) {
       match = 1;
     }
     return match == 0;
   }
 
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
-  void visit(const expr& op) {
-    switch (op.type()) {
-    case node_type::add: visit(reinterpret_cast<const add*>(op.get())); return;
-    case node_type::min: visit(reinterpret_cast<const class min*>(op.get())); return;
-    case node_type::max: visit(reinterpret_cast<const class max*>(op.get())); return;
-    default: op.accept(this);
+  void visit(const base_expr_node* op) {
+    switch (op->type) {
+    case node_type::variable: visit(reinterpret_cast<const variable*>(op)); return;
+    case node_type::add: visit(reinterpret_cast<const add*>(op)); return;
+    case node_type::min: visit(reinterpret_cast<const class min*>(op)); return;
+    case node_type::max: visit(reinterpret_cast<const class max*>(op)); return;
+    default: op->accept(this);
     }
   }
 
-  bool try_match(const expr& e, const expr& op) {
-    if (!e.defined() && !op.defined()) {
-      match = 0;
-    } else if (!e.defined()) {
+  bool try_match(const base_expr_node* e, const base_expr_node* op) {
+    assert(match == 0);
+    if (!e && !op) {
+    } else if (!e) {
       match = -1;
-    } else if (!op.defined()) {
+    } else if (!op) {
+      match = 1;
+    } else if (matches && op->type == node_type::variable) {
+      // When we are matching with variables as wildcards, the type doesn't need to match.
+      self = e;
+      visit(reinterpret_cast<const variable*>(op));
+    } else if (e->type < op->type) {
+      match = -1;
+    } else if (e->type > op->type) {
       match = 1;
     } else {
-      self = e.get();
+      self = e;
       visit(op);
     }
     return match == 0;
   }
+  bool try_match(const expr& e, const expr& op) { return try_match(e.get(), op.get()); }
 
-  bool try_match(const stmt& s, const stmt& op) {
-    if (!s.defined() && !op.defined()) {
-      match = 0;
-    } else if (!s.defined()) {
+  bool try_match(const base_stmt_node* s, const base_stmt_node* op) {
+    assert(match == 0);
+    if (!s && !op) {
+    } else if (!s) {
       match = -1;
-    } else if (!op.defined()) {
+    } else if (!op) {
+      match = 1;
+    } else if (s->type < op->type) {
+      match = -1;
+    } else if (s->type > op->type) {
       match = 1;
     } else {
-      self = s.get();
-      op.accept(this);
+      self = s;
+      op->accept(this);
     }
     return match == 0;
   }
+  bool try_match(const stmt& s, const stmt& op) { return try_match(s.get(), op.get()); }
 
   bool try_match(const interval_expr& self, const interval_expr& op) {
     if (!try_match(self.min, op.min)) return false;
@@ -121,30 +126,14 @@ public:
   }
 
   template <typename T>
-  const T* match_self_as(const T* op) {
-    const T* result = self_as<T>();
-    if (result) {
-      match = 0;
-    } else if (!self || self->type < op->type) {
-      match = -1;
-    } else {
-      match = 1;
-    }
-    return result;
-  }
-
-  template <typename T>
   void match_binary(const T* op) {
-    if (match) return;
-    const T* ex = match_self_as(op);
-    if (!ex) return;
+    const T* ex = static_cast<const T*>(self);
 
     if (!try_match(ex->a, op->a)) return;
     if (!try_match(ex->b, op->b)) return;
   }
 
   void visit(const variable* op) override {
-    if (match) return;
     if (matches) {
       std::optional<expr>& matched = (*matches)[op->sym];
       if (matched) {
@@ -152,36 +141,27 @@ public:
         if (!matched->same_as(static_cast<const base_expr_node*>(self))) {
           symbol_map<expr>* old_matches = matches;
           matches = nullptr;
-          matched->accept(this);
+          try_match(matched->get(), static_cast<const base_expr_node*>(self));
           matches = old_matches;
         }
       } else {
         // This is a new match.
         matched = static_cast<const base_expr_node*>(self);
-        match = 0;
       }
     } else {
-      const variable* ev = match_self_as(op);
-      if (ev) {
-        try_match(ev->sym, op->sym);
-      }
+      const variable* ev = static_cast<const variable*>(self);
+      try_match(ev->sym, op->sym);
     }
   }
 
   void visit(const constant* op) override {
-    if (match) return;
-
-    const constant* ec = match_self_as(op);
-    if (ec) {
-      try_match(ec->value, op->value);
-    }
+    const constant* ec = static_cast<const constant*>(self);
+    try_match(ec->value, op->value);
   }
 
   template <typename T>
   void visit_let(const T* op) {
-    if (match) return;
-    const T* el = match_self_as(op);
-    if (!el) return;
+    const T* el = static_cast<const T*>(self);
 
     if (!try_match(el->lets, op->lets)) return;
     if (!try_match(el->body, op->body)) return;
@@ -201,18 +181,15 @@ public:
   void visit(const less_equal* op) override { match_binary(op); }
   void visit(const logical_and* op) override { match_binary(op); }
   void visit(const logical_or* op) override { match_binary(op); }
+
   void visit(const logical_not* op) override {
-    if (match) return;
-    const class logical_not* ne = match_self_as(op);
-    if (!ne) return;
+    const class logical_not* ne = static_cast<const logical_not*>(self);
 
     try_match(ne->a, op->a);
   }
 
   void visit(const class select* op) override {
-    if (match) return;
-    const class select* se = match_self_as(op);
-    if (!se) return;
+    const class select* se = static_cast<const class select*>(self);
 
     if (!try_match(se->condition, op->condition)) return;
     if (!try_match(se->true_value, op->true_value)) return;
@@ -220,28 +197,22 @@ public:
   }
 
   void visit(const call* op) override {
-    if (match) return;
-    const call* c = match_self_as(op);
-    if (!c) return;
+    const call* c = static_cast<const call*>(self);
 
     if (!try_match(c->intrinsic, op->intrinsic)) return;
     if (!try_match(c->args, op->args)) return;
   }
 
-  void visit(const let_stmt* op) override { visit_let(op); }
+  void visit(const let_stmt* op) override { visit_let(static_cast<const let_stmt*>(self)); }
 
   void visit(const block* op) override {
-    if (match) return;
-    const block* bs = match_self_as(op);
-    if (!bs) return;
+    const block* bs = static_cast<const block*>(self);
 
     if (!try_match(bs->stmts, op->stmts)) return;
   }
 
   void visit(const loop* op) override {
-    if (match) return;
-    const loop* ls = match_self_as(op);
-    if (!ls) return;
+    const loop* ls = static_cast<const loop*>(self);
 
     if (!try_match(ls->sym, op->sym)) return;
     if (!try_match(ls->bounds, op->bounds)) return;
@@ -251,17 +222,16 @@ public:
 
   void visit(const call_stmt* op) override {
     if (match) return;
-    const call_stmt* cs = match_self_as(op);
-    if (!cs) return;
+    const call_stmt* cs = static_cast<const call_stmt*>(self);
+    assert(cs);
 
     if (!try_match(cs->inputs, op->inputs)) return;
     if (!try_match(cs->outputs, op->outputs)) return;
   }
 
   void visit(const copy_stmt* op) override {
-    if (match) return;
-    const copy_stmt* cs = match_self_as(op);
-    if (!cs) return;
+    const copy_stmt* cs = static_cast<const copy_stmt*>(self);
+    assert(cs);
 
     if (!try_match(cs->src, op->src)) return;
     if (!try_match(cs->src_x, op->src_x)) return;
@@ -271,9 +241,8 @@ public:
   }
 
   void visit(const allocate* op) override {
-    if (match) return;
-    const allocate* as = match_self_as(op);
-    if (!as) return;
+    const allocate* as = static_cast<const allocate*>(self);
+    assert(as);
 
     if (!try_match(as->sym, op->sym)) return;
     if (!try_match(as->elem_size, op->elem_size)) return;
@@ -282,9 +251,8 @@ public:
   }
 
   void visit(const make_buffer* op) override {
-    if (match) return;
-    const make_buffer* mbs = match_self_as(op);
-    if (!mbs) return;
+    const make_buffer* mbs = static_cast<const make_buffer*>(self);
+    assert(mbs);
 
     if (!try_match(mbs->sym, op->sym)) return;
     if (!try_match(mbs->base, op->base)) return;
@@ -294,9 +262,8 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    if (match) return;
-    const clone_buffer* mbs = match_self_as(op);
-    if (!mbs) return;
+    const clone_buffer* mbs = static_cast<const clone_buffer*>(self);
+    assert(mbs);
 
     if (!try_match(mbs->sym, op->sym)) return;
     if (!try_match(mbs->src, op->src)) return;
@@ -304,9 +271,8 @@ public:
   }
 
   void visit(const crop_buffer* op) override {
-    if (match) return;
-    const crop_buffer* cbs = match_self_as(op);
-    if (!cbs) return;
+    const crop_buffer* cbs = static_cast<const crop_buffer*>(self);
+    assert(cbs);
 
     if (!try_match(cbs->sym, op->sym)) return;
     if (!try_match(cbs->bounds, op->bounds)) return;
@@ -314,9 +280,8 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    if (match) return;
-    const crop_dim* cds = match_self_as(op);
-    if (!cds) return;
+    const crop_dim* cds = static_cast<const crop_dim*>(self);
+    assert(cds);
 
     if (!try_match(cds->sym, op->sym)) return;
     if (!try_match(cds->dim, op->dim)) return;
@@ -325,9 +290,8 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    if (match) return;
-    const slice_buffer* cbs = match_self_as(op);
-    if (!cbs) return;
+    const slice_buffer* cbs = static_cast<const slice_buffer*>(self);
+    assert(cbs);
 
     if (!try_match(cbs->sym, op->sym)) return;
     if (!try_match(cbs->at, op->at)) return;
@@ -335,9 +299,8 @@ public:
   }
 
   void visit(const slice_dim* op) override {
-    if (match) return;
-    const slice_dim* cds = match_self_as(op);
-    if (!cds) return;
+    const slice_dim* cds = static_cast<const slice_dim*>(self);
+    assert(cds);
 
     if (!try_match(cds->sym, op->sym)) return;
     if (!try_match(cds->dim, op->dim)) return;
@@ -346,9 +309,8 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
-    if (match) return;
-    const truncate_rank* trs = match_self_as(op);
-    if (!trs) return;
+    const truncate_rank* trs = static_cast<const truncate_rank*>(self);
+    assert(trs);
 
     if (!try_match(trs->sym, op->sym)) return;
     if (!try_match(trs->rank, op->rank)) return;
@@ -356,17 +318,16 @@ public:
   }
 
   void visit(const check* op) override {
-    if (match) return;
-    const check* cs = match_self_as(op);
-    if (!cs) return;
+    const check* cs = static_cast<const check*>(self);
+    assert(cs);
 
     try_match(cs->condition, op->condition);
   }
 };
 
 bool match(const expr& p, const expr& e, symbol_map<expr>& matches) {
-  matcher m(e.get(), &matches);
-  p.accept(&m);
+  matcher m(&matches);
+  m.try_match(e, p);
   return m.match == 0;
 }
 
@@ -380,20 +341,14 @@ bool match(const dim_expr& a, const dim_expr& b) {
 int compare(const expr& a, const expr& b) { return compare(a.get(), b.get()); }
 
 int compare(const base_expr_node* a, const base_expr_node* b) {
-  // This should match the behavior of matcher::try_match.
-  // TODO: It would be nice if we didn't need to duplicate this tricky logic.
-  if (!b) return a ? 1 : 0;
-  matcher m(a);
-  b->accept(&m);
+  matcher m;
+  m.try_match(a, b);
   return m.match;
 }
 
 int compare(const stmt& a, const stmt& b) {
-  // This should match the behavior of matcher::try_match.
-  // TODO: It would be nice if we didn't need to duplicate this tricky logic.
-  if (!b.defined()) return a.defined() ? 1 : 0;
-  matcher m(a.get());
-  b.accept(&m);
+  matcher m;
+  m.try_match(a, b);
   return m.match;
 }
 
@@ -435,7 +390,6 @@ public:
       set_result(r ? *r : v);
     }
   }
-
 
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {

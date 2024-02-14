@@ -48,7 +48,7 @@ public:
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
-      accept_buffer(op->args[0], op->intrinsic == intrinsic::buffer_at || op->intrinsic == intrinsic::buffer_base);
+      accept_buffer(op->args[0], op->intrinsic == intrinsic::buffer_at);
 
       for (std::size_t i = 1; i < op->args.size(); ++i) {
         if (op->args[i].defined()) op->args[i].accept(this);

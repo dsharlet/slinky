@@ -23,21 +23,25 @@ pattern_constant c0{0};
 pattern_constant c1{1};
 pattern_constant c2{2};
 
-} // namespace
+}  // namespace
 
 expr simplify(const class min* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return std::min(*ca, *cb);
   }
-  
+
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   auto r = make_rewriter(min(pattern_expr{a}, pattern_expr{b}));
+  // clang-format off
   if (// Constant simplifications
-      r.rewrite(min(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) ||
       r.rewrite(min(x, rewrite::positive_infinity()), x) ||
       r.rewrite(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
@@ -81,6 +85,7 @@ expr simplify(const class min* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -92,15 +97,19 @@ expr simplify(const class max* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return std::max(*ca, *cb);
   }
 
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+
   auto r = make_rewriter(max(pattern_expr{a}, pattern_expr{b}));
+  // clang-format off
   if (// Constant simplifications
-      r.rewrite(max(x, rewrite::indeterminate()), rewrite::indeterminate()) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) ||
       r.rewrite(max(x, rewrite::negative_infinity()), x) ||
       r.rewrite(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
@@ -140,6 +149,7 @@ expr simplify(const class max* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -151,18 +161,22 @@ expr simplify(const add* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return *ca + *cb;
   }
 
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+  int inf_a = is_infinity(a);
+  int inf_b = is_infinity(b);
+  if (inf_a && inf_b) return inf_a == inf_b ? a : slinky::indeterminate();
+
   auto r = make_rewriter(pattern_expr{a} + pattern_expr{b});
-  if (r.rewrite(x + rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() + rewrite::positive_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() + rewrite::negative_infinity(), rewrite::negative_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() + rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
+  // clang-format off
+  if (r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       r.rewrite(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       r.rewrite(x + 0, x) ||
       r.rewrite(x + x, x * 2) ||
@@ -215,6 +229,7 @@ expr simplify(const add* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -223,8 +238,6 @@ expr simplify(const add* op, expr a, expr b) {
 }
 
 expr simplify(const sub* op, expr a, expr b) {
-  assert(a.defined());
-  assert(b.defined());
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
@@ -234,14 +247,15 @@ expr simplify(const sub* op, expr a, expr b) {
     return simplify(static_cast<add*>(nullptr), a, -*cb);
   }
 
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+  int inf_a = is_infinity(a);
+  int inf_b = is_infinity(b);
+  if (inf_a && inf_b) return inf_a == inf_b ? slinky::indeterminate() : a;
+
   auto r = make_rewriter(pattern_expr{a} - pattern_expr{b});
-  if (r.rewrite(x - rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::indeterminate() - x, rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() - rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() - rewrite::negative_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() - rewrite::negative_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::negative_infinity() - rewrite::positive_infinity(), rewrite::negative_infinity()) ||
-      r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
+  // clang-format off
+  if (r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       r.rewrite(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       r.rewrite(x - x, 0) ||
       r.rewrite(x - 0, x) ||
@@ -282,6 +296,7 @@ expr simplify(const sub* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -293,18 +308,22 @@ expr simplify(const mul* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
     return *ca * *cb;
   }
 
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+  int inf_a = is_infinity(a);
+  int inf_b = is_infinity(b);
+  if (inf_a && inf_b) return infinity(inf_a * inf_b);
+
   auto r = make_rewriter(pattern_expr{a} * pattern_expr{b});
-  if (r.rewrite(x * rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() * rewrite::positive_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() * rewrite::positive_infinity(), rewrite::negative_infinity()) ||
-      r.rewrite(rewrite::negative_infinity() * rewrite::negative_infinity(), rewrite::positive_infinity()) ||
-      r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
+  // clang-format off
+  if (r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::negative_infinity() * c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::positive_infinity() * c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
       r.rewrite(rewrite::negative_infinity() * c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
@@ -312,11 +331,11 @@ expr simplify(const mul* op, expr a, expr b) {
       r.rewrite(x * 1, x) ||
       r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
       r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) ||
-      r.rewrite((0 - x) * c1, x * eval(-c1)) ||
-      r.rewrite((c0 - x) * c1, eval(c0 * c1) - x * c1) ||
+      r.rewrite((c0 - x) * c1, eval(c0 * c1) + x * eval(-c1)) ||
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -331,14 +350,13 @@ expr simplify(const div* op, expr a, expr b) {
     return euclidean_div(*ca, *cb);
   }
 
+  if (is_indeterminate(a)) return a;
+  if (is_indeterminate(b)) return b;
+  if (is_infinity(a) && is_infinity(b)) return slinky::indeterminate();
+
   auto r = make_rewriter(pattern_expr{a} / pattern_expr{b});
-  if (r.rewrite(x / rewrite::indeterminate(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::indeterminate() / x, rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::positive_infinity() / rewrite::negative_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::negative_infinity() / rewrite::positive_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(rewrite::negative_infinity() / rewrite::negative_infinity(), rewrite::indeterminate()) ||
-      r.rewrite(x / rewrite::positive_infinity(), 0, is_finite(x)) ||
+  // clang-format off
+  if (r.rewrite(x / rewrite::positive_infinity(), 0, is_finite(x)) ||
       r.rewrite(x / rewrite::negative_infinity(), 0, is_finite(x)) ||
       r.rewrite(rewrite::positive_infinity() / c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
       r.rewrite(rewrite::negative_infinity() / c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
@@ -359,6 +377,7 @@ expr simplify(const div* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -374,12 +393,14 @@ expr simplify(const mod* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} % pattern_expr{b});
+  // clang-format off
   if (r.rewrite(x % 1, 0) || 
       r.rewrite(x % 0, 0) || 
       r.rewrite(x % x, 0) ||
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -395,23 +416,25 @@ expr simplify(const less* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} < pattern_expr{b});
+  // clang-format off
   if (r.rewrite(rewrite::positive_infinity() < x, false, is_finite(x)) ||
       r.rewrite(rewrite::negative_infinity() < x, true, is_finite(x)) ||
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
+    
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x - y < x, 0 < y) ||
-      r.rewrite(0 - x < c0, -c0 < x) ||
       r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
+      r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x < x - y, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
+      r.rewrite(x < x - y, y < 0) ||
+      r.rewrite(x - y < y, x < y * 2) ||
+      r.rewrite(y < x - y, y * 2 < x) ||
+
       r.rewrite(x + y < x + z, y < z) ||
       r.rewrite(x - y < x - z, z < y) ||
       r.rewrite(x - y < z - y, x < z) ||
@@ -435,6 +458,7 @@ expr simplify(const less* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -450,6 +474,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} <= pattern_expr{b});
+  // clang-format off
   if (r.rewrite(rewrite::positive_infinity() <= x, false, is_finite(x)) ||
       r.rewrite(rewrite::negative_infinity() <= x, true, is_finite(x)) ||
       r.rewrite(x <= rewrite::positive_infinity(), true, is_finite(x)) ||
@@ -458,18 +483,22 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(x <= x + y, 0 <= y) ||
       r.rewrite(x + y <= x, y <= 0) ||
       r.rewrite(x - y <= x, 0 <= y) ||
-      r.rewrite(0 - x <= c0, -c0 <= x) ||
-      r.rewrite(c0 - x <= y, c0 <= y + x) ||
-      r.rewrite(x <= c1 - y, x + y <= c1) ||
-      r.rewrite(x + c0 <= y + c1, x - y <= eval(c1 - c0)) ||
+
+      r.rewrite(x + c0 <= c1, x <= eval(c1 - c0)) ||
+      r.rewrite(c0 - x <= c1, eval(c0 - c1) <= x) ||
+      r.rewrite(c0 <= c1 - x, x <= eval(c1 - c0)) ||
+      r.rewrite(c0 <= x + c1, eval(c0 - c1) <= x) ||
 
       r.rewrite((x + c0) / c1 <= x / c1, eval(c0 <= 0)) ||
       r.rewrite(x / c1 <= (x + c0) / c1, eval(0 <= c0)) ||
-
+    
       r.rewrite(x <= x + y, 0 <= y) ||
       r.rewrite(x + y <= x, y <= 0) ||
-      r.rewrite(x <= x - y, y <= 0) ||
       r.rewrite(x - y <= x, 0 <= y) ||
+      r.rewrite(x <= x - y, y <= 0) ||
+      r.rewrite(x - y <= y, x <= y * 2) ||
+      r.rewrite(y <= x - y, y * 2 <= x) ||
+    
       r.rewrite(x + y <= x + z, y <= z) ||
       r.rewrite(x - y <= x - z, z <= y) ||
       r.rewrite(x - y <= z - y, x <= z) ||
@@ -492,6 +521,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -503,6 +533,7 @@ expr simplify(const equal* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
+
   const index_t* ca = as_constant(a);
   const index_t* cb = as_constant(b);
   if (ca && cb) {
@@ -510,12 +541,14 @@ expr simplify(const equal* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} == pattern_expr{b});
+  // clang-format off
   if (r.rewrite(x == x, true) ||
       r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
-      r.rewrite(c0 - x == c1, -x == eval(c1 - c0), eval(c0 != 0)) ||
+      r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -534,12 +567,14 @@ expr simplify(const not_equal* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} != pattern_expr{b});
+  // clang-format off
   if (r.rewrite(x != x, false) ||
       r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
-      r.rewrite(c0 - x != c1, -x != eval(c1 - c0), eval(c0 != 0)) ||
+      r.rewrite(c0 - x != c1, x != eval(c0 - c1)) ||
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -561,6 +596,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
+  // clang-format off
   if (r.rewrite(x && x, x) ||
       r.rewrite(x && !x, false) ||
       r.rewrite(!x && x, false) ||
@@ -572,6 +608,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -593,6 +630,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
+  // clang-format off
   if (r.rewrite(x || x, x) ||
       r.rewrite(x || !x, true) ||
       r.rewrite(!x || x, true) ||
@@ -603,7 +641,8 @@ expr simplify(const logical_or* op, expr a, expr b) {
       r.rewrite((x || y) || x, x || y) ||
       false) {
     return r.result;
-  };
+  }
+  // clang-format on
   if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
@@ -618,6 +657,7 @@ expr simplify(const class logical_not* op, expr a) {
   }
 
   auto r = make_rewriter(!pattern_expr{a});
+  // clang-format off
   if (r.rewrite(!!x, x) ||
       r.rewrite(!(x == y), x != y) ||
       r.rewrite(!(x != y), x == y) ||
@@ -626,6 +666,7 @@ expr simplify(const class logical_not* op, expr a) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && a.same_as(op->a)) {
     return op;
   } else {
@@ -644,6 +685,7 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   }
 
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
+  // clang-format off
   if (r.rewrite(select(x, y, y), y) ||
       r.rewrite(select(!x, y, z), select(x, z, y)) ||
 
@@ -655,6 +697,7 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
       false) {
     return r.result;
   }
+  // clang-format on
   if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
     return op;
   } else {
@@ -673,7 +716,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   if (fn == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
-      // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_base(b)
+      // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_at(b)
       if (args[d].defined() && match(args[d], buffer_min(args[0], d - 1))) {
         args[d] = expr();
         changed = true;
@@ -683,10 +726,6 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     while (args.size() > 1 && !args.back().defined()) {
       args.pop_back();
       changed = true;
-    }
-
-    if (args.size() == 1) {
-      return call::make(intrinsic::buffer_base, std::move(args));
     }
   }
 
@@ -703,12 +742,14 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 
   rewriter r(e);
+  // clang-format off
   if (r.rewrite(abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
       r.rewrite(abs(-x), abs(x)) ||
       r.rewrite(abs(abs(x)), abs(x)) ||
       false) {
     return r.result;
   }
+  // clang-format on
   return e;
 }
 

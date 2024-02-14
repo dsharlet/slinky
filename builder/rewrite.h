@@ -21,8 +21,8 @@ struct match_context {
   int variant_bits;
 };
 
-SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context& ctx) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context& ctx) { return p; }
+SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
+SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context&) { return p; }
 SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::constant; }
 
 class pattern_expr {
@@ -265,11 +265,6 @@ public:
   T a;
   Fn fn;
 };
-
-template <typename T, typename Fn>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const replacement_predicate<T, Fn>&) {
-  return node_type::none;
-}
 
 template <typename T, typename Fn>
 bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
