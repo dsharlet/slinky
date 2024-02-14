@@ -435,7 +435,7 @@ class call : public expr_node<call> {
 
 public:
   slinky::intrinsic intrinsic;
-  embedded_array<expr> args;
+  embedded_vector<expr> args;
 
   void accept(node_visitor* v) const override;
 

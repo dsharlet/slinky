@@ -302,7 +302,7 @@ expr call::make(slinky::intrinsic i, span<const expr> args) {
   void* buffer = ::operator new(sizeof(call) + sizeof(expr) * args.size());
   auto n = new (buffer) call(args.size());
   n->intrinsic = i;
-  std::copy(args.begin(), args.end(), n->args.begin());
+  n->args.assign(args.begin(), args.end());
   return n;
 }
 

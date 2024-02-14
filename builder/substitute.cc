@@ -126,7 +126,7 @@ public:
   }
 
   template <typename T>
-  bool try_match(const embedded_array<T>& self, const embedded_array<T>& op) {
+  bool try_match(const embedded_vector<T>& self, const embedded_vector<T>& op) {
     return try_match_vector(self, op);
   }
 

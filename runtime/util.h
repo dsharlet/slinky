@@ -227,12 +227,10 @@ public:
 // For use in objects that allocate a block of memory for the object itself plus extra data. This object
 // can be pointed at that extra data to manage that memory.
 template <typename T>
-class embedded_array {
-  T* data_;
-  std::size_t size_;
-
+class embedded_vector {
 public:
   using value_type = T;
+  using size_type = std::size_t;
   using reference = value_type&;
   using const_reference = const value_type&;
   using pointer = value_type*;
@@ -240,37 +238,82 @@ public:
   using iterator = pointer;
   using const_iterator = const_pointer;
 
-  embedded_array() = delete;
-  embedded_array(T* data, std::size_t size) : data_(data), size_(size) {
-    // Call default constructor.
-    for (T& i : *this) {
-      new (&i) T();
-    }
-  }
-  ~embedded_array() {
-    for (T& i : *this) {
-      i.~T();
-    }
-  }
+private:
+  T* data_;
+  size_type capacity_;
+  size_type size_;
 
-  // We can't implement any copy/move functions.
-  embedded_array(const embedded_array&) = delete;
-  embedded_array(embedded_array&&) = delete;
-  void operator=(const embedded_array&) = delete;
-  void operator=(embedded_array&&) = delete;
+public:
+  embedded_vector() = delete;
+  embedded_vector(T* data, size_type capacity) : data_(data), capacity_(capacity), size_(0) {}
+  ~embedded_vector() { resize(0); }
+
+  // We can't implement any constructor that doesn't give us a pointer and capacity, and we can't do anything useful
+  // with moves.
+  embedded_vector(const embedded_vector&) = delete;
+  embedded_vector(embedded_vector&&) = delete;
+  void operator=(const embedded_vector&) = delete;
+  void operator=(embedded_vector&&) = delete;
+
+  void assign(size_type count, const T& value) {
+    for (size_type i = 0; i < std::min(size_, count); ++i) {
+      data_[i] = value;
+    }
+    if (size_ < count) {
+      for (size_type i = size_; i < count; ++i) {
+        push_back(value);
+      }
+    } else if (size_ > count) {
+      resize(count);
+    }
+  }
+  template <class It>
+  void assign(It begin, It end) {
+    resize(0);
+    for (It i = begin; i != end; ++i) {
+      push_back(*i);
+    }
+  }
+  void assign(std::initializer_list<T> ilist) { assign(ilist.begin(), ilist.end()); }
 
   T* data() { return data_; }
   const T* data() const { return data_; }
-  std::size_t size() const { return size_; }
+  size_type size() const { return size_; }
+  size_type capacity() const { return capacity_; }
   bool empty() const { return size_ == 0; }
 
-  T& operator[](std::size_t i) { return data_[i]; }
-  const T& operator[](std::size_t i) const { return data_[i]; }
-  T& at(std::size_t i) {
+  void resize(size_type new_size) {
+    assert(new_size <= capacity_);
+    // Construct new elements.
+    for (size_type i = size_; i < new_size; ++i) {
+      new (&data_[i]) T();
+    }
+    // Destruct removed elements.
+    for (size_type i = new_size; i < size_; ++i) {
+      data_[i].~T();
+    }
+    size_ = new_size;
+  }
+  void clear() { resize(0); }
+  void push_back(const T& x) { new (&data_[size_++]) T(x); }
+  void push_back(T&& x) { new (&data_[size_++]) T(x); }
+  template <typename... Args>
+  reference emplace_back(Args&&... args) {
+    new (&data_[size_++]) T(std::forward<Args>(args)...);
+    return back();
+  }
+  void pop_back() {
+    back().~T();
+    --size_;
+  }
+
+  T& operator[](size_type i) { return data_[i]; }
+  const T& operator[](size_type i) const { return data_[i]; }
+  T& at(size_type i) {
     assert(i < size_);
     return data_[i];
   }
-  const T& at(std::size_t i) const {
+  const T& at(size_type i) const {
     assert(i < size_);
     return data_[i];
   }
