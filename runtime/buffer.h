@@ -11,6 +11,15 @@
 
 namespace slinky {
 
+#ifdef NDEBUG
+// alloca() will cause stack-smashing code to be inserted;
+// while laudable, we use alloca() in time-critical code
+// and don't want it inserted there.
+#define SLINKY_NO_STACK_PROTECTOR __attribute__ ((no_stack_protector))
+#else
+#define SLINKY_NO_STACK_PROTECTOR /* nothing */
+#endif
+
 using index_t = std::ptrdiff_t;
 
 // Helper to offset a pointer by a number of bytes.
@@ -491,7 +500,7 @@ void for_each_tile(const index_t* tile, raw_buffer& buf, int d, const F& f) {
 // This function is not fast, use it for non-performance critical code. It is useful for
 // making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
 template <typename F>
-void for_each_index(span<const dim> dims, const F& f) {
+SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) {
   // Not using alloca for performance, but to avoid including <vector>
   index_t* i = SLINKY_ALLOCA(index_t, dims.size());
   internal::for_each_index(dims, dims.size() - 1, i, f);
@@ -509,7 +518,7 @@ void for_each_index(const raw_buffer& buf, const F& f) {
 // All additional buffers must be of identical rank to the main, and must cover (at least) the same area in each
 // dimension.
 template <typename F, typename... Args>
-void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
+SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   constexpr std::size_t NumBufs = sizeof...(Args) + 1;
   std::array<const raw_buffer*, NumBufs> bufs = {&buf, &other_bufs...};
   for (std::size_t n = 1; n < NumBufs; n++) {
@@ -545,7 +554,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
 // dimension.
 template <typename F>
-void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
+SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
   assert(buf.rank == tile.size());
 
   // Copy the buffer so we can mutate it.
