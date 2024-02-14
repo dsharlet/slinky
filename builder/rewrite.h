@@ -233,8 +233,8 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_call<Args...>&)
   return node_type::call;
 }
 
-template <typename T, std::size_t... Is>
-bool match_tuple(const T& t, const std::vector<expr>& x, match_context& ctx, std::index_sequence<Is...>) {
+template <typename T, typename V, std::size_t... Is>
+bool match_tuple(const T& t, const V& x, match_context& ctx, std::index_sequence<Is...>) {
   return (... && match(std::get<Is>(t), x[Is], ctx));
 }
 

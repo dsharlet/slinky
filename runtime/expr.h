@@ -431,13 +431,15 @@ public:
 };
 
 class call : public expr_node<call> {
+  call(std::size_t size);
+
 public:
   slinky::intrinsic intrinsic;
-  std::vector<expr> args;
+  embedded_array<expr> args;
 
   void accept(node_visitor* v) const override;
 
-  static expr make(slinky::intrinsic i, std::vector<expr> args);
+  static expr make(slinky::intrinsic i, span<const expr> args);
 
   static constexpr node_type static_type = node_type::call;
 };

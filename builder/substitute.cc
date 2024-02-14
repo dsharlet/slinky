@@ -104,7 +104,7 @@ public:
   }
 
   template <typename T>
-  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+  bool try_match_vector(const T& self, const T& op) {
     if (self.size() < op.size()) {
       match = -1;
       return false;
@@ -118,6 +118,16 @@ public:
     }
 
     return true;
+  }
+
+  template <typename T>
+  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+    return try_match_vector(self, op);
+  }
+
+  template <typename T>
+  bool try_match(const embedded_array<T>& self, const embedded_array<T>& op) {
+    return try_match_vector(self, op);
   }
 
   template <typename T>
