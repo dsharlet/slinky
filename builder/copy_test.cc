@@ -49,7 +49,6 @@ TEST(copy, trivial_1d) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  // This copy should be implemented as a single call to copy.
   func copy = func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -94,7 +93,6 @@ TEST(copy, trivial_2d) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  // This copy should be implemented as a single call to copy.
   func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -139,7 +137,6 @@ TEST(copy, trivial_3d) {
   var y(ctx, "y");
   var z(ctx, "z");
 
-  // This copy should be implemented as a single call to copy.
   func copy = func::make_copy({in, {point(x), point(y), point(z)}}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -212,7 +209,6 @@ TEST(copy, flip_y) {
     var y(ctx, "y");
     var z(ctx, "z");
 
-    // This copy should be implemented with a loop over y, and a call to copy at each y.
     func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
 
     if (split > 0) {
@@ -235,6 +231,7 @@ TEST(copy, flip_y) {
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    // TODO: This could be expressed with a single copy with a negative stride in y.
     ASSERT_EQ(eval_ctx.copy_calls, H);
 
     for (int z = 0; z < D; ++z) {
@@ -258,8 +255,6 @@ TEST(copy, upsample_y) {
     var x(ctx, "x");
     var y(ctx, "y");
 
-    // This copy should be implemented with a loop over y, and a call to copy at each y.
-    // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
     func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
 
     if (split > 0) {
@@ -280,6 +275,8 @@ TEST(copy, upsample_y) {
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
+    // This copy should be implemented with a loop over y, and a call to copy at each y.
+    // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
     ASSERT_EQ(eval_ctx.copy_calls, H);
 
     for (int y = 0; y < H; ++y) {
@@ -302,8 +299,6 @@ TEST(copy, transpose) {
   var z(ctx, "z");
 
   // Transpose the first two dimensions.
-  // TODO: We should have a special case for transposing 2 dimensions, and this copy should
-  // result in a loop plus a call to that.
   func flip = func::make_copy({in, {point(y), point(x), point(z)}}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
