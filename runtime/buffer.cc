@@ -215,7 +215,7 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
 
 }  // namespace
 
-void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
 
@@ -262,7 +262,7 @@ void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   copy(src_base, dst_base, dims, dst.elem_size, padding, rank - 1);
 }
 
-void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
+SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   if (dst.rank == 0) {
     // The buffer is scalar.
     return;
@@ -290,7 +290,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   copy(nullptr, dst_base, dims, dst.elem_size, padding, rank - 1);
 }
 
-void fill(const raw_buffer& dst, const void* value) {
+SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   if (dst.rank == 0) {
     // The buffer is scalar.
     memcpy(dst.base, value, dst.elem_size);

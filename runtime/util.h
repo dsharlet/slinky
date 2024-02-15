@@ -14,6 +14,15 @@ namespace slinky {
 #define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(alloca((N) * sizeof(T)))
 #define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
 
+#ifdef NDEBUG
+// alloca() will cause stack-smashing code to be inserted;
+// while laudable, we use alloca() in time-critical code
+// and don't want it inserted there.
+#define SLINKY_NO_STACK_PROTECTOR __attribute__((no_stack_protector))
+#else
+#define SLINKY_NO_STACK_PROTECTOR /* nothing */
+#endif
+
 // Signed integer division in C/C++ is terrible. These implementations
 // of Euclidean division and mod are taken from:
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408

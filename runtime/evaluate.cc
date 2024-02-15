@@ -117,7 +117,7 @@ public:
   void visit(const constant* op) override { result = op->value; }
 
   template <typename T>
-  void visit_let(const T* op) {
+  SLINKY_NO_STACK_PROTECTOR void visit_let(const T* op) {
     // This is a bit ugly but we really want to avoid heap allocations here.
     const size_t size = op->lets.size();
     std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
@@ -316,6 +316,7 @@ public:
     std::abort();
   }
 
+  // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
   void visit(const allocate* op) override {
     std::size_t rank = op->dims.size();
     raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
@@ -356,7 +357,7 @@ public:
     }
   }
 
-  void visit(const make_buffer* op) override {
+  SLINKY_NO_STACK_PROTECTOR void visit(const make_buffer* op) override {
     std::size_t rank = op->dims.size();
     raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
     buffer->elem_size = eval_expr(op->elem_size);
@@ -375,7 +376,7 @@ public:
     visit(op->body);
   }
 
-  void visit(const clone_buffer* op) override {
+  SLINKY_NO_STACK_PROTECTOR void visit(const clone_buffer* op) override {
     raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
 
     raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
@@ -389,7 +390,7 @@ public:
     visit(op->body);
   }
 
-  void visit(const crop_buffer* op) override {
+  SLINKY_NO_STACK_PROTECTOR void visit(const crop_buffer* op) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
@@ -457,7 +458,7 @@ public:
     dim.set_bounds(old_min, old_max);
   }
 
-  void visit(const slice_buffer* op) override {
+  SLINKY_NO_STACK_PROTECTOR void visit(const slice_buffer* op) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
@@ -486,7 +487,7 @@ public:
     buffer->dims = dims;
   }
 
-  void visit(const slice_dim* op) override {
+  SLINKY_NO_STACK_PROTECTOR void visit(const slice_dim* op) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
