@@ -205,7 +205,6 @@ public:
     node_mutator::visit(op);
   }
 
-  // TODO: Need to handle this?
   void visit(const slice_buffer* op) override {
     std::optional<box_expr> bounds = crops[op->sym];
     for (int d = 0; d < static_cast<int>(op->at.size()); ++d) {
