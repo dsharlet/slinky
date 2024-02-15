@@ -351,10 +351,16 @@ bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
 }
 
 bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
+  // Use bit-twiddling hacks here to avoid conditional branches;
+  // in the most common cases, this will be inlined into make_for_each_contiguous_slice_dims_impl
+  // with constant small values for `size`, so this will be a dozen or so
+  // instructions with no branching.
+  static_assert(dim::unfolded == std::numeric_limits<index_t>::max());
+  index_t any = 0;
   for (std::size_t i = 0; i < size; ++i) {
-    if (bufs[i]->dim(d).fold_factor() != dim::unfolded) return true;
+    any |= ~bufs[i]->dim(d).fold_factor();
   }
-  return false;
+  return (any << 1) != 0;
 }
 
 template <std::size_t BufsSize>
