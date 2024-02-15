@@ -492,7 +492,6 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
   int rank = static_cast<int>(b->rank());
   expr buf_var = variable::make(b->sym());
   checks.push_back(check::make(buf_var != 0));
-  // TODO: Maybe this check is overzealous (https://github.com/dsharlet/slinky/issues/17).
   checks.push_back(check::make(buffer_rank(buf_var) == rank));
   checks.push_back(check::make(buffer_at(buf_var) != 0));
   checks.push_back(check::make(buffer_elem_size(buf_var) == b->elem_size()));
