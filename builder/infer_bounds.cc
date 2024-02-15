@@ -153,11 +153,8 @@ public:
     std::vector<stmt> checks;
     for (std::size_t d = 0; d < dims.size(); ++d) {
       if (d < bounds.size()) {
-        // TODO: These checks fail in a case that seems reasonable (setting the bounds of a buffer that
-        // is going to be copied for the purposes of adding padding). Maybe the checks aren't valid?
-        // Maybe they should be skipped if the consumer is a copy? That seems like a hack.
-        // checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-        // checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+        checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+        checks.push_back(check::make(dims[d].max() >= bounds[d].max));
       }
     }
 
