@@ -380,10 +380,13 @@ union dim_or_stride {
 };
 
 struct for_each_contiguous_slice_dim {
-  enum {
+  enum op {
     call_f,       // Uses extent
     loop_linear,  // Uses stride, extent
     loop_folded,  // Uses dim, extent
+    loop_linear_next,
+    loop_folded_next,
+    finished,
   } impl;
   index_t extent;
 };
@@ -391,47 +394,114 @@ struct for_each_contiguous_slice_dim {
 void make_for_each_contiguous_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims);
 
+template <std::size_t NumBufs>
+struct stack_entry {
+  std::array<void*, NumBufs> bases;
+  index_t i, end;
+  for_each_contiguous_slice_dim::op pop_op;
+};
+
 template <typename F, std::size_t NumBufs>
-void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_each_contiguous_slice_dim* slice_dim,
+void for_each_contiguous_slice_impl(stack_entry<NumBufs>* stack_base, const for_each_contiguous_slice_dim* slice_dim,
     const dim_or_stride* dims, const F& f) {
-  if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
-    std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent), bases));
-  } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
-    const auto* next = slice_dim + 1;
-    if (next->impl == for_each_contiguous_slice_dim::call_f) {
-      // If the next step is to call f, do that eagerly here to avoid an extra call.
-      for (index_t i = 0; i < slice_dim->extent; ++i) {
-        std::apply(f, std::tuple_cat(std::make_tuple(next->extent), bases));
-        for (std::size_t n = 0; n < NumBufs; n++) {
-          bases[n] = offset_bytes(bases[n], dims[n].stride);
-        }
-      }
-    } else {
-      for (index_t i = 0; i < slice_dim->extent; ++i) {
-        for_each_contiguous_slice_impl(bases, slice_dim + 1, dims + NumBufs, f);
-        for (std::size_t n = 0; n < NumBufs; n++) {
-          bases[n] = offset_bytes(bases[n], dims[n].stride);
-        }
-      }
+  auto* stack = stack_base;
+  index_t i, end;
+  for_each_contiguous_slice_dim::op op = slice_dim->impl;
+
+#define PUSH(POP_OP)                                                                                                   \
+  do {                                                                                                                 \
+    stack->i = i;                                                                                                      \
+    stack->end = end;                                                                                                  \
+    stack->pop_op = (POP_OP);                                                                                          \
+    slice_dim += 1;                                                                                                    \
+    dims += NumBufs;                                                                                                   \
+    stack++;                                                                                                           \
+  } while (0)
+
+#define POP()                                                                                                          \
+  do {                                                                                                                 \
+    assert(stack > stack_base);                                                                                        \
+    stack--;                                                                                                           \
+    i = stack->i;                                                                                                      \
+    end = stack->end;                                                                                                  \
+    op = stack->pop_op;                                                                                                \
+    slice_dim -= 1;                                                                                                    \
+    dims -= NumBufs;                                                                                                   \
+  } while (0)
+
+  stack->pop_op = for_each_contiguous_slice_dim::finished;
+  stack++;
+  stack->bases = (stack - 1)->bases;
+  do {
+    switch (op) {
+    case for_each_contiguous_slice_dim::call_f: {
+      std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent), stack->bases));
+      POP();
+      break;
     }
-  } else {
-    assert(slice_dim->impl == for_each_contiguous_slice_dim::loop_folded);
+    case for_each_contiguous_slice_dim::loop_linear: {
+      if (const auto* next = slice_dim + 1; next->impl == for_each_contiguous_slice_dim::call_f) {
+        // If the next step is to call f, do that eagerly here to avoid loop overhead.
+        for (index_t i = 0; i < slice_dim->extent; ++i) {
+          std::apply(f, std::tuple_cat(std::make_tuple(next->extent), stack->bases));
+          for (std::size_t n = 0; n < NumBufs; n++) {
+            stack->bases[n] = offset_bytes(stack->bases[n], dims[n].stride);
+          }
+        }
+        POP();
+        break;
+      }
 
-    std::array<void*, NumBufs> offset_bases;
-
-    // TODO: If any buffer if folded in a given dimension, we just take the slow path
-    // that handles either folded or unfolded for *all* the buffers in that dimension.
-    // It's possible we could special-case and improve the situation somewhat if we
-    // see common cases (eg main buffer never folded and one 'other' buffer that is folded).
-    index_t begin = dims[0].dim->begin();
-    index_t end = begin + slice_dim->extent;
-    for (index_t i = begin; i < end; ++i) {
+      i = 0;
+      end = slice_dim->extent;
+      PUSH(for_each_contiguous_slice_dim::loop_linear_next);
+      stack->bases = (stack - 1)->bases;
+      op = slice_dim->impl;
+      break;
+    }
+    case for_each_contiguous_slice_dim::loop_linear_next: {
+      if (++i < end) {
+        // TODO improve this, too much copying
+        for (std::size_t n = 0; n < NumBufs; n++) {
+          stack->bases[n] = offset_bytes(stack->bases[n], dims[n].stride);
+        }
+        PUSH(for_each_contiguous_slice_dim::loop_linear_next);
+        stack->bases = (stack - 1)->bases;
+        op = slice_dim->impl;
+      } else {
+        POP();
+      }
+      break;
+    }
+    case for_each_contiguous_slice_dim::loop_folded: {
+      i = dims[0].dim->begin();
+      end = i + slice_dim->extent;
+      PUSH(for_each_contiguous_slice_dim::loop_folded_next);
+      op = slice_dim->impl;
       for (std::size_t n = 0; n < NumBufs; n++) {
-        offset_bases[n] = offset_bytes(bases[n], dims[n].dim->flat_offset_bytes(i));
+        stack->bases[n] = offset_bytes((stack - 1)->bases[n], (dims - NumBufs)[n].dim->flat_offset_bytes(i));
       }
-      for_each_contiguous_slice_impl(offset_bases, slice_dim + 1, dims + NumBufs, f);
+      break;
     }
-  }
+    case for_each_contiguous_slice_dim::loop_folded_next: {
+      if (++i < end) {
+        PUSH(for_each_contiguous_slice_dim::loop_folded_next);
+        for (std::size_t n = 0; n < NumBufs; n++) {
+          stack->bases[n] = offset_bytes((stack - 1)->bases[n], (dims - NumBufs)[n].dim->flat_offset_bytes(i));
+        }
+        op = slice_dim->impl;
+      } else {
+        POP();
+      }
+      break;
+    }
+    case for_each_contiguous_slice_dim::finished:
+    default: {
+      assert(!"Should never encounter");
+      return;
+    }
+    }
+  } while (stack > stack_base);
 }
 
 bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
@@ -509,10 +579,11 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
   internal::for_each_contiguous_slice_dim* slice_dims =
       SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, bufs[0]->rank + 1);
   internal::dim_or_stride* dims = SLINKY_ALLOCA(internal::dim_or_stride, bufs[0]->rank * NumBufs);
-  std::array<void*, NumBufs> bases;
-  internal::make_for_each_contiguous_slice_dims(bufs, bases.data(), slice_dims, dims);
 
-  internal::for_each_contiguous_slice_impl(bases, slice_dims, dims, f);
+  internal::stack_entry<NumBufs>* stack_base = SLINKY_ALLOCA(internal::stack_entry<NumBufs>, bufs[0]->rank + 2);
+  internal::make_for_each_contiguous_slice_dims(bufs, stack_base->bases.data(), slice_dims, dims);
+
+  internal::for_each_contiguous_slice_impl(stack_base, slice_dims, dims, f);
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
