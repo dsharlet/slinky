@@ -371,17 +371,11 @@ void make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
   index_t extent = 1;
   for (int d = static_cast<int>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.extent() == 1) {
-      // base already points to the min.
-      for (std::size_t n = 1; n < bufs_size; n++) {
-        bases[n] = offset_bytes(bases[n], bufs[n]->dim(d).flat_offset_bytes(buf_dim.min()));
-      }
-      continue;
-    }
-    extent *= buf_dim.extent();
-    if (any_folded(bufs, bufs_size, d)) {
+    if (buf_dim.max() > buf_dim.min() && any_folded(bufs, bufs_size, d)) {
+      // There is a folded dimension in one of the buffers.
+      assert(extent == 1);
       next->impl = for_each_contiguous_slice_dim::loop_folded;
-      next->extent = extent;
+      next->extent = buf_dim.extent();
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
         next_dims->dim = &bufs[n]->dim(d);
@@ -390,12 +384,17 @@ void make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
       extent = 1;
       continue;
     }
+
+    extent *= buf_dim.extent();
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
       bases[n] = offset_bytes(bases[n], bufs[n]->dim(d).flat_offset_bytes(buf_dim.min()));
     }
 
-    if (buf_dim.stride() == static_cast<index_t>(buf->elem_size)) {
+    if (buf_dim.min() == buf_dim.max()) {
+      // This dimension has only one element, nothing to do.
+      continue;
+    } else if (buf_dim.stride() == static_cast<index_t>(buf->elem_size)) {
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
