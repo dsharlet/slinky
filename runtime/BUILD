@@ -72,17 +72,17 @@ cc_test(
     ],
 )
 
-cc_binary(
+cc_test(
     name = "buffer_benchmark",
     srcs = ["buffer_benchmark.cc"],
     deps = [
         ":runtime",
         "@google_benchmark//:benchmark_main",
     ],
-    testonly = 1,
+    args=["--benchmark_min_time=0.1s"],
 )
 
-cc_binary(
+cc_test(
     name = "evaluate_benchmark",
     srcs = ["evaluate_benchmark.cc"],
     deps = [
@@ -90,5 +90,5 @@ cc_binary(
         ":thread_pool",
         "@google_benchmark//:benchmark_main",
     ],
-    testonly = 1,
+    args=["--benchmark_min_time=0.1s"],
 )
