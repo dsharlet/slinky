@@ -132,6 +132,7 @@ void BM_copy_padded(benchmark::State& state) {
   dst.dim(0).set_min_extent(0, extents[0] + 16);
   src.allocate();
   dst.allocate();
+  dst.dim(0).set_min_extent(0, extents[0]);
 
   for (auto _ : state) {
     copy(src, dst);
