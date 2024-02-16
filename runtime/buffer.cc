@@ -340,14 +340,16 @@ bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   const dim& outer = buf->dim(d);
   const index_t buf_dim_d_stride = outer.stride();
 
+  index_t any_folded = 0;
+  index_t any_mismatched = 0;
   for (std::size_t n = 0; n < size; n++) {
     // Our caller should have ensured this
     assert(bufs[n]->dim(d).fold_factor() == dim::unfolded);
     const auto& inner_other = bufs[n]->dim(d - 1);
-    if (inner_other.fold_factor() != dim::unfolded) return false;
-    if (inner_other.stride() * inner_other.extent() != buf_dim_d_stride) return false;
+    any_folded |= ~inner_other.fold_factor();
+    any_mismatched |= (inner_other.stride() * inner_other.extent() != buf_dim_d_stride);
   }
-  return true;
+  return ((any_folded << 1) | any_mismatched) == 0;
 }
 
 bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
