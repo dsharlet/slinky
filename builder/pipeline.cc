@@ -87,9 +87,7 @@ func::func(input input, output out, std::optional<std::vector<char>> padding)
   padding_ = std::move(padding);
 }
 
-func::func(std::vector<input> inputs, output out)
-    : func(nullptr, std::move(inputs), {std::move(out)}) {
-}
+func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
 
 func::func(func&& m) noexcept { *this = std::move(m); }
 func& func::operator=(func&& m) noexcept {
@@ -214,6 +212,37 @@ func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t d
 }
 
 namespace {
+
+class unionize_crop : public node_mutator {
+  symbol_id target;
+  const box_expr& crop;
+
+public:
+  bool found = false;
+
+  unionize_crop(symbol_id target, const box_expr& crop) : target(target), crop(crop) {}
+
+  void visit(const crop_buffer* op) override {
+    if (op->sym != target) {
+      node_mutator::visit(op);
+      return;
+    }
+
+    // Don't recursively mutate, once we crop the buffer here, it doesn't need to be cropped again.
+    set_result(crop_buffer::make(target, crop | op->bounds, op->body));
+    found = true;
+  }
+};
+
+// Expand an existing crop for `target` to include `crop`, or add a new crop if there was no existing crop.
+stmt add_crop_union(stmt s, symbol_id target, const box_expr& crop) {
+  unionize_crop m(target, crop);
+  s = m.mutate(s);
+  if (!m.found) {
+    s = crop_buffer::make(target, crop, s);
+  }
+  return s;
+}
 
 bool operator==(const loop_id& a, const loop_id& b) {
   if (!a.func) {
@@ -384,7 +413,8 @@ public:
         // The bounds may have been negated.
         crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
-      result = crop_buffer::make(i.sym(), crop, result);
+      // We want to take the union of this crop with any existing crop of this buffer.
+      result = add_crop_union(result, i.sym(), crop);
     }
     return result;
   }
