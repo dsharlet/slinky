@@ -23,58 +23,6 @@ __attribute__((noinline)) void no_inline(Fn&& fn) {
   fn();
 }
 
-void BM_memcpy(benchmark::State& state) {
-  std::size_t size = state.range(0);
-  char* src = new char[size];
-  char* dst = new char[size];
-
-  memset(src, 0, size);
-  memset(dst, 0, size);
-
-  for (auto _ : state) {
-    no_inline([=]() { memcpy(dst, src, size); });
-  }
-
-  benchmark::DoNotOptimize(src);
-  benchmark::DoNotOptimize(dst);
-
-  delete[] src;
-  delete[] dst;
-}
-
-BENCHMARK(BM_memcpy)->Arg(1024 * 1024);
-
-void BM_copy(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> src(extents);
-  buffer<char, 4> dst(extents);
-  src.allocate();
-  dst.allocate();
-
-  for (auto _ : state) {
-    copy(src, dst);
-  }
-}
-
-BENCHMARK(BM_copy)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_copy)->Args({32, 32, 256, 4});
-
-void BM_copy_padded(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> src(extents);
-  buffer<char, 4> dst(extents);
-  dst.dim(0).set_min_extent(0, extents[0] + 16);
-  src.allocate();
-  dst.allocate();
-
-  for (auto _ : state) {
-    copy(src, dst);
-  }
-}
-
-BENCHMARK(BM_copy_padded)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_copy_padded)->Args({32, 32, 256, 4});
-
 void BM_memset(benchmark::State& state) {
   std::size_t size = state.range(0);
   char* dst = new char[size];
@@ -140,6 +88,58 @@ void BM_pad(benchmark::State& state) {
 
 BENCHMARK(BM_pad)->Args({1024, 256, 4, -1});
 BENCHMARK(BM_pad)->Args({32, 32, 256, 4});
+
+void BM_memcpy(benchmark::State& state) {
+  std::size_t size = state.range(0);
+  char* src = new char[size];
+  char* dst = new char[size];
+
+  memset(src, 0, size);
+  memset(dst, 0, size);
+
+  for (auto _ : state) {
+    no_inline([=]() { memcpy(dst, src, size); });
+  }
+
+  benchmark::DoNotOptimize(src);
+  benchmark::DoNotOptimize(dst);
+
+  delete[] src;
+  delete[] dst;
+}
+
+BENCHMARK(BM_memcpy)->Arg(1024 * 1024);
+
+void BM_copy(benchmark::State& state) {
+  std::vector<index_t> extents = state_to_vector(4, state);
+  buffer<char, 4> src(extents);
+  buffer<char, 4> dst(extents);
+  src.allocate();
+  dst.allocate();
+
+  for (auto _ : state) {
+    copy(src, dst);
+  }
+}
+
+BENCHMARK(BM_copy)->Args({1024, 256, 4, -1});
+BENCHMARK(BM_copy)->Args({32, 32, 256, 4});
+
+void BM_copy_padded(benchmark::State& state) {
+  std::vector<index_t> extents = state_to_vector(4, state);
+  buffer<char, 4> src(extents);
+  buffer<char, 4> dst(extents);
+  dst.dim(0).set_min_extent(0, extents[0] + 16);
+  src.allocate();
+  dst.allocate();
+
+  for (auto _ : state) {
+    copy(src, dst);
+  }
+}
+
+BENCHMARK(BM_copy_padded)->Args({1024, 256, 4, -1});
+BENCHMARK(BM_copy_padded)->Args({32, 32, 256, 4});
 
 constexpr index_t slice_extent = 64;
 
