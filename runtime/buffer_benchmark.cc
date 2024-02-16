@@ -35,6 +35,9 @@ void BM_memcpy(benchmark::State& state) {
     no_inline([=]() { memcpy(dst, src, size); });
   }
 
+  benchmark::DoNotOptimize(src);
+  benchmark::DoNotOptimize(dst);
+
   delete[] src;
   delete[] dst;
 }
@@ -79,6 +82,8 @@ void BM_memset(benchmark::State& state) {
   for (auto _ : state) {
     no_inline([=]() { memset(dst, 0, size); });
   }
+
+  benchmark::DoNotOptimize(dst);
 
   delete[] dst;
 }
