@@ -432,7 +432,7 @@ public:
         for (auto i = new_crops.rbegin(); i != new_crops.rend(); ++i) {
           result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), result);
         }
-        set_result(std::move(result));
+        set_result(mutate(result));
         return;
       }
     }
