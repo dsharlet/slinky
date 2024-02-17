@@ -177,7 +177,7 @@ public:
     // Record the bounds we currently have from the crops.
     for (symbol_id input : op->inputs) {
       std::optional<box_expr>& infer_i = infer[input];
-      std::optional<box_expr>& crop_i = crops[input];
+      const std::optional<box_expr>& crop_i = crops[input];
       if (!infer_i || !crop_i) continue;
       if (infer_i->empty()) {
         infer_i = crop_i;
