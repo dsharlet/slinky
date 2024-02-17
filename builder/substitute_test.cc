@@ -57,6 +57,8 @@ TEST(substitute, shadowed) {
   test_substitute(let::make(x.sym(), y, x + z), x.sym(), w, let::make(x.sym(), y, x + z));
   test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(buffer_min(x, 3) == 0)), buffer_min(x, 3), 1,
       slice_dim::make(x.sym(), 2, 0, check::make(buffer_min(x, 3) == 0)));
+  test_substitute(let::make({{x.sym(), 1}, {y.sym(), 2}}, z + 1), z.sym(), z + w,
+      let::make({{x.sym(), 1}, {y.sym(), 2}}, z + w + 1));
 }
 
 TEST(match, basic) {

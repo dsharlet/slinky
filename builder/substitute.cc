@@ -416,9 +416,20 @@ public:
       changed = changed || !lets.back().second.same_as(s.second);
     }
 
-    auto body = op->body;
+    symbol_map<bool> old_shadowed = shadowed;
+    bool can_substitute = true;
     for (const auto& s : lets) {
-      body = mutate_decl_body(s.first, body);
+      shadowed[s.first] = true;
+      if (target.defined() && depends_on(target, s.first).any()) {
+        // If the target expression depends on the symbol we're declaring, don't substitute it because it's a different
+        // expression now.
+        can_substitute = false;
+        break;
+      }
+    }
+    auto body = op->body;
+    if (can_substitute) {
+      body = mutate(body);
     }
     changed = changed || !body.same_as(op->body);
 
