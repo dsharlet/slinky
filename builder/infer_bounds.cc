@@ -255,7 +255,6 @@ public:
               substitute(j.max, op->sym, op->bounds.max));
         }
       }
-      result = crop_buffer::make(buf, *inferring, result);
     }
     set_result(result);
   }
