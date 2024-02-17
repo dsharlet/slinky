@@ -489,7 +489,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
+      if (!is_zero(new_dim.stride) && prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
       }
       changed = changed || !new_dim.same_as(op->dims[d]);
@@ -520,7 +520,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
+      if (!is_zero(new_dim.stride) && prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
       }
       changed = changed || !new_dim.same_as(op->dims[d]);
@@ -583,7 +583,7 @@ public:
         }
         if (is_slice && slice_rank == dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
+          set_result(mutate(slice_buffer::make(op->sym, std::move(at), std::move(body))));
           return;
         }
 
