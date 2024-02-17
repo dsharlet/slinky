@@ -50,34 +50,18 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
 }
 
 class input_crop_remover : public node_mutator {
-  symbol_map<bool> used_as_output;
+  const std::vector<symbol_id>& inputs;
 
 public:
-  void visit(const call_stmt* op) override {
-    for (symbol_id i : op->outputs) {
-      used_as_output[i] = true;
-    }
-    set_result(op);
-  }
-  void visit(const copy_stmt* op) override {
-    used_as_output[op->dst] = true;
-    set_result(op);
-  }
+  input_crop_remover(const std::vector<symbol_id>& inputs) : inputs(inputs) {}
 
   template <typename T>
   void visit_crop(const T* op) {
-    std::optional<bool> old_value = used_as_output[op->sym];
-    used_as_output[op->sym] = false;
     stmt body = mutate(op->body);
 
-    if (!*used_as_output[op->sym]) {
-      used_as_output[op->sym] = old_value;
-      set_result(body);
-      return;
-    }
-    used_as_output[op->sym] = true;
-
-    if (body.same_as(op->body)) {
+    if (std::find(inputs.begin(), inputs.end(), op->sym) != inputs.end()) {
+      set_result(std::move(body));
+    } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(clone_with_new_body(op, std::move(body)));
@@ -596,12 +580,9 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   result = slide_and_fold_storage(ctx).mutate(result);
 
   // At this point, crops of input buffers are unnecessary.
-  // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
-  // be the case.
-  // TODO: This is now somewhat redundant with the simplifier, but what the simplifier does is more correct.
-  // Unfortunately, we need the more aggressive incorrect crop removal here! This needs to be fixed, and this
-  // should be removed completely.
-  result = input_crop_remover().mutate(result);
+  // TODO: This should be removed. AFAIK, it is only necessary because substitute doesn't handle substituting buffer
+  // metadata expressions across slices.
+  result = input_crop_remover(inputs).mutate(result);
 
   return result;
 }
