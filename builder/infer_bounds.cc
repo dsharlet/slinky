@@ -354,6 +354,7 @@ public:
     set_result(op);
     for (symbol_id output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
+      bool did_overlapped_fold = false;
       for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
         std::optional<box_expr>& bounds = (*loops[loop_index].buffer_bounds)[output];
         if (!bounds) continue;
@@ -394,6 +395,10 @@ public:
             }
             continue;
           }
+          if (did_overlapped_fold) {
+            // We already did an overlapping fold, we can't do another one.
+            continue;
+          }
           // Allowing the leading edge to not change means that some calls may ask for empty buffers.
           expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
           expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
@@ -428,7 +433,7 @@ public:
               // seems like it might be fine anyways here, but pretty janky.
               (*bounds)[d].min = select(loop_var == loops[loop_index].orig_min, old_min, new_min);
             }
-            break;
+            did_overlapped_fold = true;
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
