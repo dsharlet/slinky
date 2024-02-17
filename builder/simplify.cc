@@ -745,7 +745,7 @@ public:
     if (!depends_on(body, op->sym).buffer_base) {
       // This crop only affects bounds. Just substitute the bounds.
       body = substitute_bounds(body, op->sym, op->dim, bounds);
-      set_result(body);
+      set_result(mutate(body));
       return;
     }
     {
