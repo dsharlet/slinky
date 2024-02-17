@@ -14,6 +14,12 @@ struct depends_on_result {
   bool buffer = false;
   // True if the buffer's base pointer is used.
   bool buffer_base = false;
+  // True if the buffer is used as a call input or output, respectively.
+  bool buffer_input = false;
+  bool buffer_output = false;
+  // True if the buffer is used as a copy source or destination, respectively.
+  bool buffer_src = false;
+  bool buffer_dst = false;
 
   bool any() const { return var || buffer; }
 };

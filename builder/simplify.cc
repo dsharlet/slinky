@@ -485,11 +485,9 @@ public:
     std::vector<dim_expr> dims;
     box_expr bounds;
     dims.reserve(op->dims.size());
-    stmt body = op->body;
     bool changed = false;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
-      body = substitute_bounds(body, op->sym, d, bounds_d);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
       if (prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
@@ -498,6 +496,8 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
     }
+    stmt body = substitute_bounds(op->body, op->sym, bounds);
+
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     body = mutate(body);
     if (!body.defined()) {
@@ -517,10 +517,8 @@ public:
     dims.reserve(op->dims.size());
     bounds.reserve(op->dims.size());
     bool changed = false;
-    stmt body = op->body;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
-      body = substitute_bounds(body, op->sym, d, new_bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
       if (prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
         new_dim.stride = 0;
@@ -529,6 +527,7 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
     }
+    stmt body = substitute_bounds(op->body, op->sym, bounds);
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
     body = mutate(body);
@@ -639,6 +638,12 @@ public:
     return {simplify_crop_bound(i.min, sym, dim), simplify_crop_bound(i.max, sym, dim)};
   }
 
+  static bool crop_needed(const depends_on_result& deps) {
+    // We don't need a crop if the buffer is only used as an input to a call. But we do need the crop if it is used as
+    // an input to a copy, which uses the bounds of the input for padding.
+    return deps.buffer_output || deps.buffer_src || deps.buffer_dst;
+  }
+
   void visit(const crop_buffer* op) override {
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
@@ -670,13 +675,8 @@ public:
     }
 
     stmt body = op->body;
-    if (!depends_on(body, op->sym).buffer_base) {
-      // This crop only affects bounds. Just substitute the bounds.
-      for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        if (new_bounds[d].min.defined() || new_bounds[d].max.defined()) {
-          body = substitute_bounds(body, op->sym, d, new_bounds[d]);
-        }
-      }
+    if (!crop_needed(depends_on(body, op->sym))) {
+      body = substitute_bounds(body, op->sym, new_bounds);
       set_result(mutate(body));
       return;
     }
@@ -742,8 +742,7 @@ public:
     }
 
     stmt body = op->body;
-    if (!depends_on(body, op->sym).buffer_base) {
-      // This crop only affects bounds. Just substitute the bounds.
+    if (!crop_needed(depends_on(body, op->sym))) {
       body = substitute_bounds(body, op->sym, op->dim, bounds);
       set_result(mutate(body));
       return;

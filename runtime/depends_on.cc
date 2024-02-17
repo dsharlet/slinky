@@ -16,6 +16,8 @@ public:
 
   dependencies(span<const symbol_id> vars) : vars(vars) {}
 
+  bool vars_contains(symbol_id i) const { return std::find(vars.begin(), vars.end(), i) != vars.end(); }
+
   void accept_buffer(const expr& e, bool uses_base) {
     bool old_found_var = result.var;
     result.var = false;
@@ -25,26 +27,7 @@ public:
     result.var = old_found_var;
   }
 
-  void visit_var(symbol_id sym) {
-    for (symbol_id i : vars) {
-      if (i == sym) {
-        result.var = true;
-        return;
-      }
-    }
-  }
-
-  void visit_buf(symbol_id sym) {
-    for (symbol_id i : vars) {
-      if (i == sym) {
-        result.buffer = true;
-        result.buffer_base = true;
-        return;
-      }
-    }
-  }
-
-  void visit(const variable* op) override { visit_var(op->sym); }
+  void visit(const variable* op) override { result.var = result.var || vars_contains(op->sym); }
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
@@ -60,15 +43,28 @@ public:
 
   void visit(const call_stmt* op) override {
     for (symbol_id i : op->inputs) {
-      visit_buf(i);
+      if (vars_contains(i)) {
+        result.buffer = true;
+        result.buffer_input = true;
+      }
     }
     for (symbol_id i : op->outputs) {
-      visit_buf(i);
+      if (vars_contains(i)) {
+        result.buffer = true;
+        result.buffer_output = true;
+      }
     }
   }
+
   void visit(const copy_stmt* op) override {
-    visit_buf(op->src);
-    visit_buf(op->dst);
+    if (vars_contains(op->src)) {
+      result.buffer = true;
+      result.buffer_src = true;
+    }
+    if (vars_contains(op->dst)) {
+      result.buffer = true;
+      result.buffer_dst = true;
+    }
   }
 };
 
