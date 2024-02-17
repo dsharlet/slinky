@@ -350,8 +350,8 @@ TEST(pipeline, elementwise_2d) {
         p.evaluate(inputs, outputs, eval_ctx);
         if (schedule_storage) {
           ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-        } else if (split > 0 && lm == loop_mode::serial) {
-          ASSERT_EQ(eval_ctx.heap.total_size, split * split * sizeof(int));
+        } else {
+          ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
         }
 
         for (int y = 0; y < H; ++y) {
