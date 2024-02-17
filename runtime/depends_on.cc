@@ -92,6 +92,12 @@ depends_on_result depends_on(const stmt& s, symbol_id var) {
   return v.result;
 }
 
+depends_on_result depends_on(const expr& e, span<const symbol_id> vars) {
+  dependencies v(vars);
+  if (e.defined()) e.accept(&v);
+  return v.result;
+}
+
 depends_on_result depends_on(const stmt& s, span<const symbol_id> vars) {
   dependencies v(vars);
   if (s.defined()) s.accept(&v);

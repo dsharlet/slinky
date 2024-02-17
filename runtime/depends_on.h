@@ -28,6 +28,7 @@ struct depends_on_result {
 depends_on_result depends_on(const expr& e, symbol_id var);
 depends_on_result depends_on(const interval_expr& e, symbol_id var);
 depends_on_result depends_on(const stmt& s, symbol_id var);
+depends_on_result depends_on(const expr& e, span<const symbol_id> vars);
 depends_on_result depends_on(const stmt& s, span<const symbol_id> vars);
 
 }  // namespace slinky

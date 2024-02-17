@@ -359,78 +359,64 @@ symbol_map<expr> empty_replacements;
 class substitutor : public node_mutator {
   const symbol_map<expr>& replacements = empty_replacements;
   symbol_id target_var = -1;
-  expr target;
   expr replacement;
+  span<const std::pair<expr, expr>> expr_replacements;
 
   // Track newly declared variables that might shadow the variables we want to replace.
-  symbol_map<bool> shadowed;
+  std::vector<symbol_id> shadowed;
 
 public:
   substitutor(const symbol_map<expr>& replacements) : replacements(replacements) {}
   substitutor(symbol_id target, const expr& replacement) : target_var(target), replacement(replacement) {}
-  substitutor(const expr& target, const expr& replacement) : target(target), replacement(replacement) {}
+  substitutor(span<const std::pair<expr, expr>> expr_replacements) : expr_replacements(expr_replacements) {}
 
   expr mutate(const expr& op) override {
-    if (target.defined() && op.defined() && match(op, target)) {
-      return replacement;
-    } else {
-      return node_mutator::mutate(op);
+    for (const auto& i : expr_replacements) {
+      if (!depends_on(i.first, shadowed).any() && match(op, i.first) && !depends_on(i.second, shadowed).any()) {
+        return i.second;
+      }
     }
+    return node_mutator::mutate(op);
   }
   using node_mutator::mutate;
 
   void visit(const variable* v) override {
-    if (shadowed.contains(v->sym)) {
+    if (std::find(shadowed.begin(), shadowed.end(), v->sym) != shadowed.end()) {
       // This variable has been shadowed, don't substitute it.
       set_result(v);
-    } else if (v->sym == target_var) {
+    } else if (v->sym == target_var && !depends_on(replacement, shadowed).any()) {
       set_result(replacement);
     } else {
       std::optional<expr> r = replacements.lookup(v->sym);
-      set_result(r ? *r : v);
+      if (r && !depends_on(*r, shadowed).any()) {
+        set_result(*r);
+      } else {
+        set_result(v);
+      }
     }
   }
 
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {
-    auto s = set_value_in_scope(shadowed, sym, true);
-    if (target.defined() && depends_on(target, sym).any()) {
-      // If the target expression depends on the symbol we're declaring, don't substitute it because it's a different
-      // expression now.
-      return x;
-    } else {
-      return mutate(x);
-    }
+    shadowed.push_back(sym);
+    T result = mutate(x);
+    shadowed.pop_back();
+    return result;
   }
 
   template <typename T>
   auto mutate_let(const T* op) {
     std::vector<std::pair<symbol_id, expr>> lets;
     lets.reserve(op->lets.size());
-    std::vector<scoped_value_in_symbol_map<bool>> scoped_values;
-    scoped_values.reserve(op->lets.size());
     bool changed = false;
     for (const auto& s : op->lets) {
       lets.emplace_back(s.first, mutate(s.second));
-      scoped_values.push_back(set_value_in_scope(shadowed, s.first, true));
+      shadowed.push_back(s.first);
       changed = changed || !lets.back().second.same_as(s.second);
     }
 
-    symbol_map<bool> old_shadowed = shadowed;
-    bool can_substitute = true;
-    for (const auto& s : lets) {
-      shadowed[s.first] = true;
-      if (target.defined() && depends_on(target, s.first).any()) {
-        // If the target expression depends on the symbol we're declaring, don't substitute it because it's a different
-        // expression now.
-        can_substitute = false;
-        break;
-      }
-    }
-    auto body = op->body;
-    if (can_substitute) {
-      body = mutate(body);
-    }
+    auto body = mutate(op->body);
+    shadowed.resize(shadowed.size() - lets.size());
     changed = changed || !body.same_as(op->body);
 
     if (!changed) {
@@ -520,19 +506,13 @@ public:
 };
 
 template <typename T>
-T substitute(T op, span<const std::pair<expr, expr>> subs) {
-  for (const std::pair<expr, expr>& i : subs) {
-    op = substitutor(i.first, i.second).mutate(op);
-  }
-  return op;
-}
-
-template <typename T>
 T substitute_bounds_impl(T op, symbol_id buffer, int dim, const interval_expr& bounds) {
   expr buf_var = variable::make(buffer);
-  if (bounds.min.defined()) op = substitute(op, buffer_min(buf_var, dim), bounds.min);
-  if (bounds.max.defined()) op = substitute(op, buffer_max(buf_var, dim), bounds.max);
-  return op;
+  std::vector<std::pair<expr, expr>> subs;
+  subs.reserve(2);
+  if (bounds.min.defined()) subs.emplace_back(buffer_min(buf_var, dim), bounds.min);
+  if (bounds.max.defined()) subs.emplace_back(buffer_max(buf_var, dim), bounds.max);
+  return substitutor(subs).mutate(op);
 }
 
 template <typename T>
@@ -544,7 +524,7 @@ T substitute_bounds_impl(T op, symbol_id buffer, const box_expr& bounds) {
     if (bounds[d].min.defined()) subs.emplace_back(buffer_min(buf_var, d), bounds[d].min);
     if (bounds[d].max.defined()) subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
   }
-  return substitute(op, subs);
+  return substitutor(subs).mutate(op);
 }
 
 }  // namespace
@@ -559,11 +539,13 @@ stmt substitute(const stmt& s, symbol_id target, const expr& replacement) {
   return substitutor(target, replacement).mutate(s);
 }
 
-expr substitute(const expr& e, const expr& target, const expr& replacement) {
-  return substitutor(target, replacement).mutate(e);
+expr substitute(const expr& e, const expr& target, const expr& replacement){
+  std::pair<expr, expr> subs[] = {{target, replacement}};
+  return substitutor(subs).mutate(e);
 }
 stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
-  return substitutor(target, replacement).mutate(s);
+  std::pair<expr, expr> subs[] = {{target, replacement}};
+  return substitutor(subs).mutate(s);
 }
 
 expr substitute_bounds(const expr& e, symbol_id buffer, const box_expr& bounds) {
