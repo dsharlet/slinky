@@ -411,10 +411,10 @@ public:
 
               (*bounds)[d].min = new_min;
             } else {
-              // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
-              // TODO: If another loop or func adjusts the loop min, we're going to run before the original min... that
-              // seems like it might be fine anyways here, but pretty janky.
-              (*bounds)[d].min = select(loop_var == loops[loop_index].orig_min, old_min, new_min);
+              // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
+              // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
+              // effectively not slide while running before the original loop min.
+              (*bounds)[d].min = select(loop_var <= loops[loop_index].orig_min, old_min, new_min);
             }
             did_overlapped_fold = true;
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
