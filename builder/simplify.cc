@@ -267,6 +267,29 @@ public:
       args_bounds.push_back(std::move(i_bounds));
     }
 
+    if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max ||
+        op->intrinsic == intrinsic::buffer_extent) {
+      assert(op->args.size() == 2);
+      const symbol_id* buf = as_variable(op->args[0]);
+      const index_t* dim = as_constant(op->args[1]);
+      assert(buf);
+      assert(dim);
+      const std::optional<box_expr>& bounds = buffer_bounds[*buf];
+      if (bounds && *dim < static_cast<index_t>(bounds->size())) {
+        const interval_expr& dim_bounds = (*bounds)[*dim];
+        if (op->intrinsic == intrinsic::buffer_min && dim_bounds.min.defined()) {
+          mutate_and_set_result(dim_bounds.min);
+          return;
+        } else if (op->intrinsic == intrinsic::buffer_max && dim_bounds.max.defined()) {
+          mutate_and_set_result(dim_bounds.max);
+          return;
+        } else if (op->intrinsic == intrinsic::buffer_extent && dim_bounds.min.defined() && dim_bounds.max.defined()) {
+          mutate_and_set_result(dim_bounds.extent());
+          return;
+        }
+      }
+    }
+
     expr e = simplify(op, op->intrinsic, std::move(args));
     if (e.same_as(op)) {
       set_result(e, bounds_of(op, std::move(args_bounds)));
@@ -481,6 +504,18 @@ public:
     node_mutator::visit(op);
   }
 
+  // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
+  // if they came from outside the body).
+  static void clear_shadowed_bounds(symbol_id sym, interval_expr& bounds) {
+    if (depends_on(bounds.min, sym).buffer) bounds.min = expr();
+    if (depends_on(bounds.max, sym).buffer) bounds.max = expr();
+  }
+  static void clear_shadowed_bounds(symbol_id sym, box_expr& bounds) {
+    for (interval_expr& i : bounds) {
+      clear_shadowed_bounds(sym, i);
+    }
+  }
+
   void visit(const allocate* op) override {
     std::vector<dim_expr> dims;
     box_expr bounds;
@@ -496,10 +531,10 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
     }
-    stmt body = substitute_bounds(op->body, op->sym, bounds);
+    clear_shadowed_bounds(op->sym, bounds);
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    body = mutate(body);
+    stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
     } else if (changed || !body.same_as(op->body)) {
@@ -527,10 +562,10 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
     }
-    stmt body = substitute_bounds(op->body, op->sym, bounds);
+    clear_shadowed_bounds(op->sym, bounds);
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    body = mutate(body);
+    stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -652,7 +687,7 @@ public:
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
     expr sym_var = variable::make(op->sym);
-    std::optional<box_expr> prev_bounds = buffer_bounds[op->sym];
+    const std::optional<box_expr>& prev_bounds = buffer_bounds[op->sym];
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
@@ -673,6 +708,7 @@ public:
       if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
       dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
+    clear_shadowed_bounds(op->sym, bounds);
 
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
@@ -739,6 +775,7 @@ public:
       }
       if (bounds.min.defined()) (*buf_bounds)[op->dim].min = bounds.min;
       if (bounds.max.defined()) (*buf_bounds)[op->dim].max = bounds.max;
+      clear_shadowed_bounds(op->sym, (*buf_bounds)[op->dim]);
     }
 
     stmt body = op->body;
