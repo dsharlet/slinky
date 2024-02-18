@@ -141,9 +141,10 @@ TEST(simplify, let) {
 }
 
 TEST(simplify, buffer_intrinsics) {
-  test_simplify(buffer_extent(x, y) >= 0, true);
-  test_simplify((buffer_max(x, y) - buffer_min(x, y) + 1) * 4, buffer_extent(x, y) * 4);
-  test_simplify(max(buffer_max(x, y) + 1, buffer_min(x, y) - 1), buffer_max(x, y) + 1);
+  test_simplify(buffer_extent(x, 0) >= 0, true);
+  test_simplify((buffer_max(x, 0) - buffer_min(x, 0) + 1) * 4, buffer_extent(x, 0) * 4);
+  test_simplify(buffer_max(x, 0) - buffer_min(x, 1) + 1, buffer_max(x, 0) - buffer_min(x, 1) + 1);
+  test_simplify(max(buffer_max(x, 0) + 1, buffer_min(x, 0) - 1), buffer_max(x, 0) + 1);
 }
 
 TEST(simplify, bounds) {
