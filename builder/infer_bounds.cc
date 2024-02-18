@@ -49,29 +49,6 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
   }
 }
 
-class input_crop_remover : public node_mutator {
-  const std::vector<symbol_id>& inputs;
-
-public:
-  input_crop_remover(const std::vector<symbol_id>& inputs) : inputs(inputs) {}
-
-  template <typename T>
-  void visit_crop(const T* op) {
-    stmt body = mutate(op->body);
-
-    if (std::find(inputs.begin(), inputs.end(), op->sym) != inputs.end()) {
-      set_result(std::move(body));
-    } else if (body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(clone_with_new_body(op, std::move(body)));
-    }
-  }
-
-  void visit(const crop_buffer* op) override { visit_crop(op); }
-  void visit(const crop_dim* op) override { visit_crop(op); }
-};
-
 // Keep substituting substitutions until nothing happens.
 std::vector<dim_expr> recursive_substitute(
     std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
@@ -577,11 +554,6 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
-
-  // At this point, crops of input buffers are unnecessary.
-  // TODO: This should be removed. AFAIK, it is only necessary because substitute doesn't handle substituting buffer
-  // metadata expressions across slices.
-  result = input_crop_remover(inputs).mutate(result);
 
   return result;
 }
