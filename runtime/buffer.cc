@@ -323,7 +323,10 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
 
 namespace internal {
 
-bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf) {
+namespace {
+
+#ifndef NDEBUG
+bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
   if (other_buf.rank != buf.rank) return false;
   for (std::size_t d = 0; d < buf.rank; d++) {
     if (other_buf.dims[d].min() > buf.dims[d].min()) return false;
@@ -331,8 +334,7 @@ bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf) {
   }
   return true;
 }
-
-namespace {
+#endif
 
 bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   assert(d > 0);
@@ -421,6 +423,10 @@ void make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
 
 void make_for_each_contiguous_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+  for (std::size_t n = 1; n < bufs.size(); n++) {
+    assert(can_slice_with(*bufs[0], *bufs[n]));
+  }
+
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.

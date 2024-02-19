@@ -434,8 +434,6 @@ void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_
   }
 }
 
-bool other_bufs_ok(const raw_buffer& buf, const raw_buffer& other_buf);
-
 // Implements the cropping part of a loop over tiles.
 template <typename F>
 void for_each_tile(const index_t* tile, raw_buffer& buf, int d, const F& f) {
@@ -501,9 +499,6 @@ template <typename F, typename... Args>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   constexpr std::size_t NumBufs = sizeof...(Args) + 1;
   std::array<const raw_buffer*, NumBufs> bufs = {&buf, &other_bufs...};
-  for (std::size_t n = 1; n < NumBufs; n++) {
-    assert(internal::other_bufs_ok(*bufs[0], *bufs[n]));
-  }
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
   auto* slice_dims = SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, bufs[0]->rank + 1);
