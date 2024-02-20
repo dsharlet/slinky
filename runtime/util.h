@@ -148,8 +148,6 @@ class span {
 
 public:
   span() : data_(nullptr), size_(0) {}
-  span(const span&) = default;
-  span(span&&) = default;
   span(const value_type* data, std::size_t size) : data_(data), size_(size) {}
   span(const value_type* begin, const value_type* end) : data_(begin), size_(end - begin) {}
   template <std::size_t N>
@@ -157,6 +155,12 @@ public:
   template <std::size_t N>
   span(const std::array<value_type, N>& x) : data_(std::data(x)), size_(N) {}
   span(const std::vector<value_type>& c) : data_(std::data(c)), size_(std::size(c)) {}
+
+  // Allow shallow copying/assignment.
+  span(const span&) = default;
+  span(span&&) = default;
+  span& operator=(const span&) = default;
+  span& operator=(span&&) = default;
 
   const value_type* data() const { return data_; }
   std::size_t size() const { return size_; }

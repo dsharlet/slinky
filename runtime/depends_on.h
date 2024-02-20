@@ -14,6 +14,12 @@ struct depends_on_result {
   bool buffer = false;
   // True if the buffer's base pointer is used.
   bool buffer_base = false;
+  // True if the buffer is used as a call input or output, respectively.
+  bool buffer_input = false;
+  bool buffer_output = false;
+  // True if the buffer is used as a copy source or destination, respectively.
+  bool buffer_src = false;
+  bool buffer_dst = false;
 
   bool any() const { return var || buffer; }
 };
@@ -22,6 +28,7 @@ struct depends_on_result {
 depends_on_result depends_on(const expr& e, symbol_id var);
 depends_on_result depends_on(const interval_expr& e, symbol_id var);
 depends_on_result depends_on(const stmt& s, symbol_id var);
+depends_on_result depends_on(const expr& e, span<const symbol_id> vars);
 depends_on_result depends_on(const stmt& s, span<const symbol_id> vars);
 
 }  // namespace slinky

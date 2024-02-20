@@ -55,8 +55,20 @@ TEST(substitute, basic) {
 
 TEST(substitute, shadowed) {
   test_substitute(let::make(x.sym(), y, x + z), x.sym(), w, let::make(x.sym(), y, x + z));
+  test_substitute(let::make({{x.sym(), 1}, {y.sym(), 2}}, z + 1), z.sym(), z + w,
+      let::make({{x.sym(), 1}, {y.sym(), 2}}, z + w + 1));
+
+  test_substitute(crop_dim::make(x.sym(), 1, {y, z}, check::make(0 < buffer_min(x, 1))), buffer_min(x, 1), w,
+      crop_dim::make(x.sym(), 1, {max(y, w), z}, check::make(0 < buffer_min(x, 1))));
+
   test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(buffer_min(x, 3) == 0)), buffer_min(x, 3), 1,
       slice_dim::make(x.sym(), 2, 0, check::make(buffer_min(x, 3) == 0)));
+  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3),
+      slice_dim::make(x.sym(), 2, 0, check::make(buffer_max(x, 2) == buffer_min(x, 3))));
+  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 2),
+      slice_dim::make(x.sym(), 2, 0, check::make(expr() == buffer_min(x, 3))));
+  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1),
+      slice_dim::make(x.sym(), 2, 0, check::make(buffer_max(x, 1) == buffer_min(x, 3))));
 }
 
 TEST(match, basic) {

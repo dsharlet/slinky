@@ -510,6 +510,13 @@ expr simplify(const less_equal* op, expr a, expr b) {
       r.rewrite(x <= min(x, y), x <= y) ||
       r.rewrite(min(x, y) <= max(x, y), true) ||
       r.rewrite(max(x, y) <= min(x, y), x == y) ||
+    
+      r.rewrite(min(x, y) <= min(x, y + c0), eval(0 <= c0)) ||
+      r.rewrite(max(x, y) <= max(x, y + c0), eval(0 <= c0)) ||
+      r.rewrite(min(x, y + c0) <= min(x, y), eval(c0 <= 0)) ||
+      r.rewrite(max(x, y + c0) <= max(x, y), eval(c0 <= 0)) ||
+      r.rewrite(min(x, y + c0) <= min(x, y + c1), eval(c0 <= c1)) ||
+      r.rewrite(max(x, y + c0) <= max(x, y + c1), eval(c0 <= c1)) ||
 
       r.rewrite(c0 <= max(x, c1), c0 <= x || eval(c0 <= c1)) ||
       r.rewrite(c0 <= min(x, c1), c0 <= x && eval(c0 <= c1)) ||

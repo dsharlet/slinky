@@ -49,45 +49,6 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
   }
 }
 
-class input_crop_remover : public node_mutator {
-  symbol_map<bool> used_as_output;
-
-public:
-  void visit(const call_stmt* op) override {
-    for (symbol_id i : op->outputs) {
-      used_as_output[i] = true;
-    }
-    set_result(op);
-  }
-  void visit(const copy_stmt* op) override {
-    used_as_output[op->dst] = true;
-    set_result(op);
-  }
-
-  template <typename T>
-  void visit_crop(const T* op) {
-    std::optional<bool> old_value = used_as_output[op->sym];
-    used_as_output[op->sym] = false;
-    stmt body = mutate(op->body);
-
-    if (!*used_as_output[op->sym]) {
-      used_as_output[op->sym] = old_value;
-      set_result(body);
-      return;
-    }
-    used_as_output[op->sym] = true;
-
-    if (body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(clone_with_new_body(op, std::move(body)));
-    }
-  }
-
-  void visit(const crop_buffer* op) override { visit_crop(op); }
-  void visit(const crop_dim* op) override { visit_crop(op); }
-};
-
 // Keep substituting substitutions until nothing happens.
 std::vector<dim_expr> recursive_substitute(
     std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
@@ -271,7 +232,6 @@ public:
               substitute(j.max, op->sym, op->bounds.max));
         }
       }
-      result = crop_buffer::make(buf, *inferring, result);
     }
     set_result(result);
   }
@@ -354,6 +314,7 @@ public:
     set_result(op);
     for (symbol_id output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
+      bool did_overlapped_fold = false;
       for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
         std::optional<box_expr>& bounds = (*loops[loop_index].buffer_bounds)[output];
         if (!bounds) continue;
@@ -394,6 +355,10 @@ public:
             }
             continue;
           }
+          if (did_overlapped_fold) {
+            // We already did an overlapping fold, we can't do another one.
+            continue;
+          }
           // Allowing the leading edge to not change means that some calls may ask for empty buffers.
           expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
           expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
@@ -423,12 +388,12 @@ public:
 
               (*bounds)[d].min = new_min;
             } else {
-              // We couldn't find the new loop min. We need to warm up the loop on the first iteration.
-              // TODO: If another loop or func adjusts the loop min, we're going to run before the original min... that
-              // seems like it might be fine anyways here, but pretty janky.
-              (*bounds)[d].min = select(loop_var == loops[loop_index].orig_min, old_min, new_min);
+              // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
+              // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
+              // effectively not slide while running before the original loop min.
+              (*bounds)[d].min = select(loop_var <= loops[loop_index].orig_min, old_min, new_min);
             }
-            break;
+            did_overlapped_fold = true;
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
@@ -589,14 +554,6 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
-
-  // At this point, crops of input buffers are unnecessary.
-  // TODO: This is actually necessary for correctness in the case of folded buffers, but this shouldn't
-  // be the case.
-  // TODO: This is now somewhat redundant with the simplifier, but what the simplifier does is more correct.
-  // Unfortunately, we need the more aggressive incorrect crop removal here! This needs to be fixed, and this
-  // should be removed completely.
-  result = input_crop_remover().mutate(result);
 
   return result;
 }

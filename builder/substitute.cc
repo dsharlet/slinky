@@ -354,72 +354,67 @@ int compare(const stmt& a, const stmt& b) {
 
 namespace {
 
-symbol_map<expr> empty_replacements;
-
 class substitutor : public node_mutator {
-  const symbol_map<expr>& replacements = empty_replacements;
+  const symbol_map<expr>* replacements = nullptr;
   symbol_id target_var = -1;
-  expr target;
   expr replacement;
+  span<const std::pair<expr, expr>> expr_replacements;
 
   // Track newly declared variables that might shadow the variables we want to replace.
-  symbol_map<bool> shadowed;
+  std::vector<symbol_id> shadowed;
 
 public:
-  substitutor(const symbol_map<expr>& replacements) : replacements(replacements) {}
+  substitutor(const symbol_map<expr>& replacements) : replacements(&replacements) {}
   substitutor(symbol_id target, const expr& replacement) : target_var(target), replacement(replacement) {}
-  substitutor(const expr& target, const expr& replacement) : target(target), replacement(replacement) {}
+  substitutor(span<const std::pair<expr, expr>> expr_replacements) : expr_replacements(expr_replacements) {}
 
   expr mutate(const expr& op) override {
-    if (target.defined() && op.defined() && match(op, target)) {
-      return replacement;
-    } else {
-      return node_mutator::mutate(op);
+    for (const auto& i : expr_replacements) {
+      if (!depends_on(i.first, shadowed).any() && match(op, i.first) && !depends_on(i.second, shadowed).any()) {
+        return i.second;
+      }
     }
+    return node_mutator::mutate(op);
   }
   using node_mutator::mutate;
 
   void visit(const variable* v) override {
-    if (shadowed.contains(v->sym)) {
+    if (std::find(shadowed.begin(), shadowed.end(), v->sym) != shadowed.end()) {
       // This variable has been shadowed, don't substitute it.
-      set_result(v);
-    } else if (v->sym == target_var) {
+    } else if (v->sym == target_var && !depends_on(replacement, shadowed).any()) {
       set_result(replacement);
-    } else {
-      std::optional<expr> r = replacements.lookup(v->sym);
-      set_result(r ? *r : v);
+      return;
+    } else if (replacements) {
+      std::optional<expr> r = replacements->lookup(v->sym);
+      if (r && !depends_on(*r, shadowed).any()) {
+        set_result(*r);
+        return;
+      }
     }
+    set_result(v);
   }
 
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {
-    auto s = set_value_in_scope(shadowed, sym, true);
-    if (target.defined() && depends_on(target, sym).any()) {
-      // If the target expression depends on the symbol we're declaring, don't substitute it because it's a different
-      // expression now.
-      return x;
-    } else {
-      return mutate(x);
-    }
+    shadowed.push_back(sym);
+    T result = mutate(x);
+    shadowed.pop_back();
+    return result;
   }
 
   template <typename T>
   auto mutate_let(const T* op) {
     std::vector<std::pair<symbol_id, expr>> lets;
     lets.reserve(op->lets.size());
-    std::vector<scoped_value_in_symbol_map<bool>> scoped_values;
-    scoped_values.reserve(op->lets.size());
     bool changed = false;
     for (const auto& s : op->lets) {
       lets.emplace_back(s.first, mutate(s.second));
-      scoped_values.push_back(set_value_in_scope(shadowed, s.first, true));
+      shadowed.push_back(s.first);
       changed = changed || !lets.back().second.same_as(s.second);
     }
 
-    auto body = op->body;
-    for (const auto& s : lets) {
-      body = mutate_decl_body(s.first, body);
-    }
+    auto body = mutate(op->body);
+    shadowed.resize(shadowed.size() - lets.size());
     changed = changed || !body.same_as(op->body);
 
     if (!changed) {
@@ -476,15 +471,115 @@ public:
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     }
   }
+
+  stmt mutate_slice_body(symbol_id sym, span<const int> slices, stmt body) {
+    // Rewrite buffer metadata accessing dimensions of sliced buffers to refer to the correct dimension.
+    class rewriter : public node_mutator {
+      symbol_id sym;
+      span<const int> slices;
+
+    public:
+      rewriter(symbol_id sym, span<const int> slices) : sym(sym), slices(slices) {}
+
+      void visit(const call* op) override {
+        switch (op->intrinsic) {
+        case intrinsic::buffer_min:
+        case intrinsic::buffer_max:
+        case intrinsic::buffer_stride:
+        case intrinsic::buffer_fold_factor:
+        case intrinsic::buffer_extent:
+          if (is_variable(op->args[0], sym)) {
+            const index_t* dim = as_constant(op->args[1]);
+            assert(dim);
+            index_t new_dim = *dim;
+            for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
+              if (slices[i] == new_dim) {
+                // This dimension is gone.
+                set_result(expr());
+                return;
+              } else if (slices[i] < new_dim) {
+                --new_dim;
+              }
+            }
+            if (new_dim != *dim) {
+              set_result(call::make(op->intrinsic, {op->args[0], new_dim}));
+            } else {
+              set_result(op);
+            }
+            return;
+          }
+          break;
+        case intrinsic::buffer_at:
+          if (is_variable(op->args[0], sym)) {
+            std::vector<expr> args = op->args;
+            for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
+              if (slices[i] + 1 < static_cast<int>(args.size())) {
+                args.erase(args.begin() + slices[i] + 1);
+              }
+            }
+            bool changed = args.size() < op->args.size();
+            for (expr& i : args) {
+              expr new_i = mutate(i);
+              changed = changed || !new_i.same_as(i);
+              i = new_i;
+            }
+            if (changed) {
+              set_result(call::make(intrinsic::buffer_at, std::move(args)));
+            } else {
+              set_result(op);
+            }
+            return;
+          }
+          break;
+        default: break;
+        }
+        node_mutator::visit(op);
+      }
+    } r(sym, slices);
+
+    const symbol_map<expr>* old_replacements = replacements;
+    expr old_replacement = replacement;
+    span<const std::pair<expr, expr>> old_expr_replacements = expr_replacements;
+
+    symbol_map<expr> new_replacements;
+    if (replacements) {
+      new_replacements = *replacements;
+      for (std::optional<expr>& i : new_replacements) {
+        if (i) i = r.mutate(*i);
+      }
+      replacements = &new_replacements;
+    }
+
+    replacement = r.mutate(replacement);
+
+    std::vector<std::pair<expr, expr>> new_expr_replacements;
+    new_expr_replacements.reserve(expr_replacements.size());
+    for (const std::pair<expr, expr>& i : expr_replacements) {
+      new_expr_replacements.emplace_back(r.mutate(i.first), r.mutate(i.second));
+    }
+    expr_replacements = span<const std::pair<expr, expr>>(new_expr_replacements);
+
+    body = mutate(body);
+
+    replacements = old_replacements;
+    replacement = old_replacement;
+    expr_replacements = old_expr_replacements;
+
+    return body;
+  }
   void visit(const slice_buffer* op) override {
-    std::vector<expr> at;
+    std::vector<expr> at(op->at.size());
     at.reserve(op->at.size());
     bool changed = false;
-    for (const expr& i : op->at) {
-      at.push_back(mutate(i));
-      changed = changed || !at.back().same_as(i);
+    std::vector<int> dims;
+    for (int d = 0; d < static_cast<int>(op->at.size()); ++d) {
+      at[d] = mutate(op->at[d]);
+      changed = changed || !at[d].same_as(op->at[d]);
+      if (at[d].defined()) {
+        dims.push_back(d);
+      }
     }
-    stmt body = mutate_decl_body(op->sym, op->body);
+    stmt body = mutate_slice_body(op->sym, dims, op->body);
     if (!changed && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -493,35 +588,71 @@ public:
   }
   void visit(const slice_dim* op) override {
     expr at = mutate(op->at);
-    stmt body = mutate_decl_body(op->sym, op->body);
+    int slices[] = {op->dim};
+    stmt body = mutate_slice_body(op->sym, slices, op->body);
     if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
     }
   }
-  // truncate_rank, clone_buffer, crop_buffer, crop_dim not treated here because references to dimensions of these
-  // operations are still valid.
-  // TODO: This seems sketchy. Shadowed symbols are shadowed symbols. But the simplifier relies on this behavior
-  // currently... Another reason this is sketchy: we treat make_buffers as shadowing, but not crop_buffer. But the
-  // simplifier will rewrite some make_buffer to crop_buffer, so that means substitute will behave differently before
-  // vs. after simplification.
-};
 
-template <typename T>
-T substitute(T op, span<const std::pair<expr, expr>> subs) {
-  for (const std::pair<expr, expr>& i : subs) {
-    op = substitutor(i.first, i.second).mutate(op);
+  interval_expr substitute_crop_bounds(symbol_id sym, int dim, const interval_expr& bounds) {
+    // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(sym, dim) and
+    // buffer_max(sym, dim).
+    expr buf_var = variable::make(sym);
+    interval_expr old_bounds = {buffer_min(buf_var, dim), buffer_max(buf_var, dim)};
+    interval_expr new_bounds = {mutate(old_bounds.min), mutate(old_bounds.max)};
+    interval_expr result = {mutate(bounds.min), mutate(bounds.max)};
+    if (!old_bounds.min.same_as(new_bounds.min)) {
+      // The substitution changed the implicit clamp, include it.
+      result.min = max(result.min, new_bounds.min);
+    }
+    if (!old_bounds.max.same_as(new_bounds.max)) {
+      // The substitution changed the implicit clamp, include it.
+      result.max = min(result.max, new_bounds.max);
+    }
+    return result;
   }
-  return op;
-}
+
+  void visit(const crop_buffer* op) override {
+    box_expr bounds(op->bounds.size());
+    bool changed = false;
+    for (std::size_t i = 0; i < op->bounds.size(); ++i) {
+      bounds[i] = substitute_crop_bounds(op->sym, i, op->bounds[i]);
+      changed = changed || !bounds[i].same_as(op->bounds[i]);
+    }
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (changed || !body.same_as(op->body)) {
+      set_result(crop_buffer::make(op->sym, std::move(bounds), std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const crop_dim* op) override {
+    interval_expr bounds = substitute_crop_bounds(op->sym, op->dim, op->bounds);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
+    }
+  }
+  // truncate_rank, clone_buffer, not treated here because references to dimensions of these
+  // operations are still valid.
+  // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
+  // dims.
+};
 
 template <typename T>
 T substitute_bounds_impl(T op, symbol_id buffer, int dim, const interval_expr& bounds) {
   expr buf_var = variable::make(buffer);
-  if (bounds.min.defined()) op = substitute(op, buffer_min(buf_var, dim), bounds.min);
-  if (bounds.max.defined()) op = substitute(op, buffer_max(buf_var, dim), bounds.max);
-  return op;
+  std::vector<std::pair<expr, expr>> subs;
+  subs.reserve(2);
+  if (bounds.min.defined()) subs.emplace_back(buffer_min(buf_var, dim), bounds.min);
+  if (bounds.max.defined()) subs.emplace_back(buffer_max(buf_var, dim), bounds.max);
+  return substitutor(subs).mutate(op);
 }
 
 template <typename T>
@@ -533,7 +664,7 @@ T substitute_bounds_impl(T op, symbol_id buffer, const box_expr& bounds) {
     if (bounds[d].min.defined()) subs.emplace_back(buffer_min(buf_var, d), bounds[d].min);
     if (bounds[d].max.defined()) subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
   }
-  return substitute(op, subs);
+  return substitutor(subs).mutate(op);
 }
 
 }  // namespace
@@ -549,10 +680,12 @@ stmt substitute(const stmt& s, symbol_id target, const expr& replacement) {
 }
 
 expr substitute(const expr& e, const expr& target, const expr& replacement) {
-  return substitutor(target, replacement).mutate(e);
+  std::pair<expr, expr> subs[] = {{target, replacement}};
+  return substitutor(subs).mutate(e);
 }
 stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
-  return substitutor(target, replacement).mutate(s);
+  std::pair<expr, expr> subs[] = {{target, replacement}};
+  return substitutor(subs).mutate(s);
 }
 
 expr substitute_bounds(const expr& e, symbol_id buffer, const box_expr& bounds) {
