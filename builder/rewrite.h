@@ -27,7 +27,6 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::
 
 class pattern_expr {
 public:
-  using is_pattern = std::true_type;
   const expr& e;
 };
 
@@ -44,7 +43,6 @@ const pattern_expr& indeterminate();
 
 class pattern_wildcard {
 public:
-  using is_pattern = std::true_type;
   int idx;
 };
 
@@ -69,7 +67,6 @@ inline const base_expr_node* substitute(const pattern_wildcard& p, const match_c
 
 class pattern_constant {
 public:
-  using is_pattern = std::true_type;
   int idx;
 };
 
@@ -95,7 +92,6 @@ inline index_t substitute(const pattern_constant& p, const match_context& ctx) {
 template <typename T, typename A, typename B>
 class pattern_binary {
 public:
-  using is_pattern = std::true_type;
   A a;
   B b;
 
@@ -146,7 +142,8 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) 
 }
 
 template <typename T, typename A, typename B>
-bool match(const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
+bool match(
+    const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
   return match(p, commute_bit(p, ctx), x.a.e, x.b.e, ctx);
 }
 
@@ -158,7 +155,6 @@ expr substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
 template <typename T, typename A>
 class pattern_unary {
 public:
-  using is_pattern = std::true_type;
   A a;
 };
 
@@ -189,7 +185,6 @@ expr substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
 template <typename C, typename T, typename F>
 class pattern_select {
 public:
-  using is_pattern = std::true_type;
   C c;
   T t;
   F f;
@@ -223,7 +218,6 @@ expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
 template <typename... Args>
 class pattern_call {
 public:
-  using is_pattern = std::true_type;
   slinky::intrinsic fn;
   std::tuple<Args...> args;
 };
@@ -292,79 +286,135 @@ index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
   return evaluate(substitute(r.a, ctx));
 }
 
-template <typename A>
+// We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
+template <typename... Ts>
+struct enable_pattern_ops {
+  using type = void;
+};
+
+template <typename T, typename... Ts>
+struct enable_pattern_ops<T, Ts...> {
+  using type = typename enable_pattern_ops<Ts...>::type;
+};
+
+template <typename... Ts>
+struct enable_pattern_ops<pattern_expr, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename... Ts>
+struct enable_pattern_ops<pattern_wildcard, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename... Ts>
+struct enable_pattern_ops<pattern_constant, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename T, typename A, typename B, typename... Ts>
+struct enable_pattern_ops<pattern_binary<T, A, B>, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename T, typename A, typename... Ts>
+struct enable_pattern_ops<pattern_unary<T, A>, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename C, typename T, typename F, typename... Ts>
+struct enable_pattern_ops<pattern_select<C, T, F>, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename... Args, typename... Ts>
+struct enable_pattern_ops<pattern_call<Args...>, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename T, typename... Ts>
+struct enable_pattern_ops<replacement_eval<T>, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename T, typename Fn, typename... Ts>
+struct enable_pattern_ops<replacement_predicate<T, Fn>, Ts...> {
+  using type = std::true_type;
+};
+
+template <typename A, bool = typename enable_pattern_ops<A>::type()>
 auto operator!(const A& a) {
   return pattern_unary<logical_not, A>{a};
 }
-template <typename A>
+template <typename A, bool = typename enable_pattern_ops<A>::type()>
 auto operator-(const A& a) {
   return pattern_binary<sub, index_t, A>{0, a};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator+(const A& a, const B& b) {
   return pattern_binary<add, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator-(const A& a, const B& b) {
   return pattern_binary<sub, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator*(const A& a, const B& b) {
   return pattern_binary<mul, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator/(const A& a, const B& b) {
   return pattern_binary<div, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator%(const A& a, const B& b) {
   return pattern_binary<mod, A, B>{a, b};
 }
-template <typename A, typename B, typename = typename A::is_pattern>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator==(const A& a, const B& b) {
   return pattern_binary<equal, A, B>{a, b};
 }
-template <typename A, typename B, typename = typename A::is_pattern>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator!=(const A& a, const B& b) {
   return pattern_binary<not_equal, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator<(const A& a, const B& b) {
   return pattern_binary<less, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator<=(const A& a, const B& b) {
   return pattern_binary<less_equal, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator>(const A& a, const B& b) {
   return pattern_binary<less, B, A>{b, a};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator>=(const A& a, const B& b) {
   return pattern_binary<less_equal, B, A>{b, a};
 }
-template <typename A, typename B, typename = typename A::is_pattern>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator&&(const A& a, const B& b) {
   return pattern_binary<logical_and, A, B>{a, b};
 }
-template <typename A, typename B, typename = typename A::is_pattern>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto operator||(const A& a, const B& b) {
   return pattern_binary<logical_or, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto min(const A& a, const B& b) {
   return pattern_binary<class min, A, B>{a, b};
 }
-template <typename A, typename B>
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 auto max(const A& a, const B& b) {
   return pattern_binary<class max, A, B>{a, b};
 }
-template <typename C, typename T, typename F>
+template <typename C, typename T, typename F, bool = typename enable_pattern_ops<C, T, F>::type()>
 auto select(const C& c, const T& t, const F& f) {
   return pattern_select<C, T, F>{c, t, f};
 }
-template <typename T>
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
 auto abs(const T& x) {
   return pattern_call<T>{intrinsic::abs, {x}};
 }
