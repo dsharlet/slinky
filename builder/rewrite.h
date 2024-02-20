@@ -22,7 +22,7 @@ struct match_context {
 };
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline expr substitute(index_t p, const match_context&) { return p; }
+SLINKY_ALWAYS_INLINE inline index_t substitute(index_t p, const match_context&) { return p; }
 SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::constant; }
 
 class pattern_expr {
@@ -147,9 +147,31 @@ bool match(
   return match(p, commute_bit(p, ctx), x.a.e, x.b.e, ctx);
 }
 
+template <typename T>
+expr make_binary(expr a, expr b) {
+  return T::make(std::move(a), std::move(b));
+}
+
+// clang-format off
+template <typename T> index_t make_binary(index_t a, index_t b);
+template <> inline index_t make_binary<add>(index_t a, index_t b) { return a + b; }
+template <> inline index_t make_binary<sub>(index_t a, index_t b) { return a - b; }
+template <> inline index_t make_binary<mul>(index_t a, index_t b) { return a * b; }
+template <> inline index_t make_binary<div>(index_t a, index_t b) { return euclidean_div(a, b); }
+template <> inline index_t make_binary<mod>(index_t a, index_t b) { return euclidean_mod(a, b); }
+template <> inline index_t make_binary<class min>(index_t a, index_t b) { return std::min(a, b); }
+template <> inline index_t make_binary<class max>(index_t a, index_t b) { return std::max(a, b); }
+template <> inline index_t make_binary<equal>(index_t a, index_t b) { return a == b; }
+template <> inline index_t make_binary<not_equal>(index_t a, index_t b) { return a != b; }
+template <> inline index_t make_binary<less>(index_t a, index_t b) { return a < b; }
+template <> inline index_t make_binary<less_equal>(index_t a, index_t b) { return a <= b; }
+template <> inline index_t make_binary<logical_and>(index_t a, index_t b) { return ((a != 0) && (b != 0)) ? 1 : 0; }
+template <> inline index_t make_binary<logical_or>(index_t a, index_t b) { return ((a != 0) || (b != 0)) ? 1 : 0; }
+// clang-format on
+
 template <typename T, typename A, typename B>
-expr substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
-  return T::make(substitute(p.a, ctx), substitute(p.b, ctx));
+auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
+  return make_binary<T>(substitute(p.a, ctx), substitute(p.b, ctx));
 }
 
 template <typename T, typename A>
@@ -177,9 +199,18 @@ bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x
   return match(p.a, x.a.e, ctx);
 }
 
+template <typename T>
+expr make_unary(expr a) {
+  return T::make(std::move(a));
+}
+// clang-format off
+template <typename T> index_t make_unary(index_t a);
+template <> inline index_t make_unary<logical_not>(index_t a) { return a == 0 ? 1 : 0; }
+// clang-format on
+
 template <typename T, typename A>
-expr substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
-  return T::make(substitute(p.a, ctx));
+auto substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
+  return make_unary<T>(substitute(p.a, ctx));
 }
 
 template <typename C, typename T, typename F>
@@ -283,7 +314,7 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(const replacement_eval<T>&) {
 
 template <typename T>
 index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
-  return evaluate(substitute(r.a, ctx));
+  return substitute(r.a, ctx);
 }
 
 // We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
@@ -297,135 +328,69 @@ struct enable_pattern_ops<T, Ts...> {
   using type = typename enable_pattern_ops<Ts...>::type;
 };
 
+// clang-format off
 template <typename... Ts>
-struct enable_pattern_ops<pattern_expr, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_expr, Ts...> { using type = std::true_type; };
 template <typename... Ts>
-struct enable_pattern_ops<pattern_wildcard, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_wildcard, Ts...> { using type = std::true_type; };
 template <typename... Ts>
-struct enable_pattern_ops<pattern_constant, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_constant, Ts...> { using type = std::true_type; };
 template <typename T, typename A, typename B, typename... Ts>
-struct enable_pattern_ops<pattern_binary<T, A, B>, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_binary<T, A, B>, Ts...> { using type = std::true_type; };
 template <typename T, typename A, typename... Ts>
-struct enable_pattern_ops<pattern_unary<T, A>, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_unary<T, A>, Ts...> { using type = std::true_type; };
 template <typename C, typename T, typename F, typename... Ts>
-struct enable_pattern_ops<pattern_select<C, T, F>, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_select<C, T, F>, Ts...> { using type = std::true_type; };
 template <typename... Args, typename... Ts>
-struct enable_pattern_ops<pattern_call<Args...>, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<pattern_call<Args...>, Ts...> { using type = std::true_type; };
 template <typename T, typename... Ts>
-struct enable_pattern_ops<replacement_eval<T>, Ts...> {
-  using type = std::true_type;
-};
-
+struct enable_pattern_ops<replacement_eval<T>, Ts...> { using type = std::true_type; };
 template <typename T, typename Fn, typename... Ts>
-struct enable_pattern_ops<replacement_predicate<T, Fn>, Ts...> {
-  using type = std::true_type;
-};
+struct enable_pattern_ops<replacement_predicate<T, Fn>, Ts...> { using type = std::true_type; };
 
 template <typename A, bool = typename enable_pattern_ops<A>::type()>
-auto operator!(const A& a) {
-  return pattern_unary<logical_not, A>{a};
-}
+auto operator!(const A& a) { return pattern_unary<logical_not, A>{a}; }
 template <typename A, bool = typename enable_pattern_ops<A>::type()>
-auto operator-(const A& a) {
-  return pattern_binary<sub, index_t, A>{0, a};
-}
+auto operator-(const A& a) { return pattern_binary<sub, index_t, A>{0, a}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator+(const A& a, const B& b) {
-  return pattern_binary<add, A, B>{a, b};
-}
+auto operator+(const A& a, const B& b) { return pattern_binary<add, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator-(const A& a, const B& b) {
-  return pattern_binary<sub, A, B>{a, b};
-}
+auto operator-(const A& a, const B& b) { return pattern_binary<sub, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator*(const A& a, const B& b) {
-  return pattern_binary<mul, A, B>{a, b};
-}
+auto operator*(const A& a, const B& b) { return pattern_binary<mul, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator/(const A& a, const B& b) {
-  return pattern_binary<div, A, B>{a, b};
-}
+auto operator/(const A& a, const B& b) { return pattern_binary<div, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator%(const A& a, const B& b) {
-  return pattern_binary<mod, A, B>{a, b};
-}
+auto operator%(const A& a, const B& b) { return pattern_binary<mod, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator==(const A& a, const B& b) {
-  return pattern_binary<equal, A, B>{a, b};
-}
+auto operator==(const A& a, const B& b) { return pattern_binary<equal, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator!=(const A& a, const B& b) {
-  return pattern_binary<not_equal, A, B>{a, b};
-}
+auto operator!=(const A& a, const B& b) { return pattern_binary<not_equal, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator<(const A& a, const B& b) {
-  return pattern_binary<less, A, B>{a, b};
-}
+auto operator<(const A& a, const B& b) { return pattern_binary<less, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator<=(const A& a, const B& b) {
-  return pattern_binary<less_equal, A, B>{a, b};
-}
+auto operator<=(const A& a, const B& b) { return pattern_binary<less_equal, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator>(const A& a, const B& b) {
-  return pattern_binary<less, B, A>{b, a};
-}
+auto operator>(const A& a, const B& b) { return pattern_binary<less, B, A>{b, a}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator>=(const A& a, const B& b) {
-  return pattern_binary<less_equal, B, A>{b, a};
-}
+auto operator>=(const A& a, const B& b) { return pattern_binary<less_equal, B, A>{b, a}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator&&(const A& a, const B& b) {
-  return pattern_binary<logical_and, A, B>{a, b};
-}
+auto operator&&(const A& a, const B& b) { return pattern_binary<logical_and, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator||(const A& a, const B& b) {
-  return pattern_binary<logical_or, A, B>{a, b};
-}
+auto operator||(const A& a, const B& b) { return pattern_binary<logical_or, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto min(const A& a, const B& b) {
-  return pattern_binary<class min, A, B>{a, b};
-}
+auto min(const A& a, const B& b) { return pattern_binary<class min, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto max(const A& a, const B& b) {
-  return pattern_binary<class max, A, B>{a, b};
-}
+auto max(const A& a, const B& b) { return pattern_binary<class max, A, B>{a, b}; }
 template <typename C, typename T, typename F, bool = typename enable_pattern_ops<C, T, F>::type()>
-auto select(const C& c, const T& t, const F& f) {
-  return pattern_select<C, T, F>{c, t, f};
-}
+auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>{c, t, f}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-auto abs(const T& x) {
-  return pattern_call<T>{intrinsic::abs, {x}};
-}
+auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
 template <typename T>
-auto is_finite(const T& x) {
-  return make_predicate(x, slinky::is_finite);
-}
+auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
 template <typename T>
-auto is_constant(const T& x) {
-  return make_predicate(x, slinky::as_constant);
-}
+auto is_constant(const T& x) { return make_predicate(x, slinky::as_constant); }
+// clang-format on
 
 using buffer_dim_meta = pattern_call<pattern_wildcard, pattern_wildcard>;
 
