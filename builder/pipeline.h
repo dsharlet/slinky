@@ -137,6 +137,7 @@ public:
 
 private:
   call_stmt::callable impl_;
+  call_stmt::callable_attrs attrs_;
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
@@ -150,7 +151,8 @@ private:
 
 public:
   func() = default;
-  func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs);
+  func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs,
+      call_stmt::callable_attrs attrs = {});
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::optional<std::vector<char>> padding = std::nullopt);
   func(func&&) noexcept;
@@ -202,7 +204,8 @@ private:
 public:
   // Version for std::function
   template <typename... T>
-  static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs) {
+  static func make(
+      callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
 
@@ -219,22 +222,24 @@ public:
       return call_impl<T...>(impl, ctx, symbols, std::make_index_sequence<sizeof...(T)>());
     };
 
-    return func(std::move(wrapper), std::move(inputs), std::move(outputs));
+    return func(std::move(wrapper), std::move(inputs), std::move(outputs), attrs);
   }
 
   // Version for lambdas
   template <typename Lambda>
-  static func make(Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs) {
+  static func make(
+      Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
     using std_function_type = typename lambda_call_signature<Lambda>::std_function_type;
     std_function_type impl = std::move(lambda);
-    return make(std::move(impl), std::move(inputs), std::move(outputs));
+    return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
   }
 
   // Version for plain old function ptrs
   template <typename... T>
-  static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs) {
+  static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs,
+      call_stmt::callable_attrs attrs = {}) {
     callable<T...> impl = fn;
-    return make(std::move(impl), std::move(inputs), std::move(outputs));
+    return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
   }
 
   // Make a copy from a single input to a single output.

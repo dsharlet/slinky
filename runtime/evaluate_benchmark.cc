@@ -27,7 +27,7 @@ stmt make_call_counter(std::atomic<int>& calls) {
         ++calls;
         return 0;
       },
-      {}, {});
+      {}, {}, {});
 }
 
 stmt make_loop(stmt body) { return loop::make(x.sym(), loop_mode::serial, range(0, iterations), 1, body); }

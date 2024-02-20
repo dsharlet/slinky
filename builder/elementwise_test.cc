@@ -84,7 +84,8 @@ public:
       for_each_index(c, [&](auto i) { c(i) = impl(a(i), b(i)); });
       return 0;
     };
-    func r = func::make<const T, const T, T>(std::move(fn), {{a, bounds}, {b, bounds}}, {{result, dims}});
+    func r = func::make<const T, const T, T>(
+        std::move(fn), {{a, bounds}, {b, bounds}}, {{result, dims}}, call_stmt::callable_attrs{.allow_in_place = true});
     result_funcs.push_back(std::move(r));
   }
 
@@ -120,8 +121,8 @@ public:
       for_each_index(c, [&](auto i) { r(i) = c(i) != 0 ? t(i) : f(i); });
       return 0;
     };
-    func r = func::make<const T, const T, const T, T>(
-        std::move(fn), {{c, bounds}, {t, bounds}, {f, bounds}}, {{result, dims}});
+    func r = func::make<const T, const T, const T, T>(std::move(fn), {{c, bounds}, {t, bounds}, {f, bounds}},
+        {{result, dims}}, call_stmt::callable_attrs{.allow_in_place = true});
     result_funcs.push_back(std::move(r));
   }
 

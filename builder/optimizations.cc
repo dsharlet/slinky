@@ -23,48 +23,6 @@ namespace slinky {
 
 namespace {
 
-// Get a reference to `n`th vector element of v, resizing the vector if necessary.
-template <typename T>
-T& vector_at(std::vector<T>& v, std::size_t n) {
-  if (n >= v.size()) {
-    v.resize(n + 1);
-  }
-  return v[n];
-}
-template <typename T>
-T& vector_at(std::optional<std::vector<T>>& v, std::size_t n) {
-  if (!v) {
-    v = std::vector<T>(n + 1);
-  }
-  return vector_at(*v, n);
-}
-
-void merge_crop(std::optional<box_expr>& bounds, int dim, const interval_expr& new_bounds) {
-  if (new_bounds.min.defined()) {
-    vector_at(bounds, dim).min = new_bounds.min;
-  }
-  if (new_bounds.max.defined()) {
-    vector_at(bounds, dim).max = new_bounds.max;
-  }
-}
-
-void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
-  for (int d = 0; d < static_cast<int>(new_bounds.size()); ++d) {
-    merge_crop(bounds, d, new_bounds[d]);
-  }
-}
-
-bool is_elementwise(const box_expr& in_x, symbol_id out) {
-  for (index_t d = 0; d < static_cast<index_t>(in_x.size()); ++d) {
-    // TODO: This is too lax, we really need to check for elementwise before we've computed the bounds of this
-    // particular call, so we can check that a single point of the output is a function of the same point in the input
-    // (and not a rectangle of output being a function of a rectangle of the input).
-    if (!is_buffer_min(in_x[d].min, out, d)) return false;
-    if (!is_buffer_max(in_x[d].max, out, d)) return false;
-  }
-  return true;
-}
-
 bool is_copy(expr in, var out, expr& offset) {
   static var x(0), dx(1), negative_dx(2);
   static expr patterns[] = {
@@ -122,25 +80,18 @@ class buffer_aliaser : public node_mutator {
     }
   };
   symbol_map<buffer_info> alias_info;
-  symbol_map<box_expr> buffer_bounds;
-  symbol_map<std::size_t> elem_sizes;
   symbol_map<bool> do_not_alias;
 
 public:
   void visit(const allocate* op) override {
-    box_expr bounds;
-    bounds.reserve(op->dims.size());
     bool do_not_alias_sym = false;
     for (const dim_expr& d : op->dims) {
-      bounds.push_back(d.bounds);
       if (d.fold_factor.defined()) {
         // This buffer can't be aliased.
         do_not_alias_sym = true;
       }
     }
     auto set_do_not_alias = set_value_in_scope(do_not_alias, op->sym, do_not_alias_sym);
-    auto set_buffer_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    auto set_elem_size = set_value_in_scope(elem_sizes, op->sym, op->elem_size);
 
     // When we allocate a buffer, we can look for all the uses of this buffer. If it is:
     // - consumed elemenwise,
@@ -191,7 +142,7 @@ public:
               ctx.pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
-            {src}, {dst});
+            {src}, {dst}, {});
       });
       
       if (pad_result.same_as(result)) {
@@ -216,24 +167,16 @@ public:
   void visit(const call_stmt* op) override {
     set_result(op);
     for (symbol_id o : op->outputs) {
-      std::optional<std::size_t> elem_size_o = elem_sizes[o];
-      if (!elem_size_o) continue;
-
       std::optional<bool> no_alias = do_not_alias[o];
       if (no_alias && *no_alias) {
         continue;
       }
 
       for (symbol_id i : op->inputs) {
-        const std::optional<box_expr>& in_x = buffer_bounds[i];
         std::optional<buffer_info>& info = alias_info[i];
         if (!info) continue;
-        std::optional<std::size_t> elem_size_i = elem_sizes[i];
-        if (!elem_size_i) continue;
 
-        // TODO: `is_elementwise` should be replaced by op->metadata.can_be_computed_in_place or the like. Then, we
-        // don't need to track bounds at all in this visitor.
-        if (!in_x || *elem_size_o != *elem_size_i || !is_elementwise(*in_x, o)) {
+        if (!op->attrs.allow_in_place) {
           info->do_not_alias(o);
           return;
         }
@@ -264,20 +207,6 @@ public:
     info->maybe_alias(op->dst, std::move(a));
   }
 
-  void visit(const crop_buffer* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    merge_crop(bounds, op->bounds);
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    node_mutator::visit(op);
-  }
-
-  void visit(const crop_dim* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    merge_crop(bounds, op->dim, op->bounds);
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-    node_mutator::visit(op);
-  }
-
   void merge_alias_info(symbol_map<buffer_info> add) {
     for (symbol_id i = 0; i < add.size(); ++i) {
       if (!add[i]) continue;
@@ -293,14 +222,6 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    if (bounds) {
-      for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
-        if (!op->at[d].defined()) continue;
-        bounds->erase(bounds->begin() + d);
-      }
-    }
-
     // We need to know which alias candidates are added inside this slice.
     symbol_map<buffer_info> old_alias_info;
     std::swap(old_alias_info, alias_info);
@@ -310,7 +231,6 @@ public:
       }
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     node_mutator::visit(op);
 
     // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
@@ -331,11 +251,6 @@ public:
   }
 
   void visit(const slice_dim* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    if (bounds && op->dim < static_cast<int>(bounds->size())) {
-      bounds->erase(bounds->begin() + op->dim);
-    }
-
     // We need to know which alias candidates are added inside this slice.
     symbol_map<buffer_info> old_alias_info;
     std::swap(old_alias_info, alias_info);
@@ -345,7 +260,6 @@ public:
       }
     }
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
     node_mutator::visit(op);
 
     // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
@@ -363,45 +277,6 @@ public:
   }
 
   void visit(const truncate_rank*) override { std::abort(); }
-
-  // We need a better way to do this. `check` doesn't have a scope, so we need to be careful to only learn information
-  // about buffers within the scope the check has been guaranteed to have run in. For now, only bother with checks at
-  // the global scope.
-  bool at_root_scope = true;
-
-  void visit(const check* op) override {
-    set_result(op);
-    if (!at_root_scope) return;
-    if (const equal* eq = op->condition.as<equal>()) {
-      if (const call* op = eq->a.as<call>()) {
-        if (op->intrinsic == intrinsic::buffer_elem_size) {
-          const symbol_id* buf = as_variable(op->args[0]);
-          const index_t* value = as_constant(eq->b);
-          if (buf && value) {
-            elem_sizes[*buf] = *value;
-          }
-        }
-      }
-    }
-  }
-
-  void visit(const block* op) override {
-    std::vector<stmt> stmts;
-    stmts.reserve(op->stmts.size());
-    bool changed = false;
-    for (const stmt& s : op->stmts) {
-      if (!s.as<check>() && !s.as<block>()) {
-        at_root_scope = false;
-      }
-      stmts.push_back(mutate(s));
-      changed = changed || !stmts.back().same_as(s);
-    }
-    if (!changed) {
-      set_result(op);
-    } else {
-      set_result(block::make(std::move(stmts)));
-    }
-  }
 };
 
 }  // namespace
@@ -418,7 +293,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
-      {op->src}, {op->dst});
+      {op->src}, {op->dst}, {});
 
   var src_var(op->src);
   var dst_var(op->dst);

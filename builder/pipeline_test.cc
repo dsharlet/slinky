@@ -200,7 +200,8 @@ TEST(pipeline, trivial) {
 
       var x(ctx, "x");
 
-      func mul = func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}});
+      func mul = func::make(
+          multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
       if (split > 0) {
         mul.loops({{x, split, lm}});
       }
@@ -253,8 +254,10 @@ TEST(pipeline, elementwise_1d) {
         func::callable<const int, int> m2 = multiply_2<int>;
         func::callable<const int, int> a1 = add_1<int>;
 
-        func mul = func::make(std::move(m2), {{in, {point(x)}}}, {{intm, {x}}});
-        func add = func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}});
+        func mul = func::make(
+            std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+        func add = func::make(
+            std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
         if (split > 0) {
           add.loops({{x, split, lm}});
@@ -315,8 +318,10 @@ TEST(pipeline, elementwise_2d) {
         auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return multiply_2<int>(a, b); };
         auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
 
-        func mul = func::make(std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-        func add = func::make(std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
+        func mul = func::make(std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}},
+            call_stmt::callable_attrs{.allow_in_place = true});
+        func add = func::make(std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}},
+            call_stmt::callable_attrs{.allow_in_place = true});
 
         if (split > 0) {
           add.loops({{x, split, lm}, {y, split, lm}});
@@ -897,11 +902,14 @@ TEST(pipeline, unrelated) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
+      call_stmt::callable_attrs{.allow_in_place = true});
   func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
 
-  func mul2 = func::make(multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}});
-  func add2 = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}});
+  func mul2 = func::make(
+      multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+  func add2 =
+      func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
   stencil1.loops({{y, 2}});
 
