@@ -77,8 +77,9 @@ box_expr buffer_expr::bounds() const {
   return result;
 }
 
-func::func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs)
-    : impl_(std::move(impl)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+func::func(
+    call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs)
+    : impl_(std::move(impl)), attrs_(attrs), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   add_this_to_buffers();
 }
 
@@ -126,7 +127,7 @@ stmt func::make_call() const {
     for (const func::output& i : outputs_) {
       outputs.push_back(i.sym());
     }
-    return call_stmt::make(impl_, std::move(inputs), std::move(outputs));
+    return call_stmt::make(impl_, std::move(inputs), std::move(outputs), attrs_);
   } else {
     std::vector<stmt> copies;
     for (const func::input& input : inputs_) {

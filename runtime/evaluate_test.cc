@@ -45,7 +45,7 @@ TEST(evaluate, call) {
         calls.push_back(*ctx[x]);
         return 0;
       },
-      {}, {});
+      {}, {}, {});
 
   eval_context context;
   context[x] = 2;
@@ -74,7 +74,7 @@ TEST(evaluate, loop) {
           sum_x += *ctx[x];
           return 0;
         },
-        {}, {});
+        {}, {}, {});
 
     stmt l = loop::make(x.sym(), type, range(2, 12), 3, c);
 

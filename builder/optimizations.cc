@@ -54,17 +54,6 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
   }
 }
 
-bool is_elementwise(const box_expr& in_x, symbol_id out) {
-  for (index_t d = 0; d < static_cast<index_t>(in_x.size()); ++d) {
-    // TODO: This is too lax, we really need to check for elementwise before we've computed the bounds of this
-    // particular call, so we can check that a single point of the output is a function of the same point in the input
-    // (and not a rectangle of output being a function of a rectangle of the input).
-    if (!is_buffer_min(in_x[d].min, out, d)) return false;
-    if (!is_buffer_max(in_x[d].max, out, d)) return false;
-  }
-  return true;
-}
-
 bool is_copy(expr in, var out, expr& offset) {
   static var x(0), dx(1), negative_dx(2);
   static expr patterns[] = {
@@ -191,7 +180,7 @@ public:
               ctx.pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
-            {src}, {dst});
+            {src}, {dst}, {});
       });
       
       if (pad_result.same_as(result)) {
@@ -216,24 +205,16 @@ public:
   void visit(const call_stmt* op) override {
     set_result(op);
     for (symbol_id o : op->outputs) {
-      std::optional<std::size_t> elem_size_o = elem_sizes[o];
-      if (!elem_size_o) continue;
-
       std::optional<bool> no_alias = do_not_alias[o];
       if (no_alias && *no_alias) {
         continue;
       }
 
       for (symbol_id i : op->inputs) {
-        const std::optional<box_expr>& in_x = buffer_bounds[i];
         std::optional<buffer_info>& info = alias_info[i];
         if (!info) continue;
-        std::optional<std::size_t> elem_size_i = elem_sizes[i];
-        if (!elem_size_i) continue;
 
-        // TODO: `is_elementwise` should be replaced by op->metadata.can_be_computed_in_place or the like. Then, we
-        // don't need to track bounds at all in this visitor.
-        if (!in_x || *elem_size_o != *elem_size_i || !is_elementwise(*in_x, o)) {
+        if (!op->attrs.allow_in_place) {
           info->do_not_alias(o);
           return;
         }
@@ -418,7 +399,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
-      {op->src}, {op->dst});
+      {op->src}, {op->dst}, {});
 
   var src_var(op->src);
   var dst_var(op->dst);

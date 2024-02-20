@@ -449,15 +449,21 @@ public:
   using callable = std::function<index_t(eval_context&)>;
   using symbol_list = std::vector<symbol_id>;
 
+  struct callable_attrs {
+    // Allow inputs and outputs to this call to be aliased to the same buffer.
+    bool allow_in_place = false;
+  };
+
   callable target;
   // These are not actually used during evaluation. They are only here for analyzing the IR, so we can know what will be
   // accessed (and how) by the callable.
   symbol_list inputs;
   symbol_list outputs;
+  callable_attrs attrs; 
 
   void accept(node_visitor* v) const override;
 
-  static stmt make(callable target, symbol_list inputs, symbol_list outputs);
+  static stmt make(callable target, symbol_list inputs, symbol_list outputs, callable_attrs attrs);
 
   static constexpr node_type static_type = node_type::call_stmt;
 };
