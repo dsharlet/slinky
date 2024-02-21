@@ -188,22 +188,36 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
   for (int d = 0; d + 1 < rank;) {
     copy_dim& a = dims[d];
     const copy_dim& b = dims[d + 1];
-    if (a.pad_before == 0 && a.pad_after == 0 && b.dst_stride == a.dst_stride * a.total_size &&
-        b.src_stride == a.src_stride * a.total_size) {
+    if (b.dst_stride != a.dst_stride * a.total_size || b.src_stride != a.src_stride * a.total_size) {
+      // There are gaps between these dimensions, we can't fuse them.
+      ++d;
+      continue;
+    }
+
+    if (a.pad_before == 0 && a.pad_after == 0) {
+      // a is entirely copied in this dimension.
       assert(a.size == a.total_size);
       a.pad_before = b.pad_before * a.size;
       a.pad_after = b.pad_after * a.size;
       a.total_size = b.total_size * a.size;
       a.size = b.size * a.size;
-
-      // Remove the now-fused dimension.
-      for (int i = d + 1; i + 1 < rank; ++i) {
-        dims[i] = dims[i + 1];
-      }
-      --rank;
+    } else if (a.size == 0 && a.pad_after == 0) {
+      // a is entirely padded in this dimension.
+      assert(a.pad_before == a.total_size);
+      a.pad_before *= b.total_size;
+      a.total_size = a.pad_before;
     } else {
+      // Make sure we didn't use pad_after for all the padding.
+      assert(a.pad_after < a.total_size);
       ++d;
+      continue;
     }
+
+    // Remove the now-fused dimension.
+    for (int i = d + 1; i + 1 < rank; ++i) {
+      dims[i] = dims[i + 1];
+    }
+    --rank;
   }
   return rank;
 }
