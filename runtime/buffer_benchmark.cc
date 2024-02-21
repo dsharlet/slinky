@@ -56,8 +56,9 @@ BENCHMARK(BM_fill)->Args({32, 32, 256, 4});
 void BM_fill_padded(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
   buffer<char, 4> dst(extents);
-  dst.dim(0).set_stride(dst.dim(0).stride() + 16);
+  dst.dim(0).set_min_extent(0, extents[0] + 16);
   dst.allocate();
+  dst.dim(0).set_min_extent(0, extents[0]);
 
   char five = 0;
 
