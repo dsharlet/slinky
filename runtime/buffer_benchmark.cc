@@ -7,6 +7,8 @@
 
 namespace slinky {
 
+constexpr int padding_size = 64;  // one cache line, barely matters
+
 std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::State& state) {
   std::vector<index_t> vec(max_size);
   for (std::size_t i = 0; i < max_size; ++i) {
@@ -16,6 +18,19 @@ std::vector<index_t> state_to_vector(std::size_t max_size, const benchmark::Stat
     vec.pop_back();
   }
   return vec;
+}
+
+template <typename T, std::size_t N>
+void allocate_buffer(buffer<T, N>& buf, const std::vector<index_t>& extents, index_t dim_0_padding = 0) {
+  assert(extents.size() <= N);
+  index_t stride = buf.elem_size;
+  buf.rank = extents.size();
+  for (std::size_t d = 0; d < extents.size(); ++d) {
+    buf.dim(d).set_min_extent(0, extents[d]);
+    buf.dim(d).set_stride(stride);
+    stride *= buf.dim(d).extent() + (d == 0 ? dim_0_padding : 0);
+  }
+  buf.allocate();
 }
 
 template <typename Fn>
@@ -39,9 +54,8 @@ void BM_memset(benchmark::State& state) {
 BENCHMARK(BM_memset)->Arg(1024 * 1024);
 
 void BM_fill(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> dst(extents);
-  dst.allocate();
+  buffer<char, 4> dst;
+  allocate_buffer(dst, state_to_vector(4, state));
 
   char five = 0;
 
@@ -54,10 +68,8 @@ BENCHMARK(BM_fill)->Args({1024, 256, 4, -1});
 BENCHMARK(BM_fill)->Args({32, 32, 256, 4});
 
 void BM_fill_padded(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> dst(extents);
-  dst.dim(0).set_stride(dst.dim(0).stride() + 16);
-  dst.allocate();
+  buffer<char, 4> dst;
+  allocate_buffer(dst, state_to_vector(4, state), padding_size);
 
   char five = 0;
 
@@ -71,8 +83,8 @@ BENCHMARK(BM_fill_padded)->Args({32, 32, 256, 4});
 
 void BM_pad(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> dst(extents);
-  dst.allocate();
+  buffer<char, 4> dst;
+  allocate_buffer(dst, extents);
 
   buffer<char, 4> src(extents);
   for (std::size_t d = 0; d < src.rank; ++d) {
@@ -112,10 +124,10 @@ BENCHMARK(BM_memcpy)->Arg(1024 * 1024);
 
 void BM_copy(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> src(extents);
-  buffer<char, 4> dst(extents);
-  src.allocate();
-  dst.allocate();
+  buffer<char, 4> src;
+  buffer<char, 4> dst;
+  allocate_buffer(src, extents);
+  allocate_buffer(dst, extents);
 
   for (auto _ : state) {
     copy(src, dst);
@@ -127,12 +139,10 @@ BENCHMARK(BM_copy)->Args({32, 32, 256, 4});
 
 void BM_copy_padded(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> src(extents);
-  buffer<char, 4> dst(extents);
-  dst.dim(0).set_min_extent(0, extents[0] + 16);
-  src.allocate();
-  dst.allocate();
-  dst.dim(0).set_min_extent(0, extents[0]);
+  buffer<char, 4> src;
+  buffer<char, 4> dst;
+  allocate_buffer(src, extents);
+  allocate_buffer(dst, extents, padding_size);
 
   for (auto _ : state) {
     copy(src, dst);
@@ -149,10 +159,8 @@ void memset_slice(index_t, void* base) { memset(base, 0, slice_extent); }
 template <typename Fn>
 void BM_for_each_slice_1x(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
-  extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> buf(extents);
-  buf.allocate();
-  buf.dim(0).set_extent(state.range(0));
+  buffer<char, 3> buf;
+  allocate_buffer(buf, extents, padding_size);
 
   auto fn_wrapper = [fn = std::move(fn)](const raw_buffer& buf) { fn(slice_extent, buf.base); };
 
@@ -164,10 +172,8 @@ void BM_for_each_slice_1x(benchmark::State& state, Fn fn) {
 template <typename Fn>
 void BM_for_each_contiguous_slice_1x(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
-  extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> buf(extents);
-  buf.allocate();
-  buf.dim(0).set_extent(state.range(0));
+  buffer<char, 3> buf;
+  allocate_buffer(buf, extents, padding_size);
 
   for (auto _ : state) {
     for_each_contiguous_slice(buf, fn);
@@ -177,10 +183,8 @@ void BM_for_each_contiguous_slice_1x(benchmark::State& state, Fn fn) {
 template <typename Fn>
 void BM_for_each_slice_hardcoded_1x(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
-  extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> buf(extents);
-  buf.allocate();
-  buf.dim(0).set_extent(state.range(0));
+  buffer<char, 3> buf;
+  allocate_buffer(buf, extents, padding_size);
 
   for (auto _ : state) {
     char* base_i = buf.base();
@@ -211,14 +215,11 @@ void memcpy_slices(index_t extent, void* dst, const void* src) { memcpy(dst, src
 template <typename Fn>
 void BM_for_each_slice_2x(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
-  extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> dst(extents);
-  dst.allocate();
-  dst.dim(0).set_extent(state.range(0));
+  buffer<char, 3> dst;
+  allocate_buffer(dst, extents, padding_size);
 
-  buffer<char, 3> src(extents);
-  src.allocate();
-  src.dim(0).set_extent(state.range(0));
+  buffer<char, 3> src;
+  allocate_buffer(src, extents);
 
   char x = 42;
   fill(src, &x);
@@ -233,14 +234,11 @@ void BM_for_each_slice_2x(benchmark::State& state, Fn fn) {
 template <typename Fn>
 void BM_for_each_contiguous_slice_2x(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
-  extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> dst(extents);
-  dst.allocate();
-  dst.dim(0).set_extent(state.range(0));
+  buffer<char, 3> dst;
+  allocate_buffer(dst, extents, padding_size);
 
-  buffer<char, 3> src(extents);
-  src.allocate();
-  src.dim(0).set_extent(state.range(0));
+  buffer<char, 3> src;
+  allocate_buffer(src, extents);
 
   char x = 42;
   fill(src, &x);
@@ -253,14 +251,11 @@ void BM_for_each_contiguous_slice_2x(benchmark::State& state, Fn fn) {
 template <typename Fn>
 void BM_for_each_slice_hardcoded_2x(benchmark::State& state, Fn fn) {
   std::vector<index_t> extents = state_to_vector(3, state);
-  extents[0] += 64;  // Insert padding after the first dimension.
-  buffer<char, 3> dst(extents);
-  dst.allocate();
-  dst.dim(0).set_extent(state.range(0));
+  buffer<char, 3> dst;
+  allocate_buffer(dst, extents, padding_size);
 
-  buffer<char, 3> src(extents);
-  src.allocate();
-  src.dim(0).set_extent(state.range(0));
+  buffer<char, 3> src;
+  allocate_buffer(src, extents);
 
   char x = 42;
   fill(src, &x);

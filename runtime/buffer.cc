@@ -66,20 +66,15 @@ struct copy_dim {
   bool operator<(const copy_dim& r) const { return dst_stride < r.dst_stride; }
 };
 
-template <typename T>
-void fill(T* dst, T value, index_t size) {
-  std::fill(dst, dst + size, value);
-}
-
 void fill(char* dst, index_t stride, index_t elem_size, const void* value, index_t size) {
   if (!value) return;
 
   if (stride == elem_size) {
     switch (elem_size) {
-    case 1: fill(reinterpret_cast<uint8_t*>(dst), *reinterpret_cast<const uint8_t*>(value), size); return;
-    case 2: fill(reinterpret_cast<uint16_t*>(dst), *reinterpret_cast<const uint16_t*>(value), size); return;
-    case 4: fill(reinterpret_cast<uint32_t*>(dst), *reinterpret_cast<const uint32_t*>(value), size); return;
-    case 8: fill(reinterpret_cast<uint64_t*>(dst), *reinterpret_cast<const uint64_t*>(value), size); return;
+    case 1: std::fill_n(reinterpret_cast<uint8_t*>(dst), size, *reinterpret_cast<const uint8_t*>(value)); return;
+    case 2: std::fill_n(reinterpret_cast<uint16_t*>(dst), size, *reinterpret_cast<const uint16_t*>(value)); return;
+    case 4: std::fill_n(reinterpret_cast<uint32_t*>(dst), size, *reinterpret_cast<const uint32_t*>(value)); return;
+    case 8: std::fill_n(reinterpret_cast<uint64_t*>(dst), size, *reinterpret_cast<const uint64_t*>(value)); return;
     }
   }
   for (index_t i = 0; i < size; ++i) {
