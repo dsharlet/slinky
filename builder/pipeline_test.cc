@@ -590,6 +590,64 @@ TEST(pipeline, stencil) {
   }
 }
 
+
+TEST(pipeline, slide_2d) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  int add_count = 0;
+  auto add_counter = [&add_count](const buffer<const short>& in, const buffer<short>& out) -> index_t {
+    add_count += out.dim(0).extent() * out.dim(1).extent();
+    return add_1<short>(in, out);
+  };
+
+  func add = func::make(std::move(add_counter), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+
+  stencil.loops({{x, 1}, {y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 2, H + 2});
+  in_buf.translate(-1, -1);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(add_count, (W + 2) * (H + 2));
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          correct += in_buf(x + dx, y + dy) + 1;
+        }
+      }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+    }
+  }
+}
+
 TEST(pipeline, stencil_chain) {
   for (int split : {0, 1, 2}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {

@@ -369,10 +369,7 @@ public:
             }
             continue;
           }
-          if (did_overlapped_fold) {
-            // We already did an overlapping fold, we can't do another one.
-            continue;
-          }
+
           // Allowing the leading edge to not change means that some calls may ask for empty buffers.
           expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
           expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
@@ -382,13 +379,16 @@ public:
             expr old_min = cur_bounds_d.min;
             expr new_min = simplify(prev_bounds_d.max + 1);
 
-            expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
-            if (!depends_on(fold_factor, loop_sym).any()) {
-              // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-              fold_factor = simplify(align_up(fold_factor, loop_step));
-              vector_at(fold_factors[output], d) = fold_factor;
-            } else {
-              // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+            if (!did_overlapped_fold) {
+              expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
+              if (!depends_on(fold_factor, loop_sym).any()) {
+                // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+                fold_factor = simplify(align_up(fold_factor, loop_step));
+                vector_at(fold_factors[output], d) = fold_factor;
+                did_overlapped_fold = true;
+              } else {
+                // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+              }
             }
 
             // Now that we're only computing the newly required parts of the domain, we need
@@ -407,7 +407,6 @@ public:
               // effectively not slide while running before the original loop min.
               (*bounds)[d].min = select(loop_var <= loops[loop_index].orig_min, old_min, new_min);
             }
-            did_overlapped_fold = true;
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
