@@ -34,6 +34,7 @@ bazel-*
 
 # Visual Studio folder status
 .vs
+.vscode
 
 # Mac nonsense
 .DS_Store
