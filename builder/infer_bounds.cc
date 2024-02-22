@@ -76,13 +76,22 @@ std::vector<dim_expr> recursive_substitute(
 // producers to the required region.
 class bounds_inferrer : public node_mutator {
 public:
+  node_context& ctx;
+
   symbol_map<box_expr> infer;
   symbol_map<box_expr> crops;
 
+  // A map of buffers that should be substituted in for consumers.
+  symbol_map<symbol_id> consumer_subs;
+
+  bounds_inferrer(node_context& ctx) : ctx(ctx) {}
+
   void visit(const allocate* op) override {
+    symbol_id uncropped = ctx.insert_unique(ctx.name(op->sym) + ".uncropped");
+    auto set_consumer_subs = set_value_in_scope(consumer_subs, op->sym, uncropped);
     auto set_bounds = set_value_in_scope(infer, op->sym, box_expr());
     stmt body = mutate(op->body);
-
+    body = clone_buffer::make(uncropped, op->sym, body);
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
     // (This is a little janky because the buffers they are loading from don't exist where they are used.)
     // Here, we are building a list of replacements for those expressions. This way, if the user did something
@@ -136,7 +145,11 @@ public:
 
   void visit(const call_stmt* op) override {
     // Record the bounds we currently have from the crops.
+    call_stmt::symbol_list new_inputs;
+    new_inputs.reserve(op->inputs.size());
     for (symbol_id input : op->inputs) {
+      const std::optional<symbol_id>& sub = consumer_subs[input];
+      new_inputs.push_back(sub ? *sub : input);
       std::optional<box_expr>& infer_i = infer[input];
       const std::optional<box_expr>& crop_i = crops[input];
       if (!infer_i || !crop_i) continue;
@@ -146,7 +159,7 @@ public:
         *infer_i = *infer_i | *crop_i;
       }
     }
-    set_result(op);
+    set_result(call_stmt::make(op->target, std::move(new_inputs), op->outputs, op->attrs));
   }
 
   void visit(const copy_stmt* op) override {
@@ -232,6 +245,7 @@ public:
               substitute(j.max, op->sym, op->bounds.max));
         }
       }
+      result = crop_buffer::make(buf, *inferring, result);
     }
     set_result(result);
   }
@@ -523,9 +537,9 @@ public:
   }
 };
 
-stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
+stmt infer_bounds_impl(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
   // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
-  bounds_inferrer infer;
+  bounds_inferrer infer(ctx);
   for (symbol_id i : inputs) {
     infer.infer[i] = box_expr();
   }
@@ -550,7 +564,7 @@ stmt infer_bounds(const stmt& s, const std::vector<symbol_id>& inputs) {
 stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
   stmt result = s;
 
-  result = infer_bounds(s, inputs);
+  result = infer_bounds_impl(s, ctx, inputs);
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
