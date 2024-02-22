@@ -36,6 +36,35 @@ void init_random(buffer<T, N>& x) {
   });
 }
 
+TEST(copy, trivial_scalar) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 0);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 0);
+
+  var x(ctx, "x");
+
+  func copy = func::make_copy({in, {}}, {out, {}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  buffer<int> out_buf;
+  out_buf.allocate();
+
+  // Run the pipeline.
+  buffer<int> in_buf;
+  init_random(in_buf);
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+
+  ASSERT_EQ(out_buf(), in_buf());
+}
+
 TEST(copy, trivial_1d) {
   // Make the pipeline
   node_context ctx;

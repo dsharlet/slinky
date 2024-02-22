@@ -44,6 +44,9 @@ void merge_crop(std::optional<box_expr>& bounds, int dim, const interval_expr& n
 }
 
 void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
+  if (!bounds) {
+    bounds = box_expr();
+  }
   for (int d = 0; d < static_cast<int>(new_bounds.size()); ++d) {
     merge_crop(bounds, d, new_bounds[d]);
   }
@@ -548,11 +551,12 @@ stmt infer_bounds_impl(const stmt& s, node_context& ctx, const std::vector<symbo
   std::vector<stmt> checks;
   for (symbol_id i : inputs) {
     expr buf_var = variable::make(i);
-    const box_expr& bounds = *infer.infer[i];
-    for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
-      checks.push_back(check::make(buffer_min(buf_var, d) <= bounds[d].min));
-      checks.push_back(check::make(buffer_max(buf_var, d) >= bounds[d].max));
-      checks.push_back(check::make(bounds[d].extent() <= buffer_fold_factor(buf_var, d)));
+    const std::optional<box_expr>& bounds = infer.infer[i];
+    assert(bounds);
+    for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+      checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
+      checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
+      checks.push_back(check::make((*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)));
     }
   }
   return block::make(std::move(checks), std::move(result));

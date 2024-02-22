@@ -958,7 +958,7 @@ public:
         bounds->resize(op->rank);
       } else {
         // truncate_rank can't add dimensions.
-        assert(static_cast<int>(bounds->size()) > op->rank);
+        assert(static_cast<int>(bounds->size()) >= op->rank);
         // This truncate is a no-op.
         set_result(mutate(op->body));
         return;
