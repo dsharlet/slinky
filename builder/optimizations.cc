@@ -276,6 +276,24 @@ public:
     merge_alias_info(std::move(old_alias_info));
   }
 
+  void visit(const clone_buffer* op) override {
+    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
+    node_mutator::visit(op);
+
+    // Alias candidates for op->sym are also alias candidates for op->src.
+    std::optional<buffer_info> sym_info = std::move(alias_info[op->sym]);
+    if (sym_info) {
+      std::optional<buffer_info>& src_info = alias_info[op->src];
+      if (!src_info) {
+        src_info = std::move(sym_info);
+      } else {
+        for (auto& j : sym_info->can_alias()) {
+          src_info->maybe_alias(j.first, std::move(j.second));
+        }
+      }
+    }
+  }
+
   void visit(const truncate_rank*) override { std::abort(); }
 };
 
