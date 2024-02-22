@@ -639,6 +639,40 @@ public:
       set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
     }
   }
+
+  void visit(const call* op) override {
+    if (op->intrinsic == intrinsic::buffer_at) {
+      std::vector<expr> args;
+      args.reserve(op->args.size());
+      bool changed = false;
+      for (const expr& i : op->args) {
+        args.push_back(mutate(i));
+        changed = changed || !args.back().same_as(i);
+      }
+      for (const auto& i : expr_replacements) {
+        if (const call* c = i.first.as<call>()) {
+          if (c->intrinsic == intrinsic::buffer_min && match(c->args[0], op->args[0])) {
+            const index_t* dim = as_constant(c->args[1]);
+            assert(dim);
+            if (*dim + 1 >= static_cast<index_t>(args.size())) {
+              args.resize(*dim + 2);
+            }
+            expr& arg_d = args[*dim + 1];
+            if (!arg_d.defined()) {
+              // This is implicitly buffer_min(...)
+              arg_d = i.second;
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) {
+        set_result(call::make(intrinsic::buffer_at, std::move(args)));
+        return;
+      }
+    }
+    node_mutator::visit(op);
+  }
   // truncate_rank, clone_buffer, not treated here because references to dimensions of these
   // operations are still valid.
   // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
