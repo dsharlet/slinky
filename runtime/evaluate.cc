@@ -300,7 +300,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    result = op->target(context);
+    result = op->target(op, context);
     if (result) {
       if (context.call_failed) {
         context.call_failed(op);

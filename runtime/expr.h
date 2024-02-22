@@ -446,7 +446,9 @@ class eval_context;
 // Call `target`.
 class call_stmt : public stmt_node<call_stmt> {
 public:
-  using callable = std::function<index_t(eval_context&)>;
+  // TODO: I think it would be cleaner to pass two spans for the input and output symbol lists here, but the overhead
+  // might be significant.
+  using callable = std::function<index_t(const call_stmt*, eval_context&)>;
   using symbol_list = std::vector<symbol_id>;
 
   struct callable_attrs {
@@ -459,7 +461,7 @@ public:
   // accessed (and how) by the callable.
   symbol_list inputs;
   symbol_list outputs;
-  callable_attrs attrs; 
+  callable_attrs attrs;
 
   void accept(node_visitor* v) const override;
 

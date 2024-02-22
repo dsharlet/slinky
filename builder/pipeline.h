@@ -186,9 +186,11 @@ public:
 
 private:
   template <typename... T, std::size_t... Indices>
-  static inline index_t call_impl(const func::callable<T...>& impl, eval_context& ctx,
-      const std::array<symbol_id, sizeof...(T)>& symbols, std::index_sequence<Indices...>) {
-    return impl(ctx.lookup_buffer(symbols[Indices])->template cast<T>()...);
+  static inline index_t call_impl(
+      const func::callable<T...>& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
+    return impl(
+        ctx.lookup_buffer(Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()])
+            ->template cast<T>()...);
   }
 
   template <typename Lambda>
@@ -204,22 +206,13 @@ private:
 public:
   // Version for std::function
   template <typename... T>
-  static func make(
-      callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
+  static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs,
+      call_stmt::callable_attrs attrs = {}) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
 
-    // TODO: if https://github.com/dsharlet/slinky/issues/13 lands, this needs attention, as the
-    // symbol ids we capture may be invalid.
-    std::array<symbol_id, sizeof...(T)> symbols;
-    std::size_t i = 0;
-    for (const auto& in : inputs)
-      symbols[i++] = in.sym();
-    for (const auto& out : outputs)
-      symbols[i++] = out.sym();
-
-    auto wrapper = [symbols = std::move(symbols), impl = std::move(impl)](eval_context& ctx) -> index_t {
-      return call_impl<T...>(impl, ctx, symbols, std::make_index_sequence<sizeof...(T)>());
+    auto wrapper = [impl = std::move(impl)](const call_stmt* op, eval_context& ctx) -> index_t {
+      return call_impl<T...>(impl, ctx, op, std::make_index_sequence<sizeof...(T)>());
     };
 
     return func(std::move(wrapper), std::move(inputs), std::move(outputs), attrs);
@@ -249,9 +242,7 @@ public:
     return func({std::move(in)}, std::move(out), std::move(padding));
   }
   // Make a copy from multiple inputs with undefined padding.
-  static func make_copy(std::vector<input> in, output out) {
-    return func(std::move(in), {std::move(out)});
-  }
+  static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
   // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
   static func make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t dim, std::vector<expr> bounds);

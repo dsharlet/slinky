@@ -136,9 +136,9 @@ public:
         }
         // Make a call to `pad`.
         return call_stmt::make(
-            [src, dst, padding = *op->padding](const eval_context& ctx) -> index_t {
-              const raw_buffer* src_buf = ctx.lookup_buffer(src);
-              const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+            [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+              const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
+              const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
               ctx.pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
@@ -304,9 +304,9 @@ stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // Start by making a call to copy.
   stmt result = call_stmt::make(
-      [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
-        const raw_buffer* src_buf = ctx.lookup_buffer(src);
-        const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+      [padding = op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+        const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
+        const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
         const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
