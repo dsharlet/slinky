@@ -781,7 +781,7 @@ public:
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(new_bounds.size()) - 1;
-      set_result(crop_dim::make(op->sym, d, std::move(new_bounds[d]), std::move(body)));
+      set_result(mutate(crop_dim::make(op->sym, d, std::move(new_bounds[d]), std::move(body))));
     } else if (changed || !body.same_as(op->body)) {
       set_result(crop_buffer::make(op->sym, std::move(new_bounds), std::move(body)));
     } else {
