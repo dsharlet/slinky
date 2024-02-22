@@ -537,8 +537,29 @@ public:
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
-    } else if (changed || !body.same_as(op->body)) {
-      set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)));
+      return;
+    }
+
+    stmt before, after;
+    if (const block* b = body.as<block>()) {
+      // Split the body into 3 parts: the part that depends on the allocation, and anything before or after that.
+      const auto depends_on_alloc = [=](const stmt& s) { return depends_on(s, op->sym).any(); };
+      auto end_before = std::find_if(b->stmts.begin(), b->stmts.end(), depends_on_alloc);
+      if (end_before != b->stmts.end()) {
+        before = block::make({b->stmts.begin(), end_before});
+        auto end_body = std::find_if(b->stmts.rbegin(), b->stmts.rend(), depends_on_alloc).base();
+        after = block::make({end_body, b->stmts.end()});
+        body = block::make({end_before, end_body});
+        changed = true;
+      } else {
+        set_result(block::make({b->stmts.begin(), end_before}));
+        return;
+      }
+    }
+
+    if (changed || !body.same_as(op->body)) {
+      set_result(block::make({std::move(before),
+          allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)), std::move(after)}));
     } else {
       set_result(op);
     }
@@ -590,7 +611,7 @@ public:
               const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
               if (src_bounds && src_bounds->size() == dims.size()) {
                 // This is a clone of src_buf.
-                set_result(clone_buffer::make(op->sym, *src_buf, std::move(body)));
+                set_result(mutate(clone_buffer::make(op->sym, *src_buf, std::move(body))));
                 return;
               }
             }
@@ -650,7 +671,14 @@ public:
       }
     }
 
-    if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
+    if (const block* b = body.as<block>()) {
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(make_buffer::make(op->sym, base, elem_size, dims, s)));
+      }
+      set_result(block::make(std::move(stmts)));
+    } else if (changed || !base.same_as(op->base) || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
     } else {
       set_result(op);
@@ -712,6 +740,15 @@ public:
 
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
+      // Add clamps for the implicit bounds like crop would have done.
+      for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
+        if (new_bounds[d].min.defined()) {
+          new_bounds[d].min = max(new_bounds[d].min, buffer_min(sym_var, d));
+        }
+        if (new_bounds[d].max.defined()) {
+          new_bounds[d].max = min(new_bounds[d].max, buffer_max(sym_var, d));
+        }
+      }
       body = substitute_bounds(body, op->sym, new_bounds);
       set_result(mutate(body));
       return;
@@ -780,7 +817,7 @@ public:
 
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds);
+      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
       set_result(mutate(body));
       return;
     }
@@ -946,6 +983,30 @@ public:
       set_result(op);
     } else {
       set_result(truncate_rank::make(op->sym, op->rank, std::move(body)));
+    }
+  }
+
+  void visit(const clone_buffer* op) override {
+    visit_symbol(op->src, true);
+    auto set_refs = set_value_in_scope(references, op->sym, 0);
+    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
+    stmt body = mutate(op->body);
+
+    if (!body.defined()) {
+      set_result(stmt());
+    } else if (*references[op->sym] == 0) {
+      set_result(std::move(body));
+    } else if (const block* b = body.as<block>()) {
+      std::vector<stmt> stmts;
+      stmts.reserve(b->stmts.size());
+      for (const stmt& s : b->stmts) {
+        stmts.push_back(mutate(clone_buffer::make(op->sym, op->src, s)));
+      }
+      set_result(block::make(std::move(stmts)));
+    } else if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_buffer::make(op->sym, op->src, std::move(body)));
     }
   }
 

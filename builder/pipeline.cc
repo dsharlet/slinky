@@ -580,7 +580,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = infer_bounds(result, ctx, input_syms);
 
   result = simplify(result);
-  result = reduce_scopes(result);
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
@@ -591,7 +590,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = implement_copies(result, ctx);
 
   result = simplify(result);
-  result = reduce_scopes(result);
 
   result = fix_buffer_races(result);
 

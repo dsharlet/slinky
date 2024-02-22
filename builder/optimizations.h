@@ -15,9 +15,6 @@ stmt implement_copy(const copy_stmt* c, node_context& ctx);
 // Replace every `copy_stmt` with the result of `implement_copy`
 stmt implement_copies(const stmt& s, node_context& ctx);
 
-// Attempt to reduce the scope of statements to only the operations required.
-stmt reduce_scopes(const stmt& s);
-
 // We can't modify buffers allocated outside parallel loops inside parallel loops. To avoid this, this mutation will
 // insert `clone_buffer` operations that clone buffers inside parallel loops.
 stmt fix_buffer_races(const stmt& s);
