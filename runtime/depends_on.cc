@@ -66,6 +66,14 @@ public:
       result.buffer_dst = true;
     }
   }
+
+  void visit(const clone_buffer* op) override {
+    if (vars_contains(op->src)) {
+      result.buffer = true;
+      result.buffer_base = true;
+    }
+    recursive_node_visitor::visit(op);
+  }
 };
 
 }  // namespace

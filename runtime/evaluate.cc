@@ -300,7 +300,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    result = op->target(context);
+    result = op->target(op, context);
     if (result) {
       if (context.call_failed) {
         context.call_failed(op);
@@ -377,7 +377,7 @@ public:
   }
 
   SLINKY_NO_STACK_PROTECTOR void visit(const clone_buffer* op) override {
-    raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
 
     raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
     buffer->dims = SLINKY_ALLOCA(dim, src->rank);

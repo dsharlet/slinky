@@ -71,6 +71,14 @@ TEST(substitute, shadowed) {
       slice_dim::make(x.sym(), 2, 0, check::make(buffer_max(x, 1) == buffer_min(x, 3))));
 }
 
+TEST(substitution, implicit_bounds) {
+  test_substitute(crop_dim::make(x.sym(), 0, bounds(y, z), check::make(x)), buffer_min(x, 0), w,
+      crop_dim::make(x.sym(), 0, bounds(max(y, w), z), check::make(x)));
+  test_substitute(crop_dim::make(x.sym(), 0, bounds(y, z), check::make(x)), buffer_max(x, 0), w,
+      crop_dim::make(x.sym(), 0, bounds(y, min(z, w)), check::make(x)));
+  test_substitute(buffer_at(x), buffer_min(x, 2), y, buffer_at(x, std::vector<expr>{expr(), expr(), expr(y)}));
+}
+
 TEST(match, basic) {
   ASSERT_TRUE(match(x, x));
   ASSERT_FALSE(match(x, y));

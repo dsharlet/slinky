@@ -23,7 +23,7 @@ constexpr index_t iterations = 100000;
 // These benchmarks mostly work by generating nodes around a call counter, and wrapping that node with a loop.
 stmt make_call_counter(std::atomic<int>& calls) {
   return call_stmt::make(
-      [&](eval_context& ctx) -> index_t {
+      [&](const call_stmt*, eval_context& ctx) -> index_t {
         ++calls;
         return 0;
       },

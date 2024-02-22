@@ -136,9 +136,9 @@ public:
         }
         // Make a call to `pad`.
         return call_stmt::make(
-            [src, dst, padding = *op->padding](const eval_context& ctx) -> index_t {
-              const raw_buffer* src_buf = ctx.lookup_buffer(src);
-              const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+            [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+              const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
+              const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
               ctx.pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
@@ -276,6 +276,24 @@ public:
     merge_alias_info(std::move(old_alias_info));
   }
 
+  void visit(const clone_buffer* op) override {
+    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
+    node_mutator::visit(op);
+
+    // Alias candidates for op->sym are also alias candidates for op->src.
+    std::optional<buffer_info> sym_info = std::move(alias_info[op->sym]);
+    if (sym_info) {
+      std::optional<buffer_info>& src_info = alias_info[op->src];
+      if (!src_info) {
+        src_info = std::move(sym_info);
+      } else {
+        for (auto& j : sym_info->can_alias()) {
+          src_info->maybe_alias(j.first, std::move(j.second));
+        }
+      }
+    }
+  }
+
   void visit(const truncate_rank*) override { std::abort(); }
 };
 
@@ -286,9 +304,9 @@ stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // Start by making a call to copy.
   stmt result = call_stmt::make(
-      [src = op->src, dst = op->dst, padding = op->padding](const eval_context& ctx) -> index_t {
-        const raw_buffer* src_buf = ctx.lookup_buffer(src);
-        const raw_buffer* dst_buf = ctx.lookup_buffer(dst);
+      [padding = op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+        const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
+        const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
         const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
@@ -376,80 +394,6 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 stmt implement_copies(const stmt& s, node_context& ctx) {
   return recursive_mutate<copy_stmt>(s, [&](const copy_stmt* op) { return implement_copy(op, ctx); });
 }
-
-namespace {
-
-// Split `body` into 3 parts:
-// - stmts that don't depend on `vars`
-// - stmts that do depend on `vars`
-// - stmts that don't depend on `vars`
-std::tuple<stmt, stmt, stmt> split_body(const stmt& body, span<const symbol_id> vars) {
-  if (const block* b = body.as<block>()) {
-    const auto depends_on_stmt = [&](const stmt& s) { return depends_on(s, vars).any(); };
-    auto end_before = std::find_if(b->stmts.begin(), b->stmts.end(), depends_on_stmt);
-    if (end_before != b->stmts.end()) {
-      std::vector<stmt> before = {b->stmts.begin(), end_before};
-      auto end_body = std::find_if(b->stmts.rbegin(), b->stmts.rend(), depends_on_stmt).base();
-      std::vector<stmt> new_body = {end_before, end_body};
-      std::vector<stmt> after = {end_body, b->stmts.end()};
-      return {block::make(std::move(before)), block::make(std::move(new_body)), block::make(std::move(after))};
-    } else {
-      return {body, stmt{}, stmt{}};
-    }
-  } else if (depends_on(body, vars).any()) {
-    return {stmt{}, body, stmt{}};
-  } else {
-    return {body, stmt{}, stmt{}};
-  }
-}
-
-class scope_reducer : public node_mutator {
-public:
-  template <typename T>
-  void visit_stmt(const T* op, span<const symbol_id> vars) {
-    stmt body = mutate(op->body);
-
-    stmt before, new_body, after;
-    std::tie(before, new_body, after) = split_body(body, vars);
-
-    if (body.same_as(op->body) && !before.defined() && !after.defined()) {
-      set_result(op);
-    } else if (new_body.defined()) {
-      stmt result = clone_with_new_body(op, std::move(new_body));
-      set_result(block::make({std::move(before), std::move(result), std::move(after)}));
-    } else {
-      // The op was dead...?
-      set_result(block::make({std::move(before), std::move(after)}));
-    }
-  }
-
-  template <typename T>
-  void visit_stmt(const T* op) {
-    symbol_id vars[] = {op->sym};
-    visit_stmt(op, vars);
-  }
-
-  void visit(const let_stmt* op) override {
-    std::vector<symbol_id> vars;
-    vars.reserve(op->lets.size());
-    for (const auto& s : op->lets) {
-      vars.push_back(s.first);
-    }
-    visit_stmt(op, vars);
-  }
-  void visit(const allocate* op) override { visit_stmt(op); }
-  void visit(const make_buffer* op) override { visit_stmt(op); }
-  void visit(const clone_buffer* op) override { visit_stmt(op); }
-  void visit(const crop_buffer* op) override { visit_stmt(op); }
-  void visit(const crop_dim* op) override { visit_stmt(op); }
-  void visit(const slice_buffer* op) override { visit_stmt(op); }
-  void visit(const slice_dim* op) override { visit_stmt(op); }
-  void visit(const truncate_rank* op) override { visit_stmt(op); }
-};
-
-}  // namespace
-
-stmt reduce_scopes(const stmt& s) { return scope_reducer().mutate(s); }
 
 namespace {
 
