@@ -33,4 +33,24 @@ TEST(arithmetic, euclidean_div_mod) {
   }
 }
 
+template <typename Dst, typename Src>
+Dst saturate(Src x) {
+  return std::max<Src>(std::min<Src>(x, std::numeric_limits<Dst>::max()), std::numeric_limits<Dst>::min());
+}
+
+TEST(arithmetic, saturate) {
+  constexpr int32_t min = std::numeric_limits<int32_t>::min();
+  constexpr int32_t max = std::numeric_limits<int32_t>::max();
+  const int32_t values[] = {min, min + 1, min + 2, -2, -1, 0, 1, 2, max - 2, max - 1, max};
+  for (int32_t a : values) {
+    for (int32_t b : values) {
+      ASSERT_EQ(saturate_add(a, b), saturate<int32_t>(static_cast<int64_t>(a) + static_cast<int64_t>(b)));
+      ASSERT_EQ(saturate_sub(a, b), saturate<int32_t>(static_cast<int64_t>(a) - static_cast<int64_t>(b)));
+      ASSERT_EQ(saturate_mul(a, b), saturate<int32_t>(static_cast<int64_t>(a) * static_cast<int64_t>(b)));
+      ASSERT_EQ(saturate_div(a, b), saturate<int32_t>(euclidean_div(static_cast<int64_t>(a), static_cast<int64_t>(b))));
+      ASSERT_EQ(saturate_mod(a, b), saturate<int32_t>(euclidean_mod(static_cast<int64_t>(a), static_cast<int64_t>(b))));
+    }
+  }
+}
+
 }  // namespace slinky
