@@ -397,7 +397,7 @@ public:
         // We have an output crop for this input. Apply it to our bounds.
         // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
         // difficult to do because it could be used in several places, each with a different output crop to apply.
-        for (std::size_t d = 0; d < o.dims.size(); ++d) {
+        for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
           std::optional<expr>& min = output_mins_i[o.dims[d]];
           std::optional<expr>& max = output_maxs_i[o.dims[d]];
           assert(min);

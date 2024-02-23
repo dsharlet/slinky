@@ -460,28 +460,30 @@ TEST(copy, concatenate) {
   // Make the pipeline
   node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(int), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(int), 3);
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 3);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
 
   var x(ctx, "x");
   var y(ctx, "y");
+  var z(ctx, "z");
 
-  func concat = func::make_concat({in1, in2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
+  func concat = func::make_concat({in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   const int W = 8;
   const int H1 = 5;
   const int H2 = 4;
+  const int D = 3;
 
   // Run the pipeline.
-  buffer<int, 2> in1_buf({W, H1});
-  buffer<int, 2> in2_buf({W, H2});
+  buffer<int, 3> in1_buf({W, H1, D});
+  buffer<int, 3> in2_buf({W, H2, D});
   init_random(in1_buf);
   init_random(in2_buf);
 
-  buffer<int, 2> out_buf({W, H1 + H2});
+  buffer<int, 3> out_buf({W, H1 + H2, D});
   out_buf.allocate();
 
   const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
@@ -490,9 +492,11 @@ TEST(copy, concatenate) {
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
 
-  for (int y = 0; y < H1 + H2; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1));
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H1 + H2; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), y < H1 ? in1_buf(x, y, z) : in2_buf(x, y - H1, z));
+      }
     }
   }
 }
