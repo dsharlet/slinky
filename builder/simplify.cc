@@ -1044,7 +1044,7 @@ public:
 
   void visit(const clone_buffer* op) override {
     visit_symbol(op->src, true);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info(0, false));
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
     stmt body = mutate(op->body);
     auto& ref_info = references[op->sym];
