@@ -388,7 +388,7 @@ struct for_each_contiguous_slice_dim {
   index_t extent;
 };
 
-void make_for_each_contiguous_slice_dims(
+bool make_for_each_contiguous_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
@@ -504,7 +504,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
   auto* slice_dims = SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, bufs[0]->rank + 1);
   auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, bufs[0]->rank * NumBufs);
   std::array<void*, NumBufs> bases;
-  internal::make_for_each_contiguous_slice_dims(bufs, bases.data(), slice_dims, dims);
+  if (!internal::make_for_each_contiguous_slice_dims(bufs, bases.data(), slice_dims, dims)) return;
 
   internal::for_each_contiguous_slice_impl(bases, slice_dims, dims, f);
 }
