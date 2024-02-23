@@ -309,7 +309,7 @@ public:
   }
 
   // Expression is trivial if it is a constant, var or buffer_min / buffer_max
-  bool is_trivial(expr &e) {
+  static bool is_trivial_let_value(expr &e) {
     if (e.as<constant>() || e.as<variable>()) {
       return true;
     }
@@ -347,15 +347,15 @@ public:
     interval_expr body_bounds;
     expr body = mutate(op->body, &body_bounds);
 
-    // - Prune dead lets
-    // - Inline single-ref lets outside of a loop, along with lets that are trivial
     for (auto it = lets.begin(); it != lets.end();) {
       auto& ref_info = references[it->first];
       assert(ref_info);
       if (ref_info->ref_count == 0) {
+        // - Prune dead lets
         it = lets.erase(it);
         values_changed = true;
-      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial(it->second)) {
+      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
+        // - Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
         it = lets.erase(it);
         values_changed = true;
@@ -399,15 +399,15 @@ public:
       return;
     }
 
-    // - Prune dead lets
-    // - Inline single-ref lets outside of a loop, along with lets that are trivial
     for (auto it = lets.begin(); it != lets.end();) {
       auto& ref_info = references[it->first];
       assert(ref_info);
       if (ref_info->ref_count == 0) {
+        // - Prune dead lets
         it = lets.erase(it);
         values_changed = true;
-      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial(it->second)) {
+      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
+        // - Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(std::move(body), it->first, it->second));
         it = lets.erase(it);
         values_changed = true;
