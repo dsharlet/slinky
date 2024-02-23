@@ -1,18 +1,66 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <numeric>
 
 #include "runtime/buffer.h"
 
 namespace slinky {
+
+int random(int min, int max) { 
+  static std::once_flag once;
+  std::call_once(once, [] { srand(time(nullptr)); });
+    
+  return rand() % (max - min + 1) + min; 
+}
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& buf) {
   buf.allocate();
   std::size_t flat_size = buf.size_bytes() / sizeof(T);
   for (std::size_t i = 0; i < flat_size; ++i) {
-    buf.base()[i] = rand();
+    buf.base()[i] = random(0, 255);
+  }
+}
+
+struct randomize_options {
+  int padding_min = 0;
+  int padding_max = 3;
+  bool allow_broadcast = false;
+  bool allow_fold = false;
+};
+
+
+template <typename T, std::size_t N>
+void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& options) {
+  std::vector<int> permutation(buf.rank);
+  std::iota(permutation.begin(), permutation.end(), 0);
+  if (random(0, 3) == 0) {
+    // Randomize the strides ordering.
+    std::random_shuffle(permutation.begin(), permutation.end());
+  }
+
+  index_t stride = buf.elem_size;
+  for (std::size_t d : permutation) {
+    slinky::dim& dim = buf.dim(d);
+    // Expand the bounds randomly.
+    dim.set_bounds(dim.min() - random(options.padding_min, options.padding_max),
+        dim.max() + random(options.padding_min, options.padding_max));
+    assert(dim.extent() > 0);
+    if (options.allow_broadcast && random(0, 9) == 0) {
+      // Make this a broadcast.
+      dim.set_stride(0);
+    } else {
+      dim.set_stride(stride);
+      // Add some extra random padding.
+      stride *= dim.extent() + random(0, 3) * buf.elem_size;
+    }
+    if (options.allow_fold && random(0, 9) == 0) {
+      // Make sure the fold factor divides the min so the fold is valid.
+      dim.set_fold_factor(std::max<index_t>(1, std::abs(dim.min())));
+    }
   }
 }
 
@@ -148,6 +196,152 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
     slices++;
   });
   ASSERT_EQ(slices, buf.dim(0).extent() * buf.dim(2).extent());
+}
+
+template <typename T>
+void test_for_each_contiguous_slice_fill() {
+  buffer<T, 4> dst;
+  for (std::size_t d = 0; d < dst.rank; ++d) {
+    dst.dim(d).set_min_extent(0, 5);
+  }
+  randomize_strides_and_padding(dst, {-1, 1, false, true});
+  dst.allocate();
+
+  for_each_contiguous_slice(
+      dst, [&](index_t slice_extent, void* dst) { std::fill_n(reinterpret_cast<T*>(dst), slice_extent, 7); });
+
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), 7); });
+}
+
+TEST(buffer, for_each_contiguous_slice_fill) {
+  for (int cases = 0; cases < 100; ++cases) {
+    test_for_each_contiguous_slice_fill<char>();
+    test_for_each_contiguous_slice_fill<int>();
+  }
+}
+
+template <typename Src, typename Dst>
+void test_for_each_contiguous_slice_copy() {
+  buffer<Src, 4> src;
+  buffer<Dst, 4> dst;
+  for (std::size_t d = 0; d < src.rank; ++d) {
+    src.dim(d).set_min_extent(0, 3);
+    dst.dim(d).set_min_extent(0, 3);
+  }
+  randomize_strides_and_padding(src, {0, 1, true, true});
+  randomize_strides_and_padding(dst, {-1, 0, false, false});
+  init_random(src);
+  dst.allocate();
+
+  for_each_contiguous_slice(
+      dst,
+      [&](index_t slice_extent, void* dst, const void* src) {
+        std::copy_n(reinterpret_cast<const Src*>(src), slice_extent, reinterpret_cast<Dst*>(dst));
+      },
+      src);
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(src(i), dst(i)); });
+}
+
+TEST(buffer, for_each_contiguous_slice_copy) {
+  for (int cases = 0; cases < 100; ++cases) {
+    test_for_each_contiguous_slice_copy<char, char>();
+    test_for_each_contiguous_slice_copy<short, int>();
+    test_for_each_contiguous_slice_copy<int, int>();
+  }
+}
+
+template <typename A, typename B, typename Dst>
+void test_for_each_contiguous_slice_add() {
+  buffer<A, 4> a;
+  buffer<B, 4> b;
+  for (std::size_t d = 0; d < a.rank; ++d) {
+    a.dim(d).set_min_extent(0, 5);
+    b.dim(d).set_min_extent(0, 5);
+  }
+
+  buffer<Dst, 4> dst;
+  for (std::size_t d = 0; d < a.rank; ++d) {
+    dst.dim(d) = a.dim(d);
+  }
+
+  randomize_strides_and_padding(a, {0, 1, true, true});
+  randomize_strides_and_padding(b, {0, 1, true, true});
+  init_random(a);
+  init_random(b);
+
+  randomize_strides_and_padding(dst, {-1, 0, false, false});
+  dst.allocate();
+
+  for_each_contiguous_slice(
+      dst,
+      [&](index_t slice_extent, void* dst_v, const void* a_v, const void* b_v) {
+        Dst* dst = reinterpret_cast<int*>(dst_v);
+        const A* a = reinterpret_cast<const A*>(a_v);
+        const B* b = reinterpret_cast<const B*>(b_v);
+        for (index_t i = 0; i < slice_extent; ++i) {
+          dst[i] = a[i] + b[i];
+        }
+      },
+      a, b);
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), a(i) + b(i)); });
+}
+
+TEST(buffer, for_each_contiguous_slice_add) {
+  for (int cases = 0; cases < 100; ++cases) {
+    test_for_each_contiguous_slice_add<int, int, int>();
+    test_for_each_contiguous_slice_add<short, int, int>();
+    test_for_each_contiguous_slice_add<short, short, int>();
+  }
+}
+
+TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
+  // TODO: if/when buffer<> gets a move ctor, do this in a vector<>
+  buffer<char, 3> buf1({10, 20, 30});
+  buffer<char, 3> buf2({10, 20, 30});
+  buffer<char, 3> buf3({10, 20, 30});
+  buffer<char, 3> buf4({10, 20, 30});
+  buffer<char, 3> buf5({10, 20, 30});
+  buffer<char, 3> buf6({10, 20, 30});
+  buffer<char, 3> buf7({10, 20, 30});
+  buffer<char, 3> buf8({10, 20, 30});
+  buffer<char, 3> buf9({10, 20, 30});
+  buf1.allocate();
+  buf2.allocate();
+  buf3.allocate();
+  buf4.allocate();
+  buf5.allocate();
+  buf6.allocate();
+  buf7.allocate();
+  buf8.allocate();
+  buf9.allocate();
+  int slices = 0;
+  for_each_contiguous_slice(
+      buf1,
+      [&](index_t slice_extent, void* slice1, void* slice2, void* slice3, void* slice4, void* slice5, void* slice6,
+          void* slice7, void* slice8, void* slice9) {
+        memset(slice1, 1, slice_extent);
+        memset(slice2, 2, slice_extent);
+        memset(slice3, 3, slice_extent);
+        memset(slice4, 4, slice_extent);
+        memset(slice5, 5, slice_extent);
+        memset(slice6, 6, slice_extent);
+        memset(slice7, 7, slice_extent);
+        memset(slice8, 8, slice_extent);
+        memset(slice9, 9, slice_extent);
+        slices++;
+      },
+      buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);
+  // These should fuse into a single slice
+  ASSERT_EQ(slices, 1);
+  for_each_index(buf1, [&](auto i) { ASSERT_EQ(buf1(i), 1); });
+  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 2); });
+  for_each_index(buf3, [&](auto i) { ASSERT_EQ(buf3(i), 3); });
+  for_each_index(buf4, [&](auto i) { ASSERT_EQ(buf4(i), 4); });
+  for_each_index(buf5, [&](auto i) { ASSERT_EQ(buf5(i), 5); });
+  for_each_index(buf6, [&](auto i) { ASSERT_EQ(buf6(i), 6); });
+  for_each_index(buf7, [&](auto i) { ASSERT_EQ(buf7(i), 7); });
+  for_each_index(buf8, [&](auto i) { ASSERT_EQ(buf8(i), 8); });
+  for_each_index(buf9, [&](auto i) { ASSERT_EQ(buf9(i), 9); });
 }
 
 TEST(buffer, for_each_tile_1x1) {
@@ -323,89 +517,66 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
 
 template <typename T, std::size_t Rank>
 void test_copy() {
-  int src_permutation[Rank];
-  int dst_permutation[Rank];
-  index_t src_padding[Rank] = {0};
-  index_t dst_padding[Rank] = {0};
-  for (bool broadcast : {false, true}) {
-    for (bool reverse_src : {false, true}) {
-      for (bool reverse_dst : {false, true}) {
-        for (index_t pad_src : {0, 1}) {
-          for (index_t pad_dst : {0, 1}) {
-            for (std::size_t i = 0; i < Rank; ++i) {
-              src_permutation[i] = reverse_src ? Rank - 1 - i : i;
-              dst_permutation[i] = reverse_dst ? Rank - 1 - i : i;
-              src_padding[i] = pad_src;
-              dst_padding[i] = pad_dst;
-            }
+  for (int cases = 0; cases < 100; ++cases) {
+    T padding = 7;
 
-            T padding = 7;
-
-            buffer<T, Rank> src;
-            for (std::size_t d = 0; d < src.rank; ++d) {
-              src.dim(d).set_min_extent(d - Rank / 2, d + 10);
-            }
-            set_strides(src, src_permutation, src_padding, broadcast);
-            init_random(src);
-
-            for (int dmin : {-1, 0, 1}) {
-              for (int dmax : {-1, 0, 1}) {
-                buffer<T, Rank> dst;
-                for (std::size_t d = 0; d < dst.rank; ++d) {
-                  dst.dim(d).set_bounds(src.dim(d).min() + dmin, src.dim(d).max() + dmax);
-                }
-                set_strides(dst, dst_permutation, dst_padding);
-                dst.allocate();
-
-                copy(src, dst, &padding);
-                for_each_index(dst, [&](auto i) {
-                  if (src.contains(i)) {
-                    ASSERT_EQ(dst(i), src(i));
-                  } else {
-                    ASSERT_EQ(dst(i), padding);
-                  }
-                });
-
-                for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-                  for (index_t i = 0; i < extent; ++i) {
-                    reinterpret_cast<T*>(base)[i] += 1;
-                  }
-                });
-
-                copy(src, dst, nullptr);
-                for_each_index(dst, [&](auto i) {
-                  if (src.contains(i)) {
-                    // The copied area should have been copied.
-                    ASSERT_EQ(dst(i), src(i));
-                  } else {
-                    // The padding should be unchanged.
-                    ASSERT_EQ(dst(i), padding);
-                  }
-                });
-
-                for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-                  for (index_t i = 0; i < extent; ++i) {
-                    reinterpret_cast<T*>(base)[i] += -1;
-                  }
-                });
-
-                T new_padding = 3;
-                pad(src.dims, dst, &new_padding);
-                for_each_index(dst, [&](auto i) {
-                  if (src.contains(i)) {
-                    // The src should not have been copied.
-                    ASSERT_NE(dst(i), src(i));
-                  } else {
-                    // But we should have new padding.
-                    ASSERT_EQ(dst(i), new_padding);
-                  }
-                });
-              }
-            }
-          }
-        }
-      }
+    buffer<T, Rank> src;
+    for (std::size_t d = 0; d < src.rank; ++d) {
+      src.dim(d).set_min_extent(0, 5);
     }
+    randomize_strides_and_padding(src, {-1, 1, true, false});
+    init_random(src);
+
+    buffer<T, Rank> dst;
+    for (std::size_t d = 0; d < src.rank; ++d) {
+      dst.dim(d) = src.dim(d);
+    }
+    randomize_strides_and_padding(dst, {-1, 1, false, false});
+    dst.allocate();
+
+    copy(src, dst, &padding);
+    for_each_index(dst, [&](auto i) {
+      if (src.contains(i)) {
+        ASSERT_EQ(dst(i), src(i));
+      } else {
+        ASSERT_EQ(dst(i), padding);
+      }
+    });
+
+    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
+      for (index_t i = 0; i < extent; ++i) {
+        reinterpret_cast<T*>(base)[i] += 1;
+      }
+    });
+
+    copy(src, dst, nullptr);
+    for_each_index(dst, [&](auto i) {
+      if (src.contains(i)) {
+        // The copied area should have been copied.
+        ASSERT_EQ(dst(i), src(i));
+      } else {
+        // The padding should be unchanged.
+        ASSERT_EQ(dst(i), padding);
+      }
+    });
+
+    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
+      for (index_t i = 0; i < extent; ++i) {
+        reinterpret_cast<T*>(base)[i] += -1;
+      }
+    });
+
+    T new_padding = 3;
+    pad(src.dims, dst, &new_padding);
+    for_each_index(dst, [&](auto i) {
+      if (src.contains(i)) {
+        // The src should not have been copied.
+        ASSERT_NE(dst(i), src(i));
+      } else {
+        // But we should have new padding.
+        ASSERT_EQ(dst(i), new_padding);
+      }
+    });
   }
 }
 
@@ -422,368 +593,6 @@ TEST(buffer, copy) {
   test_copy<uint32_t>();
   test_copy<uint64_t>();
   test_copy<big>();
-}
-
-TEST(buffer, for_each_contiguous_slice_multi) {
-  buffer<char, 3> dst({10, 20, 30});
-  buffer<char, 3> src({10, 20, 30});
-  dst.allocate();
-  src.allocate();
-  char x = 42;
-  fill(src, &x);
-  int slices = 0;
-  for_each_contiguous_slice(
-      dst,
-      [&](index_t slice_extent, void* dst, void* src) {
-        const char* s = reinterpret_cast<const char*>(src);
-        char* d = reinterpret_cast<char*>(dst);
-        memcpy(d, s, slice_extent);
-        slices++;
-      },
-      src);
-  ASSERT_EQ(slices, 1);
-  for_each_index(dst, [&](auto i) { ASSERT_EQ(dst(i), 42); });
-  for_each_index(src, [&](auto i) { ASSERT_EQ(src(i), 42); });
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_padded) {
-  for (int padded_dim = 0; padded_dim < 3; ++padded_dim) {
-    buffer<int, 3> buf({10, 20, 30});
-    buf.allocate();
-    buf.dim(padded_dim).set_min_extent(0, 8);
-    buffer<int, 3> buf2({10, 20, 30});
-    buf2.allocate();
-    int value = 0;
-    for_each_contiguous_slice(
-        buf,
-        [&](index_t slice_extent, void* slice, void* slice2) {
-          int* s = reinterpret_cast<int*>(slice);
-          int* s2 = reinterpret_cast<int*>(slice2);
-          for (int i = 0; i < slice_extent; i++) {
-            *s++ = value;
-            *s2++ = value;
-            value++;
-          }
-        },
-        buf2);
-    value = 0;
-    for (int c = 0; c < (padded_dim == 2 ? 8 : 30); c++) {
-      for (int y = 0; y < (padded_dim == 1 ? 8 : 20); y++) {
-        for (int x = 0; x < (padded_dim == 0 ? 8 : 10); x++) {
-          ASSERT_EQ(buf(x, y, c), value) << x << " " << y << " " << c;
-          ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
-          value++;
-        }
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_copy_broadcast) {
-  for (int broadcast_dim = 0; broadcast_dim < 3; ++broadcast_dim) {
-    buffer<int, 3> src({10, 2, 3});
-    src.dim(broadcast_dim).set_stride(0);
-    init_random(src);
-    buffer<int, 3> dst({10, 2, 3});
-    dst.allocate();
-    for_each_contiguous_slice(
-        dst,
-        [&](index_t slice_extent, void* dst, const void* src) {
-          memcpy(dst, src, slice_extent * sizeof(int));
-        },
-        src);
-    for (int c = 0; c < 3; c++) {
-      for (int y = 0; y < 2; y++) {
-        for (int x = 0; x < 10; x++) {
-          ASSERT_EQ(src(x, y, c), dst(x, y, c)) << x << " " << y << " " << c;
-        }
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_non_innermost) {
-  buffer<int, 3> buf({10, 20, 30});
-  buf.allocate();
-  std::swap(buf.dim(0), buf.dim(1));
-  buffer<int, 3> buf2({10, 20, 30});
-  buf2.allocate();
-  std::swap(buf2.dim(0), buf2.dim(1));
-  int value = 0;
-  for_each_contiguous_slice(
-      buf,
-      [&](index_t slice_extent, void* slice, void* slice2) {
-        int* s = reinterpret_cast<int*>(slice);
-        int* s2 = reinterpret_cast<int*>(slice2);
-        for (int i = 0; i < slice_extent; i++) {
-          *s++ = value;
-          *s2++ = value;
-          value++;
-        }
-      },
-      buf2);
-  value = 0;
-  for (int c = 0; c < 30; c++) {
-    for (int y = 0; y < 20; y++) {
-      for (int x = 0; x < 10; x++) {
-        ASSERT_EQ(buf(y, x, c), value) << x << " " << y << " " << c;
-        ASSERT_EQ(buf2(y, x, c), value) << x << " " << y << " " << c;
-        value++;
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_both_non_zero_min) {
-  buffer<char, 3> buf({10, 20, 30});
-  buffer<char, 3> buf2({10, 20, 30});
-  buf.allocate();
-  buf.translate(1, 2, 3);
-  buf2.allocate();
-  buf2.translate(1, 2, 3);
-  int slices = 0;
-  for_each_contiguous_slice(
-      buf,
-      [&](index_t slice_extent, void* slice, void* slice2) {
-        memset(slice, 7, slice_extent);
-        memset(slice2, 7, slice_extent);
-        slices++;
-      },
-      buf2);
-  // These should fuse into a single slice
-  ASSERT_EQ(slices, 1);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 7); });
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
-  // TODO: if/when buffer<> gets a move ctor, do this in a vector<>
-  buffer<char, 3> buf1({10, 20, 30});
-  buffer<char, 3> buf2({10, 20, 30});
-  buffer<char, 3> buf3({10, 20, 30});
-  buffer<char, 3> buf4({10, 20, 30});
-  buffer<char, 3> buf5({10, 20, 30});
-  buffer<char, 3> buf6({10, 20, 30});
-  buffer<char, 3> buf7({10, 20, 30});
-  buffer<char, 3> buf8({10, 20, 30});
-  buffer<char, 3> buf9({10, 20, 30});
-  buf1.allocate();
-  buf2.allocate();
-  buf3.allocate();
-  buf4.allocate();
-  buf5.allocate();
-  buf6.allocate();
-  buf7.allocate();
-  buf8.allocate();
-  buf9.allocate();
-  int slices = 0;
-  for_each_contiguous_slice(
-      buf1,
-      [&](index_t slice_extent, void* slice1, void* slice2, void* slice3, void* slice4, void* slice5, void* slice6,
-          void* slice7, void* slice8, void* slice9) {
-        memset(slice1, 1, slice_extent);
-        memset(slice2, 2, slice_extent);
-        memset(slice3, 3, slice_extent);
-        memset(slice4, 4, slice_extent);
-        memset(slice5, 5, slice_extent);
-        memset(slice6, 6, slice_extent);
-        memset(slice7, 7, slice_extent);
-        memset(slice8, 8, slice_extent);
-        memset(slice9, 9, slice_extent);
-        slices++;
-      },
-      buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);
-  // These should fuse into a single slice
-  ASSERT_EQ(slices, 1);
-  for_each_index(buf1, [&](auto i) { ASSERT_EQ(buf1(i), 1); });
-  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 2); });
-  for_each_index(buf3, [&](auto i) { ASSERT_EQ(buf3(i), 3); });
-  for_each_index(buf4, [&](auto i) { ASSERT_EQ(buf4(i), 4); });
-  for_each_index(buf5, [&](auto i) { ASSERT_EQ(buf5(i), 5); });
-  for_each_index(buf6, [&](auto i) { ASSERT_EQ(buf6(i), 6); });
-  for_each_index(buf7, [&](auto i) { ASSERT_EQ(buf7(i), 7); });
-  for_each_index(buf8, [&](auto i) { ASSERT_EQ(buf8(i), 8); });
-  for_each_index(buf9, [&](auto i) { ASSERT_EQ(buf9(i), 9); });
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_extra_buf_offset_negative) {
-  buffer<int, 3> buf({10, 20, 30});
-  buffer<int, 3> buf2({11, 21, 31});
-  buf.allocate();
-  buf2.allocate();
-  buf2.translate(-1, -1, -1);
-  int slices = 0;
-  int value = 0;
-  for_each_contiguous_slice(
-      buf,
-      [&](index_t slice_extent, void* slice, void* slice2) {
-        int* s = reinterpret_cast<int*>(slice);
-        int* s2 = reinterpret_cast<int*>(slice2);
-        for (int i = 0; i < slice_extent; i++) {
-          *s++ = value;
-          *s2++ = value;
-          value++;
-        }
-        slices++;
-      },
-      buf2);
-  ASSERT_EQ(slices, 600);
-  value = 0;
-  for (int c = 0; c < 30; c++) {
-    for (int y = 0; y < 20; y++) {
-      for (int x = 0; x < 10; x++) {
-        ASSERT_EQ(buf(x, y, c), value) << x << " " << y << " " << c;
-        ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
-        value++;
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_folded_main_buffer) {
-  buffer<char, 3> buf({10, 20, 30});
-  buf.dim(1).set_fold_factor(4);
-  buf.allocate();
-  buffer<char, 3> buf2({10, 20, 30});
-  buf2.allocate();
-  char xx = 42;
-  fill(buf2, &xx);
-  for (int crop_extent : {1, 2, 3, 4}) {
-    buf.dim(1).set_min_extent(8, crop_extent);
-    int slices = 0;
-    for_each_contiguous_slice(
-        buf,
-        [&](index_t slice_extent, void* slice, void* slice2) {
-          memset(slice, 7, slice_extent);
-          memset(slice2, 7, slice_extent);
-          slices++;
-        },
-        buf2);
-    ASSERT_EQ(slices, crop_extent * 30);
-    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-    for (int c = 0; c < 30; c++) {
-      for (int y = 0; y < 20; y++) {
-        for (int x = 0; x < 10; x++) {
-          const char value = (y >= 8 && y < 8 + crop_extent) ? 7 : 42;
-          ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
-        }
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_folded_other_buffer) {
-  constexpr int W = 10, H = 20, C = 30;
-  buffer<char, 3> buf({W, H, C});
-  buf.allocate();
-  buffer<char, 3> buf2({W, H, C});
-  buf2.dim(1).set_fold_factor(4);
-  buf2.allocate();
-  int slices = 0;
-  for_each_contiguous_slice(
-      buf,
-      [&](index_t slice_extent, void* slice, void* slice2) {
-        memset(slice, 7, slice_extent);
-        memset(slice2, 7, slice_extent);
-        slices++;
-      },
-      buf2);
-  ASSERT_EQ(slices, 600);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-  for (int c = 0; c < C; c++) {
-    for (int y = 0; y < H; y++) {
-      for (int x = 0; x < W; x++) {
-        ASSERT_EQ(buf(x, y, c), 7) << x << " " << y << " " << c;
-        ASSERT_EQ(buf2(x, y, c), 7) << x << " " << y << " " << c;
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_folded_all) {
-  constexpr int W = 30, H = 30, C = 30;
-  buffer<char, 3> buf({W, H, C});
-  buf.dim(1).set_fold_factor(2);
-  buf.allocate();
-  buffer<char, 3> buf2({W, H, C});
-  buf2.dim(1).set_fold_factor(3);
-  buf2.allocate();
-  buffer<char, 3> buf3({W, H, C});
-  buf3.dim(1).set_fold_factor(5);
-  buf3.allocate();
-  int slices = 0;
-  for_each_contiguous_slice(
-      buf,
-      [&](index_t slice_extent, void* slice, void* slice2, void* slice3) {
-        memset(slice, 7, slice_extent);
-        memset(slice2, 8, slice_extent);
-        memset(slice3, 9, slice_extent);
-        slices++;
-      },
-      buf2, buf3);
-  ASSERT_EQ(slices, 900);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-  for (int c = 0; c < C; c++) {
-    for (int y = 0; y < H; y++) {
-      for (int x = 0; x < W; x++) {
-        ASSERT_EQ(buf(x, y, c), 7) << x << " " << y << " " << c;
-        ASSERT_EQ(buf2(x, y, c), 8) << x << " " << y << " " << c;
-        ASSERT_EQ(buf3(x, y, c), 9) << x << " " << y << " " << c;
-      }
-    }
-  }
-}
-
-TEST(buffer, for_each_contiguous_slice_multi_folded_all_with_offset) {
-  const auto fill_slow = [](buffer<char, 3>& buf, char value) {
-    for (int c = buf.dim(2).min(); c <= buf.dim(2).max(); c++) {
-      for (int y = buf.dim(1).min(); y <= buf.dim(1).max(); y++) {
-        for (int x = buf.dim(0).min(); x <= buf.dim(0).max(); x++) {
-          buf(x, y, c) = value;
-        }
-      }
-    }
-  };
-
-  constexpr int W = 30, H = 30, C = 30;
-  buffer<char, 3> buf({W, H, C});
-  buf.dim(1).set_fold_factor(2);
-  buf.allocate();
-  fill_slow(buf, 41);
-  buffer<char, 3> buf2({W + 1, H + 1, C + 1});
-  buf2.dim(1).set_fold_factor(3);
-  buf2.allocate();
-  buf2.translate(-1, -1, -1);
-  fill_slow(buf2, 42);
-  buffer<char, 3> buf3({W + 2, H + 2, C + 2});
-  buf3.dim(1).set_fold_factor(5);
-  buf3.allocate();
-  buf3.translate(-1, -1, -1);
-  fill_slow(buf3, 43);
-  int slices = 0;
-  for_each_contiguous_slice(
-      buf,
-      [&](index_t slice_extent, void* slice, void* slice2, void* slice3) {
-        memset(slice, 7, slice_extent);
-        memset(slice2, 8, slice_extent);
-        memset(slice3, 9, slice_extent);
-        slices++;
-      },
-      buf2, buf3);
-  ASSERT_EQ(slices, 900);
-  ASSERT_EQ(buf2(-1, -1, -1), 42);
-  ASSERT_EQ(buf3(-1, -1, -1), 43);
-  ASSERT_EQ(buf3(W, H, C), 43);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
-  for (int c = 0; c < C; c++) {
-    for (int y = 0; y < H; y++) {
-      for (int x = 0; x < W; x++) {
-        ASSERT_EQ(buf(x, y, c), 7) << x << " " << y << " " << c;
-        ASSERT_EQ(buf2(x, y, c), 8) << x << " " << y << " " << c;
-        ASSERT_EQ(buf3(x, y, c), 9) << x << " " << y << " " << c;
-      }
-    }
-  }
 }
 
 }  // namespace slinky
