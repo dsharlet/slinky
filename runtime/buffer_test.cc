@@ -447,7 +447,7 @@ TEST(buffer, for_each_contiguous_slice_multi) {
 }
 
 TEST(buffer, for_each_contiguous_slice_multi_padded) {
-  for (int padded_dim = 0; padded_dim < 2; ++padded_dim) {
+  for (int padded_dim = 0; padded_dim < 3; ++padded_dim) {
     buffer<int, 3> buf({10, 20, 30});
     buf.allocate();
     buf.dim(padded_dim).set_min_extent(0, 8);
@@ -473,6 +473,29 @@ TEST(buffer, for_each_contiguous_slice_multi_padded) {
           ASSERT_EQ(buf(x, y, c), value) << x << " " << y << " " << c;
           ASSERT_EQ(buf2(x, y, c), value) << x << " " << y << " " << c;
           value++;
+        }
+      }
+    }
+  }
+}
+
+TEST(buffer, for_each_contiguous_slice_copy_broadcast) {
+  for (int broadcast_dim = 0; broadcast_dim < 3; ++broadcast_dim) {
+    buffer<int, 3> src({10, 2, 3});
+    src.dim(broadcast_dim).set_stride(0);
+    init_random(src);
+    buffer<int, 3> dst({10, 2, 3});
+    dst.allocate();
+    for_each_contiguous_slice(
+        dst,
+        [&](index_t slice_extent, void* dst, const void* src) {
+          memcpy(dst, src, slice_extent * sizeof(int));
+        },
+        src);
+    for (int c = 0; c < 3; c++) {
+      for (int y = 0; y < 2; y++) {
+        for (int x = 0; x < 10; x++) {
+          ASSERT_EQ(src(x, y, c), dst(x, y, c)) << x << " " << y << " " << c;
         }
       }
     }

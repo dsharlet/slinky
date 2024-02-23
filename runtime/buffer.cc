@@ -345,18 +345,23 @@ bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
 }
 #endif
 
+bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
+  for (std::size_t n = 0; n < size; n++) {
+    if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) return false;
+  }
+  return true;
+}
+
 bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   assert(d > 0);
-  const raw_buffer* buf = bufs[0];
-  const dim& outer = buf->dim(d);
-  const index_t buf_dim_d_stride = outer.stride();
-
   for (std::size_t n = 0; n < size; n++) {
+    const auto& inner = bufs[n]->dim(d - 1);
+    const auto& outer = bufs[n]->dim(d);
     // Our caller should have ensured this
-    assert(bufs[n]->dim(d).fold_factor() == dim::unfolded);
-    const auto& inner_other = bufs[n]->dim(d - 1);
-    if (inner_other.fold_factor() != dim::unfolded) return false;
-    if (inner_other.stride() * inner_other.extent() != buf_dim_d_stride) return false;
+    assert(outer.fold_factor() == dim::unfolded);
+    if (inner.fold_factor() != dim::unfolded) return false;
+    if (inner.min() != bufs[0]->dim(d - 1).min()) return false;
+    if (inner.stride() * inner.extent() != outer.stride()) return false;
   }
   return true;
 }
@@ -405,7 +410,7 @@ void make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
     if (buf_dim.min() == buf_dim.max()) {
       // This dimension has only one element, nothing to do.
       continue;
-    } else if (buf_dim.stride() == static_cast<index_t>(buf->elem_size)) {
+    } else if (is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
