@@ -50,9 +50,10 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
       r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
       r.rewrite(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
-      r.rewrite(min(c0 - x, c0 - y), c0 - max(x, y)) ||
       r.rewrite(min(x, -x), -abs(x)) ||
       r.rewrite(min(x + c0, c0 - x), c0 - abs(x)) ||
+      r.rewrite(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
+      r.rewrite(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
 
       // Algebraic simplifications
       r.rewrite(min(x, x), x) ||
@@ -118,9 +119,10 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
       r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
       r.rewrite(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
-      r.rewrite(max(c0 - x, c0 - y), c0 - min(x, y)) ||
       r.rewrite(max(x, -x), abs(x)) ||
       r.rewrite(max(x + c0, c0 - x), abs(x) + c0) ||
+      r.rewrite(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
+      r.rewrite(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
 
       // Algebraic simplifications
       r.rewrite(max(x, x), x) ||
@@ -204,15 +206,6 @@ expr simplify(const add* op, expr a, expr b) {
       r.rewrite(z + min(x, y - z), min(y, x + z)) ||
       r.rewrite(z + max(x, y - z), max(y, x + z)) ||
 
-      r.rewrite(min(x + c0, y + c1) + c2, min(x + eval(c0 + c2), y + eval(c1 + c2))) ||
-      r.rewrite(max(x + c0, y + c1) + c2, max(x + eval(c0 + c2), y + eval(c1 + c2))) ||
-      r.rewrite(min(y + c1, c0 - x) + c2, min(y + eval(c1 + c2), eval(c0 + c2) - x)) ||
-      r.rewrite(max(y + c1, c0 - x) + c2, max(y + eval(c1 + c2), eval(c0 + c2) - x)) ||
-      r.rewrite(min(c0 - x, c1 - y) + c2, min(eval(c0 + c2) - x, eval(c1 + c2) - y)) ||
-      r.rewrite(max(c0 - x, c1 - y) + c2, max(eval(c0 + c2) - x, eval(c1 + c2) - y)) ||
-      r.rewrite(min(x, y + c0) + c1, min(x + c1, y + eval(c0 + c1))) ||
-      r.rewrite(max(x, y + c0) + c1, max(x + c1, y + eval(c0 + c1))) ||
-
       r.rewrite(select(x, c0, c1) + c2, select(x, eval(c0 + c2), eval(c1 + c2))) ||
       r.rewrite(select(x, y + c0, c1) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2))) ||
       r.rewrite(select(x, c0 - y, c1) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2))) ||
@@ -289,6 +282,9 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite(c2 - select(x, c0 - y, z + c1), select(x, y + eval(c2 - c0), eval(c2 - c1) - z)) ||
       r.rewrite(c2 - select(x, y + c0, c1 - z), select(x, eval(c2 - c0) - y, z + eval(c2 - c1))) ||
       r.rewrite(c2 - select(x, c0 - y, c1 - z), select(x, y + eval(c2 - c0), z + eval(c2 - c1))) ||
+    
+      r.rewrite(max(x, y) - min(x, y), abs(x - y)) ||
+      r.rewrite(min(x, y) - max(x, y), -abs(x - y)) ||
 
       r.rewrite(buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) + -1) ||
       r.rewrite(buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) + -1) ||
