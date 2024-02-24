@@ -351,11 +351,11 @@ public:
       auto& ref_info = references[it->first];
       assert(ref_info);
       if (ref_info->ref_count == 0) {
-        // - Prune dead lets
+        // Prune dead lets
         it = lets.erase(it);
         values_changed = true;
       } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
-        // - Inline single-ref lets outside of a loop, along with lets that are trivial
+        // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
         it = lets.erase(it);
         values_changed = true;
@@ -426,16 +426,18 @@ public:
     }
   }
   
-  void merge_loop_references(symbol_map<symbol_info> add) {
+  void merge_references(symbol_map<symbol_info> add, bool is_in_loop) {
     for (symbol_id i = 0; i < add.size(); ++i) {
       if (!add[i]) continue;
+
       std::optional<symbol_info>& info = references[i];
       if (!info) {
         info = std::move(add[i]);
       } else {
         info->ref_count += add[i]->ref_count;
-        info->referenced_in_loop = true;
       }
+
+      info->referenced_in_loop = info->referenced_in_loop || is_in_loop;
     }
   }
 
@@ -449,12 +451,12 @@ public:
     if (prove_true(bounds.min > bounds.max)) {
       // This loop is dead.
       set_result(stmt());
-      merge_loop_references(std::move(old_references));
+      std::swap(references, old_references);
       return;
     } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs once.
       set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
-      merge_loop_references(std::move(old_references));
+      merge_references(std::move(old_references), false);
       return;
     }
 
@@ -462,7 +464,7 @@ public:
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
-      merge_loop_references(std::move(old_references));
+      std::swap(references, old_references);
       return;
     }
 
@@ -514,7 +516,7 @@ public:
           result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), result);
         }
         set_result(mutate(result));
-        merge_loop_references(std::move(old_references));
+        merge_references(std::move(old_references), false);
         return;
       }
     }
@@ -525,7 +527,7 @@ public:
       set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
     }
 
-    merge_loop_references(std::move(old_references));
+    merge_references(std::move(old_references), true);
   }
 
   void visit(const block* op) override {
