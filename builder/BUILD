@@ -31,6 +31,18 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "replica_pipeline",
+    srcs = [
+        "replica_pipeline.cc",
+    ],
+    hdrs = [
+        "replica_pipeline.h",
+    ],
+    deps = ["//runtime", ":builder"],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "checks_test",
     srcs = ["checks_test.cc"],
@@ -70,6 +82,20 @@ cc_test(
         "//runtime",
         "//runtime:thread_pool",
         "//runtime:visualize",
+    ],
+)
+
+cc_test(
+    name = "replica_pipeline_test",
+    srcs = ["replica_pipeline_test.cc"],
+    data = ["replica_pipeline_test.cc"],
+    deps = [
+        ":builder",
+        ":replica_pipeline",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@googletest//:gtest_main",
+        "//runtime",
+        "//runtime:thread_pool",
     ],
 )
 
