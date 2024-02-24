@@ -124,8 +124,8 @@ inline T saturate_mul(T a, T b) {
 template <typename T>
 inline T saturate_div(T a, T b) {
   // This is safe from overflow unless a is max and b is -1.
-  if (a == std::numeric_limits<T>::max() && b == -1) {
-    return std::numeric_limits<T>::min();
+  if (b == -1 && a == std::numeric_limits<T>::min()) {
+    return std::numeric_limits<T>::max();
   } else {
     return euclidean_div(a, b);
   }
@@ -134,7 +134,11 @@ inline T saturate_div(T a, T b) {
 template <typename T>
 inline T saturate_mod(T a, T b) {
   // Can this overflow...?
-  return euclidean_mod(a, b);
+  if (b == -1) {
+    return 0;
+  } else {
+    return euclidean_mod(a, b);
+  }
 }
 
 // Don't want to depend on C++20, so just provide our own span-like helper. Differences:
