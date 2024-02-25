@@ -737,7 +737,7 @@ public:
 
   void visit(const clone_buffer* op) override {
     symbol_id src = visit_symbol(op->src);
-    stmt body = mutate(op->body);
+    stmt body = mutate_decl_body(op->sym, op->body);
     if (src != op->src || !body.same_as(op->body)) {
       set_result(clone_buffer::make(op->sym, src, std::move(body)));
     } else {
