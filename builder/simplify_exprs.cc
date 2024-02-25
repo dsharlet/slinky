@@ -54,6 +54,8 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x + c0, c0 - x), c0 - abs(x)) ||
       r.rewrite(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
       r.rewrite(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
+      r.rewrite(min(abs(x), c0), c0, c0 <= 0) ||
+      r.rewrite(min(c1 - abs(x), c0), c1 - abs(x), c1 <= c0) ||
 
       // Algebraic simplifications
       r.rewrite(min(x, x), x) ||
@@ -123,6 +125,8 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x + c0, c0 - x), abs(x) + c0) ||
       r.rewrite(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
       r.rewrite(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
+      r.rewrite(max(abs(x), c0), abs(x), c0 <= 0) ||
+      r.rewrite(max(c1 - abs(x), c0), c0, c1 <= c0) ||
 
       // Algebraic simplifications
       r.rewrite(max(x, x), x) ||

@@ -139,24 +139,41 @@ public:
     }
   }
 
+  template <typename T>
+  void visit_compare(const T* op) {
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
+      if (is_true(result_bounds.min)) {
+        set_result(result_bounds.min, point(result_bounds.min));
+      } else if (is_false(result_bounds.max)) {
+        set_result(result_bounds.max, point(result_bounds.max));
+      } else {
+        set_result(result, std::move(result_bounds));
+      }
+    }
+  }
+
   void visit(const class min* op) override {
     interval_expr a_bounds;
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
-    std::optional<bool> lt = attempt_to_prove(a < b);
-    if (lt && *lt) {
-      set_result(std::move(a), std::move(a_bounds));
-      return;
-    } else if (lt && !*lt) {
-      set_result(std::move(b), std::move(b_bounds));
-      return;
-    }
-
-    expr result = simplify(op, std::move(a), std::move(b));
+    expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
+    } else if (is_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+      set_result(std::move(a), std::move(a_bounds));
+    } else if (is_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+      set_result(std::move(b), std::move(b_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
@@ -167,18 +184,13 @@ public:
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
-    std::optional<bool> gt = attempt_to_prove(a > b);
-    if (gt && *gt) {
-      set_result(std::move(a), std::move(a_bounds));
-      return;
-    } else if (gt && !*gt) {
-      set_result(std::move(b), std::move(b_bounds));
-      return;
-    }
-
-    expr result = simplify(op, std::move(a), std::move(b));
+    expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
+    } else if (is_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+      set_result(std::move(b), std::move(b_bounds));
+    } else if (is_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+      set_result(std::move(a), std::move(a_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
@@ -208,10 +220,10 @@ public:
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }
   void visit(const mod* op) override { visit_binary(op); }
-  void visit(const less* op) override { visit_binary(op); }
-  void visit(const less_equal* op) override { visit_binary(op); }
-  void visit(const equal* op) override { visit_binary(op); }
-  void visit(const not_equal* op) override { visit_binary(op); }
+  void visit(const less* op) override { visit_compare(op); }
+  void visit(const less_equal* op) override { visit_compare(op); }
+  void visit(const equal* op) override { visit_compare(op); }
+  void visit(const not_equal* op) override { visit_compare(op); }
   void visit(const logical_and* op) override { visit_binary(op); }
   void visit(const logical_or* op) override { visit_binary(op); }
   void visit(const logical_not* op) override {
