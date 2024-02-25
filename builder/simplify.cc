@@ -152,7 +152,7 @@ public:
   }
 
   template <typename T>
-  void visit_compare(const T* op) {
+  void visit_logical(const T* op) {
     interval_expr a_bounds;
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
@@ -232,12 +232,12 @@ public:
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }
   void visit(const mod* op) override { visit_binary(op); }
-  void visit(const less* op) override { visit_compare(op); }
-  void visit(const less_equal* op) override { visit_compare(op); }
-  void visit(const equal* op) override { visit_compare(op); }
-  void visit(const not_equal* op) override { visit_compare(op); }
-  void visit(const logical_and* op) override { visit_binary(op); }
-  void visit(const logical_or* op) override { visit_binary(op); }
+  void visit(const less* op) override { visit_logical(op); }
+  void visit(const less_equal* op) override { visit_logical(op); }
+  void visit(const equal* op) override { visit_logical(op); }
+  void visit(const not_equal* op) override { visit_logical(op); }
+  void visit(const logical_and* op) override { visit_logical(op); }
+  void visit(const logical_or* op) override { visit_logical(op); }
   void visit(const logical_not* op) override {
     interval_expr bounds;
     expr a = mutate(op->a, &bounds);
