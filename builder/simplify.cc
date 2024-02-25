@@ -1001,6 +1001,7 @@ public:
   void visit(const clone_buffer* op) override {
     visit_symbol(op->src, true);
     auto set_refs = set_value_in_scope(references, op->sym, 0);
+    std::optional<int> src_refs = references[op->src];
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
     stmt body = mutate(op->body);
 
@@ -1008,6 +1009,10 @@ public:
       set_result(stmt());
     } else if (*references[op->sym] == 0) {
       set_result(std::move(body));
+    } else if (references[op->src] == src_refs) {
+      // We didn't use the original buffer. We can just use that instead.
+      // TODO: We could do this even if the buffer is used, as long as it is not mutated.
+      set_result(substitute(body, op->sym, variable::make(op->src)));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());

@@ -177,7 +177,7 @@ TEST(simplify, allocate) {
                     block::make({check::make(y), clone_buffer::make(w.sym(), x.sym(), check::make(w)), check::make(z)})),
       block::make({check::make(y),
           allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-              clone_buffer::make(w.sym(), x.sym(), check::make(w))),
+              check::make(x)),
           check::make(z)}));
 }
 
