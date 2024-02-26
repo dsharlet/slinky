@@ -4,16 +4,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
+#include <random>
 
 #include "runtime/buffer.h"
 
+std::mt19937 rng{};
+
 namespace slinky {
 
-int random(int min, int max) { 
+int random(int min, int max) {
   static std::once_flag once;
-  std::call_once(once, [] { srand(time(nullptr)); });
-    
-  return rand() % (max - min + 1) + min; 
+  std::call_once(once, [] { rng.seed(time(nullptr)); });
+
+  return rng() % (max - min + 1) + min;
 }
 
 template <typename T, std::size_t N>
@@ -32,14 +35,13 @@ struct randomize_options {
   bool allow_fold = false;
 };
 
-
 template <typename T, std::size_t N>
 void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& options) {
   std::vector<int> permutation(buf.rank);
   std::iota(permutation.begin(), permutation.end(), 0);
   if (random(0, 3) == 0) {
     // Randomize the strides ordering.
-    std::random_shuffle(permutation.begin(), permutation.end());
+    std::shuffle(permutation.begin(), permutation.end(), rng);
   }
 
   index_t stride = buf.elem_size;
