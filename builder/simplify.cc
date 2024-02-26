@@ -393,7 +393,7 @@ public:
         values_changed = true;
       } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
-        body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
+        body = mutate(substitute(body, it->first, it->second), &body_bounds);
         it = lets.erase(it);
         values_changed = true;
       } else {
@@ -445,7 +445,7 @@ public:
         values_changed = true;
       } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
-        body = mutate(substitute(std::move(body), it->first, it->second));
+        body = mutate(substitute(body, it->first, it->second));
         it = lets.erase(it);
         values_changed = true;
       } else {
