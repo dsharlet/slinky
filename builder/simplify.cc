@@ -25,12 +25,16 @@ namespace {
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   class symbol_info {
-    public:
-      int ref_count;
-      bool referenced_in_loop;
+  public:
+    int ref_count;
+    bool referenced_in_loop;
 
-      symbol_info() = default;
-      symbol_info(int c, int l) : ref_count(c), referenced_in_loop(l) {}
+    symbol_info() = default;
+    symbol_info(int c, int l) : ref_count(c), referenced_in_loop(l) {}
+
+    bool operator==(const symbol_info& r) const {
+      return ref_count == r.ref_count && referenced_in_loop == r.referenced_in_loop;
+    }
   };
 
   symbol_map<symbol_info> references;
@@ -109,6 +113,18 @@ public:
     return result && !*result;
   }
 
+  // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
+  // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
+  static bool evaluates_true(const expr& e) {
+    std::optional<index_t> result = evaluate_constant(e);
+    return result && *result != 0;
+  }
+
+  static bool evaluates_false(const expr& e) {
+    std::optional<index_t> result = evaluate_constant(e);
+    return result && *result == 0;
+  }
+
   void visit_symbol(symbol_id sym, bool bounds_used = true) {
     auto& ref_info = references[sym];
     if (!ref_info) {
@@ -149,24 +165,41 @@ public:
     }
   }
 
+  template <typename T>
+  void visit_logical(const T* op) {
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
+      if (evaluates_true(result_bounds.min)) {
+        set_result(result_bounds.min, point(result_bounds.min));
+      } else if (evaluates_false(result_bounds.max)) {
+        set_result(result_bounds.max, point(result_bounds.max));
+      } else {
+        set_result(result, std::move(result_bounds));
+      }
+    }
+  }
+
   void visit(const class min* op) override {
     interval_expr a_bounds;
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
-    std::optional<bool> lt = attempt_to_prove(a < b);
-    if (lt && *lt) {
-      set_result(std::move(a), std::move(a_bounds));
-      return;
-    } else if (lt && !*lt) {
-      set_result(std::move(b), std::move(b_bounds));
-      return;
-    }
-
-    expr result = simplify(op, std::move(a), std::move(b));
+    expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
+    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+      set_result(std::move(a), std::move(a_bounds));
+    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+      set_result(std::move(b), std::move(b_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
@@ -177,18 +210,13 @@ public:
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
-    std::optional<bool> gt = attempt_to_prove(a > b);
-    if (gt && *gt) {
-      set_result(std::move(a), std::move(a_bounds));
-      return;
-    } else if (gt && !*gt) {
-      set_result(std::move(b), std::move(b_bounds));
-      return;
-    }
-
-    expr result = simplify(op, std::move(a), std::move(b));
+    expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
+    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+      set_result(std::move(b), std::move(b_bounds));
+    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+      set_result(std::move(a), std::move(a_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
@@ -218,19 +246,19 @@ public:
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }
   void visit(const mod* op) override { visit_binary(op); }
-  void visit(const less* op) override { visit_binary(op); }
-  void visit(const less_equal* op) override { visit_binary(op); }
-  void visit(const equal* op) override { visit_binary(op); }
-  void visit(const not_equal* op) override { visit_binary(op); }
-  void visit(const logical_and* op) override { visit_binary(op); }
-  void visit(const logical_or* op) override { visit_binary(op); }
+  void visit(const less* op) override { visit_logical(op); }
+  void visit(const less_equal* op) override { visit_logical(op); }
+  void visit(const equal* op) override { visit_logical(op); }
+  void visit(const not_equal* op) override { visit_logical(op); }
+  void visit(const logical_and* op) override { visit_logical(op); }
+  void visit(const logical_or* op) override { visit_logical(op); }
   void visit(const logical_not* op) override {
     interval_expr bounds;
     expr a = mutate(op->a, &bounds);
 
-    if (is_true(bounds.min)) {
+    if (evaluates_true(bounds.min)) {
       set_result(false, {0, 0});
-    } else if (is_false(bounds.max)) {
+    } else if (evaluates_false(bounds.max)) {
       set_result(true, {1, 1});
     } else {
       expr result = simplify(op, std::move(a));
@@ -245,10 +273,10 @@ public:
   void visit(const class select* op) override {
     interval_expr c_bounds;
     expr c = mutate(op->condition, &c_bounds);
-    if (is_true(c_bounds.min)) {
+    if (evaluates_true(c_bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
-    } else if (is_false(c_bounds.max)) {
+    } else if (evaluates_false(c_bounds.max)) {
       mutate_and_set_result(op->false_value);
       return;
     }
@@ -298,6 +326,15 @@ public:
           return;
         }
       }
+    } else if (op->intrinsic == intrinsic::abs) {
+      assert(args.size() == 1);
+      if (is_non_negative(args_bounds[0].min)) {
+        set_result(args[0], std::move(args_bounds[0]));
+        return;
+      } else if (is_non_positive(args_bounds[0].max)) {
+        mutate_and_set_result(-args[0]);
+        return;
+      }
     }
 
     expr e = simplify(op, op->intrinsic, std::move(args));
@@ -309,7 +346,7 @@ public:
   }
 
   // Expression is trivial if it is a constant, var or buffer_min / buffer_max
-  static bool is_trivial_let_value(expr &e) {
+  static bool is_trivial_let_value(expr& e) {
     if (e.as<constant>() || e.as<variable>()) {
       return true;
     }
@@ -356,7 +393,7 @@ public:
         values_changed = true;
       } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
-        body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
+        body = mutate(substitute(body, it->first, it->second), &body_bounds);
         it = lets.erase(it);
         values_changed = true;
       } else {
@@ -408,7 +445,7 @@ public:
         values_changed = true;
       } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
-        body = mutate(substitute(std::move(body), it->first, it->second));
+        body = mutate(substitute(body, it->first, it->second));
         it = lets.erase(it);
         values_changed = true;
       } else {
@@ -425,7 +462,7 @@ public:
       set_result(let_stmt::make(std::move(lets), std::move(body)));
     }
   }
-  
+
   void merge_references(symbol_map<symbol_info> add, bool is_in_loop) {
     for (symbol_id i = 0; i < add.size(); ++i) {
       if (!add[i]) continue;
@@ -644,9 +681,15 @@ public:
     clear_shadowed_bounds(op->sym, bounds);
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
+      return;
+    }
+    if (references[op->sym]->ref_count == 0) {
+      // This make_buffer is unused.
+      set_result(std::move(body));
       return;
     }
 
@@ -800,12 +843,7 @@ public:
     if (!crop_needed(depends_on(body, op->sym))) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        if (new_bounds[d].min.defined()) {
-          new_bounds[d].min = max(new_bounds[d].min, buffer_min(sym_var, d));
-        }
-        if (new_bounds[d].max.defined()) {
-          new_bounds[d].max = min(new_bounds[d].max, buffer_max(sym_var, d));
-        }
+        new_bounds[d] &= slinky::buffer_bounds(sym_var, d);
       }
       body = substitute_bounds(body, op->sym, new_bounds);
       set_result(mutate(body));
@@ -1047,6 +1085,7 @@ public:
   void visit(const clone_buffer* op) override {
     visit_symbol(op->src, true);
     auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
+    std::optional<symbol_info> src_refs = references[op->src];
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
     stmt body = mutate(op->body);
     auto& ref_info = references[op->sym];
@@ -1056,6 +1095,10 @@ public:
       set_result(stmt());
     } else if (ref_info->ref_count == 0) {
       set_result(std::move(body));
+    } else if (references[op->src] == src_refs) {
+      // We didn't use the original buffer. We can just use that instead.
+      // TODO: We could do this even if the buffer is used, as long as it is not mutated.
+      set_result(substitute(body, op->sym, variable::make(op->src)));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
@@ -1078,9 +1121,9 @@ public:
 
     interval_expr c_bounds;
     expr c = mutate(op->condition, &c_bounds);
-    if (is_true(c_bounds.min)) {
+    if (evaluates_true(c_bounds.min)) {
       set_result(stmt());
-    } else if (is_false(c_bounds.max)) {
+    } else if (evaluates_false(c_bounds.max)) {
       std::cerr << op->condition << " is statically false." << std::endl;
       std::abort();
     } else if (c.same_as(op->condition)) {

@@ -121,7 +121,7 @@ int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
 }
 
 template <typename T, typename A, typename B>
-bool match(const pattern_binary<T, A, B>& p, int this_bit, const expr& a, const expr& b, match_context& ctx) {
+bool match_binary(const pattern_binary<T, A, B>& p, int this_bit, const expr& a, const expr& b, match_context& ctx) {
   if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
     // We should commute in this variant.
     return match(p.a, b, ctx) && match(p.b, a, ctx);
@@ -135,7 +135,7 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) 
   int this_bit = commute_bit(p, ctx);
 
   if (const T* t = x.as<T>()) {
-    return match(p, this_bit, t->a, t->b, ctx);
+    return match_binary(p, this_bit, t->a, t->b, ctx);
   } else {
     return false;
   }
@@ -144,30 +144,8 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) 
 template <typename T, typename A, typename B>
 bool match(
     const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
-  return match(p, commute_bit(p, ctx), x.a.e, x.b.e, ctx);
+  return match_binary(p, commute_bit(p, ctx), x.a.e, x.b.e, ctx);
 }
-
-template <typename T>
-expr make_binary(expr a, expr b) {
-  return T::make(std::move(a), std::move(b));
-}
-
-// clang-format off
-template <typename T> index_t make_binary(index_t a, index_t b);
-template <> inline index_t make_binary<add>(index_t a, index_t b) { return a + b; }
-template <> inline index_t make_binary<sub>(index_t a, index_t b) { return a - b; }
-template <> inline index_t make_binary<mul>(index_t a, index_t b) { return a * b; }
-template <> inline index_t make_binary<div>(index_t a, index_t b) { return euclidean_div(a, b); }
-template <> inline index_t make_binary<mod>(index_t a, index_t b) { return euclidean_mod(a, b); }
-template <> inline index_t make_binary<class min>(index_t a, index_t b) { return std::min(a, b); }
-template <> inline index_t make_binary<class max>(index_t a, index_t b) { return std::max(a, b); }
-template <> inline index_t make_binary<equal>(index_t a, index_t b) { return a == b; }
-template <> inline index_t make_binary<not_equal>(index_t a, index_t b) { return a != b; }
-template <> inline index_t make_binary<less>(index_t a, index_t b) { return a < b; }
-template <> inline index_t make_binary<less_equal>(index_t a, index_t b) { return a <= b; }
-template <> inline index_t make_binary<logical_and>(index_t a, index_t b) { return ((a != 0) && (b != 0)) ? 1 : 0; }
-template <> inline index_t make_binary<logical_or>(index_t a, index_t b) { return ((a != 0) || (b != 0)) ? 1 : 0; }
-// clang-format on
 
 template <typename T, typename A, typename B>
 auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {

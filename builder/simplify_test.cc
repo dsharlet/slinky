@@ -75,6 +75,7 @@ TEST(simplify, basic) {
   test_simplify(positive_infinity() + negative_infinity(), indeterminate());
   test_simplify(positive_infinity() * positive_infinity(), positive_infinity());
   test_simplify(positive_infinity() * negative_infinity(), negative_infinity());
+  test_simplify(abs(negative_infinity()), positive_infinity());
 
   test_simplify(min(1, 2), 1);
   test_simplify(max(1, 2), 2);
@@ -192,7 +193,7 @@ TEST(simplify, allocate) {
                     block::make({check::make(y), clone_buffer::make(w.sym(), x.sym(), check::make(w)), check::make(z)})),
       block::make({check::make(y),
           allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-              clone_buffer::make(w.sym(), x.sym(), check::make(w))),
+              check::make(x)),
           check::make(z)}));
 }
 

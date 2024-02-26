@@ -138,19 +138,25 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  void visit(const add* op) override { result = eval_expr(op->a) + eval_expr(op->b); }
-  void visit(const sub* op) override { result = eval_expr(op->a) - eval_expr(op->b); }
-  void visit(const mul* op) override { result = eval_expr(op->a) * eval_expr(op->b); }
-  void visit(const div* op) override { result = euclidean_div(eval_expr(op->a), eval_expr(op->b)); }
-  void visit(const mod* op) override { result = euclidean_mod(eval_expr(op->a), eval_expr(op->b)); }
-  void visit(const class min* op) override { result = std::min(eval_expr(op->a), eval_expr(op->b)); }
-  void visit(const class max* op) override { result = std::max(eval_expr(op->a), eval_expr(op->b)); }
-  void visit(const equal* op) override { result = eval_expr(op->a) == eval_expr(op->b); }
-  void visit(const not_equal* op) override { result = eval_expr(op->a) != eval_expr(op->b); }
-  void visit(const less* op) override { result = eval_expr(op->a) < eval_expr(op->b); }
-  void visit(const less_equal* op) override { result = eval_expr(op->a) <= eval_expr(op->b); }
-  void visit(const logical_and* op) override { result = eval_expr(op->a) != 0 && eval_expr(op->b) != 0; }
-  void visit(const logical_or* op) override { result = eval_expr(op->a) != 0 || eval_expr(op->b) != 0; }
+  template <typename T>
+  void visit_binary(const T* op) {
+    result = make_binary<T>(eval_expr(op->a), eval_expr(op->b));
+  }
+
+  void visit(const add* op) override { visit_binary(op); }
+  void visit(const sub* op) override { visit_binary(op); }
+  void visit(const mul* op) override { visit_binary(op); }
+  void visit(const div* op) override { visit_binary(op); }
+  void visit(const mod* op) override { visit_binary(op); }
+  void visit(const class min* op) override { visit_binary(op); }
+  void visit(const class max* op) override { visit_binary(op); }
+  void visit(const equal* op) override { visit_binary(op); }
+  void visit(const not_equal* op) override { visit_binary(op); }
+  void visit(const less* op) override { visit_binary(op); }
+  void visit(const less_equal* op) override { visit_binary(op); }
+  void visit(const logical_and* op) override { visit_binary(op); }
+  void visit(const logical_or* op) override { visit_binary(op); }
+
   void visit(const logical_not* op) override { result = eval_expr(op->a) == 0; }
 
   void visit(const class select* op) override {
@@ -566,5 +572,108 @@ index_t evaluate(const stmt& s) {
   eval_context ctx;
   return evaluate(s, ctx);
 }
+
+namespace {
+
+class constant_evaluator : public node_visitor {
+public:
+  std::optional<index_t> result;
+
+  std::optional<index_t> eval_expr(const expr& e) {
+    if (e.defined()) {
+      e.accept(this);
+      return result;
+    } else {
+      return std::nullopt;
+    }
+  }
+
+  void visit(const variable* op) override { result = std::nullopt; }
+  void visit(const constant* op) override { result = op->value; }
+
+  void visit(const let* op) override { result = std::nullopt; }
+  void visit(const let_stmt* op) override { result = std::nullopt; }
+
+  template <typename T>
+  void visit_binary(const T* op) {
+    std::optional<index_t> a = eval_expr(op->a);
+    std::optional<index_t> b = eval_expr(op->b);
+    if (a && b) {
+      result = make_binary<T>(*a, *b);
+    } else {
+      result = std::nullopt;
+    }
+  }
+
+  void visit(const add* op) override { visit_binary(op); }
+  void visit(const sub* op) override { visit_binary(op); }
+  void visit(const mul* op) override { visit_binary(op); }
+  void visit(const div* op) override { visit_binary(op); }
+  void visit(const mod* op) override { visit_binary(op); }
+  void visit(const class min* op) override { visit_binary(op); }
+  void visit(const class max* op) override { visit_binary(op); }
+  void visit(const equal* op) override { visit_binary(op); }
+  void visit(const not_equal* op) override { visit_binary(op); }
+  void visit(const less* op) override { visit_binary(op); }
+  void visit(const less_equal* op) override { visit_binary(op); }
+  void visit(const logical_and* op) override { visit_binary(op); }
+  void visit(const logical_or* op) override { visit_binary(op); }
+  void visit(const logical_not* op) override {
+    std::optional<index_t> a = eval_expr(op->a);
+    if (a) {
+      result = *a == 0;
+    } else {
+      result = std::nullopt;
+    }
+  }
+
+  void visit(const class select* op) override {
+    std::optional<index_t> c = eval_expr(op->condition);
+    std::optional<index_t> t = eval_expr(op->true_value);
+    std::optional<index_t> f = eval_expr(op->false_value);
+    if (c && *c && t) {
+      result = *t;
+    } else if (c && !*c && f) {
+      result = *f;
+    } else {
+      result = std::nullopt;
+    }
+  }
+
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
+    case intrinsic::abs: {
+      assert(op->args.size() == 1);
+      std::optional<index_t> x = eval_expr(op->args[0]);
+      if (x) {
+        result = std::abs(*x);
+      } else {
+        result = std::nullopt;
+      }
+      return;
+    }
+
+    default: result = std::nullopt; return;
+    }
+  }
+
+  void visit(const block* op) override { std::abort(); }
+  void visit(const loop* op) override { std::abort(); }
+  void visit(const call_stmt* op) override { std::abort(); }
+  void visit(const copy_stmt* op) override { std::abort(); }
+  void visit(const allocate* op) override { std::abort(); }
+  void visit(const make_buffer* op) override { std::abort(); }
+  void visit(const clone_buffer* op) override { std::abort(); }
+  void visit(const crop_buffer* op) override { std::abort(); }
+  void visit(const crop_dim* op) override { std::abort(); }
+  void visit(const slice_buffer* op) override { std::abort(); }
+  void visit(const slice_dim* op) override { std::abort(); }
+  void visit(const truncate_rank* op) override { std::abort(); }
+  void visit(const check* op) override { std::abort(); }
+};
+
+}  // namespace
+
+std::optional<index_t> evaluate_constant(const expr& e) { return constant_evaluator().eval_expr(e); }
 
 }  // namespace slinky

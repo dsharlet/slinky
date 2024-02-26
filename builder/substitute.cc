@@ -394,6 +394,34 @@ public:
     set_result(v);
   }
 
+  static symbol_id replacement_symbol(const expr& r) {
+    const symbol_id* s = as_variable(r);
+    assert(s);
+    return *s;
+  }
+
+  symbol_id visit_symbol(symbol_id x) {
+    if (std::find(shadowed.begin(), shadowed.end(), x) != shadowed.end()) {
+      // This variable has been shadowed, don't substitute it.
+      return x;
+    } else if (x == target_var && !depends_on(replacement, shadowed).any()) {
+      return replacement_symbol(replacement);
+    } else if (replacements) {
+      std::optional<expr> r = replacements->lookup(x);
+      if (r && !depends_on(*r, shadowed).any()) {
+        return replacement_symbol(*r);
+      }
+    }
+    for (const auto& i : expr_replacements) {
+      const symbol_id* target = as_variable(i.first);
+      if (!target) continue;
+      if (*target == x) {
+        return replacement_symbol(i.second);
+      }
+    }
+    return x;
+  }
+
   template <typename T>
   T mutate_decl_body(symbol_id sym, const T& x) {
     shadowed.push_back(sym);
@@ -677,6 +705,45 @@ public:
   // operations are still valid.
   // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
   // dims.
+
+  void visit(const call_stmt* op) override {
+    call_stmt::symbol_list inputs(op->inputs.size());
+    call_stmt::symbol_list outputs(op->outputs.size());
+    bool changed = false;
+    for (std::size_t i = 0; i < op->inputs.size(); ++i) {
+      inputs[i] = visit_symbol(op->inputs[i]);
+      changed = changed || inputs[i] != op->inputs[i];
+    }
+    for (std::size_t i = 0; i < op->outputs.size(); ++i) {
+      outputs[i] = visit_symbol(op->outputs[i]);
+      changed = changed || outputs[i] != op->outputs[i];
+    }
+    if (changed) {
+      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const copy_stmt* op) override {
+    symbol_id src = visit_symbol(op->src);
+    symbol_id dst = visit_symbol(op->dst);
+    if (src != op->src || dst != op->dst) {
+      set_result(copy_stmt::make(src, op->src_x, dst, op->dst_x, op->padding));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const clone_buffer* op) override {
+    symbol_id src = visit_symbol(op->src);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (src != op->src || !body.same_as(op->body)) {
+      set_result(clone_buffer::make(op->sym, src, std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
 };
 
 template <typename T>
