@@ -130,28 +130,28 @@ TEST(simplify, basic) {
 
 TEST(simplify, let) {
   // lets that should be removed
-  test_simplify(let::make(0, y, z), z);                                // Dead let
-  test_simplify(let::make(0, y * 2, x), y * 2);                        // Single use, substitute
-  test_simplify(let::make(0, y * w, x), y * w);                        // Single use, substitute
-  test_simplify(let::make(0, y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
-  test_simplify(let::make(0, 10, x / x), 1);                           // Trivial value, substitute
-  test_simplify(let::make(0, buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
-  test_simplify(let::make(0, buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
+  test_simplify(let::make(x.sym(), y, z), z);                                // Dead let
+  test_simplify(let::make(x.sym(), y * 2, x), y * 2);                        // Single use, substitute
+  test_simplify(let::make(x.sym(), y * w, x), y * w);                        // Single use, substitute
+  test_simplify(let::make(x.sym(), y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
+  test_simplify(let::make(x.sym(), 10, x / x), 1);                           // Trivial value, substitute
+  test_simplify(let::make(x.sym(), buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
+  test_simplify(let::make(x.sym(), buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
+
   test_simplify(
-    loop::make(x.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(let::make(0, y, z))),
-    loop::make(x.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(z)));  // Trivial value, substitute
+    let_stmt::make(x.sym(), y, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
+    loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
 
   // lets that should be kept
   test_simplify(
-      let::make(0, y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+      let::make(x.sym(), y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 
   test_simplify(
     loop::make(x.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(let::make(0, z * w, y))),
     loop::make(x.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(y)));  // Non-trivial, used in loop
 
-  auto let1 = let::make(0, z * w, y);
   test_simplify(
-    block::make({check::make(let1 > 0), check::make(let1 < 10)}),
+    let_stmt::make(x.sym(), y, block::make({check::make(y > 0), check::make(y < 10)})),
     block::make({check::make(y > 0), check::make(y < 10)}));  // Used twice
 }
 
