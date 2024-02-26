@@ -147,8 +147,8 @@ TEST(simplify, let) {
       let::make(x.sym(), y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 
   test_simplify(
-    loop::make(x.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(let::make(0, z * w, y))),
-    loop::make(x.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(y)));  // Non-trivial, used in loop
+    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
+    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
 
   test_simplify(
     let_stmt::make(x.sym(), y, block::make({check::make(y > 0), check::make(y < 10)})),
