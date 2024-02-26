@@ -8,16 +8,14 @@
 
 #include "runtime/buffer.h"
 
-std::mt19937 rng{};
+std::mt19937& rng() {
+  static std::mt19937 r{(uint64_t)time(nullptr)};
+  return r;
+}
 
 namespace slinky {
 
-int random(int min, int max) {
-  static std::once_flag once;
-  std::call_once(once, [] { rng.seed(time(nullptr)); });
-
-  return rng() % (max - min + 1) + min;
-}
+int random(int min, int max) { return rng()() % (max - min + 1) + min; }
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& buf) {
@@ -41,7 +39,7 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
   std::iota(permutation.begin(), permutation.end(), 0);
   if (random(0, 3) == 0) {
     // Randomize the strides ordering.
-    std::shuffle(permutation.begin(), permutation.end(), rng);
+    std::shuffle(permutation.begin(), permutation.end(), rng());
   }
 
   index_t stride = buf.elem_size;
