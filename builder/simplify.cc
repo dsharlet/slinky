@@ -775,12 +775,7 @@ public:
     if (!crop_needed(depends_on(body, op->sym))) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        if (new_bounds[d].min.defined()) {
-          new_bounds[d].min = max(new_bounds[d].min, buffer_min(sym_var, d));
-        }
-        if (new_bounds[d].max.defined()) {
-          new_bounds[d].max = min(new_bounds[d].max, buffer_max(sym_var, d));
-        }
+        new_bounds[d] &= slinky::buffer_bounds(sym_var, d);
       }
       body = substitute_bounds(body, op->sym, new_bounds);
       set_result(mutate(body));
