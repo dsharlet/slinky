@@ -151,8 +151,8 @@ TEST(simplify, let) {
     let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
 
   test_simplify(
-    let_stmt::make(x.sym(), y, block::make({check::make(y > 0), check::make(y < 10)})),
-    block::make({check::make(y > 0), check::make(y < 10)}));  // Used twice
+    let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})),
+    let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
 }
 
 TEST(simplify, buffer_intrinsics) {
