@@ -681,9 +681,15 @@ public:
     clear_shadowed_bounds(op->sym, bounds);
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
+      return;
+    }
+    if (references[op->sym]->ref_count == 0) {
+      // This make_buffer is unused.
+      set_result(std::move(body));
       return;
     }
 
