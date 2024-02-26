@@ -75,6 +75,7 @@ TEST(simplify, basic) {
   test_simplify(positive_infinity() + negative_infinity(), indeterminate());
   test_simplify(positive_infinity() * positive_infinity(), positive_infinity());
   test_simplify(positive_infinity() * negative_infinity(), negative_infinity());
+  test_simplify(abs(negative_infinity()), positive_infinity());
 
   test_simplify(min(1, 2), 1);
   test_simplify(max(1, 2), 2);

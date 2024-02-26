@@ -312,6 +312,15 @@ public:
           return;
         }
       }
+    } else if (op->intrinsic == intrinsic::abs) {
+      assert(args.size() == 1);
+      if (is_non_negative(args_bounds[0].min)) {
+        set_result(args[0], std::move(args_bounds[0]));
+        return;
+      } else if (is_non_positive(args_bounds[0].max)) {
+        mutate_and_set_result(-args[0]);
+        return;
+      }
     }
 
     expr e = simplify(op, op->intrinsic, std::move(args));

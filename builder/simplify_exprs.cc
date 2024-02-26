@@ -750,9 +750,9 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
 
   rewriter r(e);
   // clang-format off
-  if (r.rewrite(abs(rewrite::negative_infinity()), rewrite::positive_infinity()) || 
-      r.rewrite(abs(-x), abs(x)) ||
-      r.rewrite(abs(abs(x)), abs(x)) ||
+  if (r.rewrite(abs(x * c0), abs(x) * c0, c0 > 0) ||
+      r.rewrite(abs(x * c0), abs(x) * eval(-c0), c0 < 0) ||
+      r.rewrite(abs(c0 - x), abs(x + eval(-c0))) ||
       false) {
     return r.result;
   }
