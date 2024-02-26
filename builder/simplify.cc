@@ -24,7 +24,20 @@ namespace {
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
-  symbol_map<int> references;
+  class symbol_info {
+  public:
+    int ref_count;
+    bool referenced_in_loop;
+
+    symbol_info() = default;
+    symbol_info(int c, int l) : ref_count(c), referenced_in_loop(l) {}
+
+    bool operator==(const symbol_info& r) const {
+      return ref_count == r.ref_count && referenced_in_loop == r.referenced_in_loop;
+    }
+  };
+
+  symbol_map<symbol_info> references;
   symbol_map<box_expr> buffer_bounds;
   symbol_map<bool> bounds_used;
   bounds_map expr_bounds;
@@ -77,7 +90,7 @@ public:
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
     // Visits to variables mutate this state, we don't want to do that while trying to prove some other expression.
-    symbol_map<int> refs;
+    symbol_map<symbol_info> refs;
     std::swap(references, refs);
     mutate(e, &bounds);
     std::swap(references, refs);
@@ -113,12 +126,13 @@ public:
   }
 
   void visit_symbol(symbol_id sym, bool bounds_used = true) {
-    auto& ref_count = references[sym];
-    if (!ref_count) {
-      ref_count = 1;
+    auto& ref_info = references[sym];
+    if (!ref_info) {
+      references[sym] = symbol_info(1, false);
     } else {
-      *ref_count += 1;
+      ref_info->ref_count += 1;
     }
+
     if (bounds_used) {
       this->bounds_used[sym] = true;
     }
@@ -331,11 +345,28 @@ public:
     }
   }
 
+  // Expression is trivial if it is a constant, var or buffer_min / buffer_max
+  static bool is_trivial_let_value(expr& e) {
+    if (e.as<constant>() || e.as<variable>()) {
+      return true;
+    }
+
+    const call* c = e.as<call>();
+    if (c && (c->intrinsic == intrinsic::buffer_min || c->intrinsic == intrinsic::buffer_max)) {
+      assert(c->args.size() == 2);
+      assert(c->args[0].as<variable>());
+      assert(c->args[1].as<constant>());
+      return true;
+    }
+
+    return false;
+  }
+
   void visit(const let* op) override {
     std::vector<std::pair<symbol_id, expr>> lets;
     lets.reserve(op->lets.size());
 
-    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<int>>;
+    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<symbol_info>>;
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
@@ -346,21 +377,22 @@ public:
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
       auto vb = set_value_in_scope(expr_bounds, s.first, value_bounds);
-      auto rc = set_value_in_scope(references, s.first, 0);
+      auto rc = set_value_in_scope(references, s.first, symbol_info());
       scoped_values.emplace_back(std::move(vb), std::move(rc));
     }
 
     interval_expr body_bounds;
     expr body = mutate(op->body, &body_bounds);
 
-    // - Prune dead lets
-    // - Inline single-ref lets, along with lets that are just constants or vars
     for (auto it = lets.begin(); it != lets.end();) {
-      int refs = *references[it->first];
-      if (refs == 0) {
+      auto& ref_info = references[it->first];
+      assert(ref_info);
+      if (ref_info->ref_count == 0) {
+        // Prune dead lets
         it = lets.erase(it);
         values_changed = true;
-      } else if (refs == 1 || it->second.as<constant>() || it->second.as<variable>()) {
+      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
+        // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(std::move(body), it->first, it->second), &body_bounds);
         it = lets.erase(it);
         values_changed = true;
@@ -383,7 +415,7 @@ public:
     std::vector<std::pair<symbol_id, expr>> lets;
     lets.reserve(op->lets.size());
 
-    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<int>>;
+    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<symbol_info>>;
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
@@ -394,7 +426,7 @@ public:
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
       auto vb = set_value_in_scope(expr_bounds, s.first, value_bounds);
-      auto rc = set_value_in_scope(references, s.first, 0);
+      auto rc = set_value_in_scope(references, s.first, symbol_info());
       scoped_values.emplace_back(std::move(vb), std::move(rc));
     }
 
@@ -404,10 +436,16 @@ public:
       return;
     }
 
-    // First, prune any dead lets, and any lets that are just vars
     for (auto it = lets.begin(); it != lets.end();) {
-      int refs = *references[it->first];
-      if (refs == 0 || is_variable(it->second, it->first)) {
+      auto& ref_info = references[it->first];
+      assert(ref_info);
+      if (ref_info->ref_count == 0) {
+        // Prune dead lets
+        it = lets.erase(it);
+        values_changed = true;
+      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
+        // Inline single-ref lets outside of a loop, along with lets that are trivial
+        body = mutate(substitute(std::move(body), it->first, it->second));
         it = lets.erase(it);
         values_changed = true;
       } else {
@@ -425,17 +463,37 @@ public:
     }
   }
 
+  void merge_references(symbol_map<symbol_info> add, bool is_in_loop) {
+    for (symbol_id i = 0; i < add.size(); ++i) {
+      if (!add[i]) continue;
+
+      std::optional<symbol_info>& info = references[i];
+      if (!info) {
+        info = std::move(add[i]);
+      } else {
+        info->ref_count += add[i]->ref_count;
+      }
+
+      info->referenced_in_loop = info->referenced_in_loop || is_in_loop;
+    }
+  }
+
   void visit(const loop* op) override {
+    symbol_map<symbol_info> old_references;
+    std::swap(old_references, references);
+
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
     if (prove_true(bounds.min > bounds.max)) {
       // This loop is dead.
       set_result(stmt());
+      std::swap(references, old_references);
       return;
     } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs once.
       set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
+      merge_references(std::move(old_references), false);
       return;
     }
 
@@ -443,6 +501,7 @@ public:
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
+      std::swap(references, old_references);
       return;
     }
 
@@ -494,6 +553,7 @@ public:
           result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), result);
         }
         set_result(mutate(result));
+        merge_references(std::move(old_references), false);
         return;
       }
     }
@@ -503,6 +563,8 @@ public:
     } else {
       set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
     }
+
+    merge_references(std::move(old_references), true);
   }
 
   void visit(const block* op) override {
@@ -1016,14 +1078,16 @@ public:
 
   void visit(const clone_buffer* op) override {
     visit_symbol(op->src, true);
-    auto set_refs = set_value_in_scope(references, op->sym, 0);
-    std::optional<int> src_refs = references[op->src];
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
+    std::optional<symbol_info> src_refs = references[op->src];
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
     stmt body = mutate(op->body);
+    auto& ref_info = references[op->sym];
+    assert(ref_info);
 
     if (!body.defined()) {
       set_result(stmt());
-    } else if (*references[op->sym] == 0) {
+    } else if (ref_info->ref_count == 0) {
       set_result(std::move(body));
     } else if (references[op->src] == src_refs) {
       // We didn't use the original buffer. We can just use that instead.

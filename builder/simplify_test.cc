@@ -131,14 +131,29 @@ TEST(simplify, basic) {
 
 TEST(simplify, let) {
   // lets that should be removed
-  test_simplify(let::make(0, y, z), z);                      // Dead let
-  test_simplify(let::make(0, y * 2, x), y * 2);              // Single use, substitute
-  test_simplify(let::make(0, y, (x + 1) / x), (y + 1) / y);  // Trivial value, substitute
-  test_simplify(let::make(0, 10, x / x), 1);                 // Trivial value, substitute
+  test_simplify(let::make(x.sym(), y, z), z);                                // Dead let
+  test_simplify(let::make(x.sym(), y * 2, x), y * 2);                        // Single use, substitute
+  test_simplify(let::make(x.sym(), y * w, x), y * w);                        // Single use, substitute
+  test_simplify(let::make(x.sym(), y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
+  test_simplify(let::make(x.sym(), 10, x / x), 1);                           // Trivial value, substitute
+  test_simplify(let::make(x.sym(), buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
+  test_simplify(let::make(x.sym(), buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
+
+  test_simplify(
+    let_stmt::make(x.sym(), y, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
+    loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
 
   // lets that should be kept
   test_simplify(
-      let::make(0, y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+      let::make(x.sym(), y * 2, (x + 1) / x), let::make(x.sym(), y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+
+  test_simplify(
+    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
+    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
+
+  test_simplify(
+    let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})),
+    let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
 }
 
 TEST(simplify, buffer_intrinsics) {
