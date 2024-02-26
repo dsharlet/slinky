@@ -26,20 +26,19 @@ namespace {
 class simplifier : public node_mutator {
   class symbol_info {
   public:
-    int ref_count;
-    bool referenced_in_loop;
+    int ref_count = 0;
+    bool used_in_loop = false;
+    bool bounds_used = false;
 
     symbol_info() = default;
-    symbol_info(int c, int l) : ref_count(c), referenced_in_loop(l) {}
 
     bool operator==(const symbol_info& r) const {
-      return ref_count == r.ref_count && referenced_in_loop == r.referenced_in_loop;
+      return ref_count == r.ref_count && used_in_loop == r.used_in_loop && bounds_used == r.bounds_used;
     }
   };
 
   symbol_map<symbol_info> references;
   symbol_map<box_expr> buffer_bounds;
-  symbol_map<bool> bounds_used;
   bounds_map expr_bounds;
 
   interval_expr result_bounds;
@@ -128,13 +127,12 @@ public:
   void visit_symbol(symbol_id sym, bool bounds_used = true) {
     auto& ref_info = references[sym];
     if (!ref_info) {
-      references[sym] = symbol_info(1, false);
-    } else {
-      ref_info->ref_count += 1;
+      references[sym] = symbol_info();
     }
 
+    ref_info->ref_count += 1;
     if (bounds_used) {
-      this->bounds_used[sym] = true;
+      ref_info->bounds_used = true;
     }
   }
 
@@ -391,7 +389,7 @@ public:
         // Prune dead lets
         it = lets.erase(it);
         values_changed = true;
-      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
+      } else if ((ref_info->ref_count == 1 && !ref_info->used_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(body, it->first, it->second), &body_bounds);
         it = lets.erase(it);
@@ -443,7 +441,7 @@ public:
         // Prune dead lets
         it = lets.erase(it);
         values_changed = true;
-      } else if ((ref_info->ref_count == 1 && !ref_info->referenced_in_loop) || is_trivial_let_value(it->second)) {
+      } else if ((ref_info->ref_count == 1 && !ref_info->used_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(body, it->first, it->second));
         it = lets.erase(it);
@@ -474,7 +472,7 @@ public:
         info->ref_count += add[i]->ref_count;
       }
 
-      info->referenced_in_loop = info->referenced_in_loop || is_in_loop;
+      info->used_in_loop = info->used_in_loop || is_in_loop;
     }
   }
 
@@ -839,6 +837,10 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
+    // Crops both use the existing symbol, and also shadow it with a new definition.
+    visit_symbol(op->sym, true);
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
+
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
       // Add clamps for the implicit bounds like crop would have done.
@@ -850,10 +852,9 @@ public:
       return;
     }
     {
-      auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
       body = mutate(body);
-      if (!body.defined() || !*bounds_used[op->sym]) {
+      if (!body.defined() || !references[op->sym]->bounds_used) {
         set_result(body);
         return;
       }
@@ -911,6 +912,10 @@ public:
       clear_shadowed_bounds(op->sym, (*buf_bounds)[op->dim]);
     }
 
+    // Crops both use the existing symbol, and also shadow it with a new definition.
+    visit_symbol(op->sym, true);
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
+
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
       body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
@@ -918,10 +923,9 @@ public:
       return;
     }
     {
-      auto set_bounds_used = set_value_in_scope(bounds_used, op->sym, false);
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
       body = mutate(body);
-      if (!body.defined() || !*bounds_used[op->sym]) {
+      if (!body.defined() || !references[op->sym]->bounds_used) {
         set_result(body);
         return;
       }
@@ -979,6 +983,11 @@ public:
         ++dims_count;
       }
     }
+
+    // Slices use the existing symbol, and shadow it with a new symbol. The bounds are modified, but not actually used.
+    visit_symbol(op->sym, false);
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
+
     stmt body = op->body;
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
@@ -1027,6 +1036,10 @@ public:
       }
     }
 
+    // Slices use the existing symbol, and shadow it with a new symbol. The bounds are modified, but not actually used.
+    visit_symbol(op->sym, false);
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
+
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
       body = mutate(body);
@@ -1060,6 +1073,11 @@ public:
         return;
       }
     }
+
+    // Truncates use the existing symbol, and shadow it with a new symbol. The bounds are modified, but not actually
+    // used.
+    visit_symbol(op->sym, false);
+    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
 
     stmt body;
     {
