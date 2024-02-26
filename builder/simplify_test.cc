@@ -144,7 +144,7 @@ TEST(simplify, let) {
 
   // lets that should be kept
   test_simplify(
-      let::make(x.sym(), y * 2, (x + 1) / x), let::make(0, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+      let::make(x.sym(), y * 2, (x + 1) / x), let::make(x.sym(), y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 
   test_simplify(
     let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
