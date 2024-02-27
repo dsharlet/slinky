@@ -12,8 +12,6 @@ struct depends_on_result {
 
   // The remaining fields all indicate the symbol is used as a buffer.
   bool buffer = false;
-  // True if the buffer's base pointer is used.
-  bool buffer_base = false;
   // True if the buffer is used as a call input or output, respectively.
   bool buffer_input = false;
   bool buffer_output = false;
@@ -21,10 +19,21 @@ struct depends_on_result {
   bool buffer_src = false;
   bool buffer_dst = false;
 
+  // How many references there are.
+  int ref_count = 0;
+
+  // True if any reference is in a loop.
+  bool used_in_loop = false;
+
   bool any() const { return var || buffer; }
 };
 
 // Check if the node depends on a symbol or set of symbols.
+
+void depends_on(const expr& e, span<const std::pair<symbol_id, depends_on_result&>> var_deps);
+void depends_on(const stmt& s, span<const std::pair<symbol_id, depends_on_result&>> var_deps);
+void depends_on(const expr& e, symbol_id var, depends_on_result& deps);
+void depends_on(const stmt& s, symbol_id var, depends_on_result& deps);
 depends_on_result depends_on(const expr& e, symbol_id var);
 depends_on_result depends_on(const interval_expr& e, symbol_id var);
 depends_on_result depends_on(const stmt& s, symbol_id var);

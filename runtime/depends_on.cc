@@ -11,27 +11,30 @@ namespace {
 
 class dependencies : public recursive_node_visitor {
 public:
-  span<const symbol_id> vars;
-  depends_on_result result;
+  span<const std::pair<symbol_id, depends_on_result&>> var_deps;
+  std::vector<symbol_id> shadowed;
 
-  dependencies(span<const symbol_id> vars) : vars(vars) {}
+  dependencies(span<const std::pair<symbol_id, depends_on_result&>> var_deps) : var_deps(var_deps) {}
 
-  bool vars_contains(symbol_id i) const { return std::find(vars.begin(), vars.end(), i) != vars.end(); }
-
-  void accept_buffer(const expr& e, bool uses_base) {
-    bool old_found_var = result.var;
-    result.var = false;
-    e.accept(this);
-    result.buffer = result.buffer || result.var;
-    result.buffer_base = result.buffer_base || (uses_base && result.var);
-    result.var = old_found_var;
+  template <typename Fn>
+  void update_deps(symbol_id i, Fn fn) {
+    for (const auto& v : var_deps) {
+      if (v.first == i) {
+        fn(v.second);
+        v.second.ref_count++;
+      }
+    }
   }
 
-  void visit(const variable* op) override { result.var = result.var || vars_contains(op->sym); }
+  void visit(const variable* op) override {
+    update_deps(op->sym, [](depends_on_result& deps) { deps.var = true; });
+  }
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
-      accept_buffer(op->args[0], op->intrinsic == intrinsic::buffer_at);
+      const symbol_id* buf = as_variable(op->args[0]);
+      assert(buf);
+      update_deps(*buf, [](depends_on_result& deps) { deps.buffer = true; });
 
       for (std::size_t i = 1; i < op->args.size(); ++i) {
         if (op->args[i].defined()) op->args[i].accept(this);
@@ -41,75 +44,191 @@ public:
     }
   }
 
-  void visit(const call_stmt* op) override {
-    for (symbol_id i : op->inputs) {
-      if (vars_contains(i)) {
-        result.buffer = true;
-        result.buffer_input = true;
+  template <typename T>
+  void visit_let(const T* op) {
+    for (const auto& p : op->lets) {
+      p.second.accept(this);
+      shadowed.push_back(p.first);
+    }
+    op->body.accept(this);
+    for (const auto& p : op->lets) {
+      shadowed.pop_back();
+    }
+  }
+
+  template <typename T>
+  void visit_sym_body(const T* op) {
+    if (!op->body.defined()) return;
+    shadowed.push_back(op->sym);
+    op->body.accept(this);
+    shadowed.pop_back();
+  }
+
+  void visit(const loop* op) override {
+    op->bounds.min.accept(this);
+    op->bounds.max.accept(this);
+    if (op->step.defined()) op->step.accept(this);
+
+    std::vector<int> old_ref_count(var_deps.size());
+    for (std::size_t i = 0; i < var_deps.size(); ++i) {
+      old_ref_count[i] = var_deps[i].second.ref_count;
+    }
+
+    visit_sym_body(op);
+
+    for (std::size_t i = 0; i < var_deps.size(); ++i) {
+      if (var_deps[i].second.ref_count > old_ref_count[i]) {
+        var_deps[i].second.used_in_loop = true;
       }
     }
+  }
+
+  void visit(const call_stmt* op) override {
+    for (symbol_id i : op->inputs) {
+      update_deps(i, [](depends_on_result& deps) {
+        deps.buffer = true;
+        deps.buffer_input = true;
+      });
+    }
     for (symbol_id i : op->outputs) {
-      if (vars_contains(i)) {
-        result.buffer = true;
-        result.buffer_output = true;
-      }
+      update_deps(i, [](depends_on_result& deps) {
+        deps.buffer = true;
+        deps.buffer_output = true;
+      });
     }
   }
 
   void visit(const copy_stmt* op) override {
-    if (vars_contains(op->src)) {
-      result.buffer = true;
-      result.buffer_src = true;
-    }
-    if (vars_contains(op->dst)) {
-      result.buffer = true;
-      result.buffer_dst = true;
+    update_deps(op->src, [](depends_on_result& deps) {
+      deps.buffer = true;
+      deps.buffer_src = true;
+    });
+    update_deps(op->dst, [](depends_on_result& deps) {
+      deps.buffer = true;
+      deps.buffer_dst = true;
+    });
+    for (const expr& i : op->src_x) {
+      i.accept(this);
     }
   }
 
   void visit(const clone_buffer* op) override {
-    if (vars_contains(op->src)) {
-      result.buffer = true;
-      result.buffer_base = true;
+    update_deps(op->src, [](depends_on_result& deps) { deps.buffer = true; });
+    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer = true; });
+    visit_sym_body(op);
+  }
+
+  void visit(const allocate* op) override {
+    for (const dim_expr& i : op->dims) {
+      i.bounds.min.accept(this);
+      i.bounds.max.accept(this);
+      i.stride.accept(this);
+      if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    recursive_node_visitor::visit(op);
+    visit_sym_body(op);
+  }
+  void visit(const make_buffer* op) override {
+    op->base.accept(this);
+    op->elem_size.accept(this);
+    for (const dim_expr& i : op->dims) {
+      i.bounds.min.accept(this);
+      i.bounds.max.accept(this);
+      i.stride.accept(this);
+      if (i.fold_factor.defined()) i.fold_factor.accept(this);
+    }
+    visit_sym_body(op);
+  }
+  void visit(const crop_buffer* op) override {
+    for (const interval_expr& i : op->bounds) {
+      if (i.min.defined()) i.min.accept(this);
+      if (i.max.defined()) i.max.accept(this);
+    }
+    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer = true; });
+    visit_sym_body(op);
+  }
+  void visit(const crop_dim* op) override {
+    if (op->bounds.min.defined()) op->bounds.min.accept(this);
+    if (op->bounds.max.defined()) op->bounds.max.accept(this);
+    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer = true; });
+    visit_sym_body(op);
+  }
+  void visit(const slice_buffer* op) override {
+    for (const expr& i : op->at) {
+      if (i.defined()) i.accept(this);
+    }
+    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer = true; });
+    visit_sym_body(op);
+  }
+  void visit(const slice_dim* op) override {
+    op->at.accept(this);
+    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer = true; });
+    visit_sym_body(op);
+  }
+  void visit(const truncate_rank* op) override {
+    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer = true; });
+    visit_sym_body(op);
   }
 };
 
 }  // namespace
 
-depends_on_result depends_on(const expr& e, symbol_id var) {
-  symbol_id vars[] = {var};
-  dependencies v(vars);
+void depends_on(const expr& e, span<const std::pair<symbol_id, depends_on_result&>> var_deps) {
+  dependencies v(var_deps);
   if (e.defined()) e.accept(&v);
-  return v.result;
+}
+
+void depends_on(const stmt& s, span<const std::pair<symbol_id, depends_on_result&>> var_deps) {
+  dependencies v(var_deps);
+  if (s.defined()) s.accept(&v);
+}
+
+void depends_on(const expr& e, symbol_id var, depends_on_result& deps) {
+  std::pair<symbol_id, depends_on_result&> var_deps[] = {{var, deps}};
+  depends_on(e, var_deps);
+}
+
+void depends_on(const stmt& s, symbol_id var, depends_on_result& deps) {
+  std::pair<symbol_id, depends_on_result&> var_deps[] = {{var, deps}};
+  depends_on(s, var_deps);
+}
+
+depends_on_result depends_on(const expr& e, symbol_id var) {
+  depends_on_result r;
+  depends_on(e, var, r);
+  return r;
 }
 
 depends_on_result depends_on(const interval_expr& e, symbol_id var) {
-  symbol_id vars[] = {var};
-  dependencies v(vars);
-  if (e.min.defined()) e.min.accept(&v);
-  if (e.max.defined()) e.max.accept(&v);
-  return v.result;
+  depends_on_result r;
+  depends_on(e.min, var, r);
+  depends_on(e.max, var, r);
+  return r;
 }
 
 depends_on_result depends_on(const stmt& s, symbol_id var) {
-  symbol_id vars[] = {var};
-  dependencies v(vars);
-  if (s.defined()) s.accept(&v);
-  return v.result;
+  depends_on_result r;
+  depends_on(s, var, r);
+  return r;
 }
 
 depends_on_result depends_on(const expr& e, span<const symbol_id> vars) {
-  dependencies v(vars);
-  if (e.defined()) e.accept(&v);
-  return v.result;
+  depends_on_result r;
+  std::vector<std::pair<symbol_id, depends_on_result&>> var_deps;
+  for (symbol_id i : vars) {
+    var_deps.push_back({i, r});
+  }
+  depends_on(e, var_deps);
+  return r;
 }
 
 depends_on_result depends_on(const stmt& s, span<const symbol_id> vars) {
-  dependencies v(vars);
-  if (s.defined()) s.accept(&v);
-  return v.result;
+  depends_on_result r;
+  std::vector<std::pair<symbol_id, depends_on_result&>> var_deps;
+  for (symbol_id i : vars) {
+    var_deps.push_back({i, r});
+  }
+  depends_on(s, var_deps);
+  return r;
 }
 
 }  // namespace slinky
