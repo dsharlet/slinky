@@ -53,6 +53,8 @@ class simplifier : public node_mutator {
     result_bounds = interval_expr();
     node_mutator::set_result(std::move(s));
   }
+  // Dummy for template code.
+  void set_result(stmt s, interval_expr) { set_result(std::move(s)); }
 
 public:
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
@@ -68,8 +70,10 @@ public:
     }
     return result;
   }
+  // Dummy for template code.
+  stmt mutate(const stmt& s, interval_expr* bounds) { return node_mutator::mutate(s); }
   expr mutate(const expr& e) override { return mutate(e, nullptr); }
-  stmt mutate(const stmt& s) override { return node_mutator::mutate(s); }
+  stmt mutate(const stmt& s) override { return mutate(s, nullptr); }
 
   void mutate_and_set_result(const expr& e) {
     assert(!result_bounds.min.defined() && !result_bounds.max.defined());
@@ -360,7 +364,8 @@ public:
     return false;
   }
 
-  void visit(const let* op) override {
+  template <typename T>
+  void visit_let(const T* op) {
     std::vector<std::pair<symbol_id, expr>> lets;
     lets.reserve(op->lets.size());
 
@@ -380,7 +385,7 @@ public:
     }
 
     interval_expr body_bounds;
-    expr body = mutate(op->body, &body_bounds);
+    auto body = mutate(op->body, &body_bounds);
 
     for (auto it = lets.begin(); it != lets.end();) {
       auto& ref_info = references[it->first];
@@ -405,61 +410,12 @@ public:
     } else if (!values_changed && body.same_as(op->body)) {
       set_result(op, std::move(body_bounds));
     } else {
-      set_result(let::make(std::move(lets), std::move(body)), std::move(body_bounds));
+      set_result(T::make(std::move(lets), std::move(body)), std::move(body_bounds));
     }
   }
 
-  void visit(const let_stmt* op) override {
-    std::vector<std::pair<symbol_id, expr>> lets;
-    lets.reserve(op->lets.size());
-
-    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<symbol_info>>;
-    std::vector<sv_type> scoped_values;
-    scoped_values.reserve(op->lets.size());
-
-    bool values_changed = false;
-    for (const auto& s : op->lets) {
-      interval_expr value_bounds;
-      lets.emplace_back(s.first, mutate(s.second, &value_bounds));
-      values_changed = values_changed || !lets.back().second.same_as(s.second);
-
-      auto vb = set_value_in_scope(expr_bounds, s.first, value_bounds);
-      auto rc = set_value_in_scope(references, s.first, symbol_info());
-      scoped_values.emplace_back(std::move(vb), std::move(rc));
-    }
-
-    stmt body = mutate(op->body);
-    if (!body.defined()) {
-      set_result(stmt());
-      return;
-    }
-
-    for (auto it = lets.begin(); it != lets.end();) {
-      auto& ref_info = references[it->first];
-      assert(ref_info);
-      if (ref_info->ref_count == 0) {
-        // Prune dead lets
-        it = lets.erase(it);
-        values_changed = true;
-      } else if ((ref_info->ref_count == 1 && !ref_info->used_in_loop) || is_trivial_let_value(it->second)) {
-        // Inline single-ref lets outside of a loop, along with lets that are trivial
-        body = mutate(substitute(body, it->first, it->second));
-        it = lets.erase(it);
-        values_changed = true;
-      } else {
-        it++;
-      }
-    }
-
-    if (lets.empty()) {
-      // All lets were pruned.
-      set_result(body);
-    } else if (!values_changed && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(let_stmt::make(std::move(lets), std::move(body)));
-    }
-  }
+  void visit(const let* op) override { visit_let(op); }
+  void visit(const let_stmt* op) override { visit_let(op); }
 
   void merge_references(symbol_map<symbol_info> add, bool is_in_loop) {
     for (symbol_id i = 0; i < add.size(); ++i) {
