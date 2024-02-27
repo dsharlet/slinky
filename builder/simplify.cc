@@ -355,6 +355,7 @@ public:
     auto body = mutate(op->body, &body_bounds);
 
     for (auto it = lets.rbegin(); it != lets.rend();) {
+      scoped_values.pop_back();
       auto deps = depends_on(body, it->first);
       // Find any deps on this variable in the inner let values.
       for (auto inner = lets.rbegin(); inner != it; ++inner) {
@@ -373,7 +374,6 @@ public:
       } else {
         ++it;
       }
-      scoped_values.pop_back();
     }
 
     if (lets.empty()) {
