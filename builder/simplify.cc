@@ -24,20 +24,6 @@ namespace {
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
-  class symbol_info {
-  public:
-    int ref_count = 0;
-    bool used_in_loop = false;
-    bool bounds_used = false;
-
-    symbol_info() = default;
-
-    bool operator==(const symbol_info& r) const {
-      return ref_count == r.ref_count && used_in_loop == r.used_in_loop && bounds_used == r.bounds_used;
-    }
-  };
-
-  symbol_map<symbol_info> references;
   symbol_map<box_expr> buffer_bounds;
   bounds_map expr_bounds;
 
@@ -92,11 +78,7 @@ public:
 
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
-    // Visits to variables mutate this state, we don't want to do that while trying to prove some other expression.
-    symbol_map<symbol_info> refs;
-    std::swap(references, refs);
     mutate(e, &bounds);
-    std::swap(references, refs);
     if (is_true(bounds.min)) {
       return true;
     } else if (is_false(bounds.max)) {
@@ -128,20 +110,7 @@ public:
     return result && *result == 0;
   }
 
-  void visit_symbol(symbol_id sym, bool bounds_used = true) {
-    auto& ref_info = references[sym];
-    if (!ref_info) {
-      references[sym] = symbol_info();
-    }
-
-    ref_info->ref_count += 1;
-    if (bounds_used) {
-      ref_info->bounds_used = true;
-    }
-  }
-
   void visit(const variable* op) override {
-    visit_symbol(op->sym);
     std::optional<interval_expr> bounds = expr_bounds[op->sym];
     if (bounds) {
       set_result(op, std::move(*bounds));
@@ -369,7 +338,7 @@ public:
     std::vector<std::pair<symbol_id, expr>> lets;
     lets.reserve(op->lets.size());
 
-    using sv_type = std::pair<scoped_value_in_symbol_map<interval_expr>, scoped_value_in_symbol_map<symbol_info>>;
+    using sv_type = scoped_value_in_symbol_map<interval_expr>;
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
@@ -379,29 +348,32 @@ public:
       lets.emplace_back(s.first, mutate(s.second, &value_bounds));
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
-      auto vb = set_value_in_scope(expr_bounds, s.first, value_bounds);
-      auto rc = set_value_in_scope(references, s.first, symbol_info());
-      scoped_values.emplace_back(std::move(vb), std::move(rc));
+      scoped_values.push_back(set_value_in_scope(expr_bounds, s.first, value_bounds));
     }
 
     interval_expr body_bounds;
     auto body = mutate(op->body, &body_bounds);
 
-    for (auto it = lets.begin(); it != lets.end();) {
-      auto& ref_info = references[it->first];
-      assert(ref_info);
-      if (ref_info->ref_count == 0) {
+    for (auto it = lets.rbegin(); it != lets.rend();) {
+      auto deps = depends_on(body, it->first);
+      // Find any deps on this variable in the inner let values.
+      for (auto inner = lets.rbegin(); inner != it; ++inner) {
+        depends_on(inner->second, it->first, deps);
+      }
+
+      if (deps.ref_count == 0) {
         // Prune dead lets
-        it = lets.erase(it);
+        it = std::reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
-      } else if ((ref_info->ref_count == 1 && !ref_info->used_in_loop) || is_trivial_let_value(it->second)) {
+      } else if ((deps.ref_count == 1 && !deps.used_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(body, it->first, it->second), &body_bounds);
-        it = lets.erase(it);
+        it = std::reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
       } else {
-        it++;
+        ++it;
       }
+      scoped_values.pop_back();
     }
 
     if (lets.empty()) {
@@ -417,37 +389,17 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  void merge_references(symbol_map<symbol_info> add, bool is_in_loop) {
-    for (symbol_id i = 0; i < add.size(); ++i) {
-      if (!add[i]) continue;
-
-      std::optional<symbol_info>& info = references[i];
-      if (!info) {
-        info = std::move(add[i]);
-      } else {
-        info->ref_count += add[i]->ref_count;
-      }
-
-      info->used_in_loop = info->used_in_loop || is_in_loop;
-    }
-  }
-
   void visit(const loop* op) override {
-    symbol_map<symbol_info> old_references;
-    std::swap(old_references, references);
-
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
     if (prove_true(bounds.min > bounds.max)) {
       // This loop is dead.
       set_result(stmt());
-      std::swap(references, old_references);
       return;
     } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs once.
       set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
-      merge_references(std::move(old_references), false);
       return;
     }
 
@@ -455,7 +407,6 @@ public:
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
-      std::swap(references, old_references);
       return;
     }
 
@@ -507,7 +458,6 @@ public:
           result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), result);
         }
         set_result(mutate(result));
-        merge_references(std::move(old_references), false);
         return;
       }
     }
@@ -517,8 +467,6 @@ public:
     } else {
       set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
     }
-
-    merge_references(std::move(old_references), true);
   }
 
   void visit(const block* op) override {
@@ -535,22 +483,6 @@ public:
     } else {
       set_result(block::make(std::move(stmts)));
     }
-  }
-
-  void visit(const call_stmt* op) override {
-    for (symbol_id i : op->inputs) {
-      visit_symbol(i, /*bounds_used=*/false);
-    }
-    for (symbol_id o : op->outputs) {
-      visit_symbol(o);
-    }
-    node_mutator::visit(op);
-  }
-
-  void visit(const copy_stmt* op) override {
-    visit_symbol(op->src);
-    visit_symbol(op->dst);
-    node_mutator::visit(op);
   }
 
   // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
@@ -635,13 +567,13 @@ public:
     clear_shadowed_bounds(op->sym, bounds);
 
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
     stmt body = mutate(op->body);
     if (!body.defined()) {
       set_result(stmt());
       return;
     }
-    if (references[op->sym]->ref_count == 0) {
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       // This make_buffer is unused.
       set_result(std::move(body));
       return;
@@ -793,10 +725,6 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    // Crops both use the existing symbol, and also shadow it with a new definition.
-    visit_symbol(op->sym, true);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
-
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
       // Add clamps for the implicit bounds like crop would have done.
@@ -810,7 +738,8 @@ public:
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
       body = mutate(body);
-      if (!body.defined() || !references[op->sym]->bounds_used) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
         set_result(body);
         return;
       }
@@ -868,10 +797,6 @@ public:
       clear_shadowed_bounds(op->sym, (*buf_bounds)[op->dim]);
     }
 
-    // Crops both use the existing symbol, and also shadow it with a new definition.
-    visit_symbol(op->sym, true);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
-
     stmt body = op->body;
     if (!crop_needed(depends_on(body, op->sym))) {
       body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
@@ -881,7 +806,8 @@ public:
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
       body = mutate(body);
-      if (!body.defined() || !references[op->sym]->bounds_used) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
         set_result(body);
         return;
       }
@@ -940,16 +866,13 @@ public:
       }
     }
 
-    // Slices use the existing symbol, and shadow it with a new symbol. The bounds are modified, but not actually used.
-    visit_symbol(op->sym, false);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
-
     stmt body = op->body;
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
       body = mutate(body);
     }
-    if (!body.defined()) {
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       set_result(stmt());
       return;
     }
@@ -992,15 +915,12 @@ public:
       }
     }
 
-    // Slices use the existing symbol, and shadow it with a new symbol. The bounds are modified, but not actually used.
-    visit_symbol(op->sym, false);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
-
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
       body = mutate(body);
     }
-    if (!body.defined()) {
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       set_result(stmt());
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
@@ -1030,17 +950,13 @@ public:
       }
     }
 
-    // Truncates use the existing symbol, and shadow it with a new symbol. The bounds are modified, but not actually
-    // used.
-    visit_symbol(op->sym, false);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
-
     stmt body;
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
       body = mutate(op->body);
     }
-    if (!body.defined()) {
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       set_result(stmt());
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
@@ -1057,19 +973,13 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    visit_symbol(op->src, true);
-    auto set_refs = set_value_in_scope(references, op->sym, symbol_info());
-    std::optional<symbol_info> src_refs = references[op->src];
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
     stmt body = mutate(op->body);
-    auto& ref_info = references[op->sym];
-    assert(ref_info);
 
-    if (!body.defined()) {
-      set_result(stmt());
-    } else if (ref_info->ref_count == 0) {
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       set_result(std::move(body));
-    } else if (references[op->src] == src_refs) {
+    } else if (!depends_on(body, op->src).any()) {
       // We didn't use the original buffer. We can just use that instead.
       // TODO: We could do this even if the buffer is used, as long as it is not mutated.
       set_result(substitute(body, op->sym, variable::make(op->src)));
