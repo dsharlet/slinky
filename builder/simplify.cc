@@ -726,7 +726,15 @@ public:
     clear_shadowed_bounds(op->sym, bounds);
 
     stmt body = op->body;
-    if (!crop_needed(depends_on(body, op->sym))) {
+    {
+      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
+      body = mutate(body);
+    }
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
+      set_result(body);
+      return;
+    } else if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
         new_bounds[d] &= slinky::buffer_bounds(sym_var, d);
@@ -734,15 +742,6 @@ public:
       body = substitute_bounds(body, op->sym, new_bounds);
       set_result(mutate(body));
       return;
-    }
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(body);
-      auto deps = depends_on(body, op->sym);
-      if (!deps.any()) {
-        set_result(body);
-        return;
-      }
     }
 
     // Remove trailing undefined bounds.
@@ -798,19 +797,18 @@ public:
     }
 
     stmt body = op->body;
-    if (!crop_needed(depends_on(body, op->sym))) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
-      set_result(mutate(body));
-      return;
-    }
     {
       auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
       body = mutate(body);
-      auto deps = depends_on(body, op->sym);
-      if (!deps.any()) {
-        set_result(body);
-        return;
-      }
+    }
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
+      set_result(body);
+      return;
+    } else if (!crop_needed(deps)) {
+      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
+      set_result(mutate(body));
+      return;
     }
 
     if (const slice_dim* slice = body.as<slice_dim>()) {
@@ -847,30 +845,43 @@ public:
     }
   }
 
+  static void update_sliced_buffer_metadata(bounds_map& bounds, symbol_id sym, span<const int> sliced) {
+    for (std::optional<interval_expr>& i : bounds) {
+      if (!i) continue;
+      i->min = slinky::update_sliced_buffer_metadata(i->min, sym, sliced);
+      i->max = slinky::update_sliced_buffer_metadata(i->max, sym, sliced);
+    }
+  }
+  static void update_sliced_buffer_metadata(symbol_map<box_expr>& bounds, symbol_id sym, span<const int> sliced) {
+    for (std::optional<box_expr>& i : bounds) {
+      if (!i) continue;
+      for (interval_expr& j : *i) {
+        j.min = slinky::update_sliced_buffer_metadata(j.min, sym, sliced);
+        j.max = slinky::update_sliced_buffer_metadata(j.max, sym, sliced);
+      }
+    }
+  }
+
   void visit(const slice_buffer* op) override {
-    // Update the bounds for the slice. Sliced dimensions are removed from the bounds.
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
     std::vector<expr> at(op->at.size());
-    std::size_t dims_count = 0;
+    std::vector<int> sliced_dims;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->at.size()); ++i) {
       if (op->at[i].defined()) {
         at[i] = mutate(op->at[i]);
         changed = changed || !at[i].same_as(op->at[i]);
-
-        // We sliced this dimension. Remove it from the bounds.
-        if (bounds && i < static_cast<index_t>(bounds->size())) {
-          bounds->erase(bounds->begin() + i);
-        }
-        ++dims_count;
+        sliced_dims.push_back(i);
       }
     }
 
-    stmt body = op->body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(body);
-    }
+    symbol_map<box_expr> old_buffer_bounds = buffer_bounds;
+    bounds_map old_expr_bounds = expr_bounds;
+    update_sliced_buffer_metadata(buffer_bounds, op->sym, sliced_dims);
+    update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
+    stmt body = mutate(op->body);
+    buffer_bounds = std::move(old_buffer_bounds);
+    expr_bounds = std::move(old_expr_bounds);
+
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(stmt());
@@ -892,7 +903,7 @@ public:
         stmts.push_back(mutate(slice_buffer::make(op->sym, at, s)));
       }
       set_result(block::make(std::move(stmts)));
-    } else if (dims_count == 1) {
+    } else if (sliced_dims.size() == 1) {
       // This slice is of one dimension, replace it with slice_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(at.size()) - 1;
@@ -907,18 +918,15 @@ public:
   void visit(const slice_dim* op) override {
     expr at = mutate(op->at);
 
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    stmt body = op->body;
-    if (bounds) {
-      if (op->dim < static_cast<index_t>(bounds->size())) {
-        bounds->erase(bounds->begin() + op->dim);
-      }
-    }
+    symbol_map<box_expr> old_buffer_bounds = buffer_bounds;
+    bounds_map old_expr_bounds = expr_bounds;
+    int sliced_dims[] = {op->dim};
+    update_sliced_buffer_metadata(buffer_bounds, op->sym, sliced_dims);
+    update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
+    stmt body = mutate(op->body);
+    buffer_bounds = std::move(old_buffer_bounds);
+    expr_bounds = std::move(old_expr_bounds);
 
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(body);
-    }
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(stmt());
@@ -976,8 +984,7 @@ public:
     auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
     stmt body = mutate(op->body);
 
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
+    if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
     } else if (!depends_on(body, op->src).any()) {
       // We didn't use the original buffer. We can just use that instead.
