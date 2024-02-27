@@ -501,70 +501,6 @@ public:
   }
 
   stmt mutate_slice_body(symbol_id sym, span<const int> slices, stmt body) {
-    // Rewrite buffer metadata accessing dimensions of sliced buffers to refer to the correct dimension.
-    class rewriter : public node_mutator {
-      symbol_id sym;
-      span<const int> slices;
-
-    public:
-      rewriter(symbol_id sym, span<const int> slices) : sym(sym), slices(slices) {}
-
-      void visit(const call* op) override {
-        switch (op->intrinsic) {
-        case intrinsic::buffer_min:
-        case intrinsic::buffer_max:
-        case intrinsic::buffer_stride:
-        case intrinsic::buffer_fold_factor:
-        case intrinsic::buffer_extent:
-          if (is_variable(op->args[0], sym)) {
-            const index_t* dim = as_constant(op->args[1]);
-            assert(dim);
-            index_t new_dim = *dim;
-            for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
-              if (slices[i] == new_dim) {
-                // This dimension is gone.
-                set_result(expr());
-                return;
-              } else if (slices[i] < new_dim) {
-                --new_dim;
-              }
-            }
-            if (new_dim != *dim) {
-              set_result(call::make(op->intrinsic, {op->args[0], new_dim}));
-            } else {
-              set_result(op);
-            }
-            return;
-          }
-          break;
-        case intrinsic::buffer_at:
-          if (is_variable(op->args[0], sym)) {
-            std::vector<expr> args = op->args;
-            for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
-              if (slices[i] + 1 < static_cast<int>(args.size())) {
-                args.erase(args.begin() + slices[i] + 1);
-              }
-            }
-            bool changed = args.size() < op->args.size();
-            for (expr& i : args) {
-              expr new_i = mutate(i);
-              changed = changed || !new_i.same_as(i);
-              i = new_i;
-            }
-            if (changed) {
-              set_result(call::make(intrinsic::buffer_at, std::move(args)));
-            } else {
-              set_result(op);
-            }
-            return;
-          }
-          break;
-        default: break;
-        }
-        node_mutator::visit(op);
-      }
-    } r(sym, slices);
-
     const symbol_map<expr>* old_replacements = replacements;
     expr old_replacement = replacement;
     span<const std::pair<expr, expr>> old_expr_replacements = expr_replacements;
@@ -573,17 +509,18 @@ public:
     if (replacements) {
       new_replacements = *replacements;
       for (std::optional<expr>& i : new_replacements) {
-        if (i) i = r.mutate(*i);
+        if (i) i = update_sliced_buffer_metadata(*i, sym, slices);
       }
       replacements = &new_replacements;
     }
 
-    replacement = r.mutate(replacement);
+    replacement = update_sliced_buffer_metadata(replacement, sym, slices);
 
     std::vector<std::pair<expr, expr>> new_expr_replacements;
     new_expr_replacements.reserve(expr_replacements.size());
     for (const std::pair<expr, expr>& i : expr_replacements) {
-      new_expr_replacements.emplace_back(r.mutate(i.first), r.mutate(i.second));
+      new_expr_replacements.emplace_back(
+          update_sliced_buffer_metadata(i.first, sym, slices), update_sliced_buffer_metadata(i.second, sym, slices));
     }
     expr_replacements = span<const std::pair<expr, expr>>(new_expr_replacements);
 
@@ -800,6 +737,77 @@ expr substitute_bounds(const expr& e, symbol_id buffer, int dim, const interval_
 }
 stmt substitute_bounds(const stmt& s, symbol_id buffer, int dim, const interval_expr& bounds) {
   return substitute_bounds_impl(s, buffer, dim, bounds);
+}
+
+namespace {
+
+class slice_updater : public node_mutator {
+  symbol_id sym;
+  span<const int> slices;
+
+public:
+  slice_updater(symbol_id sym, span<const int> slices) : sym(sym), slices(slices) {}
+
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
+    case intrinsic::buffer_min:
+    case intrinsic::buffer_max:
+    case intrinsic::buffer_stride:
+    case intrinsic::buffer_fold_factor:
+    case intrinsic::buffer_extent:
+      if (is_variable(op->args[0], sym)) {
+        const index_t* dim = as_constant(op->args[1]);
+        assert(dim);
+        index_t new_dim = *dim;
+        for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
+          if (slices[i] == new_dim) {
+            // This dimension is gone.
+            set_result(expr());
+            return;
+          } else if (slices[i] < new_dim) {
+            --new_dim;
+          }
+        }
+        if (new_dim != *dim) {
+          set_result(call::make(op->intrinsic, {op->args[0], new_dim}));
+        } else {
+          set_result(op);
+        }
+        return;
+      }
+      break;
+    case intrinsic::buffer_at:
+      if (is_variable(op->args[0], sym)) {
+        std::vector<expr> args = op->args;
+        for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
+          if (slices[i] + 1 < static_cast<int>(args.size())) {
+            args.erase(args.begin() + slices[i] + 1);
+          }
+        }
+        bool changed = args.size() < op->args.size();
+        for (expr& i : args) {
+          expr new_i = mutate(i);
+          changed = changed || !new_i.same_as(i);
+          i = new_i;
+        }
+        if (changed) {
+          set_result(call::make(intrinsic::buffer_at, std::move(args)));
+        } else {
+          set_result(op);
+        }
+        return;
+      }
+      break;
+    default: break;
+    }
+    node_mutator::visit(op);
+  }
+};
+
+}  // namespace
+
+expr update_sliced_buffer_metadata(const expr& e, symbol_id buf, span<const int> slices) {
+  return slice_updater(buf, slices).mutate(e);
 }
 
 }  // namespace slinky

@@ -154,6 +154,12 @@ TEST(simplify, let) {
   test_simplify(
     let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})),
     let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
+
+  // Compound lets with dependencies between let values.
+  test_simplify(let::make({{x.sym(), y}, {z.sym(), x}}, z), y);
+  test_simplify(let::make({{x.sym(), y}, {z.sym(), x * 2}}, z), y * 2);
+  test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), x}}, z), y * 2);
+  test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), y}}, z), y);
 }
 
 TEST(simplify, buffer_intrinsics) {

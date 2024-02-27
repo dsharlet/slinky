@@ -30,6 +30,9 @@ int compare(const expr& a, const expr& b);
 int compare(const base_expr_node* a, const base_expr_node* b);
 int compare(const stmt& a, const stmt& b);
 
+// Update buffer metadata expressions to account for a slice that has occurred.
+expr update_sliced_buffer_metadata(const expr& e, symbol_id buf, span<const int> slices);
+
 // A comparator suitable for using expr/stmt as keys in an std::map/std::set.
 struct node_less {
   bool operator()(const expr& a, const expr& b) const { return compare(a, b) < 0; }
