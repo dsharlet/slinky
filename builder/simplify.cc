@@ -500,6 +500,11 @@ public:
     }
   }
 
+  stmt mutate_with_bounds(stmt body, symbol_id buf, std::optional<box_expr> bounds) {
+    auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
+    return mutate(body);
+  }
+
   void visit(const allocate* op) override {
     std::vector<dim_expr> dims;
     box_expr bounds;
@@ -517,8 +522,7 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -569,12 +573,7 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    stmt body = mutate(op->body);
-    if (!body.defined()) {
-      set_result(stmt());
-      return;
-    }
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       // This make_buffer is unused.
@@ -728,11 +727,7 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    stmt body = op->body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(body);
-    }
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(body);
@@ -799,11 +794,7 @@ public:
       clear_shadowed_bounds(op->sym, (*buf_bounds)[op->dim]);
     }
 
-    stmt body = op->body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
-      body = mutate(body);
-    }
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(body);
@@ -948,24 +939,19 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    const std::optional<box_expr>& bounds = buffer_bounds[op->sym];
     if (bounds) {
-      if (static_cast<int>(bounds->size()) > op->rank) {
-        bounds->resize(op->rank);
-      } else {
+      if (static_cast<int>(bounds->size()) <= op->rank) {
         // truncate_rank can't add dimensions.
-        assert(static_cast<int>(bounds->size()) >= op->rank);
+        assert(static_cast<int>(bounds->size()) == op->rank);
         // This truncate is a no-op.
         set_result(mutate(op->body));
         return;
       }
     }
 
-    stmt body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(op->body);
-    }
+    stmt body = mutate(op->body);
+
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(stmt());
@@ -984,8 +970,7 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, buffer_bounds[op->src]);
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
