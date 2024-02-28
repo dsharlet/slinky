@@ -161,6 +161,7 @@ TEST(simplify, let) {
   test_simplify(let::make({{x.sym(), y}, {z.sym(), x * 2}}, z), y * 2);
   test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), x}}, z), y * 2);
   test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), y}}, z), y);
+  test_simplify(let::make({{x.sym(), y}, {z.sym(), (x + 1) / x}}, (z + 1) / z), let::make({{z.sym(), (y + 1) / y}}, (z + 1) / z));
 }
 
 TEST(simplify, buffer_intrinsics) {
