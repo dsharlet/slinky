@@ -392,6 +392,16 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  stmt mutate_with_bounds(stmt body, symbol_id buf, std::optional<box_expr> bounds) {
+    auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
+    return mutate(body);
+  }
+
+  stmt mutate_with_bounds(stmt body, symbol_id var, interval_expr bounds) {
+    auto set_bounds = set_value_in_scope(expr_bounds, var, std::move(bounds));
+    return mutate(body);
+  }
+
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
@@ -406,8 +416,7 @@ public:
       return;
     }
 
-    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -432,12 +441,12 @@ public:
             result = crop->body;
             // If the crop negates the loop variable, the min could become the max. Just do both and take the union.
             interval_expr new_crop_a = {
-                substitute(crop->bounds.min, op->sym, op->bounds.min),
-                substitute(crop->bounds.max, op->sym, op->bounds.max),
+                substitute(crop->bounds.min, op->sym, bounds.min),
+                substitute(crop->bounds.max, op->sym, bounds.max),
             };
             interval_expr new_crop_b = {
-                substitute(crop->bounds.min, op->sym, op->bounds.max),
-                substitute(crop->bounds.max, op->sym, op->bounds.min),
+                substitute(crop->bounds.min, op->sym, bounds.max),
+                substitute(crop->bounds.max, op->sym, bounds.min),
             };
             new_crops.emplace_back(crop->sym, crop->dim, new_crop_a | new_crop_b);
           } else {
@@ -498,11 +507,6 @@ public:
     for (interval_expr& i : bounds) {
       clear_shadowed_bounds(sym, i);
     }
-  }
-
-  stmt mutate_with_bounds(stmt body, symbol_id buf, std::optional<box_expr> bounds) {
-    auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
-    return mutate(body);
   }
 
   void visit(const allocate* op) override {
