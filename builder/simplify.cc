@@ -369,6 +369,9 @@ public:
       } else if ((deps.ref_count == 1 && !deps.used_in_loop) || is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(body, it->first, it->second), &body_bounds);
+        for (auto inner = lets.rbegin(); inner != it; ++inner) {
+          inner->second = substitute(inner->second, it->first, it->second);
+        }
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
       } else {
@@ -389,6 +392,16 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  stmt mutate_with_bounds(stmt body, symbol_id buf, std::optional<box_expr> bounds) {
+    auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
+    return mutate(body);
+  }
+
+  stmt mutate_with_bounds(stmt body, symbol_id var, interval_expr bounds) {
+    auto set_bounds = set_value_in_scope(expr_bounds, var, std::move(bounds));
+    return mutate(body);
+  }
+
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
@@ -403,8 +416,7 @@ public:
       return;
     }
 
-    auto set_bounds = set_value_in_scope(expr_bounds, op->sym, bounds);
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -429,12 +441,12 @@ public:
             result = crop->body;
             // If the crop negates the loop variable, the min could become the max. Just do both and take the union.
             interval_expr new_crop_a = {
-                substitute(crop->bounds.min, op->sym, op->bounds.min),
-                substitute(crop->bounds.max, op->sym, op->bounds.max),
+                substitute(crop->bounds.min, op->sym, bounds.min),
+                substitute(crop->bounds.max, op->sym, bounds.max),
             };
             interval_expr new_crop_b = {
-                substitute(crop->bounds.min, op->sym, op->bounds.max),
-                substitute(crop->bounds.max, op->sym, op->bounds.min),
+                substitute(crop->bounds.min, op->sym, bounds.max),
+                substitute(crop->bounds.max, op->sym, bounds.min),
             };
             new_crops.emplace_back(crop->sym, crop->dim, new_crop_a | new_crop_b);
           } else {
@@ -514,8 +526,7 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -566,12 +577,7 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, std::move(bounds));
-    stmt body = mutate(op->body);
-    if (!body.defined()) {
-      set_result(stmt());
-      return;
-    }
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       // This make_buffer is unused.
@@ -725,14 +731,10 @@ public:
     }
     clear_shadowed_bounds(op->sym, bounds);
 
-    stmt body = op->body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(body);
-    }
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(body);
+      set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
@@ -796,14 +798,10 @@ public:
       clear_shadowed_bounds(op->sym, (*buf_bounds)[op->dim]);
     }
 
-    stmt body = op->body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buf_bounds);
-      body = mutate(body);
-    }
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(body);
+      set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
       body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
@@ -884,7 +882,7 @@ public:
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(stmt());
+      set_result(std::move(body));
       return;
     }
 
@@ -929,7 +927,7 @@ public:
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(stmt());
+      set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
@@ -945,24 +943,19 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
+    const std::optional<box_expr>& bounds = buffer_bounds[op->sym];
     if (bounds) {
-      if (static_cast<int>(bounds->size()) > op->rank) {
-        bounds->resize(op->rank);
-      } else {
+      if (static_cast<int>(bounds->size()) <= op->rank) {
         // truncate_rank can't add dimensions.
-        assert(static_cast<int>(bounds->size()) >= op->rank);
+        assert(static_cast<int>(bounds->size()) == op->rank);
         // This truncate is a no-op.
         set_result(mutate(op->body));
         return;
       }
     }
 
-    stmt body;
-    {
-      auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, bounds);
-      body = mutate(op->body);
-    }
+    stmt body = mutate(op->body);
+
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(stmt());
@@ -981,8 +974,7 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    auto set_bounds = set_value_in_scope(buffer_bounds, op->sym, buffer_bounds[op->src]);
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, buffer_bounds[op->src]);
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
