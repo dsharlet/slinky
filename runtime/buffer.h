@@ -227,7 +227,7 @@ public:
     rank = DimsSize;
     elem_size = sizeof(T);
     if (DimsSize > 0) {
-      dims = &dims_storage[0];
+      dims = dims_storage;
     } else {
       dims = nullptr;
     }
@@ -252,9 +252,19 @@ public:
   ~buffer() { free(); }
 
   buffer(const buffer&) = delete;
-  buffer(buffer&& m) = delete;
+  buffer(buffer&& m) { *this = std::move(m); }
   void operator=(const buffer&) = delete;
-  void operator=(buffer&& m) = delete;
+
+  void operator=(buffer&& m) {
+    memcpy((raw_buffer*)this, (const raw_buffer*)&m, sizeof(raw_buffer));
+    if (DimsSize > 0) {
+      memcpy(dims_storage, m.dims_storage, DimsSize * sizeof(slinky::dim));
+      dims = dims_storage;
+    }
+    // Take ownership of the data.
+    to_free = m.to_free;
+    m.to_free = nullptr;
+  }
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
 
