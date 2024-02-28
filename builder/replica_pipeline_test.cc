@@ -16,7 +16,7 @@ namespace slinky {
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
-std::string read_entire_file(const std::string &pathname) {
+std::string read_entire_file(const std::string& pathname) {
   try {
     std::ifstream f(pathname, std::ios::in | std::ios::binary);
     std::string result;
@@ -33,13 +33,13 @@ std::string read_entire_file(const std::string &pathname) {
     f.close();
     return result;
   } catch (...) {
-    std::cerr<<"HEY WAIT NOW\n";
+    std::cerr << "HEY WAIT NOW\n";
     return "";
   }
 }
 
 class ReplicaPipelineTest : public testing::Test {
- protected:
+protected:
   void SetUp() override {
     std::string error;
     runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
@@ -69,7 +69,7 @@ public:
   }
 };
 
-template<typename T>
+template <typename T>
 T output_fill_value() {
   T value;
   memset(&value, internal::kReplicaBufferFillValue, sizeof(value));
@@ -89,6 +89,7 @@ static std::function<pipeline()> kTrivialReplicas[2][2] = {
   {
     {
 // split = 0, lm = serial
+// BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 1);
@@ -105,9 +106,11 @@ static std::function<pipeline()> kTrivialReplicas[2][2] = {
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
 }
+// END define_replica_pipeline() output
     },
     {
 // split = 1, lm = serial
+// BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 1);
@@ -125,11 +128,13 @@ static std::function<pipeline()> kTrivialReplicas[2][2] = {
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
 }
+// END define_replica_pipeline() output
     },
   },
   {
     {
 // split = 0, lm = parallel
+// BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 1);
@@ -146,9 +151,11 @@ static std::function<pipeline()> kTrivialReplicas[2][2] = {
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
 }
+// END define_replica_pipeline() output
     },
     {
 // split = 1, lm = parallel
+// BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 1);
@@ -166,6 +173,7 @@ static std::function<pipeline()> kTrivialReplicas[2][2] = {
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
 }
+// END define_replica_pipeline() output
     },
   },
 };
