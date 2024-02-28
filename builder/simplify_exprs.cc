@@ -432,7 +432,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
       r.rewrite((x + c0) / c1 < x / c1, eval(c0 < 0)) ||
-      r.rewrite(x / c1 < (x + c0) / c1, eval(0 < c0)) ||
+      r.rewrite(x / c1 < (x + c0) / c1, eval(c1 <= c0)) ||
     
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
