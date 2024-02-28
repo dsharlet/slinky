@@ -730,7 +730,7 @@ public:
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(body);
+      set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
@@ -797,7 +797,7 @@ public:
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(body);
+      set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
       body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
@@ -878,7 +878,7 @@ public:
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(stmt());
+      set_result(std::move(body));
       return;
     }
 
@@ -923,7 +923,7 @@ public:
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(stmt());
+      set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
