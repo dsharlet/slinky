@@ -514,12 +514,6 @@ expr simplify(const less* op, expr a, expr b) {
 }
 
 expr simplify(const less_equal* op, expr a, expr b) {
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
-  if (ca && cb) {
-    return *ca <= *cb;
-  }
-
   // Rewrite to !(b < a) and simplify that instead.
   expr result = simplify(static_cast<const logical_not*>(nullptr), simplify(static_cast<const less*>(nullptr), b, a));
   if (const less_equal* le = result.as<less_equal>()) {
@@ -558,29 +552,14 @@ expr simplify(const equal* op, expr a, expr b) {
 }
 
 expr simplify(const not_equal* op, expr a, expr b) {
-  if (should_commute(a, b)) {
-    std::swap(a, b);
+  // Rewrite to !(a == b) and simplify that instead.
+  expr result = simplify(static_cast<const logical_not*>(nullptr), simplify(static_cast<const equal*>(nullptr), a, b));
+  if (const not_equal* ne = result.as<not_equal>()) {
+    if (ne->a.same_as(a) && ne->b.same_as(b)) {
+      return op;
+    }
   }
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
-  if (ca && cb) {
-    return *ca != *cb;
-  }
-
-  auto r = make_rewriter(pattern_expr{a} != pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x != x, false) ||
-      r.rewrite(x + c0 != c1, x != eval(c1 - c0)) ||
-      r.rewrite(c0 - x != c1, x != eval(c0 - c1)) ||
-      false) {
-    return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
-  } else {
-    return not_equal::make(std::move(a), std::move(b));
-  }
+  return result;
 }
 
 expr simplify(const logical_and* op, expr a, expr b) {
