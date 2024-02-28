@@ -119,6 +119,7 @@ TEST(simplify, basic) {
 
   test_simplify(x < x + 1, true);
   test_simplify(x - 1 < x + 1, true);
+  test_simplify(min(x + 1, z) < x + 2, true);
 
   test_simplify(abs(abs(x)), abs(x));
 
@@ -127,9 +128,6 @@ TEST(simplify, basic) {
 
   test_simplify(select(x, y + 1, y + 2), y + select(x, 1, 2));
   test_simplify(select(x, 1, 2) + 1, select(x, 2, 3));
-
-  test_simplify(x + 1 < x + 2, true);
-  test_simplify(min(x + 1, z) < x + 2, true);
 }
 
 TEST(simplify, let) {
