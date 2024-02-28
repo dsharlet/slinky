@@ -422,12 +422,18 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
-    
+      r.rewrite(x < x + y, 0 < y) ||
+      r.rewrite(x + y < x, y < 0) ||
+      r.rewrite(x - y < x, 0 < y) ||
+
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
       r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
+      r.rewrite((x + c0) / c1 < x / c1, eval(c0 < 0)) ||
+      r.rewrite(x / c1 < (x + c0) / c1, eval(0 < c0)) ||
+    
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
@@ -447,6 +453,13 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(min(x, y) < max(x, y), x != y) ||
       r.rewrite(max(x, y) < min(x, y), false) ||
       r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
+    
+      r.rewrite(min(x, y) < min(x, y + c0), eval(0 < c0)) ||
+      r.rewrite(max(x, y) < max(x, y + c0), eval(0 < c0)) ||
+      r.rewrite(min(x, y + c0) < min(x, y), eval(c0 < 0)) ||
+      r.rewrite(max(x, y + c0) < max(x, y), eval(c0 < 0)) ||
+      r.rewrite(min(x, y + c0) < min(x, y + c1), eval(c0 < c1)) ||
+      r.rewrite(max(x, y + c0) < max(x, y + c1), eval(c0 < c1)) ||
 
       r.rewrite(c0 < max(x, c1), c0 < x || eval(c0 < c1)) ||
       r.rewrite(c0 < min(x, c1), c0 < x && eval(c0 < c1)) ||
@@ -473,67 +486,14 @@ expr simplify(const less_equal* op, expr a, expr b) {
     return *ca <= *cb;
   }
 
-  auto r = make_rewriter(pattern_expr{a} <= pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(rewrite::positive_infinity() <= x, false, is_finite(x)) ||
-      r.rewrite(rewrite::negative_infinity() <= x, true, is_finite(x)) ||
-      r.rewrite(x <= rewrite::positive_infinity(), true, is_finite(x)) ||
-      r.rewrite(x <= rewrite::negative_infinity(), false, is_finite(x)) ||
-      r.rewrite(x <= x, true) ||
-      r.rewrite(x <= x + y, 0 <= y) ||
-      r.rewrite(x + y <= x, y <= 0) ||
-      r.rewrite(x - y <= x, 0 <= y) ||
-
-      r.rewrite(x + c0 <= c1, x <= eval(c1 - c0)) ||
-      r.rewrite(c0 - x <= c1, eval(c0 - c1) <= x) ||
-      r.rewrite(c0 <= c1 - x, x <= eval(c1 - c0)) ||
-      r.rewrite(c0 <= x + c1, eval(c0 - c1) <= x) ||
-
-      r.rewrite((x + c0) / c1 <= x / c1, eval(c0 <= 0)) ||
-      r.rewrite(x / c1 <= (x + c0) / c1, eval(0 <= c0)) ||
-    
-      r.rewrite(x <= x + y, 0 <= y) ||
-      r.rewrite(x + y <= x, y <= 0) ||
-      r.rewrite(x - y <= x, 0 <= y) ||
-      r.rewrite(x <= x - y, y <= 0) ||
-      r.rewrite(x - y <= y, x <= y * 2) ||
-      r.rewrite(y <= x - y, y * 2 <= x) ||
-    
-      r.rewrite(x + y <= x + z, y <= z) ||
-      r.rewrite(x - y <= x - z, z <= y) ||
-      r.rewrite(x - y <= z - y, x <= z) ||
-
-      r.rewrite(min(x, y) <= x, true) ||
-      r.rewrite(min(x, min(y, z)) <= y, true) ||
-      r.rewrite(max(x, y) <= x, y <= x) ||
-      r.rewrite(x <= max(x, y), true) ||
-      r.rewrite(x <= min(x, y), x <= y) ||
-      r.rewrite(min(x, y) <= max(x, y), true) ||
-      r.rewrite(max(x, y) <= min(x, y), x == y) ||
-    
-      r.rewrite(min(x, y) <= min(x, y + c0), eval(0 <= c0)) ||
-      r.rewrite(max(x, y) <= max(x, y + c0), eval(0 <= c0)) ||
-      r.rewrite(min(x, y + c0) <= min(x, y), eval(c0 <= 0)) ||
-      r.rewrite(max(x, y + c0) <= max(x, y), eval(c0 <= 0)) ||
-      r.rewrite(min(x, y + c0) <= min(x, y + c1), eval(c0 <= c1)) ||
-      r.rewrite(max(x, y + c0) <= max(x, y + c1), eval(c0 <= c1)) ||
-
-      r.rewrite(c0 <= max(x, c1), c0 <= x || eval(c0 <= c1)) ||
-      r.rewrite(c0 <= min(x, c1), c0 <= x && eval(c0 <= c1)) ||
-      r.rewrite(max(x, c0) <= c1, x <= c1 && eval(c0 <= c1)) ||
-      r.rewrite(min(x, c0) <= c1, x <= c1 || eval(c0 <= c1)) ||
-
-      r.rewrite(buffer_extent(x, y) <= c0, false, eval(c0 <= 0)) ||
-      r.rewrite(c0 <= buffer_extent(x, y), true, eval(c0 <= 0)) ||
-      false) {
-    return r.result;
+  // Rewrite to !(b < a) and simplify that instead.
+  expr result = simplify(static_cast<const logical_not*>(nullptr), simplify(static_cast<const less*>(nullptr), b, a));
+  if (const less_equal* le = result.as<less_equal>()) {
+    if (le->a.same_as(a) && le->b.same_as(b)) {
+      return op;
+    }
   }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
-  } else {
-    return less_equal::make(std::move(a), std::move(b));
-  }
+  return result;
 }
 
 expr simplify(const equal* op, expr a, expr b) {
