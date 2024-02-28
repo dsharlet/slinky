@@ -454,19 +454,53 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(max(x, y) < min(x, y), false) ||
       r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
     
-      r.rewrite(min(x, y) < min(x, y + c0), eval(0 < c0)) ||
-      r.rewrite(max(x, y) < max(x, y + c0), eval(0 < c0)) ||
-      r.rewrite(min(x, y + c0) < min(x, y), eval(c0 < 0)) ||
-      r.rewrite(max(x, y + c0) < max(x, y), eval(c0 < 0)) ||
-      r.rewrite(min(x, y + c0) < min(x, y + c1), eval(c0 < c1)) ||
-      r.rewrite(max(x, y + c0) < max(x, y + c1), eval(c0 < c1)) ||
+      // The following rules are taken from
+      // https://github.com/halide/Halide/blob/7636c44acc2954a7c20275618093973da6767359/src/Simplify_LT.cpp#L186-L263
+      // with adjustments for the simplifier implementation here.
 
-      r.rewrite(c0 < max(x, c1), c0 < x || eval(c0 < c1)) ||
-      r.rewrite(c0 < min(x, c1), c0 < x && eval(c0 < c1)) ||
-      r.rewrite(max(x, c0) < c1, x < c1 && eval(c0 < c1)) ||
-      r.rewrite(min(x, c0) < c1, x < c1 || eval(c0 < c1)) ||
+      // We want to break max(x, y) < z into x < z && y <
+      // z in cases where one of those two terms is going
+      // to eval.
+      r.rewrite(min(y, x + c0) < x + c1, y < x + c1 || eval(c0 < c1)) ||
+      r.rewrite(max(y, x + c0) < x + c1, y < x + c1 && eval(c0 < c1)) ||
+      r.rewrite(x < min(y, x + c0) + c1, x < y + c1 && eval(0 < c0 + c1)) ||
+      r.rewrite(x < max(y, x + c0) + c1, x < y + c1 || eval(0 < c0 + c1)) ||
 
-      r.rewrite(buffer_extent(x, y) < c0, false, eval(c0 < 0)) ||
+      // Special cases where c0 == 0
+      r.rewrite(min(x, y) < x + c1, y < x + c1 || eval(0 < c1)) ||
+      r.rewrite(max(x, y) < x + c1, y < x + c1 && eval(0 < c1)) ||
+      r.rewrite(x < min(x, y) + c1, x < y + c1 && eval(0 < c1)) ||
+      r.rewrite(x < max(x, y) + c1, x < y + c1 || eval(0 < c1)) ||
+
+      // Special cases where c1 == 0
+      r.rewrite(min(y, x + c0) < x, y < x || eval(c0 < 0)) ||
+      r.rewrite(max(y, x + c0) < x, y < x && eval(c0 < 0)) ||
+      r.rewrite(x < min(y, x + c0), x < y && eval(0 < c0)) ||
+      r.rewrite(x < max(y, x + c0), x < y || eval(0 < c0)) ||
+
+      // Special cases where c0 == c1 == 0
+      r.rewrite(min(x, y) < x, y < x) ||
+      r.rewrite(min(y, x) < x, y < x) ||
+      r.rewrite(x < max(x, y), x < y) ||
+      r.rewrite(x < max(y, x), x < y) ||
+
+      // Special case where x is constant
+      r.rewrite(min(y, c0) < c1, y < c1 || eval(c0 < c1)) ||
+      r.rewrite(max(y, c0) < c1, y < c1 && eval(c0 < c1)) ||
+      r.rewrite(c1 < min(y, c0), c1 < y && eval(c1 < c0)) ||
+      r.rewrite(c1 < max(y, c0), c1 < y || eval(c1 < c0)) ||
+
+      // Cases where we can remove a min on one side because
+      // one term dominates another. These rules were
+      // synthesized then extended by hand.
+      r.rewrite(min(z, y) < min(x, y), z < min(x, y)) ||
+      r.rewrite(min(z, y) < min(x, y + c0), min(z, y) < x, c0 > 0) ||
+
+      // Equivalents with max
+      r.rewrite(max(z, y) < max(x, y), max(z, y) < x) ||
+      r.rewrite(max(y, z) < max(x, y), max(z, y) < x) ||
+
+      r.rewrite(buffer_extent(x, y) < c0, false, eval(c0 <= 0)) ||
       r.rewrite(c0 < buffer_extent(x, y), true, eval(c0 < 0)) ||
       false) {
     return r.result;
