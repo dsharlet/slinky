@@ -255,8 +255,8 @@ public:
   buffer(buffer&& m) { *this = std::move(m); }
   void operator=(const buffer&) = delete;
 
-  void operator=(buffer&& m) {
-    memcpy((raw_buffer*)this, (const raw_buffer*)&m, sizeof(raw_buffer));
+  buffer& operator=(buffer&& m) {
+    memcpy(static_cast<raw_buffer*>(this), static_cast<const raw_buffer*>(&m), sizeof(raw_buffer));
     if (DimsSize > 0) {
       memcpy(dims_storage, m.dims_storage, DimsSize * sizeof(slinky::dim));
       dims = dims_storage;
@@ -264,6 +264,7 @@ public:
     // Take ownership of the data.
     to_free = m.to_free;
     m.to_free = nullptr;
+    return *this;
   }
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
