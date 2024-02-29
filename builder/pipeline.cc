@@ -620,17 +620,14 @@ void build_loop_tree(const std::vector<const func*>& order, const std::map<const
     const auto& p = deps.find(f);
     if (p != deps.end()) {
       // assert that p->second is not empty.
+      assert(!p->second.empty());
       int parent_id = -1;
       for (const auto& d: p->second) {
         std::cout << "produces for " << d->name() << std::endl;
         const auto& node = func_to_loop_tree.find(d);
-        // assert that node is found.
-        if (node != func_to_loop_tree.end()) {
-          parent_id = node->second;
-          std::cout << "loop tree node " << node->second << std::endl;
-        } else {
-          std::cout << "loop tree node wasn't found" << std::endl;
-        }
+        assert(node != func_to_loop_tree.end());
+        parent_id = node->second;
+        std::cout << "loop tree node " << node->second << std::endl;
       }
       for (const auto& l: f->loops()) {
         std::cout << "Adding a loop " << l.sym() << std::endl;
