@@ -606,12 +606,49 @@ struct loop_tree_node {
   loop_id loop;
 };
 
-void build_loop_tree(const std::vector<const func*>& order, const std::map<const func*, std::vector<const func*>> deps) {
+int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& parent_ids) {
+  std::cout << "!! LCA: " << std::endl;
+  std::vector<std::vector<int>> pathes_to_root(parent_ids.size());
+  for (int ix = 0; ix < (int)parent_ids.size(); ix++) {
+    int parent_id = parent_ids[ix];
+    pathes_to_root[ix].push_back(parent_id);
+    std::cout << "!! start processing: " << parent_id << std::endl;
+    while (parent_id > 0) {
+      parent_id = loop_tree[parent_id].parent_index;
+      pathes_to_root[ix].push_back(parent_id);
+      std::cout << "!! processing: " << parent_id << std::endl;
+    }
+    std::reverse(pathes_to_root[ix].begin(), pathes_to_root[ix].end());
+  }
+
+  int max_match = pathes_to_root[0].size() - 1;
+  std::cout << "Initial max_match - " << max_match << std::endl;
+  for (int ix = 1; ix < (int)pathes_to_root.size(); ix++) {
+    max_match = std::min(max_match, (int)pathes_to_root.size() - 1);
+    for (int iy = 0; iy <= max_match; iy++) {
+      std::cout << "Pathes: " << pathes_to_root[ix][iy] << " " << pathes_to_root[0][iy] << std::endl;
+      if (pathes_to_root[ix][iy] != pathes_to_root[0][iy]) {
+        max_match = iy - 1;
+        std::cout << "Updated max_match - " << max_match << std::endl;
+        break;
+      }
+    }
+  }
+
+  std::cout << "Max match up to " << max_match << std::endl;
+  return pathes_to_root[0][max_match];
+}
+
+void compute_innermost_locations(const std::vector<const func*>& order, const std::map<const func*, std::vector<const func*>> deps, std::map<const func*, loop_id>& compute_at_levels) {
   std::cout << ">>> Build tree:" << std::endl;
+  // A tree which stores loop nest.
   std::vector<loop_tree_node> loop_tree;
+  // Mapping between function and it's most innermost location.
   std::map<const func*, int> func_to_loop_tree;
   // Push root loop.
   loop_tree.push_back({-1, loop_id()});
+  
+  // Iterate over functions in topological order starting from the output and build a loop nest tree.
   for (const auto& f: order) {
     std::cout << "@@ Processing " << f->name() << std::endl;
     if (f->compute_at()) {
@@ -619,16 +656,31 @@ void build_loop_tree(const std::vector<const func*>& order, const std::map<const
     }
     const auto& p = deps.find(f);
     if (p != deps.end()) {
-      // assert that p->second is not empty.
       assert(!p->second.empty());
-      int parent_id = -1;
+      // Check all of the consumers and find their innermost locations.
+      std::vector<int> parent_ids;
       for (const auto& d: p->second) {
         std::cout << "produces for " << d->name() << std::endl;
         const auto& node = func_to_loop_tree.find(d);
         assert(node != func_to_loop_tree.end());
-        parent_id = node->second;
+        parent_ids.push_back(node->second);
         std::cout << "loop tree node " << node->second << std::endl;
       }
+      int parent_id = -1;
+      if (parent_ids.size() == 1) {
+        // We have just one consumer, so use it innermost location.
+        parent_id = parent_ids[0];
+      } else {
+        std::cout << "Multiple consumers, need to call LCA" << std::endl;
+        // There are multiple consumers, so we need to find least common ancestor
+        // of their innermost locations.
+        parent_id = lca(loop_tree, parent_ids);
+      }
+      assert(parent_id != -1);
+      
+      compute_at_levels[f] = loop_tree[parent_id].loop;
+
+      // Add loops for this function to the loop nest.
       for (const auto& l: f->loops()) {
         std::cout << "Adding a loop " << l.sym() << std::endl;
         loop_tree.push_back({parent_id, {f, l.var}});
@@ -636,8 +688,11 @@ void build_loop_tree(const std::vector<const func*>& order, const std::map<const
       }
       func_to_loop_tree[f] = parent_id;
     } else {
+      // This is an output so should be computed at root.
       std::cout << "This is a root node" << std::endl;
       int parent_id = 0;
+      compute_at_levels[f] = loop_id();
+      // Add loops for this function to the loop nest.
       for (const auto& l: f->loops()) {
         std::cout << "Adding a loop " << l.sym() << std::endl;
         loop_tree.push_back({parent_id, {f, l.var}});
@@ -650,10 +705,27 @@ void build_loop_tree(const std::vector<const func*>& order, const std::map<const
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
+  
+  // Topologically sorted functions.
   std::vector<const func*> order;
+  // Dependencies between the functions.
   std::map<const func*, std::vector<const func*>> deps;
   topological_sort(outputs, order, deps);
-  build_loop_tree(order, deps);
+
+  // Build a loop nest tree and computes compute_at locations when neccessary.
+  std::map<const func*, loop_id> compute_at_levels;
+  compute_innermost_locations(order, deps, compute_at_levels);
+
+  std::cout << "Final compute_at locations: " << std::endl;
+  for (const auto& p: compute_at_levels) {
+    std::cout << p.first->name() << " -> ";
+    if (p.second.root()) {
+      std::cout << "<root>";
+    } else {
+      std::cout << "<" << p.second.func->name() << ", " << p.second.sym() << ">";
+    }
+    std::cout << std::endl;
+  }
   pipeline_builder builder(inputs, outputs, constants);
 
   stmt result;
