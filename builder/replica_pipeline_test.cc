@@ -141,7 +141,6 @@ static std::function<pipeline()> kMultipleOutputsReplica =
 ;
 // clang-format on
 
-
 TEST_F(ReplicaPipelineTest, multiple_outputs) {
   constexpr int split = 1;
   constexpr loop_mode lm = loop_mode::serial;
@@ -208,7 +207,6 @@ TEST_F(ReplicaPipelineTest, multiple_outputs) {
   p.evaluate(inputs, outputs, eval_ctx);
   p_replica.evaluate(inputs, outputs, eval_ctx);
 }
-
 
 // clang-format off
 static std::function<pipeline()> kMatmulReplica =
@@ -489,6 +487,171 @@ TEST_F(ReplicaPipelineTest, pyramid) {
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  p_replica.evaluate(inputs, outputs, eval_ctx);
+}
+
+template <typename T>
+index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  for_each_index(out, [&](auto i) { out(i) = in(i) + 1; });
+  return 0;
+}
+
+// A 2D stencil, sums [x + dx0, x + dx1] x [y + dy0, y + dy]
+template <typename T, int dx0, int dy0, int dx1, int dy1>
+index_t sum_stencil(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == 2);
+  assert(out.rank == 2);
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+      T sum = 0;
+      for (index_t dy = dy0; dy <= dy1; ++dy) {
+        for (index_t dx = dx0; dx <= dx1; ++dx) {
+          sum += in(x + dx, y + dy);
+        }
+      }
+      out(x, y) = sum;
+    }
+  }
+  return 0;
+}
+
+// A centered 2D 3x3 stencil operation.
+template <typename T>
+index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
+  return sum_stencil<T, -1, -1, 1, 1>(in, out);
+}
+
+template <typename T>
+index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
+  return 0;
+}
+
+// clang-format off
+static std::function<pipeline()> kUnrelatedReplica =
+// BEGIN define_replica_pipeline() output
+[]() -> ::slinky::pipeline {
+  node_context ctx;
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint32_t), 1);
+  auto out1 = buffer_expr::make(ctx, "out1", sizeof(uint16_t), 2);
+  auto x = var(ctx, "x");
+  auto y = var(ctx, "y");
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
+  auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* ins[] = {&i0};
+    const buffer<void>* outs[] = {&o0};
+    const func::input fins[] = {{in1, {point(x), point(y)}}};
+    const std::vector<var> fout_dims[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  auto _3 = x + -1;
+  auto _4 = x + 1;
+  auto _5 = y + -1;
+  auto _6 = y + 1;
+  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* ins[] = {&i0};
+    const buffer<void>* outs[] = {&o0};
+    const func::input fins[] = {{intm1, {{_3, _4}, {_5, _6}}}};
+    const std::vector<var> fout_dims[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _8 = x + -1;
+  auto _9 = x + 1;
+  auto _10 = y + -1;
+  auto _11 = y + 1;
+  auto _fn_0 = func::make(std::move(_replica_fn_7), {{intm1, {{_8, _9}, {_10, _11}}}}, {{out1, {x, y}}});
+  _fn_0.loops({{y, 2, loop_mode::serial}});
+  auto out2 = buffer_expr::make(ctx, "out2", sizeof(uint32_t), 1);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint32_t), 1);
+  auto _replica_fn_14 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* ins[] = {&i0};
+    const buffer<void>* outs[] = {&o0};
+    const func::input fins[] = {{in2, {point(x)}}};
+    const std::vector<var> fout_dims[] = {{x}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _fn_13 = func::make(std::move(_replica_fn_14), {{in2, {point(x)}}}, {{intm2, {x}}});
+  auto _replica_fn_15 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* ins[] = {&i0};
+    const buffer<void>* outs[] = {&o0};
+    const func::input fins[] = {{intm2, {point(x)}}};
+    const std::vector<var> fout_dims[] = {{x}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _fn_12 = func::make(std::move(_replica_fn_15), {{intm2, {point(x)}}}, {{out2, {x}}});
+  auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {});
+  return p;
+}
+// END define_replica_pipeline() output
+;
+// clang-format on
+
+TEST_F(ReplicaPipelineTest, unrelated) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+  auto out1 = buffer_expr::make(ctx, "out1", sizeof(short), 2);
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+
+  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 1);
+  auto out2 = buffer_expr::make(ctx, "out2", sizeof(int), 1);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(int), 1);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
+      call_stmt::callable_attrs{.allow_in_place = true});
+  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
+
+  func mul2 = func::make(
+      multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+  func add2 =
+      func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+
+  stencil1.loops({{y, 2}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out1, out2});
+  pipeline p_replica = kUnrelatedReplica();
+
+  // Look at the source code to this test to verify that we
+  // we have something that matches exactly
+  std::string replica_text = define_replica_pipeline(ctx, {in1, in2}, {out1, out2});
+  LOG_REPLICA_TEXT(replica_text);
+  size_t pos = replica_pipeline_test_src.find(replica_text);
+  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+  // Run the pipeline.
+  const int W1 = 20;
+  const int H1 = 10;
+  buffer<short, 2> in1_buf({W1 + 2, H1 + 2});
+  in1_buf.translate(-1, -1);
+  buffer<short, 2> out1_buf({W1, H1});
+
+  init_random(in1_buf);
+  out1_buf.allocate();
+
+  const int N2 = 30;
+  buffer<int, 1> in2_buf({N2});
+  in2_buf.allocate();
+  for (int i = 0; i < N2; ++i) {
+    in2_buf(i) = i;
+  }
+
+  buffer<int, 1> out2_buf({N2});
+  out2_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
   p_replica.evaluate(inputs, outputs, eval_ctx);
 }
 
