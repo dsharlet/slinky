@@ -373,13 +373,11 @@ public:
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
-    // std::cout << "add_input_crops " << std::endl;
     // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
     // output associated with a particular dimension.
     assert(!f->outputs().empty());
     symbol_map<expr> output_mins, output_maxs;
     for (const func::output& o : f->outputs()) {
-      // std::cout << "<output> " << o.sym() << std::endl;
       for (std::size_t d = 0; d < o.dims.size(); ++d) {
         expr dim_min = o.buffer->dim(d).min();
         expr dim_max = o.buffer->dim(d).max();
@@ -469,9 +467,7 @@ public:
   stmt make_producers(const loop_id& at, const func* f) {
     if (const func* next = find_next_producer(at)) {
       stmt result = produce(next, at);
-      // std::cout << "make_producers::[0]add_input_crops" << std::endl;
       result = add_input_crops(result, f);
-      // std::cout << "make_producers::[0]add_input_crops" << std::endl;
       result = block::make({make_producers(at, next), std::move(result)});
       return result;
     } else {
@@ -501,12 +497,8 @@ public:
   // - Wrapping f with the loops it wanted to be explicit
   // - Producing all the buffers that f consumes (recursively).
   stmt produce(const func* f, const loop_id& current_at = loop_id()) {
-    // std::cout << "produce::[0] <<<<<<" << std::endl;
     stmt result = f->make_call();
-    // std::cout << "make_call\n" << result << std::endl;
-    // std::cout << "produce::[0]add_input_crops" << std::endl;
     result = add_input_crops(result, f);
-    // std::cout << "produce::[1]add_input_crops" << std::endl;
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);
       if (!allocated.count(i.buffer)) {
@@ -523,10 +515,7 @@ public:
     }
 
     // Try to make any other producers needed here.
-    // std::cout << "produce::[0]make_producers" << std::endl;
     result = block::make({make_producers(current_at, f), result});
-    // std::cout << "produce::[1]make_producers" << std::endl;
-    // std::cout << "produce::[1] >>>>>>>" << std::endl;
     return result;
   }
 };
