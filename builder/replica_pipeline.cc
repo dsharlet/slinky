@@ -1,10 +1,13 @@
 #include "builder/replica_pipeline.h"
 
+#include <iostream>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -45,17 +48,30 @@ class pipeline_replicator : public recursive_node_visitor {
 public:
   explicit pipeline_replicator(node_context& ctx) : ctx_(ctx) {}
 
+  void fail(const char* msg) {
+    std::cerr << "Unimplemented/TODO: " << msg << "\n";
+    std::abort();
+  }
+
   void visit(const variable* op) override {
-    name_ = ctx_.name(op->sym);
-    if (!vars_emitted_.count(name_)) {
-      vars_emitted_.insert(name_);
-      print_assignment_explicit(name_, "var(ctx, \"", name_, "\")");
+    const auto& name = ctx_.name(op->sym);
+
+    if (buffers_emitted_.count(op->sym)) {
+      auto it = buffer_variables_emitted_.find(op->sym);
+      if (it != buffer_variables_emitted_.end()) {
+        name_ = it->second;
+      } else {
+        name_ = print_expr_assignment("variable::make(" + name + "->sym())");
+        buffer_variables_emitted_[op->sym] = name_;
+      }
+      return;
     }
+
+    name_ = print(var(op->sym));
   }
 
   void visit(const constant* op) override { name_ = std::to_string(op->value); }
-
-  void visit(const let* op) override { assert(!"unimplemented let"); }
+  void visit(const let* op) override { fail("unimplemented let"); }
   void visit(const add* op) override { visit_binary_op(op, "+"); }
   void visit(const sub* op) override { visit_binary_op(op, "-"); }
   void visit(const mul* op) override { visit_binary_op(op, "*"); }
@@ -70,34 +86,61 @@ public:
   void visit(const logical_and* op) override { visit_binary_op(op, "&&"); }
   void visit(const logical_or* op) override { visit_binary_op(op, "||"); }
   void visit(const logical_not* op) override {
-    assert(!"UNTESTED");
+    fail("logical_not");
     std::string sa = print_expr(op->a);
     print_expr_assignment("!", sa);
   }
-  void visit(const class select* op) override { assert(!"unimplemented select"); }
-  void visit(const call* op) override { assert(!"unimplemented call"); }
-  void visit(const let_stmt* op) override { assert(!"unimplemented let_stmt"); }
-  void visit(const block* op) override { assert(!"unimplemented block"); }
-  void visit(const loop* op) override { assert(!"unimplemented loop"); }
-  void visit(const call_stmt* op) override { assert(!"unimplemented call_stmt"); }
-  void visit(const copy_stmt* op) override { assert(!"unimplemented copy_stmt"); }
-  void visit(const allocate* op) override { assert(!"unimplemented allocate"); }
-  void visit(const make_buffer* op) override { assert(!"unimplemented make_buffer"); }
-  void visit(const clone_buffer* op) override { assert(!"unimplemented clone_buffer"); }
-  void visit(const crop_buffer* op) override { assert(!"unimplemented crop_buffer"); }
-  void visit(const crop_dim* op) override { assert(!"unimplemented crop_dim"); }
-  void visit(const slice_buffer* op) override { assert(!"unimplemented slice_buffer"); }
-  void visit(const slice_dim* op) override { assert(!"unimplemented slice_dim"); }
-  void visit(const truncate_rank* op) override { assert(!"unimplemented truncate_rank"); }
-  void visit(const check* op) override { assert(!"unimplemented check"); }
+  void visit(const class select* op) override { fail("unimplemented select"); }
+
+  void visit(const call* op) override {
+    std::string call_name;
+    switch (op->intrinsic) {
+    case intrinsic::positive_infinity: call_name = "std::numeric_limits<float>::infinity"; break;
+    case intrinsic::negative_infinity: call_name = "-std::numeric_limits<float>::infinity"; break;
+    case intrinsic::indeterminate: call_name = "std::numeric_limits<float>::quiet_NaN"; break;
+    case intrinsic::abs: call_name = "std::abs"; break;
+    case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
+    case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
+    case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
+    case intrinsic::buffer_min: call_name = "buffer_min"; break;
+    case intrinsic::buffer_max: call_name = "buffer_max"; break;
+    case intrinsic::buffer_extent: call_name = "buffer_extent"; break;
+    case intrinsic::buffer_stride: call_name = "buffer_stride"; break;
+    case intrinsic::buffer_fold_factor: call_name = "buffer_fold_factor"; break;
+    case intrinsic::buffer_at: call_name = "buffer_at"; break;
+    default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
+    }
+    std::vector<std::string> args;
+    for (const auto& arg : op->args) {
+      args.push_back(print_expr(arg));
+    }
+    print_expr_assignment(call_name, "(", print_vector_elements(args), ")");
+  }
+
+  void visit(const let_stmt* op) override { fail("unimplemented let_stmt"); }
+  void visit(const block* op) override { fail("unimplemented block"); }
+  void visit(const loop* op) override { fail("unimplemented loop"); }
+  void visit(const call_stmt* op) override { fail("unimplemented call_stmt"); }
+  void visit(const copy_stmt* op) override { fail("unimplemented copy_stmt"); }
+  void visit(const allocate* op) override { fail("unimplemented allocate"); }
+  void visit(const make_buffer* op) override { fail("unimplemented make_buffer"); }
+  void visit(const clone_buffer* op) override { fail("unimplemented clone_buffer"); }
+  void visit(const crop_buffer* op) override { fail("unimplemented crop_buffer"); }
+  void visit(const crop_dim* op) override { fail("unimplemented crop_dim"); }
+  void visit(const slice_buffer* op) override { fail("unimplemented slice_buffer"); }
+  void visit(const slice_dim* op) override { fail("unimplemented slice_dim"); }
+  void visit(const truncate_rank* op) override { fail("unimplemented truncate_rank"); }
+  void visit(const check* op) override { fail("unimplemented check"); }
 
   std::string print(const var& v) {
-    const auto& name = ctx_.name(v.sym());
-    if (!vars_emitted_.count(name)) {
-      vars_emitted_.insert(name);
-      return print_assignment_explicit(name, "var(ctx, \"", name, "\")");
+    auto it = vars_emitted_.find(v.sym());
+    if (it != vars_emitted_.end()) {
+      return it->second;
     }
-    return name;
+
+    const auto& name = ctx_.name(v.sym());
+    vars_emitted_[v.sym()] = name;
+    return print_assignment_explicit(name, "var(ctx, \"", name, "\")");
   }
 
   std::string print(const std::vector<var>& vars) {
@@ -206,7 +249,7 @@ public:
   }
 
   std::string print(const loop_id& loopid) {
-    assert(!"UNTESTED");
+    fail("UNTESTED");
     std::string fn_ptr;
     if (loopid.func) {
       auto fn = print(*loopid.func);
@@ -219,11 +262,10 @@ public:
   }
 
   std::string print_callback(const std::vector<func::input>& fins, const std::vector<func::output>& fouts) {
-    std::vector<std::string> args, body_in, body_out, fin_bounds, fout_dims;
+    std::vector<std::string> args, body_in, body_out, fout_dims;
     for (size_t i = 0; i < fins.size(); i++) {
       args.push_back(str_cat("const buffer<const void>& i", i));
       body_in.push_back(str_cat("&i", i));
-      fin_bounds.push_back(print(fins[i].bounds));
     }
     for (size_t i = 0; i < fouts.size(); i++) {
       args.push_back(str_cat("const buffer<void>& o", i));
@@ -231,12 +273,12 @@ public:
       fout_dims.push_back(print(fouts[i].dims));
     }
     std::ostringstream os;
-    os << str_cat("  [=](", print_vector_elements(args), ") -> index_t {\n");
+    os << str_cat("[=](", print_vector_elements(args), ") -> index_t {\n");
     os << "    const buffer<const void>* ins[] = " << print_vector(body_in) << ";\n";
     os << "    const buffer<void>* outs[] = " << print_vector(body_out) << ";\n";
-    os << "    const box_expr fin_bounds[] = " << print_vector(fin_bounds) << ";\n";
+    os << "    const func::input fins[] = " << print(fins) << ";\n";
     os << "    const std::vector<var> fout_dims[] = " << print_vector(fout_dims) << ";\n";
-    os << "    return ::slinky::internal::replica_pipeline_handler(ins, outs, fin_bounds, fout_dims);\n";
+    os << "    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);\n";
     os << "  }";
     return print_assignment_prefixed("_replica_fn_", os.str());
   }
@@ -296,7 +338,8 @@ private:
   std::string name_;
   uint32_t next_id_ = 0;
   std::set<symbol_id> buffers_emitted_;
-  std::set<std::string> vars_emitted_;
+  std::map<symbol_id, std::string> buffer_variables_emitted_;
+  std::map<symbol_id, std::string> vars_emitted_;
   std::map<const func*, std::string> funcs_emitted_;
 
   std::string print_expr(const expr& e) {
@@ -345,7 +388,7 @@ private:
 
   template <typename T>
   void visit_binary_op(const T* op, const std::string& binop) {
-    assert(!"UNTESTED");
+    fail("visit_binary_op");
     std::string sa = print_expr(op->a);
     std::string sb = print_expr(op->b);
     name_ = print_expr_assignment(sa, " ", binop, " ", sb);
@@ -353,7 +396,7 @@ private:
 
   template <typename T>
   void visit_binary_call(const T* op, const std::string& call) {
-    assert(!"UNTESTED");
+    fail("visit_binary_call");
     std::string sa = print_expr(op->a);
     std::string sb = print_expr(op->b);
     name_ = print_expr_assignment(call, "(", sa, ", ", sb, ")");
@@ -361,46 +404,23 @@ private:
 };
 
 struct rph_handler {
-  //node_context& ctx;
   const span<const buffer<const void>*>& inputs;
-  const span<box_expr>& fin_bounds;
+  const span<func::input>& fins;
   const buffer<void>* output;
   const std::vector<var>& fout_dims;
-  index_t* out_pos;
 
-  struct min_max {
-    index_t min, max;
-  };
+  std::vector<index_t> in_pos, out_pos;
+  eval_context eval_values;
 
-  std::vector<min_max> calc_input_required(
-      eval_context& values, const buffer<const void>* input, const box_expr& fin_bounds) {
-    std::vector<min_max> input_required(fin_bounds.size());
-    for (std::size_t d = 0; d < fin_bounds.size(); d++) {
-      input_required[d].min = evaluate(fin_bounds[d].min, values);
-      input_required[d].max = evaluate(fin_bounds[d].max, values);
-      assert(input_required[d].min >= input->dims[d].min());
-      assert(input_required[d].max <= input->dims[d].max());
-    }
-    return input_required;
-  }
+  void run() {
+    out_pos.resize(output->rank);
 
-  void apply_input(int d, index_t* in_pos, const buffer<const void>* input, const std::vector<min_max>& ranges) {
-    if (d >= 0) {
-      for (in_pos[d] = ranges[d].min; in_pos[d] <= ranges[d].max; in_pos[d]++) {
-        apply_input(d - 1, in_pos, input, ranges);
-      }
-      return;
+    assert(inputs.size() == fins.size());
+    for (std::size_t i = 0; i < fins.size(); i++) {
+      eval_values[fins[i].sym()] = reinterpret_cast<index_t>(inputs[i]);
     }
 
-    auto in_pos_span = span<const index_t>(in_pos, input->rank);
-    auto out_pos_span = span<const index_t>(out_pos, output->rank);
-    const char* in_pos_addr = reinterpret_cast<const char*>(input->address_at(in_pos_span));
-    char* out_pos_addr = reinterpret_cast<char*>(output->address_at(out_pos_span));
-    for (std::size_t o = 0; o < output->elem_size; o++) {
-      for (std::size_t i = 0; i < input->elem_size; i++) {
-        out_pos_addr[o] ^= in_pos_addr[i];
-      }
-    }
+    handler((int)output->rank - 1);
   }
 
   void handler(int d) {
@@ -412,19 +432,68 @@ struct rph_handler {
     }
 
     assert(fout_dims.size() == output->rank);
-    eval_context values;
     for (std::size_t d = 0; d < output->rank; d++) {
-      values[fout_dims[d]] = out_pos[d];
+      eval_values[fout_dims[d]] = out_pos[d];
     }
 
-    auto out_pos_span = span<const index_t>(out_pos, output->rank);
-    char* out_pos_addr = reinterpret_cast<char*>(output->address_at(out_pos_span));
+    char* out_pos_addr = reinterpret_cast<char*>(output->address_at(out_pos));
     memset(out_pos_addr, internal::kReplicaBufferFillValue, output->elem_size);
 
     for (std::size_t i = 0; i < inputs.size(); i++) {
-      auto input_required = calc_input_required(values, inputs[i], fin_bounds[i]);
-      index_t* in_pos = SLINKY_ALLOCA(index_t, inputs[i]->rank);
-      apply_input((int)inputs[i]->rank - 1, in_pos, inputs[i], input_required);
+      auto input_required = calc_input_required(inputs[i], fins[i].bounds);
+      in_pos.resize(inputs[i]->rank, 0);
+      apply_input((int)inputs[i]->rank - 1, inputs[i], input_required);
+    }
+  }
+
+  struct min_max {
+    index_t min, max;
+  };
+
+  std::vector<min_max> calc_input_required(const buffer<const void>* input, const box_expr& fin_bounds) {
+    std::vector<min_max> input_required(fin_bounds.size());
+    for (std::size_t d = 0; d < fin_bounds.size(); d++) {
+      input_required[d].min = evaluate(fin_bounds[d].min, eval_values);
+      input_required[d].max = evaluate(fin_bounds[d].max, eval_values);
+      assert(input_required[d].min >= input->dims[d].min());
+      assert(input_required[d].max <= input->dims[d].max());
+    }
+    return input_required;
+  }
+
+  template <typename SRC, typename DST>
+  inline void do_xor(void* dst, const void* src) {
+    *reinterpret_cast<DST*>(dst) ^= static_cast<DST>(*reinterpret_cast<const SRC*>(src));
+  }
+
+  void apply_input(int d, const buffer<const void>* input, const std::vector<min_max>& ranges) {
+    if (d >= 0) {
+      for (in_pos[d] = ranges[d].min; in_pos[d] <= ranges[d].max; in_pos[d]++) {
+        apply_input(d - 1, input, ranges);
+      }
+      return;
+    }
+
+    const void* in_pos_addr = input->address_at(in_pos);
+    void* out_pos_addr = output->address_at(out_pos);
+    switch ((output->elem_size << 4) | input->elem_size) {
+    case 0x11: do_xor<uint8_t, uint8_t>(out_pos_addr, in_pos_addr); break;
+    case 0x12: do_xor<uint8_t, uint16_t>(out_pos_addr, in_pos_addr); break;
+    case 0x14: do_xor<uint8_t, uint32_t>(out_pos_addr, in_pos_addr); break;
+    case 0x18: do_xor<uint8_t, uint64_t>(out_pos_addr, in_pos_addr); break;
+    case 0x21: do_xor<uint16_t, uint8_t>(out_pos_addr, in_pos_addr); break;
+    case 0x22: do_xor<uint16_t, uint16_t>(out_pos_addr, in_pos_addr); break;
+    case 0x24: do_xor<uint16_t, uint32_t>(out_pos_addr, in_pos_addr); break;
+    case 0x28: do_xor<uint16_t, uint64_t>(out_pos_addr, in_pos_addr); break;
+    case 0x41: do_xor<uint32_t, uint8_t>(out_pos_addr, in_pos_addr); break;
+    case 0x42: do_xor<uint32_t, uint16_t>(out_pos_addr, in_pos_addr); break;
+    case 0x44: do_xor<uint32_t, uint32_t>(out_pos_addr, in_pos_addr); break;
+    case 0x48: do_xor<uint32_t, uint64_t>(out_pos_addr, in_pos_addr); break;
+    case 0x81: do_xor<uint64_t, uint8_t>(out_pos_addr, in_pos_addr); break;
+    case 0x82: do_xor<uint64_t, uint16_t>(out_pos_addr, in_pos_addr); break;
+    case 0x84: do_xor<uint64_t, uint32_t>(out_pos_addr, in_pos_addr); break;
+    case 0x88: do_xor<uint64_t, uint64_t>(out_pos_addr, in_pos_addr); break;
+    default: std::cerr << "Unsupported elem_size combination\n"; std::abort();
     }
   }
 };
@@ -433,14 +502,13 @@ struct rph_handler {
 
 namespace internal {
 
-index_t replica_pipeline_handler(span<const buffer<const void>*> inputs,
-    span<const buffer<void>*> outputs, span<box_expr> fin_bounds, span<std::vector<var>> fout_dims) {
-  assert(inputs.size() == fin_bounds.size());
+index_t replica_pipeline_handler(span<const buffer<const void>*> inputs, span<const buffer<void>*> outputs,
+    span<func::input> fins, span<std::vector<var>> fout_dims) {
+  assert(inputs.size() == fins.size());
   assert(outputs.size() == fout_dims.size());
   for (std::size_t i = 0; i < outputs.size(); i++) {
-    index_t* out_pos = SLINKY_ALLOCA(index_t, outputs[i]->rank);
-    rph_handler rh = {inputs, fin_bounds, outputs[i], fout_dims[i], out_pos};
-    rh.handler((int)outputs[i]->rank - 1);
+    rph_handler rh = {inputs, fins, outputs[i], fout_dims[i]};
+    rh.run();
   }
   return 0;
 }

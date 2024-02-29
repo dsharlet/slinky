@@ -19,8 +19,8 @@ namespace internal {
 
 constexpr char kReplicaBufferFillValue = 0xAA;
 
-index_t replica_pipeline_handler(span<const buffer<const void>*> inputs,
-    span<const buffer<void>*> outputs, span<box_expr> fin_bounds, span<std::vector<var>> fout_dims);
+index_t replica_pipeline_handler(span<const buffer<const void>*> inputs, span<const buffer<void>*> outputs,
+    span<func::input> fins, span<std::vector<var>> fout_dims);
 
 }  // namespace internal
 
