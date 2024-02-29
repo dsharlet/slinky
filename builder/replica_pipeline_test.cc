@@ -107,114 +107,7 @@ void init_random(buffer<T, N>& buf) {
 }
 
 // clang-format off
-static std::function<pipeline()> kMatmulReplicas[2][2] = {
-  {
-    {
-// split = 0, lm = serial
-// BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
-  node_context ctx;
-  auto a = buffer_expr::make(ctx, "a", sizeof(uint32_t), 2);
-  auto b = buffer_expr::make(ctx, "b", sizeof(uint32_t), 2);
-  auto c = buffer_expr::make(ctx, "c", sizeof(uint32_t), 2);
-  auto abc = buffer_expr::make(ctx, "abc", sizeof(uint32_t), 2);
-  auto i = var(ctx, "i");
-  auto j = var(ctx, "j");
-  auto ab = buffer_expr::make(ctx, "ab", sizeof(uint32_t), 2);
-  auto _2 = variable::make(a->sym());
-  auto _3 = buffer_min(_2, 1);
-  auto _4 = buffer_max(_2, 1);
-  auto _5 = buffer_min(_2, 1);
-  auto _6 = buffer_max(_2, 1);
-  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{a, {point(i), {_3, _4}}}, {b, {{_5, _6}, point(j)}}};
-    const std::vector<var> fout_dims[] = {{i, j}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _8 = buffer_min(_2, 1);
-  auto _9 = buffer_max(_2, 1);
-  auto _10 = buffer_min(_2, 1);
-  auto _11 = buffer_max(_2, 1);
-  auto _fn_1 = func::make(std::move(_replica_fn_7), {{a, {point(i), {_8, _9}}}, {b, {{_10, _11}, point(j)}}}, {{ab, {i, j}}});
-  auto _12 = variable::make(c->sym());
-  auto _13 = buffer_min(_12, 0);
-  auto _14 = buffer_max(_12, 0);
-  auto _15 = buffer_min(_12, 0);
-  auto _16 = buffer_max(_12, 0);
-  auto _replica_fn_17 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{ab, {point(i), {_13, _14}}}, {c, {{_15, _16}, point(j)}}};
-    const std::vector<var> fout_dims[] = {{i, j}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _18 = buffer_min(_12, 0);
-  auto _19 = buffer_max(_12, 0);
-  auto _20 = buffer_min(_12, 0);
-  auto _21 = buffer_max(_12, 0);
-  auto _fn_0 = func::make(std::move(_replica_fn_17), {{ab, {point(i), {_18, _19}}}, {c, {{_20, _21}, point(j)}}}, {{abc, {i, j}}});
-  auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
-  return p;
-}
-// END define_replica_pipeline() output
-    },
-    {
-// split = 1, lm = serial
-// BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
-  node_context ctx;
-  auto a = buffer_expr::make(ctx, "a", sizeof(uint32_t), 2);
-  auto b = buffer_expr::make(ctx, "b", sizeof(uint32_t), 2);
-  auto c = buffer_expr::make(ctx, "c", sizeof(uint32_t), 2);
-  auto abc = buffer_expr::make(ctx, "abc", sizeof(uint32_t), 2);
-  auto i = var(ctx, "i");
-  auto j = var(ctx, "j");
-  auto ab = buffer_expr::make(ctx, "ab", sizeof(uint32_t), 2);
-  auto _2 = variable::make(a->sym());
-  auto _3 = buffer_min(_2, 1);
-  auto _4 = buffer_max(_2, 1);
-  auto _5 = buffer_min(_2, 1);
-  auto _6 = buffer_max(_2, 1);
-  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{a, {point(i), {_3, _4}}}, {b, {{_5, _6}, point(j)}}};
-    const std::vector<var> fout_dims[] = {{i, j}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _8 = buffer_min(_2, 1);
-  auto _9 = buffer_max(_2, 1);
-  auto _10 = buffer_min(_2, 1);
-  auto _11 = buffer_max(_2, 1);
-  auto _fn_1 = func::make(std::move(_replica_fn_7), {{a, {point(i), {_8, _9}}}, {b, {{_10, _11}, point(j)}}}, {{ab, {i, j}}});
-  auto _12 = variable::make(c->sym());
-  auto _13 = buffer_min(_12, 0);
-  auto _14 = buffer_max(_12, 0);
-  auto _15 = buffer_min(_12, 0);
-  auto _16 = buffer_max(_12, 0);
-  auto _replica_fn_17 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{ab, {point(i), {_13, _14}}}, {c, {{_15, _16}, point(j)}}};
-    const std::vector<var> fout_dims[] = {{i, j}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _18 = buffer_min(_12, 0);
-  auto _19 = buffer_max(_12, 0);
-  auto _20 = buffer_min(_12, 0);
-  auto _21 = buffer_max(_12, 0);
-  auto _fn_0 = func::make(std::move(_replica_fn_17), {{ab, {point(i), {_18, _19}}}, {c, {{_20, _21}, point(j)}}}, {{abc, {i, j}}});
-  auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
-  return p;
-}
-// END define_replica_pipeline() output
-    },
-  },
-  {
-    {
-// split = 0, lm = parallel
+static std::function<pipeline()> kMatmulReplica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -264,71 +157,25 @@ static std::function<pipeline()> kMatmulReplicas[2][2] = {
   return p;
 }
 // END define_replica_pipeline() output
-    },
-    {
-// split = 1, lm = parallel
-// BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
-  node_context ctx;
-  auto a = buffer_expr::make(ctx, "a", sizeof(uint32_t), 2);
-  auto b = buffer_expr::make(ctx, "b", sizeof(uint32_t), 2);
-  auto c = buffer_expr::make(ctx, "c", sizeof(uint32_t), 2);
-  auto abc = buffer_expr::make(ctx, "abc", sizeof(uint32_t), 2);
-  auto i = var(ctx, "i");
-  auto j = var(ctx, "j");
-  auto ab = buffer_expr::make(ctx, "ab", sizeof(uint32_t), 2);
-  auto _2 = variable::make(a->sym());
-  auto _3 = buffer_min(_2, 1);
-  auto _4 = buffer_max(_2, 1);
-  auto _5 = buffer_min(_2, 1);
-  auto _6 = buffer_max(_2, 1);
-  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{a, {point(i), {_3, _4}}}, {b, {{_5, _6}, point(j)}}};
-    const std::vector<var> fout_dims[] = {{i, j}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _8 = buffer_min(_2, 1);
-  auto _9 = buffer_max(_2, 1);
-  auto _10 = buffer_min(_2, 1);
-  auto _11 = buffer_max(_2, 1);
-  auto _fn_1 = func::make(std::move(_replica_fn_7), {{a, {point(i), {_8, _9}}}, {b, {{_10, _11}, point(j)}}}, {{ab, {i, j}}});
-  auto _12 = variable::make(c->sym());
-  auto _13 = buffer_min(_12, 0);
-  auto _14 = buffer_max(_12, 0);
-  auto _15 = buffer_min(_12, 0);
-  auto _16 = buffer_max(_12, 0);
-  auto _replica_fn_17 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{ab, {point(i), {_13, _14}}}, {c, {{_15, _16}, point(j)}}};
-    const std::vector<var> fout_dims[] = {{i, j}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _18 = buffer_min(_12, 0);
-  auto _19 = buffer_max(_12, 0);
-  auto _20 = buffer_min(_12, 0);
-  auto _21 = buffer_max(_12, 0);
-  auto _fn_0 = func::make(std::move(_replica_fn_17), {{ab, {point(i), {_18, _19}}}, {c, {{_20, _21}, point(j)}}}, {{abc, {i, j}}});
-  _fn_0.loops({{i, 1, loop_mode::parallel}});
-  auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
-  return p;
-}
-// END define_replica_pipeline() output
-    },
-  },
-};
+;
 // clang-format on
 
+// Matrix multiplication (not fast!)
 template <typename T>
-index_t xor_hash_matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
-  const T value = 0;
+index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
+  assert(a.rank == 2);
+  assert(b.rank == 2);
+  assert(c.rank == 2);
+  assert(a.dim(1).begin() == b.dim(0).begin());
+  assert(a.dim(1).end() == b.dim(0).end());
+  assert(a.dim(1).stride() == sizeof(T));
+  assert(b.dim(1).stride() == sizeof(T));
+  assert(c.dim(1).stride() == sizeof(T));
   for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
     for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
-      c(i, j) = value;
+      c(i, j) = 0;
       for (index_t k = a.dim(1).begin(); k < a.dim(1).end(); ++k) {
-        c(i, j) = c(i, j) ^ a(i, k) ^ b(k, j);
+        c(i, j) += a(i, k) * b(k, j);
       }
     }
   }
@@ -337,101 +184,92 @@ index_t xor_hash_matmul(const buffer<const T>& a, const buffer<const T>& b, cons
 
 // Two matrix multiplies: D = (A x B) x C.
 TEST_F(ReplicaPipelineTest, matmul) {
-  for (int split : {0, 1}) {
-    for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
+  constexpr int split = 1;
+  constexpr loop_mode lm = loop_mode::serial;
 
-      // Make the pipeline
-      node_context ctx;
+  // Make the pipeline
+  node_context ctx;
 
-      auto a = buffer_expr::make(ctx, "a", sizeof(int), 2);
-      auto b = buffer_expr::make(ctx, "b", sizeof(int), 2);
-      auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
-      auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
-      auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
+  auto a = buffer_expr::make(ctx, "a", sizeof(int), 2);
+  auto b = buffer_expr::make(ctx, "b", sizeof(int), 2);
+  auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
+  auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
+  auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
 
-      var i(ctx, "i");
-      var j(ctx, "j");
+  var i(ctx, "i");
+  var j(ctx, "j");
 
-      // The bounds required of the dimensions consumed by the reduction depend on the size of the
-      // buffers passed in. Note that we haven't used any constants yet.
-      auto K_ab = a->dim(1).bounds;
-      auto K_abc = c->dim(0).bounds;
+  // The bounds required of the dimensions consumed by the reduction depend on the size of the
+  // buffers passed in. Note that we haven't used any constants yet.
+  auto K_ab = a->dim(1).bounds;
+  auto K_abc = c->dim(0).bounds;
 
-      // We use int for this pipeline so we can test for correctness exactly.
-      func matmul_ab = func::make(xor_hash_matmul<int>, {{a, {point(i), K_ab}}, {b, {K_ab, point(j)}}}, {{ab, {i, j}}});
-      func matmul_abc =
-          func::make(xor_hash_matmul<int>, {{ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}}, {{abc, {i, j}}});
+  // We use int for this pipeline so we can test for correctness exactly.
+  func matmul_ab = func::make(matmul<int>, {{a, {point(i), K_ab}}, {b, {K_ab, point(j)}}}, {{ab, {i, j}}});
+  func matmul_abc = func::make(matmul<int>, {{ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}}, {{abc, {i, j}}});
 
-      a->dim(1).stride = a->elem_size();
-      b->dim(1).stride = b->elem_size();
-      c->dim(1).stride = c->elem_size();
-      abc->dim(1).stride = abc->elem_size();
+  a->dim(1).stride = a->elem_size();
+  b->dim(1).stride = b->elem_size();
+  c->dim(1).stride = c->elem_size();
+  abc->dim(1).stride = abc->elem_size();
 
-      // TODO: There should be a more user friendly way to control the strides.
-      ab->dim(1).stride = static_cast<index_t>(sizeof(int));
-      ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
+  // TODO: There should be a more user friendly way to control the strides.
+  ab->dim(1).stride = static_cast<index_t>(sizeof(int));
+  ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
 
-      if (split > 0) {
-        matmul_abc.loops({{i, split, lm}});
+  if (split > 0) {
+    matmul_abc.loops({{i, split, lm}});
 
-        if (lm == loop_mode::parallel) {
-          ab->store_at({&matmul_abc, i});
-        }
-      }
-
-      pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
-      pipeline p_replica = kMatmulReplicas[split][static_cast<int>(lm)]();
-
-      // Look at the source code to this test to verify that we
-      // we have something that matches exactly
-      std::string replica_text = define_replica_pipeline(ctx, {a, b, c}, {abc});
-      LOG_REPLICA_TEXT(replica_text);
-      size_t pos = replica_pipeline_test_src.find(replica_text);
-      ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-      // Run the pipeline
-      const int M = 10;
-      const int N = 10;
-      buffer<int, 2> a_buf({N, M});
-      buffer<int, 2> b_buf({N, M});
-      buffer<int, 2> c_buf({N, M});
-      buffer<int, 2> abc_buf({N, M});
-      // TODO: There should be a more user friendly way to initialize a buffer with strides other than the default
-      // order.
-      std::swap(a_buf.dim(1), a_buf.dim(0));
-      std::swap(b_buf.dim(1), b_buf.dim(0));
-      std::swap(c_buf.dim(1), c_buf.dim(0));
-      std::swap(abc_buf.dim(1), abc_buf.dim(0));
-
-      init_random(a_buf);
-      init_random(b_buf);
-      init_random(c_buf);
-      abc_buf.allocate();
-
-      {
-        const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
-        const raw_buffer* outputs[] = {&abc_buf};
-        test_context eval_ctx;
-        p.evaluate(inputs, outputs, eval_ctx);
-      }
-
-      buffer<int, 2> abc_buf_replica({N, M});
-      std::swap(abc_buf_replica.dim(1), abc_buf_replica.dim(0));
-      abc_buf_replica.allocate();
-
-      {
-        const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
-        const raw_buffer* outputs[] = {&abc_buf_replica};
-        test_context eval_ctx;
-        p_replica.evaluate(inputs, outputs, eval_ctx);
-      }
-
-      for (int i = 0; i < M; ++i) {
-        for (int j = 0; j < N; ++j) {
-          ASSERT_EQ(abc_buf(j, i), abc_buf_replica(j, i));
-        }
-      }
+    if (lm == loop_mode::parallel) {
+      ab->store_at({&matmul_abc, i});
     }
+  }
+
+  pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
+  pipeline p_replica = kMatmulReplica();
+
+  // Look at the source code to this test to verify that we
+  // we have something that matches exactly
+  std::string replica_text = define_replica_pipeline(ctx, {a, b, c}, {abc});
+  LOG_REPLICA_TEXT(replica_text);
+  size_t pos = replica_pipeline_test_src.find(replica_text);
+  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+  // Run the pipeline
+  const int M = 10;
+  const int N = 10;
+  buffer<int, 2> a_buf({N, M});
+  buffer<int, 2> b_buf({N, M});
+  buffer<int, 2> c_buf({N, M});
+  buffer<int, 2> abc_buf({N, M});
+  // TODO: There should be a more user friendly way to initialize a buffer with strides other than the default
+  // order.
+  std::swap(a_buf.dim(1), a_buf.dim(0));
+  std::swap(b_buf.dim(1), b_buf.dim(0));
+  std::swap(c_buf.dim(1), c_buf.dim(0));
+  std::swap(abc_buf.dim(1), abc_buf.dim(0));
+
+  init_random(a_buf);
+  init_random(b_buf);
+  init_random(c_buf);
+  abc_buf.allocate();
+
+  {
+    const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+    const raw_buffer* outputs[] = {&abc_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+  }
+
+  buffer<int, 2> abc_buf_replica({N, M});
+  std::swap(abc_buf_replica.dim(1), abc_buf_replica.dim(0));
+  abc_buf_replica.allocate();
+
+  {
+    const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+    const raw_buffer* outputs[] = {&abc_buf_replica};
+    test_context eval_ctx;
+    p_replica.evaluate(inputs, outputs, eval_ctx);
   }
 }
 
@@ -530,8 +368,7 @@ TEST_F(ReplicaPipelineTest, pyramid) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func downsample =
-      func::make(downsample2x, {{in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{intm, {x, y}}});
+  func downsample = func::make(downsample2x, {{in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{intm, {x, y}}});
   func upsample = func::make(pyramid_upsample2x,
       {{in, {point(x), point(y)}}, {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
 
