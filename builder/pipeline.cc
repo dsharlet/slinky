@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <list>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -372,11 +373,13 @@ public:
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
+    // std::cout << "add_input_crops " << std::endl;
     // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
     // output associated with a particular dimension.
     assert(!f->outputs().empty());
     symbol_map<expr> output_mins, output_maxs;
     for (const func::output& o : f->outputs()) {
+      // std::cout << "<output> " << o.sym() << std::endl;
       for (std::size_t d = 0; d < o.dims.size(); ++d) {
         expr dim_min = o.buffer->dim(d).min();
         expr dim_max = o.buffer->dim(d).max();
@@ -466,7 +469,9 @@ public:
   stmt make_producers(const loop_id& at, const func* f) {
     if (const func* next = find_next_producer(at)) {
       stmt result = produce(next, at);
+      // std::cout << "make_producers::[0]add_input_crops" << std::endl;
       result = add_input_crops(result, f);
+      // std::cout << "make_producers::[0]add_input_crops" << std::endl;
       result = block::make({make_producers(at, next), std::move(result)});
       return result;
     } else {
@@ -496,8 +501,12 @@ public:
   // - Wrapping f with the loops it wanted to be explicit
   // - Producing all the buffers that f consumes (recursively).
   stmt produce(const func* f, const loop_id& current_at = loop_id()) {
+    // std::cout << "produce::[0] <<<<<<" << std::endl;
     stmt result = f->make_call();
+    // std::cout << "make_call\n" << result << std::endl;
+    // std::cout << "produce::[0]add_input_crops" << std::endl;
     result = add_input_crops(result, f);
+    // std::cout << "produce::[1]add_input_crops" << std::endl;
     for (const func::output& i : f->outputs()) {
       produced.insert(i.buffer);
       if (!allocated.count(i.buffer)) {
@@ -514,7 +523,10 @@ public:
     }
 
     // Try to make any other producers needed here.
+    // std::cout << "produce::[0]make_producers" << std::endl;
     result = block::make({make_producers(current_at, f), result});
+    // std::cout << "produce::[1]make_producers" << std::endl;
+    // std::cout << "produce::[1] >>>>>>>" << std::endl;
     return result;
   }
 };
@@ -538,8 +550,113 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
   }
 }
 
+void topological_sort_impl(const func* f, std::set<const func *>& visited, 
+                            std::vector<const func *>& order, 
+                            std::map<const func*, std::vector<const func*>>& deps) {
+  std::cout << ">> Visiting - " << f->name() << std::endl;
+  for (const auto& i: f->inputs()) {
+    const auto& input = i.buffer;
+    if (input->constant()) {
+      continue;
+    }
+    if (!input->producer()) {
+      continue;
+    }
+    // Record that f is consumer of input->producer.
+    deps[input->producer()].push_back(f);
+
+    if(visited.count(input->producer()) > 0) {
+      continue;
+    }
+    topological_sort_impl(input->producer(), visited, order, deps);
+  }
+  std::cout << ">> Pushing into visited " << f->name() << std::endl;
+  visited.insert(f);
+  order.push_back(f);
+}
+
+void topological_sort(const std::vector<buffer_expr_ptr>& outputs,
+                      std::vector<const func *>& order,
+                      std::map<const func*, std::vector<const func*>>& deps) {
+  std::cout << ">>> topological_sort - " << std::endl;
+  std::set<const func* > visited;
+  for(const auto& i: outputs) {
+    topological_sort_impl(i->producer(), visited, order, deps);
+  }
+  std::reverse(order.begin(), order.end());
+  std::cout << "Final order: " << std::endl;
+  for (const auto& f: order) {
+    std::cout << "@@ " << f->name() << std::endl;
+    if (f->compute_at()) {
+      std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
+    }
+    
+    for(const auto& l: f->loops()) {
+      std::cout << "$" << l.sym() << std::endl;
+    }
+  }
+  std::cout << "Final deps: " << std::endl;
+  for (const auto& p: deps) {
+    std::cout << "## " << p.first->name() << std::endl;
+  }
+}
+
+struct loop_tree_node {
+  int parent_index = -1;
+  loop_id loop;
+};
+
+void build_loop_tree(const std::vector<const func*>& order, const std::map<const func*, std::vector<const func*>> deps) {
+  std::cout << ">>> Build tree:" << std::endl;
+  std::vector<loop_tree_node> loop_tree;
+  std::map<const func*, int> func_to_loop_tree;
+  // Push root loop.
+  loop_tree.push_back({-1, loop_id()});
+  for (const auto& f: order) {
+    std::cout << "@@ Processing " << f->name() << std::endl;
+    if (f->compute_at()) {
+      std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
+    }
+    const auto& p = deps.find(f);
+    if (p != deps.end()) {
+      // assert that p->second is not empty.
+      int parent_id = -1;
+      for (const auto& d: p->second) {
+        std::cout << "produces for " << d->name() << std::endl;
+        const auto& node = func_to_loop_tree.find(d);
+        // assert that node is found.
+        if (node != func_to_loop_tree.end()) {
+          parent_id = node->second;
+          std::cout << "loop tree node " << node->second << std::endl;
+        } else {
+          std::cout << "loop tree node wasn't found" << std::endl;
+        }
+      }
+      for (const auto& l: f->loops()) {
+        std::cout << "Adding a loop " << l.sym() << std::endl;
+        loop_tree.push_back({parent_id, {f, l.var}});
+        parent_id = loop_tree.size() - 1;
+      }
+      func_to_loop_tree[f] = parent_id;
+    } else {
+      std::cout << "This is a root node" << std::endl;
+      int parent_id = 0;
+      for (const auto& l: f->loops()) {
+        std::cout << "Adding a loop " << l.sym() << std::endl;
+        loop_tree.push_back({parent_id, {f, l.var}});
+        parent_id = loop_tree.size() - 1;
+      }
+      func_to_loop_tree[f] = parent_id;
+    }
+  }
+}
+
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
+  std::vector<const func*> order;
+  std::map<const func*, std::vector<const func*>> deps;
+  topological_sort(outputs, order, deps);
+  build_loop_tree(order, deps);
   pipeline_builder builder(inputs, outputs, constants);
 
   stmt result;
@@ -559,6 +676,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     produce_f = builder.make_allocations(produce_f);
     result = block::make({std::move(result), std::move(produce_f)});
   }
+  // std::cout << "+++ Initital loop nest: \n" << result << std::endl;
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
@@ -578,13 +696,14 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     input_syms.push_back(i->sym());
   }
   result = infer_bounds(result, ctx, input_syms);
+  // std::cout << "After infer_bounds\n" << result << std::endl;
 
   result = simplify(result);
 
   // Try to reuse buffers and eliminate copies where possible.
-  if (!options.no_alias_buffers) {
-    result = alias_buffers(result);
-  }
+  // if (!options.no_alias_buffers) {
+  //   result = alias_buffers(result);
+  // }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
