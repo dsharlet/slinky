@@ -107,6 +107,110 @@ void init_random(buffer<T, N>& buf) {
 }
 
 // clang-format off
+static std::function<pipeline()> kMultipleOutputsReplica =
+// BEGIN define_replica_pipeline() output
+[]() -> ::slinky::pipeline {
+  node_context ctx;
+  auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 3);
+  auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(uint32_t), 2);
+  auto y = var(ctx, "y");
+  auto z = var(ctx, "z");
+  auto _1 = variable::make(in->sym());
+  auto _2 = buffer_min(_1, 0);
+  auto _3 = buffer_max(_1, 0);
+  auto _4 = buffer_min(_1, 1);
+  auto _5 = buffer_max(_1, 1);
+  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0, const buffer<void>& o1) -> index_t {
+    const buffer<const void>* ins[] = {&i0};
+    const buffer<void>* outs[] = {&o0, &o1};
+    const func::input fins[] = {{in, {{_2, _3}, {_4, _5}, point(z)}}};
+    const std::vector<var> fout_dims[] = {{y, z}, {z}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _7 = buffer_min(_1, 0);
+  auto _8 = buffer_max(_1, 0);
+  auto _9 = buffer_min(_1, 1);
+  auto _10 = buffer_max(_1, 1);
+  auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(uint32_t), 1);
+  auto _fn_0 = func::make(std::move(_replica_fn_6), {{in, {{_7, _8}, {_9, _10}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
+  _fn_0.loops({{z, 1, loop_mode::serial}});
+  auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {});
+  return p;
+}
+// END define_replica_pipeline() output
+;
+// clang-format on
+
+
+TEST_F(ReplicaPipelineTest, multiple_outputs) {
+  constexpr int split = 1;
+  constexpr loop_mode lm = loop_mode::serial;
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
+  auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(int), 2);
+  auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(int), 1);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  auto X = in->dim(0).bounds;
+  auto Y = in->dim(1).bounds;
+
+  // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
+  func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
+                                                     const buffer<int>& sum_xy) -> index_t {
+    assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
+    for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
+      sum_xy(z) = 0;
+      for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
+        sum_x(y, z) = 0;
+        for (index_t x = in.dim(0).min(); x <= in.dim(0).max(); ++x) {
+          sum_x(y, z) += in(x, y, z);
+          sum_xy(z) += in(x, y, z);
+        }
+      }
+    }
+    return 0;
+  };
+  func sums = func::make(std::move(sum_x_xy), {{in, {X, Y, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
+
+  if (split > 0) {
+    sums.loops({{z, split, lm}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
+  pipeline p_replica = kMultipleOutputsReplica();
+
+  // Look at the source code to this test to verify that we
+  // we have something that matches exactly
+  std::string replica_text = define_replica_pipeline(ctx, {in}, {sum_x, sum_xy});
+  LOG_REPLICA_TEXT(replica_text);
+  size_t pos = replica_pipeline_test_src.find(replica_text);
+  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  const int D = 5;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  buffer<int, 2> sum_x_buf({H, D});
+  buffer<int, 1> sum_xy_buf({D});
+  sum_x_buf.allocate();
+  sum_xy_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  p_replica.evaluate(inputs, outputs, eval_ctx);
+}
+
+
+// clang-format off
 static std::function<pipeline()> kMatmulReplica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
@@ -254,23 +358,11 @@ TEST_F(ReplicaPipelineTest, matmul) {
   init_random(c_buf);
   abc_buf.allocate();
 
-  {
-    const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
-    const raw_buffer* outputs[] = {&abc_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-  }
-
-  buffer<int, 2> abc_buf_replica({N, M});
-  std::swap(abc_buf_replica.dim(1), abc_buf_replica.dim(0));
-  abc_buf_replica.allocate();
-
-  {
-    const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
-    const raw_buffer* outputs[] = {&abc_buf_replica};
-    test_context eval_ctx;
-    p_replica.evaluate(inputs, outputs, eval_ctx);
-  }
+  const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+  const raw_buffer* outputs[] = {&abc_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  p_replica.evaluate(inputs, outputs, eval_ctx);
 }
 
 // clang-format off
@@ -394,22 +486,10 @@ TEST_F(ReplicaPipelineTest, pyramid) {
   buffer<int, 2> out_buf({W, H});
   out_buf.allocate();
 
-  {
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-  }
-
-  buffer<int, 2> out_buf_replica({W, H});
-  out_buf_replica.allocate();
-
-  {
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf_replica};
-    test_context eval_ctx;
-    p_replica.evaluate(inputs, outputs, eval_ctx);
-  }
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p_replica.evaluate(inputs, outputs, eval_ctx);
 }
 
 }  // namespace slinky
