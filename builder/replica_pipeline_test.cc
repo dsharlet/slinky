@@ -80,13 +80,6 @@ public:
   }
 };
 
-template <typename T>
-T output_fill_value() {
-  T value;
-  memset(&value, internal::kReplicaBufferFillValue, sizeof(value));
-  return value;
-}
-
 std::mt19937& rng() {
   static std::mt19937 r{static_cast<uint32_t>(time(nullptr))};
   return r;
@@ -210,7 +203,7 @@ static std::function<pipeline()> kTrivialReplicas[2][2] = {
 
 template <typename T>
 index_t xor_hash_trivial(const buffer<const T>& in, const buffer<T>& out) {
-  const T value = output_fill_value<T>();
+  const T value = 0;
   fill(out, &value);
   for_each_index(out, [&](auto i) { out(i) ^= in(i); });
   return 0;
@@ -497,9 +490,7 @@ static std::function<pipeline()> kMatmulReplicas[2][2] = {
 
 template <typename T>
 index_t xor_hash_matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
-  const T value = output_fill_value<T>();
-  // fill(out, &value);
-  // for_each_index(out, [&](auto i) { out(i) = out(i) ^ a(i) ^ b(i); });
+  const T value = 0;
   for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
     for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
       c(i, j) = value;
@@ -608,6 +599,146 @@ TEST_F(ReplicaPipelineTest, matmul) {
         }
       }
     }
+  }
+}
+
+// clang-format off
+static std::function<pipeline()> kPyramidReplica =
+// BEGIN define_replica_pipeline() output
+[]() -> ::slinky::pipeline {
+  node_context ctx;
+  auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(uint32_t), 2);
+  auto x = var(ctx, "x");
+  auto y = var(ctx, "y");
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(uint32_t), 2);
+  auto _2 = x * 2;
+  auto _3 = _2 + 0;
+  auto _4 = x * 2;
+  auto _5 = _4 + 1;
+  auto _6 = y * 2;
+  auto _7 = _6 + 0;
+  auto _8 = y * 2;
+  auto _9 = _8 + 1;
+  auto _replica_fn_10 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* ins[] = {&i0};
+    const buffer<void>* outs[] = {&o0};
+    const func::input fins[] = {{in, {{_3, _5}, {_7, _9}}}};
+    const std::vector<var> fout_dims[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _11 = x * 2;
+  auto _12 = _11 + 0;
+  auto _13 = x * 2;
+  auto _14 = _13 + 1;
+  auto _15 = y * 2;
+  auto _16 = _15 + 0;
+  auto _17 = y * 2;
+  auto _18 = _17 + 1;
+  auto _fn_1 = func::make(std::move(_replica_fn_10), {{in, {{_12, _14}, {_16, _18}}}}, {{intm, {x, y}}});
+  auto _19 = x / 2;
+  auto _20 = x + 1;
+  auto _21 = _20 / 2;
+  auto _22 = y / 2;
+  auto _23 = y + 1;
+  auto _24 = _23 / 2;
+  auto _replica_fn_25 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* ins[] = {&i0, &i1};
+    const buffer<void>* outs[] = {&o0};
+    const func::input fins[] = {{in, {point(x), point(y)}}, {intm, {{_19, _21}, {_22, _24}}}};
+    const std::vector<var> fout_dims[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
+  };
+  auto _26 = x / 2;
+  auto _27 = x + 1;
+  auto _28 = _27 / 2;
+  auto _29 = y / 2;
+  auto _30 = y + 1;
+  auto _31 = _30 / 2;
+  auto _fn_0 = func::make(std::move(_replica_fn_25), {{in, {point(x), point(y)}}, {intm, {{_26, _28}, {_29, _31}}}}, {{out, {x, y}}});
+  _fn_0.loops({{y, 1, loop_mode::serial}});
+  auto p = build_pipeline(ctx, {}, {in}, {out}, {});
+  return p;
+}
+// END define_replica_pipeline() output
+;
+// clang-format on
+
+index_t pyramid_upsample2x(const buffer<const int>& skip, const buffer<const int>& in, const buffer<int>& out) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+      out(x, y) = in((x + 0) >> 1, (y + 0) >> 1) + in((x + 1) >> 1, (y + 0) >> 1) + in((x + 0) >> 1, (y + 1) >> 1) +
+                  in((x + 1) >> 1, (y + 1) >> 1) + skip(x, y);
+    }
+  }
+  return 0;
+}
+
+index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+      out(x, y) = (in(2 * x + 0, 2 * y + 0) + in(2 * x + 1, 2 * y + 0) + in(2 * x + 0, 2 * y + 1) +
+                      in(2 * x + 1, 2 * y + 1) + 2) /
+                  4;
+    }
+  }
+  return 0;
+}
+
+TEST_F(ReplicaPipelineTest, pyramid) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func downsample =
+      func::make(downsample2x, {{in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{intm, {x, y}}});
+  func upsample = func::make(pyramid_upsample2x,
+      {{in, {point(x), point(y)}}, {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
+
+  upsample.loops({{y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+  pipeline p_replica = kPyramidReplica();
+
+  // Look at the source code to this test to verify that we
+  // we have something that matches exactly
+  std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
+  LOG_REPLICA_TEXT(replica_text);
+  size_t pos = replica_pipeline_test_src.find(replica_text);
+  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+  // Run the pipeline.
+  const int W = 8;
+  const int H = 8;
+  buffer<int, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  {
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+  }
+
+  buffer<int, 2> out_buf_replica({W, H});
+  out_buf_replica.allocate();
+
+  {
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf_replica};
+    test_context eval_ctx;
+    p_replica.evaluate(inputs, outputs, eval_ctx);
   }
 }
 

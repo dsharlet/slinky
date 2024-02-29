@@ -388,7 +388,6 @@ private:
 
   template <typename T>
   void visit_binary_op(const T* op, const std::string& binop) {
-    fail("visit_binary_op");
     std::string sa = print_expr(op->a);
     std::string sb = print_expr(op->b);
     name_ = print_expr_assignment(sa, " ", binop, " ", sb);
@@ -396,7 +395,6 @@ private:
 
   template <typename T>
   void visit_binary_call(const T* op, const std::string& call) {
-    fail("visit_binary_call");
     std::string sa = print_expr(op->a);
     std::string sb = print_expr(op->b);
     name_ = print_expr_assignment(call, "(", sa, ", ", sb, ")");
@@ -437,7 +435,7 @@ struct rph_handler {
     }
 
     char* out_pos_addr = reinterpret_cast<char*>(output->address_at(out_pos));
-    memset(out_pos_addr, internal::kReplicaBufferFillValue, output->elem_size);
+    memset(out_pos_addr, 0, output->elem_size);
 
     for (std::size_t i = 0; i < inputs.size(); i++) {
       auto input_required = calc_input_required(inputs[i], fins[i].bounds);

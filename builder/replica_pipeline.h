@@ -17,8 +17,6 @@ std::string define_replica_pipeline(node_context& ctx, const std::vector<buffer_
 
 namespace internal {
 
-constexpr char kReplicaBufferFillValue = 0xAA;
-
 index_t replica_pipeline_handler(span<const buffer<const void>*> inputs, span<const buffer<void>*> outputs,
     span<func::input> fins, span<std::vector<var>> fout_dims);
 
