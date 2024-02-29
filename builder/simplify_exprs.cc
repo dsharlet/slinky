@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <iostream>
 
 #include "builder/rewrite.h"
 #include "builder/substitute.h"
