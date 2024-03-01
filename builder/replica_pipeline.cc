@@ -86,7 +86,7 @@ public:
   void visit(const logical_and* op) override { visit_binary_op(op, "&&"); }
   void visit(const logical_or* op) override { visit_binary_op(op, "||"); }
   void visit(const logical_not* op) override {
-    fail("logical_not");
+    fail("untested logical_not");
     std::string sa = print_expr(op->a);
     print_expr_assignment("!", sa);
   }
@@ -98,7 +98,7 @@ public:
     case intrinsic::positive_infinity: call_name = "std::numeric_limits<float>::infinity"; break;
     case intrinsic::negative_infinity: call_name = "-std::numeric_limits<float>::infinity"; break;
     case intrinsic::indeterminate: call_name = "std::numeric_limits<float>::quiet_NaN"; break;
-    case intrinsic::abs: call_name = "std::abs"; break;
+    case intrinsic::abs: call_name = "std::abs"; break;  // TODO: this may need to be an expr()-based call
     case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
     case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
     case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
