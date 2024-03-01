@@ -91,7 +91,7 @@ T random() {
     T value;
     char bytes[sizeof(T)];
   } u;
-  for (int i = 0; i < sizeof(T); i++) {
+  for (std::size_t i = 0; i < sizeof(T); i++) {
     u.bytes[i] = static_cast<char>(rng()());
   }
   return u.value;
