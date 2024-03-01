@@ -325,7 +325,7 @@ public:
         os_ << "  " << fn_name << ".compute_at(" << li << ");\n";
       }
     }
-    // TODO compute_at_, paddng
+    // TODO padding?
 
     return fn_name;
   }
