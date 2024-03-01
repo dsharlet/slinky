@@ -49,8 +49,8 @@ class ReplicaPipelineTest : public testing::Test {
 protected:
   void SetUp() override {
     // TODO: for testing purposes, remove
-    replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_test.cc");
-    return;
+    // replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_test.cc");
+    // return;
 
     std::string error;
     runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
