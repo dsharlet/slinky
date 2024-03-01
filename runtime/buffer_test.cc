@@ -20,9 +20,9 @@ int random(int min, int max) { return rng()() % (max - min + 1) + min; }
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& buf) {
   buf.allocate();
-  std::size_t flat_size = buf.size_bytes() / sizeof(T);
+  std::size_t flat_size = buf.size_bytes();
   for (std::size_t i = 0; i < flat_size; ++i) {
-    buf.base()[i] = random(0, 255);
+    reinterpret_cast<char*>(buf.base())[i] = random(0, 255);
   }
 }
 
@@ -473,35 +473,6 @@ TEST(buffer, for_each_slice_sum) {
   });
 }
 
-// A non-standard size type that acts like an integer for testing.
-struct big {
-  uint64_t a, b;
-
-  void assign(int i) {
-    a = i;
-    b = i / 2;
-  }
-
-  big() = default;
-  big(int i) { assign(i); }
-  big(const big&) = default;
-
-  big& operator=(int i) {
-    assign(i);
-    return *this;
-  }
-
-  operator uint64_t() const { return a + b; }
-
-  big& operator+=(int r) {
-    a += r;
-    return *this;
-  }
-
-  bool operator==(const big& r) { return a == r.a && b == r.b; }
-  bool operator!=(const big& r) { return a != r.a || b != r.b; }
-};
-
 template <typename T, std::size_t N>
 void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr, bool broadcast = false) {
   index_t stride = broadcast ? 0 : buf.elem_size;
@@ -515,84 +486,74 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
   }
 }
 
-template <typename T, std::size_t Rank>
-void test_copy() {
-  for (int cases = 0; cases < 100; ++cases) {
-    T padding = 7;
+TEST(buffer, copy) {
+  constexpr int max_rank = 4;
+  for (int cases = 0; cases < 1000; ++cases) {
+    int rank = random(0, max_rank);
+    int elem_size = random(1, 12);
 
-    buffer<T, Rank> src;
+    std::vector<char> padding(elem_size);
+    std::fill(padding.begin(), padding.end(), 7);
+
+    buffer<void, max_rank> src(rank, elem_size);
     for (std::size_t d = 0; d < src.rank; ++d) {
       src.dim(d).set_min_extent(0, 5);
     }
     randomize_strides_and_padding(src, {-1, 1, true, false});
     init_random(src);
 
-    buffer<T, Rank> dst;
+    buffer<void, max_rank> dst(rank, elem_size);
     for (std::size_t d = 0; d < src.rank; ++d) {
       dst.dim(d) = src.dim(d);
     }
     randomize_strides_and_padding(dst, {-1, 1, false, false});
     dst.allocate();
 
-    copy(src, dst, &padding);
+    slinky::copy(src, dst, padding.data());
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
-        ASSERT_EQ(dst(i), src(i));
+        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
-        ASSERT_EQ(dst(i), padding);
+        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
       }
     });
 
     for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent; ++i) {
-        reinterpret_cast<T*>(base)[i] += 1;
+      for (index_t i = 0; i < extent * elem_size; ++i) {
+        reinterpret_cast<char*>(base)[i] += 1;
       }
     });
 
-    copy(src, dst, nullptr);
+    slinky::copy(src, dst, nullptr);
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
         // The copied area should have been copied.
-        ASSERT_EQ(dst(i), src(i));
+        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
         // The padding should be unchanged.
-        ASSERT_EQ(dst(i), padding);
+        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
       }
     });
 
     for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent; ++i) {
-        reinterpret_cast<T*>(base)[i] += -1;
+      for (index_t i = 0; i < extent * elem_size; ++i) {
+        reinterpret_cast<char*>(base)[i] += -1;
       }
     });
 
-    T new_padding = 3;
-    pad(src.dims, dst, &new_padding);
+    std::vector<char> new_padding(elem_size);
+    std::fill(new_padding.begin(), new_padding.end(), 3);
+    pad(src.dims, dst, new_padding.data());
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
         // The src should not have been copied.
-        ASSERT_NE(dst(i), src(i));
+        ASSERT_NE(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
         // But we should have new padding.
-        ASSERT_EQ(dst(i), new_padding);
+        ASSERT_EQ(memcmp(dst.address_at(i), new_padding.data(), elem_size), 0);
       }
     });
   }
-}
-
-template <typename T>
-void test_copy() {
-  test_copy<T, 1>();
-  test_copy<T, 2>();
-  test_copy<T, 3>();
-}
-
-TEST(buffer, copy) {
-  test_copy<uint8_t>();
-  test_copy<uint16_t>();
-  test_copy<uint32_t>();
-  test_copy<uint64_t>();
-  test_copy<big>();
 }
 
 }  // namespace slinky

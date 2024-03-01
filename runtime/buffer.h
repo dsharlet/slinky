@@ -208,6 +208,19 @@ public:
   static raw_buffer_ptr make_copy(const raw_buffer& src);
 };
 
+namespace internal {
+
+template <typename T>
+struct default_elem_size {
+  static constexpr std::size_t value = sizeof(T);
+};
+template <>
+struct default_elem_size<void> {
+  static constexpr std::size_t value = 0;
+};
+
+}  // namespace internal
+
 template <typename T, std::size_t DimsSize>
 class buffer : public raw_buffer {
 private:
@@ -225,7 +238,20 @@ public:
     raw_buffer::base = nullptr;
     to_free = nullptr;
     rank = DimsSize;
-    elem_size = sizeof(T);
+    elem_size = internal::default_elem_size<T>::value;
+    if (DimsSize > 0) {
+      dims = dims_storage;
+    } else {
+      dims = nullptr;
+    }
+  }
+
+  explicit buffer(std::size_t rank, std::size_t elem_size = internal::default_elem_size<T>::value) {
+    raw_buffer::base = nullptr;
+    to_free = nullptr;
+    assert(rank <= DimsSize);
+    this->rank = rank;
+    this->elem_size = elem_size;
     if (DimsSize > 0) {
       dims = dims_storage;
     } else {
