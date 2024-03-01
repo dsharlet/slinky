@@ -394,27 +394,21 @@ private:
     return name_;
   }
 
-  template<typename T>
-  void print_maybe_expr(std::ostringstream& os, const T& t) {
-    os << t;
-  }
-
-  template<>
-  void print_maybe_expr(std::ostringstream& os, const expr& e) {
-    if (e.defined()) {
-      os << e;
-    } else {
-      os << "expr()";
-    }
-  }
-
   template <typename T>
   std::string print_vector_elements(const std::vector<T>& v) {
     bool first = true;
     std::ostringstream os;
     for (const auto& vi : v) {
       if (!first) os << ", ";
-      print_maybe_expr(os, vi);
+      if constexpr (std::is_same_v<T, expr>) {
+        if (vi.defined()) {
+          os << vi;
+        } else {
+          os << "expr()";
+        }
+      } else {
+        os << vi;
+      }
       first = false;
     }
     return os.str();
