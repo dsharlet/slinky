@@ -133,6 +133,10 @@ public:
   void visit(const check* op) override { fail("unimplemented check"); }
 
   std::string print(const var& v) {
+    if (!v.defined()) {
+      return "var()";
+    }
+
     auto it = vars_emitted_.find(v.sym());
     if (it != vars_emitted_.end()) {
       return it->second;
@@ -249,7 +253,6 @@ public:
   }
 
   std::string print(const loop_id& loopid) {
-    fail("UNTESTED");
     std::string fn_ptr;
     if (loopid.func) {
       auto fn = print(*loopid.func);
@@ -258,7 +261,7 @@ public:
       fn_ptr = print_assignment_prefixed("_fn_", "static_cast<func*>(nullptr)");
     }
     auto v = print(loopid.var);
-    return print_assignment_prefixed("_loop_id_", "loop_id(", fn_ptr, ", ", v, ")");
+    return print_assignment_prefixed("_loop_id_", "loop_id{", fn_ptr, ", ", v, "}");
   }
 
   std::string print_callback(const std::vector<func::input>& fins, const std::vector<func::output>& fouts) {
