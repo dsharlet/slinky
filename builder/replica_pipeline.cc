@@ -206,7 +206,13 @@ public:
 
     auto name = ctx_.name(fin.sym());
     auto bounds = print(fin.bounds);
-    return print_string_vector({name, bounds});
+    if (!fin.output_crop.empty() || !fin.output_slice.empty()) {
+      auto output_crop = print(fin.output_crop);
+      auto output_slice = print_vector(fin.output_slice);
+      return print_string_vector({name, bounds, output_crop, output_slice});
+    } else {
+      return print_string_vector({name, bounds});
+    }
   }
 
   std::string print(const std::vector<func::input>& fins) {
@@ -253,6 +259,9 @@ public:
   }
 
   std::string print(const loop_id& loopid) {
+    if (!loopid.func && !loopid.var.defined()) {
+      return "<root>";
+    }
     std::string fn_ptr;
     if (loopid.func) {
       auto fn = print(*loopid.func);
@@ -293,17 +302,28 @@ public:
     auto fn_name = str_cat("_fn_", next_id_++);
     funcs_emitted_[&f] = fn_name;
 
-    auto callback = print_callback(f.inputs(), f.outputs());
-    auto fins = print(f.inputs());
-    auto fouts = print(f.outputs());
-    (void)print_assignment_explicit(fn_name, "func::make(std::move(", callback, "), ", fins, ", ", fouts, ")");
+    if (!f.defined() && f.outputs().size() == 1) {
+      auto fins = print(f.inputs());
+      auto fouts = print(f.outputs()[0]);
+      (void)print_assignment_explicit(fn_name, "func::make_copy(", fins, ", ", fouts, ")");
+    } else {
+      auto callback = print_callback(f.inputs(), f.outputs());
+      auto fins = print(f.inputs());
+      auto fouts = print(f.outputs());
+      (void)print_assignment_explicit(fn_name, "func::make(std::move(", callback, "), ", fins, ", ", fouts, ")");
+    }
     if (!f.loops().empty()) {
       auto li = print(f.loops());
       os_ << "  " << fn_name << ".loops(" << li << ");\n";
     }
     auto loopid = f.compute_at();
     if (loopid) {
-      print(*loopid);
+      auto li = print(*loopid);
+      if (li == "<root>") {
+        os_ << "  " << fn_name << ".compute_root();\n";
+      } else {
+        os_ << "  " << fn_name << ".compute_at(" << li << ");\n";
+      }
     }
     // TODO compute_at_, paddng
 
@@ -346,8 +366,12 @@ private:
   std::map<const func*, std::string> funcs_emitted_;
 
   std::string print_expr(const expr& e) {
-    name_ = "$$INVALID$$";
-    e.accept(this);
+    if (e.defined()) {
+      name_ = "$$INVALID$$";
+      e.accept(this);
+    } else {
+      name_ = "expr()";
+    }
     return name_;
   }
 
@@ -370,13 +394,27 @@ private:
     return name_;
   }
 
+  template<typename T>
+  void print_maybe_expr(std::ostringstream& os, const T& t) {
+    os << t;
+  }
+
+  template<>
+  void print_maybe_expr(std::ostringstream& os, const expr& e) {
+    if (e.defined()) {
+      os << e;
+    } else {
+      os << "expr()";
+    }
+  }
+
   template <typename T>
   std::string print_vector_elements(const std::vector<T>& v) {
     bool first = true;
     std::ostringstream os;
     for (const auto& vi : v) {
       if (!first) os << ", ";
-      os << vi;
+      print_maybe_expr(os, vi);
       first = false;
     }
     return os.str();

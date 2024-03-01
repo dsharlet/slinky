@@ -49,8 +49,8 @@ class ReplicaPipelineTest : public testing::Test {
 protected:
   void SetUp() override {
     // TODO: for testing purposes, remove
-    // replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_test.cc");
-    // return;
+    replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_test.cc");
+    return;
 
     std::string error;
     runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
@@ -689,7 +689,6 @@ TEST_F(ReplicaPipelineTest, unrelated) {
   }
 }
 
-#if 0
 // clang-format off
 static std::function<pipeline()> kConcatenatedReplica =
 // BEGIN define_replica_pipeline() output
@@ -698,9 +697,9 @@ static std::function<pipeline()> kConcatenatedReplica =
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
@@ -711,46 +710,42 @@ static std::function<pipeline()> kConcatenatedReplica =
   auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
   auto _3 = y - 0;
   auto _4 = y - 0;
+  auto _5 = variable::make(in1->sym());
+  auto _6 = buffer_max(_5, 1);
+  auto _7 = buffer_min(_5, 1);
+  auto _8 = _6 - _7;
+  auto _9 = _8 + 1;
+  auto _10 = _9 - 1;
   auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
-  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_12 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
     const func::input fins[] = {{in2, {point(x), point(y)}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _fn_5 = func::make(std::move(_replica_fn_6), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  auto _7 = variable::make(in1->sym());
-  auto _8 = buffer_max(_7, 1);
-  auto _9 = buffer_min(_7, 1);
-  auto _10 = _8 - _9;
-  auto _11 = _10 + 1;
-  auto _12 = y - _11;
-  auto _13 = buffer_max(_7, 1);
-  auto _14 = buffer_min(_7, 1);
+  auto _fn_11 = func::make(std::move(_replica_fn_12), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  auto _13 = buffer_max(_5, 1);
+  auto _14 = buffer_min(_5, 1);
   auto _15 = _13 - _14;
   auto _16 = _15 + 1;
   auto _17 = y - _16;
-  auto _replica_fn_18 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{intm1, {point(x), {_3, _4}}}, {intm2, {point(x), {_12, _17}}}};
-    const std::vector<var> fout_dims[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _19 = y - 0;
-  auto _20 = y - 0;
-  auto _21 = buffer_max(_7, 1);
-  auto _22 = buffer_min(_7, 1);
-  auto _23 = _21 - _22;
-  auto _24 = _23 + 1;
-  auto _25 = y - _24;
-  auto _26 = buffer_max(_7, 1);
-  auto _27 = buffer_min(_7, 1);
-  auto _28 = _26 - _27;
-  auto _29 = _28 + 1;
-  auto _30 = y - _29;
-  auto _fn_0 = func::make(std::move(_replica_fn_18), {{intm1, {point(x), {_19, _20}}}, {intm2, {point(x), {_25, _30}}}}, {{out, {x, y}}});
+  auto _18 = buffer_max(_5, 1);
+  auto _19 = buffer_min(_5, 1);
+  auto _20 = _18 - _19;
+  auto _21 = _20 + 1;
+  auto _22 = y - _21;
+  auto _23 = buffer_max(_5, 1);
+  auto _24 = buffer_min(_5, 1);
+  auto _25 = _23 - _24;
+  auto _26 = _25 + 1;
+  auto _27 = variable::make(out->sym());
+  auto _28 = buffer_max(_27, 1);
+  auto _29 = buffer_min(_27, 1);
+  auto _30 = _28 - _29;
+  auto _31 = _30 + 1;
+  auto _32 = _31 - 1;
+  auto _fn_0 = func::make_copy({{intm1, {point(x), {_3, _4}}, {point(expr()), {0, _10}}, {}}, {intm2, {point(x), {_17, _22}}, {point(expr()), {_26, _32}}, {}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {.no_alias_buffers = true});
   return p;
 }
@@ -815,9 +810,7 @@ TEST_F(ReplicaPipelineTest, concatenated) {
     p_replica.evaluate(inputs, outputs, eval_ctx);
   }
 }
-#endif
 
-#if 0
 // clang-format off
 static std::function<pipeline()> kStackedReplica =
 // BEGIN define_replica_pipeline() output
@@ -826,9 +819,9 @@ static std::function<pipeline()> kStackedReplica =
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 3);
+  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
@@ -846,14 +839,7 @@ static std::function<pipeline()> kStackedReplica =
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
   auto _fn_3 = func::make(std::move(_replica_fn_4), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0, &i1};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}};
-    const std::vector<var> fout_dims[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _fn_0 = func::make(std::move(_replica_fn_5), {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}}, {{out, {x, y}}});
+  auto _fn_0 = func::make_copy({{intm1, {point(x), point(y)}, {}, {expr(), expr(), 0}}, {intm2, {point(x), point(y)}, {}, {expr(), expr(), 1}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {});
   return p;
 }
@@ -915,7 +901,6 @@ TEST_F(ReplicaPipelineTest, stacked) {
     p_replica.evaluate(inputs, outputs, eval_ctx);
   }
 }
-#endif
 
 // clang-format off
 static std::function<pipeline()> kDiamondStencilsReplica =
@@ -1039,7 +1024,6 @@ TEST_F(ReplicaPipelineTest, diamond_stencils) {
   }
 }
 
-#if 0
 // clang-format off
 static std::function<pipeline()> kPaddedStencilReplica =
 // BEGIN define_replica_pipeline() output
@@ -1059,32 +1043,29 @@ static std::function<pipeline()> kPaddedStencilReplica =
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
   auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  auto _replica_fn_4 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _4 = variable::make(in->sym());
+  auto _5 = buffer_min(_4, 0);
+  auto _6 = buffer_max(_4, 0);
+  auto _7 = buffer_min(_4, 1);
+  auto _8 = buffer_max(_4, 1);
+  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{_5, _6}, {_7, _8}}, {}}}, {padded_intm, {x, y}});
+  _fn_1.compute_root();
+  auto _9 = x + -1;
+  auto _10 = x + 1;
+  auto _11 = y + -1;
+  auto _12 = y + 1;
+  auto _replica_fn_13 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{intm, {point(x), point(y)}}};
+    const func::input fins[] = {{padded_intm, {{_9, _10}, {_11, _12}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _fn_1 = func::make(std::move(_replica_fn_4), {{intm, {point(x), point(y)}}}, {{padded_intm, {x, y}}});
-  auto _fn_5 = static_cast<func*>(nullptr);
-  auto _loop_id_6 = loop_id{_fn_5, var()};
-  auto _7 = x + -1;
-  auto _8 = x + 1;
-  auto _9 = y + -1;
-  auto _10 = y + 1;
-  auto _replica_fn_11 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* ins[] = {&i0};
-    const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{padded_intm, {{_7, _8}, {_9, _10}}}};
-    const std::vector<var> fout_dims[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
-  };
-  auto _12 = x + -1;
-  auto _13 = x + 1;
-  auto _14 = y + -1;
-  auto _15 = y + 1;
-  auto _fn_0 = func::make(std::move(_replica_fn_11), {{padded_intm, {{_12, _13}, {_14, _15}}}}, {{out, {x, y}}});
+  auto _14 = x + -1;
+  auto _15 = x + 1;
+  auto _16 = y + -1;
+  auto _17 = y + 1;
+  auto _fn_0 = func::make(std::move(_replica_fn_13), {{padded_intm, {{_14, _15}, {_16, _17}}}}, {{out, {x, y}}});
   _fn_0.loops({{y, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
@@ -1144,6 +1125,5 @@ TEST_F(ReplicaPipelineTest, padded_stencil) {
     p_replica.evaluate(inputs, outputs, eval_ctx);
   }
 }
-#endif
 
 }  // namespace slinky
