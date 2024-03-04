@@ -107,7 +107,7 @@ void init_random(buffer<T, N>& buf) {
 }
 
 // clang-format off
-static std::function<pipeline()> kMultipleOutputsReplica =
+static std::function<pipeline()> multiple_outputs_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -181,7 +181,7 @@ TEST_F(ReplicaPipelineTest, multiple_outputs) {
   }
 
   pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
-  pipeline p_replica = kMultipleOutputsReplica();
+  pipeline p_replica = multiple_outputs_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -214,7 +214,7 @@ TEST_F(ReplicaPipelineTest, multiple_outputs) {
 }
 
 // clang-format off
-static std::function<pipeline()> kMatmulReplica =
+static std::function<pipeline()> matmul_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -345,7 +345,7 @@ TEST_F(ReplicaPipelineTest, matmul) {
   }
 
   pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
-  pipeline p_replica = kMatmulReplica();
+  pipeline p_replica = matmul_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -386,7 +386,7 @@ TEST_F(ReplicaPipelineTest, matmul) {
 }
 
 // clang-format off
-static std::function<pipeline()> kPyramidReplica =
+static std::function<pipeline()> pyramid_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -487,7 +487,7 @@ TEST_F(ReplicaPipelineTest, pyramid) {
   upsample.loops({{y, 1}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
-  pipeline p_replica = kPyramidReplica();
+  pipeline p_replica = pyramid_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -572,7 +572,7 @@ index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
 }
 
 // clang-format off
-static std::function<pipeline()> kUnrelatedReplica =
+static std::function<pipeline()> unrelated_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -659,7 +659,7 @@ TEST_F(ReplicaPipelineTest, unrelated) {
   stencil1.loops({{y, 2}});
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out1, out2});
-  pipeline p_replica = kUnrelatedReplica();
+  pipeline p_replica = unrelated_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -702,7 +702,7 @@ TEST_F(ReplicaPipelineTest, unrelated) {
 }
 
 // clang-format off
-static std::function<pipeline()> kConcatenatedReplica =
+static std::function<pipeline()> concatenated_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -788,7 +788,7 @@ TEST_F(ReplicaPipelineTest, concatenated) {
       func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
-  pipeline p_replica = kConcatenatedReplica();
+  pipeline p_replica = concatenated_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -824,7 +824,7 @@ TEST_F(ReplicaPipelineTest, concatenated) {
 }
 
 // clang-format off
-static std::function<pipeline()> kStackedReplica =
+static std::function<pipeline()> stacked_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -880,7 +880,7 @@ TEST_F(ReplicaPipelineTest, stacked) {
   func stacked = func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
-  pipeline p_replica = kStackedReplica();
+  pipeline p_replica = stacked_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -915,7 +915,7 @@ TEST_F(ReplicaPipelineTest, stacked) {
 }
 
 // clang-format off
-static std::function<pipeline()> kDiamondStencilsReplica =
+static std::function<pipeline()> diamond_stencils_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -1004,7 +1004,7 @@ TEST_F(ReplicaPipelineTest, diamond_stencils) {
   diff.loops({{y, 1}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
-  pipeline p_replica = kDiamondStencilsReplica();
+  pipeline p_replica = diamond_stencils_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
@@ -1037,7 +1037,7 @@ TEST_F(ReplicaPipelineTest, diamond_stencils) {
 }
 
 // clang-format off
-static std::function<pipeline()> kPaddedStencilReplica =
+static std::function<pipeline()> padded_stencil_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -1107,7 +1107,7 @@ TEST_F(ReplicaPipelineTest, padded_stencil) {
   padded.compute_root();
 
   pipeline p = build_pipeline(ctx, {in}, {out});
-  pipeline p_replica = kPaddedStencilReplica();
+  pipeline p_replica = padded_stencil_replica();
 
   // Look at the source code to this test to verify that we
   // we have something that matches exactly
