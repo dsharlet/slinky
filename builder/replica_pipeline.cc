@@ -95,10 +95,10 @@ public:
   void visit(const call* op) override {
     std::string call_name;
     switch (op->intrinsic) {
-    case intrinsic::positive_infinity: call_name = "std::numeric_limits<float>::infinity"; break;
-    case intrinsic::negative_infinity: call_name = "-std::numeric_limits<float>::infinity"; break;
-    case intrinsic::indeterminate: call_name = "std::numeric_limits<float>::quiet_NaN"; break;
-    case intrinsic::abs: call_name = "std::abs"; break;  // TODO: this may need to be an expr()-based call
+    case intrinsic::positive_infinity: call_name = "positive_infinity"; break;
+    case intrinsic::negative_infinity: call_name = "negative_infinity"; break;
+    case intrinsic::indeterminate: call_name = "indeterminate"; break;
+    case intrinsic::abs: os_ << "  using std::abs;\n"; call_name = "abs"; break;
     case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
     case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
     case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
