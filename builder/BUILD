@@ -76,8 +76,12 @@ cc_test(
 cc_test(
     name = "pipeline_test",
     srcs = ["pipeline_test.cc"],
+    data = ["replica_pipeline_srcs.cc"],
     deps = [
         ":builder",
+        ":replica_pipeline",
+        ":replica_pipeline_srcs",
+        "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest_main",
         "//runtime",
         "//runtime:thread_pool",
@@ -85,17 +89,12 @@ cc_test(
     ],
 )
 
-cc_test(
-    name = "replica_pipeline_test",
-    srcs = ["replica_pipeline_test.cc"],
-    data = ["replica_pipeline_test.cc"],
+cc_library(
+    name = "replica_pipeline_srcs",
+    srcs = ["replica_pipeline_srcs.cc"],
     deps = [
         ":builder",
         ":replica_pipeline",
-        "@bazel_tools//tools/cpp/runfiles",
-        "@googletest//:gtest_main",
-        "//runtime",
-        "//runtime:thread_pool",
     ],
 )
 

@@ -1,14 +1,80 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
+#include <fstream>
 
 #include "builder/pipeline.h"
+#include "builder/replica_pipeline.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
 #include "runtime/visualize.h"
+#include "tools/cpp/runfiles/runfiles.h"
+
+#if 1
+#define LOG_REPLICA_TEXT(STR)                                                                                          \
+  do {                                                                                                                 \
+  } while (0)
+#else
+#define LOG_REPLICA_TEXT(STR)                                                                                          \
+  do {                                                                                                                 \
+    std::cerr << "REPLICA_TEXT:\n" << (STR) << "\n";                                                                   \
+  } while (0)
+#endif
 
 namespace slinky {
+
+extern std::function<pipeline()> concatenated_replica;
+extern std::function<pipeline()> diamond_stencils_replica;
+extern std::function<pipeline()> matmul_replica;
+extern std::function<pipeline()> multiple_outputs_replica;
+extern std::function<pipeline()> padded_stencil_replica;
+extern std::function<pipeline()> pyramid_replica;
+extern std::function<pipeline()> stacked_replica;
+extern std::function<pipeline()> unrelated_replica;
+
+using bazel::tools::cpp::runfiles::Runfiles;
+
+std::string read_entire_file(const std::string& pathname) {
+  std::ifstream f(pathname, std::ios::in | std::ios::binary);
+  std::string result;
+
+  f.seekg(0, std::ifstream::end);
+  size_t size = f.tellg();
+  result.resize(size);
+  f.seekg(0, std::ifstream::beg);
+  f.read(result.data(), result.size());
+  if (!f.good()) {
+    std::cerr << "Unable to read file: " << pathname;
+    std::abort();
+  }
+  f.close();
+  return result;
+}
+
+class PipelineTest : public testing::Test {
+protected:
+  void SetUp() override {
+    // TODO: for testing purposes, remove
+    // replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_srcs.cc");
+    // return;
+
+    std::string error;
+    runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
+    if (runfiles == nullptr) {
+      std::cerr << "Can't find runfile directory: " << error;
+      std::abort();
+    }
+
+    // As of Bazel 6.x, apparently `_main` is the toplevel for runfiles
+    // (https://github.com/bazelbuild/bazel/issues/18128)
+    auto full_path = runfiles->Rlocation("_main/builder/replica_pipeline_srcs.cc");
+    replica_pipeline_test_src = read_entire_file(full_path);
+  }
+
+  std::unique_ptr<Runfiles> runfiles;
+  std::string replica_pipeline_test_src;
+};
 
 std::string viz_dir() {
   const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
@@ -189,7 +255,7 @@ index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
 }
 
 // A trivial pipeline with one stage
-TEST(pipeline, trivial) {
+TEST_F(PipelineTest, trivial) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -235,7 +301,7 @@ TEST(pipeline, trivial) {
 }
 
 // An example of two 1D elementwise operations in sequence.
-TEST(pipeline, elementwise_1d) {
+TEST_F(PipelineTest, elementwise_1d) {
   for (int split : {0, 1, 2, 3}) {
     for (bool schedule_storage : {false, true}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -299,7 +365,7 @@ TEST(pipeline, elementwise_1d) {
 }
 
 // An example of two 2D elementwise operations in sequence.
-TEST(pipeline, elementwise_2d) {
+TEST_F(PipelineTest, elementwise_2d) {
   for (int split : {0, 1, 2, 3}) {
     for (bool schedule_storage : {false, true}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -370,7 +436,7 @@ TEST(pipeline, elementwise_2d) {
 }
 
 // Two matrix multiplies: D = (A x B) x C.
-TEST(pipeline, matmuls) {
+TEST_F(PipelineTest, matmuls) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -455,6 +521,18 @@ TEST(pipeline, matmuls) {
           ASSERT_EQ(ref_abc(j, i), abc_buf(j, i));
         }
       }
+
+      if (split == 1 && lm == loop_mode::serial) {
+        pipeline p_replica = matmul_replica();
+
+        std::string replica_text = define_replica_pipeline(ctx, {a, b, c}, {abc});
+        LOG_REPLICA_TEXT(replica_text);
+        size_t pos = replica_pipeline_test_src.find(replica_text);
+        ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+        test_context eval_ctx;
+        p_replica.evaluate(inputs, outputs, eval_ctx);
+      }
     }
   }
 }
@@ -480,7 +558,7 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-TEST(pipeline, pyramid) {
+TEST_F(PipelineTest, pyramid) {
   // Make the pipeline
   node_context ctx;
 
@@ -517,9 +595,21 @@ TEST(pipeline, pyramid) {
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
+
+  {
+    pipeline p_replica = pyramid_replica();
+
+    std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
+    LOG_REPLICA_TEXT(replica_text);
+    size_t pos = replica_pipeline_test_src.find(replica_text);
+    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+    test_context eval_ctx;
+    p_replica.evaluate(inputs, outputs, eval_ctx);
+  }
 }
 
-TEST(pipeline, stencil) {
+TEST_F(PipelineTest, stencil) {
   for (int split : {0, 1, 2, 3}) {
     for (int split_intermediate : {0, 1, 2, 3}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -590,8 +680,7 @@ TEST(pipeline, stencil) {
   }
 }
 
-
-TEST(pipeline, slide_2d) {
+TEST_F(PipelineTest, slide_2d) {
   // Make the pipeline
   node_context ctx;
 
@@ -648,7 +737,7 @@ TEST(pipeline, slide_2d) {
   }
 }
 
-TEST(pipeline, stencil_chain) {
+TEST_F(PipelineTest, stencil_chain) {
   for (int split : {0, 1, 2}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -728,7 +817,7 @@ TEST(pipeline, stencil_chain) {
   }
 }
 
-TEST(pipeline, flip_y) {
+TEST_F(PipelineTest, flip_y) {
   // Make the pipeline
   node_context ctx;
 
@@ -767,7 +856,7 @@ TEST(pipeline, flip_y) {
   }
 }
 
-TEST(pipeline, padded_copy) {
+TEST_F(PipelineTest, padded_copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -824,7 +913,7 @@ TEST(pipeline, padded_copy) {
   }
 }
 
-TEST(pipeline, multiple_outputs) {
+TEST_F(PipelineTest, multiple_outputs) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -893,11 +982,23 @@ TEST(pipeline, multiple_outputs) {
         }
         ASSERT_EQ(sum_xy_buf(z), expected_xy);
       }
+
+      if (split == 1 && lm == loop_mode::serial) {
+        pipeline p_replica = multiple_outputs_replica();
+
+        std::string replica_text = define_replica_pipeline(ctx, {in}, {sum_x, sum_xy});
+        LOG_REPLICA_TEXT(replica_text);
+        size_t pos = replica_pipeline_test_src.find(replica_text);
+        ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+        test_context eval_ctx;
+        p_replica.evaluate(inputs, outputs, eval_ctx);
+      }
     }
   }
 }
 
-TEST(pipeline, outer_product) {
+TEST_F(PipelineTest, outer_product) {
   for (int split_i : {0, 1, 2, 3}) {
     for (int split_j : {0, 1, 2, 3}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -945,7 +1046,7 @@ TEST(pipeline, outer_product) {
   }
 }
 
-TEST(pipeline, unrelated) {
+TEST_F(PipelineTest, unrelated) {
   // Make the pipeline
   node_context ctx;
 
@@ -1017,9 +1118,21 @@ TEST(pipeline, unrelated) {
   for (int i = 0; i < N2; ++i) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
+
+  {
+    pipeline p_replica = unrelated_replica();
+
+    std::string replica_text = define_replica_pipeline(ctx, {in1, in2}, {out1, out2});
+    LOG_REPLICA_TEXT(replica_text);
+    size_t pos = replica_pipeline_test_src.find(replica_text);
+    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+    test_context eval_ctx;
+    p_replica.evaluate(inputs, outputs, eval_ctx);
+  }
 }
 
-TEST(pipeline, copied_result) {
+TEST_F(PipelineTest, copied_result) {
   for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
@@ -1078,7 +1191,7 @@ TEST(pipeline, copied_result) {
   }
 }
 
-TEST(pipeline, concatenated_result) {
+TEST_F(PipelineTest, concatenated_result) {
   for (bool no_alias_buffers : {false, true}) {
     // Make the pipeline
     node_context ctx;
@@ -1130,10 +1243,23 @@ TEST(pipeline, concatenated_result) {
 
     // Also visualize this pipeline.
     visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
+
+    if (no_alias_buffers == true) {
+      pipeline p_replica = concatenated_replica();
+
+      std::string replica_text =
+          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+      LOG_REPLICA_TEXT(replica_text);
+      size_t pos = replica_pipeline_test_src.find(replica_text);
+      ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+      test_context eval_ctx;
+      p_replica.evaluate(inputs, outputs, eval_ctx);
+    }
   }
 }
 
-TEST(pipeline, stacked_result) {
+TEST_F(PipelineTest, stacked_result) {
   // Make the pipeline
   node_context ctx;
 
@@ -1179,9 +1305,21 @@ TEST(pipeline, stacked_result) {
       ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y) + 1);
     }
   }
+
+  {
+    pipeline p_replica = stacked_replica();
+
+    std::string replica_text = define_replica_pipeline(ctx, {in1, in2}, {out});
+    LOG_REPLICA_TEXT(replica_text);
+    size_t pos = replica_pipeline_test_src.find(replica_text);
+    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+    test_context eval_ctx;
+    p_replica.evaluate(inputs, outputs, eval_ctx);
+  }
 }
 
-TEST(pipeline, padded_stencil) {
+TEST_F(PipelineTest, padded_stencil) {
   for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
@@ -1249,10 +1387,22 @@ TEST(pipeline, padded_stencil) {
 
     // Also visualize this pipeline.
     visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+
+    if (schedule == 1) {
+      pipeline p_replica = padded_stencil_replica();
+
+      std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
+      LOG_REPLICA_TEXT(replica_text);
+      size_t pos = replica_pipeline_test_src.find(replica_text);
+      ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+      test_context eval_ctx;
+      p_replica.evaluate(inputs, outputs, eval_ctx);
+    }
   }
 }
 
-TEST(pipeline, constant) {
+TEST_F(PipelineTest, constant) {
   // Make the pipeline
   node_context ctx;
 
@@ -1291,7 +1441,7 @@ TEST(pipeline, constant) {
   }
 }
 
-TEST(pipeline, parallel_stencils) {
+TEST_F(PipelineTest, parallel_stencils) {
   // Make the pipeline
   node_context ctx;
 
@@ -1366,7 +1516,7 @@ TEST(pipeline, parallel_stencils) {
   visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
 }
 
-TEST(pipeline, diamond_stencils) {
+TEST_F(PipelineTest, diamond_stencils) {
   // Make the pipeline
   node_context ctx;
 
@@ -1425,6 +1575,18 @@ TEST(pipeline, diamond_stencils) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(ref_out(x, y), out_buf(x, y));
     }
+  }
+
+  {
+    pipeline p_replica = diamond_stencils_replica();
+
+    std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
+    LOG_REPLICA_TEXT(replica_text);
+    size_t pos = replica_pipeline_test_src.find(replica_text);
+    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+
+    test_context eval_ctx;
+    p_replica.evaluate(inputs, outputs, eval_ctx);
   }
 }
 
