@@ -9,7 +9,7 @@
 #include "runtime/buffer.h"
 
 std::mt19937& rng() {
-  static std::mt19937 r{static_cast<uint64_t>(time(nullptr))};
+  static std::mt19937 r{static_cast<uint32_t>(time(nullptr))};
   return r;
 }
 
