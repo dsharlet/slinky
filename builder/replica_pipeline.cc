@@ -227,11 +227,12 @@ public:
   std::string print(const box_expr& bounds) {
     std::vector<std::string> bounds_vec;
     for (const auto& be : bounds) {
-      auto mn = print_expr(be.min);
-      auto mx = print_expr(be.max);
-      if (mn == mx) {
+      if (be.min.same_as(be.max)) {
+        auto mn = print_expr(be.min);
         bounds_vec.push_back(str_cat("point(", mn, ")"));
       } else {
+        auto mn = print_expr(be.min);
+        auto mx = print_expr(be.max);
         bounds_vec.push_back(str_cat("{", mn, ", ", mx, "}"));
       }
     }
