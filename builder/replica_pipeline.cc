@@ -224,9 +224,9 @@ public:
     return name;
   }
 
-  std::string print(const box_expr& fin_bounds) {
+  std::string print(const box_expr& bounds) {
     std::vector<std::string> bounds_vec;
-    for (const auto& be : fin_bounds) {
+    for (const auto& be : bounds) {
       auto mn = print_expr(be.min);
       auto mx = print_expr(be.max);
       if (mn == mx) {
