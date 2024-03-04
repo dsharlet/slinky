@@ -99,7 +99,10 @@ public:
     case intrinsic::positive_infinity: call_name = "positive_infinity"; break;
     case intrinsic::negative_infinity: call_name = "negative_infinity"; break;
     case intrinsic::indeterminate: call_name = "indeterminate"; break;
-    case intrinsic::abs: os_ << "  using std::abs;\n"; call_name = "abs"; break;
+    case intrinsic::abs:
+      os_ << "  using std::abs;\n";
+      call_name = "abs";
+      break;
     case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
     case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
     case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
@@ -532,9 +535,9 @@ struct rph_handler {
     return input_required;
   }
 
-  template <typename SRC, typename DST>
-  inline void do_xor(void* dst, const void* src) {
-    *reinterpret_cast<DST*>(dst) ^= static_cast<DST>(*reinterpret_cast<const SRC*>(src));
+  template <typename Dst, typename Src>
+  inline void do_xor(Dst& dst, Src src) {
+    dst ^= static_cast<Dst>(src);
   }
 
   void apply_input(int d, const buffer<const void>* input, const std::vector<interval>& ranges) {
@@ -545,27 +548,32 @@ struct rph_handler {
       return;
     }
 
+#define DO_XOR(DST, SRC)                                                                                               \
+  do_xor<DST, SRC>(*reinterpret_cast<DST*>(out_pos_addr), *reinterpret_cast<const SRC*>(in_pos_addr))
+
     const void* in_pos_addr = input->address_at(in_pos);
     void* out_pos_addr = output->address_at(out_pos);
     switch ((output->elem_size << 4) | input->elem_size) {
-    case 0x11: do_xor<uint8_t, uint8_t>(out_pos_addr, in_pos_addr); break;
-    case 0x12: do_xor<uint8_t, uint16_t>(out_pos_addr, in_pos_addr); break;
-    case 0x14: do_xor<uint8_t, uint32_t>(out_pos_addr, in_pos_addr); break;
-    case 0x18: do_xor<uint8_t, uint64_t>(out_pos_addr, in_pos_addr); break;
-    case 0x21: do_xor<uint16_t, uint8_t>(out_pos_addr, in_pos_addr); break;
-    case 0x22: do_xor<uint16_t, uint16_t>(out_pos_addr, in_pos_addr); break;
-    case 0x24: do_xor<uint16_t, uint32_t>(out_pos_addr, in_pos_addr); break;
-    case 0x28: do_xor<uint16_t, uint64_t>(out_pos_addr, in_pos_addr); break;
-    case 0x41: do_xor<uint32_t, uint8_t>(out_pos_addr, in_pos_addr); break;
-    case 0x42: do_xor<uint32_t, uint16_t>(out_pos_addr, in_pos_addr); break;
-    case 0x44: do_xor<uint32_t, uint32_t>(out_pos_addr, in_pos_addr); break;
-    case 0x48: do_xor<uint32_t, uint64_t>(out_pos_addr, in_pos_addr); break;
-    case 0x81: do_xor<uint64_t, uint8_t>(out_pos_addr, in_pos_addr); break;
-    case 0x82: do_xor<uint64_t, uint16_t>(out_pos_addr, in_pos_addr); break;
-    case 0x84: do_xor<uint64_t, uint32_t>(out_pos_addr, in_pos_addr); break;
-    case 0x88: do_xor<uint64_t, uint64_t>(out_pos_addr, in_pos_addr); break;
+    case 0x11: DO_XOR(uint8_t, uint8_t); break;
+    case 0x12: DO_XOR(uint8_t, uint16_t); break;
+    case 0x14: DO_XOR(uint8_t, uint32_t); break;
+    case 0x18: DO_XOR(uint8_t, uint64_t); break;
+    case 0x21: DO_XOR(uint16_t, uint8_t); break;
+    case 0x22: DO_XOR(uint16_t, uint16_t); break;
+    case 0x24: DO_XOR(uint16_t, uint32_t); break;
+    case 0x28: DO_XOR(uint16_t, uint64_t); break;
+    case 0x41: DO_XOR(uint32_t, uint8_t); break;
+    case 0x42: DO_XOR(uint32_t, uint16_t); break;
+    case 0x44: DO_XOR(uint32_t, uint32_t); break;
+    case 0x48: DO_XOR(uint32_t, uint64_t); break;
+    case 0x81: DO_XOR(uint64_t, uint8_t); break;
+    case 0x82: DO_XOR(uint64_t, uint16_t); break;
+    case 0x84: DO_XOR(uint64_t, uint32_t); break;
+    case 0x88: DO_XOR(uint64_t, uint64_t); break;
     default: std::cerr << "Unsupported elem_size combination\n"; std::abort();
     }
+
+#undef DO_XOR
   }
 };
 
