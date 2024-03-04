@@ -517,12 +517,12 @@ struct rph_handler {
     }
   }
 
-  struct min_max {
+  struct interval {
     index_t min, max;
   };
 
-  std::vector<min_max> calc_input_required(const buffer<const void>* input, const box_expr& fin_bounds) {
-    std::vector<min_max> input_required(fin_bounds.size());
+  std::vector<interval> calc_input_required(const buffer<const void>* input, const box_expr& fin_bounds) {
+    std::vector<interval> input_required(fin_bounds.size());
     for (std::size_t d = 0; d < fin_bounds.size(); d++) {
       input_required[d].min = evaluate(fin_bounds[d].min, eval_values);
       input_required[d].max = evaluate(fin_bounds[d].max, eval_values);
@@ -537,7 +537,7 @@ struct rph_handler {
     *reinterpret_cast<DST*>(dst) ^= static_cast<DST>(*reinterpret_cast<const SRC*>(src));
   }
 
-  void apply_input(int d, const buffer<const void>* input, const std::vector<min_max>& ranges) {
+  void apply_input(int d, const buffer<const void>* input, const std::vector<interval>& ranges) {
     if (d >= 0) {
       for (in_pos[d] = ranges[d].min; in_pos[d] <= ranges[d].max; in_pos[d]++) {
         apply_input(d - 1, input, ranges);
