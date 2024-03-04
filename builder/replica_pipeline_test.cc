@@ -116,23 +116,15 @@ static std::function<pipeline()> multiple_outputs_replica =
   auto y = var(ctx, "y");
   auto z = var(ctx, "z");
   auto _1 = variable::make(in->sym());
-  auto _2 = buffer_min(_1, 0);
-  auto _3 = buffer_max(_1, 0);
-  auto _4 = buffer_min(_1, 1);
-  auto _5 = buffer_max(_1, 1);
-  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0, const buffer<void>& o1) -> index_t {
+  auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0, const buffer<void>& o1) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0, &o1};
-    const func::input fins[] = {{in, {{_2, _3}, {_4, _5}, point(z)}}};
+    const func::input fins[] = {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}};
     const std::vector<var> fout_dims[] = {{y, z}, {z}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _7 = buffer_min(_1, 0);
-  auto _8 = buffer_max(_1, 0);
-  auto _9 = buffer_min(_1, 1);
-  auto _10 = buffer_max(_1, 1);
   auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(uint32_t), 1);
-  auto _fn_0 = func::make(std::move(_replica_fn_6), {{in, {{_7, _8}, {_9, _10}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
+  auto _fn_0 = func::make(std::move(_replica_fn_2), {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
   _fn_0.loops({{z, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {});
   return p;
@@ -230,47 +222,26 @@ static std::function<pipeline()> matmul_replica =
   auto j = var(ctx, "j");
   auto ab = buffer_expr::make(ctx, "ab", sizeof(uint32_t), 2);
   auto _1 = variable::make(ab->sym());
-  auto _2 = buffer_max(_1, 1);
-  auto _3 = buffer_min(_1, 1);
-  auto _4 = _2 - _3;
-  auto _5 = _4 + 1;
-  auto _6 = _5 * 4;
-  ab->dim(0).stride = _6;
+  ab->dim(0).stride = (((((((buffer_max(_1, 1)) - (buffer_min(_1, 1)))) + 1)) * 4));
   ab->dim(1).stride = 4;
-  auto _8 = variable::make(a->sym());
-  auto _9 = buffer_min(_8, 1);
-  auto _10 = buffer_max(_8, 1);
-  auto _11 = buffer_min(_8, 1);
-  auto _12 = buffer_max(_8, 1);
-  auto _replica_fn_13 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+  auto _3 = variable::make(a->sym());
+  auto _replica_fn_4 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0, &i1};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{a, {point(i), {_9, _10}}}, {b, {{_11, _12}, point(j)}}};
+    const func::input fins[] = {{a, {point(i), {(buffer_min(_3, 1)), (buffer_max(_3, 1))}}}, {b, {{(buffer_min(_3, 1)), (buffer_max(_3, 1))}, point(j)}}};
     const std::vector<var> fout_dims[] = {{i, j}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _14 = buffer_min(_8, 1);
-  auto _15 = buffer_max(_8, 1);
-  auto _16 = buffer_min(_8, 1);
-  auto _17 = buffer_max(_8, 1);
-  auto _fn_7 = func::make(std::move(_replica_fn_13), {{a, {point(i), {_14, _15}}}, {b, {{_16, _17}, point(j)}}}, {{ab, {i, j}}});
-  auto _18 = variable::make(c->sym());
-  auto _19 = buffer_min(_18, 0);
-  auto _20 = buffer_max(_18, 0);
-  auto _21 = buffer_min(_18, 0);
-  auto _22 = buffer_max(_18, 0);
-  auto _replica_fn_23 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+  auto _fn_2 = func::make(std::move(_replica_fn_4), {{a, {point(i), {(buffer_min(_3, 1)), (buffer_max(_3, 1))}}}, {b, {{(buffer_min(_3, 1)), (buffer_max(_3, 1))}, point(j)}}}, {{ab, {i, j}}});
+  auto _5 = variable::make(c->sym());
+  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0, &i1};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{ab, {point(i), {_19, _20}}}, {c, {{_21, _22}, point(j)}}};
+    const func::input fins[] = {{ab, {point(i), {(buffer_min(_5, 0)), (buffer_max(_5, 0))}}}, {c, {{(buffer_min(_5, 0)), (buffer_max(_5, 0))}, point(j)}}};
     const std::vector<var> fout_dims[] = {{i, j}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _24 = buffer_min(_18, 0);
-  auto _25 = buffer_max(_18, 0);
-  auto _26 = buffer_min(_18, 0);
-  auto _27 = buffer_max(_18, 0);
-  auto _fn_0 = func::make(std::move(_replica_fn_23), {{ab, {point(i), {_24, _25}}}, {c, {{_26, _27}, point(j)}}}, {{abc, {i, j}}});
+  auto _fn_0 = func::make(std::move(_replica_fn_6), {{ab, {point(i), {(buffer_min(_5, 0)), (buffer_max(_5, 0))}}}, {c, {{(buffer_min(_5, 0)), (buffer_max(_5, 0))}, point(j)}}}, {{abc, {i, j}}});
   _fn_0.loops({{i, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
   return p;
@@ -395,50 +366,22 @@ static std::function<pipeline()> pyramid_replica =
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
   auto intm = buffer_expr::make(ctx, "intm", sizeof(uint32_t), 2);
-  auto _2 = x * 2;
-  auto _3 = _2 + 0;
-  auto _4 = x * 2;
-  auto _5 = _4 + 1;
-  auto _6 = y * 2;
-  auto _7 = _6 + 0;
-  auto _8 = y * 2;
-  auto _9 = _8 + 1;
-  auto _replica_fn_10 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{in, {{_3, _5}, {_7, _9}}}};
+    const func::input fins[] = {{in, {{((((x * 2)) + 0)), ((((x * 2)) + 1))}, {((((y * 2)) + 0)), ((((y * 2)) + 1))}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _11 = x * 2;
-  auto _12 = _11 + 0;
-  auto _13 = x * 2;
-  auto _14 = _13 + 1;
-  auto _15 = y * 2;
-  auto _16 = _15 + 0;
-  auto _17 = y * 2;
-  auto _18 = _17 + 1;
-  auto _fn_1 = func::make(std::move(_replica_fn_10), {{in, {{_12, _14}, {_16, _18}}}}, {{intm, {x, y}}});
-  auto _19 = x / 2;
-  auto _20 = x + 1;
-  auto _21 = _20 / 2;
-  auto _22 = y / 2;
-  auto _23 = y + 1;
-  auto _24 = _23 / 2;
-  auto _replica_fn_25 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in, {{((((x * 2)) + 0)), ((((x * 2)) + 1))}, {((((y * 2)) + 0)), ((((y * 2)) + 1))}}}}, {{intm, {x, y}}});
+  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0, &i1};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{in, {point(x), point(y)}}, {intm, {{_19, _21}, {_22, _24}}}};
+    const func::input fins[] = {{in, {point(x), point(y)}}, {intm, {{((x / 2)), ((((x + 1)) / 2))}, {((y / 2)), ((((y + 1)) / 2))}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _26 = x / 2;
-  auto _27 = x + 1;
-  auto _28 = _27 / 2;
-  auto _29 = y / 2;
-  auto _30 = y + 1;
-  auto _31 = _30 / 2;
-  auto _fn_0 = func::make(std::move(_replica_fn_25), {{in, {point(x), point(y)}}, {intm, {{_26, _28}, {_29, _31}}}}, {{out, {x, y}}});
+  auto _fn_0 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}, {intm, {{((x / 2)), ((((x + 1)) / 2))}, {((y / 2)), ((((y + 1)) / 2))}}}}, {{out, {x, y}}});
   _fn_0.loops({{y, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
@@ -590,41 +533,33 @@ static std::function<pipeline()> unrelated_replica =
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
   auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  auto _3 = x + -1;
-  auto _4 = x + 1;
-  auto _5 = y + -1;
-  auto _6 = y + 1;
-  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{intm1, {{_3, _4}, {_5, _6}}}};
+    const func::input fins[] = {{intm1, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _8 = x + -1;
-  auto _9 = x + 1;
-  auto _10 = y + -1;
-  auto _11 = y + 1;
-  auto _fn_0 = func::make(std::move(_replica_fn_7), {{intm1, {{_8, _9}, {_10, _11}}}}, {{out1, {x, y}}});
+  auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm1, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out1, {x, y}}});
   _fn_0.loops({{y, 2, loop_mode::serial}});
   auto out2 = buffer_expr::make(ctx, "out2", sizeof(uint32_t), 1);
   auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint32_t), 1);
-  auto _replica_fn_14 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
     const func::input fins[] = {{in2, {point(x)}}};
     const std::vector<var> fout_dims[] = {{x}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _fn_13 = func::make(std::move(_replica_fn_14), {{in2, {point(x)}}}, {{intm2, {x}}});
-  auto _replica_fn_15 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _fn_5 = func::make(std::move(_replica_fn_6), {{in2, {point(x)}}}, {{intm2, {x}}});
+  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
     const func::input fins[] = {{intm2, {point(x)}}};
     const std::vector<var> fout_dims[] = {{x}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _fn_12 = func::make(std::move(_replica_fn_15), {{intm2, {point(x)}}}, {{out2, {x}}});
+  auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {});
   return p;
 }
@@ -720,44 +655,18 @@ static std::function<pipeline()> concatenated_replica =
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
   auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  auto _3 = y - 0;
-  auto _4 = y - 0;
-  auto _5 = variable::make(in1->sym());
-  auto _6 = buffer_max(_5, 1);
-  auto _7 = buffer_min(_5, 1);
-  auto _8 = _6 - _7;
-  auto _9 = _8 + 1;
-  auto _10 = _9 - 1;
+  auto _3 = variable::make(in1->sym());
   auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
-  auto _replica_fn_12 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
     const func::input fins[] = {{in2, {point(x), point(y)}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _fn_11 = func::make(std::move(_replica_fn_12), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  auto _13 = buffer_max(_5, 1);
-  auto _14 = buffer_min(_5, 1);
-  auto _15 = _13 - _14;
-  auto _16 = _15 + 1;
-  auto _17 = y - _16;
-  auto _18 = buffer_max(_5, 1);
-  auto _19 = buffer_min(_5, 1);
-  auto _20 = _18 - _19;
-  auto _21 = _20 + 1;
-  auto _22 = y - _21;
-  auto _23 = buffer_max(_5, 1);
-  auto _24 = buffer_min(_5, 1);
-  auto _25 = _23 - _24;
-  auto _26 = _25 + 1;
-  auto _27 = variable::make(out->sym());
-  auto _28 = buffer_max(_27, 1);
-  auto _29 = buffer_min(_27, 1);
-  auto _30 = _28 - _29;
-  auto _31 = _30 + 1;
-  auto _32 = _31 - 1;
-  auto _fn_0 = func::make_copy({{intm1, {point(x), {_3, _4}}, {point(expr()), {0, _10}}, {}}, {intm2, {point(x), {_17, _22}}, {point(expr()), {_26, _32}}, {}}}, {out, {x, y}});
+  auto _fn_4 = func::make(std::move(_replica_fn_5), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  auto _6 = variable::make(out->sym());
+  auto _fn_0 = func::make_copy({{intm1, {point(x), {((y - 0)), ((y - 0))}}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {}}, {intm2, {point(x), {((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))), ((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1))))}}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {.no_alias_buffers = true});
   return p;
 }
@@ -933,47 +842,31 @@ static std::function<pipeline()> diamond_stencils_replica =
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
   auto _fn_2 = func::make(std::move(_replica_fn_3), {{in1, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  auto _4 = x + -1;
-  auto _5 = x + 1;
-  auto _6 = y + -1;
-  auto _7 = y + 1;
-  auto _replica_fn_8 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_4 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{intm2, {{_4, _5}, {_6, _7}}}};
+    const func::input fins[] = {{intm2, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _9 = x + -1;
-  auto _10 = x + 1;
-  auto _11 = y + -1;
-  auto _12 = y + 1;
-  auto _fn_1 = func::make(std::move(_replica_fn_8), {{intm2, {{_9, _10}, {_11, _12}}}}, {{intm3, {x, y}}});
+  auto _fn_1 = func::make(std::move(_replica_fn_4), {{intm2, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{intm3, {x, y}}});
   auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(uint16_t), 2);
-  auto _14 = x + -2;
-  auto _15 = x + 2;
-  auto _16 = y + -2;
-  auto _17 = y + 2;
-  auto _replica_fn_18 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{intm2, {{_14, _15}, {_16, _17}}}};
+    const func::input fins[] = {{intm2, {{((x + -2)), ((x + 2))}, {((y + -2)), ((y + 2))}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _19 = x + -2;
-  auto _20 = x + 2;
-  auto _21 = y + -2;
-  auto _22 = y + 2;
-  auto _fn_13 = func::make(std::move(_replica_fn_18), {{intm2, {{_19, _20}, {_21, _22}}}}, {{intm4, {x, y}}});
-  auto _replica_fn_23 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+  auto _fn_5 = func::make(std::move(_replica_fn_6), {{intm2, {{((x + -2)), ((x + 2))}, {((y + -2)), ((y + 2))}}}}, {{intm4, {x, y}}});
+  auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0, &i1};
     const buffer<void>* outs[] = {&o0};
     const func::input fins[] = {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _fn_0 = func::make(std::move(_replica_fn_23), {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+  auto _fn_0 = func::make(std::move(_replica_fn_7), {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
   _fn_0.loops({{y, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in1}, {out}, {});
   return p;
@@ -1056,28 +949,16 @@ static std::function<pipeline()> padded_stencil_replica =
   };
   auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   auto _4 = variable::make(in->sym());
-  auto _5 = buffer_min(_4, 0);
-  auto _6 = buffer_max(_4, 0);
-  auto _7 = buffer_min(_4, 1);
-  auto _8 = buffer_max(_4, 1);
-  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{_5, _6}, {_7, _8}}, {}}}, {padded_intm, {x, y}});
+  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}}}, {padded_intm, {x, y}});
   _fn_1.compute_root();
-  auto _9 = x + -1;
-  auto _10 = x + 1;
-  auto _11 = y + -1;
-  auto _12 = y + 1;
-  auto _replica_fn_13 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* ins[] = {&i0};
     const buffer<void>* outs[] = {&o0};
-    const func::input fins[] = {{padded_intm, {{_9, _10}, {_11, _12}}}};
+    const func::input fins[] = {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
     const std::vector<var> fout_dims[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);
   };
-  auto _14 = x + -1;
-  auto _15 = x + 1;
-  auto _16 = y + -1;
-  auto _17 = y + 1;
-  auto _fn_0 = func::make(std::move(_replica_fn_13), {{padded_intm, {{_14, _15}, {_16, _17}}}}, {{out, {x, y}}});
+  auto _fn_0 = func::make(std::move(_replica_fn_5), {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out, {x, y}}});
   _fn_0.loops({{y, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
