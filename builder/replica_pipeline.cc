@@ -326,11 +326,11 @@ public:
     }
     std::ostringstream os;
     os << str_cat("[=](", print_vector_elements(args), ") -> index_t {\n");
-    os << "    const buffer<const void>* ins[] = " << print_vector(body_in) << ";\n";
-    os << "    const buffer<void>* outs[] = " << print_vector(body_out) << ";\n";
-    os << "    const func::input fins[] = " << print(fins) << ";\n";
-    os << "    const std::vector<var> fout_dims[] = " << print_vector(fout_dims) << ";\n";
-    os << "    return ::slinky::internal::replica_pipeline_handler(ins, outs, fins, fout_dims);\n";
+    os << "    const buffer<const void>* input_buffers[] = " << print_vector(body_in) << ";\n";
+    os << "    const buffer<void>* output_buffers[] = " << print_vector(body_out) << ";\n";
+    os << "    const func::input inputs[] = " << print(fins) << ";\n";
+    os << "    const std::vector<var> outputs[] = " << print_vector(fout_dims) << ";\n";
+    os << "    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);\n";
     os << "  }";
     return print_assignment_prefixed("_replica_fn_", os.str());
   }
