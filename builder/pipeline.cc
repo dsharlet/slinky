@@ -538,6 +538,11 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
   }
 }
 
+bool is_verbose() {
+  auto* s = std::getenv("SLINKY_VERBOSE");
+  return (s && std::atoi(s) == 1);
+}
+
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
   pipeline_builder builder(inputs, outputs, constants);
@@ -597,7 +602,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
   }
 
-  std::cout << std::tie(result, ctx) << std::endl;
+  if (is_verbose()) {
+    std::cout << std::tie(result, ctx) << std::endl;
+  }
 
   return result;
 }
