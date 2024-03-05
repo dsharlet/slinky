@@ -382,7 +382,12 @@ public:
   }
 
   std::string print(const std::vector<var>& args, const std::vector<buffer_expr_ptr>& inputs,
-      const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
+      const std::vector<buffer_expr_ptr>& outputs, const build_options& options, const std::string& fname) {
+    if (!fname.empty()) {
+      os_ << "  // clang-format off\n";
+      os_ << "// BEGIN define_replica_pipeline() output\n";
+      os_ << "auto " << fname << " = ";
+    }
     os_ << "[]() -> ::slinky::pipeline {\n";
     os_ << "  node_context ctx;\n";
     std::string a = print(args);
@@ -391,7 +396,13 @@ public:
     std::string bo = print(options);
     print_assignment_explicit("p", "build_pipeline(ctx, ", a, ", ", i, ", ", o, ", ", bo, ")");
     os_ << "  return p;\n";
-    os_ << "}\n";
+    if (!fname.empty()) {
+      os_ << "};\n";
+      os_ << "// END define_replica_pipeline() output\n";
+      os_ << "  // clang-format on\n";
+    } else {
+      os_ << "}\n";
+    }
     return os_.str();
   }
 
@@ -616,14 +627,14 @@ index_t replica_pipeline_handler(span<const buffer<const void>*> inputs, span<co
 
 std::string define_replica_pipeline(node_context& ctx, const std::vector<var>& args,
     const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-    const build_options& options) {
+    const build_options& options, const std::string& fname) {
   pipeline_replicator r(ctx);
-  return r.print(args, inputs, outputs, options);
+  return r.print(args, inputs, outputs, options, fname);
 }
 
 std::string define_replica_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
-  return define_replica_pipeline(ctx, {}, inputs, outputs, options);
+    const std::vector<buffer_expr_ptr>& outputs, const build_options& options, const std::string& fname) {
+  return define_replica_pipeline(ctx, {}, inputs, outputs, options, fname);
 }
 
 }  // namespace slinky

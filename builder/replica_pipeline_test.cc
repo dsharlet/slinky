@@ -1,47 +1,28 @@
-#include <functional>
-#include <iostream>
-#include <map>
+#include <gtest/gtest.h>
+
+#include <random>
 #include <string>
 
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 
 namespace slinky {
-namespace internal {
 
-namespace {
-
-// clang-format off
-std::function<pipeline()> multiple_outputs_replica =
-// BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
-  node_context ctx;
-  auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 3);
-  auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(uint32_t), 2);
-  auto y = var(ctx, "y");
-  auto z = var(ctx, "z");
-  auto _1 = variable::make(in->sym());
-  auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0, const buffer<void>& o1) -> index_t {
-    const buffer<const void>* input_buffers[] = {&i0};
-    const buffer<void>* output_buffers[] = {&o0, &o1};
-    const func::input inputs[] = {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}};
-    const std::vector<var> outputs[] = {{y, z}, {z}};
-    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
-  };
-  auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(uint32_t), 1);
-  auto _fn_0 = func::make(std::move(_replica_fn_2), {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
-  _fn_0.loops({{z, 1, loop_mode::serial}});
-  auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {});
-  return p;
+std::mt19937& rng() {
+  static std::mt19937 r{static_cast<uint32_t>(time(nullptr))};
+  return r;
 }
-// END define_replica_pipeline() output
-;
-// clang-format on
 
-// clang-format off
-std::function<pipeline()> matmuls_replica =
+template <typename T, std::size_t N>
+void init_random(buffer<T, N>& x) {
+  x.allocate();
+  for_each_index(x, [&](auto i) { x(i) = (rng()() % 20) - 10; });
+}
+
+TEST(replica, matmuls) {
+  // clang-format off
 // BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
+auto p = []() -> ::slinky::pipeline {
   node_context ctx;
   auto a = buffer_expr::make(ctx, "a", sizeof(uint32_t), 2);
   a->dim(1).stride = 4;
@@ -78,15 +59,37 @@ std::function<pipeline()> matmuls_replica =
   _fn_0.loops({{i, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
   return p;
-}
+};
 // END define_replica_pipeline() output
-;
-// clang-format on
+  // clang-format on
 
-// clang-format off
-std::function<pipeline()> pyramid_replica =
+  const int M = 10;
+  const int N = 10;
+  buffer<int, 2> a_buf({N, M});
+  buffer<int, 2> b_buf({N, M});
+  buffer<int, 2> c_buf({N, M});
+  buffer<int, 2> abc_buf({N, M});
+  std::swap(a_buf.dim(1), a_buf.dim(0));
+  std::swap(b_buf.dim(1), b_buf.dim(0));
+  std::swap(c_buf.dim(1), c_buf.dim(0));
+  std::swap(abc_buf.dim(1), abc_buf.dim(0));
+
+  init_random(a_buf);
+  init_random(b_buf);
+  init_random(c_buf);
+  abc_buf.allocate();
+
+  const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+  const raw_buffer* outputs[] = {&abc_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, pyramid) {
+  // clang-format off
 // BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
+auto p = []() -> ::slinky::pipeline {
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint32_t), 2);
@@ -112,15 +115,72 @@ std::function<pipeline()> pyramid_replica =
   _fn_0.loops({{y, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in}, {out}, {});
   return p;
-}
+};
 // END define_replica_pipeline() output
-;
-// clang-format on
+  // clang-format on
 
-// clang-format off
-std::function<pipeline()> unrelated_replica =
+  const int W = 10;
+  const int H = 10;
+  buffer<int, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
+  buffer<int, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, multiple_outputs) {
+  // clang-format off
 // BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
+auto p = []() -> ::slinky::pipeline {
+  node_context ctx;
+  auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 3);
+  auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(uint32_t), 2);
+  auto y = var(ctx, "y");
+  auto z = var(ctx, "z");
+  auto _1 = variable::make(in->sym());
+  auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0, const buffer<void>& o1) -> index_t {
+    const buffer<const void>* input_buffers[] = {&i0};
+    const buffer<void>* output_buffers[] = {&o0, &o1};
+    const func::input inputs[] = {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}};
+    const std::vector<var> outputs[] = {{y, z}, {z}};
+    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
+  };
+  auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(uint32_t), 1);
+  auto _fn_0 = func::make(std::move(_replica_fn_2), {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
+  _fn_0.loops({{z, 1, loop_mode::serial}});
+  auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {});
+  return p;
+};
+// END define_replica_pipeline() output
+  // clang-format on
+
+  const int H = 20;
+  const int W = 10;
+  const int D = 5;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+  buffer<int, 2> sum_x_buf({H, D});
+  buffer<int, 1> sum_xy_buf({D});
+  sum_x_buf.allocate();
+  sum_xy_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, unrelated) {
+  // clang-format off
+// BEGIN define_replica_pipeline() output
+auto p = []() -> ::slinky::pipeline {
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint32_t), 1);
@@ -165,15 +225,40 @@ std::function<pipeline()> unrelated_replica =
   auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {});
   return p;
-}
+};
 // END define_replica_pipeline() output
-;
-// clang-format on
+  // clang-format on
 
-// clang-format off
-std::function<pipeline()> concatenated_result_replica =
+  const int W1 = 20;
+  const int H1 = 10;
+  buffer<short, 2> in1_buf({W1 + 2, H1 + 2});
+  in1_buf.translate(-1, -1);
+  buffer<short, 2> out1_buf({W1, H1});
+
+  init_random(in1_buf);
+  out1_buf.allocate();
+
+  const int N2 = 30;
+  buffer<int, 1> in2_buf({N2});
+  in2_buf.allocate();
+  for (int i = 0; i < N2; ++i) {
+    in2_buf(i) = i;
+  }
+
+  buffer<int, 1> out2_buf({N2});
+  out2_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, concatenated_result) {
+  // clang-format off
 // BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
+auto p = []() -> ::slinky::pipeline {
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
@@ -203,15 +288,32 @@ std::function<pipeline()> concatenated_result_replica =
   auto _fn_0 = func::make_copy({{intm1, {point(x), {((y - 0)), ((y - 0))}}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {}}, {intm2, {point(x), {((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))), ((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1))))}}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {.no_alias_buffers = true});
   return p;
-}
+};
 // END define_replica_pipeline() output
-;
-// clang-format on
+  // clang-format on
 
-// clang-format off
-std::function<pipeline()> stacked_result_replica =
+  const int W = 20;
+  const int H1 = 4;
+  const int H2 = 7;
+  buffer<short, 2> in1_buf({W, H1});
+  buffer<short, 2> in2_buf({W, H2});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 2> out_buf({W, H1 + H2});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, stacked_result) {
+  // clang-format off
 // BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
+auto p = []() -> ::slinky::pipeline {
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
@@ -239,15 +341,83 @@ std::function<pipeline()> stacked_result_replica =
   auto _fn_0 = func::make_copy({{intm1, {point(x), point(y)}, {}, {expr(), expr(), 0}}, {intm2, {point(x), point(y)}, {}, {expr(), expr(), 1}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {});
   return p;
-}
+};
 // END define_replica_pipeline() output
-;
-// clang-format on
+  // clang-format on
 
-// clang-format off
-std::function<pipeline()> diamond_stencils_replica =
+  const int W = 20;
+  const int H = 8;
+  buffer<short, 2> in1_buf({W, H});
+  buffer<short, 2> in2_buf({W, H});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 3> out_buf({W, H, 2});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, padded_stencil) {
+  // clang-format off
 // BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
+auto p = []() -> ::slinky::pipeline {
+  node_context ctx;
+  auto in = buffer_expr::make(ctx, "in", sizeof(uint16_t), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
+  auto x = var(ctx, "x");
+  auto y = var(ctx, "y");
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(uint16_t), 2);
+  auto intm = buffer_expr::make(ctx, "intm", sizeof(uint16_t), 2);
+  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* input_buffers[] = {&i0};
+    const buffer<void>* output_buffers[] = {&o0};
+    const func::input inputs[] = {{in, {point(x), point(y)}}};
+    const std::vector<var> outputs[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
+  };
+  auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  auto _4 = variable::make(in->sym());
+  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}}}, {padded_intm, {x, y}});
+  _fn_1.compute_root();
+  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* input_buffers[] = {&i0};
+    const buffer<void>* output_buffers[] = {&o0};
+    const func::input inputs[] = {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
+    const std::vector<var> outputs[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
+  };
+  auto _fn_0 = func::make(std::move(_replica_fn_5), {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out, {x, y}}});
+  _fn_0.loops({{y, 1, loop_mode::serial}});
+  auto p = build_pipeline(ctx, {}, {in}, {out}, {});
+  return p;
+};
+// END define_replica_pipeline() output
+  // clang-format on
+
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
+TEST(replica, diamond_stencils) {
+  // clang-format off
+// BEGIN define_replica_pipeline() output
+auto p = []() -> ::slinky::pipeline {
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
@@ -291,84 +461,24 @@ std::function<pipeline()> diamond_stencils_replica =
   _fn_0.loops({{y, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in1}, {out}, {});
   return p;
-}
-// END define_replica_pipeline() output
-;
-// clang-format on
-
-// clang-format off
-std::function<pipeline()> padded_stencil_replica =
-// BEGIN define_replica_pipeline() output
-[]() -> ::slinky::pipeline {
-  node_context ctx;
-  auto in = buffer_expr::make(ctx, "in", sizeof(uint16_t), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
-  auto x = var(ctx, "x");
-  auto y = var(ctx, "y");
-  auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(uint16_t), 2);
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(uint16_t), 2);
-  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* input_buffers[] = {&i0};
-    const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{in, {point(x), point(y)}}};
-    const std::vector<var> outputs[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
-  };
-  auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  auto _4 = variable::make(in->sym());
-  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}}}, {padded_intm, {x, y}});
-  _fn_1.compute_root();
-  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* input_buffers[] = {&i0};
-    const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
-    const std::vector<var> outputs[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
-  };
-  auto _fn_0 = func::make(std::move(_replica_fn_5), {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out, {x, y}}});
-  _fn_0.loops({{y, 1, loop_mode::serial}});
-  auto p = build_pipeline(ctx, {}, {in}, {out}, {});
-  return p;
-}
-// END define_replica_pipeline() output
-;
-// clang-format on
-
-// clang-format off
-std::map<std::string, std::function<pipeline()>> replica_map = {
-  {"concatenated_result", concatenated_result_replica},
-  {"diamond_stencils", diamond_stencils_replica},
-  {"matmuls", matmuls_replica},
-  {"multiple_outputs", multiple_outputs_replica},
-  {"padded_stencil", padded_stencil_replica},
-  {"pyramid", pyramid_replica},
-  {"stacked_result", stacked_result_replica},
-  {"unrelated", unrelated_replica},
 };
-// clang-format on
+// END define_replica_pipeline() output
+  // clang-format on
 
-}  // namespace
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
+  buffer<short, 2> out_buf({W, H});
 
-void check_replica_pipeline(const std::string& name, const std::string& replica_text, span<const raw_buffer*> inputs,
-    span<const raw_buffer*> outputs, const std::string& test_src) {
-  auto it = replica_map.find(name);
-  if (it == replica_map.end()) {
-    std::cerr << "replica not found: " << name << "\n";
-    std::abort();
-  }
+  init_random(in_buf);
+  out_buf.allocate();
 
-  // std::cerr << "REPLICA_TEXT:\n" << replica_text << "\n"
-  size_t pos = test_src.find(replica_text);
-  if (pos == std::string::npos) {
-    std::cerr << "Matching replica text not found, expected:\n" << replica_text;
-    std::abort();
-  }
-
-  auto p_replica = it->second();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
 
   eval_context eval_ctx;
-  p_replica.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
 }
 
-}  // namespace internal
 }  // namespace slinky

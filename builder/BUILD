@@ -80,7 +80,6 @@ cc_test(
     deps = [
         ":builder",
         ":replica_pipeline",
-        ":replica_pipeline_test",
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest_main",
         "//runtime",
@@ -89,12 +88,13 @@ cc_test(
     ],
 )
 
-cc_library(
+cc_test(
     name = "replica_pipeline_test",
     srcs = ["replica_pipeline_test.cc"],
     deps = [
         ":builder",
         ":replica_pipeline",
+        "@googletest//:gtest_main",
     ],
 )
 

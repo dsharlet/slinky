@@ -13,13 +13,6 @@
 
 namespace slinky {
 
-namespace internal {
-extern void check_replica_pipeline(const std::string& name, const std::string& replica_text,
-    span<const raw_buffer*> inputs, span<const raw_buffer*> outputs, const std::string& test_src);
-}  // namespace internal
-
-using bazel::tools::cpp::runfiles::Runfiles;
-
 std::string read_entire_file(const std::string& pathname) {
   std::ifstream f(pathname, std::ios::in | std::ios::binary);
   std::string result;
@@ -37,34 +30,31 @@ std::string read_entire_file(const std::string& pathname) {
   return result;
 }
 
-class PipelineTest : public testing::Test {
-protected:
-  void SetUp() override {
-    // TODO: for testing purposes, remove
-    // replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_test.cc");
-    // return;
+std::string read_entire_runfile(const std::string& rlocation) {
+  using bazel::tools::cpp::runfiles::Runfiles;
 
-    std::string error;
-    runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
-    if (runfiles == nullptr) {
-      std::cerr << "Can't find runfile directory: " << error;
-      std::abort();
-    }
-
-    // As of Bazel 6.x, apparently `_main` is the toplevel for runfiles
-    // (https://github.com/bazelbuild/bazel/issues/18128)
-    auto full_path = runfiles->Rlocation("_main/builder/replica_pipeline_test.cc");
-    replica_pipeline_test_src = read_entire_file(full_path);
-  }
-
-  void check_replica_pipeline(const std::string& name, const std::string& replica_text, span<const raw_buffer*> inputs,
-      span<const raw_buffer*> outputs) {
-    ::slinky::internal::check_replica_pipeline(name, replica_text, inputs, outputs, replica_pipeline_test_src);
-  }
-
+  std::string error;
   std::unique_ptr<Runfiles> runfiles;
-  std::string replica_pipeline_test_src;
-};
+  runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
+  if (runfiles == nullptr) {
+    std::cerr << "Can't find runfile directory: " << error;
+    std::abort();
+  }
+
+  auto pathname = runfiles->Rlocation(rlocation);
+  return read_entire_file(pathname);
+}
+
+std::string get_replica_golden() {
+  static std::string golden = read_entire_runfile("_main/builder/replica_pipeline_test.cc");
+  return golden;
+}
+
+void check_replica_pipeline(const std::string& replica_text) {
+  // std::cerr << "REPLICA_TEXT:\n" << replica_text << "\n";
+  size_t pos = get_replica_golden().find(replica_text);
+  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+}
 
 std::string viz_dir() {
   const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
@@ -245,7 +235,7 @@ index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
 }
 
 // A trivial pipeline with one stage
-TEST_F(PipelineTest, trivial) {
+TEST(pipeline, trivial) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -291,7 +281,7 @@ TEST_F(PipelineTest, trivial) {
 }
 
 // An example of two 1D elementwise operations in sequence.
-TEST_F(PipelineTest, elementwise_1d) {
+TEST(pipeline, elementwise_1d) {
   for (int split : {0, 1, 2, 3}) {
     for (bool schedule_storage : {false, true}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -355,7 +345,7 @@ TEST_F(PipelineTest, elementwise_1d) {
 }
 
 // An example of two 2D elementwise operations in sequence.
-TEST_F(PipelineTest, elementwise_2d) {
+TEST(pipeline, elementwise_2d) {
   for (int split : {0, 1, 2, 3}) {
     for (bool schedule_storage : {false, true}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -426,7 +416,7 @@ TEST_F(PipelineTest, elementwise_2d) {
 }
 
 // Two matrix multiplies: D = (A x B) x C.
-TEST_F(PipelineTest, matmuls) {
+TEST(pipeline, matmuls) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -513,7 +503,7 @@ TEST_F(PipelineTest, matmuls) {
       }
 
       if (split == 1 && lm == loop_mode::serial) {
-        check_replica_pipeline("matmuls", define_replica_pipeline(ctx, {a, b, c}, {abc}), inputs, outputs);
+        check_replica_pipeline(define_replica_pipeline(ctx, {a, b, c}, {abc}));
       }
     }
   }
@@ -540,7 +530,7 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-TEST_F(PipelineTest, pyramid) {
+TEST(pipeline, pyramid) {
   // Make the pipeline
   node_context ctx;
 
@@ -578,10 +568,10 @@ TEST_F(PipelineTest, pyramid) {
   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
-  check_replica_pipeline("pyramid", define_replica_pipeline(ctx, {in}, {out}), inputs, outputs);
+  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
 
-TEST_F(PipelineTest, stencil) {
+TEST(pipeline, stencil) {
   for (int split : {0, 1, 2, 3}) {
     for (int split_intermediate : {0, 1, 2, 3}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -652,7 +642,7 @@ TEST_F(PipelineTest, stencil) {
   }
 }
 
-TEST_F(PipelineTest, slide_2d) {
+TEST(pipeline, slide_2d) {
   // Make the pipeline
   node_context ctx;
 
@@ -709,7 +699,7 @@ TEST_F(PipelineTest, slide_2d) {
   }
 }
 
-TEST_F(PipelineTest, stencil_chain) {
+TEST(pipeline, stencil_chain) {
   for (int split : {0, 1, 2}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -789,7 +779,7 @@ TEST_F(PipelineTest, stencil_chain) {
   }
 }
 
-TEST_F(PipelineTest, flip_y) {
+TEST(pipeline, flip_y) {
   // Make the pipeline
   node_context ctx;
 
@@ -828,7 +818,7 @@ TEST_F(PipelineTest, flip_y) {
   }
 }
 
-TEST_F(PipelineTest, padded_copy) {
+TEST(pipeline, padded_copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -885,7 +875,7 @@ TEST_F(PipelineTest, padded_copy) {
   }
 }
 
-TEST_F(PipelineTest, multiple_outputs) {
+TEST(pipeline, multiple_outputs) {
   for (int split : {0, 1, 2, 3}) {
     for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
       // Make the pipeline
@@ -956,14 +946,13 @@ TEST_F(PipelineTest, multiple_outputs) {
       }
 
       if (split == 1 && lm == loop_mode::serial) {
-        check_replica_pipeline(
-            "multiple_outputs", define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}), inputs, outputs);
+        check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
       }
     }
   }
 }
 
-TEST_F(PipelineTest, outer_product) {
+TEST(pipeline, outer_product) {
   for (int split_i : {0, 1, 2, 3}) {
     for (int split_j : {0, 1, 2, 3}) {
       for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
@@ -1011,7 +1000,7 @@ TEST_F(PipelineTest, outer_product) {
   }
 }
 
-TEST_F(PipelineTest, unrelated) {
+TEST(pipeline, unrelated) {
   // Make the pipeline
   node_context ctx;
 
@@ -1084,10 +1073,10 @@ TEST_F(PipelineTest, unrelated) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
 
-  check_replica_pipeline("unrelated", define_replica_pipeline(ctx, {in1, in2}, {out1, out2}), inputs, outputs);
+  check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out1, out2}));
 }
 
-TEST_F(PipelineTest, copied_result) {
+TEST(pipeline, copied_result) {
   for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
@@ -1146,7 +1135,7 @@ TEST_F(PipelineTest, copied_result) {
   }
 }
 
-TEST_F(PipelineTest, concatenated_result) {
+TEST(pipeline, concatenated_result) {
   for (bool no_alias_buffers : {false, true}) {
     // Make the pipeline
     node_context ctx;
@@ -1200,14 +1189,13 @@ TEST_F(PipelineTest, concatenated_result) {
     visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
 
     if (no_alias_buffers == true) {
-      check_replica_pipeline("concatenated_result",
-          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}), inputs,
-          outputs);
+      check_replica_pipeline(
+          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}));
     }
   }
 }
 
-TEST_F(PipelineTest, stacked_result) {
+TEST(pipeline, stacked_result) {
   // Make the pipeline
   node_context ctx;
 
@@ -1254,10 +1242,10 @@ TEST_F(PipelineTest, stacked_result) {
     }
   }
 
-  check_replica_pipeline("stacked_result", define_replica_pipeline(ctx, {in1, in2}, {out}), inputs, outputs);
+  check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
-TEST_F(PipelineTest, padded_stencil) {
+TEST(pipeline, padded_stencil) {
   for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
@@ -1327,12 +1315,12 @@ TEST_F(PipelineTest, padded_stencil) {
     visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
 
     if (schedule == 1) {
-      check_replica_pipeline("padded_stencil", define_replica_pipeline(ctx, {in}, {out}), inputs, outputs);
+      check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
     }
   }
 }
 
-TEST_F(PipelineTest, constant) {
+TEST(pipeline, constant) {
   // Make the pipeline
   node_context ctx;
 
@@ -1371,7 +1359,7 @@ TEST_F(PipelineTest, constant) {
   }
 }
 
-TEST_F(PipelineTest, parallel_stencils) {
+TEST(pipeline, parallel_stencils) {
   // Make the pipeline
   node_context ctx;
 
@@ -1446,7 +1434,7 @@ TEST_F(PipelineTest, parallel_stencils) {
   visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
 }
 
-TEST_F(PipelineTest, diamond_stencils) {
+TEST(pipeline, diamond_stencils) {
   // Make the pipeline
   node_context ctx;
 
@@ -1507,7 +1495,7 @@ TEST_F(PipelineTest, diamond_stencils) {
     }
   }
 
-  check_replica_pipeline("diamond_stencils", define_replica_pipeline(ctx, {in}, {out}), inputs, outputs);
+  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
 
 }  // namespace slinky
