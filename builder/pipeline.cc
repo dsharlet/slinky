@@ -597,7 +597,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
   }
 
-  // std::cout << std::tie(result, ctx) << std::endl;
+  std::cout << std::tie(result, ctx) << std::endl;
 
   return result;
 }
