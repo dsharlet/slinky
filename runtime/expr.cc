@@ -672,8 +672,8 @@ void recursive_node_visitor::visit(const allocate* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const make_buffer* op) {
-  op->base.accept(this);
-  op->elem_size.accept(this);
+  if (op->base.defined()) op->base.accept(this);
+  if (op->elem_size.defined()) op->elem_size.accept(this);
   for (const dim_expr& i : op->dims) {
     i.bounds.min.accept(this);
     i.bounds.max.accept(this);
