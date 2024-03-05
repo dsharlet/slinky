@@ -611,13 +611,22 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
   return result;
 }
 
+std::vector<std::pair<symbol_id, const raw_buffer*>> constant_map(const std::set<buffer_expr_ptr>& constants) {
+  std::vector<std::pair<symbol_id, const raw_buffer*>> result;
+  result.reserve(constants.size());
+  for (const buffer_expr_ptr& i : constants) {
+    result.push_back({i->sym(), i->constant()});
+  }
+  return result;
+}
+
 }  // namespace
 
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
   std::set<buffer_expr_ptr> constants;
   stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
-  return pipeline(std::move(args), vars(inputs), vars(outputs), std::move(body));
+  return pipeline(std::move(args), vars(inputs), vars(outputs), constant_map(constants), std::move(body));
 }
 
 pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
