@@ -35,6 +35,7 @@ class elementwise_pipeline_builder : public node_visitor {
   std::string name(const buffer_expr_ptr& b) const { return ctx.name(b->sym()); }
 
   std::map<symbol_id, buffer_expr_ptr> vars;
+  std::vector<std::pair<std::unique_ptr<buffer<T, Rank>>, buffer_expr_ptr>> constants;
 
 public:
   elementwise_pipeline_builder(node_context& ctx) : ctx(ctx) {
@@ -60,15 +61,15 @@ public:
   }
 
   void visit(const constant* c) override {
-    std::abort();
-    // This isn't right, because `value` is on the stack and needs to be kept alive.
-    buffer<T, Rank> value;
+    auto value = std::make_unique<buffer<T, Rank>>();
     for (std::size_t d = 0; d < Rank; ++d) {
-      value.dims[d].set_stride(0);
+      value->dims[d].set_bounds(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
+      value->dims[d].set_stride(0);
     }
-    value.allocate();
-    memcpy(value.base(), &c->value, sizeof(T));
-    result = buffer_expr::make(ctx, "constant", &value);
+    value->allocate();
+    memcpy(value->base(), &c->value, sizeof(T));
+    result = buffer_expr::make(ctx, "c" + std::to_string(c->value), &*value);
+    constants.push_back({std::move(value), result});
   }
 
   buffer_expr_ptr visit_expr(const expr& e) {
@@ -181,12 +182,14 @@ public:
 
   void visit(const constant* c) override {
     result.free();
+    index_t stride = sizeof(T);
     for (std::size_t d = 0; d < Rank; ++d) {
       result.dims[d].set_min_extent(0, extents[d]);
-      result.dims[d].set_stride(0);
+      result.dims[d].set_stride(stride);
+      stride *= extents[d];
     }
     result.allocate();
-    memcpy(result.base(), &c->value, sizeof(T));
+    std::fill_n(result.base(), stride / sizeof(T), c->value);
   }
 
   void visit_expr(const expr& e, buffer<T, Rank>& r) {
@@ -298,10 +301,6 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
 namespace {
 
 node_context ctx;
-var a(ctx, "a");
-var b(ctx, "b");
-var c(ctx, "c");
-var d(ctx, "d");
 var x(ctx, "x");
 var y(ctx, "y");
 var z(ctx, "z");
@@ -320,9 +319,10 @@ expr pow(expr x, int n) {
 
 TEST(elementwise, add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
 TEST(elementwise, mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
-TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c); }
-TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
-TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
-TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
+TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(x + y, 0) * z); }
+TEST(elementwise, exp1) { test_expr_pipeline<int, 1>(ctx, 1 + x); }
+TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2)); }
+TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3)); }
+TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
 
 }  // namespace slinky

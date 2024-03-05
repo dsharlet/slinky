@@ -1280,8 +1280,6 @@ TEST(pipeline, constant) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
-  // TODO: Should pipeline understand constants and do this itself?
-  eval_ctx[constant->sym()] = reinterpret_cast<index_t>(constant->constant());
   p.evaluate({}, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {

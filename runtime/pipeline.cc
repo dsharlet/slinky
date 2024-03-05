@@ -7,11 +7,9 @@
 
 namespace slinky {
 
-pipeline::pipeline(std::vector<var> args, std::vector<var> inputs, std::vector<var> outputs, stmt body)
-    : args_(std::move(args)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), body_(std::move(body)) {}
-
-pipeline::pipeline(std::vector<var> inputs, std::vector<var> outputs, stmt body)
-    : pipeline({}, std::move(inputs), std::move(outputs), std::move(body)) {}
+pipeline::pipeline(std::vector<var> args, std::vector<var> inputs, std::vector<var> outputs,
+    std::vector<std::pair<symbol_id, const raw_buffer*>> constants, stmt body)
+    : args_(std::move(args)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), constants_(std::move(constants)), body_(std::move(body)) {}
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
   assert(args.size() == args_.size());
@@ -26,6 +24,9 @@ index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_c
   }
   for (std::size_t i = 0; i < outputs.size(); ++i) {
     ctx[outputs_[i]] = reinterpret_cast<index_t>(outputs[i]);
+  }
+  for (const auto& i : constants_) {
+    ctx[i.first] = reinterpret_cast<index_t>(i.second);
   }
 
   return slinky::evaluate(body_, ctx);
