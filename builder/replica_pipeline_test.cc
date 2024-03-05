@@ -1,9 +1,15 @@
 #include <functional>
+#include <iostream>
+#include <map>
+#include <string>
 
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 
 namespace slinky {
+namespace internal {
+
+namespace {
 
 // clang-format off
 std::function<pipeline()> multiple_outputs_replica =
@@ -33,7 +39,7 @@ std::function<pipeline()> multiple_outputs_replica =
 // clang-format on
 
 // clang-format off
-std::function<pipeline()> matmul_replica =
+std::function<pipeline()> matmuls_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -165,7 +171,7 @@ std::function<pipeline()> unrelated_replica =
 // clang-format on
 
 // clang-format off
-std::function<pipeline()> concatenated_replica =
+std::function<pipeline()> concatenated_result_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -203,7 +209,7 @@ std::function<pipeline()> concatenated_replica =
 // clang-format on
 
 // clang-format off
-std::function<pipeline()> stacked_replica =
+std::function<pipeline()> stacked_result_replica =
 // BEGIN define_replica_pipeline() output
 []() -> ::slinky::pipeline {
   node_context ctx;
@@ -328,4 +334,41 @@ std::function<pipeline()> padded_stencil_replica =
 ;
 // clang-format on
 
+// clang-format off
+std::map<std::string, std::function<pipeline()>> replica_map = {
+  {"concatenated_result", concatenated_result_replica},
+  {"diamond_stencils", diamond_stencils_replica},
+  {"matmuls", matmuls_replica},
+  {"multiple_outputs", multiple_outputs_replica},
+  {"padded_stencil", padded_stencil_replica},
+  {"pyramid", pyramid_replica},
+  {"stacked_result", stacked_result_replica},
+  {"unrelated", unrelated_replica},
+};
+// clang-format on
+
+}  // namespace
+
+void check_replica_pipeline(const std::string& name, const std::string& replica_text, span<const raw_buffer*> inputs,
+    span<const raw_buffer*> outputs, const std::string& test_src) {
+  auto it = replica_map.find(name);
+  if (it == replica_map.end()) {
+    std::cerr << "replica not found: " << name << "\n";
+    std::abort();
+  }
+
+  // std::cerr << "REPLICA_TEXT:\n" << replica_text << "\n"
+  size_t pos = test_src.find(replica_text);
+  if (pos == std::string::npos) {
+    std::cerr << "Matching replica text not found, expected:\n" << replica_text;
+    std::abort();
+  }
+
+  auto p_replica = it->second();
+
+  eval_context eval_ctx;
+  p_replica.evaluate(inputs, outputs, eval_ctx);
+}
+
+}  // namespace internal
 }  // namespace slinky

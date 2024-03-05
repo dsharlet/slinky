@@ -11,27 +11,12 @@
 #include "runtime/visualize.h"
 #include "tools/cpp/runfiles/runfiles.h"
 
-#if 1
-#define LOG_REPLICA_TEXT(STR)                                                                                          \
-  do {                                                                                                                 \
-  } while (0)
-#else
-#define LOG_REPLICA_TEXT(STR)                                                                                          \
-  do {                                                                                                                 \
-    std::cerr << "REPLICA_TEXT:\n" << (STR) << "\n";                                                                   \
-  } while (0)
-#endif
-
 namespace slinky {
 
-extern std::function<pipeline()> concatenated_replica;
-extern std::function<pipeline()> diamond_stencils_replica;
-extern std::function<pipeline()> matmul_replica;
-extern std::function<pipeline()> multiple_outputs_replica;
-extern std::function<pipeline()> padded_stencil_replica;
-extern std::function<pipeline()> pyramid_replica;
-extern std::function<pipeline()> stacked_replica;
-extern std::function<pipeline()> unrelated_replica;
+namespace internal {
+extern void check_replica_pipeline(const std::string& name, const std::string& replica_text,
+    span<const raw_buffer*> inputs, span<const raw_buffer*> outputs, const std::string& test_src);
+}  // namespace internal
 
 using bazel::tools::cpp::runfiles::Runfiles;
 
@@ -70,6 +55,11 @@ protected:
     // (https://github.com/bazelbuild/bazel/issues/18128)
     auto full_path = runfiles->Rlocation("_main/builder/replica_pipeline_test.cc");
     replica_pipeline_test_src = read_entire_file(full_path);
+  }
+
+  void check_replica_pipeline(const std::string& name, const std::string& replica_text, span<const raw_buffer*> inputs,
+      span<const raw_buffer*> outputs) {
+    ::slinky::internal::check_replica_pipeline(name, replica_text, inputs, outputs, replica_pipeline_test_src);
   }
 
   std::unique_ptr<Runfiles> runfiles;
@@ -523,15 +513,7 @@ TEST_F(PipelineTest, matmuls) {
       }
 
       if (split == 1 && lm == loop_mode::serial) {
-        pipeline p_replica = matmul_replica();
-
-        std::string replica_text = define_replica_pipeline(ctx, {a, b, c}, {abc});
-        LOG_REPLICA_TEXT(replica_text);
-        size_t pos = replica_pipeline_test_src.find(replica_text);
-        ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-        test_context eval_ctx;
-        p_replica.evaluate(inputs, outputs, eval_ctx);
+        check_replica_pipeline("matmuls", define_replica_pipeline(ctx, {a, b, c}, {abc}), inputs, outputs);
       }
     }
   }
@@ -596,17 +578,7 @@ TEST_F(PipelineTest, pyramid) {
   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
-  {
-    pipeline p_replica = pyramid_replica();
-
-    std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
-    LOG_REPLICA_TEXT(replica_text);
-    size_t pos = replica_pipeline_test_src.find(replica_text);
-    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-    test_context eval_ctx;
-    p_replica.evaluate(inputs, outputs, eval_ctx);
-  }
+  check_replica_pipeline("pyramid", define_replica_pipeline(ctx, {in}, {out}), inputs, outputs);
 }
 
 TEST_F(PipelineTest, stencil) {
@@ -984,15 +956,8 @@ TEST_F(PipelineTest, multiple_outputs) {
       }
 
       if (split == 1 && lm == loop_mode::serial) {
-        pipeline p_replica = multiple_outputs_replica();
-
-        std::string replica_text = define_replica_pipeline(ctx, {in}, {sum_x, sum_xy});
-        LOG_REPLICA_TEXT(replica_text);
-        size_t pos = replica_pipeline_test_src.find(replica_text);
-        ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-        test_context eval_ctx;
-        p_replica.evaluate(inputs, outputs, eval_ctx);
+        check_replica_pipeline(
+            "multiple_outputs", define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}), inputs, outputs);
       }
     }
   }
@@ -1119,17 +1084,7 @@ TEST_F(PipelineTest, unrelated) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
 
-  {
-    pipeline p_replica = unrelated_replica();
-
-    std::string replica_text = define_replica_pipeline(ctx, {in1, in2}, {out1, out2});
-    LOG_REPLICA_TEXT(replica_text);
-    size_t pos = replica_pipeline_test_src.find(replica_text);
-    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-    test_context eval_ctx;
-    p_replica.evaluate(inputs, outputs, eval_ctx);
-  }
+  check_replica_pipeline("unrelated", define_replica_pipeline(ctx, {in1, in2}, {out1, out2}), inputs, outputs);
 }
 
 TEST_F(PipelineTest, copied_result) {
@@ -1245,16 +1200,9 @@ TEST_F(PipelineTest, concatenated_result) {
     visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
 
     if (no_alias_buffers == true) {
-      pipeline p_replica = concatenated_replica();
-
-      std::string replica_text =
-          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
-      LOG_REPLICA_TEXT(replica_text);
-      size_t pos = replica_pipeline_test_src.find(replica_text);
-      ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-      test_context eval_ctx;
-      p_replica.evaluate(inputs, outputs, eval_ctx);
+      check_replica_pipeline("concatenated_result",
+          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}), inputs,
+          outputs);
     }
   }
 }
@@ -1306,17 +1254,7 @@ TEST_F(PipelineTest, stacked_result) {
     }
   }
 
-  {
-    pipeline p_replica = stacked_replica();
-
-    std::string replica_text = define_replica_pipeline(ctx, {in1, in2}, {out});
-    LOG_REPLICA_TEXT(replica_text);
-    size_t pos = replica_pipeline_test_src.find(replica_text);
-    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-    test_context eval_ctx;
-    p_replica.evaluate(inputs, outputs, eval_ctx);
-  }
+  check_replica_pipeline("stacked_result", define_replica_pipeline(ctx, {in1, in2}, {out}), inputs, outputs);
 }
 
 TEST_F(PipelineTest, padded_stencil) {
@@ -1389,15 +1327,7 @@ TEST_F(PipelineTest, padded_stencil) {
     visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
 
     if (schedule == 1) {
-      pipeline p_replica = padded_stencil_replica();
-
-      std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
-      LOG_REPLICA_TEXT(replica_text);
-      size_t pos = replica_pipeline_test_src.find(replica_text);
-      ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-      test_context eval_ctx;
-      p_replica.evaluate(inputs, outputs, eval_ctx);
+      check_replica_pipeline("padded_stencil", define_replica_pipeline(ctx, {in}, {out}), inputs, outputs);
     }
   }
 }
@@ -1577,17 +1507,7 @@ TEST_F(PipelineTest, diamond_stencils) {
     }
   }
 
-  {
-    pipeline p_replica = diamond_stencils_replica();
-
-    std::string replica_text = define_replica_pipeline(ctx, {in}, {out});
-    LOG_REPLICA_TEXT(replica_text);
-    size_t pos = replica_pipeline_test_src.find(replica_text);
-    ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-
-    test_context eval_ctx;
-    p_replica.evaluate(inputs, outputs, eval_ctx);
-  }
+  check_replica_pipeline("diamond_stencils", define_replica_pipeline(ctx, {in}, {out}), inputs, outputs);
 }
 
 }  // namespace slinky
