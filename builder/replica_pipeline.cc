@@ -184,37 +184,20 @@ public:
 
     (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", ", size_code, ", ", bep->rank(), ")");
 
-    const auto matches = [](expr a, expr b) -> bool {
-      if (a.defined()) {
-        if (b.defined()) {
-          return match(a, b);
-        } else {
-          return false;
-        }
-      } else {
-        if (b.defined()) {
-          return false;
-        } else {
-          // consider two undef exprs to match each other
-          return true;
-        }
-      }
-    };
-
     for (std::size_t d = 0; d < bep->rank(); d++) {
-      if (!matches(bep->dim(d).bounds.min, buffer_min(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).bounds.min, buffer_min(variable::make(bep->sym()), static_cast<index_t>(d)))) {
         auto e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").min = " << e << ";\n";
       }
-      if (!matches(bep->dim(d).bounds.max, buffer_max(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).bounds.max, buffer_max(variable::make(bep->sym()), static_cast<index_t>(d)))) {
         auto e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").max = " << e << ";\n";
       }
-      if (!matches(bep->dim(d).stride, buffer_stride(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).stride, buffer_stride(variable::make(bep->sym()), static_cast<index_t>(d)))) {
         auto e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
-      if (!matches(bep->dim(d).fold_factor, buffer_fold_factor(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(variable::make(bep->sym()), static_cast<index_t>(d)))) {
         auto e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = " << e << ";\n";
       }
