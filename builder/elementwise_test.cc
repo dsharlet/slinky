@@ -63,7 +63,8 @@ public:
   void visit(const constant* c) override {
     auto value = std::make_unique<buffer<T, Rank>>();
     for (std::size_t d = 0; d < Rank; ++d) {
-      value->dims[d].set_bounds(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
+      // TODO: Find a better way to not care about bounds of broadcasted dimensions.
+      value->dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2, std::numeric_limits<index_t>::max() / 2);
       value->dims[d].set_stride(0);
     }
     value->allocate();
@@ -166,30 +167,28 @@ public:
     b.allocate();
   }
 
-  void visit(const variable* v) override {
-    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
-    assert(i);
+  std::size_t prepare_result() {
     result.free();
-    index_t stride = sizeof(T);
+    index_t stride = 1;
     for (std::size_t d = 0; d < Rank; ++d) {
       result.dims[d].set_min_extent(0, extents[d]);
-      result.dims[d].set_stride(stride);
+      result.dims[d].set_stride(stride * sizeof(T));
       stride *= extents[d];
     }
     result.allocate();
+    return stride;
+  }
+
+  void visit(const variable* v) override {
+    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
+    assert(i);
+    prepare_result();
     copy(**i, result);
   }
 
   void visit(const constant* c) override {
-    result.free();
-    index_t stride = sizeof(T);
-    for (std::size_t d = 0; d < Rank; ++d) {
-      result.dims[d].set_min_extent(0, extents[d]);
-      result.dims[d].set_stride(stride);
-      stride *= extents[d];
-    }
-    result.allocate();
-    std::fill_n(result.base(), stride / sizeof(T), c->value);
+    std::size_t flat_size = prepare_result();
+    std::fill_n(result.base(), flat_size, c->value);
   }
 
   void visit_expr(const expr& e, buffer<T, Rank>& r) {
