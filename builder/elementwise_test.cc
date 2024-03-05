@@ -35,7 +35,7 @@ class elementwise_pipeline_builder : public node_visitor {
   std::string name(const buffer_expr_ptr& b) const { return ctx.name(b->sym()); }
 
   std::map<symbol_id, buffer_expr_ptr> vars;
-  std::vector<std::pair<std::unique_ptr<buffer<T, Rank>>, buffer_expr_ptr>> constants;
+  std::vector<buffer_expr_ptr> constants;
 
 public:
   elementwise_pipeline_builder(node_context& ctx) : ctx(ctx) {
@@ -61,16 +61,18 @@ public:
   }
 
   void visit(const constant* c) override {
-    auto value = std::make_unique<buffer<T, Rank>>();
+    auto* dims = SLINKY_ALLOCA(dim, Rank);
     for (std::size_t d = 0; d < Rank; ++d) {
       // TODO: Find a better way to not care about bounds of broadcasted dimensions.
-      value->dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2, std::numeric_limits<index_t>::max() / 2);
-      value->dims[d].set_stride(0);
+      dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2, std::numeric_limits<index_t>::max() / 2);
+      dims[d].set_stride(0);
     }
+
+    auto value = raw_buffer::make_allocated(sizeof(T), Rank, dims);
     value->allocate();
-    memcpy(value->base(), &c->value, sizeof(T));
-    result = buffer_expr::make(ctx, "c" + std::to_string(c->value), &*value);
-    constants.push_back({std::move(value), result});
+    memcpy(value->base, &c->value, sizeof(T));
+    result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
+    constants.push_back(result);
   }
 
   buffer_expr_ptr visit_expr(const expr& e) {

@@ -36,15 +36,16 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
   }
 }
 
-buffer_expr::buffer_expr(symbol_id sym, const raw_buffer* buffer)
-    : sym_(sym), elem_size_(buffer->elem_size), producer_(nullptr), constant_(buffer) {
-  dims_.reserve(buffer->rank);
+buffer_expr::buffer_expr(symbol_id sym, raw_buffer_ptr constant_buffer)
+    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr), constant_(std::move(constant_buffer)) {
+  assert(constant_ != nullptr);
+  dims_.reserve(constant_->rank);
 
-  for (index_t d = 0; d < static_cast<index_t>(buffer->rank); ++d) {
-    expr min = buffer->dims[d].min();
-    expr max = buffer->dims[d].max();
-    expr stride = buffer->dims[d].stride();
-    expr fold_factor = buffer->dims[d].fold_factor();
+  for (index_t d = 0; d < static_cast<index_t>(constant_->rank); ++d) {
+    expr min = constant_->dims[d].min();
+    expr max = constant_->dims[d].max();
+    expr stride = constant_->dims[d].stride();
+    expr fold_factor = constant_->dims[d].fold_factor();
     dims_.push_back({slinky::bounds(min, max), stride, fold_factor});
   }
 }
@@ -57,11 +58,11 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, ind
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), elem_size, rank));
 }
 
-buffer_expr_ptr buffer_expr::make(symbol_id sym, const raw_buffer* buffer) {
-  return buffer_expr_ptr(new buffer_expr(sym, buffer));
+buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, raw_buffer_ptr constant_buffer) {
+  return buffer_expr_ptr(new buffer_expr(sym, std::move(constant_buffer)));
 }
-buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, const raw_buffer* buffer) {
-  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), buffer));
+buffer_expr_ptr buffer_expr::make_constant(node_context& ctx, const std::string& sym, raw_buffer_ptr constant_buffer) {
+  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), std::move(constant_buffer)));
 }
 
 void buffer_expr::set_producer(func* f) {

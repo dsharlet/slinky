@@ -41,6 +41,19 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
   return raw_buffer_ptr(buf);
 }
 
+raw_buffer_ptr raw_buffer::make_allocated_external(
+    std::size_t elem_size, std::size_t rank, const class dim* dims, void* base) {
+  char* mem = reinterpret_cast<char*>(malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank));
+  raw_buffer* buf = new (mem) raw_buffer();
+  mem += sizeof(raw_buffer);
+  buf->rank = rank;
+  buf->elem_size = elem_size;
+  buf->dims = reinterpret_cast<slinky::dim*>(mem);
+  memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
+  buf->base = base;
+  return raw_buffer_ptr(buf);
+}
+
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
   auto buf = make_allocated(src.elem_size, src.rank, src.dims);
   copy(src, *buf);
