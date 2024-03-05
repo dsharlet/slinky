@@ -23,6 +23,7 @@ TEST(replica, matmuls) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto a = buffer_expr::make(ctx, "a", sizeof(uint32_t), 2);
   a->dim(1).stride = 4;
@@ -90,6 +91,7 @@ TEST(replica, pyramid) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint32_t), 2);
@@ -139,6 +141,7 @@ TEST(replica, multiple_outputs) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 3);
   auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(uint32_t), 2);
@@ -181,6 +184,7 @@ TEST(replica, unrelated) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint32_t), 1);
@@ -259,6 +263,7 @@ TEST(replica, concatenated_result) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
@@ -314,6 +319,7 @@ TEST(replica, stacked_result) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
@@ -366,6 +372,7 @@ TEST(replica, padded_stencil) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in = buffer_expr::make(ctx, "in", sizeof(uint16_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
@@ -418,6 +425,7 @@ TEST(replica, diamond_stencils) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
   auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);

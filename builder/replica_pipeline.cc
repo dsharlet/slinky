@@ -98,10 +98,7 @@ public:
     case intrinsic::positive_infinity: call_name = "positive_infinity"; break;
     case intrinsic::negative_infinity: call_name = "negative_infinity"; break;
     case intrinsic::indeterminate: call_name = "indeterminate"; break;
-    case intrinsic::abs:
-      os_ << "  using std::abs;\n";
-      call_name = "abs";
-      break;
+    case intrinsic::abs: call_name = "abs"; break;
     case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
     case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
     case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
@@ -372,6 +369,7 @@ public:
       os_ << "auto " << fname << " = ";
     }
     os_ << "[]() -> ::slinky::pipeline {\n";
+    os_ << "  using std::abs, std::min, std::max;\n";
     os_ << "  node_context ctx;\n";
     std::string a = print(args);
     std::string i = print(inputs);
