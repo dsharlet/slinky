@@ -51,7 +51,6 @@ std::string get_replica_golden() {
 }
 
 void check_replica_pipeline(const std::string& replica_text) {
-  // std::cerr << "REPLICA_TEXT:\n" << replica_text << "\n";
   size_t pos = get_replica_golden().find(replica_text);
   ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
 }
