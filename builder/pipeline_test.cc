@@ -56,7 +56,7 @@ class PipelineTest : public testing::Test {
 protected:
   void SetUp() override {
     // TODO: for testing purposes, remove
-    // replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_srcs.cc");
+    // replica_pipeline_test_src = read_entire_file("/Users/srj/GitHub/slinky/builder/replica_pipeline_test.cc");
     // return;
 
     std::string error;
@@ -68,7 +68,7 @@ protected:
 
     // As of Bazel 6.x, apparently `_main` is the toplevel for runfiles
     // (https://github.com/bazelbuild/bazel/issues/18128)
-    auto full_path = runfiles->Rlocation("_main/builder/replica_pipeline_srcs.cc");
+    auto full_path = runfiles->Rlocation("_main/builder/replica_pipeline_test.cc");
     replica_pipeline_test_src = read_entire_file(full_path);
   }
 
