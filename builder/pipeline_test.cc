@@ -1268,8 +1268,10 @@ TEST(pipeline, constant) {
   auto* dims = SLINKY_ALLOCA(dim, 2);
   dims[0].set_bounds(0, W);
   dims[0].set_stride(1);
+  dims[0].set_fold_factor(dim::unfolded);
   dims[1].set_bounds(0, H);
   dims[1].set_stride(W);
+  dims[1].set_fold_factor(dim::unfolded);
 
   auto constant_buf = raw_buffer::make_allocated(sizeof(short), 2, dims);
   constant_buf->allocate();
