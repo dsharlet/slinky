@@ -279,11 +279,11 @@ void test_for_each_contiguous_slice_add() {
         const A* a = reinterpret_cast<const A*>(a_v);
         const B* b = reinterpret_cast<const B*>(b_v);
         for (index_t i = 0; i < slice_extent; ++i) {
-          dst[i] = a[i] + b[i];
+          dst[i] = saturate_add<Dst>(a[i], b[i]);
         }
       },
       a, b);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), a(i) + b(i)); });
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i), b(i))); });
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
