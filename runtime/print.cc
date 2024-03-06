@@ -48,6 +48,19 @@ std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
 }
 
+std::ostream& operator<<(std::ostream& os, const box_expr& b) {
+  os << "[" ;
+  for (std::size_t i = 0; i < b.size(); ++i) {
+    os << b[i];
+    if (i + 1 < b.size()) {
+      os << ", ";
+    }
+  }
+  os << "]";
+
+  return os;
+}
+
 class printer : public node_visitor {
 public:
   int depth = -1;

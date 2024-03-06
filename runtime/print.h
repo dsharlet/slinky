@@ -18,6 +18,7 @@ std::ostream& operator<<(std::ostream& os, const std::tuple<const expr&, const n
 std::ostream& operator<<(std::ostream& os, const std::tuple<const stmt&, const node_context&>& s);
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i);
+std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, memory_type type);
 std::ostream& operator<<(std::ostream& os, loop_mode mode);
