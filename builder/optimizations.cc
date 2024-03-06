@@ -24,11 +24,13 @@ namespace slinky {
 
 namespace {
 
-bool is_copy(expr in, var out, expr& offset) {
-  offset = simplify(in - out);
-  return !depends_on(offset, out.sym()).any();
+// Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
+bool is_copy(expr src_x, var dst_x, expr& offset) {
+  offset = simplify(src_x - dst_x);
+  return !depends_on(offset, dst_x.sym()).any();
 }
 
+// Same as above, applied to each dimension of the copy.
 bool is_copy(const copy_stmt* op, std::vector<expr>& offset) {
   if (op->src_x.size() != op->dst_x.size()) return false;
   offset.resize(op->dst_x.size());
@@ -128,7 +130,7 @@ public:
             },
             {src}, {dst}, {});
       });
-      
+
       if (pad_result.same_as(result)) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
