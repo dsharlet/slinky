@@ -386,7 +386,6 @@ public:
   stmt add_input_crops(stmt result, const func* f) {
     // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
     // output associated with a particular dimension.
-    std::cout << "add_input_crops" << std::endl;
     assert(!f->outputs().empty());
     symbol_map<expr> output_mins, output_maxs;
     for (const func::output& o : f->outputs()) {
@@ -424,7 +423,6 @@ public:
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
         expr min = substitute(i.bounds[d].min, output_mins_i);
         expr max = substitute(i.bounds[d].max, output_maxs_i);
-        std::cout << min << " " << max << std::endl;
         // The bounds may have been negated.
         crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
@@ -767,6 +765,8 @@ void compute_innermost_locations(const std::vector<const func*>& order,
       } else {
         std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
       }
+      compute_at_levels[f] = *f->compute_at();
+      continue;
     }
     const auto& p = deps.find(f);
     if (p != deps.end()) {
