@@ -393,22 +393,13 @@ public:
     return simplify(bounds);
   }
 
-  stmt make_loop_new(stmt body, const func* f, const func::loop_info& loop = func::loop_info(), bool is_inner_loop = false) {
+  stmt make_loop_new(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
     loop_id here = {f, loop.var};
-    // // Before making the loop, we need to produce any funcs that should be produced here.
-    // body = block::make({make_producers(here, f), body});
-
-    // // Make any allocations that should be here.
-    // body = make_allocations(body, here);
-    // body = block::make(build_new(here);
 
     body = build_new(body, f, here);
   
     std::cout << "make_loop_new" << std::endl;
     if (loop.defined()) {
-      // if (is_inner_loop) {
-      //   body = add_input_crops(body, f);
-      // }
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, f, loop);
       // And make the actual loop.
@@ -422,25 +413,11 @@ public:
     if (f->loops().empty()) {
       result = add_input_crops(result, f);
     }
-    // for (const func::output& i : f->outputs()) {
-    //   produced.insert(i.buffer);
-    //   if (!allocated.count(i.buffer)) {
-    //     to_allocate.push_front(i.buffer);
-    //   }
-    // }
-    // for (const func::input& i : f->inputs()) {
-    //   consumed.insert(i.buffer);
-    // }
 
     // Generate the loops that we want to be explicit.
-    bool is_inner_loop = true;
     for (const auto& loop : f->loops()) {
-      result = make_loop_new(result, f, loop, is_inner_loop);
-      is_inner_loop = false;
+      result = make_loop_new(result, f, loop);
     }
-
-    // // Try to make any other producers needed here.
-    // result = block::make({make_producers(current_at, f), result});
 
     return result;
   }
@@ -454,7 +431,6 @@ public:
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
         std::cout << "Producing " << f->name() << std::endl;
-        // produced_stmt.push_back(produce_new(f));
         if (result.defined()) {
           result = add_input_crops(result, f);
         }
@@ -463,15 +439,6 @@ public:
     }
     
     result = block::make({result, body});
-
-    // for (int ix = 0; ix < order_.size(); ix++) {
-    //   const auto& f = order_[ix];
-    //   const auto& compute_at = compute_at_levels_.find(f);
-    //   assert(compute_at != compute_at_levels_.end());
-    //   if (compute_at->second == at) {
-    //     result = add_input_crops(result, f);
-    //   }
-    // }
 
     if (base_f) {
       result = add_input_crops(result, base_f);
@@ -486,7 +453,6 @@ public:
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
           std::cout << "Storing " << f->name() << std::endl;
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
-          // allocated.insert(b);
         }
       }
     }
