@@ -866,28 +866,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   pipeline_builder builder(inputs, outputs, constants, order, compute_at_levels);
 
-  stmt new_result;
-  new_result = builder.build_new(new_result, nullptr, loop_id());
-  std::cout << "+++ New loop initital loop nest: \n" << std::tie(new_result, ctx) << std::endl;
   stmt result;
+  result = builder.build_new(result, nullptr, loop_id());
+  std::cout << "+++ New loop initital loop nest: \n" << std::tie(result, ctx) << std::endl;
 
-  while (!builder.complete()) {
-    // Find a buffer to produce.
-    const func* f = builder.find_next_producer();
-
-    // Call the producer.
-    if (!f) {
-      // TODO: Make a better error here.
-      std::cerr << "Problem in dependency graph" << std::endl;
-      std::abort();
-    }
-
-    stmt produce_f = builder.produce(f);
-    produce_f = builder.make_allocations(produce_f);
-    result = block::make({std::move(result), std::move(produce_f)});
-  }
-  std::cout << "+++ Initital loop nest: \n" << std::tie(result, ctx) << std::endl;
-  result = new_result;
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
