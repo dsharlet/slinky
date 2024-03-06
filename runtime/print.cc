@@ -49,14 +49,14 @@ std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
 }
 
 std::ostream& operator<<(std::ostream& os, const box_expr& b) {
-  os << "[" ;
+  os << "{" ;
   for (std::size_t i = 0; i < b.size(); ++i) {
     os << b[i];
     if (i + 1 < b.size()) {
       os << ", ";
     }
   }
-  os << "]";
+  os << "}";
 
   return os;
 }
