@@ -634,7 +634,13 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
   std::set<buffer_expr_ptr> constants;
   stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
-  return pipeline(std::move(args), vars(inputs), vars(outputs), constant_map(constants), std::move(body));
+  pipeline p;
+  p.args = std::move(args);
+  p.inputs = vars(inputs);
+  p.outputs = vars(outputs);
+  p.constants = constant_map(constants);
+  p.body = std::move(body);
+  return p;
 }
 
 pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,

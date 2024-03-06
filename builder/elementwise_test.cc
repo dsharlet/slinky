@@ -265,9 +265,9 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   }
 
   std::vector<const raw_buffer*> inputs;
-  std::vector<buffer<T, Rank>> input_bufs(p.inputs().size());
+  std::vector<buffer<T, Rank>> input_bufs(p.inputs.size());
 
-  for (std::size_t i = 0; i < p.inputs().size(); ++i) {
+  for (std::size_t i = 0; i < p.inputs.size(); ++i) {
     index_t stride = sizeof(T);
     for (std::size_t d = 0; d < Rank; ++d) {
       input_bufs[i].dims[d].set_min_extent(0, extents[d]);
@@ -275,7 +275,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
       stride *= extents[d];
     }
   }
-  for (std::size_t i = 0; i < p.inputs().size(); ++i) {
+  for (std::size_t i = 0; i < p.inputs.size(); ++i) {
     init_random(input_bufs[i]);
     inputs.push_back(&input_bufs[i]);
   }
@@ -291,7 +291,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_evaluator<T, Rank> eval;
   eval.extents = extents;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    eval.vars[p.inputs()[i]] = &input_bufs[i];
+    eval.vars[p.inputs[i]] = &input_bufs[i];
   }
   e.accept(&eval);
 
