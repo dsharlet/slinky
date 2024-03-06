@@ -38,7 +38,7 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
   memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
   mem += sizeof(slinky::dim) * rank;
   buf->base = mem;
-  return raw_buffer_ptr(buf);
+  return raw_buffer_ptr(buf, free);
 }
 
 raw_buffer_ptr raw_buffer::make(std::size_t elem_size, std::size_t rank) {
@@ -48,7 +48,7 @@ raw_buffer_ptr raw_buffer::make(std::size_t elem_size, std::size_t rank) {
   buf->rank = rank;
   buf->elem_size = elem_size;
   buf->dims = reinterpret_cast<slinky::dim*>(mem);
-  return raw_buffer_ptr(buf);
+  return raw_buffer_ptr(buf, free);
 }
 
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
