@@ -393,12 +393,12 @@ public:
     return simplify(bounds);
   }
 
-  stmt make_loop_new(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
+  stmt make_loop(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
     loop_id here = {f, loop.var};
 
-    body = build_new(body, f, here);
+    body = build(body, f, here);
   
-    std::cout << "make_loop_new" << std::endl;
+    std::cout << "make_loop" << std::endl;
     if (loop.defined()) {
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, f, loop);
@@ -408,7 +408,7 @@ public:
     return body;
   }
   
-  stmt produce_new(const func* f) {
+  stmt produce(const func* f) {
     stmt result = f->make_call();
     if (f->loops().empty()) {
       result = add_input_crops(result, f);
@@ -416,13 +416,13 @@ public:
 
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
-      result = make_loop_new(result, f, loop);
+      result = make_loop(result, f, loop);
     }
 
     return result;
   }
 
-  stmt build_new(stmt body, const func* base_f, const loop_id& at) {
+  stmt build(stmt body, const func* base_f, const loop_id& at) {
     stmt result;
     std::vector<stmt> produced_stmt;
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
@@ -434,7 +434,7 @@ public:
         if (result.defined()) {
           result = add_input_crops(result, f);
         }
-        result = block::make({result, produce_new(f)});
+        result = block::make({result, produce(f)});
       }
     }
     
@@ -695,7 +695,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   pipeline_builder builder(inputs, outputs, constants, order, compute_at_levels);
 
   stmt result;
-  result = builder.build_new(result, nullptr, loop_id());
+  result = builder.build(result, nullptr, loop_id());
   std::cout << "+++ New loop initital loop nest: \n" << std::tie(result, ctx) << std::endl;
 
   // Add checks that the buffer constraints the user set are satisfied.
