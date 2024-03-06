@@ -36,7 +36,7 @@ buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
   }
 }
 
-buffer_expr::buffer_expr(symbol_id sym, raw_buffer_ptr constant_buffer)
+buffer_expr::buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer)
     : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr), constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
   dims_.reserve(constant_->rank);
@@ -58,10 +58,10 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, ind
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), elem_size, rank));
 }
 
-buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, raw_buffer_ptr constant_buffer) {
+buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(sym, std::move(constant_buffer)));
 }
-buffer_expr_ptr buffer_expr::make_constant(node_context& ctx, const std::string& sym, raw_buffer_ptr constant_buffer) {
+buffer_expr_ptr buffer_expr::make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), std::move(constant_buffer)));
 }
 
@@ -619,8 +619,8 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
   return result;
 }
 
-std::vector<std::pair<symbol_id, const raw_buffer*>> constant_map(const std::set<buffer_expr_ptr>& constants) {
-  std::vector<std::pair<symbol_id, const raw_buffer*>> result;
+std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constant_map(const std::set<buffer_expr_ptr>& constants) {
+  std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> result;
   result.reserve(constants.size());
   for (const buffer_expr_ptr& i : constants) {
     result.push_back({i->sym(), i->constant()});

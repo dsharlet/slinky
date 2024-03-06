@@ -84,11 +84,8 @@ class buffer;
 
 class raw_buffer;
 
-struct free_deleter {
-  void operator()(void* p) { free(p); }
-};
-
-using raw_buffer_ptr = std::unique_ptr<raw_buffer, free_deleter>;
+using raw_buffer_ptr = std::shared_ptr<raw_buffer>;
+using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.

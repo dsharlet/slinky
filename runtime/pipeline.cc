@@ -8,7 +8,7 @@
 namespace slinky {
 
 pipeline::pipeline(std::vector<var> args, std::vector<var> inputs, std::vector<var> outputs,
-    std::vector<std::pair<symbol_id, const raw_buffer*>> constants, stmt body)
+    std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constants, stmt body)
     : args_(std::move(args)), inputs_(std::move(inputs)), outputs_(std::move(outputs)), constants_(std::move(constants)), body_(std::move(body)) {}
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
@@ -26,7 +26,7 @@ index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_c
     ctx[outputs_[i]] = reinterpret_cast<index_t>(outputs[i]);
   }
   for (const auto& i : constants_) {
-    ctx[i.first] = reinterpret_cast<index_t>(i.second);
+    ctx[i.first] = reinterpret_cast<index_t>(i.second.get());
   }
 
   return slinky::evaluate(body_, ctx);
