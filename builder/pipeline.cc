@@ -231,7 +231,11 @@ public:
     }
 
     // Don't recursively mutate, once we crop the buffer here, it doesn't need to be cropped again.
-    set_result(crop_buffer::make(target, crop | op->bounds, op->body));
+    slinky::box_expr new_crop = crop | op->bounds;
+    for (int d = 0; d < new_crop.size(); d++) {
+      new_crop[d] = simplify(new_crop[d]);
+    }
+    set_result(crop_buffer::make(target, new_crop, op->body));
     found = true;
   }
 };
@@ -268,9 +272,16 @@ class pipeline_builder {
 
   stmt result;
 
+  const std::vector<const func*>& order_;
+  const std::map<const func*, loop_id>& compute_at_levels_;
+
 public:
-  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-      std::set<buffer_expr_ptr>& constants) {
+  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs,
+                    const std::vector<buffer_expr_ptr>& outputs,
+                    std::set<buffer_expr_ptr>& constants,
+                    const std::vector<const func*>& order,
+                    const std::map<const func*, loop_id>& compute_at_levels) :
+                    order_(order), compute_at_levels_(compute_at_levels) {
     // To start with, we need to produce the outputs.
     for (auto& i : outputs) {
       to_produce.insert(i);
@@ -375,6 +386,7 @@ public:
   stmt add_input_crops(stmt result, const func* f) {
     // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
     // output associated with a particular dimension.
+    std::cout << "add_input_crops" << std::endl;
     assert(!f->outputs().empty());
     symbol_map<expr> output_mins, output_maxs;
     for (const func::output& o : f->outputs()) {
@@ -412,6 +424,7 @@ public:
       for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
         expr min = substitute(i.bounds[d].min, output_mins_i);
         expr max = substitute(i.bounds[d].max, output_maxs_i);
+        std::cout << min << " " << max << std::endl;
         // The bounds may have been negated.
         crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
@@ -516,6 +529,108 @@ public:
 
     // Try to make any other producers needed here.
     result = block::make({make_producers(current_at, f), result});
+    // std::cout << "end of produce() :" << result << std::endl;
+    return result;
+  }
+
+  stmt make_loop_new(stmt body, const func* f, const func::loop_info& loop = func::loop_info(), bool is_inner_loop = false) {
+    loop_id here = {f, loop.var};
+    // // Before making the loop, we need to produce any funcs that should be produced here.
+    // body = block::make({make_producers(here, f), body});
+
+    // // Make any allocations that should be here.
+    // body = make_allocations(body, here);
+    // body = block::make(build_new(here);
+
+    body = build_new(body, f, here);
+  
+    std::cout << "make_loop_new" << std::endl;
+    if (loop.defined()) {
+      // if (is_inner_loop) {
+      //   body = add_input_crops(body, f);
+      // }
+      // The loop body is done, and we have an actual loop to make here. Crop the body.
+      body = crop_for_loop(body, f, loop);
+      // And make the actual loop.
+      body = loop::make(loop.sym(), loop.mode, get_loop_bounds(f, loop), loop.step, body);
+    }
+    return body;
+  }
+  
+  stmt produce_new(const func* f) {
+    stmt result = f->make_call();
+    if (f->loops().empty()) {
+      result = add_input_crops(result, f);
+    }
+    // for (const func::output& i : f->outputs()) {
+    //   produced.insert(i.buffer);
+    //   if (!allocated.count(i.buffer)) {
+    //     to_allocate.push_front(i.buffer);
+    //   }
+    // }
+    // for (const func::input& i : f->inputs()) {
+    //   consumed.insert(i.buffer);
+    // }
+
+    // Generate the loops that we want to be explicit.
+    bool is_inner_loop = true;
+    for (const auto& loop : f->loops()) {
+      result = make_loop_new(result, f, loop, is_inner_loop);
+      is_inner_loop = false;
+    }
+
+    // // Try to make any other producers needed here.
+    // result = block::make({make_producers(current_at, f), result});
+
+    return result;
+  }
+
+  stmt build_new(stmt body, const func* base_f, const loop_id& at) {
+    stmt result;
+    std::vector<stmt> produced_stmt;
+    for (int ix = order_.size() - 1; ix >= 0; ix--) {
+      const auto& f = order_[ix];
+      const auto& compute_at = compute_at_levels_.find(f);
+      assert(compute_at != compute_at_levels_.end());
+      if (compute_at->second == at) {
+        std::cout << "Producing " << f->name() << std::endl;
+        // produced_stmt.push_back(produce_new(f));
+        if (result.defined()) {
+          result = add_input_crops(result, f);
+        }
+        result = block::make({result, produce_new(f)});
+      }
+    }
+    
+    result = block::make({result, body});
+
+    // for (int ix = 0; ix < order_.size(); ix++) {
+    //   const auto& f = order_[ix];
+    //   const auto& compute_at = compute_at_levels_.find(f);
+    //   assert(compute_at != compute_at_levels_.end());
+    //   if (compute_at->second == at) {
+    //     result = add_input_crops(result, f);
+    //   }
+    // }
+
+    if (base_f) {
+      result = add_input_crops(result, base_f);
+    }
+
+    for (int ix = order_.size() - 1; ix >= 0; ix--) {
+      const auto& f = order_[ix];
+      for (const auto& o: f->outputs()) {
+        const auto& b = o.buffer;
+        if (allocated.count(b)) continue;
+
+        if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
+          std::cout << "Storing " << f->name() << std::endl;
+          result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
+          // allocated.insert(b);
+        }
+      }
+    }
+
     return result;
   }
 };
@@ -577,7 +692,11 @@ void topological_sort(const std::vector<buffer_expr_ptr>& outputs,
   for (const auto& f: order) {
     std::cout << "@@ " << f->name() << std::endl;
     if (f->compute_at()) {
-      std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
+      if (f->compute_at()->root()) {
+         std::cout << "compute_at root" << std::endl;
+      } else {
+        std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
+      }
     }
     
     for(const auto& l: f->loops()) {
@@ -628,7 +747,9 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
   return pathes_to_root[0][max_match];
 }
 
-void compute_innermost_locations(const std::vector<const func*>& order, const std::map<const func*, std::vector<const func*>> deps, std::map<const func*, loop_id>& compute_at_levels) {
+void compute_innermost_locations(const std::vector<const func*>& order, 
+                                  const std::map<const func*, std::vector<const func*>> deps, 
+                                  std::map<const func*, loop_id>& compute_at_levels) {
   std::cout << ">>> Build tree:" << std::endl;
   // A tree which stores loop nest.
   std::vector<loop_tree_node> loop_tree;
@@ -641,7 +762,11 @@ void compute_innermost_locations(const std::vector<const func*>& order, const st
   for (const auto& f: order) {
     std::cout << "@@ Processing " << f->name() << std::endl;
     if (f->compute_at()) {
-      std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
+      if (f->compute_at()->root()) {
+         std::cout << "compute_at root" << std::endl;
+      } else {
+        std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
+      }
     }
     const auto& p = deps.find(f);
     if (p != deps.end()) {
@@ -670,7 +795,9 @@ void compute_innermost_locations(const std::vector<const func*>& order, const st
       compute_at_levels[f] = loop_tree[parent_id].loop;
 
       // Add loops for this function to the loop nest.
-      for (const auto& l: f->loops()) {
+      // for (const auto& l: f->loops()) {
+      for (int i = f->loops().size() - 1; i >= 0; i--) {
+        const auto& l = f->loops()[i];
         std::cout << "Adding a loop " << l.sym() << std::endl;
         loop_tree.push_back({parent_id, {f, l.var}});
         parent_id = loop_tree.size() - 1;
@@ -682,7 +809,9 @@ void compute_innermost_locations(const std::vector<const func*>& order, const st
       int parent_id = 0;
       compute_at_levels[f] = loop_id();
       // Add loops for this function to the loop nest.
-      for (const auto& l: f->loops()) {
+      // for (const auto& l: f->loops()) {
+      for (int i = f->loops().size() - 1; i >= 0; i--) {
+        const auto& l = f->loops()[i];
         std::cout << "Adding a loop " << l.sym() << std::endl;
         loop_tree.push_back({parent_id, {f, l.var}});
         parent_id = loop_tree.size() - 1;
@@ -715,8 +844,12 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     }
     std::cout << std::endl;
   }
-  pipeline_builder builder(inputs, outputs, constants);
 
+  pipeline_builder builder(inputs, outputs, constants, order, compute_at_levels);
+
+  stmt new_result;
+  new_result = builder.build_new(new_result, nullptr, loop_id());
+  std::cout << "+++ New loop initital loop nest: \n" << std::tie(new_result, ctx) << std::endl;
   stmt result;
 
   while (!builder.complete()) {
@@ -734,7 +867,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     produce_f = builder.make_allocations(produce_f);
     result = block::make({std::move(result), std::move(produce_f)});
   }
-  // std::cout << "+++ Initital loop nest: \n" << result << std::endl;
+  std::cout << "+++ Initital loop nest: \n" << std::tie(result, ctx) << std::endl;
+  result = new_result;
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
   for (const buffer_expr_ptr& i : inputs) {
@@ -759,9 +893,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = simplify(result);
 
   // Try to reuse buffers and eliminate copies where possible.
-  // if (!options.no_alias_buffers) {
-  //   result = alias_buffers(result);
-  // }
+  if (!options.no_alias_buffers) {
+    result = alias_buffers(result);
+  }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
