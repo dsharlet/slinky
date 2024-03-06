@@ -263,14 +263,7 @@ bool operator==(const loop_id& a, const loop_id& b) {
 }
 
 class pipeline_builder {
-  // We're going to incrementally build the body, starting at the end of the pipeline and adding
-  // producers as necessary.
-  std::set<buffer_expr_ptr> to_produce;
-  std::list<buffer_expr_ptr> to_allocate;
-  std::set<buffer_expr_ptr> produced, consumed;
   std::set<buffer_expr_ptr> allocated;
-
-  stmt result;
 
   const std::vector<const func*>& order_;
   const std::map<const func*, loop_id>& compute_at_levels_;
@@ -284,35 +277,7 @@ public:
                     order_(order), compute_at_levels_(compute_at_levels) {
     // To start with, we need to produce the outputs.
     for (auto& i : outputs) {
-      to_produce.insert(i);
       allocated.insert(i);
-    }
-    for (auto& i : inputs) {
-      produced.insert(i);
-    }
-
-    // Find all the buffers we need to produce.
-    while (true) {
-      std::set<buffer_expr_ptr> produce_next;
-      for (const buffer_expr_ptr& i : to_produce) {
-        if (!i->producer()) {
-          // Must be an input.
-          continue;
-        }
-
-        for (const func::input& j : i->producer()->inputs()) {
-          if (!to_produce.count(j.buffer)) {
-            if (j.buffer->constant()) {
-              constants.insert(j.buffer);
-            } else {
-              produce_next.insert(j.buffer);
-            }
-          }
-        }
-      }
-      if (produce_next.empty()) break;
-
-      to_produce.insert(produce_next.begin(), produce_next.end());
     }
   }
 
@@ -479,10 +444,12 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
 
 void topological_sort_impl(const func* f, std::set<const func *>& visited, 
                             std::vector<const func *>& order, 
-                            std::map<const func*, std::vector<const func*>>& deps) {
+                            std::map<const func*, std::vector<const func*>>& deps,
+                            std::set<buffer_expr_ptr>& constants) {
   for (const auto& i: f->inputs()) {
     const auto& input = i.buffer;
     if (input->constant()) {
+      constants.insert(input);
       continue;
     }
     if (!input->producer()) {
@@ -494,7 +461,7 @@ void topological_sort_impl(const func* f, std::set<const func *>& visited,
     if(visited.count(input->producer()) > 0) {
       continue;
     }
-    topological_sort_impl(input->producer(), visited, order, deps);
+    topological_sort_impl(input->producer(), visited, order, deps, constants);
   }
   visited.insert(f);
   order.push_back(f);
@@ -502,10 +469,11 @@ void topological_sort_impl(const func* f, std::set<const func *>& visited,
 
 void topological_sort(const std::vector<buffer_expr_ptr>& outputs,
                       std::vector<const func *>& order,
-                      std::map<const func*, std::vector<const func*>>& deps) {
+                      std::map<const func*, std::vector<const func*>>& deps,
+                      std::set<buffer_expr_ptr>& constants) {
   std::set<const func* > visited;
   for(const auto& i: outputs) {
-    topological_sort_impl(i->producer(), visited, order, deps);
+    topological_sort_impl(i->producer(), visited, order, deps, constants);
   }
   std::reverse(order.begin(), order.end());
 }
@@ -627,7 +595,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   std::vector<const func*> order;
   // Dependencies between the functions.
   std::map<const func*, std::vector<const func*>> deps;
-  topological_sort(outputs, order, deps);
+  topological_sort(outputs, order, deps, constants);
 
   // Build a loop nest tree and computes compute_at locations when neccessary.
   std::map<const func*, loop_id> compute_at_levels;
