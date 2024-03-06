@@ -61,7 +61,7 @@ public:
   }
 
   void visit(const constant* c) override {
-    auto* dims = SLINKY_ALLOCA(dim, Rank);
+    slinky::dim dims[Rank];
     for (std::size_t d = 0; d < Rank; ++d) {
       // TODO: Find a better way to not care about bounds of broadcasted dimensions.
       dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
@@ -70,6 +70,7 @@ public:
     }
 
     auto value = raw_buffer::make_allocated(sizeof(T), Rank, dims);
+    assert(value->size_bytes() == sizeof(T));
     memcpy(value->base, &c->value, sizeof(T));
     result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
     constants.push_back(result);

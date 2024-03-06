@@ -1265,7 +1265,7 @@ TEST(pipeline, constant) {
   const int W = 20;
   const int H = 10;
 
-  auto* dims = SLINKY_ALLOCA(dim, 2);
+  slinky::dim dims[2];
   dims[0].set_bounds(0, W);
   dims[0].set_stride(1 * sizeof(short));
   dims[0].set_fold_factor(dim::unfolded);
