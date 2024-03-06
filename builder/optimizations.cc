@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "builder/node_mutator.h"
+#include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/depends_on.h"
@@ -23,28 +24,13 @@ namespace slinky {
 
 namespace {
 
-bool is_copy(expr in, var out, expr& offset) {
-  static var x(0), dx(1), negative_dx(2);
-  static expr patterns[] = {
-      x, x + dx, x - negative_dx,
-      // TODO: we could also handle scaling of x by multiplying the stride.
-  };
-
-  symbol_map<expr> matches;
-  for (const expr& p : patterns) {
-    matches.clear();
-    if (match(p, in, matches) && match(*matches[x], out)) {
-      offset = 0;
-      // We found a pattern that is a copy. We don't care which one, we just need to look at the matches we have.
-      if (matches[dx]) offset = *matches[dx];
-      if (matches[negative_dx]) offset = -*matches[negative_dx];
-      return true;
-    }
-  }
-
-  return false;
+// Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
+bool is_copy(expr src_x, var dst_x, expr& offset) {
+  offset = simplify(src_x - dst_x);
+  return !depends_on(offset, dst_x.sym()).any();
 }
 
+// Same as above, applied to each dimension of the copy.
 bool is_copy(const copy_stmt* op, std::vector<expr>& offset) {
   if (op->src_x.size() != op->dst_x.size()) return false;
   offset.resize(op->dst_x.size());
@@ -144,7 +130,7 @@ public:
             },
             {src}, {dst}, {});
       });
-      
+
       if (pad_result.same_as(result)) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
