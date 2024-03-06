@@ -765,37 +765,51 @@ void compute_innermost_locations(const std::vector<const func*>& order,
       } else {
         std::cout << "compute_at " << f->compute_at()->func->name() << std::endl;
       }
-      compute_at_levels[f] = *f->compute_at();
-      continue;
     }
     const auto& p = deps.find(f);
     if (p != deps.end()) {
       assert(!p->second.empty());
-      // Check all of the consumers and find their innermost locations.
-      std::vector<int> parent_ids;
-      for (const auto& d: p->second) {
-        std::cout << "produces for " << d->name() << std::endl;
-        const auto& node = func_to_loop_tree.find(d);
-        assert(node != func_to_loop_tree.end());
-        parent_ids.push_back(node->second);
-        std::cout << "loop tree node " << node->second << std::endl;
-      }
       int parent_id = -1;
-      if (parent_ids.size() == 1) {
-        // We have just one consumer, so use it innermost location.
-        parent_id = parent_ids[0];
-      } else {
-        std::cout << "Multiple consumers, need to call LCA" << std::endl;
-        // There are multiple consumers, so we need to find least common ancestor
-        // of their innermost locations.
-        parent_id = lca(loop_tree, parent_ids);
-      }
-      assert(parent_id != -1);
-      
-      compute_at_levels[f] = loop_tree[parent_id].loop;
 
-      // Add loops for this function to the loop nest.
-      // for (const auto& l: f->loops()) {
+      // If we have an explicitly set compute_at location we should use that.
+      if (f->compute_at()) {
+        // TODO(vksnk): check if compute_at is a valid location based on computed
+        // innermost location.
+        for (int ix = 0; ix < (int)loop_tree.size(); ix++) {
+          if (loop_tree[ix].loop == *f->compute_at()) {
+            std::cout << "Found a matching loop for explicit compute_at " << ix << std::endl;
+            parent_id = ix;
+          }
+        }
+        compute_at_levels[f] = *f->compute_at();
+      } else {
+        // Check all of the consumers and find their innermost locations.
+        std::vector<int> parent_ids;
+        for (const auto& d: p->second) {
+          std::cout << "produces for " << d->name() << std::endl;
+          const auto& node = func_to_loop_tree.find(d);
+          assert(node != func_to_loop_tree.end());
+          parent_ids.push_back(node->second);
+          std::cout << "loop tree node " << node->second << std::endl;
+        }
+
+        if (parent_ids.size() == 1) {
+          // We have just one consumer, so use its innermost location.
+          parent_id = parent_ids[0];
+        } else {
+          std::cout << "Multiple consumers, need to call LCA" << std::endl;
+          // There are multiple consumers, so we need to find the least common ancestor
+          // of their innermost locations.
+          parent_id = lca(loop_tree, parent_ids);
+        }
+
+        compute_at_levels[f] = loop_tree[parent_id].loop;
+      }
+
+      assert(parent_id != -1);
+
+      // Add loops for this function to the loop nest. The loops are defined 
+      // from innermost to outermost, so iterate in reverse order.
       for (int i = f->loops().size() - 1; i >= 0; i--) {
         const auto& l = f->loops()[i];
         std::cout << "Adding a loop " << l.sym() << std::endl;

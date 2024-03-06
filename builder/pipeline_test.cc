@@ -1208,6 +1208,10 @@ TEST(pipeline, padded_stencil) {
     case 2: stencil.loops({y}); break;
     }
 
+    add.set_name("add");
+    padded.set_name("padded");
+    stencil.set_name("stencil");
+
     pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
