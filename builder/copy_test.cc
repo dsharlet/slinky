@@ -194,6 +194,56 @@ TEST(copy, trivial_3d) {
   }
 }
 
+TEST(copy, padded) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
+  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  int padding_x = 3;
+  int padding_y = 2;
+
+  std::vector<char> padding(sizeof(int), 0);
+
+  // Crop the output to the intersection of the input and output buffer.
+  box_expr in_bounds = in->bounds();
+  in_bounds[0] += padding_x;
+  in_bounds[1] += padding_y;
+  box_expr output_crop = in_bounds;
+  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, output_crop}, {out, {x, y}}, padding);
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int H = 10;
+  const int W = 7;
+  buffer<int, 2> out_buf({W + padding_x * 2, H + padding_y * 2});
+  out_buf.allocate();
+
+  buffer<int, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+
+  for (int y = 0; y < H + padding_y * 2; ++y) {
+    for (int x = 0; x < W + padding_x * 2; ++x) {
+      if (padding_x <= x && x < padding_x + W && padding_y <= y && y < padding_y + H) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x - padding_x, y - padding_y));
+      } else {
+        ASSERT_EQ(out_buf(x, y), 0);
+      }
+    }
+  }
+}
+
 TEST(copy, flip_x) {
   // Make the pipeline
   node_context ctx;
