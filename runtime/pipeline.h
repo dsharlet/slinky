@@ -14,13 +14,13 @@ class pipeline {
   std::vector<var> args_;
   std::vector<var> inputs_;
   std::vector<var> outputs_;
-  std::vector<std::pair<symbol_id, const raw_buffer*>> constants_;
+  std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constants_;
 
   stmt body_;
 
 public:
   pipeline(std::vector<var> args, std::vector<var> inputs, std::vector<var> outputs,
-      std::vector<std::pair<symbol_id, const raw_buffer*>> constants, stmt body);
+      std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constants, stmt body);
 
   using scalars = span<const index_t>;
   using buffers = span<const raw_buffer*>;

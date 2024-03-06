@@ -115,10 +115,17 @@ index_t subtract(const buffer<const T>& a, const buffer<const T>& b, const buffe
   return 0;
 }
 
+// init_random() for raw_buffer requires allocation be done by caller
+template <typename T>
+void fill_random(raw_buffer& x) {
+  assert(x.base != nullptr);
+  for_each_index(x, [&](auto i) { *reinterpret_cast<T*>(x.address_at(i)) = (rand() % 20) - 10; });
+}
+
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_index(x, [&](auto i) { x(i) = (rand() % 20) - 10; });
+  fill_random<T>(x);
 }
 
 // Matrix multiplication (not fast!)
@@ -589,7 +596,6 @@ TEST(pipeline, stencil) {
     }
   }
 }
-
 
 TEST(pipeline, slide_2d) {
   // Make the pipeline
@@ -1259,12 +1265,18 @@ TEST(pipeline, constant) {
   const int W = 20;
   const int H = 10;
 
-  buffer<short, 2> constant_buf({W, H});
-  init_random(constant_buf);
+  slinky::dim dims[2];
+  dims[0].set_bounds(0, W);
+  dims[0].set_stride(1 * sizeof(short));
+  dims[1].set_bounds(0, H);
+  dims[1].set_stride(W * sizeof(short));
+
+  auto constant_buf = raw_buffer::make_allocated(sizeof(short), 2, dims);
+  fill_random<short>(*constant_buf);
 
   auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  auto constant = buffer_expr::make(ctx, "constant", &constant_buf);
+  auto constant = buffer_expr::make_constant(ctx, "constant", std::move(constant_buf));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -1284,7 +1296,7 @@ TEST(pipeline, constant) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), constant_buf(x, y) + 1);
+      ASSERT_EQ(out_buf(x, y), *reinterpret_cast<short*>(constant->constant()->address_at(x, y)) + 1);
     }
   }
 }

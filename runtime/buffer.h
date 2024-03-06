@@ -84,11 +84,8 @@ class buffer;
 
 class raw_buffer;
 
-struct free_deleter {
-  void operator()(void* p) { free(p); }
-};
-
-using raw_buffer_ptr = std::unique_ptr<raw_buffer, free_deleter>;
+using raw_buffer_ptr = std::shared_ptr<raw_buffer>;
+using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -201,7 +198,10 @@ public:
   template <typename NewT>
   const buffer<NewT>& cast() const;
 
-  // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
+  // Make a pointer to a buffer with an allocation for the dims (but not elements) in the same allocation.
+  static raw_buffer_ptr make(std::size_t elem_size, std::size_t rank);
+
+  // Make a pointer to a buffer with an allocation for the dims and the elements in the same allocation.
   static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
