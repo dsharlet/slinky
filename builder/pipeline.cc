@@ -232,7 +232,7 @@ public:
 
     // Don't recursively mutate, once we crop the buffer here, it doesn't need to be cropped again.
     slinky::box_expr new_crop = crop | op->bounds;
-    for (int d = 0; d < new_crop.size(); d++) {
+    for (int d = 0; d < (int)new_crop.size(); d++) {
       new_crop[d] = simplify(new_crop[d]);
     }
     set_result(crop_buffer::make(target, new_crop, op->body));
