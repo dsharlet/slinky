@@ -1274,7 +1274,6 @@ TEST(pipeline, constant) {
   dims[1].set_fold_factor(dim::unfolded);
 
   auto constant_buf = raw_buffer::make_allocated(sizeof(short), 2, dims);
-  constant_buf->allocate();
   fill_random<short>(*constant_buf);
 
   auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
