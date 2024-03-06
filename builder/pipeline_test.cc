@@ -1278,11 +1278,6 @@ TEST(pipeline, constant) {
 
   auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
 
-  // Save a copy of the pointer for use in the test below,
-  // since std::move() may invalidate it in some build envs
-  // (we know it's real lifespan will be value for the life
-  // of this fn).
-  const raw_buffer* constant_buf_saved = constant_buf.get();
   auto constant = buffer_expr::make_constant(ctx, "constant", std::move(constant_buf));
 
   var x(ctx, "x");
@@ -1303,7 +1298,7 @@ TEST(pipeline, constant) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), *reinterpret_cast<short*>(constant_buf_saved->address_at(x, y)) + 1);
+      ASSERT_EQ(out_buf(x, y), *reinterpret_cast<short*>(constant->constant()->address_at(x, y)) + 1);
     }
   }
 }
