@@ -64,7 +64,7 @@ public:
     auto* dims = SLINKY_ALLOCA(dim, Rank);
     for (std::size_t d = 0; d < Rank; ++d) {
       // TODO: Find a better way to not care about bounds of broadcasted dimensions.
-      dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2, std::numeric_limits<index_t>::max() / 2);
+      dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
       dims[d].set_stride(0);
       dims[d].set_fold_factor(dim::unfolded);
     }
