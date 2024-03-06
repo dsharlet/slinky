@@ -201,13 +201,11 @@ public:
   template <typename NewT>
   const buffer<NewT>& cast() const;
 
-  // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
-  static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
+  // Make a pointer to a buffer with an allocation for the dims (but not elements) in the same allocation.
+  static raw_buffer_ptr make(std::size_t elem_size, std::size_t rank);
 
-  // Like make_allocated(), but the base pointer (for the elements) is an arbitrary, unowned address
-  // that is expected to remain valid for the life of this buffer. (A typical use case for this might
-  // be if the buffer storage is in a memory-mapped file.)
-  static raw_buffer_ptr make_allocated_external(std::size_t elem_size, std::size_t rank, const class dim* dims, void* base);
+  // Make a pointer to a buffer with an allocation for the dims and the elements in the same allocation.
+  static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);
