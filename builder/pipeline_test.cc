@@ -1268,10 +1268,8 @@ TEST(pipeline, constant) {
   slinky::dim dims[2];
   dims[0].set_bounds(0, W);
   dims[0].set_stride(1 * sizeof(short));
-  dims[0].set_fold_factor(dim::unfolded);
   dims[1].set_bounds(0, H);
   dims[1].set_stride(W * sizeof(short));
-  dims[1].set_fold_factor(dim::unfolded);
 
   auto constant_buf = raw_buffer::make_allocated(sizeof(short), 2, dims);
   fill_random<short>(*constant_buf);
