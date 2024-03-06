@@ -229,8 +229,8 @@ public:
   void visit(const make_buffer* n) override {
     *this << indent() << "{\n";
     ++depth;
-    *this << indent() << "let __base = " << n->base << ";\n";
-    *this << indent() << "let __elem_size = " << n->elem_size << ";\n";
+    *this << indent() << "let __base = " << (n->base.defined() ? n->base : expr(0)) << ";\n";
+    *this << indent() << "let __elem_size = " << (n->elem_size.defined() ? n->elem_size : expr(0)) << ";\n";
     *this << indent() << "let __dims = [";
     if (!n->dims.empty()) {
       *this << "\n";

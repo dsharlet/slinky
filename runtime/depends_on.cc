@@ -128,8 +128,8 @@ public:
     visit_sym_body(op);
   }
   void visit(const make_buffer* op) override {
-    op->base.accept(this);
-    op->elem_size.accept(this);
+    if (op->base.defined()) op->base.accept(this);
+    if (op->elem_size.defined()) op->elem_size.accept(this);
     for (const dim_expr& i : op->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);

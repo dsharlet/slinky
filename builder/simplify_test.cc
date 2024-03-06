@@ -119,6 +119,7 @@ TEST(simplify, basic) {
 
   test_simplify(x < x + 1, true);
   test_simplify(x - 1 < x + 1, true);
+  test_simplify(min(x + 1, z) < x + 2, true);
 
   test_simplify(abs(abs(x)), abs(x));
 
@@ -160,6 +161,7 @@ TEST(simplify, let) {
   test_simplify(let::make({{x.sym(), y}, {z.sym(), x * 2}}, z), y * 2);
   test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), x}}, z), y * 2);
   test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), y}}, z), y);
+  test_simplify(let::make({{x.sym(), y}, {z.sym(), (x + 1) / x}}, (z + 1) / z), let::make({{z.sym(), (y + 1) / y}}, (z + 1) / z));
 }
 
 TEST(simplify, buffer_intrinsics) {

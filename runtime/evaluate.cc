@@ -366,8 +366,8 @@ public:
   SLINKY_NO_STACK_PROTECTOR void visit(const make_buffer* op) override {
     std::size_t rank = op->dims.size();
     raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->elem_size = eval_expr(op->elem_size);
-    buffer->base = reinterpret_cast<void*>(eval_expr(op->base));
+    buffer->elem_size = eval_expr(op->elem_size, 0);
+    buffer->base = reinterpret_cast<void*>(eval_expr(op->base, 0));
     buffer->rank = rank;
     buffer->dims = SLINKY_ALLOCA(dim, rank);
 
