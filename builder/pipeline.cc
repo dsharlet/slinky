@@ -303,15 +303,24 @@ class pipeline_builder {
     for(const auto& i: outputs) {
       topological_sort_impl(i->producer(), visited, order, deps, constants);
     }
+
+    // Reverse the order, so outputs go first.
     std::reverse(order.begin(), order.end());
   }
 
+  // A simple structure to hold the node of the loop tree.
   struct loop_tree_node {
+    // Index of the parent node.
     int parent_index = -1;
     loop_id loop;
   };
 
+  // Compute the least common ancestor of multiple nodes in the tree.
   int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& parent_ids) {
+    // This is not the most optimal algorithm and likely can be improved
+    // if we see it as a bottleneck later.
+
+    // For each of the nodes find the path to the root of the tree.
     std::vector<std::vector<int>> pathes_to_root(parent_ids.size());
     for (int ix = 0; ix < (int)parent_ids.size(); ix++) {
       int parent_id = parent_ids[ix];
@@ -323,6 +332,8 @@ class pipeline_builder {
       std::reverse(pathes_to_root[ix].begin(), pathes_to_root[ix].end());
     }
 
+    // Compare pathes to the root node until the diverge. The last node before
+    // the diversion point is the least common ancestor.
     int max_match = pathes_to_root[0].size() - 1;
     for (int ix = 1; ix < (int)pathes_to_root.size(); ix++) {
       max_match = std::min(max_match, (int)pathes_to_root.size() - 1);
@@ -344,7 +355,7 @@ class pipeline_builder {
     std::vector<loop_tree_node> loop_tree;
     // Mapping between function and it's most innermost location.
     std::map<const func*, int> func_to_loop_tree;
-    // Push root loop.
+    // Push the root loop.
     loop_tree.push_back({-1, loop_id()});
     
     // Iterate over functions in topological order starting from the output and build a loop nest tree.
@@ -400,7 +411,6 @@ class pipeline_builder {
         int parent_id = 0;
         compute_at_levels[f] = loop_id();
         // Add loops for this function to the loop nest.
-        // for (const auto& l: f->loops()) {
         for (int i = f->loops().size() - 1; i >= 0; i--) {
           const auto& l = f->loops()[i];
           loop_tree.push_back({parent_id, {f, l.var}});
@@ -533,9 +543,21 @@ public:
     compute_innermost_locations(order_, deps, compute_at_levels_);
   }
 
+  // This function works together with the produce() function to
+  // build an initial IR. The high-level approach is the following:
+  // * the `build()` function looks through the list of func's
+  //   to find funcs which need to be produced or allocated at given
+  //   loop level `at`. If func need to be produced it calls the
+  //   `produce()` function which actually produces the body of the
+  //   func.
+  // * the `prodcuce()` for a given func produces it's body along
+  //   with the necessary loops defined for this function. For each
+  //   of the new loops, the `build()` is called for the case when there
+  //   are func which need to be produced in that new loop.
   stmt build(stmt body, const func* base_f, const loop_id& at) {
     stmt result;
     std::vector<stmt> produced_stmt;
+    // Build the functions computed at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
       const auto& compute_at = compute_at_levels_.find(f);
@@ -554,6 +576,7 @@ public:
       result = add_input_crops(result, base_f);
     }
 
+    // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
       for (const auto& o: f->outputs()) {
