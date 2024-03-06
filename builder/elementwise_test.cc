@@ -70,7 +70,6 @@ public:
     }
 
     auto value = raw_buffer::make_allocated(sizeof(T), Rank, dims);
-    value->allocate();
     memcpy(value->base, &c->value, sizeof(T));
     result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
     constants.push_back(result);
