@@ -1313,8 +1313,16 @@ TEST(pipeline, parallel_stencils) {
   func diff =
       func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-  diff.loops({{y, 2}});
+  add1.set_name("add1");
+  mul2.set_name("mul2");
+  stencil1.set_name("stencil1");
+  stencil2.set_name("stencil2");
+  diff.set_name("diff");
 
+  diff.loops({{y, 2}});
+  // stencil1.loops({{y, 1}});
+  // stencil2.loops({{y, 2}});
+  // add1.compute_at({&stencil1, y});
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   // Run the pipeline.
@@ -1367,7 +1375,7 @@ TEST(pipeline, parallel_stencils) {
 }
 
 TEST(pipeline, diamond_stencils) {
-  // Make the pipeline
+    // Make the pipeline
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in1", sizeof(short), 2);
@@ -1385,7 +1393,14 @@ TEST(pipeline, diamond_stencils) {
   func diff =
       func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
+  mul2.set_name("mul2");
+  stencil1.set_name("stencil1");
+  stencil2.set_name("stencil2");
+  diff.set_name("diff");
   diff.loops({{y, 1}});
+  // diff.loops({{y, 2}});
+  // stencil1.loops({{y, 2}});
+  // stencil2.loops({{y, 2}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -1428,4 +1443,70 @@ TEST(pipeline, diamond_stencils) {
   }
 }
 
+TEST(pipeline, Y) {
+    // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in1", sizeof(short), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
+  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  func stencil1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
+  func stencil2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
+
+  mul2.set_name("mul2");
+  stencil1.set_name("stencil1");
+  stencil2.set_name("stencil2");
+
+  stencil2.loops({{y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {intm3, intm4});
+
+  // Run the pipeline.
+  const int W = 32;
+  const int H = 32;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> intm3_buf({W, H});
+  buffer<short, 2> intm4_buf({W, H});
+
+  init_random(in_buf);
+  intm3_buf.allocate();
+  intm4_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&intm3_buf, &intm4_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // Run the pipeline stages manually to get the reference result.
+  buffer<short, 2> ref_intm2({W, H});
+  buffer<short, 2> ref_intm3({W, H});
+  buffer<short, 2> ref_intm4({W, H});
+
+  ref_intm2.allocate();
+  ref_intm3.allocate();
+  ref_intm4.allocate();
+
+  multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
+  add_1<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
+  add_1<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_intm3(x, y), intm3_buf(x, y));
+    }
+  }
+
+  for (int y = 0; y < W; ++y) {
+    for (int x = 0; x < H; ++x) {
+      ASSERT_EQ(ref_intm4(x, y), intm4_buf(x, y));
+    }
+  }
+}
 }  // namespace slinky
