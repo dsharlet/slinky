@@ -307,37 +307,50 @@ struct loop_tree_node {
   loop_id loop;
 };
 
+// Find a path from the node to the root of the tree.
+void find_path_from_root(const std::vector<loop_tree_node>& loop_tree,
+                          int node_id, std::vector<int>& path_from_root) {
+  path_from_root.push_back(node_id);
+  while (node_id > 0) {
+    node_id = loop_tree[node_id].parent_index;
+    path_from_root.push_back(node_id);
+  }
+  std::reverse(path_from_root.begin(), path_from_root.end());
+}
+
+// Compare two paths and return the last point where they match.
+int compare_paths_up_to(const std::vector<int>& base_path_from_root,
+                        const std::vector<int>& other_path_from_root,
+                        int max_match) {
+  max_match = std::min(max_match, (int)other_path_from_root.size() - 1);
+  for (int iy = 0; iy <= max_match; iy++) {
+    if (other_path_from_root[iy] != base_path_from_root[iy]) {
+      max_match = iy - 1;
+      break;
+    }
+  }
+  return max_match;
+}
+
 // Compute the least common ancestor of multiple nodes in the tree.
 int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& parent_ids) {
   // This is not the most optimal algorithm and likely can be improved
   // if we see it as a bottleneck later.
 
   // For each of the nodes find the path to the root of the tree.
-  std::vector<std::vector<int>> pathes_to_root(parent_ids.size());
+  std::vector<std::vector<int>> paths_from_root(parent_ids.size());
   for (int ix = 0; ix < (int)parent_ids.size(); ix++) {
-    int parent_id = parent_ids[ix];
-    pathes_to_root[ix].push_back(parent_id);
-    while (parent_id > 0) {
-      parent_id = loop_tree[parent_id].parent_index;
-      pathes_to_root[ix].push_back(parent_id);
-    }
-    std::reverse(pathes_to_root[ix].begin(), pathes_to_root[ix].end());
+    find_path_from_root(loop_tree, parent_ids[ix], paths_from_root[ix]);
   }
 
-  // Compare pathes to the root node until the diverge. The last node before
+  // Compare paths to the root node until the diverge. The last node before
   // the diversion point is the least common ancestor.
-  int max_match = pathes_to_root[0].size() - 1;
-  for (int ix = 1; ix < (int)pathes_to_root.size(); ix++) {
-    max_match = std::min(max_match, (int)pathes_to_root.size() - 1);
-    for (int iy = 0; iy <= max_match; iy++) {
-      if (pathes_to_root[ix][iy] != pathes_to_root[0][iy]) {
-        max_match = iy - 1;
-        break;
-      }
-    }
+  int max_match = paths_from_root[0].size() - 1;
+  for (int ix = 1; ix < (int)paths_from_root.size(); ix++) {
+    max_match = compare_paths_up_to(paths_from_root[0], paths_from_root[ix], max_match);
   }
 
-  return pathes_to_root[0][max_match];
+  return paths_from_root[0][max_match];
 }
 
 void compute_innermost_locations(const std::vector<const func*>& order,
