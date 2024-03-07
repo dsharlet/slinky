@@ -352,10 +352,11 @@ void compute_innermost_locations(const std::vector<const func*>& order,
 
   // Iterate over functions in topological order starting from the output and build a loop nest tree.
   for (const auto& f: order) {
+    int parent_id = -1;
+
     const auto& p = deps.find(f);
     if (p != deps.end()) {
       assert(!p->second.empty());
-      int parent_id = -1;
 
       // If we have an explicitly set compute_at location we should use that.
       if (f->compute_at()) {
@@ -387,29 +388,22 @@ void compute_innermost_locations(const std::vector<const func*>& order,
 
         compute_at_levels[f] = loop_tree[parent_id].loop;
       }
-
-      assert(parent_id != -1);
-
-      // Add loops for this function to the loop nest. The loops are defined
-      // from innermost to outermost, so iterate in reverse order.
-      for (int i = f->loops().size() - 1; i >= 0; i--) {
-        const auto& l = f->loops()[i];
-        loop_tree.push_back({parent_id, {f, l.var}});
-        parent_id = loop_tree.size() - 1;
-      }
-      func_to_loop_tree[f] = parent_id;
     } else {
       // This is an output so should be computed at root.
-      int parent_id = 0;
+      parent_id = 0;
       compute_at_levels[f] = loop_id();
-      // Add loops for this function to the loop nest.
-      for (int i = f->loops().size() - 1; i >= 0; i--) {
-        const auto& l = f->loops()[i];
-        loop_tree.push_back({parent_id, {f, l.var}});
-        parent_id = loop_tree.size() - 1;
-      }
-      func_to_loop_tree[f] = parent_id;
     }
+
+    assert(parent_id != -1);
+
+    // Add loops for this function to the loop nest. The loops are defined
+    // from innermost to outermost, so iterate in reverse order.
+    for (int i = f->loops().size() - 1; i >= 0; i--) {
+      const auto& l = f->loops()[i];
+      loop_tree.push_back({parent_id, {f, l.var}});
+      parent_id = loop_tree.size() - 1;
+    }
+    func_to_loop_tree[f] = parent_id;
   }
 }
 
