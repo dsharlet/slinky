@@ -232,7 +232,7 @@ public:
 
     // Don't recursively mutate, once we crop the buffer here, it doesn't need to be cropped again.
     slinky::box_expr new_crop = crop | op->bounds;
-    for (int d = 0; d < (int)new_crop.size(); d++) {
+    for (int d = 0; d < static_cast<int>(new_crop.size()); d++) {
       new_crop[d] = simplify(new_crop[d]);
     }
     set_result(crop_buffer::make(target, new_crop, op->body));
@@ -322,7 +322,7 @@ void find_path_from_root(const std::vector<loop_tree_node>& loop_tree,
 int compare_paths_up_to(const std::vector<int>& base_path_from_root,
                         const std::vector<int>& other_path_from_root,
                         int max_match) {
-  max_match = std::min(max_match, (int)other_path_from_root.size() - 1);
+  max_match = std::min(max_match, static_cast<int>(other_path_from_root.size()) - 1);
   for (int iy = 0; iy <= max_match; iy++) {
     if (other_path_from_root[iy] != base_path_from_root[iy]) {
       max_match = iy - 1;
@@ -339,14 +339,14 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 
   // For each of the nodes find the path to the root of the tree.
   std::vector<std::vector<int>> paths_from_root(parent_ids.size());
-  for (int ix = 0; ix < (int)parent_ids.size(); ix++) {
+  for (int ix = 0; ix < static_cast<int>(parent_ids.size()); ix++) {
     find_path_from_root(loop_tree, parent_ids[ix], paths_from_root[ix]);
   }
 
   // Compare paths to the root node until the diverge. The last node before
   // the diversion point is the least common ancestor.
   int max_match = paths_from_root[0].size() - 1;
-  for (int ix = 1; ix < (int)paths_from_root.size(); ix++) {
+  for (int ix = 1; ix < static_cast<int>(paths_from_root.size()); ix++) {
     max_match = compare_paths_up_to(paths_from_root[0], paths_from_root[ix], max_match);
   }
 
@@ -375,7 +375,7 @@ void compute_innermost_locations(const std::vector<const func*>& order,
       if (f->compute_at()) {
         // TODO(vksnk): check if compute_at is a valid location based on computed
         // innermost location.
-        for (int ix = 0; ix < (int)loop_tree.size(); ix++) {
+        for (int ix = 0; ix < static_cast<int>(loop_tree.size()); ix++) {
           if (loop_tree[ix].loop == *f->compute_at()) {
             parent_id = ix;
           }
