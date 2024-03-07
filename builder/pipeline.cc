@@ -262,6 +262,157 @@ bool operator==(const loop_id& a, const loop_id& b) {
   }
 }
 
+void topological_sort_impl(const func* f, std::set<const func *>& visited,
+                            std::vector<const func *>& order,
+                            std::map<const func*, std::vector<const func*>>& deps,
+                            std::set<buffer_expr_ptr>& constants) {
+  for (const auto& i: f->inputs()) {
+    const auto& input = i.buffer;
+    if (input->constant()) {
+      constants.insert(input);
+      continue;
+    }
+    if (!input->producer()) {
+      continue;
+    }
+    // Record that f is consumer of input->producer.
+    deps[input->producer()].push_back(f);
+
+    if(visited.count(input->producer()) > 0) {
+      continue;
+    }
+    topological_sort_impl(input->producer(), visited, order, deps, constants);
+  }
+  visited.insert(f);
+  order.push_back(f);
+}
+
+void topological_sort(const std::vector<buffer_expr_ptr>& outputs,
+                      std::vector<const func *>& order,
+                      std::map<const func*, std::vector<const func*>>& deps,
+                      std::set<buffer_expr_ptr>& constants) {
+  std::set<const func* > visited;
+  for(const auto& i: outputs) {
+    topological_sort_impl(i->producer(), visited, order, deps, constants);
+  }
+
+  // Reverse the order, so outputs go first.
+  std::reverse(order.begin(), order.end());
+}
+
+// A simple structure to hold the node of the loop tree.
+struct loop_tree_node {
+  // Index of the parent node.
+  int parent_index = -1;
+  loop_id loop;
+};
+
+// Compute the least common ancestor of multiple nodes in the tree.
+int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& parent_ids) {
+  // This is not the most optimal algorithm and likely can be improved
+  // if we see it as a bottleneck later.
+
+  // For each of the nodes find the path to the root of the tree.
+  std::vector<std::vector<int>> pathes_to_root(parent_ids.size());
+  for (int ix = 0; ix < (int)parent_ids.size(); ix++) {
+    int parent_id = parent_ids[ix];
+    pathes_to_root[ix].push_back(parent_id);
+    while (parent_id > 0) {
+      parent_id = loop_tree[parent_id].parent_index;
+      pathes_to_root[ix].push_back(parent_id);
+    }
+    std::reverse(pathes_to_root[ix].begin(), pathes_to_root[ix].end());
+  }
+
+  // Compare pathes to the root node until the diverge. The last node before
+  // the diversion point is the least common ancestor.
+  int max_match = pathes_to_root[0].size() - 1;
+  for (int ix = 1; ix < (int)pathes_to_root.size(); ix++) {
+    max_match = std::min(max_match, (int)pathes_to_root.size() - 1);
+    for (int iy = 0; iy <= max_match; iy++) {
+      if (pathes_to_root[ix][iy] != pathes_to_root[0][iy]) {
+        max_match = iy - 1;
+        break;
+      }
+    }
+  }
+
+  return pathes_to_root[0][max_match];
+}
+
+void compute_innermost_locations(const std::vector<const func*>& order,
+                                  const std::map<const func*, std::vector<const func*>> deps,
+                                  std::map<const func*, loop_id>& compute_at_levels) {
+  // A tree which stores loop nest.
+  std::vector<loop_tree_node> loop_tree;
+  // Mapping between function and it's most innermost location.
+  std::map<const func*, int> func_to_loop_tree;
+  // Push the root loop.
+  loop_tree.push_back({-1, loop_id()});
+
+  // Iterate over functions in topological order starting from the output and build a loop nest tree.
+  for (const auto& f: order) {
+    const auto& p = deps.find(f);
+    if (p != deps.end()) {
+      assert(!p->second.empty());
+      int parent_id = -1;
+
+      // If we have an explicitly set compute_at location we should use that.
+      if (f->compute_at()) {
+        // TODO(vksnk): check if compute_at is a valid location based on computed
+        // innermost location.
+        for (int ix = 0; ix < (int)loop_tree.size(); ix++) {
+          if (loop_tree[ix].loop == *f->compute_at()) {
+            parent_id = ix;
+          }
+        }
+        compute_at_levels[f] = *f->compute_at();
+      } else {
+        // Check all of the consumers and find their innermost locations.
+        std::vector<int> parent_ids;
+        for (const auto& d: p->second) {
+          const auto& node = func_to_loop_tree.find(d);
+          assert(node != func_to_loop_tree.end());
+          parent_ids.push_back(node->second);
+        }
+
+        if (parent_ids.size() == 1) {
+          // We have just one consumer, so use its innermost location.
+          parent_id = parent_ids[0];
+        } else {
+          // There are multiple consumers, so we need to find the least common ancestor
+          // of their innermost locations.
+          parent_id = lca(loop_tree, parent_ids);
+        }
+
+        compute_at_levels[f] = loop_tree[parent_id].loop;
+      }
+
+      assert(parent_id != -1);
+
+      // Add loops for this function to the loop nest. The loops are defined
+      // from innermost to outermost, so iterate in reverse order.
+      for (int i = f->loops().size() - 1; i >= 0; i--) {
+        const auto& l = f->loops()[i];
+        loop_tree.push_back({parent_id, {f, l.var}});
+        parent_id = loop_tree.size() - 1;
+      }
+      func_to_loop_tree[f] = parent_id;
+    } else {
+      // This is an output so should be computed at root.
+      int parent_id = 0;
+      compute_at_levels[f] = loop_id();
+      // Add loops for this function to the loop nest.
+      for (int i = f->loops().size() - 1; i >= 0; i--) {
+        const auto& l = f->loops()[i];
+        loop_tree.push_back({parent_id, {f, l.var}});
+        parent_id = loop_tree.size() - 1;
+      }
+      func_to_loop_tree[f] = parent_id;
+    }
+  }
+}
+
 class pipeline_builder {
   std::set<buffer_expr_ptr> allocated;
 
@@ -269,157 +420,6 @@ class pipeline_builder {
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
   std::map<const func*, loop_id> compute_at_levels_;
-
-  void topological_sort_impl(const func* f, std::set<const func *>& visited,
-                              std::vector<const func *>& order,
-                              std::map<const func*, std::vector<const func*>>& deps,
-                              std::set<buffer_expr_ptr>& constants) {
-    for (const auto& i: f->inputs()) {
-      const auto& input = i.buffer;
-      if (input->constant()) {
-        constants.insert(input);
-        continue;
-      }
-      if (!input->producer()) {
-        continue;
-      }
-      // Record that f is consumer of input->producer.
-      deps[input->producer()].push_back(f);
-
-      if(visited.count(input->producer()) > 0) {
-        continue;
-      }
-      topological_sort_impl(input->producer(), visited, order, deps, constants);
-    }
-    visited.insert(f);
-    order.push_back(f);
-  }
-
-  void topological_sort(const std::vector<buffer_expr_ptr>& outputs,
-                        std::vector<const func *>& order,
-                        std::map<const func*, std::vector<const func*>>& deps,
-                        std::set<buffer_expr_ptr>& constants) {
-    std::set<const func* > visited;
-    for(const auto& i: outputs) {
-      topological_sort_impl(i->producer(), visited, order, deps, constants);
-    }
-
-    // Reverse the order, so outputs go first.
-    std::reverse(order.begin(), order.end());
-  }
-
-  // A simple structure to hold the node of the loop tree.
-  struct loop_tree_node {
-    // Index of the parent node.
-    int parent_index = -1;
-    loop_id loop;
-  };
-
-  // Compute the least common ancestor of multiple nodes in the tree.
-  int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& parent_ids) {
-    // This is not the most optimal algorithm and likely can be improved
-    // if we see it as a bottleneck later.
-
-    // For each of the nodes find the path to the root of the tree.
-    std::vector<std::vector<int>> pathes_to_root(parent_ids.size());
-    for (int ix = 0; ix < (int)parent_ids.size(); ix++) {
-      int parent_id = parent_ids[ix];
-      pathes_to_root[ix].push_back(parent_id);
-      while (parent_id > 0) {
-        parent_id = loop_tree[parent_id].parent_index;
-        pathes_to_root[ix].push_back(parent_id);
-      }
-      std::reverse(pathes_to_root[ix].begin(), pathes_to_root[ix].end());
-    }
-
-    // Compare pathes to the root node until the diverge. The last node before
-    // the diversion point is the least common ancestor.
-    int max_match = pathes_to_root[0].size() - 1;
-    for (int ix = 1; ix < (int)pathes_to_root.size(); ix++) {
-      max_match = std::min(max_match, (int)pathes_to_root.size() - 1);
-      for (int iy = 0; iy <= max_match; iy++) {
-        if (pathes_to_root[ix][iy] != pathes_to_root[0][iy]) {
-          max_match = iy - 1;
-          break;
-        }
-      }
-    }
-
-    return pathes_to_root[0][max_match];
-  }
-
-  void compute_innermost_locations(const std::vector<const func*>& order,
-                                    const std::map<const func*, std::vector<const func*>> deps,
-                                    std::map<const func*, loop_id>& compute_at_levels) {
-    // A tree which stores loop nest.
-    std::vector<loop_tree_node> loop_tree;
-    // Mapping between function and it's most innermost location.
-    std::map<const func*, int> func_to_loop_tree;
-    // Push the root loop.
-    loop_tree.push_back({-1, loop_id()});
-    
-    // Iterate over functions in topological order starting from the output and build a loop nest tree.
-    for (const auto& f: order) {
-      const auto& p = deps.find(f);
-      if (p != deps.end()) {
-        assert(!p->second.empty());
-        int parent_id = -1;
-
-        // If we have an explicitly set compute_at location we should use that.
-        if (f->compute_at()) {
-          // TODO(vksnk): check if compute_at is a valid location based on computed
-          // innermost location.
-          for (int ix = 0; ix < (int)loop_tree.size(); ix++) {
-            if (loop_tree[ix].loop == *f->compute_at()) {
-              parent_id = ix;
-            }
-          }
-          compute_at_levels[f] = *f->compute_at();
-        } else {
-          // Check all of the consumers and find their innermost locations.
-          std::vector<int> parent_ids;
-          for (const auto& d: p->second) {
-            const auto& node = func_to_loop_tree.find(d);
-            assert(node != func_to_loop_tree.end());
-            parent_ids.push_back(node->second);
-          }
-
-          if (parent_ids.size() == 1) {
-            // We have just one consumer, so use its innermost location.
-            parent_id = parent_ids[0];
-          } else {
-            // There are multiple consumers, so we need to find the least common ancestor
-            // of their innermost locations.
-            parent_id = lca(loop_tree, parent_ids);
-          }
-
-          compute_at_levels[f] = loop_tree[parent_id].loop;
-        }
-
-        assert(parent_id != -1);
-
-        // Add loops for this function to the loop nest. The loops are defined
-        // from innermost to outermost, so iterate in reverse order.
-        for (int i = f->loops().size() - 1; i >= 0; i--) {
-          const auto& l = f->loops()[i];
-          loop_tree.push_back({parent_id, {f, l.var}});
-          parent_id = loop_tree.size() - 1;
-        }
-        func_to_loop_tree[f] = parent_id;
-      } else {
-        // This is an output so should be computed at root.
-        int parent_id = 0;
-        compute_at_levels[f] = loop_id();
-        // Add loops for this function to the loop nest.
-        for (int i = f->loops().size() - 1; i >= 0; i--) {
-          const auto& l = f->loops()[i];
-          loop_tree.push_back({parent_id, {f, l.var}});
-          parent_id = loop_tree.size() - 1;
-        }
-        func_to_loop_tree[f] = parent_id;
-      }
-    }
-  }
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
@@ -550,7 +550,7 @@ public:
   //   loop level `at`. If func need to be produced it calls the
   //   `produce()` function which actually produces the body of the
   //   func.
-  // * the `prodcuce()` for a given func produces it's body along
+  // * the `produce()` for a given func produces it's body along
   //   with the necessary loops defined for this function. For each
   //   of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
