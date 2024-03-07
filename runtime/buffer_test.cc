@@ -35,6 +35,7 @@ struct randomize_options {
   int padding_max = 3;
   bool allow_broadcast = false;
   bool allow_fold = false;
+  bool randomize_rank = false;
 };
 
 template <typename T, std::size_t N>
@@ -67,6 +68,10 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
       // Make sure the fold factor divides the min so the fold is valid.
       dim.set_fold_factor(std::max<index_t>(1, std::abs(dim.min())));
     }
+  }
+
+  if (options.randomize_rank) {
+    buf.rank = random(0, buf.rank);
   }
 }
 
@@ -234,7 +239,7 @@ void test_for_each_contiguous_slice_copy() {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(src, {0, 1, true, true});
+  randomize_strides_and_padding(src, {0, 1, true, true, true});
   randomize_strides_and_padding(dst, {-1, 0, false, false});
   init_random(src);
   dst.allocate();
@@ -245,7 +250,7 @@ void test_for_each_contiguous_slice_copy() {
         std::copy_n(reinterpret_cast<const Src*>(src), slice_extent, reinterpret_cast<Dst*>(dst));
       },
       src);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(src(i), dst(i)); });
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(src(i.subspan(0, src.rank)), dst(i)); });
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
@@ -270,8 +275,8 @@ void test_for_each_contiguous_slice_add() {
     dst.dim(d) = a.dim(d);
   }
 
-  randomize_strides_and_padding(a, {0, 1, true, true});
-  randomize_strides_and_padding(b, {0, 1, true, true});
+  randomize_strides_and_padding(a, {0, 1, true, true, true});
+  randomize_strides_and_padding(b, {0, 1, true, true, true});
   init_random(a);
   init_random(b);
 
@@ -289,7 +294,7 @@ void test_for_each_contiguous_slice_add() {
         }
       },
       a, b);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i), b(i))); });
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {

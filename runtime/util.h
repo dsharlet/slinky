@@ -174,8 +174,8 @@ public:
 
   const value_type& operator[](std::size_t i) const { return data_[i]; }
 
-  span subspan(std::size_t offset) { return span(data_ + offset, size_ - offset); }
-  span subspan(std::size_t offset, std::size_t size) { return span(data_ + offset, size); }
+  span subspan(std::size_t offset) const { return span(data_ + offset, size_ - offset); }
+  span subspan(std::size_t offset, std::size_t size) const { return span(data_ + offset, size); }
 };
 
 // Base class for reference counted objects.
