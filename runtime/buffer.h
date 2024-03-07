@@ -69,8 +69,11 @@ public:
   bool contains(index_t x) const { return min() <= x && x <= max(); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
-    assert(i >= min_);
-    assert(i <= max());
+    // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
+    // invalid memory. It's a bit messy to allow this, but this assert feels really overzealous when attempting to
+    // implement broadcasting in callbacks.
+    assert(i >= min_ || stride_ == 0);
+    assert(i <= max() || stride_ == 0);
     if (fold_factor_ == unfolded) {
       return (i - min_) * stride_;
     } else {
