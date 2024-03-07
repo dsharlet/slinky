@@ -146,8 +146,6 @@ private:
 
   std::optional<std::vector<char>> padding_;
 
-  std::string name_;
-
   void add_this_to_buffers();
   void remove_this_from_buffers();
 
@@ -185,13 +183,6 @@ public:
     return *this;
   }
 
-  void set_name(const std::string name) {
-    name_ = name;
-  }
-
-  const std::string& name() const {
-    return name_;
-  }
   const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
 private:

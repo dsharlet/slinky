@@ -1208,10 +1208,6 @@ TEST(pipeline, padded_stencil) {
     case 2: stencil.loops({y}); break;
     }
 
-    add.set_name("add");
-    padded.set_name("padded");
-    stencil.set_name("stencil");
-
     pipeline p = build_pipeline(ctx, {in}, {out});
 
     // Run the pipeline.
@@ -1316,12 +1312,6 @@ TEST(pipeline, parallel_stencils) {
     func diff =
         func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-    add1.set_name("add1");
-    mul2.set_name("mul2");
-    stencil1.set_name("stencil1");
-    stencil2.set_name("stencil2");
-    diff.set_name("diff");
-
     if (schedule == 0) {
       diff.loops({{y, 1}});
     } else if (schedule == 1) {
@@ -1404,10 +1394,6 @@ TEST(pipeline, diamond_stencils) {
     func diff =
         func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-    mul2.set_name("mul2");
-    stencil1.set_name("stencil1");
-    stencil2.set_name("stencil2");
-    diff.set_name("diff");
     if (schedule == 0) {
       diff.loops({{y, 1}});
     } else if (schedule == 1) {
@@ -1478,10 +1464,6 @@ TEST(pipeline, Y) {
   func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
   func add1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
   func add2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
-
-  mul2.set_name("mul2");
-  add1.set_name("add1");
-  add2.set_name("add2");
 
   add2.loops({{y, 1}});
 
