@@ -1476,14 +1476,14 @@ TEST(pipeline, Y) {
   var y(ctx, "y");
 
   func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func stencil1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
-  func stencil2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
+  func add1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
+  func add2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
 
   mul2.set_name("mul2");
-  stencil1.set_name("stencil1");
-  stencil2.set_name("stencil2");
+  add1.set_name("add1");
+  add2.set_name("add2");
 
-  stencil2.loops({{y, 1}});
+  add2.loops({{y, 1}});
 
   pipeline p = build_pipeline(ctx, {in}, {intm3, intm4});
 
