@@ -262,11 +262,9 @@ bool operator==(const loop_id& a, const loop_id& b) {
   }
 }
 
-void topological_sort_impl(const func* f, std::set<const func *>& visited,
-                            std::vector<const func *>& order,
-                            std::map<const func*, std::vector<const func*>>& deps,
-                            std::set<buffer_expr_ptr>& constants) {
-  for (const auto& i: f->inputs()) {
+void topological_sort_impl(const func* f, std::set<const func*>& visited, std::vector<const func*>& order,
+    std::map<const func*, std::vector<const func*>>& deps, std::set<buffer_expr_ptr>& constants) {
+  for (const auto& i : f->inputs()) {
     const auto& input = i.buffer;
     if (input->constant()) {
       constants.insert(input);
@@ -278,7 +276,7 @@ void topological_sort_impl(const func* f, std::set<const func *>& visited,
     // Record that f is consumer of input->producer.
     deps[input->producer()].push_back(f);
 
-    if(visited.count(input->producer()) > 0) {
+    if (visited.count(input->producer()) > 0) {
       continue;
     }
     topological_sort_impl(input->producer(), visited, order, deps, constants);
@@ -287,12 +285,10 @@ void topological_sort_impl(const func* f, std::set<const func *>& visited,
   order.push_back(f);
 }
 
-void topological_sort(const std::vector<buffer_expr_ptr>& outputs,
-                      std::vector<const func *>& order,
-                      std::map<const func*, std::vector<const func*>>& deps,
-                      std::set<buffer_expr_ptr>& constants) {
-  std::set<const func* > visited;
-  for(const auto& i: outputs) {
+void topological_sort(const std::vector<buffer_expr_ptr>& outputs, std::vector<const func*>& order,
+    std::map<const func*, std::vector<const func*>>& deps, std::set<buffer_expr_ptr>& constants) {
+  std::set<const func*> visited;
+  for (const auto& i : outputs) {
     topological_sort_impl(i->producer(), visited, order, deps, constants);
   }
 
@@ -308,8 +304,7 @@ struct loop_tree_node {
 };
 
 // Find a path from the node to the root of the tree.
-void find_path_from_root(const std::vector<loop_tree_node>& loop_tree,
-                          int node_id, std::vector<int>& path_from_root) {
+void find_path_from_root(const std::vector<loop_tree_node>& loop_tree, int node_id, std::vector<int>& path_from_root) {
   path_from_root.push_back(node_id);
   while (node_id > 0) {
     node_id = loop_tree[node_id].parent_index;
@@ -319,9 +314,8 @@ void find_path_from_root(const std::vector<loop_tree_node>& loop_tree,
 }
 
 // Compare two paths and return the last point where they match.
-int compare_paths_up_to(const std::vector<int>& base_path_from_root,
-                        const std::vector<int>& other_path_from_root,
-                        int max_match) {
+int compare_paths_up_to(
+    const std::vector<int>& base_path_from_root, const std::vector<int>& other_path_from_root, int max_match) {
   max_match = std::min(max_match, static_cast<int>(other_path_from_root.size()) - 1);
   for (int iy = 0; iy <= max_match; iy++) {
     if (other_path_from_root[iy] != base_path_from_root[iy]) {
@@ -354,8 +348,7 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 }
 
 void compute_innermost_locations(const std::vector<const func*>& order,
-                                  const std::map<const func*, std::vector<const func*>> deps,
-                                  std::map<const func*, loop_id>& compute_at_levels) {
+    const std::map<const func*, std::vector<const func*>> deps, std::map<const func*, loop_id>& compute_at_levels) {
   // A tree which stores loop nest.
   std::vector<loop_tree_node> loop_tree;
   // Mapping between function and it's most innermost location.
@@ -364,7 +357,7 @@ void compute_innermost_locations(const std::vector<const func*>& order,
   loop_tree.push_back({-1, loop_id()});
 
   // Iterate over functions in topological order starting from the output and build a loop nest tree.
-  for (const auto& f: order) {
+  for (const auto& f : order) {
     int parent_id = -1;
 
     const auto& p = deps.find(f);
@@ -384,7 +377,7 @@ void compute_innermost_locations(const std::vector<const func*>& order,
       } else {
         // Check all of the consumers and find their innermost locations.
         std::vector<int> parent_ids;
-        for (const auto& d: p->second) {
+        for (const auto& d : p->second) {
           const auto& node = func_to_loop_tree.find(d);
           assert(node != func_to_loop_tree.end());
           parent_ids.push_back(node->second);
@@ -509,7 +502,7 @@ class pipeline_builder {
     loop_id here = {f, loop.var};
 
     body = build(body, f, here);
-  
+
     if (loop.defined()) {
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, f, loop);
@@ -518,7 +511,7 @@ class pipeline_builder {
     }
     return body;
   }
-  
+
   stmt produce(const func* f) {
     stmt result = f->make_call();
     if (f->loops().empty()) {
@@ -534,9 +527,8 @@ class pipeline_builder {
   }
 
 public:
-  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs,
-                    const std::vector<buffer_expr_ptr>& outputs,
-                    std::set<buffer_expr_ptr>& constants) {
+  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
+      std::set<buffer_expr_ptr>& constants) {
     // To start with, we need to produce the outputs.
     for (auto& i : outputs) {
       allocated.insert(i);
@@ -576,7 +568,7 @@ public:
         result = block::make({result, produce(f)});
       }
     }
-    
+
     result = block::make({result, body});
 
     if (base_f) {
@@ -586,7 +578,7 @@ public:
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
-      for (const auto& o: f->outputs()) {
+      for (const auto& o : f->outputs()) {
         const auto& b = o.buffer;
         if (allocated.count(b)) continue;
 

@@ -590,7 +590,6 @@ TEST(pipeline, stencil) {
   }
 }
 
-
 TEST(pipeline, slide_2d) {
   // Make the pipeline
   node_context ctx;
@@ -1450,7 +1449,7 @@ TEST(pipeline, diamond_stencils) {
 }
 
 TEST(pipeline, Y) {
-    // Make the pipeline
+  // Make the pipeline
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in1", sizeof(short), 2);
