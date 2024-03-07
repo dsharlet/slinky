@@ -348,8 +348,14 @@ namespace {
 bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
   if (other_buf.rank != buf.rank) return false;
   for (std::size_t d = 0; d < buf.rank; d++) {
-    if (other_buf.dims[d].min() > buf.dims[d].min()) return false;
-    if (other_buf.dims[d].max() < buf.dims[d].max()) return false;
+    const dim& other_dim = other_buf.dim(d);
+    
+    // Allow stride 0 dimensions to be accessed "out of bounds". 
+    if (other_dim.stride() == 0) continue;
+
+    const dim& buf_dim = buf.dim(d);
+    if (other_dim.min() > buf_dim.min()) return false;
+    if (other_dim.max() < buf_dim.max()) return false;
   }
   return true;
 }

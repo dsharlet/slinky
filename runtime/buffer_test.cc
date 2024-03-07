@@ -48,10 +48,15 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
     // Expand the bounds randomly.
     dim.set_bounds(dim.min() - random(options.padding_min, options.padding_max),
         dim.max() + random(options.padding_min, options.padding_max));
-    assert(dim.extent() > 0);
+    if (dim.extent() <= 0) {
+      dim.set_extent(1);
+    }
     if (options.allow_broadcast && random(0, 9) == 0) {
       // Make this a broadcast.
       dim.set_stride(0);
+      if (random(0, 2) == 0) {
+        dim.set_min_extent(0, 1);
+      }
     } else {
       dim.set_stride(stride);
       // Add some extra random padding.
