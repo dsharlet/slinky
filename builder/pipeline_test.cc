@@ -1302,7 +1302,7 @@ TEST(pipeline, constant) {
 }
 
 TEST(pipeline, parallel_stencils) {
-  for (int schedule : {0, 1}) {
+  for (int schedule : {0, 1, 2}) {
     // Make the pipeline
     node_context ctx;
 
@@ -1332,6 +1332,10 @@ TEST(pipeline, parallel_stencils) {
       stencil2.loops({{y, 2}});
       add1.compute_root();
       mul2.compute_at({&diff, y});
+    } else if (schedule == 2) {
+      diff.loops({{y, 2}});
+      stencil1.loops({{y, 2}});
+      stencil2.loops({{y, 2}});
     }
 
     pipeline p = build_pipeline(ctx, {in1, in2}, {out});
