@@ -531,10 +531,8 @@ void for_each_index(const raw_buffer& buf, const F& f) {
 // Call `f(void* base, index_t extent[, void* other_bases, ...])` for each contiguous slice in the domain of `buf[,
 // other_bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
 //
-// When additional buffers are passed, they will be sliced in tandem with the 'main' buffer.
-//
-// All additional buffers must be of identical rank to the main, and must cover (at least) the same area in each
-// dimension.
+// When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
+// lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
 template <typename F, typename... Args>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   constexpr std::size_t NumBufs = sizeof...(Args) + 1;
