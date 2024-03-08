@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include "builder/pipeline.h"
+#include "builder/substitute.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
@@ -977,7 +978,10 @@ TEST(pipeline, unrelated) {
 
   stencil1.loops({{y, 2}});
 
+  node_context ctx2 = ctx;
   pipeline p = build_pipeline(ctx, {in1, in2}, {out1, out2});
+  pipeline p2 = build_pipeline(ctx2, {in1, in2}, {out1, out2});
+  ASSERT_TRUE(match(p.body, p2.body));
 
   // Run the pipeline.
   const int W1 = 20;
@@ -1105,7 +1109,10 @@ TEST(pipeline, concatenated_result) {
     func concatenated =
         func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
+    node_context ctx2 = ctx;
     pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+    pipeline p2 = build_pipeline(ctx2, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+    ASSERT_TRUE(match(p.body, p2.body));
 
     // Run the pipeline.
     const int W = 20;
@@ -1159,7 +1166,10 @@ TEST(pipeline, stacked_result) {
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
   func stacked = func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
 
+  node_context ctx2 = ctx;
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+  pipeline p2 = build_pipeline(ctx2, {in1, in2}, {out});
+  ASSERT_TRUE(match(p.body, p2.body));
 
   // Run the pipeline.
   const int W = 20;
@@ -1423,7 +1433,10 @@ TEST(pipeline, diamond_stencils) {
       mul2.compute_root();
     }
 
+    node_context ctx2 = ctx;
     pipeline p = build_pipeline(ctx, {in}, {out});
+    pipeline p2 = build_pipeline(ctx2, {in}, {out});
+    ASSERT_TRUE(match(p.body, p2.body));
 
     // Run the pipeline.
     const int W = 20;
