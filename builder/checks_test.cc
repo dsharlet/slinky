@@ -21,8 +21,8 @@ TEST(pipeline, checks) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
   var x(ctx, "x");
 

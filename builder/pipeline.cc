@@ -25,7 +25,7 @@
 
 namespace slinky {
 
-buffer_expr::buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank)
+buffer_expr::buffer_expr(symbol_id sym, std::size_t rank, index_t elem_size)
     : sym_(sym), elem_size_(elem_size), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
   auto var = variable::make(sym);
@@ -51,12 +51,12 @@ buffer_expr::buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer)
   }
 }
 
-buffer_expr_ptr buffer_expr::make(symbol_id sym, index_t elem_size, std::size_t rank) {
-  return buffer_expr_ptr(new buffer_expr(sym, elem_size, rank));
+buffer_expr_ptr buffer_expr::make(symbol_id sym, std::size_t rank, index_t elem_size) {
+  return buffer_expr_ptr(new buffer_expr(sym, rank, elem_size));
 }
 
-buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank) {
-  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), elem_size, rank));
+buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size) {
+  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), rank, elem_size));
 }
 
 buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer) {

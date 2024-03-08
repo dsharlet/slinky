@@ -33,7 +33,7 @@ class buffer_expr : public ref_counted<buffer_expr> {
   memory_type storage_ = memory_type::heap;
   std::optional<loop_id> store_at_;
 
-  buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank);
+  buffer_expr(symbol_id sym, std::size_t rank, index_t elem_size);
   buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer);
   buffer_expr(const buffer_expr&) = delete;
   buffer_expr(buffer_expr&&) = delete;
@@ -45,8 +45,8 @@ class buffer_expr : public ref_counted<buffer_expr> {
   void set_producer(func* f);
 
 public:
-  static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank);
+  static buffer_expr_ptr make(symbol_id sym, std::size_t rank, index_t elem_size);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size);
   // Make a constant buffer_expr. It takes ownership of the buffer from the caller.
   static buffer_expr_ptr make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer);
   static buffer_expr_ptr make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);

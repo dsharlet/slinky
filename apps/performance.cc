@@ -43,9 +43,9 @@ pipeline make_pipeline(bool explicit_y) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
 
   var x(ctx, "x");
   var y(ctx, "y");
