@@ -40,8 +40,8 @@ TEST(copy, trivial_scalar) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 0);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 0);
+  auto in = buffer_expr::make(ctx, "in", 0, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 0, sizeof(int));
 
   var x(ctx, "x");
 
@@ -69,8 +69,8 @@ TEST(copy, trivial_1d) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
   var x(ctx, "x");
 
@@ -112,8 +112,8 @@ TEST(copy, trivial_2d) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -159,8 +159,8 @@ TEST(copy, trivial_3d) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -198,8 +198,8 @@ TEST(copy, padded) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -248,8 +248,8 @@ TEST(copy, flip_x) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
   var x(ctx, "x");
 
@@ -281,8 +281,8 @@ TEST(copy, flip_y) {
     // Make the pipeline
     node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-    auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+    auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+    auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -328,8 +328,8 @@ TEST(copy, upsample_y) {
     // Make the pipeline
     node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-    auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+    auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+    auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -370,8 +370,8 @@ TEST(copy, transpose) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -411,8 +411,8 @@ TEST(copy, broadcast) {
     // Make the pipeline
     node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-    auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+    auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+    auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -460,8 +460,8 @@ TEST(copy, broadcast_sliced) {
     // Make the pipeline
     node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-    auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+    auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+    auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -510,9 +510,9 @@ TEST(copy, concatenate) {
   // Make the pipeline
   node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(int), 3);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 3);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+  auto in1 = buffer_expr::make(ctx, "in1", 3, sizeof(int));
+  auto in2 = buffer_expr::make(ctx, "in2", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -555,9 +555,9 @@ TEST(copy, stack) {
   // Make the pipeline
   node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(int), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -597,8 +597,8 @@ TEST(copy, reshape) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 3);
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
   // prior dimensions).
@@ -653,8 +653,8 @@ TEST(copy, batch_reshape) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 4);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 4);
+  auto in = buffer_expr::make(ctx, "in", 4, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 4, sizeof(int));
 
   // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
   // prior dimensions).

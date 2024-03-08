@@ -55,7 +55,7 @@ public:
       result = i->second;
       return;
     }
-    result = buffer_expr::make(v->sym, sizeof(T), Rank);
+    result = buffer_expr::make(v->sym, Rank, sizeof(T));
     inputs.push_back(result);
     vars[v->sym] = result;
   }
@@ -67,7 +67,7 @@ public:
       dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
     }
 
-    auto value = raw_buffer::make_allocated(sizeof(T), Rank, dims);
+    auto value = raw_buffer::make_allocated(Rank, sizeof(T), dims);
     assert(value->size_bytes() == sizeof(T));
     memcpy(value->base, &c->value, sizeof(T));
     result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
@@ -81,7 +81,7 @@ public:
 
   template <typename Impl>
   void visit_binary(const char* fn_name, const buffer_expr_ptr& a, const buffer_expr_ptr& b, const Impl& impl) {
-    result = buffer_expr::make(ctx, name(a) + fn_name + name(b), sizeof(T), Rank);
+    result = buffer_expr::make(ctx, name(a) + fn_name + name(b), Rank, sizeof(T));
     func::callable<const T, const T, T> fn = [=](const buffer<const T>& a, const buffer<const T>& b,
                                                  const buffer<T>& c) {
       for_each_index(c, [&](auto i) { c(i) = impl(a(i), b(i)); });
@@ -118,7 +118,7 @@ public:
     buffer_expr_ptr c = visit_expr(op->condition);
     buffer_expr_ptr t = visit_expr(op->true_value);
     buffer_expr_ptr f = visit_expr(op->false_value);
-    result = buffer_expr::make(ctx, "select_" + name(c) + "_" + name(t) + "_" + name(f), sizeof(T), Rank);
+    result = buffer_expr::make(ctx, "select_" + name(c) + "_" + name(t) + "_" + name(f), Rank, sizeof(T));
     func::callable<const T, const T, const T, T> fn = [](const buffer<const T>& c, const buffer<const T>& t,
                                                           const buffer<const T>& f, const buffer<T>& r) -> index_t {
       for_each_index(c, [&](auto i) { r(i) = c(i) != 0 ? t(i) : f(i); });

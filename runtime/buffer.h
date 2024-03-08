@@ -202,10 +202,10 @@ public:
   const buffer<NewT>& cast() const;
 
   // Make a pointer to a buffer with an allocation for the dims (but not elements) in the same allocation.
-  static raw_buffer_ptr make(std::size_t elem_size, std::size_t rank);
+  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
 
   // Make a pointer to a buffer with an allocation for the dims and the elements in the same allocation.
-  static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
+  static raw_buffer_ptr make_allocated(std::size_t rank, std::size_t elem_size, const class dim* dims);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);

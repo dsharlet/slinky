@@ -12,7 +12,7 @@ namespace slinky {
 
 namespace {
 
-std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims) {
+std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
@@ -25,11 +25,11 @@ std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims)
 
 }  // namespace
 
-std::size_t raw_buffer::size_bytes() const { return alloc_size(elem_size, rank, dims); }
+std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, dims); }
 
-raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims) {
+raw_buffer_ptr raw_buffer::make_allocated(std::size_t rank, std::size_t elem_size, const class dim* dims) {
   char* mem = reinterpret_cast<char*>(
-      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
+      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(rank, elem_size, dims)));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
   buf->rank = rank;
@@ -41,18 +41,19 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
   return raw_buffer_ptr(buf, free);
 }
 
-raw_buffer_ptr raw_buffer::make(std::size_t elem_size, std::size_t rank) {
+raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
   char* mem = reinterpret_cast<char*>(malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
   buf->rank = rank;
   buf->elem_size = elem_size;
   buf->dims = reinterpret_cast<slinky::dim*>(mem);
+  new (buf->dims) slinky::dim[buf->rank];
   return raw_buffer_ptr(buf, free);
 }
 
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
-  auto buf = make_allocated(src.elem_size, src.rank, src.dims);
+  auto buf = make_allocated(src.rank, src.elem_size, src.dims);
   copy(src, *buf);
   return buf;
 }
