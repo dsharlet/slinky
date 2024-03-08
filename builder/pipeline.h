@@ -179,6 +179,7 @@ public:
     compute_at_ = loop_id();
     return *this;
   }
+
   const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
 private:
