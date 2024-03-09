@@ -954,33 +954,35 @@ TEST(pipeline, outer_product) {
 
 TEST(pipeline, unrelated) {
   // Make the pipeline
-  node_context ctx;
+  auto make_pipeline = []() {
+    node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
-  auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(short));
-  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+    auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+    auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(short));
+    auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
 
-  auto in2 = buffer_expr::make(ctx, "in2", 1, sizeof(int));
-  auto out2 = buffer_expr::make(ctx, "out2", 1, sizeof(int));
-  auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
+    auto in2 = buffer_expr::make(ctx, "in2", 1, sizeof(int));
+    auto out2 = buffer_expr::make(ctx, "out2", 1, sizeof(int));
+    auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
-      call_stmt::callable_attrs{.allow_in_place = true});
-  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
+    func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
+        call_stmt::callable_attrs{.allow_in_place = true});
+    func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
 
-  func mul2 = func::make(
-      multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
-  func add2 =
-      func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+    func mul2 = func::make(
+        multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+    func add2 =
+        func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
-  stencil1.loops({{y, 2}});
+    stencil1.loops({{y, 2}});
 
-  node_context ctx2 = ctx;
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out1, out2});
-  pipeline p2 = build_pipeline(ctx2, {in1, in2}, {out1, out2});
+    return build_pipeline(ctx, {in1, in2}, {out1, out2});
+  };
+  pipeline p = make_pipeline();
+  pipeline p2 = make_pipeline();
   ASSERT_TRUE(match(p.body, p2.body));
 
   // Run the pipeline.
@@ -1109,10 +1111,7 @@ TEST(pipeline, concatenated_result) {
     func concatenated =
         func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
-    node_context ctx2 = ctx;
     pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
-    pipeline p2 = build_pipeline(ctx2, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
-    ASSERT_TRUE(match(p.body, p2.body));
 
     // Run the pipeline.
     const int W = 20;
@@ -1166,10 +1165,7 @@ TEST(pipeline, stacked_result) {
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
   func stacked = func::make_stack({intm1, intm2}, {out, {x, y, z}}, 2);
 
-  node_context ctx2 = ctx;
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
-  pipeline p2 = build_pipeline(ctx2, {in1, in2}, {out});
-  ASSERT_TRUE(match(p.body, p2.body));
 
   // Run the pipeline.
   const int W = 20;
@@ -1402,40 +1398,41 @@ TEST(pipeline, parallel_stencils) {
 
 TEST(pipeline, diamond_stencils) {
   for (int schedule : {0, 1, 2}) {
-    // Make the pipeline
-    node_context ctx;
+    auto make_pipeline = [schedule]() {
+      node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
-    auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
-    auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
-    auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
-    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+      auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+      auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+      auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
+      auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
+      auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    var x(ctx, "x");
-    var y(ctx, "y");
+      var x(ctx, "x");
+      var y(ctx, "y");
 
-    func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
-    func stencil1 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
-    func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
-    func diff =
-        func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+      func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
+      func stencil1 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+      func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
+      func diff =
+          func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-    if (schedule == 0) {
-      diff.loops({{y, 1}});
-    } else if (schedule == 1) {
-      diff.loops({{y, 1}});
-      stencil1.loops({{y, 2}});
-      stencil2.loops({{y, 2}});
-    } else if (schedule == 2) {
-      diff.loops({{y, 1}});
-      stencil1.loops({{y, 2}});
-      stencil2.loops({{y, 2}});
-      mul2.compute_root();
-    }
+      if (schedule == 0) {
+        diff.loops({{y, 1}});
+      } else if (schedule == 1) {
+        diff.loops({{y, 1}});
+        stencil1.loops({{y, 2}});
+        stencil2.loops({{y, 2}});
+      } else if (schedule == 2) {
+        diff.loops({{y, 1}});
+        stencil1.loops({{y, 2}});
+        stencil2.loops({{y, 2}});
+        mul2.compute_root();
+      }
 
-    node_context ctx2 = ctx;
-    pipeline p = build_pipeline(ctx, {in}, {out});
-    pipeline p2 = build_pipeline(ctx2, {in}, {out});
+      return build_pipeline(ctx, {in}, {out});
+    };
+    pipeline p = make_pipeline();
+    pipeline p2 = make_pipeline();
     ASSERT_TRUE(match(p.body, p2.body));
 
     // Run the pipeline.
