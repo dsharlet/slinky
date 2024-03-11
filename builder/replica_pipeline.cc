@@ -181,7 +181,7 @@ public:
     default: size_code = to_string(bep->elem_size()); break;
     }
 
-    (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", ", size_code, ", ", bep->rank(), ")");
+    (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", ", bep->rank(), ", ", size_code, ")");
 
     for (std::size_t d = 0; d < bep->rank(); d++) {
       if (!match(bep->dim(d).bounds.min, buffer_min(variable::make(bep->sym()), static_cast<index_t>(d)))) {

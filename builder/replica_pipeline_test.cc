@@ -25,17 +25,17 @@ TEST(replica, matmuls) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto a = buffer_expr::make(ctx, "a", sizeof(uint32_t), 2);
+  auto a = buffer_expr::make(ctx, "a", 2, sizeof(uint32_t));
   a->dim(1).stride = 4;
-  auto b = buffer_expr::make(ctx, "b", sizeof(uint32_t), 2);
+  auto b = buffer_expr::make(ctx, "b", 2, sizeof(uint32_t));
   b->dim(1).stride = 4;
-  auto c = buffer_expr::make(ctx, "c", sizeof(uint32_t), 2);
+  auto c = buffer_expr::make(ctx, "c", 2, sizeof(uint32_t));
   c->dim(1).stride = 4;
-  auto abc = buffer_expr::make(ctx, "abc", sizeof(uint32_t), 2);
+  auto abc = buffer_expr::make(ctx, "abc", 2, sizeof(uint32_t));
   abc->dim(1).stride = 4;
   auto i = var(ctx, "i");
   auto j = var(ctx, "j");
-  auto ab = buffer_expr::make(ctx, "ab", sizeof(uint32_t), 2);
+  auto ab = buffer_expr::make(ctx, "ab", 2, sizeof(uint32_t));
   auto _1 = variable::make(ab->sym());
   ab->dim(0).stride = (((((((buffer_max(_1, 1)) - (buffer_min(_1, 1)))) + 1)) * 4));
   ab->dim(1).stride = 4;
@@ -93,11 +93,11 @@ TEST(replica, pyramid) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(uint32_t), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(uint32_t));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(uint32_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(uint32_t), 2);
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(uint32_t));
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -143,8 +143,8 @@ TEST(replica, multiple_outputs) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in = buffer_expr::make(ctx, "in", sizeof(uint32_t), 3);
-  auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(uint32_t), 2);
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(uint32_t));
+  auto sum_x = buffer_expr::make(ctx, "sum_x", 2, sizeof(uint32_t));
   auto y = var(ctx, "y");
   auto z = var(ctx, "z");
   auto _1 = variable::make(in->sym());
@@ -155,7 +155,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{y, z}, {z}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(uint32_t), 1);
+  auto sum_xy = buffer_expr::make(ctx, "sum_xy", 1, sizeof(uint32_t));
   auto _fn_0 = func::make(std::move(_replica_fn_2), {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
   _fn_0.loops({{z, 1, loop_mode::serial}});
   auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {});
@@ -186,12 +186,12 @@ TEST(replica, unrelated) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint32_t), 1);
-  auto out1 = buffer_expr::make(ctx, "out1", sizeof(uint16_t), 2);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(uint16_t));
+  auto in2 = buffer_expr::make(ctx, "in2", 1, sizeof(uint32_t));
+  auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(uint16_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(uint16_t));
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -209,8 +209,8 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm1, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out1, {x, y}}});
   _fn_0.loops({{y, 2, loop_mode::serial}});
-  auto out2 = buffer_expr::make(ctx, "out2", sizeof(uint32_t), 1);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint32_t), 1);
+  auto out2 = buffer_expr::make(ctx, "out2", 1, sizeof(uint32_t));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(uint32_t));
   auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -265,10 +265,10 @@ TEST(replica, concatenated_result) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(uint16_t));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(uint16_t));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(uint16_t));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(uint16_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
@@ -280,7 +280,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
   auto _3 = variable::make(in1->sym());
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(uint16_t));
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -321,10 +321,10 @@ TEST(replica, stacked_result) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(uint16_t), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 3);
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(uint16_t), 2);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(uint16_t));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(uint16_t));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(uint16_t));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(uint16_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
@@ -335,7 +335,7 @@ auto p = []() -> ::slinky::pipeline {
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
   auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(uint16_t));
   auto _replica_fn_4 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -374,12 +374,12 @@ TEST(replica, padded_stencil) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in = buffer_expr::make(ctx, "in", sizeof(uint16_t), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(uint16_t));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(uint16_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(uint16_t), 2);
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(uint16_t), 2);
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(uint16_t));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(uint16_t));
   auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -427,12 +427,12 @@ TEST(replica, diamond_stencils) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(uint16_t), 2);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(uint16_t));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(uint16_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(uint16_t), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
+  auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(uint16_t));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(uint16_t));
   auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -449,7 +449,7 @@ auto p = []() -> ::slinky::pipeline {
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
   auto _fn_1 = func::make(std::move(_replica_fn_4), {{intm2, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{intm3, {x, y}}});
-  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(uint16_t), 2);
+  auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(uint16_t));
   auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -495,11 +495,11 @@ TEST(replica, Y) {
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
-  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(uint16_t), 2);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(uint16_t));
+  auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(uint16_t));
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(uint16_t));
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -516,7 +516,7 @@ auto p = []() -> ::slinky::pipeline {
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
   auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
-  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(uint16_t), 2);
+  auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(uint16_t));
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
