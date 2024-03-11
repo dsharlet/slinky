@@ -223,47 +223,45 @@ public:
     return print_vector(bounds_vec);
   }
 
-  std::string print(const func::input& fin) {
-    print(fin.buffer);
+  std::string print(const func::input& func_input) {
+    print(func_input.buffer);
 
-    std::string name = ctx_.name(fin.sym());
-    std::string bounds = print(fin.bounds, /*inlined*/ true);
-    if (!fin.output_crop.empty() || !fin.output_slice.empty()) {
-      std::string output_crop = print(fin.output_crop, /*inlined*/ true);
-      std::string output_slice = print_vector(fin.output_slice);
+    std::string name = ctx_.name(func_input.sym());
+    std::string bounds = print(func_input.bounds, /*inlined*/ true);
+    if (!func_input.output_crop.empty() || !func_input.output_slice.empty()) {
+      std::string output_crop = print(func_input.output_crop, /*inlined*/ true);
+      std::string output_slice = print_vector(func_input.output_slice);
       return print_string_vector({name, bounds, output_crop, output_slice});
     } else {
       return print_string_vector({name, bounds});
     }
   }
 
-  std::string print(const std::vector<func::input>& fins) {
+  std::string print(const std::vector<func::input>& func_inputs) {
     std::vector<std::string> fin_names;
-    for (const auto& fin : fins) {
-      fin_names.push_back(print(fin));
+    for (const auto& func_input : func_inputs) {
+      fin_names.push_back(print(func_input));
     }
     return print_vector(fin_names);
   }
 
-  std::string print(const func::output& fout) {
-    print(fout.buffer);
+  std::string print(const func::output& func_output) {
+    print(func_output.buffer);
 
-    std::string name = ctx_.name(fout.sym());
-    std::string dims = print(fout.dims);
+    std::string name = ctx_.name(func_output.sym());
+    std::string dims = print(func_output.dims);
     return print_string_vector({name, dims});
   }
 
-  std::string print(const std::vector<func::output>& fouts) {
+  std::string print(const std::vector<func::output>& func_outputs) {
     std::vector<std::string> fout_names;
-    for (const auto& fout : fouts) {
-      fout_names.push_back(print(fout));
+    for (const auto& func_output : func_outputs) {
+      fout_names.push_back(print(func_output));
     }
     return print_vector(fout_names);
   }
 
-  std::string print(const loop_mode& mode) {
-    return to_string(mode);
-  }
+  std::string print(const loop_mode& mode) { return to_string(mode); }
 
   std::string print(const func::loop_info& loopinfo) {
     std::string v = print(loopinfo.var);
@@ -295,22 +293,23 @@ public:
     return print_assignment_prefixed("_loop_id_", "loop_id{", fn_ptr, ", ", v, "}");
   }
 
-  std::string print_callback(const std::vector<func::input>& fins, const std::vector<func::output>& fouts) {
+  std::string print_callback(
+      const std::vector<func::input>& func_inputs, const std::vector<func::output>& func_outputs) {
     std::vector<std::string> args, body_in, body_out, fout_dims;
-    for (size_t i = 0; i < fins.size(); i++) {
+    for (size_t i = 0; i < func_inputs.size(); i++) {
       args.push_back(str_cat("const buffer<const void>& i", i));
       body_in.push_back(str_cat("&i", i));
     }
-    for (size_t i = 0; i < fouts.size(); i++) {
+    for (size_t i = 0; i < func_outputs.size(); i++) {
       args.push_back(str_cat("const buffer<void>& o", i));
       body_out.push_back(str_cat("&o", i));
-      fout_dims.push_back(print(fouts[i].dims));
+      fout_dims.push_back(print(func_outputs[i].dims));
     }
     std::ostringstream os;
     os << str_cat("[=](", print_vector_elements(args), ") -> index_t {\n");
     os << "    const buffer<const void>* input_buffers[] = " << print_vector(body_in) << ";\n";
     os << "    const buffer<void>* output_buffers[] = " << print_vector(body_out) << ";\n";
-    os << "    const func::input inputs[] = " << print(fins) << ";\n";
+    os << "    const func::input inputs[] = " << print(func_inputs) << ";\n";
     os << "    const std::vector<var> outputs[] = " << print_vector(fout_dims) << ";\n";
     os << "    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);\n";
     os << "  }";
@@ -325,14 +324,15 @@ public:
     funcs_emitted_[&f] = fn_name;
 
     if (!f.defined() && f.outputs().size() == 1) {
-      std::string fins = print(f.inputs());
-      std::string fouts = print(f.outputs()[0]);
-      (void)print_assignment_explicit(fn_name, "func::make_copy(", fins, ", ", fouts, ")");
+      std::string func_inputs = print(f.inputs());
+      std::string func_outputs = print(f.outputs()[0]);
+      (void)print_assignment_explicit(fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ")");
     } else {
       std::string callback = print_callback(f.inputs(), f.outputs());
-      std::string fins = print(f.inputs());
-      std::string fouts = print(f.outputs());
-      (void)print_assignment_explicit(fn_name, "func::make(std::move(", callback, "), ", fins, ", ", fouts, ")");
+      std::string func_inputs = print(f.inputs());
+      std::string func_outputs = print(f.outputs());
+      (void)print_assignment_explicit(
+          fn_name, "func::make(std::move(", callback, "), ", func_inputs, ", ", func_outputs, ")");
     }
     if (!f.loops().empty()) {
       std::string li = print(f.loops());
@@ -493,7 +493,7 @@ private:
 
 struct rph_handler {
   const span<const buffer<const void>*>& inputs;
-  const span<func::input>& fins;
+  const span<func::input>& func_inputs;
   const buffer<void>* output;
   const std::vector<var>& fout_dims;
 
@@ -503,9 +503,9 @@ struct rph_handler {
   void run() {
     out_pos.resize(output->rank);
 
-    assert(inputs.size() == fins.size());
-    for (std::size_t i = 0; i < fins.size(); i++) {
-      eval_ctx[fins[i].sym()] = reinterpret_cast<index_t>(inputs[i]);
+    assert(inputs.size() == func_inputs.size());
+    for (std::size_t i = 0; i < func_inputs.size(); i++) {
+      eval_ctx[func_inputs[i].sym()] = reinterpret_cast<index_t>(inputs[i]);
     }
 
     handler((int)output->rank - 1);
@@ -528,7 +528,7 @@ struct rph_handler {
     memset(out_pos_addr, 0, output->elem_size);
 
     for (std::size_t i = 0; i < inputs.size(); i++) {
-      std::vector<interval> input_required = calc_input_required(inputs[i], fins[i].bounds);
+      std::vector<interval> input_required = calc_input_required(inputs[i], func_inputs[i].bounds);
       in_pos.resize(inputs[i]->rank, 0);
       apply_input((int)inputs[i]->rank - 1, inputs[i], input_required);
     }
@@ -596,11 +596,11 @@ struct rph_handler {
 namespace internal {
 
 index_t replica_pipeline_handler(span<const buffer<const void>*> inputs, span<const buffer<void>*> outputs,
-    span<func::input> fins, span<std::vector<var>> fout_dims) {
-  assert(inputs.size() == fins.size());
+    span<func::input> func_inputs, span<std::vector<var>> fout_dims) {
+  assert(inputs.size() == func_inputs.size());
   assert(outputs.size() == fout_dims.size());
   for (std::size_t i = 0; i < outputs.size(); i++) {
-    rph_handler rh = {inputs, fins, outputs[i], fout_dims[i]};
+    rph_handler rh = {inputs, func_inputs, outputs[i], fout_dims[i]};
     rh.run();
   }
   return 0;
