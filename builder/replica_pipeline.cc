@@ -87,7 +87,7 @@ public:
   void visit(const logical_and* op) override { visit_binary_op(op, "&&"); }
   void visit(const logical_or* op) override { visit_binary_op(op, "||"); }
   void visit(const logical_not* op) override {
-    auto s = print_expr_maybe_inlined(op->a);
+    std::string s = print_expr_maybe_inlined(op->a);
     name_ = "!(" + s + ")";
   }
   void visit(const class select* op) override { fail("unimplemented select"); }
@@ -183,19 +183,19 @@ public:
 
     for (std::size_t d = 0; d < bep->rank(); d++) {
       if (!match(bep->dim(d).bounds.min, buffer_min(variable::make(bep->sym()), static_cast<index_t>(d)))) {
-        auto e = print_expr_inlined(bep->dim(d).bounds.min);
+        std::string e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").min = " << e << ";\n";
       }
       if (!match(bep->dim(d).bounds.max, buffer_max(variable::make(bep->sym()), static_cast<index_t>(d)))) {
-        auto e = print_expr_inlined(bep->dim(d).bounds.max);
+        std::string e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").max = " << e << ";\n";
       }
       if (!match(bep->dim(d).stride, buffer_stride(variable::make(bep->sym()), static_cast<index_t>(d)))) {
-        auto e = print_expr_inlined(bep->dim(d).stride);
+        std::string e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
       if (!match(bep->dim(d).fold_factor, buffer_fold_factor(variable::make(bep->sym()), static_cast<index_t>(d)))) {
-        auto e = print_expr_inlined(bep->dim(d).fold_factor);
+        std::string e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = " << e << ";\n";
       }
     }
@@ -210,11 +210,11 @@ public:
     std::vector<std::string> bounds_vec;
     for (const auto& be : bounds) {
       if (be.min.same_as(be.max)) {
-        auto mn = print_expr_inlined(be.min);
+        std::string mn = print_expr_inlined(be.min);
         bounds_vec.push_back(str_cat("point(", mn, ")"));
       } else {
-        auto mn = print_expr_inlined(be.min);
-        auto mx = print_expr_inlined(be.max);
+        std::string mn = print_expr_inlined(be.min);
+        std::string mx = print_expr_inlined(be.max);
         bounds_vec.push_back(str_cat("{", mn, ", ", mx, "}"));
       }
     }
@@ -224,11 +224,11 @@ public:
   std::string print(const func::input& fin) {
     print(fin.buffer);
 
-    auto name = ctx_.name(fin.sym());
-    auto bounds = print(fin.bounds, /*inlined*/ true);
+    std::string name = ctx_.name(fin.sym());
+    std::string bounds = print(fin.bounds, /*inlined*/ true);
     if (!fin.output_crop.empty() || !fin.output_slice.empty()) {
-      auto output_crop = print(fin.output_crop, /*inlined*/ true);
-      auto output_slice = print_vector(fin.output_slice);
+      std::string output_crop = print(fin.output_crop, /*inlined*/ true);
+      std::string output_slice = print_vector(fin.output_slice);
       return print_string_vector({name, bounds, output_crop, output_slice});
     } else {
       return print_string_vector({name, bounds});
@@ -246,8 +246,8 @@ public:
   std::string print(const func::output& fout) {
     print(fout.buffer);
 
-    auto name = ctx_.name(fout.sym());
-    auto dims = print(fout.dims);
+    std::string name = ctx_.name(fout.sym());
+    std::string dims = print(fout.dims);
     return print_string_vector({name, dims});
   }
 
@@ -264,9 +264,9 @@ public:
   }
 
   std::string print(const func::loop_info& loopinfo) {
-    auto v = print(loopinfo.var);
-    auto step = print_expr_maybe_inlined(loopinfo.step);
-    auto mode = print(loopinfo.mode);
+    std::string v = print(loopinfo.var);
+    std::string step = print_expr_maybe_inlined(loopinfo.step);
+    std::string mode = print(loopinfo.mode);
     return print_string_vector({v, step, mode});
   }
 
@@ -284,12 +284,12 @@ public:
     }
     std::string fn_ptr;
     if (loopid.func) {
-      auto fn = print(*loopid.func);
+      std::string fn = print(*loopid.func);
       fn_ptr = print_assignment_prefixed("_fn_", "&", fn);
     } else {
       fn_ptr = print_assignment_prefixed("_fn_", "static_cast<func*>(nullptr)");
     }
-    auto v = print(loopid.var);
+    std::string v = print(loopid.var);
     return print_assignment_prefixed("_loop_id_", "loop_id{", fn_ptr, ", ", v, "}");
   }
 
@@ -319,26 +319,26 @@ public:
     if (auto it = funcs_emitted_.find(&f); it != funcs_emitted_.end()) {
       return it->second;
     }
-    auto fn_name = str_cat("_fn_", next_id_++);
+    std::string fn_name = str_cat("_fn_", next_id_++);
     funcs_emitted_[&f] = fn_name;
 
     if (!f.defined() && f.outputs().size() == 1) {
-      auto fins = print(f.inputs());
-      auto fouts = print(f.outputs()[0]);
+      std::string fins = print(f.inputs());
+      std::string fouts = print(f.outputs()[0]);
       (void)print_assignment_explicit(fn_name, "func::make_copy(", fins, ", ", fouts, ")");
     } else {
-      auto callback = print_callback(f.inputs(), f.outputs());
-      auto fins = print(f.inputs());
-      auto fouts = print(f.outputs());
+      std::string callback = print_callback(f.inputs(), f.outputs());
+      std::string fins = print(f.inputs());
+      std::string fouts = print(f.outputs());
       (void)print_assignment_explicit(fn_name, "func::make(std::move(", callback, "), ", fins, ", ", fouts, ")");
     }
     if (!f.loops().empty()) {
-      auto li = print(f.loops());
+      std::string li = print(f.loops());
       os_ << "  " << fn_name << ".loops(" << li << ");\n";
     }
-    auto loopid = f.compute_at();
+    std::optional<loop_id> loopid = f.compute_at();
     if (loopid) {
-      auto li = print(*loopid);
+      std::string li = print(*loopid);
       if (li == "<root>") {
         os_ << "  " << fn_name << ".compute_root();\n";
       } else {
@@ -401,7 +401,7 @@ private:
   std::string print_expr_inlined(const expr& e) {
     bool old = exprs_inlined_;
     exprs_inlined_ = true;
-    auto result = print_expr_maybe_inlined(e);
+    std::string result = print_expr_maybe_inlined(e);
     exprs_inlined_ = old;
     return result;
   }
@@ -409,7 +409,7 @@ private:
   std::string print_expr_assignment(const expr& e) {
     bool old = exprs_inlined_;
     exprs_inlined_ = false;
-    auto result = print_expr_maybe_inlined(e);
+    std::string result = print_expr_maybe_inlined(e);
     exprs_inlined_ = old;
     return result;
   }
@@ -526,7 +526,7 @@ struct rph_handler {
     memset(out_pos_addr, 0, output->elem_size);
 
     for (std::size_t i = 0; i < inputs.size(); i++) {
-      auto input_required = calc_input_required(inputs[i], fins[i].bounds);
+      std::vector<interval> input_required = calc_input_required(inputs[i], fins[i].bounds);
       in_pos.resize(inputs[i]->rank, 0);
       apply_input((int)inputs[i]->rank - 1, inputs[i], input_required);
     }
