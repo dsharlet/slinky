@@ -49,11 +49,11 @@ std::ostream& operator<<(std::ostream& os, memory_type type) {
 }
 
 std::ostream& operator<<(std::ostream& os, loop_mode mode) {
-  return os << to_string(type);
+  return os << to_string(mode);
 }
 
 std::ostream& operator<<(std::ostream& os, intrinsic fn) {
-  return os << to_string(type);
+  return os << to_string(fn);
 }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
