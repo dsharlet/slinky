@@ -23,6 +23,9 @@ std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, memory_type type);
 std::ostream& operator<<(std::ostream& os, loop_mode mode);
 
+std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);
+std::ostream& operator<<(std::ostream& os, const dim& d);
+
 // It's not legal to overload std::to_string(), or anything else in std;
 // intended usage here is to do `using std::to_string;` followed by naked
 // to_string() calls.
