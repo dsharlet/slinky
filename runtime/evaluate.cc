@@ -41,20 +41,7 @@ void dump_context_for_expr(
     } else if (!deps_of.defined() || deps.buffer) {
       if (ctx.contains(i)) {
         const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx.lookup(i));
-        s << "  " << sym << " = {base=" << buf->base << ", elem_size=" << buf->elem_size << ", dims={";
-        for (std::size_t d = 0; d < buf->rank; ++d) {
-          const dim& dim = buf->dims[d];
-          s << "{min=" << dim.min() << ", max=" << dim.max() << ", extent=" << dim.extent()
-            << ", stride=" << dim.stride();
-          if (dim.fold_factor() != dim::unfolded) {
-            s << ", fold_factor=" << dim.fold_factor();
-          }
-          s << "}";
-          if (d + 1 < buf->rank) {
-            s << ",";
-          }
-        }
-        s << "}" << std::endl;
+        s << "  " << sym << " = " << *buf << std::endl;
       }
     }
   }
