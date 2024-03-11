@@ -319,26 +319,22 @@ std::ostream& operator<<(std::ostream& os, const std::tuple<const stmt&, const n
 }
 
 
-std::ostream& operator<<(std::ostream& os, const raw_buffer* buf) {
-  os << "{base=" << buf->base << ", elem_size=" << buf->elem_size << ", dims={";
-  for (std::size_t d = 0; d < buf->rank; ++d) {
-    const slinky::dim& dim = buf->dims[d];
+std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
+  os << "{base=" << buf.base << ", elem_size=" << buf.elem_size << ", dims={";
+  for (std::size_t d = 0; d < buf.rank; ++d) {
+    const slinky::dim& dim = buf.dims[d];
     os << "{min=" << dim.min() << ", max=" << dim.max() << ", extent=" << dim.extent()
       << ", stride=" << dim.stride();
     if (dim.fold_factor() != slinky::dim::unfolded) {
       os << ", fold_factor=" << dim.fold_factor();
     }
     os << "}";
-    if (d + 1 < buf->rank) {
+    if (d + 1 < buf.rank) {
       os << ",";
     }
   }
   os << "}";
   return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
-  return os << &buf;
 }
 
 }  // namespace slinky

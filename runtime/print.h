@@ -23,7 +23,6 @@ std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, memory_type type);
 std::ostream& operator<<(std::ostream& os, loop_mode mode);
 
-std::ostream& operator<<(std::ostream& os, const raw_buffer* buf);
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);
 
 }  // namespace slinky
