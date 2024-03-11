@@ -44,24 +44,18 @@ std::string to_string(intrinsic fn) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, memory_type type) {
-  return os << to_string(type);
-}
+std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
 
-std::ostream& operator<<(std::ostream& os, loop_mode mode) {
-  return os << to_string(mode);
-}
+std::ostream& operator<<(std::ostream& os, loop_mode mode) { return os << to_string(mode); }
 
-std::ostream& operator<<(std::ostream& os, intrinsic fn) {
-  return os << to_string(fn);
-}
+std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
 }
 
 std::ostream& operator<<(std::ostream& os, const box_expr& b) {
-  os << "{" ;
+  os << "{";
   for (std::size_t i = 0; i < b.size(); ++i) {
     os << b[i];
     if (i + 1 < b.size()) {
@@ -330,20 +324,23 @@ std::ostream& operator<<(std::ostream& os, const std::tuple<const stmt&, const n
   return os;
 }
 
-
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
   os << "{base=" << buf.base << ", elem_size=" << buf.elem_size << ", dims={";
   for (std::size_t d = 0; d < buf.rank; ++d) {
     const slinky::dim& dim = buf.dims[d];
-    os << "{min=" << dim.min() << ", max=" << dim.max() << ", extent=" << dim.extent()
-      << ", stride=" << dim.stride();
-    if (dim.fold_factor() != slinky::dim::unfolded) {
-      os << ", fold_factor=" << dim.fold_factor();
-    }
-    os << "}";
+    os << dim;
     if (d + 1 < buf.rank) {
       os << ",";
     }
+  }
+  os << "}";
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const dim& d) {
+  os << "{min=" << d.min() << ", max=" << d.max() << ", extent=" << d.extent() << ", stride=" << d.stride();
+  if (d.fold_factor() != dim::unfolded) {
+    os << ", fold_factor=" << d.fold_factor();
   }
   os << "}";
   return os;
