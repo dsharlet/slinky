@@ -12,6 +12,8 @@
 
 namespace slinky {
 
+using std::to_string;
+
 namespace {
 
 struct ConcatHelper {
@@ -20,7 +22,7 @@ struct ConcatHelper {
 
   template <typename T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
   static constexpr size_t size(T value) {
-    return std::to_string(value).size();
+    return to_string(value).size();
   }
 
   void operator()(const char* str) { result += str; }
@@ -28,7 +30,7 @@ struct ConcatHelper {
 
   template <typename T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
   void operator()(T value) {
-    result += std::to_string(value);
+    result += to_string(value);
   }
 
   std::string result;
@@ -71,7 +73,7 @@ public:
     name_ = print(var(op->sym));
   }
 
-  void visit(const constant* op) override { name_ = std::to_string(op->value); }
+  void visit(const constant* op) override { name_ = to_string(op->value); }
   void visit(const let* op) override { fail("unimplemented let"); }
   void visit(const add* op) override { visit_binary_op(op, "+"); }
   void visit(const sub* op) override { visit_binary_op(op, "-"); }
@@ -176,7 +178,7 @@ public:
     case 2: size_code = "sizeof(uint16_t)"; break;
     case 4: size_code = "sizeof(uint32_t)"; break;
     case 8: size_code = "sizeof(uint64_t)"; break;
-    default: size_code = std::to_string(bep->elem_size()); break;
+    default: size_code = to_string(bep->elem_size()); break;
     }
 
     (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", ", size_code, ", ", bep->rank(), ")");
@@ -260,7 +262,7 @@ public:
   }
 
   std::string print(const loop_mode& mode) {
-    return mode == loop_mode::serial ? "loop_mode::serial" : "loop_mode::parallel";
+    return to_string(mode);
   }
 
   std::string print(const func::loop_info& loopinfo) {
