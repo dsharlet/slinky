@@ -1034,6 +1034,8 @@ TEST(pipeline, unrelated) {
 
     stencil1.loops({{y, 2}});
 
+    check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out1, out2}));
+
     return build_pipeline(ctx, {in1, in2}, {out1, out2});
   };
   pipeline p = make_pipeline();
@@ -1084,8 +1086,6 @@ TEST(pipeline, unrelated) {
   for (int i = 0; i < N2; ++i) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
-
-  check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out1, out2}));
 }
 
 TEST(pipeline, copied_result) {
@@ -1605,6 +1605,6 @@ TEST(pipeline, Y) {
     }
   }
 
-  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {intm3, intm4}));
 }
 }  // namespace slinky

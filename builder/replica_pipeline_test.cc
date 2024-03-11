@@ -489,4 +489,65 @@ auto p = []() -> ::slinky::pipeline {
   ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
 }
 
+TEST(replica, Y) {
+  // clang-format off
+// BEGIN define_replica_pipeline() output
+auto p = []() -> ::slinky::pipeline {
+  using std::abs, std::min, std::max;
+  node_context ctx;
+  auto in1 = buffer_expr::make(ctx, "in1", sizeof(uint16_t), 2);
+  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(uint16_t), 2);
+  auto x = var(ctx, "x");
+  auto y = var(ctx, "y");
+  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(uint16_t), 2);
+  auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* input_buffers[] = {&i0};
+    const buffer<void>* output_buffers[] = {&o0};
+    const func::input inputs[] = {{in1, {point(x), point(y)}}};
+    const std::vector<var> outputs[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
+  };
+  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* input_buffers[] = {&i0};
+    const buffer<void>* output_buffers[] = {&o0};
+    const func::input inputs[] = {{intm2, {point(x), point(y)}}};
+    const std::vector<var> outputs[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
+  };
+  auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
+  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(uint16_t), 2);
+  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
+    const buffer<const void>* input_buffers[] = {&i0};
+    const buffer<void>* output_buffers[] = {&o0};
+    const func::input inputs[] = {{intm2, {point(x), point(y)}}};
+    const std::vector<var> outputs[] = {{x, y}};
+    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
+  };
+  auto _fn_4 = func::make(std::move(_replica_fn_5), {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
+  _fn_4.loops({{y, 1, loop_mode::serial}});
+  auto p = build_pipeline(ctx, {}, {in1}, {intm3, intm4}, {});
+  return p;
+};
+// END define_replica_pipeline() output
+  // clang-format on
+
+  const int W = 32;
+  const int H = 32;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> intm3_buf({W, H});
+  buffer<short, 2> intm4_buf({W, H});
+
+  init_random(in_buf);
+  intm3_buf.allocate();
+  intm4_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&intm3_buf, &intm4_buf};
+
+  eval_context eval_ctx;
+  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
+}
+
 }  // namespace slinky
