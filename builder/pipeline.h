@@ -220,7 +220,12 @@ public:
   template <typename Lambda>
   static func make(
       Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
-    using std_function_type = typename lambda_call_signature<Lambda>::std_function_type;
+    // Verify that the lambda returns an index_t; a different return type will fail to match
+    // the std::function call and just call this same function in an endless death spiral.
+    using sig = lambda_call_signature<Lambda>;
+    static_assert(std::is_same_v<typename sig::ret_type, index_t>);
+
+    using std_function_type = typename sig::std_function_type;
     std_function_type impl = std::move(lambda);
     return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
   }
