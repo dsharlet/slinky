@@ -18,8 +18,8 @@ std::string to_string(memory_type type) {
 
 std::string to_string(loop_mode mode) {
   switch (mode) {
-  case loop_mode::serial: return "loop_mode::serial";
-  case loop_mode::parallel: return "loop_mode::parallel";
+  case loop_mode::serial: return "serial";
+  case loop_mode::parallel: return "parallel";
   default: return "<invalid loop_mode>";
   }
 }

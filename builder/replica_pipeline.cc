@@ -261,7 +261,7 @@ public:
     return print_vector(fout_names);
   }
 
-  std::string print(const loop_mode& mode) { return to_string(mode); }
+  std::string print(const loop_mode& mode) { return "loop_mode::" + to_string(mode); }
 
   std::string print(const func::loop_info& loopinfo) {
     std::string v = print(loopinfo.var);
