@@ -12,7 +12,7 @@ namespace slinky {
 
 namespace {
 
-std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims) {
+std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
@@ -25,11 +25,11 @@ std::size_t alloc_size(std::size_t elem_size, std::size_t rank, const dim* dims)
 
 }  // namespace
 
-std::size_t raw_buffer::size_bytes() const { return alloc_size(elem_size, rank, dims); }
+std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, dims); }
 
-raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims) {
+raw_buffer_ptr raw_buffer::make_allocated(std::size_t rank, std::size_t elem_size, const class dim* dims) {
   char* mem = reinterpret_cast<char*>(
-      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(elem_size, rank, dims)));
+      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(rank, elem_size, dims)));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
   buf->rank = rank;
@@ -38,11 +38,22 @@ raw_buffer_ptr raw_buffer::make_allocated(std::size_t elem_size, std::size_t ran
   memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
   mem += sizeof(slinky::dim) * rank;
   buf->base = mem;
-  return raw_buffer_ptr(buf);
+  return raw_buffer_ptr(buf, free);
+}
+
+raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
+  char* mem = reinterpret_cast<char*>(malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank));
+  raw_buffer* buf = new (mem) raw_buffer();
+  mem += sizeof(raw_buffer);
+  buf->rank = rank;
+  buf->elem_size = elem_size;
+  buf->dims = reinterpret_cast<slinky::dim*>(mem);
+  new (buf->dims) slinky::dim[buf->rank];
+  return raw_buffer_ptr(buf, free);
 }
 
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
-  auto buf = make_allocated(src.elem_size, src.rank, src.dims);
+  auto buf = make_allocated(src.rank, src.elem_size, src.dims);
   copy(src, *buf);
   return buf;
 }
@@ -336,10 +347,16 @@ namespace {
 
 #ifndef NDEBUG
 bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
-  if (other_buf.rank != buf.rank) return false;
-  for (std::size_t d = 0; d < buf.rank; d++) {
-    if (other_buf.dims[d].min() > buf.dims[d].min()) return false;
-    if (other_buf.dims[d].max() < buf.dims[d].max()) return false;
+  if (other_buf.rank > buf.rank) return false;
+  for (std::size_t d = 0; d < other_buf.rank; d++) {
+    const dim& other_dim = other_buf.dim(d);
+    
+    // Allow stride 0 dimensions to be accessed "out of bounds". 
+    if (other_dim.stride() == 0) continue;
+
+    const dim& buf_dim = buf.dim(d);
+    if (other_dim.min() > buf_dim.min()) return false;
+    if (other_dim.max() < buf_dim.max()) return false;
   }
   return true;
 }
@@ -347,7 +364,7 @@ bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
 
 bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
   for (std::size_t n = 0; n < size; n++) {
-    if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) return false;
+    if (d >= static_cast<int>(bufs[n]->rank) || bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) return false;
   }
   return true;
 }
@@ -356,6 +373,8 @@ bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   const dim& base_inner = bufs[0]->dim(d - 1);
   assert(d > 0);
   for (std::size_t n = 0; n < size; n++) {
+    if (d >= static_cast<int>(bufs[n]->rank)) return false;
+
     const dim& outer = bufs[n]->dim(d);
     const dim& inner = bufs[n]->dim(d - 1);
     // Our caller should have ensured this
@@ -369,10 +388,12 @@ bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
 
 bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
   for (std::size_t i = 0; i < size; ++i) {
-    if (bufs[i]->dim(d).fold_factor() != dim::unfolded) return true;
+    if (d < static_cast<int>(bufs[i]->rank) && bufs[i]->dim(d).fold_factor() != dim::unfolded) return true;
   }
   return false;
 }
+
+static dim stride_0_dim;
 
 template <std::size_t BufsSize>
 bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
@@ -395,7 +416,7 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
       next->extent = buf_dim.extent();
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims->dim = &bufs[n]->dim(d);
+        next_dims->dim = d < static_cast<int>(bufs[n]->rank) ? &bufs[n]->dim(d) : &stride_0_dim;
         ++next_dims;
       }
       extent = 1;
@@ -405,8 +426,10 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
     extent *= buf_dim.extent();
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
-      index_t offset = bufs[n]->dim(d).flat_offset_bytes(buf_dim.min());
-      bases[n] = offset_bytes(bases[n], offset);
+      if (d < static_cast<int>(bufs[n]->rank)) {
+        index_t offset = bufs[n]->dim(d).flat_offset_bytes(buf_dim.min());
+        bases[n] = offset_bytes(bases[n], offset);
+      }
     }
 
     if (buf_dim.min() == buf_dim.max()) {
@@ -428,7 +451,7 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
       next->extent = extent;
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims->stride = bufs[n]->dim(d).stride();
+        next_dims->stride = d < static_cast<int>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
         ++next_dims;
       }
       extent = 1;

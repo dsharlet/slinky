@@ -69,8 +69,11 @@ public:
   bool contains(index_t x) const { return min() <= x && x <= max(); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
-    assert(i >= min_);
-    assert(i <= max());
+    // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
+    // invalid memory. It's a bit messy to allow this, but this assert feels really overzealous when attempting to
+    // implement broadcasting in callbacks.
+    assert(i >= min_ || stride_ == 0);
+    assert(i <= max() || stride_ == 0);
     if (fold_factor_ == unfolded) {
       return (i - min_) * stride_;
     } else {
@@ -84,11 +87,8 @@ class buffer;
 
 class raw_buffer;
 
-struct free_deleter {
-  void operator()(void* p) { free(p); }
-};
-
-using raw_buffer_ptr = std::unique_ptr<raw_buffer, free_deleter>;
+using raw_buffer_ptr = std::shared_ptr<raw_buffer>;
+using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
@@ -201,8 +201,11 @@ public:
   template <typename NewT>
   const buffer<NewT>& cast() const;
 
-  // Make a pointer to a buffer with an allocation for the buffer in the same allocation.
-  static raw_buffer_ptr make_allocated(std::size_t elem_size, std::size_t rank, const class dim* dims);
+  // Make a pointer to a buffer with an allocation for the dims (but not elements) in the same allocation.
+  static raw_buffer_ptr make(std::size_t rank, std::size_t elem_size);
+
+  // Make a pointer to a buffer with an allocation for the dims and the elements in the same allocation.
+  static raw_buffer_ptr make_allocated(std::size_t rank, std::size_t elem_size, const class dim* dims);
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);
@@ -528,10 +531,8 @@ void for_each_index(const raw_buffer& buf, const F& f) {
 // Call `f(void* base, index_t extent[, void* other_bases, ...])` for each contiguous slice in the domain of `buf[,
 // other_bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
 //
-// When additional buffers are passed, they will be sliced in tandem with the 'main' buffer.
-//
-// All additional buffers must be of identical rank to the main, and must cover (at least) the same area in each
-// dimension.
+// When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
+// lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
 template <typename F, typename... Args>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
   constexpr std::size_t NumBufs = sizeof...(Args) + 1;

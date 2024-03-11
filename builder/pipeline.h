@@ -28,13 +28,13 @@ class buffer_expr : public ref_counted<buffer_expr> {
   std::vector<dim_expr> dims_;
 
   func* producer_;
-  const raw_buffer* constant_;
+  const_raw_buffer_ptr constant_;
 
   memory_type storage_ = memory_type::heap;
   std::optional<loop_id> store_at_;
 
-  buffer_expr(symbol_id sym, index_t elem_size, std::size_t rank);
-  buffer_expr(symbol_id sym, const raw_buffer* buffer);
+  buffer_expr(symbol_id sym, std::size_t rank, index_t elem_size);
+  buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer);
   buffer_expr(const buffer_expr&) = delete;
   buffer_expr(buffer_expr&&) = delete;
   buffer_expr& operator=(const buffer_expr&) = delete;
@@ -45,14 +45,11 @@ class buffer_expr : public ref_counted<buffer_expr> {
   void set_producer(func* f);
 
 public:
-  static buffer_expr_ptr make(symbol_id sym, index_t elem_size, std::size_t rank);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, index_t elem_size, std::size_t rank);
-  // Make a constant buffer_expr. This does not take ownership of the object, and it must be kept alive as long as this
-  // buffer_expr is alive.
-  // TODO: This should probably either be some kind of smart pointer, or maybe at least copy the raw_buffer object (but
-  // not the underlying data).
-  static buffer_expr_ptr make(symbol_id sym, const raw_buffer* buffer);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const raw_buffer* buffer);
+  static buffer_expr_ptr make(symbol_id sym, std::size_t rank, index_t elem_size);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size);
+  // Make a constant buffer_expr. It takes ownership of the buffer from the caller.
+  static buffer_expr_ptr make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
 
   symbol_id sym() const { return sym_; }
   index_t elem_size() const { return elem_size_; }
@@ -84,7 +81,7 @@ public:
 
   const func* producer() const { return producer_; }
 
-  const raw_buffer* constant() const { return constant_; }
+  const_raw_buffer_ptr constant() const { return constant_; }
 
   static void destroy(buffer_expr* p) { delete p; }
 };
@@ -182,6 +179,7 @@ public:
     compute_at_ = loop_id();
     return *this;
   }
+
   const std::optional<loop_id>& compute_at() const { return compute_at_; }
 
 private:
@@ -222,7 +220,12 @@ public:
   template <typename Lambda>
   static func make(
       Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
-    using std_function_type = typename lambda_call_signature<Lambda>::std_function_type;
+    // Verify that the lambda returns an index_t; a different return type will fail to match
+    // the std::function call and just call this same function in an endless death spiral.
+    using sig = lambda_call_signature<Lambda>;
+    static_assert(std::is_same_v<typename sig::ret_type, index_t>);
+
+    using std_function_type = typename sig::std_function_type;
     std_function_type impl = std::move(lambda);
     return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
   }

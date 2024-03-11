@@ -35,6 +35,7 @@ class elementwise_pipeline_builder : public node_visitor {
   std::string name(const buffer_expr_ptr& b) const { return ctx.name(b->sym()); }
 
   std::map<symbol_id, buffer_expr_ptr> vars;
+  std::vector<buffer_expr_ptr> constants;
 
 public:
   elementwise_pipeline_builder(node_context& ctx) : ctx(ctx) {
@@ -54,21 +55,23 @@ public:
       result = i->second;
       return;
     }
-    result = buffer_expr::make(v->sym, sizeof(T), Rank);
+    result = buffer_expr::make(v->sym, Rank, sizeof(T));
     inputs.push_back(result);
     vars[v->sym] = result;
   }
 
   void visit(const constant* c) override {
-    std::abort();
-    // This isn't right, because `value` is on the stack and needs to be kept alive.
-    buffer<T, Rank> value;
+    slinky::dim dims[Rank];
     for (std::size_t d = 0; d < Rank; ++d) {
-      value.dims[d].set_stride(0);
+      // TODO: Find a better way to not care about bounds of broadcasted dimensions.
+      dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
     }
-    value.allocate();
-    memcpy(value.base(), &c->value, sizeof(T));
-    result = buffer_expr::make(ctx, "constant", &value);
+
+    auto value = raw_buffer::make_allocated(Rank, sizeof(T), dims);
+    assert(value->size_bytes() == sizeof(T));
+    memcpy(value->base, &c->value, sizeof(T));
+    result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
+    constants.push_back(result);
   }
 
   buffer_expr_ptr visit_expr(const expr& e) {
@@ -78,7 +81,7 @@ public:
 
   template <typename Impl>
   void visit_binary(const char* fn_name, const buffer_expr_ptr& a, const buffer_expr_ptr& b, const Impl& impl) {
-    result = buffer_expr::make(ctx, name(a) + fn_name + name(b), sizeof(T), Rank);
+    result = buffer_expr::make(ctx, name(a) + fn_name + name(b), Rank, sizeof(T));
     func::callable<const T, const T, T> fn = [=](const buffer<const T>& a, const buffer<const T>& b,
                                                  const buffer<T>& c) {
       for_each_index(c, [&](auto i) { c(i) = impl(a(i), b(i)); });
@@ -115,7 +118,7 @@ public:
     buffer_expr_ptr c = visit_expr(op->condition);
     buffer_expr_ptr t = visit_expr(op->true_value);
     buffer_expr_ptr f = visit_expr(op->false_value);
-    result = buffer_expr::make(ctx, "select_" + name(c) + "_" + name(t) + "_" + name(f), sizeof(T), Rank);
+    result = buffer_expr::make(ctx, "select_" + name(c) + "_" + name(t) + "_" + name(f), Rank, sizeof(T));
     func::callable<const T, const T, const T, T> fn = [](const buffer<const T>& c, const buffer<const T>& t,
                                                           const buffer<const T>& f, const buffer<T>& r) -> index_t {
       for_each_index(c, [&](auto i) { r(i) = c(i) != 0 ? t(i) : f(i); });
@@ -165,28 +168,28 @@ public:
     b.allocate();
   }
 
-  void visit(const variable* v) override {
-    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
-    assert(i);
+  std::size_t prepare_result() {
     result.free();
-    index_t stride = sizeof(T);
+    index_t stride = 1;
     for (std::size_t d = 0; d < Rank; ++d) {
       result.dims[d].set_min_extent(0, extents[d]);
-      result.dims[d].set_stride(stride);
+      result.dims[d].set_stride(stride * sizeof(T));
       stride *= extents[d];
     }
     result.allocate();
+    return stride;
+  }
+
+  void visit(const variable* v) override {
+    const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
+    assert(i);
+    prepare_result();
     copy(**i, result);
   }
 
   void visit(const constant* c) override {
-    result.free();
-    for (std::size_t d = 0; d < Rank; ++d) {
-      result.dims[d].set_min_extent(0, extents[d]);
-      result.dims[d].set_stride(0);
-    }
-    result.allocate();
-    memcpy(result.base(), &c->value, sizeof(T));
+    std::size_t flat_size = prepare_result();
+    std::fill_n(result.base(), flat_size, c->value);
   }
 
   void visit_expr(const expr& e, buffer<T, Rank>& r) {
@@ -262,9 +265,9 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   }
 
   std::vector<const raw_buffer*> inputs;
-  std::vector<buffer<T, Rank>> input_bufs(p.inputs().size());
+  std::vector<buffer<T, Rank>> input_bufs(p.inputs.size());
 
-  for (std::size_t i = 0; i < p.inputs().size(); ++i) {
+  for (std::size_t i = 0; i < p.inputs.size(); ++i) {
     index_t stride = sizeof(T);
     for (std::size_t d = 0; d < Rank; ++d) {
       input_bufs[i].dims[d].set_min_extent(0, extents[d]);
@@ -272,7 +275,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
       stride *= extents[d];
     }
   }
-  for (std::size_t i = 0; i < p.inputs().size(); ++i) {
+  for (std::size_t i = 0; i < p.inputs.size(); ++i) {
     init_random(input_bufs[i]);
     inputs.push_back(&input_bufs[i]);
   }
@@ -288,7 +291,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   elementwise_pipeline_evaluator<T, Rank> eval;
   eval.extents = extents;
   for (std::size_t i = 0; i < inputs.size(); ++i) {
-    eval.vars[p.inputs()[i]] = &input_bufs[i];
+    eval.vars[p.inputs[i]] = &input_bufs[i];
   }
   e.accept(&eval);
 
@@ -298,10 +301,6 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
 namespace {
 
 node_context ctx;
-var a(ctx, "a");
-var b(ctx, "b");
-var c(ctx, "c");
-var d(ctx, "d");
 var x(ctx, "x");
 var y(ctx, "y");
 var z(ctx, "z");
@@ -320,9 +319,10 @@ expr pow(expr x, int n) {
 
 TEST(elementwise, add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
 TEST(elementwise, mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
-TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(a + b, d) * c); }
-TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2)); }
-TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3)); }
-TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, a + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
+TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(x + y, 0) * z); }
+TEST(elementwise, exp1) { test_expr_pipeline<int, 1>(ctx, 1 + x); }
+TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2)); }
+TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3)); }
+TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
 
 }  // namespace slinky

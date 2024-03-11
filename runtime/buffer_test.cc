@@ -21,8 +21,12 @@ template <typename T, std::size_t N>
 void init_random(buffer<T, N>& buf) {
   buf.allocate();
   std::size_t flat_size = buf.size_bytes();
-  for (std::size_t i = 0; i < flat_size; ++i) {
-    reinterpret_cast<char*>(buf.base())[i] = random(0, 255);
+  std::size_t i = 0;
+  for (; i + 3 < flat_size; i += 4) {
+    reinterpret_cast<int*>(buf.base())[i >> 2] = rng()();
+  }
+  for (; i < flat_size; ++i) {
+    reinterpret_cast<char*>(buf.base())[i] = rng()();
   }
 }
 
@@ -31,6 +35,7 @@ struct randomize_options {
   int padding_max = 3;
   bool allow_broadcast = false;
   bool allow_fold = false;
+  bool randomize_rank = false;
 };
 
 template <typename T, std::size_t N>
@@ -48,7 +53,9 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
     // Expand the bounds randomly.
     dim.set_bounds(dim.min() - random(options.padding_min, options.padding_max),
         dim.max() + random(options.padding_min, options.padding_max));
-    assert(dim.extent() > 0);
+    if (dim.extent() <= 0) {
+      dim.set_extent(1);
+    }
     if (options.allow_broadcast && random(0, 9) == 0) {
       // Make this a broadcast.
       dim.set_stride(0);
@@ -61,6 +68,10 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
       // Make sure the fold factor divides the min so the fold is valid.
       dim.set_fold_factor(std::max<index_t>(1, std::abs(dim.min())));
     }
+  }
+
+  if (options.randomize_rank) {
+    buf.rank = random(0, buf.rank);
   }
 }
 
@@ -214,7 +225,7 @@ void test_for_each_contiguous_slice_fill() {
 }
 
 TEST(buffer, for_each_contiguous_slice_fill) {
-  for (int cases = 0; cases < 100; ++cases) {
+  for (int cases = 0; cases < 1000; ++cases) {
     test_for_each_contiguous_slice_fill<char>();
     test_for_each_contiguous_slice_fill<int>();
   }
@@ -228,7 +239,7 @@ void test_for_each_contiguous_slice_copy() {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(src, {0, 1, true, true});
+  randomize_strides_and_padding(src, {0, 1, true, true, true});
   randomize_strides_and_padding(dst, {-1, 0, false, false});
   init_random(src);
   dst.allocate();
@@ -239,11 +250,11 @@ void test_for_each_contiguous_slice_copy() {
         std::copy_n(reinterpret_cast<const Src*>(src), slice_extent, reinterpret_cast<Dst*>(dst));
       },
       src);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(src(i), dst(i)); });
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(src(i.subspan(0, src.rank)), dst(i)); });
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
-  for (int cases = 0; cases < 100; ++cases) {
+  for (int cases = 0; cases < 10000; ++cases) {
     test_for_each_contiguous_slice_copy<char, char>();
     test_for_each_contiguous_slice_copy<short, int>();
     test_for_each_contiguous_slice_copy<int, int>();
@@ -264,8 +275,8 @@ void test_for_each_contiguous_slice_add() {
     dst.dim(d) = a.dim(d);
   }
 
-  randomize_strides_and_padding(a, {0, 1, true, true});
-  randomize_strides_and_padding(b, {0, 1, true, true});
+  randomize_strides_and_padding(a, {0, 1, true, true, true});
+  randomize_strides_and_padding(b, {0, 1, true, true, true});
   init_random(a);
   init_random(b);
 
@@ -279,15 +290,15 @@ void test_for_each_contiguous_slice_add() {
         const A* a = reinterpret_cast<const A*>(a_v);
         const B* b = reinterpret_cast<const B*>(b_v);
         for (index_t i = 0; i < slice_extent; ++i) {
-          dst[i] = a[i] + b[i];
+          dst[i] = saturate_add<Dst>(a[i], b[i]);
         }
       },
       a, b);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), a(i) + b(i)); });
+  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
-  for (int cases = 0; cases < 100; ++cases) {
+  for (int cases = 0; cases < 1000; ++cases) {
     test_for_each_contiguous_slice_add<int, int, int>();
     test_for_each_contiguous_slice_add<short, int, int>();
     test_for_each_contiguous_slice_add<short, short, int>();
@@ -488,7 +499,7 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
 
 TEST(buffer, copy) {
   constexpr int max_rank = 4;
-  for (int cases = 0; cases < 1000; ++cases) {
+  for (int cases = 0; cases < 10000; ++cases) {
     int rank = random(0, max_rank);
     int elem_size = random(1, 12);
 

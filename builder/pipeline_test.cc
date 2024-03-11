@@ -5,6 +5,7 @@
 
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
+#include "builder/substitute.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
@@ -160,10 +161,17 @@ index_t subtract(const buffer<const T>& a, const buffer<const T>& b, const buffe
   return 0;
 }
 
+// init_random() for raw_buffer requires allocation be done by caller
+template <typename T>
+void fill_random(raw_buffer& x) {
+  assert(x.base != nullptr);
+  for_each_index(x, [&](auto i) { *reinterpret_cast<T*>(x.address_at(i)) = (rand() % 20) - 10; });
+}
+
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_index(x, [&](auto i) { x(i) = (rand() % 20) - 10; });
+  fill_random<T>(x);
 }
 
 // Matrix multiplication (not fast!)
@@ -240,8 +248,8 @@ TEST(pipeline, trivial) {
       // Make the pipeline
       node_context ctx;
 
-      auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
-      auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
+      auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+      auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
       var x(ctx, "x");
 
@@ -287,9 +295,9 @@ TEST(pipeline, elementwise_1d) {
         // Make the pipeline
         node_context ctx;
 
-        auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
-        auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
-        auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
+        auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+        auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+        auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
 
         var x(ctx, "x");
 
@@ -351,9 +359,9 @@ TEST(pipeline, elementwise_2d) {
         // Make the pipeline
         node_context ctx;
 
-        auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-        auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
-        auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+        auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+        auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+        auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
 
         var x(ctx, "x");
         var y(ctx, "y");
@@ -421,12 +429,12 @@ TEST(pipeline, matmuls) {
       // Make the pipeline
       node_context ctx;
 
-      auto a = buffer_expr::make(ctx, "a", sizeof(int), 2);
-      auto b = buffer_expr::make(ctx, "b", sizeof(int), 2);
-      auto c = buffer_expr::make(ctx, "c", sizeof(int), 2);
-      auto abc = buffer_expr::make(ctx, "abc", sizeof(int), 2);
+      auto a = buffer_expr::make(ctx, "a", 2, sizeof(int));
+      auto b = buffer_expr::make(ctx, "b", 2, sizeof(int));
+      auto c = buffer_expr::make(ctx, "c", 2, sizeof(int));
+      auto abc = buffer_expr::make(ctx, "abc", 2, sizeof(int));
 
-      auto ab = buffer_expr::make(ctx, "ab", sizeof(int), 2);
+      auto ab = buffer_expr::make(ctx, "ab", 2, sizeof(int));
 
       var i(ctx, "i");
       var j(ctx, "j");
@@ -533,10 +541,10 @@ TEST(pipeline, pyramid) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(int), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 2);
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -577,10 +585,10 @@ TEST(pipeline, stencil) {
         // Make the pipeline
         node_context ctx;
 
-        auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-        auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+        auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+        auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-        auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+        auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
         var x(ctx, "x");
         var y(ctx, "y");
@@ -645,10 +653,10 @@ TEST(pipeline, slide_2d) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -704,11 +712,11 @@ TEST(pipeline, stencil_chain) {
       // Make the pipeline
       node_context ctx;
 
-      auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-      auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+      auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+      auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-      auto intm = buffer_expr::make(ctx, "add_result", sizeof(short), 2);
-      auto intm2 = buffer_expr::make(ctx, "stencil1_result", sizeof(short), 2);
+      auto intm = buffer_expr::make(ctx, "add_result", 2, sizeof(short));
+      auto intm2 = buffer_expr::make(ctx, "stencil1_result", 2, sizeof(short));
 
       var x(ctx, "x");
       var y(ctx, "y");
@@ -782,9 +790,9 @@ TEST(pipeline, flip_y) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -821,9 +829,9 @@ TEST(pipeline, padded_copy) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", sizeof(char), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(char), 2);
-  auto intm = buffer_expr::make(ctx, "intm", sizeof(char), 2);
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -880,9 +888,9 @@ TEST(pipeline, multiple_outputs) {
       // Make the pipeline
       node_context ctx;
 
-      auto in = buffer_expr::make(ctx, "in", sizeof(int), 3);
-      auto sum_x = buffer_expr::make(ctx, "sum_x", sizeof(int), 2);
-      auto sum_xy = buffer_expr::make(ctx, "sum_xy", sizeof(int), 1);
+      auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+      auto sum_x = buffer_expr::make(ctx, "sum_x", 2, sizeof(int));
+      auto sum_xy = buffer_expr::make(ctx, "sum_xy", 1, sizeof(int));
 
       var x(ctx, "x");
       var y(ctx, "y");
@@ -958,9 +966,9 @@ TEST(pipeline, outer_product) {
         // Make the pipeline
         node_context ctx;
 
-        auto a = buffer_expr::make(ctx, "a", sizeof(int), 1);
-        auto b = buffer_expr::make(ctx, "b", sizeof(int), 1);
-        auto out = buffer_expr::make(ctx, "out", sizeof(int), 2);
+        auto a = buffer_expr::make(ctx, "a", 1, sizeof(int));
+        auto b = buffer_expr::make(ctx, "b", 1, sizeof(int));
+        auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
         var i(ctx, "i");
         var j(ctx, "j");
@@ -1001,31 +1009,36 @@ TEST(pipeline, outer_product) {
 
 TEST(pipeline, unrelated) {
   // Make the pipeline
-  node_context ctx;
+  auto make_pipeline = []() {
+    node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto out1 = buffer_expr::make(ctx, "out1", sizeof(short), 2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
+    auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+    auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(short));
+    auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
 
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(int), 1);
-  auto out2 = buffer_expr::make(ctx, "out2", sizeof(int), 1);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(int), 1);
+    auto in2 = buffer_expr::make(ctx, "in2", 1, sizeof(int));
+    auto out2 = buffer_expr::make(ctx, "out2", 1, sizeof(int));
+    auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
-      call_stmt::callable_attrs{.allow_in_place = true});
-  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
+    func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
+        call_stmt::callable_attrs{.allow_in_place = true});
+    func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
 
-  func mul2 = func::make(
-      multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
-  func add2 =
-      func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+    func mul2 = func::make(
+        multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+    func add2 =
+        func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
-  stencil1.loops({{y, 2}});
+    stencil1.loops({{y, 2}});
 
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out1, out2});
+    return build_pipeline(ctx, {in1, in2}, {out1, out2});
+  };
+  pipeline p = make_pipeline();
+  pipeline p2 = make_pipeline();
+  ASSERT_TRUE(match(p.body, p2.body));
 
   // Run the pipeline.
   const int W1 = 20;
@@ -1080,10 +1093,10 @@ TEST(pipeline, copied_result) {
     // Make the pipeline
     node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
+    auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -1139,12 +1152,12 @@ TEST(pipeline, concatenated_result) {
     // Make the pipeline
     node_context ctx;
 
-    auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-    auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
-    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+    auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
-    auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+    auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+    auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -1198,12 +1211,12 @@ TEST(pipeline, stacked_result) {
   // Make the pipeline
   node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 3);
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
 
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -1249,11 +1262,11 @@ TEST(pipeline, padded_stencil) {
     // Make the pipeline
     node_context ctx;
 
-    auto in = buffer_expr::make(ctx, "in", sizeof(short), 2);
-    auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
-    auto padded_intm = buffer_expr::make(ctx, "padded_intm", sizeof(short), 2);
+    auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+    auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
 
     var x(ctx, "x");
     var y(ctx, "y");
@@ -1326,12 +1339,18 @@ TEST(pipeline, constant) {
   const int W = 20;
   const int H = 10;
 
-  buffer<short, 2> constant_buf({W, H});
-  init_random(constant_buf);
+  slinky::dim dims[2];
+  dims[0].set_bounds(0, W);
+  dims[0].set_stride(1 * sizeof(short));
+  dims[1].set_bounds(0, H);
+  dims[1].set_stride(W * sizeof(short));
 
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+  auto constant_buf = raw_buffer::make_allocated(2, sizeof(short), dims);
+  fill_random<short>(*constant_buf);
 
-  auto constant = buffer_expr::make(ctx, "constant", &constant_buf);
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto constant = buffer_expr::make_constant(ctx, "constant", std::move(constant_buf));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -1347,154 +1366,245 @@ TEST(pipeline, constant) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
-  // TODO: Should pipeline understand constants and do this itself?
-  eval_ctx[constant->sym()] = reinterpret_cast<index_t>(constant->constant());
   p.evaluate({}, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), constant_buf(x, y) + 1);
+      ASSERT_EQ(out_buf(x, y), *reinterpret_cast<short*>(constant->constant()->address_at(x, y)) + 1);
     }
   }
 }
 
 TEST(pipeline, parallel_stencils) {
-  // Make the pipeline
-  node_context ctx;
+  for (int schedule : {0, 1, 2}) {
+    // Make the pipeline
+    node_context ctx;
 
-  auto in1 = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto in2 = buffer_expr::make(ctx, "in2", sizeof(short), 2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", sizeof(short), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
-  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
-  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+    auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+    auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+    auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+    auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+    auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
+    auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
+    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-  var x(ctx, "x");
-  var y(ctx, "y");
+    var x(ctx, "x");
+    var y(ctx, "y");
 
-  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  func mul2 = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
-  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
-  func diff =
-      func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+    func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+    func mul2 = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
+    func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+    func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
+    func diff =
+        func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-  diff.loops({{y, 2}});
-
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
-
-  // Run the pipeline.
-  const int W = 20;
-  const int H = 30;
-  buffer<short, 2> in1_buf({W + 2, H + 2});
-  buffer<short, 2> in2_buf({W + 4, H + 4});
-  in1_buf.translate(-1, -1);
-  in2_buf.translate(-2, -2);
-  buffer<short, 2> out_buf({W, H});
-
-  init_random(in1_buf);
-  init_random(in2_buf);
-  out_buf.allocate();
-
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
-
-  // Run the pipeline stages manually to get the reference result.
-  buffer<short, 2> ref_intm1({W + 2, H + 2});
-  buffer<short, 2> ref_intm2({W + 4, H + 4});
-  buffer<short, 2> ref_intm3({W, H});
-  buffer<short, 2> ref_intm4({W, H});
-  buffer<short, 2> ref_out({W, H});
-  ref_intm1.translate(-1, -1);
-  ref_intm2.translate(-2, -2);
-  ref_intm1.allocate();
-  ref_intm2.allocate();
-  ref_intm3.allocate();
-  ref_intm4.allocate();
-  ref_out.allocate();
-
-  add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
-  multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
-  sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
-  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
-
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    if (schedule == 0) {
+      diff.loops({{y, 1}});
+    } else if (schedule == 1) {
+      diff.loops({{y, 2}});
+      stencil1.loops({{y, 1}});
+      stencil2.loops({{y, 2}});
+      add1.compute_root();
+      mul2.compute_at({&diff, y});
+    } else if (schedule == 2) {
+      diff.loops({{y, 2}});
+      stencil1.loops({{y, 2}});
+      stencil2.loops({{y, 2}});
     }
-  }
 
-  // Also visualize this pipeline
-  visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
+    pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+
+    // Run the pipeline.
+    const int W = 20;
+    const int H = 30;
+    buffer<short, 2> in1_buf({W + 2, H + 2});
+    buffer<short, 2> in2_buf({W + 4, H + 4});
+    in1_buf.translate(-1, -1);
+    in2_buf.translate(-2, -2);
+    buffer<short, 2> out_buf({W, H});
+
+    init_random(in1_buf);
+    init_random(in2_buf);
+    out_buf.allocate();
+
+    // Not having span(std::initializer_list<T>) is unfortunate.
+    const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+
+    // Run the pipeline stages manually to get the reference result.
+    buffer<short, 2> ref_intm1({W + 2, H + 2});
+    buffer<short, 2> ref_intm2({W + 4, H + 4});
+    buffer<short, 2> ref_intm3({W, H});
+    buffer<short, 2> ref_intm4({W, H});
+    buffer<short, 2> ref_out({W, H});
+    ref_intm1.translate(-1, -1);
+    ref_intm2.translate(-2, -2);
+    ref_intm1.allocate();
+    ref_intm2.allocate();
+    ref_intm3.allocate();
+    ref_intm4.allocate();
+    ref_out.allocate();
+
+    add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
+    multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
+    sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
+    sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+    subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+      }
+    }
+
+    // Also visualize this pipeline
+    visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
+  }
 }
 
 TEST(pipeline, diamond_stencils) {
+  for (int schedule : {0, 1, 2}) {
+    auto make_pipeline = [schedule]() {
+      node_context ctx;
+
+      auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+      auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+      auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
+      auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
+      auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+      var x(ctx, "x");
+      var y(ctx, "y");
+
+      func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
+      func stencil1 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+      func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
+      func diff =
+          func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+
+      if (schedule == 0) {
+        diff.loops({{y, 1}});
+      } else if (schedule == 1) {
+        diff.loops({{y, 1}});
+        stencil1.loops({{y, 2}});
+        stencil2.loops({{y, 2}});
+      } else if (schedule == 2) {
+        diff.loops({{y, 1}});
+        stencil1.loops({{y, 2}});
+        stencil2.loops({{y, 2}});
+        mul2.compute_root();
+      }
+
+      return build_pipeline(ctx, {in}, {out});
+    };
+    pipeline p = make_pipeline();
+    pipeline p2 = make_pipeline();
+    ASSERT_TRUE(match(p.body, p2.body));
+
+    // Run the pipeline.
+    const int W = 20;
+    const int H = 10;
+    buffer<short, 2> in_buf({W + 4, H + 4});
+    in_buf.translate(-2, -2);
+    buffer<short, 2> out_buf({W, H});
+
+    init_random(in_buf);
+    out_buf.allocate();
+
+    // Not having span(std::initializer_list<T>) is unfortunate.
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+
+    // Run the pipeline stages manually to get the reference result.
+    buffer<short, 2> ref_intm2({W + 4, H + 4});
+    buffer<short, 2> ref_intm3({W, H});
+    buffer<short, 2> ref_intm4({W, H});
+    buffer<short, 2> ref_out({W, H});
+    ref_intm2.translate(-2, -2);
+    ref_intm2.allocate();
+    ref_intm3.allocate();
+    ref_intm4.allocate();
+    ref_out.allocate();
+
+    multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
+    sum3x3<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
+    sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+    subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+      }
+    }
+  }
+}
+
+TEST(pipeline, Y) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in1", sizeof(short), 2);
-  auto intm2 = buffer_expr::make(ctx, "intm2", sizeof(short), 2);
-  auto intm3 = buffer_expr::make(ctx, "intm3", sizeof(short), 2);
-  auto intm4 = buffer_expr::make(ctx, "intm4", sizeof(short), 2);
-  auto out = buffer_expr::make(ctx, "out", sizeof(short), 2);
+  auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+  auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
+  auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
 
   var x(ctx, "x");
   var y(ctx, "y");
 
   func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func stencil1 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
-  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
-  func diff =
-      func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+  func add1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
+  func add2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
 
-  diff.loops({{y, 1}});
+  add2.loops({{y, 1}});
 
-  pipeline p = build_pipeline(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {intm3, intm4});
 
   // Run the pipeline.
-  const int W = 20;
-  const int H = 10;
-  buffer<short, 2> in_buf({W + 4, H + 4});
-  in_buf.translate(-2, -2);
-  buffer<short, 2> out_buf({W, H});
+  const int W = 32;
+  const int H = 32;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> intm3_buf({W, H});
+  buffer<short, 2> intm4_buf({W, H});
 
   init_random(in_buf);
-  out_buf.allocate();
+  intm3_buf.allocate();
+  intm4_buf.allocate();
 
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
+  const raw_buffer* outputs[] = {&intm3_buf, &intm4_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   // Run the pipeline stages manually to get the reference result.
-  buffer<short, 2> ref_intm2({W + 4, H + 4});
+  buffer<short, 2> ref_intm2({W, H});
   buffer<short, 2> ref_intm3({W, H});
   buffer<short, 2> ref_intm4({W, H});
-  buffer<short, 2> ref_out({W, H});
-  ref_intm2.translate(-2, -2);
+
   ref_intm2.allocate();
   ref_intm3.allocate();
   ref_intm4.allocate();
-  ref_out.allocate();
 
   multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
-  sum3x3<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
-  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+  add_1<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
+  add_1<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+      ASSERT_EQ(ref_intm3(x, y), intm3_buf(x, y));
+    }
+  }
+
+  for (int y = 0; y < W; ++y) {
+    for (int x = 0; x < H; ++x) {
+      ASSERT_EQ(ref_intm4(x, y), intm4_buf(x, y));
     }
   }
 
   check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
-
 }  // namespace slinky

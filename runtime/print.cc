@@ -8,44 +8,69 @@
 
 namespace slinky {
 
-std::ostream& operator<<(std::ostream& os, memory_type type) {
+std::string to_string(memory_type type) {
   switch (type) {
-  case memory_type::stack: return os << "stack";
-  case memory_type::heap: return os << "heap";
-  default: return os << "<invalid memory_type>";
+  case memory_type::stack: return "stack";
+  case memory_type::heap: return "heap";
+  default: return "<invalid memory_type>";
   }
+}
+
+std::string to_string(loop_mode mode) {
+  switch (mode) {
+  case loop_mode::serial: return "serial";
+  case loop_mode::parallel: return "parallel";
+  default: return "<invalid loop_mode>";
+  }
+}
+
+std::string to_string(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::positive_infinity: return "oo";
+  case intrinsic::negative_infinity: return "-oo";
+  case intrinsic::indeterminate: return "indeterminate";
+  case intrinsic::abs: return "abs";
+  case intrinsic::buffer_rank: return "buffer_rank";
+  case intrinsic::buffer_elem_size: return "buffer_elem_size";
+  case intrinsic::buffer_size_bytes: return "buffer_size_bytes";
+  case intrinsic::buffer_min: return "buffer_min";
+  case intrinsic::buffer_max: return "buffer_max";
+  case intrinsic::buffer_stride: return "buffer_stride";
+  case intrinsic::buffer_fold_factor: return "buffer_fold_factor";
+  case intrinsic::buffer_extent: return "buffer_extent";
+  case intrinsic::buffer_at: return "buffer_at";
+
+  default: return "<invalid intrinsic>";
+  }
+}
+
+std::ostream& operator<<(std::ostream& os, memory_type type) {
+  return os << to_string(type);
 }
 
 std::ostream& operator<<(std::ostream& os, loop_mode mode) {
-  switch (mode) {
-  case loop_mode::serial: return os << "serial";
-  case loop_mode::parallel: return os << "parallel";
-  default: return os << "<invalid loop_mode>";
-  }
+  return os << to_string(mode);
 }
 
 std::ostream& operator<<(std::ostream& os, intrinsic fn) {
-  switch (fn) {
-  case intrinsic::positive_infinity: return os << "oo";
-  case intrinsic::negative_infinity: return os << "-oo";
-  case intrinsic::indeterminate: return os << "indeterminate";
-  case intrinsic::abs: return os << "abs";
-  case intrinsic::buffer_rank: return os << "buffer_rank";
-  case intrinsic::buffer_elem_size: return os << "buffer_elem_size";
-  case intrinsic::buffer_size_bytes: return os << "buffer_size_bytes";
-  case intrinsic::buffer_min: return os << "buffer_min";
-  case intrinsic::buffer_max: return os << "buffer_max";
-  case intrinsic::buffer_stride: return os << "buffer_stride";
-  case intrinsic::buffer_fold_factor: return os << "buffer_fold_factor";
-  case intrinsic::buffer_extent: return os << "buffer_extent";
-  case intrinsic::buffer_at: return os << "buffer_at";
-
-  default: return os << "<invalid intrinsic>";
-  }
+  return os << to_string(fn);
 }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
+}
+
+std::ostream& operator<<(std::ostream& os, const box_expr& b) {
+  os << "{" ;
+  for (std::size_t i = 0; i < b.size(); ++i) {
+    os << b[i];
+    if (i + 1 < b.size()) {
+      os << ", ";
+    }
+  }
+  os << "}";
+
+  return os;
 }
 
 class printer : public node_visitor {
