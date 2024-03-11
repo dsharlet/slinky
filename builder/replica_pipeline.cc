@@ -496,14 +496,14 @@ struct rph_handler {
   const std::vector<var>& fout_dims;
 
   std::vector<index_t> in_pos, out_pos;
-  eval_context eval_values;
+  eval_context eval_ctx;
 
   void run() {
     out_pos.resize(output->rank);
 
     assert(inputs.size() == fins.size());
     for (std::size_t i = 0; i < fins.size(); i++) {
-      eval_values[fins[i].sym()] = reinterpret_cast<index_t>(inputs[i]);
+      eval_ctx[fins[i].sym()] = reinterpret_cast<index_t>(inputs[i]);
     }
 
     handler((int)output->rank - 1);
@@ -519,7 +519,7 @@ struct rph_handler {
 
     assert(fout_dims.size() == output->rank);
     for (std::size_t d = 0; d < output->rank; d++) {
-      eval_values[fout_dims[d]] = out_pos[d];
+      eval_ctx[fout_dims[d]] = out_pos[d];
     }
 
     char* out_pos_addr = reinterpret_cast<char*>(output->address_at(out_pos));
@@ -539,8 +539,8 @@ struct rph_handler {
   std::vector<interval> calc_input_required(const buffer<const void>* input, const box_expr& fin_bounds) {
     std::vector<interval> input_required(fin_bounds.size());
     for (std::size_t d = 0; d < fin_bounds.size(); d++) {
-      input_required[d].min = evaluate(fin_bounds[d].min, eval_values);
-      input_required[d].max = evaluate(fin_bounds[d].max, eval_values);
+      input_required[d].min = evaluate(fin_bounds[d].min, eval_ctx);
+      input_required[d].max = evaluate(fin_bounds[d].max, eval_ctx);
       assert(input_required[d].min >= input->dims[d].min());
       assert(input_required[d].max <= input->dims[d].max());
     }
