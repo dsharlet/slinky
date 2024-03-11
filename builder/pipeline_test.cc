@@ -1,15 +1,60 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
+#include <fstream>
 
 #include "builder/pipeline.h"
+#include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
 #include "runtime/visualize.h"
+#include "tools/cpp/runfiles/runfiles.h"
 
 namespace slinky {
+
+std::string read_entire_file(const std::string& pathname) {
+  std::ifstream f(pathname, std::ios::in | std::ios::binary);
+  std::string result;
+
+  f.seekg(0, std::ifstream::end);
+  size_t size = f.tellg();
+  result.resize(size);
+  f.seekg(0, std::ifstream::beg);
+  f.read(result.data(), result.size());
+  if (!f.good()) {
+    std::cerr << "Unable to read file: " << pathname;
+    std::abort();
+  }
+  f.close();
+  return result;
+}
+
+std::string read_entire_runfile(const std::string& rlocation) {
+  using bazel::tools::cpp::runfiles::Runfiles;
+
+  std::string error;
+  std::unique_ptr<Runfiles> runfiles;
+  runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
+  if (runfiles == nullptr) {
+    std::cerr << "Can't find runfile directory: " << error;
+    std::abort();
+  }
+
+  auto pathname = runfiles->Rlocation(rlocation);
+  return read_entire_file(pathname);
+}
+
+std::string get_replica_golden() {
+  static std::string golden = read_entire_runfile("_main/builder/replica_pipeline_test.cc");
+  return golden;
+}
+
+void check_replica_pipeline(const std::string& replica_text) {
+  size_t pos = get_replica_golden().find(replica_text);
+  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
+}
 
 std::string viz_dir() {
   const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
@@ -463,6 +508,10 @@ TEST(pipeline, matmuls) {
           ASSERT_EQ(ref_abc(j, i), abc_buf(j, i));
         }
       }
+
+      if (split == 1 && lm == loop_mode::serial) {
+        check_replica_pipeline(define_replica_pipeline(ctx, {a, b, c}, {abc}));
+      }
     }
   }
 }
@@ -525,6 +574,8 @@ TEST(pipeline, pyramid) {
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
+
+  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
 
 TEST(pipeline, stencil) {
@@ -900,6 +951,10 @@ TEST(pipeline, multiple_outputs) {
         }
         ASSERT_EQ(sum_xy_buf(z), expected_xy);
       }
+
+      if (split == 1 && lm == loop_mode::serial) {
+        check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
+      }
     }
   }
 }
@@ -978,6 +1033,8 @@ TEST(pipeline, unrelated) {
         func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
     stencil1.loops({{y, 2}});
+
+    check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out1, out2}));
 
     return build_pipeline(ctx, {in1, in2}, {out1, out2});
   };
@@ -1142,6 +1199,11 @@ TEST(pipeline, concatenated_result) {
 
     // Also visualize this pipeline.
     visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
+
+    if (no_alias_buffers == true) {
+      check_replica_pipeline(
+          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}));
+    }
   }
 }
 
@@ -1191,6 +1253,8 @@ TEST(pipeline, stacked_result) {
       ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y) + 1);
     }
   }
+
+  check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
 TEST(pipeline, padded_stencil) {
@@ -1261,6 +1325,10 @@ TEST(pipeline, padded_stencil) {
 
     // Also visualize this pipeline.
     visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+
+    if (schedule == 1) {
+      check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+    }
   }
 }
 
@@ -1536,5 +1604,7 @@ TEST(pipeline, Y) {
       ASSERT_EQ(ref_intm4(x, y), intm4_buf(x, y));
     }
   }
+
+  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {intm3, intm4}));
 }
 }  // namespace slinky
