@@ -25,6 +25,13 @@ std::ostream& operator<<(std::ostream& os, loop_mode mode);
 
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);
 
+// It's not legal to overload std::to_string(), or anything else in std;
+// intended usage here is to do `using std::to_string;` followed by naked
+// to_string() calls.
+std::string to_string(intrinsic fn);
+std::string to_string(memory_type type);
+std::string to_string(loop_mode mode);
+
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_PRINT_H
