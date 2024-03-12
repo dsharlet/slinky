@@ -3,6 +3,7 @@
 #include <cassert>
 #include <fstream>
 
+#include "builder/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
@@ -10,7 +11,6 @@
 #include "runtime/pipeline.h"
 #include "runtime/thread_pool.h"
 #include "runtime/visualize.h"
-#include "tools/cpp/runfiles/runfiles.h"
 
 namespace slinky {
 
@@ -32,22 +32,11 @@ std::string read_entire_file(const std::string& pathname) {
 }
 
 std::string read_entire_runfile(const std::string& rlocation) {
-  using bazel::tools::cpp::runfiles::Runfiles;
-
-  std::string error;
-  std::unique_ptr<Runfiles> runfiles;
-  runfiles.reset(Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error));
-  if (runfiles == nullptr) {
-    std::cerr << "Can't find runfile directory: " << error;
-    std::abort();
-  }
-
-  auto pathname = runfiles->Rlocation(rlocation);
-  return read_entire_file(pathname);
+  return read_entire_file(get_bazel_file_path(rlocation));
 }
 
 std::string get_replica_golden() {
-  static std::string golden = read_entire_runfile("_main/builder/replica_pipeline_test.cc");
+  static std::string golden = read_entire_runfile("builder/replica_pipeline_test.cc");
   return golden;
 }
 

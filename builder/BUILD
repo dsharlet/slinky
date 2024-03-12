@@ -75,7 +75,10 @@ cc_test(
 
 cc_test(
     name = "pipeline_test",
-    srcs = ["pipeline_test.cc"],
+    srcs = [
+        "pipeline_test.cc", 
+        "bazel_util.h",
+    ],
     data = ["replica_pipeline_test.cc"],
     deps = [
         ":builder",
