@@ -91,6 +91,7 @@ intm = allocate(heap, 4, {
 ```
 
 Observations:
+
 - The loop steps by 8 elements at a time, as we specified in the schedule.
 - Within the loop, we call `add` followed by `mul`, inside crops that restrict the computations to (up to) 8 elements at a time (this pipeline can handle any number of output elements, it is not limited to be a multiple of 8).
 - The allocation is "folded" by 8, limiting the size of the allocation to only what is needed for each loop iteration.
@@ -132,6 +133,7 @@ add.compute_at({&stencil, y});
 ```
 
 This means:
+
 - We want a loop over `y`, instead of just passing the whole 2D buffer to `sum3x3`.
 - We want to compute add at that same loop over y to compute `stencil`.
 
