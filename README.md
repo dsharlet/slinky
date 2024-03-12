@@ -1,22 +1,22 @@
 # Slinky
 [This project](https://en.wikipedia.org/wiki/Slinky) aims to provide a lightweight runtime to semi-automatically optimize data flow pipelines for locality.
-Pipelines are specified as graphs of operators processing data between buffers.
-After a pipeline is specified, Slinky will break the buffers into smaller chunks, and call the operator implementation to produce these chunks.
+Pipelines are specified as graphs of operators processing data between multi-dimensional buffers.
+Slinky then allows the user to describe transformations to the pipeline that improve memory locality and reduce memory usage by executing small crops of operator outputs.
 
 Slinky is heavily inspired and motivated by [Halide](https://halide-lang.org).
 It can be described by starting with Halide, and making the following changes:
 
-- Slinky is a runtime, not a compiler.
-- All operations that read and write buffers are user defined callbacks (except copies and other data movement operations).
-- Bounds for each operation are manually provided instead of inferred (as in Halide).
+- Slinky is a runtime interpreter, not a compiler.
+- All operations that read and write buffers are user defined callbacks (except copies).
+- Bounds for each operation are manually provided instead of inferred as in Halide.
 
 Because we are not responsible for generating the inner loop code like Halide, scheduling is a dramatically simpler problem.
 Without needing to worry about instruction selection, register pressure, and so on, the cost function for scheduling is a much more straightforward function of high level memory access patterns.
 
-The ultimate goal of Slinky is to make automatic scheduling of data flow pipelines reliable and fast enough to be used as a just-in-time optimization engine for runtimes executing suitable data flow pipelines.
+The ultimate goal of Slinky is to make automatic scheduling of pipelines reliable and fast enough to implement a just-in-time optimization engine at runtime.
 
 ## Graph description
-The pipelines are described by operators called `func`s and connected by `buffer_expr`s.
+Pipelines are described by operators called `func`s and connected by `buffer_expr`s.
 `func` has a list of `input` and `output` objects.
 A `func` can have multiple `output`s, but all outputs must be indexed by one set of dimensions for the `func`.
 An `input` or `output` is associated with a `buffer_expr`.
@@ -39,8 +39,8 @@ auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
 
 var x(ctx, "x");
 
-func mul = func::make<const int, int>(multiply_2<int>, {in, {point(x)}}, {intm, {x}});
-func add = func::make<const int, int>(add_1<int>, {intm, {point(x)}}, {out, {x}});
+func mul = func::make(multiply_2, {in, {point(x)}}, {intm, {x}});
+func add = func::make(add_1, {intm, {point(x)}}, {out, {x}});
 
 pipeline p = build_pipeline(ctx, {in}, {out});
 ```
@@ -64,9 +64,36 @@ This allows targeting a chunk size that fits in the cache, but amortizes the ove
 This can be implemented with the following schedule:
 
 ```c++
+const int chunk_size = 8;
 add.loops({x, chunk_size});
 mul.compute_at({&stencil, x});
 ```
+
+In this case, the `mul.compute_at` specification is only for illustration purposes, it is equivalent to the default behavior, which is to compute funcs at the innermost location that does not imply redundant compute.
+
+This will result in a slinky program that looks like this:
+
+```c++
+intm = allocate(heap, 4, {
+  {[buffer_min(out, 0), buffer_max(out, 0)], 4, 8}
+}) {
+ intm.uncropped = clone_buffer(intm) {
+  serial loop(x in [buffer_min(out, 0), buffer_max(out, 0)], 8) {
+   crop_dim(intm, 0, [x, min((x + 7), buffer_max(out, 0))]) {
+    call(add, {in}, {intm})
+   }
+   crop_dim(out, 0, [x, (x + 7)]) {
+    call(mul, {intm.uncropped}, {out})
+   }
+  }
+ }
+}
+```
+
+Observations:
+- The loop steps by 8 elements at a time, as we specified in the schedule.
+- Within the loop, we call `add` followed by `mul`, inside crops that restrict the computations to (up to) 8 elements at a time (this pipeline can handle any number of output elements, it is not limited to be a multiple of 8).
+- The allocation is "folded" by 8, limiting the size of the allocation to only what is needed for each loop iteration.
 
 ### Stencil example
 Here is an example of a pipeline that has a stage that is a stencil, such as a convolution:
@@ -82,9 +109,9 @@ auto intm = buffer_expr::make(ctx, "intm", sizeof(short), 2);
 var x(ctx, "x");
 var y(ctx, "y");
 
-func add = func::make<const short, short>(add_1<short>, {in, {point(x), point(y)}}, {intm, {x, y}});
+func add = func::make(add_1, {in, {point(x), point(y)}}, {intm, {x, y}});
 func stencil =
-    func::make<const short, short>(sum3x3<short>, {intm, {{x - 1, x + 1}, {y - 1, y + 1}}}, {out, {x, y}});
+    func::make(sum3x3, {intm, {{x - 1, x + 1}, {y - 1, y + 1}}}, {out, {x, y}});
 
 pipeline p = build_pipeline(ctx, {in}, {out});
 ```
@@ -132,7 +159,7 @@ This program does the following:
 - Runs a loop over `y` starting from 2 rows before the first output row, calling `add` and `sum3x3` at each `y`.
 - The calls are cropped to the line to be produced on the current iteration `y`. `sum3x3` reads rows `y-1`, `y`, and `y+1` of `intm`, so we need to produce `y+1` of `intm` before producing `y` of `out`.
 - The `intm` buffer persists between loop iterations, so we only need to compute the newly required line `y+1` of `intm` on each iteration, lines `y-1` and `y` were already produced on previous iterations.
-- Because we started the loop two iterations of `y` early, lines `y-1` and `y` have already been produced for the first value of `y` of `out`. For these two "warmup" iterations, the `sum3x3` call's crop of `out` will be an empty buffer.
+- Because we started the loop two iterations of `y` early, lines `y-1` and `y` have already been produced for the first value of `y` of `out`. For these two "warmup" iterations, the `sum3x3` call's crop of `out` will be an empty buffer (because crops clamp to the original bounds).
 - Because we only need lines `[y-1,y+1]`, we can "fold" the storage of `intm`, by rewriting all accesses `y` to be `y%3`.
 
 ### Matrix multiply example
