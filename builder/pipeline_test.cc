@@ -35,8 +35,13 @@ std::string read_entire_runfile(const std::string& rlocation) {
   return read_entire_file(get_bazel_file_path(rlocation));
 }
 
+std::string remove_windows_newlines(std::string s) {
+  s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
+  return s;
+}
+
 std::string get_replica_golden() {
-  static std::string golden = read_entire_runfile("builder/replica_pipeline_test.cc");
+  static std::string golden = remove_windows_newlines(read_entire_runfile("builder/replica_pipeline_test.cc"));
   return golden;
 }
 
