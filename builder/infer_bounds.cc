@@ -84,6 +84,8 @@ public:
   symbol_map<box_expr> infer;
   symbol_map<box_expr> crops;
 
+  std::vector<std::pair<symbol_id, std::vector<dim_expr>>> inferred;
+
   // A map of buffers that should be substituted in for consumers.
   symbol_map<symbol_id> consumer_subs;
 
@@ -95,55 +97,40 @@ public:
     auto set_bounds = set_value_in_scope(infer, op->sym, box_expr());
     stmt body = mutate(op->body);
     body = clone_buffer::make(uncropped, op->sym, body);
-    // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
-    // (This is a little janky because the buffers they are loading from don't exist where they are used.)
-    // Here, we are building a list of replacements for those expressions. This way, if the user did something
-    // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
-    // inferred value.
-    // TODO: Is this actually a good design...?
-    std::vector<std::pair<expr, expr>> substitutions;
+
+    std::vector<dim_expr> shape_dims;
+    std::vector<dim_expr> alloc_dims;
 
     expr alloc_var = variable::make(op->sym);
-
+    
     box_expr& bounds = *infer[op->sym];
     expr stride = static_cast<index_t>(op->elem_size);
     for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
       const interval_expr& bounds_d = bounds[d];
 
-      substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
-      substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
-      substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
+      shape_dims.push_back({bounds_d});
+      alloc_dims.push_back({buffer_bounds(alloc_var, d), stride});
 
       // We didn't initially set up the buffer with an extent, but the user might have used it.
-      expr extent = bounds_d.extent();
-      substitutions.emplace_back(buffer_extent(alloc_var, d), extent);
+      expr extent = buffer_extent(alloc_var, d);
       stride *= min(extent, buffer_fold_factor(alloc_var, d));
     }
-    std::vector<dim_expr> dims = recursive_substitute(op->dims, substitutions);
 
     // Check that the actual bounds we generated are bigger than the inferred bounds (in case the
     // user set the bounds to something too small).
     std::vector<stmt> checks;
-    for (std::size_t d = 0; d < dims.size(); ++d) {
+    for (std::size_t d = 0; d < shape_dims.size(); ++d) {
       if (d < bounds.size()) {
-        checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-        checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+        checks.push_back(check::make(shape_dims[d].min() <= bounds[d].min));
+        checks.push_back(check::make(shape_dims[d].max() >= bounds[d].max));
       }
     }
 
-    // Substitute the allocation bounds in any remaining inferred bounds.
-    for (std::optional<box_expr>& i : infer) {
-      if (!i) continue;
-      for (interval_expr& j : *i) {
-        for (const auto& k : substitutions) {
-          j.min = substitute(j.min, k.first, k.second);
-          j.max = substitute(j.max, k.first, k.second);
-        }
-      }
-    }
+    inferred.push_back({op->sym, std::move(shape_dims)});
 
-    stmt s = allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body);
-    set_result(block::make(std::move(checks), std::move(s)));
+    stmt s = allocate::make(op->sym, op->storage, op->elem_size, std::move(alloc_dims), body);
+    s = block::make(std::move(checks), std::move(s));
+    set_result(std::move(s));
   }
 
   void visit(const call_stmt* op) override {
@@ -559,7 +546,12 @@ stmt infer_bounds_impl(const stmt& s, node_context& ctx, const std::vector<symbo
       checks.push_back(check::make((*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)));
     }
   }
-  return block::make(std::move(checks), std::move(result));
+  result = block::make(std::move(checks), std::move(result));
+
+  for (auto i = infer.inferred.begin(); i != infer.inferred.end(); ++i) {
+    result = make_buffer::make(i->first, expr(), expr(), i->second, result);
+  }
+  return result;
 }
 
 }  // namespace
