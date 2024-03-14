@@ -500,8 +500,8 @@ public:
   // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
   // if they came from outside the body).
   static void clear_shadowed_bounds(symbol_id sym, interval_expr& bounds) {
-    if (depends_on(bounds.min, sym).buffer) bounds.min = expr();
-    if (depends_on(bounds.max, sym).buffer) bounds.max = expr();
+    if (depends_on(bounds.min, sym).buffer_meta_read) bounds.min = expr();
+    if (depends_on(bounds.max, sym).buffer_meta_read) bounds.max = expr();
   }
   static void clear_shadowed_bounds(symbol_id sym, box_expr& bounds) {
     for (interval_expr& i : bounds) {
@@ -978,9 +978,8 @@ public:
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (!depends_on(body, op->src).any()) {
-      // We didn't use the original buffer. We can just use that instead.
-      // TODO: We could do this even if the buffer is used, as long as it is not mutated.
+    } else if (!depends_on(body, op->src).buffer_meta_mutated) {
+      // We didn't mutate the original buffer. We can just use that instead.
       set_result(substitute(body, op->sym, variable::make(op->src)));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;

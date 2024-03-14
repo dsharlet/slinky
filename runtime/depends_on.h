@@ -10,8 +10,6 @@ struct depends_on_result {
   // True if the node depends on the symbol as a variable.
   bool var = false;
 
-  // The remaining fields all indicate the symbol is used as a buffer.
-  bool buffer = false;
   // True if the buffer is used as a call input or output, respectively.
   bool buffer_input = false;
   bool buffer_output = false;
@@ -19,13 +17,21 @@ struct depends_on_result {
   bool buffer_src = false;
   bool buffer_dst = false;
 
+  // True if the buffer metadata is read or written.
+  bool buffer_meta_read = false;
+  bool buffer_meta_mutated = false;
+
   // How many references there are.
   int ref_count = 0;
 
   // True if any reference is in a loop.
   bool used_in_loop = false;
 
-  bool any() const { return var || buffer; }
+  bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst; }
+  bool buffer_meta() const { return buffer_meta_read || buffer_meta_mutated; }
+  bool buffer() const { return buffer_data() || buffer_meta(); }
+
+  bool any() const { return var || buffer(); }
 };
 
 // Check if the node depends on a symbol or set of symbols.
