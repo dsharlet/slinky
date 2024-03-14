@@ -500,8 +500,8 @@ public:
   // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
   // if they came from outside the body).
   static void clear_shadowed_bounds(symbol_id sym, interval_expr& bounds) {
-    if (depends_on(bounds.min, sym).buffer) bounds.min = expr();
-    if (depends_on(bounds.max, sym).buffer) bounds.max = expr();
+    if (depends_on(bounds.min, sym).buffer_meta_read) bounds.min = expr();
+    if (depends_on(bounds.max, sym).buffer_meta_read) bounds.max = expr();
   }
   static void clear_shadowed_bounds(symbol_id sym, box_expr& bounds) {
     for (interval_expr& i : bounds) {

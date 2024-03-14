@@ -38,7 +38,7 @@ void dump_context_for_expr(
       } else {
         s << "  " << sym << " = <>" << std::endl;
       }
-    } else if (!deps_of.defined() || deps.buffer) {
+    } else if (!deps_of.defined() || deps.buffer_meta_read) {
       if (ctx.contains(i)) {
         const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx.lookup(i));
         s << "  " << sym << " = " << *buf << std::endl;
