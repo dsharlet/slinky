@@ -51,6 +51,7 @@ cc_test(
         ":runtime",
         "@googletest//:gtest_main",
     ],
+    size="small",
 )
 
 cc_test(
@@ -60,6 +61,7 @@ cc_test(
         ":runtime",
         "@googletest//:gtest_main",
     ],
+    size="small",
 )
 
 cc_test(
@@ -70,6 +72,7 @@ cc_test(
         ":thread_pool",
         "@googletest//:gtest_main",
     ],
+    size="small",
 )
 
 cc_test(
@@ -80,6 +83,7 @@ cc_test(
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=0.1s"],
+    size="small",
 )
 
 cc_test(
@@ -91,4 +95,5 @@ cc_test(
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=0.1s"],
+    size="small",
 )

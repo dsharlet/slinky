@@ -9,6 +9,7 @@ cc_test(
         "benchmark.h",
         "memcpy.cc", 
     ],
+    size="small",
 )
 
 cc_test(
@@ -21,4 +22,5 @@ cc_test(
         "//builder", 
         "//runtime",
     ],
+    size="small",
 )
