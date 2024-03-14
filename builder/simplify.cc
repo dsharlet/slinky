@@ -978,9 +978,8 @@ public:
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (!depends_on(body, op->src).any()) {
-      // We didn't use the original buffer. We can just use that instead.
-      // TODO: We could do this even if the buffer is used, as long as it is not mutated.
+    } else if (!depends_on(body, op->src).buffer_meta_mutated) {
+      // We didn't mutate the original buffer. We can just use that instead.
       set_result(substitute(body, op->sym, variable::make(op->src)));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
