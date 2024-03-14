@@ -51,6 +51,7 @@ cc_test(
         "@googletest//:gtest_main",
         "//runtime",
     ],
+    size="small",
 )
 
 cc_test(
@@ -61,6 +62,7 @@ cc_test(
         "@googletest//:gtest_main",
         "//runtime",
     ],
+    size="small",
 )
 
 cc_test(
@@ -71,6 +73,7 @@ cc_test(
         "@googletest//:gtest_main",
         "//runtime",
     ],
+    size="small",
 )
 
 cc_test(
@@ -89,6 +92,7 @@ cc_test(
         "//runtime:thread_pool",
         "//runtime:visualize",
     ],
+    size="small",
 )
 
 cc_test(
@@ -99,6 +103,7 @@ cc_test(
         ":replica_pipeline",
         "@googletest//:gtest_main",
     ],
+    size="small",
 )
 
 cc_test(
@@ -109,6 +114,7 @@ cc_test(
         "@googletest//:gtest_main",
         "//runtime",
     ],
+    size="small",
 )
 
 cc_test(
@@ -119,4 +125,5 @@ cc_test(
         "@googletest//:gtest_main",
         "//runtime",
     ],
+    size="small",
 )

@@ -23,6 +23,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v3
@@ -32,10 +33,10 @@ jobs:
       - name: Setup Cpp
         uses: aminya/setup-cpp@v1
         with:
-          gcc: '11'
+          compiler: llvm
 
       - name: Build and test
         run: bazel test --test_output=errors ...
         
       - name: Build and test with ASAN
-        run: bazel test --config=asan --test_output=errors ...
+        run: bazel test --config=asan --copt=-O1 --test_output=errors ...
