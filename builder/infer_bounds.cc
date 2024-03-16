@@ -154,31 +154,41 @@ public:
     set_result(block::make(std::move(checks), std::move(s)));
   }
 
-  void visit(const call_stmt* op) override {
-    // Record the bounds we currently have from the crops.
-    call_stmt::symbol_list new_inputs;
-    new_inputs.reserve(op->inputs.size());
-    for (symbol_id input : op->inputs) {
-      const std::optional<symbol_id>& sub = consumer_subs[input];
-      new_inputs.push_back(sub ? *sub : input);
-      std::optional<box_expr>& infer_i = infer[input];
-      const std::optional<box_expr>& crop_i = crops[input];
-      if (!infer_i || !crop_i) continue;
+  symbol_id propagate_bounds(symbol_id buf) {
+    const std::optional<symbol_id>& sub = consumer_subs[buf];
+    std::optional<box_expr>& infer_i = infer[buf];
+    const std::optional<box_expr>& crop_i = crops[buf];
+    if (infer_i && crop_i) {
       if (infer_i->empty()) {
         infer_i = crop_i;
       } else {
         *infer_i = *infer_i | *crop_i;
       }
     }
+    return sub ? *sub : buf;
+  }
+
+  void visit(const call_stmt* op) override {
+    // Record the bounds we currently have from the crops.
+    call_stmt::symbol_list new_inputs;
+    new_inputs.reserve(op->inputs.size());
+    for (symbol_id input : op->inputs) {
+      new_inputs.push_back(propagate_bounds(input));
+    }
     set_result(call_stmt::make(op->target, std::move(new_inputs), op->outputs, op->attrs));
   }
 
   void visit(const copy_stmt* op) override {
     // Record the bounds we currently have from the crops.
+    symbol_id src = op->src;
     if (infer.contains(op->src)) {
-      infer[op->src] = crops[op->src];
+      src = propagate_bounds(op->src);
     }
-    set_result(op);
+    if (src == op->src) {
+      set_result(op);
+    } else {
+      set_result(copy_stmt::make(src, op->src_x, op->dst, op->dst_x, op->padding));
+    }
   }
 
   void visit(const crop_buffer* op) override {
