@@ -291,7 +291,7 @@ TEST(copy, flip_y) {
     func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
 
     if (split > 0) {
-      //flip.loops({{y, split}});
+      flip.loops({{y, split}});
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
@@ -337,7 +337,7 @@ TEST(copy, upsample_y) {
     func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
 
     if (split > 0) {
-      //upsample.loops({{y, split}});
+      upsample.loops({{y, split}});
     }
 
     pipeline p = build_pipeline(ctx, {in}, {out});
