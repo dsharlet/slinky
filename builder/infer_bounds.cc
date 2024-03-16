@@ -34,12 +34,20 @@ T& vector_at(std::optional<std::vector<T>>& v, std::size_t n) {
   return vector_at(*v, n);
 }
 
-void merge_crop(std::optional<box_expr>& bounds, int dim, const interval_expr& new_bounds) {
-  if (new_bounds.min.defined()) {
-    vector_at(bounds, dim).min = new_bounds.min;
+void merge_crop(std::optional<box_expr>& bounds, int d, const interval_expr& new_bounds) {
+  // Crops produce the intersection of the old bounds and the new bounds.
+  // TODO: This is equivalent to vector_at(bounds, d) &= new_bounds, except for simplification, which makes
+  // a huge difference in the cost of this.
+  interval_expr& bounds_d = vector_at(bounds, d);
+  if (bounds_d.min.defined() && new_bounds.min.defined()) {
+    bounds_d.min = simplify(static_cast<const class max*>(nullptr), bounds_d.min, new_bounds.min);
+  } else if (new_bounds.min.defined()) {
+    bounds_d.min = new_bounds.min;
   }
-  if (new_bounds.max.defined()) {
-    vector_at(bounds, dim).max = new_bounds.max;
+  if (bounds_d.max.defined() && new_bounds.max.defined()) {
+    bounds_d.max = simplify(static_cast<const class min*>(nullptr), bounds_d.max, new_bounds.max);
+  } else if (new_bounds.max.defined()) {
+    bounds_d.max = new_bounds.max;
   }
 }
 
