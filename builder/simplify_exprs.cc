@@ -63,8 +63,10 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(y + c0, min(x, y)), min(x, min(y, y + c0))) ||
       r.rewrite(min(y, min(x, y + c0)), min(x, min(y, y + c0))) ||
       r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
+      r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
       r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
       r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
+      r.rewrite(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
       r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
       r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
       r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
@@ -134,8 +136,10 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(y + c0, max(x, y)), max(x, max(y, y + c0))) ||
       r.rewrite(max(y, max(x, y + c0)), max(x, max(y, y + c0))) ||
       r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
+      r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
       r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
       r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
+      r.rewrite(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
       r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
       r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
       r.rewrite(max(x / c0, y / c0), max(x, y) / c0, eval(c0 > 0)) ||
