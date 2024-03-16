@@ -105,39 +105,19 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_binary<T, A, B>
   return T::static_type;
 }
 
-template <typename T>
-SLINKY_ALWAYS_INLINE inline int commutative_variants(const T&) {
-  return 1;
-}
-
 template <typename T, typename A, typename B>
-bool could_commute(const pattern_binary<T, A, B>& p) {
+int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
+  int this_bit = -1;
   if (T::commutative) {
     node_type ta = pattern_type(p.a);
     node_type tb = pattern_type(p.b);
     if (ta == node_type::none || tb == node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
-      return true;
+      // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
+      this_bit = ctx.variant_bits++;
     }
   }
-  return false;
-}
-
-template <typename T, typename A, typename B>
-int commutative_variants(const pattern_binary<T, A, B>& p) {
-  int child_variants = commutative_variants(p.a) * commutative_variants(p.b);
-  return could_commute(p) ? child_variants * 2 : child_variants;
-}
-
-template <typename T, typename A, typename B>
-int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
-  if (could_commute(p)) {
-    // This is a commutative operation and we can't canonicalize the ordering.
-    // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
-    return ctx.variant_bits++;
-  } else {
-    return -1;
-  }
+  return this_bit;
 }
 
 template <typename T, typename A, typename B>
@@ -184,11 +164,6 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_unary<T, A>&) {
 }
 
 template <typename T, typename A>
-int commutative_variants(const pattern_unary<T, A>& p) {
-  return commutative_variants(p.a);
-}
-
-template <typename T, typename A>
 bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
   if (const T* t = x.as<T>()) {
     return match(p.a, t->a, ctx);
@@ -230,11 +205,6 @@ SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_select<C, T, F>
 }
 
 template <typename C, typename T, typename F>
-int commutative_variants(const pattern_select<C, T, F>& p) {
-  return commutative_variants(p.c) * commutative_variants(p.t) * commutative_variants(p.f);
-}
-
-template <typename C, typename T, typename F>
 bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) {
   if (const class select* s = x.as<class select>()) {
     return match(p.c, s->condition, ctx) && match(p.t, s->true_value, ctx) && match(p.f, s->false_value, ctx);
@@ -264,16 +234,6 @@ public:
 template <typename... Args>
 SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_call<Args...>&) {
   return node_type::call;
-}
-
-template <typename... Args, std::size_t... Is>
-int commutative_variants(const std::tuple<Args...>& t, std::index_sequence<Is...>) {
-  return (... * commutative_variants(std::get<Is>(t)));
-}
-
-template <typename... Args>
-int commutative_variants(const pattern_call<Args...>& p) {
-  return commutative_variants(p.args, std::make_index_sequence<sizeof...(Args)>());
 }
 
 template <typename T, std::size_t... Is>
@@ -433,12 +393,16 @@ class base_rewriter {
 
   template <typename Pattern>
   bool variant_match(const Pattern& p, match_context& ctx) {
-    const int variants = commutative_variants(p);
-    for (int variant = 0; variant < variants; ++variant) {
+    for (int variant = 0;; ++variant) {
       memset(&ctx, 0, sizeof(ctx));
       ctx.variant = variant;
       if (match(p, x, ctx)) {
         return true;
+      }
+      // variant_bits *should* be constant across all variants. We're done when
+      // there are no more bits in the variant index to flip.
+      if (variant >= (1 << ctx.variant_bits)) {
+        break;
       }
     }
     return false;
