@@ -23,7 +23,7 @@ struct match_context {
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
 SLINKY_ALWAYS_INLINE inline index_t substitute(index_t p, const match_context&) { return p; }
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(index_t) { return node_type::constant; }
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(index_t) { return expr_node_type::constant; }
 
 class pattern_expr {
 public:
@@ -35,7 +35,7 @@ SLINKY_ALWAYS_INLINE inline bool match(const pattern_expr& p, const expr& x, mat
   return p.e.same_as(x);
 }
 SLINKY_ALWAYS_INLINE inline const expr& substitute(const pattern_expr& p, const match_context& ctx) { return p.e; }
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_expr& p) { return p.e.type(); }
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_expr& p) { return p.e.type(); }
 
 const pattern_expr& positive_infinity();
 const pattern_expr& negative_infinity();
@@ -46,7 +46,7 @@ public:
   int idx;
 };
 
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_wildcard&) { return node_type::none; }
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_wildcard&) { return expr_node_type::none; }
 
 inline bool match(const pattern_wildcard& p, const expr& x, match_context& ctx) {
   if (ctx.vars[p.idx]) {
@@ -70,7 +70,7 @@ public:
   int idx;
 };
 
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_constant&) { return node_type::constant; }
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_constant&) { return expr_node_type::constant; }
 
 inline bool match(const pattern_constant& p, const expr& x, match_context& ctx) {
   if (const constant* c = x.as<constant>()) {
@@ -101,7 +101,7 @@ public:
 };
 
 template <typename T, typename A, typename B>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_binary<T, A, B>&) {
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_binary<T, A, B>&) {
   return T::static_type;
 }
 
@@ -109,9 +109,9 @@ template <typename T, typename A, typename B>
 int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
-    node_type ta = pattern_type(p.a);
-    node_type tb = pattern_type(p.b);
-    if (ta == node_type::none || tb == node_type::none || ta == tb) {
+    expr_node_type ta = pattern_type(p.a);
+    expr_node_type tb = pattern_type(p.b);
+    if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
       this_bit = ctx.variant_bits++;
@@ -159,7 +159,7 @@ public:
 };
 
 template <typename T, typename A>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_unary<T, A>&) {
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_unary<T, A>&) {
   return T::static_type;
 }
 
@@ -200,8 +200,8 @@ public:
 };
 
 template <typename C, typename T, typename F>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_select<C, T, F>&) {
-  return node_type::select;
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_select<C, T, F>&) {
+  return expr_node_type::select;
 }
 
 template <typename C, typename T, typename F>
@@ -232,8 +232,8 @@ public:
 };
 
 template <typename... Args>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const pattern_call<Args...>&) {
-  return node_type::call;
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_call<Args...>&) {
+  return expr_node_type::call;
 }
 
 template <typename T, std::size_t... Is>
@@ -286,8 +286,8 @@ public:
 };
 
 template <typename T>
-SLINKY_ALWAYS_INLINE inline node_type pattern_type(const replacement_eval<T>&) {
-  return node_type::call;
+SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const replacement_eval<T>&) {
+  return expr_node_type::call;
 }
 
 template <typename T>

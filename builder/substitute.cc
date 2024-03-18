@@ -42,10 +42,10 @@ public:
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
   void visit(const base_expr_node* op) {
     switch (op->type) {
-    case node_type::variable: visit(reinterpret_cast<const variable*>(op)); return;
-    case node_type::add: visit(reinterpret_cast<const add*>(op)); return;
-    case node_type::min: visit(reinterpret_cast<const class min*>(op)); return;
-    case node_type::max: visit(reinterpret_cast<const class max*>(op)); return;
+    case expr_node_type::variable: visit(reinterpret_cast<const variable*>(op)); return;
+    case expr_node_type::add: visit(reinterpret_cast<const add*>(op)); return;
+    case expr_node_type::min: visit(reinterpret_cast<const class min*>(op)); return;
+    case expr_node_type::max: visit(reinterpret_cast<const class max*>(op)); return;
     default: op->accept(this);
     }
   }
@@ -57,7 +57,7 @@ public:
       match = -1;
     } else if (!op) {
       match = 1;
-    } else if (matches && op->type == node_type::variable) {
+    } else if (matches && op->type == expr_node_type::variable) {
       // When we are matching with variables as wildcards, the type doesn't need to match.
       self_expr = e;
       visit(reinterpret_cast<const variable*>(op));

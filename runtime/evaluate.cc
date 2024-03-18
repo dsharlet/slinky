@@ -62,18 +62,18 @@ public:
   // Skip the visitor pattern (two virtual function calls) for some frequently used node types.
   void visit(const expr& op) {
     switch (op.type()) {
-    case node_type::variable: visit(reinterpret_cast<const variable*>(op.get())); return;
-    case node_type::constant: visit(reinterpret_cast<const constant*>(op.get())); return;
+    case expr_node_type::variable: visit(reinterpret_cast<const variable*>(op.get())); return;
+    case expr_node_type::constant: visit(reinterpret_cast<const constant*>(op.get())); return;
     default: op.accept(this);
     }
   }
 
   void visit(const stmt& op) {
     switch (op.type()) {
-    // case node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(op.get())); return;
-    // case node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(op.get())); return;
-    // case node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(op.get())); return;
-    // case node_type::block: visit(reinterpret_cast<const block*>(op.get())); return;
+    // case stmt_node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(op.get())); return;
+    // case stmt_node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(op.get())); return;
+    // case stmt_node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(op.get())); return;
+    // case stmt_node_type::block: visit(reinterpret_cast<const block*>(op.get())); return;
     default: op.accept(this);
     }
   }

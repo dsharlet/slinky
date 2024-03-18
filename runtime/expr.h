@@ -31,7 +31,7 @@ public:
   std::optional<symbol_id> lookup(const std::string& name) const;
 };
 
-enum class node_type {
+enum class expr_node_type {
   none,
 
   variable,
@@ -53,6 +53,10 @@ enum class node_type {
   select,
   call,
   constant,
+};
+
+enum class stmt_node_type {
+  none,
 
   call_stmt,
   copy_stmt,
@@ -105,13 +109,14 @@ class node_visitor;
 // `base_expr_node` is the base of `expr`s, and always produce an `index_t`-sized result when evaluated.
 // `base_stmt_node` is the base of `stmt`s, and do not produce any result.
 // Both are immutable.
-class base_node : public ref_counted<base_node> {
+template <typename NodeType>
+class base_node : public ref_counted<base_node<NodeType>> {
 public:
-  base_node(node_type type) : type(type) {}
+  base_node(NodeType type) : type(type) {}
 
   virtual void accept(node_visitor* v) const = 0;
 
-  node_type type;
+  NodeType type;
 
   template <typename T>
   const T* as() const {
@@ -125,15 +130,8 @@ public:
   static void destroy(base_node* p) { delete p; }
 };
 
-class base_expr_node : public base_node {
-public:
-  base_expr_node(node_type type) : base_node(type) {}
-};
-
-class base_stmt_node : public base_node {
-public:
-  base_stmt_node(node_type type) : base_node(type) {}
-};
+using base_expr_node = base_node<expr_node_type>;
+using base_stmt_node = base_node<stmt_node_type>;
 
 // These next two are just helpers for constructing the type information.
 template <typename T>
@@ -187,7 +185,7 @@ public:
   SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
   SLINKY_ALWAYS_INLINE bool same_as(const expr& other) const { return n_ == other.n_; }
   SLINKY_ALWAYS_INLINE bool same_as(const base_expr_node* other) const { return n_ == other; }
-  SLINKY_ALWAYS_INLINE node_type type() const { return n_ ? n_->type : node_type::none; }
+  SLINKY_ALWAYS_INLINE expr_node_type type() const { return n_ ? n_->type : expr_node_type::none; }
   SLINKY_ALWAYS_INLINE const base_expr_node* get() const { return n_; }
 
   template <typename T>
@@ -240,7 +238,7 @@ expr min(span<expr> x);
 expr max(span<expr> x);
 
 // Check if a and b should be commuted.
-SLINKY_ALWAYS_INLINE inline bool should_commute(node_type a, node_type b) { return a > b; }
+SLINKY_ALWAYS_INLINE inline bool should_commute(expr_node_type a, expr_node_type b) { return a > b; }
 inline bool should_commute(const expr& a, const expr& b) { return should_commute(a.type(), b.type()); }
 
 struct interval_expr {
@@ -323,7 +321,7 @@ public:
   SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
   SLINKY_ALWAYS_INLINE bool same_as(const stmt& other) const { return n_ == other.n_; }
   SLINKY_ALWAYS_INLINE bool same_as(const base_stmt_node* other) const { return n_ == other; }
-  SLINKY_ALWAYS_INLINE node_type type() const { return n_ ? n_->type : node_type::none; }
+  SLINKY_ALWAYS_INLINE stmt_node_type type() const { return n_ ? n_->type : stmt_node_type::none; }
   SLINKY_ALWAYS_INLINE const base_stmt_node* get() const { return n_; }
 
   template <typename T>
@@ -351,7 +349,7 @@ public:
 
   static expr make(symbol_id sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
-  static constexpr node_type static_type = node_type::let;
+  static constexpr expr_node_type static_type = expr_node_type::let;
 };
 
 class variable : public expr_node<variable> {
@@ -362,7 +360,7 @@ public:
 
   static expr make(symbol_id sym);
 
-  static constexpr node_type static_type = node_type::variable;
+  static constexpr expr_node_type static_type = expr_node_type::variable;
 };
 
 class constant : public expr_node<constant> {
@@ -374,7 +372,7 @@ public:
   static expr make(index_t value);
   static expr make(const void* value);
 
-  static constexpr node_type static_type = node_type::constant;
+  static constexpr expr_node_type static_type = expr_node_type::constant;
 };
 
 #define DECLARE_BINARY_OP(op, c)                                                                                       \
@@ -383,7 +381,7 @@ public:
     expr a, b;                                                                                                         \
     void accept(node_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
-    static constexpr node_type static_type = node_type::op;                                                            \
+    static constexpr expr_node_type static_type = expr_node_type::op;                                                  \
     static constexpr bool commutative = c;                                                                             \
   };
 
@@ -434,7 +432,7 @@ public:
 
   static expr make(expr a);
 
-  static constexpr node_type static_type = node_type::logical_not;
+  static constexpr expr_node_type static_type = expr_node_type::logical_not;
 };
 
 // Similar to the C++ ternary operator. `true_value` or `false_value` are only evaluated when the `condition` is true or
@@ -449,7 +447,7 @@ public:
 
   static expr make(expr condition, expr true_value, expr false_value);
 
-  static constexpr node_type static_type = node_type::select;
+  static constexpr expr_node_type static_type = expr_node_type::select;
 };
 
 class call : public expr_node<call> {
@@ -461,7 +459,7 @@ public:
 
   static expr make(slinky::intrinsic i, std::vector<expr> args);
 
-  static constexpr node_type static_type = node_type::call;
+  static constexpr expr_node_type static_type = expr_node_type::call;
 };
 
 class eval_context;
@@ -490,7 +488,7 @@ public:
 
   static stmt make(callable target, symbol_list inputs, symbol_list outputs, callable_attrs attrs);
 
-  static constexpr node_type static_type = node_type::call_stmt;
+  static constexpr stmt_node_type static_type = stmt_node_type::call_stmt;
 };
 
 class copy_stmt : public stmt_node<copy_stmt> {
@@ -509,7 +507,7 @@ public:
   static stmt make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
       std::optional<std::vector<char>> padding);
 
-  static constexpr node_type static_type = node_type::copy_stmt;
+  static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };
 
 // Allows lifting a list of common subexpressions (specified by symbol_id/stmt pairs)
@@ -527,7 +525,7 @@ public:
 
   static stmt make(symbol_id sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
-  static constexpr node_type static_type = node_type::let_stmt;
+  static constexpr stmt_node_type static_type = stmt_node_type::let_stmt;
 };
 
 class block : public stmt_node<block> {
@@ -545,7 +543,7 @@ public:
   // (eg checks) followed by a result.
   static stmt make(std::vector<stmt> stmts, stmt tail_stmt);
 
-  static constexpr node_type static_type = node_type::block;
+  static constexpr stmt_node_type static_type = stmt_node_type::block;
 };
 
 // Runs `body` for each value i in the interval `bounds` with `sym` set to i.
@@ -561,7 +559,7 @@ public:
 
   static stmt make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body);
 
-  static constexpr node_type static_type = node_type::loop;
+  static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };
 
 // A helper containing sub-expressions that describe a dimension of a buffer, corresponding to `dim`.
@@ -594,7 +592,7 @@ public:
 
   static stmt make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
-  static constexpr node_type static_type = node_type::allocate;
+  static constexpr stmt_node_type static_type = stmt_node_type::allocate;
 };
 
 // Make a `raw_buffer` object around an existing pointer `base` with fields corresponding to the expressions in this
@@ -611,7 +609,7 @@ public:
 
   static stmt make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
-  static constexpr node_type static_type = node_type::make_buffer;
+  static constexpr stmt_node_type static_type = stmt_node_type::make_buffer;
 };
 
 // Makes a clone of an existing buffer.
@@ -627,7 +625,7 @@ public:
 
   static stmt make(symbol_id sym, symbol_id src, stmt body);
 
-  static constexpr node_type static_type = node_type::clone_buffer;
+  static constexpr stmt_node_type static_type = stmt_node_type::clone_buffer;
 };
 
 // For the `body` scope, crops the buffer `sym` to `bounds`. If the expressions in `bounds` are undefined, they default
@@ -643,7 +641,7 @@ public:
 
   static stmt make(symbol_id sym, std::vector<interval_expr> bounds, stmt body);
 
-  static constexpr node_type static_type = node_type::crop_buffer;
+  static constexpr stmt_node_type static_type = stmt_node_type::crop_buffer;
 };
 
 // Similar to `crop_buffer`, but only crops the dimension `dim`.
@@ -658,7 +656,7 @@ public:
 
   static stmt make(symbol_id sym, int dim, interval_expr bounds, stmt body);
 
-  static constexpr node_type static_type = node_type::crop_dim;
+  static constexpr stmt_node_type static_type = stmt_node_type::crop_dim;
 };
 
 // For the `body` scope, slices the buffer `sym` at the coordinate `at`. The `at` expressions can be undefined,
@@ -675,7 +673,7 @@ public:
 
   static stmt make(symbol_id sym, std::vector<expr> at, stmt body);
 
-  static constexpr node_type static_type = node_type::slice_buffer;
+  static constexpr stmt_node_type static_type = stmt_node_type::slice_buffer;
 };
 
 // Similar to `slice_buffer`, but only slices one dimension `dim`. The rank of the result is one less than the original
@@ -691,7 +689,7 @@ public:
 
   static stmt make(symbol_id sym, int dim, expr at, stmt body);
 
-  static constexpr node_type static_type = node_type::slice_dim;
+  static constexpr stmt_node_type static_type = stmt_node_type::slice_dim;
 };
 
 // Within `body`, remove the dimensions of the buffer `sym` above `rank`.
@@ -705,7 +703,7 @@ public:
 
   static stmt make(symbol_id sym, int rank, stmt body);
 
-  static constexpr node_type static_type = node_type::truncate_rank;
+  static constexpr stmt_node_type static_type = stmt_node_type::truncate_rank;
 };
 
 // Basically an assert.
@@ -717,7 +715,7 @@ public:
 
   static stmt make(expr condition);
 
-  static constexpr node_type static_type = node_type::check;
+  static constexpr stmt_node_type static_type = stmt_node_type::check;
 };
 
 class node_visitor {
