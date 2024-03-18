@@ -316,10 +316,11 @@ public:
 class check : public stmt_node<check> {
 public:
   expr condition;
+  std::string description;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(expr condition);
+  static stmt make(expr condition, std::string description = "");
 
   static constexpr stmt_node_type static_type = stmt_node_type::check;
 };

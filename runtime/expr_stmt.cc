@@ -455,9 +455,10 @@ stmt truncate_rank::make(symbol_id sym, int rank, stmt body) {
   return n;
 }
 
-stmt check::make(expr condition) {
+stmt check::make(expr condition, std::string description) {
   auto n = new check();
   n->condition = std::move(condition);
+  n->description = std::move(description);
   return n;
 }
 

@@ -262,7 +262,7 @@ void node_mutator::visit(const check* op) {
   if (condition.same_as(op->condition)) {
     set_result(op);
   } else {
-    set_result(check::make(std::move(condition)));
+    set_result(check::make(std::move(condition), op->description));
   }
 }
 
