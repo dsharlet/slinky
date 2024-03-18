@@ -422,13 +422,8 @@ class pipeline_builder {
   // A mapping between func's and their compute_at locations.
   std::map<const func*, loop_id> compute_at_levels_;
 
-  // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
-  stmt add_input_crops(stmt result, const func* f) {
-    // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
-    // output associated with a particular dimension.
-    assert(!f->outputs().empty());
-    symbol_map<expr> output_mins, output_maxs;
-    for (const func::output& o : f->outputs()) {
+  void get_output_bounds(const std::vector<func::output>& outputs, symbol_map<expr>& output_mins, symbol_map<expr>& output_maxs) {
+    for (const func::output& o : outputs) {
       for (std::size_t d = 0; d < o.dims.size(); ++d) {
         expr dim_min = o.buffer->dim(d).min();
         expr dim_max = o.buffer->dim(d).max();
@@ -438,8 +433,12 @@ class pipeline_builder {
         max = max ? slinky::max(*max, dim_max) : dim_max;
       }
     }
-    // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
-    for (const func::input& i : f->inputs()) {
+  }
+
+  box_expr compute_input_bounds(const func* f,
+                                const func::input& i,
+                                const symbol_map<expr>& output_mins,
+                                const symbol_map<expr>& output_maxs) {
       symbol_map<expr> output_mins_i = output_mins;
       symbol_map<expr> output_maxs_i = output_maxs;
       if (!i.output_crop.empty()) {
@@ -466,7 +465,57 @@ class pipeline_builder {
         // The bounds may have been negated.
         crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
       }
+      return crop;
+  }
+
+  // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
+  stmt add_input_crops(stmt result, const func* f) {
+    // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
+    // output associated with a particular dimension.
+    assert(!f->outputs().empty());
+    symbol_map<expr> output_mins, output_maxs;
+    get_output_bounds(f->outputs(), output_mins, output_maxs);
+    // for (const func::output& o : f->outputs()) {
+    //   for (std::size_t d = 0; d < o.dims.size(); ++d) {
+    //     expr dim_min = o.buffer->dim(d).min();
+    //     expr dim_max = o.buffer->dim(d).max();
+    //     std::optional<expr>& min = output_mins[o.dims[d]];
+    //     std::optional<expr>& max = output_maxs[o.dims[d]];
+    //     min = min ? slinky::min(*min, dim_min) : dim_min;
+    //     max = max ? slinky::max(*max, dim_max) : dim_max;
+    //   }
+    // }
+
+    // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
+    for (const func::input& i : f->inputs()) {
+      // symbol_map<expr> output_mins_i = output_mins;
+      // symbol_map<expr> output_maxs_i = output_maxs;
+      // if (!i.output_crop.empty()) {
+      //   const box_expr& crop = i.output_crop;
+      //   assert(f->outputs().size() == 1);
+      //   const func::output& o = f->outputs()[0];
+      //   // We have an output crop for this input. Apply it to our bounds.
+      //   // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
+      //   // difficult to do because it could be used in several places, each with a different output crop to apply.
+      //   for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
+      //     std::optional<expr>& min = output_mins_i[o.dims[d]];
+      //     std::optional<expr>& max = output_maxs_i[o.dims[d]];
+      //     assert(min);
+      //     assert(max);
+      //     if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
+      //     if (crop[d].max.defined()) max = slinky::min(*max, crop[d].max);
+      //   }
+      // }
+
+      // box_expr crop(i.buffer->rank());
+      // for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
+      //   expr min = substitute(i.bounds[d].min, output_mins_i);
+      //   expr max = substitute(i.bounds[d].max, output_maxs_i);
+      //   // The bounds may have been negated.
+      //   crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
+      // }
       // We want to take the union of this crop with any existing crop of this buffer.
+      box_expr crop = compute_input_bounds(f, i, output_mins, output_maxs);
       result = add_crop_union(result, i.sym(), crop);
     }
     return result;
@@ -623,7 +672,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
-
+  std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
   std::vector<symbol_id> input_syms;
   input_syms.reserve(inputs.size());
   for (const buffer_expr_ptr& i : inputs) {
