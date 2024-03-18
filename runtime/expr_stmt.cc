@@ -1,4 +1,5 @@
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 #include <algorithm>
 #include <cassert>

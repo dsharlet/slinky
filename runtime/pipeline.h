@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 

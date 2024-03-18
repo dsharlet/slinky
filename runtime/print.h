@@ -2,6 +2,7 @@
 #define SLINKY_RUNTIME_PRINT_H
 
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 #include <tuple>
 

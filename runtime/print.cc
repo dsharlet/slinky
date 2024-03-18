@@ -5,6 +5,7 @@
 #include <string>
 
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 
