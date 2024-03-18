@@ -16,7 +16,11 @@ namespace slinky {
 
 class matcher : public node_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
-  const base_node* self = nullptr;
+  union {
+    void* self = nullptr;
+    const base_expr_node* self_expr;
+    const base_stmt_node* self_stmt;
+  };
   symbol_map<expr>* matches;
 
 public:
@@ -55,14 +59,14 @@ public:
       match = 1;
     } else if (matches && op->type == node_type::variable) {
       // When we are matching with variables as wildcards, the type doesn't need to match.
-      self = e;
+      self_expr = e;
       visit(reinterpret_cast<const variable*>(op));
     } else if (e->type < op->type) {
       match = -1;
     } else if (e->type > op->type) {
       match = 1;
     } else {
-      self = e;
+      self_expr = e;
       visit(op);
     }
     return match == 0;
@@ -81,7 +85,7 @@ public:
     } else if (s->type > op->type) {
       match = 1;
     } else {
-      self = s;
+      self_stmt = s;
       op->accept(this);
     }
     return match == 0;
@@ -138,15 +142,15 @@ public:
       std::optional<expr>& matched = (*matches)[op->sym];
       if (matched) {
         // We already matched this variable. The expression must match.
-        if (!matched->same_as(static_cast<const base_expr_node*>(self))) {
+        if (!matched->same_as(self_expr)) {
           symbol_map<expr>* old_matches = matches;
           matches = nullptr;
-          try_match(matched->get(), static_cast<const base_expr_node*>(self));
+          try_match(matched->get(), self_expr);
           matches = old_matches;
         }
       } else {
         // This is a new match.
-        matched = static_cast<const base_expr_node*>(self);
+        matched = self_expr;
       }
     } else {
       const variable* ev = static_cast<const variable*>(self);
