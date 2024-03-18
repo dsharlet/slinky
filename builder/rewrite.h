@@ -393,17 +393,17 @@ class base_rewriter {
 
   template <typename Pattern>
   bool variant_match(const Pattern& p, match_context& ctx) {
-    for (int variant = 0;; ++variant) {
+    // We'll find out how many variant bits we have when we try to match.
+    // This can grow if we fail early due to a commutative variant that doesn't match near the root
+    // of the expression, so we track the max we've seen.
+    int max_variant_bits = 0;
+    for (int variant = 0; variant < (1 << max_variant_bits); ++variant) {
       memset(&ctx, 0, sizeof(ctx));
       ctx.variant = variant;
       if (match(p, x, ctx)) {
         return true;
       }
-      // variant_bits *should* be constant across all variants. We're done when
-      // there are no more bits in the variant index to flip.
-      if (variant >= (1 << ctx.variant_bits)) {
-        break;
-      }
+      max_variant_bits = std::max(max_variant_bits, ctx.variant_bits);
     }
     return false;
   }

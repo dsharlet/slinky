@@ -624,16 +624,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   stmt result;
   result = builder.build(result, nullptr, loop_id());
 
-  // Add checks that the buffer constraints the user set are satisfied.
-  std::vector<stmt> checks;
-  for (const buffer_expr_ptr& i : inputs) {
-    add_buffer_checks(i, /*output=*/false, checks);
-  }
-  for (const buffer_expr_ptr& i : outputs) {
-    add_buffer_checks(i, /*output=*/true, checks);
-  }
-  result = block::make(std::move(checks), std::move(result));
-
   std::vector<symbol_id> input_syms;
   input_syms.reserve(inputs.size());
   for (const buffer_expr_ptr& i : inputs) {
@@ -643,6 +633,16 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     input_syms.push_back(i->sym());
   }
   result = infer_bounds(result, ctx, input_syms);
+
+  // Add checks that the buffer constraints the user set are satisfied.
+  std::vector<stmt> checks;
+  for (const buffer_expr_ptr& i : inputs) {
+    add_buffer_checks(i, /*output=*/false, checks);
+  }
+  for (const buffer_expr_ptr& i : outputs) {
+    add_buffer_checks(i, /*output=*/true, checks);
+  }
+  result = block::make(std::move(checks), std::move(result));
 
   result = simplify(result);
 

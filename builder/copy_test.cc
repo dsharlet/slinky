@@ -551,6 +551,53 @@ TEST(copy, concatenate) {
   }
 }
 
+TEST(copy, split) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(int));
+  auto out2 = buffer_expr::make(ctx, "out2", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func copy1 = func::make_copy({in, {slinky::point(x), slinky::point(y)}}, {out1, {x, y}});
+  func copy2 = func::make_copy({in, {slinky::point(x), slinky::point(y) + out1->dim(1).extent()}}, {out2, {x, y}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out1, out2});
+
+  const int W = 8;
+  const int H1 = 5;
+  const int H2 = 4;
+
+  // Run the pipeline.
+  buffer<int, 3> in_buf({W, H1 + H2});
+  init_random(in_buf);
+
+  buffer<int, 3> out1_buf({W, H1});
+  buffer<int, 3> out2_buf({W, H2});
+  out1_buf.allocate();
+  out2_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
+
+  for (int y = 0; y < H1; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out1_buf(x, y), in_buf(x, y));
+    }
+  }
+  for (int y = 0; y < H2; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out2_buf(x, y), in_buf(x, y + H1));
+    }
+  }
+}
+
 TEST(copy, stack) {
   // Make the pipeline
   node_context ctx;
