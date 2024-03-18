@@ -7,8 +7,8 @@
 #include <cstring>
 
 inline bool is_bazel_test() {
-  const char* bazel_test = getenv("BAZEL_TEST");
-  return bazel_test && strcmp(bazel_test, "1") == 0;
+  const char* timeout = getenv("TEST_TIMEOUT");
+  return timeout != nullptr;
 }
 
 // Benchmark a call.
