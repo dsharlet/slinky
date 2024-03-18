@@ -26,7 +26,7 @@ void init_random(buffer<T, N>& x) {
 // (Ab)use our expression mechanism to make an elementwise "calculator", for the purposes of testing.
 
 template <typename T, std::size_t Rank>
-class elementwise_pipeline_builder : public node_visitor {
+class elementwise_pipeline_builder : public expr_visitor {
   node_context& ctx;
 
   std::vector<interval_expr> bounds;
@@ -132,25 +132,10 @@ public:
   void visit(const let*) override { std::abort(); }
   void visit(const call*) override { std::abort(); }
   void visit(const logical_not*) override { std::abort(); }
-
-  void visit(const let_stmt*) override { std::abort(); }
-  void visit(const block*) override { std::abort(); }
-  void visit(const loop*) override { std::abort(); }
-  void visit(const call_stmt*) override { std::abort(); }
-  void visit(const copy_stmt*) override { std::abort(); }
-  void visit(const allocate*) override { std::abort(); }
-  void visit(const make_buffer*) override { std::abort(); }
-  void visit(const clone_buffer*) override { std::abort(); }
-  void visit(const crop_buffer*) override { std::abort(); }
-  void visit(const crop_dim*) override { std::abort(); }
-  void visit(const slice_buffer*) override { std::abort(); }
-  void visit(const slice_dim*) override { std::abort(); }
-  void visit(const truncate_rank*) override { std::abort(); }
-  void visit(const check*) override { std::abort(); }
 };
 
 template <typename T, std::size_t Rank>
-class elementwise_pipeline_evaluator : public node_visitor {
+class elementwise_pipeline_evaluator : public expr_visitor {
 public:
   std::vector<index_t> extents;
   symbol_map<buffer<T, Rank>*> vars;
@@ -235,21 +220,6 @@ public:
   void visit(const let*) override { std::abort(); }
   void visit(const call*) override { std::abort(); }
   void visit(const logical_not*) override { std::abort(); }
-
-  void visit(const let_stmt*) override { std::abort(); }
-  void visit(const block*) override { std::abort(); }
-  void visit(const loop*) override { std::abort(); }
-  void visit(const call_stmt*) override { std::abort(); }
-  void visit(const copy_stmt*) override { std::abort(); }
-  void visit(const allocate*) override { std::abort(); }
-  void visit(const make_buffer*) override { std::abort(); }
-  void visit(const clone_buffer*) override { std::abort(); }
-  void visit(const crop_buffer*) override { std::abort(); }
-  void visit(const crop_dim*) override { std::abort(); }
-  void visit(const slice_buffer*) override { std::abort(); }
-  void visit(const slice_dim*) override { std::abort(); }
-  void visit(const truncate_rank*) override { std::abort(); }
-  void visit(const check*) override { std::abort(); }
 };
 
 template <typename T, std::size_t Rank>

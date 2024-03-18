@@ -4,7 +4,6 @@
 #include <cassert>
 
 #include "builder/rewrite.h"
-#include "builder/substitute.h"
 #include "runtime/evaluate.h"
 
 namespace slinky {

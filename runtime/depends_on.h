@@ -2,6 +2,7 @@
 #define SLINKY_RUNTIME_DEPENDS_ON_H
 
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 

@@ -2,6 +2,7 @@
 #define SLINKY_BUILDER_SIMPLIFY_H
 
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 
