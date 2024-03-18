@@ -103,18 +103,19 @@ enum class intrinsic {
   buffer_at,
 };
 
-class node_visitor;
+class expr_visitor;
+class stmt_visitor;
 
 // The next few classes are the base of the expression (`expr`) and statement (`stmt`) mechanism.
 // `base_expr_node` is the base of `expr`s, and always produce an `index_t`-sized result when evaluated.
 // `base_stmt_node` is the base of `stmt`s, and do not produce any result.
 // Both are immutable.
-template <typename NodeType>
-class base_node : public ref_counted<base_node<NodeType>> {
+template <typename NodeType, typename VisitorType>
+class base_node : public ref_counted<base_node<NodeType, VisitorType>> {
 public:
   base_node(NodeType type) : type(type) {}
 
-  virtual void accept(node_visitor* v) const = 0;
+  virtual void accept(VisitorType* v) const = 0;
 
   NodeType type;
 
@@ -130,8 +131,8 @@ public:
   static void destroy(base_node* p) { delete p; }
 };
 
-using base_expr_node = base_node<expr_node_type>;
-using base_stmt_node = base_node<stmt_node_type>;
+using base_expr_node = base_node<expr_node_type, expr_visitor>;
+using base_stmt_node = base_node<stmt_node_type, stmt_visitor>;
 
 // These next two are just helpers for constructing the type information.
 template <typename T>
@@ -177,7 +178,7 @@ public:
   // Make an `expr` referencing an existing node.
   expr(const base_expr_node* n) : n_(n) {}
 
-  SLINKY_ALWAYS_INLINE void accept(node_visitor* v) const {
+  SLINKY_ALWAYS_INLINE void accept(expr_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
@@ -313,7 +314,7 @@ public:
   stmt& operator=(const stmt&) = default;
   stmt& operator=(stmt&&) noexcept = default;
 
-  SLINKY_ALWAYS_INLINE void accept(node_visitor* v) const {
+  SLINKY_ALWAYS_INLINE void accept(stmt_visitor* v) const {
     assert(defined());
     n_->accept(v);
   }
@@ -343,7 +344,7 @@ public:
   std::vector<std::pair<symbol_id, expr>> lets;
   expr body;
 
-  void accept(node_visitor* v) const override;
+  void accept(expr_visitor* v) const override;
 
   static expr make(std::vector<std::pair<symbol_id, expr>> lets, expr body);
 
@@ -356,7 +357,7 @@ class variable : public expr_node<variable> {
 public:
   symbol_id sym;
 
-  void accept(node_visitor* v) const override;
+  void accept(expr_visitor* v) const override;
 
   static expr make(symbol_id sym);
 
@@ -367,7 +368,7 @@ class constant : public expr_node<constant> {
 public:
   index_t value;
 
-  void accept(node_visitor* v) const override;
+  void accept(expr_visitor* v) const override;
 
   static expr make(index_t value);
   static expr make(const void* value);
@@ -379,7 +380,7 @@ public:
   class op : public expr_node<class op> {                                                                              \
   public:                                                                                                              \
     expr a, b;                                                                                                         \
-    void accept(node_visitor* v) const override;                                                                       \
+    void accept(expr_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr expr_node_type static_type = expr_node_type::op;                                                  \
     static constexpr bool commutative = c;                                                                             \
@@ -428,7 +429,7 @@ class logical_not : public expr_node<logical_not> {
 public:
   expr a;
 
-  void accept(node_visitor* v) const override;
+  void accept(expr_visitor* v) const override;
 
   static expr make(expr a);
 
@@ -443,7 +444,7 @@ public:
   expr true_value;
   expr false_value;
 
-  void accept(node_visitor* v) const override;
+  void accept(expr_visitor* v) const override;
 
   static expr make(expr condition, expr true_value, expr false_value);
 
@@ -455,7 +456,7 @@ public:
   slinky::intrinsic intrinsic;
   std::vector<expr> args;
 
-  void accept(node_visitor* v) const override;
+  void accept(expr_visitor* v) const override;
 
   static expr make(slinky::intrinsic i, std::vector<expr> args);
 
@@ -484,7 +485,7 @@ public:
   symbol_list outputs;
   callable_attrs attrs;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(callable target, symbol_list inputs, symbol_list outputs, callable_attrs attrs);
 
@@ -502,7 +503,7 @@ public:
   // padding = <elem_size bytes> => value to put in padding
   std::optional<std::vector<char>> padding;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
       std::optional<std::vector<char>> padding);
@@ -519,7 +520,7 @@ public:
   std::vector<std::pair<symbol_id, expr>> lets;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(std::vector<std::pair<symbol_id, expr>> lets, stmt body);
 
@@ -532,7 +533,7 @@ class block : public stmt_node<block> {
 public:
   std::vector<stmt> stmts;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   // Create a single block to contain all of the `stmts`.
   // Nested block statements are flattened, and undef stmts are removed.
@@ -555,7 +556,7 @@ public:
   expr step;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body);
 
@@ -588,7 +589,7 @@ public:
   std::vector<dim_expr> dims;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
 
@@ -605,7 +606,7 @@ public:
   std::vector<dim_expr> dims;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
@@ -621,7 +622,7 @@ public:
   symbol_id src;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, symbol_id src, stmt body);
 
@@ -637,7 +638,7 @@ public:
   std::vector<interval_expr> bounds;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, std::vector<interval_expr> bounds, stmt body);
 
@@ -652,7 +653,7 @@ public:
   interval_expr bounds;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, int dim, interval_expr bounds, stmt body);
 
@@ -669,7 +670,7 @@ public:
   std::vector<expr> at;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, std::vector<expr> at, stmt body);
 
@@ -685,7 +686,7 @@ public:
   expr at;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, int dim, expr at, stmt body);
 
@@ -699,7 +700,7 @@ public:
   int rank;
   stmt body;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(symbol_id sym, int rank, stmt body);
 
@@ -711,16 +712,16 @@ class check : public stmt_node<check> {
 public:
   expr condition;
 
-  void accept(node_visitor* v) const override;
+  void accept(stmt_visitor* v) const override;
 
   static stmt make(expr condition);
 
   static constexpr stmt_node_type static_type = stmt_node_type::check;
 };
 
-class node_visitor {
+class expr_visitor {
 public:
-  virtual ~node_visitor() = default;
+  virtual ~expr_visitor() = default;
 
   virtual void visit(const variable*) = 0;
   virtual void visit(const constant*) = 0;
@@ -741,6 +742,11 @@ public:
   virtual void visit(const logical_not*) = 0;
   virtual void visit(const class select*) = 0;
   virtual void visit(const call*) = 0;
+};
+
+class stmt_visitor {
+public:
+  virtual ~stmt_visitor() = default;
 
   virtual void visit(const let_stmt*) = 0;
   virtual void visit(const block*) = 0;
@@ -758,7 +764,7 @@ public:
   virtual void visit(const check*) = 0;
 };
 
-class recursive_node_visitor : public node_visitor {
+class recursive_node_visitor : public expr_visitor, public stmt_visitor {
 public:
   void visit(const variable*) override;
   void visit(const constant*) override;
@@ -797,40 +803,40 @@ public:
   void visit(const check* op) override;
 };
 
-inline void variable::accept(node_visitor* v) const { v->visit(this); }
-inline void constant::accept(node_visitor* v) const { v->visit(this); }
-inline void let::accept(node_visitor* v) const { v->visit(this); }
-inline void add::accept(node_visitor* v) const { v->visit(this); }
-inline void sub::accept(node_visitor* v) const { v->visit(this); }
-inline void mul::accept(node_visitor* v) const { v->visit(this); }
-inline void div::accept(node_visitor* v) const { v->visit(this); }
-inline void mod::accept(node_visitor* v) const { v->visit(this); }
-inline void min::accept(node_visitor* v) const { v->visit(this); }
-inline void max::accept(node_visitor* v) const { v->visit(this); }
-inline void equal::accept(node_visitor* v) const { v->visit(this); }
-inline void not_equal::accept(node_visitor* v) const { v->visit(this); }
-inline void less::accept(node_visitor* v) const { v->visit(this); }
-inline void less_equal::accept(node_visitor* v) const { v->visit(this); }
-inline void logical_and::accept(node_visitor* v) const { v->visit(this); }
-inline void logical_or::accept(node_visitor* v) const { v->visit(this); }
-inline void logical_not::accept(node_visitor* v) const { v->visit(this); }
-inline void select::accept(node_visitor* v) const { v->visit(this); }
-inline void call::accept(node_visitor* v) const { v->visit(this); }
+inline void variable::accept(expr_visitor* v) const { v->visit(this); }
+inline void constant::accept(expr_visitor* v) const { v->visit(this); }
+inline void let::accept(expr_visitor* v) const { v->visit(this); }
+inline void add::accept(expr_visitor* v) const { v->visit(this); }
+inline void sub::accept(expr_visitor* v) const { v->visit(this); }
+inline void mul::accept(expr_visitor* v) const { v->visit(this); }
+inline void div::accept(expr_visitor* v) const { v->visit(this); }
+inline void mod::accept(expr_visitor* v) const { v->visit(this); }
+inline void min::accept(expr_visitor* v) const { v->visit(this); }
+inline void max::accept(expr_visitor* v) const { v->visit(this); }
+inline void equal::accept(expr_visitor* v) const { v->visit(this); }
+inline void not_equal::accept(expr_visitor* v) const { v->visit(this); }
+inline void less::accept(expr_visitor* v) const { v->visit(this); }
+inline void less_equal::accept(expr_visitor* v) const { v->visit(this); }
+inline void logical_and::accept(expr_visitor* v) const { v->visit(this); }
+inline void logical_or::accept(expr_visitor* v) const { v->visit(this); }
+inline void logical_not::accept(expr_visitor* v) const { v->visit(this); }
+inline void select::accept(expr_visitor* v) const { v->visit(this); }
+inline void call::accept(expr_visitor* v) const { v->visit(this); }
 
-inline void let_stmt::accept(node_visitor* v) const { v->visit(this); }
-inline void block::accept(node_visitor* v) const { v->visit(this); }
-inline void loop::accept(node_visitor* v) const { v->visit(this); }
-inline void call_stmt::accept(node_visitor* v) const { v->visit(this); }
-inline void copy_stmt::accept(node_visitor* v) const { v->visit(this); }
-inline void allocate::accept(node_visitor* v) const { v->visit(this); }
-inline void make_buffer::accept(node_visitor* v) const { v->visit(this); }
-inline void clone_buffer::accept(node_visitor* v) const { v->visit(this); }
-inline void crop_buffer::accept(node_visitor* v) const { v->visit(this); }
-inline void crop_dim::accept(node_visitor* v) const { v->visit(this); }
-inline void slice_buffer::accept(node_visitor* v) const { v->visit(this); }
-inline void slice_dim::accept(node_visitor* v) const { v->visit(this); }
-inline void truncate_rank::accept(node_visitor* v) const { v->visit(this); }
-inline void check::accept(node_visitor* v) const { v->visit(this); }
+inline void let_stmt::accept(stmt_visitor* v) const { v->visit(this); }
+inline void block::accept(stmt_visitor* v) const { v->visit(this); }
+inline void loop::accept(stmt_visitor* v) const { v->visit(this); }
+inline void call_stmt::accept(stmt_visitor* v) const { v->visit(this); }
+inline void copy_stmt::accept(stmt_visitor* v) const { v->visit(this); }
+inline void allocate::accept(stmt_visitor* v) const { v->visit(this); }
+inline void make_buffer::accept(stmt_visitor* v) const { v->visit(this); }
+inline void clone_buffer::accept(stmt_visitor* v) const { v->visit(this); }
+inline void crop_buffer::accept(stmt_visitor* v) const { v->visit(this); }
+inline void crop_dim::accept(stmt_visitor* v) const { v->visit(this); }
+inline void slice_buffer::accept(stmt_visitor* v) const { v->visit(this); }
+inline void slice_dim::accept(stmt_visitor* v) const { v->visit(this); }
+inline void truncate_rank::accept(stmt_visitor* v) const { v->visit(this); }
+inline void check::accept(stmt_visitor* v) const { v->visit(this); }
 
 // If `x` is a constant, returns the value of the constant, otherwise `nullptr`.
 SLINKY_ALWAYS_INLINE inline const index_t* as_constant(const expr& x) {

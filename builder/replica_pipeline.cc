@@ -47,7 +47,7 @@ std::string str_cat(Args&&... args) {
   return concat_helper.result;
 }
 
-class pipeline_replicator : public recursive_node_visitor {
+class pipeline_replicator : public expr_visitor {
 public:
   explicit pipeline_replicator(node_context& ctx) : ctx_(ctx) {}
 
@@ -118,21 +118,6 @@ public:
     }
     name_ = print_expr_maybe_inlined(call_name, "(", print_vector_elements(args), ")");
   }
-
-  void visit(const let_stmt* op) override { fail("unimplemented let_stmt"); }
-  void visit(const block* op) override { fail("unimplemented block"); }
-  void visit(const loop* op) override { fail("unimplemented loop"); }
-  void visit(const call_stmt* op) override { fail("unimplemented call_stmt"); }
-  void visit(const copy_stmt* op) override { fail("unimplemented copy_stmt"); }
-  void visit(const allocate* op) override { fail("unimplemented allocate"); }
-  void visit(const make_buffer* op) override { fail("unimplemented make_buffer"); }
-  void visit(const clone_buffer* op) override { fail("unimplemented clone_buffer"); }
-  void visit(const crop_buffer* op) override { fail("unimplemented crop_buffer"); }
-  void visit(const crop_dim* op) override { fail("unimplemented crop_dim"); }
-  void visit(const slice_buffer* op) override { fail("unimplemented slice_buffer"); }
-  void visit(const slice_dim* op) override { fail("unimplemented slice_dim"); }
-  void visit(const truncate_rank* op) override { fail("unimplemented truncate_rank"); }
-  void visit(const check* op) override { fail("unimplemented check"); }
 
   std::string print(const var& v) {
     if (!v.defined()) {

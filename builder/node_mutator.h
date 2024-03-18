@@ -5,7 +5,7 @@
 
 namespace slinky {
 
-class node_mutator : public node_visitor {
+class node_mutator : public expr_visitor, public stmt_visitor {
   expr e_;
   stmt s_;
 

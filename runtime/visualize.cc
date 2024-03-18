@@ -28,7 +28,7 @@ namespace slinky {
 
 namespace {
 
-class js_printer : public node_visitor {
+class js_printer : public expr_visitor, public stmt_visitor {
 public:
   int depth = -1;
   std::ostream& os;

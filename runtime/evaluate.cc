@@ -49,10 +49,10 @@ void dump_context_for_expr(
 
 namespace {
 
-// TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/node_visitor::visit
+// TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/T_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.
-class evaluator : public node_visitor {
+class evaluator : public expr_visitor, public stmt_visitor {
 public:
   index_t result = 0;
   eval_context& context;
@@ -562,7 +562,7 @@ index_t evaluate(const stmt& s) {
 
 namespace {
 
-class constant_evaluator : public node_visitor {
+class constant_evaluator : public expr_visitor {
 public:
   std::optional<index_t> result;
 
@@ -579,7 +579,6 @@ public:
   void visit(const constant* op) override { result = op->value; }
 
   void visit(const let* op) override { result = std::nullopt; }
-  void visit(const let_stmt* op) override { result = std::nullopt; }
 
   template <typename T>
   void visit_binary(const T* op) {
@@ -643,20 +642,6 @@ public:
     default: result = std::nullopt; return;
     }
   }
-
-  void visit(const block* op) override { std::abort(); }
-  void visit(const loop* op) override { std::abort(); }
-  void visit(const call_stmt* op) override { std::abort(); }
-  void visit(const copy_stmt* op) override { std::abort(); }
-  void visit(const allocate* op) override { std::abort(); }
-  void visit(const make_buffer* op) override { std::abort(); }
-  void visit(const clone_buffer* op) override { std::abort(); }
-  void visit(const crop_buffer* op) override { std::abort(); }
-  void visit(const crop_dim* op) override { std::abort(); }
-  void visit(const slice_buffer* op) override { std::abort(); }
-  void visit(const slice_dim* op) override { std::abort(); }
-  void visit(const truncate_rank* op) override { std::abort(); }
-  void visit(const check* op) override { std::abort(); }
 };
 
 }  // namespace

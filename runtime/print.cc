@@ -67,7 +67,7 @@ std::ostream& operator<<(std::ostream& os, const box_expr& b) {
   return os;
 }
 
-class printer : public node_visitor {
+class printer : public expr_visitor, public stmt_visitor {
 public:
   int depth = -1;
   std::ostream& os;

@@ -14,7 +14,7 @@
 
 namespace slinky {
 
-class matcher : public node_visitor {
+class matcher : public expr_visitor, public stmt_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
   union {
     void* self = nullptr;
