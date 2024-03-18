@@ -529,6 +529,9 @@ public:
         context.check_failed(op->condition);
       } else {
         std::cerr << "Check failed: " << op->condition << std::endl;
+        if (!op->description.empty()) {
+          std::cerr << "Description: " << op->description << std::endl;
+        }
         std::cerr << "Context: " << std::endl;
         dump_context_for_expr(std::cerr, context, op->condition);
         std::abort();

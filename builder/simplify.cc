@@ -1011,7 +1011,7 @@ public:
     } else if (c.same_as(op->condition)) {
       set_result(op);
     } else {
-      set_result(check::make(std::move(c)));
+      set_result(check::make(std::move(c), op->description));
     }
   }
 };
