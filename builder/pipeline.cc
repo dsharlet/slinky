@@ -695,6 +695,10 @@ public:
     return block::make(std::move(checks), std::move(body));
   }
 
+  stmt make_buffers(stmt body) {
+    return body;
+  }
+
   const std::vector<symbol_id>& input_syms() { return input_syms_; }
 };
 
@@ -731,7 +735,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // This inserts input checks around the statement, but the bounds
   // can be defined in the terms of the inner allocations.
   // result = builder.add_input_checks(result);
-
+  result = builder.make_buffers();
   std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
 
   result = infer_bounds(result, ctx, builder.input_syms());
