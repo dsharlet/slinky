@@ -106,7 +106,7 @@ SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_binary<T, 
 }
 
 template <typename T, typename A, typename B>
-int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
+bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
     expr_node_type ta = pattern_type(p.a);
@@ -117,11 +117,6 @@ int commute_bit(const pattern_binary<T, A, B>& p, match_context& ctx) {
       this_bit = ctx.variant_bits++;
     }
   }
-  return this_bit;
-}
-
-template <typename T, typename A, typename B>
-bool match_binary(const pattern_binary<T, A, B>& p, int this_bit, const expr& a, const expr& b, match_context& ctx) {
   if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
     // We should commute in this variant.
     return match(p.a, b, ctx) && match(p.b, a, ctx);
@@ -132,10 +127,8 @@ bool match_binary(const pattern_binary<T, A, B>& p, int this_bit, const expr& a,
 
 template <typename T, typename A, typename B>
 bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
-  int this_bit = commute_bit(p, ctx);
-
   if (const T* t = x.as<T>()) {
-    return match_binary(p, this_bit, t->a, t->b, ctx);
+    return match_binary(p, t->a, t->b, ctx);
   } else {
     return false;
   }
@@ -144,7 +137,7 @@ bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) 
 template <typename T, typename A, typename B>
 bool match(
     const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
-  return match_binary(p, commute_bit(p, ctx), x.a.e, x.b.e, ctx);
+  return match_binary(p, x.a.e, x.b.e, ctx);
 }
 
 template <typename T, typename A, typename B>

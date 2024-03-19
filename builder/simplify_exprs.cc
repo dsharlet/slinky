@@ -446,16 +446,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x + y < x + z, y < z) ||
       r.rewrite(x - y < x - z, z < y) ||
       r.rewrite(x - y < z - y, x < z) ||
-
-      r.rewrite(min(x, y) < x, y < x) ||
-      r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
-      r.rewrite(max(x, y) < x, false) ||
-      r.rewrite(x < max(x, y), x < y) ||
-      r.rewrite(x < min(x, y), false) ||
-      r.rewrite(min(x, y) < max(x, y), x != y) ||
-      r.rewrite(max(x, y) < min(x, y), false) ||
-      r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
-    
+        
       // The following rules are taken from
       // https://github.com/halide/Halide/blob/7636c44acc2954a7c20275618093973da6767359/src/Simplify_LT.cpp#L186-L263
       // with adjustments for the simplifier implementation here.
@@ -482,9 +473,9 @@ expr simplify(const less* op, expr a, expr b) {
 
       // Special cases where c0 == c1 == 0
       r.rewrite(min(x, y) < x, y < x) ||
-      r.rewrite(min(y, x) < x, y < x) ||
+      r.rewrite(max(x, y) < x, false) ||
       r.rewrite(x < max(x, y), x < y) ||
-      r.rewrite(x < max(y, x), x < y) ||
+      r.rewrite(x < min(x, y), false) ||
 
       // Special case where x is constant
       r.rewrite(min(y, c0) < c1, y < c1 || eval(c0 < c1)) ||
@@ -500,7 +491,12 @@ expr simplify(const less* op, expr a, expr b) {
 
       // Equivalents with max
       r.rewrite(max(z, y) < max(x, y), max(z, y) < x) ||
-      r.rewrite(max(y, z) < max(x, y), max(z, y) < x) ||
+
+    
+      r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
+      r.rewrite(min(x, y) < max(x, y), x != y) ||
+      r.rewrite(max(x, y) < min(x, y), false) ||
+      r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
 
       r.rewrite(buffer_extent(x, y) < c0, false, eval(c0 <= 0)) ||
       r.rewrite(c0 < buffer_extent(x, y), true, eval(c0 < 0)) ||
