@@ -471,10 +471,8 @@ void compute_allocation_bounds(const std::vector<const func*>& order, symbol_map
       auto& bound = allocation_bounds[i.sym()];
       if (bound) {
         *bound = *bound | crop;
-        std::cout << "Updating bound to - " << i.sym() << " - " << *bound << std::endl;
       } else {
         allocation_bounds[i.sym()] = crop;
-        std::cout << "Setting bound to - " << i.sym() << " - " << *allocation_bounds[i.sym()] << std::endl;
       }
     }
   }
@@ -647,10 +645,6 @@ public:
         if (allocated.count(b)) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          // // b->dim()
-          // // const auto& bounds = allocation_bounds_[b->sym()];
-          // // assert(bounds);
-
           std::vector<std::pair<expr, expr>> substitutions;
 
           expr alloc_var = variable::make(b->sym());
@@ -713,10 +707,7 @@ public:
 
         std::optional<std::vector<dim_expr>> maybe_dims = inferred_bounds_[b->sym()];
         if (maybe_dims) {
-          std::cout << "Found dims for " - b->sym() << "\n";
           body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
-        } else {
-          std::cout << "Didn't found dims for " - b->sym() << "\n";
         }
       }
     }
