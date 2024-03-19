@@ -216,6 +216,52 @@ func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t d
 
 namespace {
 
+void get_output_bounds(const std::vector<func::output>& outputs, symbol_map<expr>& output_mins, symbol_map<expr>& output_maxs) {
+  for (const func::output& o : outputs) {
+    for (std::size_t d = 0; d < o.dims.size(); ++d) {
+      expr dim_min = o.buffer->dim(d).min();
+      expr dim_max = o.buffer->dim(d).max();
+      std::optional<expr>& min = output_mins[o.dims[d]];
+      std::optional<expr>& max = output_maxs[o.dims[d]];
+      min = min ? slinky::min(*min, dim_min) : dim_min;
+      max = max ? slinky::max(*max, dim_max) : dim_max;
+    }
+  }
+}
+
+box_expr compute_input_bounds(const func* f,
+                              const func::input& i,
+                              const symbol_map<expr>& output_mins,
+                              const symbol_map<expr>& output_maxs) {
+    symbol_map<expr> output_mins_i = output_mins;
+    symbol_map<expr> output_maxs_i = output_maxs;
+    if (!i.output_crop.empty()) {
+      const box_expr& crop = i.output_crop;
+      assert(f->outputs().size() == 1);
+      const func::output& o = f->outputs()[0];
+      // We have an output crop for this input. Apply it to our bounds.
+      // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
+      // difficult to do because it could be used in several places, each with a different output crop to apply.
+      for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
+        std::optional<expr>& min = output_mins_i[o.dims[d]];
+        std::optional<expr>& max = output_maxs_i[o.dims[d]];
+        assert(min);
+        assert(max);
+        if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
+        if (crop[d].max.defined()) max = slinky::min(*max, crop[d].max);
+      }
+    }
+
+    box_expr crop(i.buffer->rank());
+    for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
+      expr min = substitute(i.bounds[d].min, output_mins_i);
+      expr max = substitute(i.bounds[d].max, output_maxs_i);
+      // The bounds may have been negated.
+      crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
+    }
+    return crop;
+}
+
 class unionize_crop : public node_mutator {
   symbol_id target;
   const box_expr& crop;
@@ -414,6 +460,41 @@ void compute_innermost_locations(const std::vector<const func*>& order,
   }
 }
 
+void compute_allocation_bounds(const std::vector<const func*>& order, symbol_map<box_expr>& allocation_bounds) {;
+  for (const func* f: order) {
+    symbol_map<expr> output_mins, output_maxs;
+    get_output_bounds(f->outputs(), output_mins, output_maxs);
+
+    for (const auto& i : f->inputs()) {
+      box_expr crop = compute_input_bounds(f, i, output_mins, output_maxs);
+      auto& bound = allocation_bounds[i.sym()];
+      if (bound) {
+        *bound = *bound | crop;
+        std::cout << "Updating bound to - " << i.sym() << " - " << *bound << std::endl;
+      } else {
+        allocation_bounds[i.sym()] = crop;
+        std::cout << "Setting bound to - " << i.sym() << " - " << *allocation_bounds[i.sym()] << std::endl;
+      }
+    }
+  }
+}
+
+// 
+std::vector<dim_expr> substitute_from_map(
+    std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
+  for (dim_expr& dim : dims) {
+    dim_expr new_dim = dim;
+    for (const std::pair<expr, expr>& j : substitutions) {
+      new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
+      new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
+      new_dim.stride = substitute(new_dim.stride, j.first, j.second);
+      new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
+    }
+    dim = new_dim;
+  }
+  return dims;
+}
+
 class pipeline_builder {
   std::set<buffer_expr_ptr> allocated;
 
@@ -422,51 +503,9 @@ class pipeline_builder {
   // A mapping between func's and their compute_at locations.
   std::map<const func*, loop_id> compute_at_levels_;
 
-  void get_output_bounds(const std::vector<func::output>& outputs, symbol_map<expr>& output_mins, symbol_map<expr>& output_maxs) {
-    for (const func::output& o : outputs) {
-      for (std::size_t d = 0; d < o.dims.size(); ++d) {
-        expr dim_min = o.buffer->dim(d).min();
-        expr dim_max = o.buffer->dim(d).max();
-        std::optional<expr>& min = output_mins[o.dims[d]];
-        std::optional<expr>& max = output_maxs[o.dims[d]];
-        min = min ? slinky::min(*min, dim_min) : dim_min;
-        max = max ? slinky::max(*max, dim_max) : dim_max;
-      }
-    }
-  }
+  symbol_map<box_expr> allocation_bounds_;
 
-  box_expr compute_input_bounds(const func* f,
-                                const func::input& i,
-                                const symbol_map<expr>& output_mins,
-                                const symbol_map<expr>& output_maxs) {
-      symbol_map<expr> output_mins_i = output_mins;
-      symbol_map<expr> output_maxs_i = output_maxs;
-      if (!i.output_crop.empty()) {
-        const box_expr& crop = i.output_crop;
-        assert(f->outputs().size() == 1);
-        const func::output& o = f->outputs()[0];
-        // We have an output crop for this input. Apply it to our bounds.
-        // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
-        // difficult to do because it could be used in several places, each with a different output crop to apply.
-        for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
-          std::optional<expr>& min = output_mins_i[o.dims[d]];
-          std::optional<expr>& max = output_maxs_i[o.dims[d]];
-          assert(min);
-          assert(max);
-          if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
-          if (crop[d].max.defined()) max = slinky::min(*max, crop[d].max);
-        }
-      }
-
-      box_expr crop(i.buffer->rank());
-      for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-        expr min = substitute(i.bounds[d].min, output_mins_i);
-        expr max = substitute(i.bounds[d].max, output_maxs_i);
-        // The bounds may have been negated.
-        crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
-      }
-      return crop;
-  }
+  std::vector<symbol_id> input_syms_;
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
@@ -475,45 +514,9 @@ class pipeline_builder {
     assert(!f->outputs().empty());
     symbol_map<expr> output_mins, output_maxs;
     get_output_bounds(f->outputs(), output_mins, output_maxs);
-    // for (const func::output& o : f->outputs()) {
-    //   for (std::size_t d = 0; d < o.dims.size(); ++d) {
-    //     expr dim_min = o.buffer->dim(d).min();
-    //     expr dim_max = o.buffer->dim(d).max();
-    //     std::optional<expr>& min = output_mins[o.dims[d]];
-    //     std::optional<expr>& max = output_maxs[o.dims[d]];
-    //     min = min ? slinky::min(*min, dim_min) : dim_min;
-    //     max = max ? slinky::max(*max, dim_max) : dim_max;
-    //   }
-    // }
 
     // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
     for (const func::input& i : f->inputs()) {
-      // symbol_map<expr> output_mins_i = output_mins;
-      // symbol_map<expr> output_maxs_i = output_maxs;
-      // if (!i.output_crop.empty()) {
-      //   const box_expr& crop = i.output_crop;
-      //   assert(f->outputs().size() == 1);
-      //   const func::output& o = f->outputs()[0];
-      //   // We have an output crop for this input. Apply it to our bounds.
-      //   // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
-      //   // difficult to do because it could be used in several places, each with a different output crop to apply.
-      //   for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
-      //     std::optional<expr>& min = output_mins_i[o.dims[d]];
-      //     std::optional<expr>& max = output_maxs_i[o.dims[d]];
-      //     assert(min);
-      //     assert(max);
-      //     if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
-      //     if (crop[d].max.defined()) max = slinky::min(*max, crop[d].max);
-      //   }
-      // }
-
-      // box_expr crop(i.buffer->rank());
-      // for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-      //   expr min = substitute(i.bounds[d].min, output_mins_i);
-      //   expr max = substitute(i.bounds[d].max, output_maxs_i);
-      //   // The bounds may have been negated.
-      //   crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
-      // }
       // We want to take the union of this crop with any existing crop of this buffer.
       box_expr crop = compute_input_bounds(f, i, output_mins, output_maxs);
       result = add_crop_union(result, i.sym(), crop);
@@ -584,12 +587,22 @@ public:
       allocated.insert(i);
     }
 
+    for (const buffer_expr_ptr& i : inputs) {
+      input_syms_.push_back(i->sym());
+    }
+    for (const buffer_expr_ptr& i : constants) {
+      input_syms_.push_back(i->sym());
+    }
+
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
     topological_sort(outputs, order_, deps, constants);
 
     // Build a loop nest tree and computes compute_at locations when neccessary.
     compute_innermost_locations(order_, deps, compute_at_levels_);
+
+    // Compute allocation bounds.
+    compute_allocation_bounds(order_, allocation_bounds_);
   }
 
   // This function works together with the produce() function to
@@ -633,13 +646,56 @@ public:
         if (allocated.count(b)) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
+          // // b->dim()
+          // // const auto& bounds = allocation_bounds_[b->sym()];
+          // // assert(bounds);
+
+          std::vector<std::pair<expr, expr>> substitutions;
+
+          expr alloc_var = variable::make(b->sym());
+
+          box_expr& bounds = *allocation_bounds_[b->sym()];
+          expr stride = static_cast<index_t>(b->elem_size());
+          for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
+            const interval_expr& bounds_d = bounds[d];
+
+            substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
+            substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
+            substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
+
+            // We didn't initially set up the buffer with an extent, but the user might have used it.
+            expr extent = bounds_d.extent();
+            substitutions.emplace_back(buffer_extent(alloc_var, d), extent);
+            stride *= min(extent, buffer_fold_factor(alloc_var, d));
+          }
+          std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
+
+          result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
+          // result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
         }
       }
     }
 
     return result;
   }
+
+  stmt add_input_checks(stmt body) {
+    // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
+    std::vector<stmt> checks;
+    for (symbol_id i : input_syms_) {
+      expr buf_var = variable::make(i);
+      const std::optional<box_expr>& bounds = allocation_bounds_[i];
+      assert(bounds);
+      for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+        checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
+        checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
+        checks.push_back(check::make((*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)));
+      }
+    }
+    return block::make(std::move(checks), std::move(body));
+  }
+
+  const std::vector<symbol_id>& input_syms() { return input_syms_; }
 };
 
 void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
@@ -672,16 +728,13 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  // This inserts input checks around the statement, but the bounds
+  // can be defined in the terms of the inner allocations.
+  // result = builder.add_input_checks(result);
+
   std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
-  std::vector<symbol_id> input_syms;
-  input_syms.reserve(inputs.size());
-  for (const buffer_expr_ptr& i : inputs) {
-    input_syms.push_back(i->sym());
-  }
-  for (const buffer_expr_ptr& i : constants) {
-    input_syms.push_back(i->sym());
-  }
-  result = infer_bounds(result, ctx, input_syms);
+
+  result = infer_bounds(result, ctx, builder.input_syms());
 
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
@@ -694,7 +747,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = block::make(std::move(checks), std::move(result));
 
   result = simplify(result);
-
+  std::cout << "After simplification: \n" << std::tie(result, ctx) << std::endl;
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
     result = alias_buffers(result);
