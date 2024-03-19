@@ -461,7 +461,6 @@ void compute_innermost_locations(const std::vector<const func*>& order,
 }
 
 void compute_allocation_bounds(const std::vector<const func*>& order, symbol_map<box_expr>& allocation_bounds) {
-  ;
   for (const func* f : order) {
     symbol_map<expr> output_mins, output_maxs;
     get_output_bounds(f->outputs(), output_mins, output_maxs);
@@ -674,7 +673,6 @@ public:
           inferred_bounds_[b->sym()] = shape;
 
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
-          // result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
         }
       }
     }
@@ -747,8 +745,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
-  // This inserts input checks around the statement, but the bounds
-  // can be defined in the terms of the inner allocations.
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
 
@@ -767,7 +763,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = block::make(std::move(checks), std::move(result));
 
   result = simplify(result);
-  std::cout << "After simplification: \n" << std::tie(result, ctx) << std::endl;
+
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
     result = alias_buffers(result);
