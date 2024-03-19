@@ -362,7 +362,7 @@ public:
     for (std::size_t i = 0; i < rank; ++i) {
       slinky::dim& dim = buffer->dim(i);
       dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
-      dim.set_stride(eval_expr(op->dims[i].stride));
+      dim.set_stride(eval_expr(op->dims[i].stride, 0));
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 

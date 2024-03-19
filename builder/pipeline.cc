@@ -504,6 +504,7 @@ class pipeline_builder {
   std::map<const func*, loop_id> compute_at_levels_;
 
   symbol_map<box_expr> allocation_bounds_;
+  symbol_map<std::vector<dim_expr>> inferred_bounds_;
 
   std::vector<symbol_id> input_syms_;
 
@@ -670,6 +671,14 @@ public:
           }
           std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
 
+          std::vector<dim_expr> shape;
+          for (const auto& d: dims) {
+            shape.push_back({d.bounds});
+          }
+
+          // Record the inferred dims.
+          inferred_bounds_[b->sym()] = shape;
+
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
           // result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
         }
@@ -696,6 +705,21 @@ public:
   }
 
   stmt make_buffers(stmt body) {
+    for (int ix = order_.size() - 1; ix >= 0; ix--) {
+      const auto& f = order_[ix];
+
+      for (const auto& o : f->outputs()) {
+        const auto& b = o.buffer;
+
+        std::optional<std::vector<dim_expr>> maybe_dims = inferred_bounds_[b->sym()];
+        if (maybe_dims) {
+          std::cout << "Found dims for " - b->sym() << "\n";
+          body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
+        } else {
+          std::cout << "Didn't found dims for " - b->sym() << "\n";
+        }
+      }
+    }
     return body;
   }
 
@@ -734,8 +758,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.build(result, nullptr, loop_id());
   // This inserts input checks around the statement, but the bounds
   // can be defined in the terms of the inner allocations.
-  // result = builder.add_input_checks(result);
+  result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
+
   std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
 
   result = infer_bounds(result, ctx, builder.input_syms());
