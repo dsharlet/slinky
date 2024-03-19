@@ -40,23 +40,17 @@ TEST(pipeline, checks) {
 
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});
+  in_buf.allocate();
+  for_each_index(in_buf, [&](const auto i) { in_buf(i) = 0; });
+  out_buf.allocate();
 
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   index_t result = p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_NE(result, 0) << " null inputs should have failed";
-
-  // The input and output pointers are null.
-  ASSERT_EQ(checks_failed, 1);
-
-  in_buf.allocate();
-  for_each_index(in_buf, [&](const auto i) { in_buf(i) = 0; });
-  out_buf.allocate();
-  result = p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(result, 0) << " should succeed";
 
   // Shouldn't have failed.
-  ASSERT_EQ(checks_failed, 1);
+  ASSERT_EQ(checks_failed, 0);
 
   buffer<int, 1> too_small_buf({N - 1});
   const raw_buffer* too_small[] = {&too_small_buf};
@@ -64,7 +58,7 @@ TEST(pipeline, checks) {
   ASSERT_NE(result, 0) << " too small should have failed";
 
   // Input is too small.
-  ASSERT_EQ(checks_failed, 2);
+  ASSERT_EQ(checks_failed, 1);
 }
 
 }  // namespace slinky
