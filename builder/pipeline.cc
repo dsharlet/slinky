@@ -492,7 +492,42 @@ std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const
   return dims;
 }
 
+class substitute_call_inputs : public node_mutator {
+  const symbol_map<symbol_id>& uncropped_subs;
+
+public:
+
+  substitute_call_inputs(const symbol_map<symbol_id>& uncropped_subs) : uncropped_subs(uncropped_subs) {}
+
+  void visit(const call_stmt* op) override {
+    bool changed = false;
+    call_stmt::symbol_list inputs;
+    for (const auto& i: op->inputs) {
+      if (uncropped_subs[i]) {
+        changed = true;
+        inputs.push_back(*uncropped_subs[i]);
+      } else {
+        inputs.push_back(i);
+      }
+    }
+
+    if (changed) {
+      set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->attrs));
+    } else {
+      set_result(op);
+    }
+  }
+};
+
+stmt substitute_uncropped(stmt s, const symbol_map<symbol_id>& uncropped_subs) {
+    substitute_call_inputs m(uncropped_subs);
+    s = m.mutate(s);
+    return s;
+}
+
 class pipeline_builder {
+  node_context& ctx;
+
   std::set<buffer_expr_ptr> allocated;
 
   // Topologically sorted functions.
@@ -504,6 +539,8 @@ class pipeline_builder {
   symbol_map<std::vector<dim_expr>> inferred_bounds_;
 
   std::vector<symbol_id> input_syms_;
+
+  std::set<symbol_id> used_in_the_loop_;
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
@@ -578,8 +615,8 @@ class pipeline_builder {
   }
 
 public:
-  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-      std::set<buffer_expr_ptr>& constants) {
+  pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
+      std::set<buffer_expr_ptr>& constants) : ctx(ctx) {
     // To start with, we need to produce the outputs.
     for (auto& i : outputs) {
       allocated.insert(i);
@@ -636,6 +673,7 @@ public:
       result = add_input_crops(result, base_f);
     }
 
+    symbol_map<symbol_id> uncropped_subs;
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
@@ -672,15 +710,26 @@ public:
           // Record the inferred dims.
           inferred_bounds_[b->sym()] = shape;
 
+          symbol_id uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
+          uncropped_subs[b->sym()] = uncropped;
+          result = clone_buffer::make(uncropped, b->sym(), result); 
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
         }
       }
     }
 
+    result = substitute_uncropped(result, uncropped_subs);
+
     return result;
   }
 
   stmt add_input_checks(stmt body) {
+    for (symbol_id i : input_syms_) {
+      const std::optional<box_expr>& bounds = allocation_bounds_[i];
+      assert(bounds);
+      body = crop_buffer::make(i, *bounds, body);
+    }
+
     // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
     std::vector<stmt> checks;
     for (symbol_id i : input_syms_) {
@@ -741,7 +790,7 @@ bool is_verbose() {
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
-  pipeline_builder builder(inputs, outputs, constants);
+  pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
