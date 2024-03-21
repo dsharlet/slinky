@@ -7,38 +7,14 @@
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
+#include "builder/test_util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
+#include "runtime/print.h"
 #include "runtime/thread_pool.h"
 #include "runtime/visualize.h"
 
 namespace slinky {
-
-std::string read_entire_file(const std::string& pathname) {
-  std::ifstream f(pathname, std::ios::in | std::ios::binary);
-  std::string result;
-
-  f.seekg(0, std::ifstream::end);
-  size_t size = f.tellg();
-  result.resize(size);
-  f.seekg(0, std::ifstream::beg);
-  f.read(result.data(), result.size());
-  if (!f.good()) {
-    std::cerr << "Unable to read file: " << pathname;
-    std::abort();
-  }
-  f.close();
-  return result;
-}
-
-std::string read_entire_runfile(const std::string& rlocation) {
-  return read_entire_file(get_bazel_file_path(rlocation));
-}
-
-std::string remove_windows_newlines(std::string s) {
-  s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
-  return s;
-}
 
 std::string get_replica_golden() {
   static std::string golden = remove_windows_newlines(read_entire_runfile("builder/replica_pipeline_test.cc"));
@@ -190,20 +166,6 @@ index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<
   return 0;
 }
 
-// Matrix multiplication (not fast!)
-template <typename T>
-index_t outer_product(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
-  assert(a.rank == 1);
-  assert(b.rank == 1);
-  assert(c.rank == 2);
-  for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
-    for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
-      c(i, j) = a(i) * b(j);
-    }
-  }
-  return 0;
-}
-
 // A 2D stencil, sums [x + dx0, x + dx1] x [y + dy0, y + dy]
 template <typename T, int dx0, int dy0, int dx1, int dy1>
 index_t sum_stencil(const buffer<const T>& in, const buffer<T>& out) {
@@ -235,278 +197,290 @@ index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
   return sum_stencil<T, -2, -2, 2, 2>(in, out);
 }
 
+const auto loop_modes = testing::Values(loop_mode::serial, loop_mode::parallel);
+
+class trivial : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(
+    split_mode, trivial, testing::Combine(loop_modes, testing::Range(0, 4)), test_params_to_string<trivial::ParamType>);
+
 // A trivial pipeline with one stage
-TEST(pipeline, trivial) {
-  for (int split : {0, 1, 2, 3}) {
-    for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-      // Make the pipeline
-      node_context ctx;
+TEST_P(trivial, pipeline) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
 
-      auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
-      auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+  // Make the pipeline
+  node_context ctx;
 
-      var x(ctx, "x");
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
 
-      func mul = func::make(
-          multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
-      if (split > 0) {
-        mul.loops({{x, split, lm}});
-      }
+  var x(ctx, "x");
 
-      pipeline p = build_pipeline(ctx, {in}, {out});
+  func mul =
+      func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+  if (split > 0) {
+    mul.loops({{x, split, lm}});
+  }
 
-      // Run the pipeline
-      const int N = 10;
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-      buffer<int, 1> in_buf({N});
-      in_buf.allocate();
-      for (int i = 0; i < N; ++i) {
-        in_buf(i) = i;
-      }
+  // Run the pipeline
+  const int N = 10;
 
-      buffer<int, 1> out_buf({N});
-      out_buf.allocate();
+  buffer<int, 1> in_buf({N});
+  in_buf.allocate();
+  for (int i = 0; i < N; ++i) {
+    in_buf(i) = i;
+  }
 
-      // Not having span(std::initializer_list<T>) is unfortunate.
-      const raw_buffer* inputs[] = {&in_buf};
-      const raw_buffer* outputs[] = {&out_buf};
-      test_context eval_ctx;
-      p.evaluate(inputs, outputs, eval_ctx);
-      ASSERT_EQ(eval_ctx.heap.total_size, 0);
+  buffer<int, 1> out_buf({N});
+  out_buf.allocate();
 
-      for (int i = 0; i < N; ++i) {
-        ASSERT_EQ(out_buf(i), 2 * i);
-      }
-    }
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_size, 0);
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(out_buf(i), 2 * i);
   }
 }
 
+class elementwise : public testing::TestWithParam<std::tuple<loop_mode, int, bool>> {};
+
+INSTANTIATE_TEST_SUITE_P(split_schedule_mode, elementwise,
+    testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true)),
+    test_params_to_string<elementwise::ParamType>);
+
 // An example of two 1D elementwise operations in sequence.
-TEST(pipeline, elementwise_1d) {
-  for (int split : {0, 1, 2, 3}) {
-    for (bool schedule_storage : {false, true}) {
-      for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-        // Make the pipeline
-        node_context ctx;
+TEST_P(elementwise, pipeline_1d) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
+  bool schedule_storage = std::get<2>(GetParam());
 
-        auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
-        auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
-        auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
+  // Make the pipeline
+  node_context ctx;
 
-        var x(ctx, "x");
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
 
-        // Here we explicitly use std::functions (in the form of a
-        // func::callable typedef) to wrap the local calls
-        // purely to verify that the relevant func::make calls work correctly.
-        func::callable<const int, int> m2 = multiply_2<int>;
-        func::callable<const int, int> a1 = add_1<int>;
+  var x(ctx, "x");
 
-        func mul = func::make(
-            std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
-        func add = func::make(
-            std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+  // Here we explicitly use std::functions (in the form of a
+  // func::callable typedef) to wrap the local calls
+  // purely to verify that the relevant func::make calls work correctly.
+  func::callable<const int, int> m2 = multiply_2<int>;
+  func::callable<const int, int> a1 = add_1<int>;
 
-        if (split > 0) {
-          add.loops({{x, split, lm}});
-          if (schedule_storage) {
-            intm->store_at({&add, x});
-            intm->store_in(memory_type::stack);
-          }
-        }
+  func mul =
+      func::make(std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
+  func add =
+      func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
-        pipeline p = build_pipeline(ctx, {in}, {out});
-
-        // Run the pipeline
-        const int N = 10;
-
-        buffer<int, 1> in_buf({N});
-        in_buf.allocate();
-        for (int i = 0; i < N; ++i) {
-          in_buf(i) = i;
-        }
-
-        buffer<int, 1> out_buf({N});
-        out_buf.allocate();
-
-        // Not having span(std::initializer_list<T>) is unfortunate.
-        const raw_buffer* inputs[] = {&in_buf};
-        const raw_buffer* outputs[] = {&out_buf};
-        test_context eval_ctx;
-        p.evaluate(inputs, outputs, eval_ctx);
-        if (schedule_storage) {
-          ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-        }
-
-        for (int i = 0; i < N; ++i) {
-          ASSERT_EQ(out_buf(i), 2 * i + 1);
-        }
-      }
+  if (split > 0) {
+    add.loops({{x, split, lm}});
+    if (schedule_storage) {
+      intm->store_at({&add, x});
+      intm->store_in(memory_type::stack);
     }
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline
+  const int N = 10;
+
+  buffer<int, 1> in_buf({N});
+  in_buf.allocate();
+  for (int i = 0; i < N; ++i) {
+    in_buf(i) = i;
+  }
+
+  buffer<int, 1> out_buf({N});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (schedule_storage) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
+  }
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(out_buf(i), 2 * i + 1);
   }
 }
 
 // An example of two 2D elementwise operations in sequence.
-TEST(pipeline, elementwise_2d) {
-  for (int split : {0, 1, 2, 3}) {
-    for (bool schedule_storage : {false, true}) {
-      for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-        // Make the pipeline
-        node_context ctx;
+TEST_P(elementwise, pipeline_2d) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
+  bool schedule_storage = std::get<2>(GetParam());
 
-        auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
-        auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
-        auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+  // Make the pipeline
+  node_context ctx;
 
-        var x(ctx, "x");
-        var y(ctx, "y");
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
 
-        // Here we explicitly use lambdas to wrap the local calls,
-        // purely to verify that the relevant func::make calls work correctly.
-        auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return multiply_2<int>(a, b); };
-        auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
+  var x(ctx, "x");
+  var y(ctx, "y");
 
-        func mul = func::make(std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}},
-            call_stmt::callable_attrs{.allow_in_place = true});
-        func add = func::make(std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}},
-            call_stmt::callable_attrs{.allow_in_place = true});
+  // Here we explicitly use lambdas to wrap the local calls,
+  // purely to verify that the relevant func::make calls work correctly.
+  auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return multiply_2<int>(a, b); };
+  auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
 
-        if (split > 0) {
-          add.loops({{x, split, lm}, {y, split, lm}});
-          if (schedule_storage) {
-            intm->store_at({&add, x});
-            intm->store_in(memory_type::stack);
-          }
-        }
+  func mul = func::make(
+      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::callable_attrs{.allow_in_place = true});
+  func add = func::make(std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}},
+      call_stmt::callable_attrs{.allow_in_place = true});
 
-        pipeline p = build_pipeline(ctx, {in}, {out});
+  if (split > 0) {
+    add.loops({{x, split, lm}, {y, split, lm}});
+    if (schedule_storage) {
+      intm->store_at({&add, x});
+      intm->store_in(memory_type::stack);
+    }
+  }
 
-        // Run the pipeline
-        const int W = 15;
-        const int H = 10;
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-        buffer<int, 2> in_buf({W, H});
-        in_buf.allocate();
-        for (int y = 0; y < H; ++y) {
-          for (int x = 0; x < W; ++x) {
-            in_buf(x, y) = y * W + x;
-          }
-        }
+  // Run the pipeline
+  const int W = 15;
+  const int H = 10;
 
-        buffer<int, 2> out_buf({W, H});
-        out_buf.allocate();
+  buffer<int, 2> in_buf({W, H});
+  in_buf.allocate();
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      in_buf(x, y) = y * W + x;
+    }
+  }
 
-        // Not having span(std::initializer_list<T>) is unfortunate.
-        const raw_buffer* inputs[] = {&in_buf};
-        const raw_buffer* outputs[] = {&out_buf};
-        test_context eval_ctx;
-        p.evaluate(inputs, outputs, eval_ctx);
-        if (schedule_storage) {
-          ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-        } else {
-          ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
-        }
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
 
-        for (int y = 0; y < H; ++y) {
-          for (int x = 0; x < W; ++x) {
-            ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
-          }
-        }
-      }
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (schedule_storage) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
+  } else {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
+  }
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
     }
   }
 }
 
+class matmuls : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(
+    split_mode, matmuls, testing::Combine(loop_modes, testing::Range(0, 4)), test_params_to_string<matmuls::ParamType>);
+
 // Two matrix multiplies: D = (A x B) x C.
-TEST(pipeline, matmuls) {
-  for (int split : {0, 1, 2, 3}) {
-    for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-      // Make the pipeline
-      node_context ctx;
+TEST_P(matmuls, pipeline) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
 
-      auto a = buffer_expr::make(ctx, "a", 2, sizeof(int));
-      auto b = buffer_expr::make(ctx, "b", 2, sizeof(int));
-      auto c = buffer_expr::make(ctx, "c", 2, sizeof(int));
-      auto abc = buffer_expr::make(ctx, "abc", 2, sizeof(int));
+  // Make the pipeline
+  node_context ctx;
 
-      auto ab = buffer_expr::make(ctx, "ab", 2, sizeof(int));
+  auto a = buffer_expr::make(ctx, "a", 2, sizeof(int));
+  auto b = buffer_expr::make(ctx, "b", 2, sizeof(int));
+  auto c = buffer_expr::make(ctx, "c", 2, sizeof(int));
+  auto abc = buffer_expr::make(ctx, "abc", 2, sizeof(int));
 
-      var i(ctx, "i");
-      var j(ctx, "j");
+  auto ab = buffer_expr::make(ctx, "ab", 2, sizeof(int));
 
-      // The bounds required of the dimensions consumed by the reduction depend on the size of the
-      // buffers passed in. Note that we haven't used any constants yet.
-      auto K_ab = a->dim(1).bounds;
-      auto K_abc = c->dim(0).bounds;
+  var i(ctx, "i");
+  var j(ctx, "j");
 
-      // We use int for this pipeline so we can test for correctness exactly.
-      func matmul_ab = func::make(matmul<int>, {{a, {point(i), K_ab}}, {b, {K_ab, point(j)}}}, {{ab, {i, j}}});
-      func matmul_abc = func::make(matmul<int>, {{ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}}, {{abc, {i, j}}});
+  // The bounds required of the dimensions consumed by the reduction depend on the size of the
+  // buffers passed in. Note that we haven't used any constants yet.
+  auto K_ab = a->dim(1).bounds;
+  auto K_abc = c->dim(0).bounds;
 
-      a->dim(1).stride = a->elem_size();
-      b->dim(1).stride = b->elem_size();
-      c->dim(1).stride = c->elem_size();
-      abc->dim(1).stride = abc->elem_size();
+  // We use int for this pipeline so we can test for correctness exactly.
+  func matmul_ab = func::make(matmul<int>, {{a, {point(i), K_ab}}, {b, {K_ab, point(j)}}}, {{ab, {i, j}}});
+  func matmul_abc = func::make(matmul<int>, {{ab, {point(i), K_abc}}, {c, {K_abc, point(j)}}}, {{abc, {i, j}}});
 
-      // TODO: There should be a more user friendly way to control the strides.
-      ab->dim(1).stride = static_cast<index_t>(sizeof(int));
-      ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
+  a->dim(1).stride = a->elem_size();
+  b->dim(1).stride = b->elem_size();
+  c->dim(1).stride = c->elem_size();
+  abc->dim(1).stride = abc->elem_size();
 
-      if (split > 0) {
-        matmul_abc.loops({{i, split, lm}});
+  // TODO: There should be a more user friendly way to control the strides.
+  ab->dim(1).stride = static_cast<index_t>(sizeof(int));
+  ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
 
-        if (lm == loop_mode::parallel) {
-          ab->store_at({&matmul_abc, i});
-        }
-      }
+  if (split > 0) {
+    matmul_abc.loops({{i, split, lm}});
 
-      pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
-
-      // Run the pipeline.
-      const int M = 10;
-      const int N = 10;
-      buffer<int, 2> a_buf({N, M});
-      buffer<int, 2> b_buf({N, M});
-      buffer<int, 2> c_buf({N, M});
-      buffer<int, 2> abc_buf({N, M});
-      // TODO: There should be a more user friendly way to initialize a buffer with strides other than the default
-      // order.
-      std::swap(a_buf.dim(1), a_buf.dim(0));
-      std::swap(b_buf.dim(1), b_buf.dim(0));
-      std::swap(c_buf.dim(1), c_buf.dim(0));
-      std::swap(abc_buf.dim(1), abc_buf.dim(0));
-
-      init_random(a_buf);
-      init_random(b_buf);
-      init_random(c_buf);
-      abc_buf.allocate();
-
-      // Not having span(std::initializer_list<T>) is unfortunate.
-      const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
-      const raw_buffer* outputs[] = {&abc_buf};
-      test_context eval_ctx;
-      p.evaluate(inputs, outputs, eval_ctx);
-      if (split > 0 && lm == loop_mode::serial) {
-        ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int) * split);
-      }
-
-      buffer<int, 2> ref_ab({N, M});
-      buffer<int, 2> ref_abc({N, M});
-      std::swap(ref_ab.dim(1), ref_ab.dim(0));
-      std::swap(ref_abc.dim(1), ref_abc.dim(0));
-      ref_ab.allocate();
-      ref_abc.allocate();
-      matmul<int>(a_buf.cast<const int>(), b_buf.cast<const int>(), ref_ab.cast<int>());
-      matmul<int>(ref_ab.cast<const int>(), c_buf.cast<const int>(), ref_abc.cast<int>());
-      for (int i = 0; i < M; ++i) {
-        for (int j = 0; j < N; ++j) {
-          ASSERT_EQ(ref_abc(j, i), abc_buf(j, i));
-        }
-      }
-
-      if (split == 1 && lm == loop_mode::serial) {
-        check_replica_pipeline(define_replica_pipeline(ctx, {a, b, c}, {abc}));
-      }
+    if (lm == loop_mode::parallel) {
+      ab->store_at({&matmul_abc, i});
     }
+  }
+
+  pipeline p = build_pipeline(ctx, {a, b, c}, {abc});
+
+  // Run the pipeline.
+  const int M = 10;
+  const int N = 10;
+  buffer<int, 2> a_buf({N, M});
+  buffer<int, 2> b_buf({N, M});
+  buffer<int, 2> c_buf({N, M});
+  buffer<int, 2> abc_buf({N, M});
+  // TODO: There should be a more user friendly way to initialize a buffer with strides other than the default
+  // order.
+  std::swap(a_buf.dim(1), a_buf.dim(0));
+  std::swap(b_buf.dim(1), b_buf.dim(0));
+  std::swap(c_buf.dim(1), c_buf.dim(0));
+  std::swap(abc_buf.dim(1), abc_buf.dim(0));
+
+  init_random(a_buf);
+  init_random(b_buf);
+  init_random(c_buf);
+  abc_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&a_buf, &b_buf, &c_buf};
+  const raw_buffer* outputs[] = {&abc_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (split > 0 && lm == loop_mode::serial) {
+    ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int) * split);
+  }
+
+  buffer<int, 2> ref_ab({N, M});
+  buffer<int, 2> ref_abc({N, M});
+  std::swap(ref_ab.dim(1), ref_ab.dim(0));
+  std::swap(ref_abc.dim(1), ref_abc.dim(0));
+  ref_ab.allocate();
+  ref_abc.allocate();
+  matmul<int>(a_buf.cast<const int>(), b_buf.cast<const int>(), ref_ab.cast<int>());
+  matmul<int>(ref_ab.cast<const int>(), c_buf.cast<const int>(), ref_abc.cast<int>());
+  for (int i = 0; i < M; ++i) {
+    for (int j = 0; j < N; ++j) {
+      ASSERT_EQ(ref_abc(j, i), abc_buf(j, i));
+    }
+  }
+
+  if (split == 1 && lm == loop_mode::serial) {
+    check_replica_pipeline(define_replica_pipeline(ctx, {a, b, c}, {abc}));
   }
 }
 
@@ -531,7 +505,7 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-TEST(pipeline, pyramid) {
+TEST(pyramid, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -572,78 +546,82 @@ TEST(pipeline, pyramid) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
 
-TEST(pipeline, stencil) {
-  for (int split : {0, 1, 2, 3}) {
-    for (int split_intermediate : {0, 1, 2, 3}) {
-      for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-        // Make the pipeline
-        node_context ctx;
+class stencil : public testing::TestWithParam<std::tuple<loop_mode, int, int>> {};
 
-        auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
-        auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil,
+    testing::Combine(loop_modes, testing::Range(0, 4), testing::Range(0, 4)),
+    test_params_to_string<stencil::ParamType>);
 
-        auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+TEST_P(stencil, pipeline) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
+  int split_intermediate = std::get<2>(GetParam());
 
-        var x(ctx, "x");
-        var y(ctx, "y");
+  // Make the pipeline
+  node_context ctx;
 
-        var s(ctx, "s");
-        var t(ctx, "t");
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-        func add = func::make(add_1<short>, {{in, {point(s), point(t)}}}, {{intm, {s, t}}});
-        func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
-        if (split > 0) {
-          stencil.loops({{y, split, lm}});
-          if (lm == loop_mode::parallel) {
-            intm->store_at({&stencil, y});
-            intm->store_in(memory_type::stack);
-          }
-        }
+  var x(ctx, "x");
+  var y(ctx, "y");
 
-        if (split_intermediate > 0) {
-          add.loops({{t, split_intermediate, loop_mode::serial}});
-        }
+  var s(ctx, "s");
+  var t(ctx, "t");
 
-        pipeline p = build_pipeline(ctx, {in}, {out});
+  func add = func::make(add_1<short>, {{in, {point(s), point(t)}}}, {{intm, {s, t}}});
+  func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
-        // Run the pipeline.
-        const int W = 20;
-        const int H = 10;
-        buffer<short, 2> in_buf({W + 2, H + 2});
-        in_buf.translate(-1, -1);
-        buffer<short, 2> out_buf({W, H});
+  if (split > 0) {
+    stencil.loops({{y, split, lm}});
+    if (lm == loop_mode::parallel) {
+      intm->store_at({&stencil, y});
+      intm->store_in(memory_type::stack);
+    }
+  }
 
-        init_random(in_buf);
-        out_buf.allocate();
+  if (split_intermediate > 0) {
+    add.loops({{t, split_intermediate, loop_mode::serial}});
+  }
 
-        // Not having span(std::initializer_list<T>) is unfortunate.
-        const raw_buffer* inputs[] = {&in_buf};
-        const raw_buffer* outputs[] = {&out_buf};
-        test_context eval_ctx;
-        p.evaluate(inputs, outputs, eval_ctx);
-        if (lm == loop_mode::serial && split > 0) {
-          ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
-        }
-        ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-        for (int y = 0; y < H; ++y) {
-          for (int x = 0; x < W; ++x) {
-            int correct = 0;
-            for (int dy = -1; dy <= 1; ++dy) {
-              for (int dx = -1; dx <= 1; ++dx) {
-                correct += in_buf(x + dx, y + dy) + 1;
-              }
-            }
-            ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
-          }
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 2, H + 2});
+  in_buf.translate(-1, -1);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (lm == loop_mode::serial && split > 0) {
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
+  }
+  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          correct += in_buf(x + dx, y + dy) + 1;
         }
       }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
 }
 
-TEST(pipeline, slide_2d) {
+TEST(slide_2d, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -700,87 +678,91 @@ TEST(pipeline, slide_2d) {
   }
 }
 
-TEST(pipeline, stencil_chain) {
-  for (int split : {0, 1, 2}) {
-    for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-      // Make the pipeline
-      node_context ctx;
+class stencil_chain : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
 
-      auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
-      auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_modes, testing::Range(0, 3)),
+    test_params_to_string<stencil_chain::ParamType>);
 
-      auto intm = buffer_expr::make(ctx, "add_result", 2, sizeof(short));
-      auto intm2 = buffer_expr::make(ctx, "stencil1_result", 2, sizeof(short));
+TEST_P(stencil_chain, pipeline) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
 
-      var x(ctx, "x");
-      var y(ctx, "y");
+  // Make the pipeline
+  node_context ctx;
 
-      func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-      func stencil1 = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm2, {x, y}}});
-      func stencil2 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-      if (split > 0) {
-        stencil2.loops({{y, split, lm}});
-        if (lm == loop_mode::parallel) {
-          intm->store_at({&stencil2, y});
-          intm2->store_at({&stencil2, y});
-          intm->store_in(memory_type::stack);
-          intm2->store_in(memory_type::stack);
-        }
-      }
+  auto intm = buffer_expr::make(ctx, "add_result", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "stencil1_result", 2, sizeof(short));
 
-      pipeline p = build_pipeline(ctx, {in}, {out});
+  var x(ctx, "x");
+  var y(ctx, "y");
 
-      // Run the pipeline.
-      const int W = 20;
-      const int H = 30;
-      buffer<short, 2> in_buf({W + 4, H + 4});
-      in_buf.translate(-2, -2);
-      buffer<short, 2> out_buf({W, H});
+  func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func stencil1 = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm2, {x, y}}});
+  func stencil2 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
-      init_random(in_buf);
-      out_buf.allocate();
-
-      // Not having span(std::initializer_list<T>) is unfortunate.
-      const raw_buffer* inputs[] = {&in_buf};
-      const raw_buffer* outputs[] = {&out_buf};
-      test_context eval_ctx;
-      p.evaluate(inputs, outputs, eval_ctx);
-      if (split > 0 && lm == loop_mode::serial) {
-        ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short) +
-                                                (W + 4) * align_up(split + 2, split) * sizeof(short));
-      }
-      ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 2 : 0);
-
-      // Run the pipeline stages manually to get the reference result.
-      buffer<short, 2> ref_intm({W + 4, H + 4});
-      buffer<short, 2> ref_intm2({W + 2, H + 2});
-      buffer<short, 2> ref_out({W, H});
-      ref_intm.translate(-2, -2);
-      ref_intm2.translate(-1, -1);
-      ref_intm.allocate();
-      ref_intm2.allocate();
-      ref_out.allocate();
-
-      add_1<short>(in_buf.cast<const short>(), ref_intm.cast<short>());
-      sum3x3<short>(ref_intm.cast<const short>(), ref_intm2.cast<short>());
-      sum3x3<short>(ref_intm2.cast<const short>(), ref_out.cast<short>());
-
-      for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-          ASSERT_EQ(ref_out(x, y), out_buf(x, y));
-        }
-      }
-
-      // Also visualize this pipeline.
-      if (lm == loop_mode::serial) {
-        visualize(viz_dir() + "stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
-      }
+  if (split > 0) {
+    stencil2.loops({{y, split, lm}});
+    if (lm == loop_mode::parallel) {
+      intm->store_at({&stencil2, y});
+      intm2->store_at({&stencil2, y});
+      intm->store_in(memory_type::stack);
+      intm2->store_in(memory_type::stack);
     }
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (split > 0 && lm == loop_mode::serial) {
+    ASSERT_EQ(eval_ctx.heap.total_size,
+        (W + 2) * align_up(split + 2, split) * sizeof(short) + (W + 4) * align_up(split + 2, split) * sizeof(short));
+  }
+  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 2 : 0);
+
+  // Run the pipeline stages manually to get the reference result.
+  buffer<short, 2> ref_intm({W + 4, H + 4});
+  buffer<short, 2> ref_intm2({W + 2, H + 2});
+  buffer<short, 2> ref_out({W, H});
+  ref_intm.translate(-2, -2);
+  ref_intm2.translate(-1, -1);
+  ref_intm.allocate();
+  ref_intm2.allocate();
+  ref_out.allocate();
+
+  add_1<short>(in_buf.cast<const short>(), ref_intm.cast<short>());
+  sum3x3<short>(ref_intm.cast<const short>(), ref_intm2.cast<short>());
+  sum3x3<short>(ref_intm2.cast<const short>(), ref_out.cast<short>());
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    }
+  }
+
+  // Also visualize this pipeline.
+  if (lm == loop_mode::serial) {
+    visualize(viz_dir() + "stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
   }
 }
 
-TEST(pipeline, flip_y) {
+TEST(flip_y, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -819,7 +801,7 @@ TEST(pipeline, flip_y) {
   }
 }
 
-TEST(pipeline, padded_copy) {
+TEST(padded_copy, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -876,132 +858,149 @@ TEST(pipeline, padded_copy) {
   }
 }
 
-TEST(pipeline, multiple_outputs) {
-  for (int split : {0, 1, 2, 3}) {
-    for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-      // Make the pipeline
-      node_context ctx;
+class multiple_outputs : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
 
-      auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
-      auto sum_x = buffer_expr::make(ctx, "sum_x", 2, sizeof(int));
-      auto sum_xy = buffer_expr::make(ctx, "sum_xy", 1, sizeof(int));
+INSTANTIATE_TEST_SUITE_P(split_mode, multiple_outputs, testing::Combine(loop_modes, testing::Range(0, 4)),
+    test_params_to_string<multiple_outputs::ParamType>);
 
-      var x(ctx, "x");
-      var y(ctx, "y");
-      var z(ctx, "z");
+TEST_P(multiple_outputs, pipeline) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
 
-      auto X = in->dim(0).bounds;
-      auto Y = in->dim(1).bounds;
+  // Make the pipeline
+  node_context ctx;
 
-      // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
-      func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
-                                                         const buffer<int>& sum_xy) -> index_t {
-        assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
-        for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
-          sum_xy(z) = 0;
-          for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
-            sum_x(y, z) = 0;
-            for (index_t x = in.dim(0).min(); x <= in.dim(0).max(); ++x) {
-              sum_x(y, z) += in(x, y, z);
-              sum_xy(z) += in(x, y, z);
-            }
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto sum_x = buffer_expr::make(ctx, "sum_x", 2, sizeof(int));
+  auto sum_xy = buffer_expr::make(ctx, "sum_xy", 1, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  auto X = in->dim(0).bounds;
+  auto Y = in->dim(1).bounds;
+
+  // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
+  func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
+                                                     const buffer<int>& sum_xy) -> index_t {
+    assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
+    for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
+      sum_xy(z) = 0;
+      for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
+        sum_x(y, z) = 0;
+        for (index_t x = in.dim(0).min(); x <= in.dim(0).max(); ++x) {
+          sum_x(y, z) += in(x, y, z);
+          sum_xy(z) += in(x, y, z);
+        }
+      }
+    }
+    return 0;
+  };
+  func sums = func::make(std::move(sum_x_xy), {{in, {X, Y, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
+
+  if (split > 0) {
+    sums.loops({{z, split, lm}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  const int D = 5;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  buffer<int, 2> sum_x_buf({H, D});
+  buffer<int, 1> sum_xy_buf({D});
+  sum_x_buf.allocate();
+  sum_xy_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    int expected_xy = 0;
+    for (int y = 0; y < H; ++y) {
+      int expected_x = 0;
+      for (int x = 0; x < W; ++x) {
+        expected_x += in_buf(x, y, z);
+        expected_xy += in_buf(x, y, z);
+      }
+      ASSERT_EQ(sum_x_buf(y, z), expected_x);
+    }
+    ASSERT_EQ(sum_xy_buf(z), expected_xy);
+  }
+
+  if (split == 1 && lm == loop_mode::serial) {
+    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
+  }
+}
+
+class outer_product : public testing::TestWithParam<std::tuple<loop_mode, int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(split_split_mode, outer_product,
+    testing::Combine(loop_modes, testing::Range(0, 4), testing::Range(0, 4)),
+    test_params_to_string<outer_product::ParamType>);
+
+TEST_P(outer_product, pipeline) {
+  loop_mode lm = std::get<0>(GetParam());
+  int split_i = std::get<1>(GetParam());
+  int split_j = std::get<2>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto a = buffer_expr::make(ctx, "a", 1, sizeof(int));
+  auto b = buffer_expr::make(ctx, "b", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var i(ctx, "i");
+  var j(ctx, "j");
+
+  func outer = func::make(
+      [](const buffer<const int>& a, const buffer<const int>& b, const buffer<int>& c) -> index_t {
+        for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
+          for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
+            c(i, j) = a(i) * b(j);
           }
         }
         return 0;
-      };
-      func sums = func::make(std::move(sum_x_xy), {{in, {X, Y, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
+      },
+      {{a, {point(i)}}, {b, {point(j)}}}, {{out, {i, j}}});
 
-      if (split > 0) {
-        sums.loops({{z, split, lm}});
-      }
+  std::vector<func::loop_info> loops;
+  if (split_i > 0) loops.emplace_back(i, split_i, lm);
+  if (split_j > 0) loops.emplace_back(j, split_j, lm);
+  outer.loops(loops);
 
-      pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
+  pipeline p = build_pipeline(ctx, {a, b}, {out});
 
-      // Run the pipeline.
-      const int H = 20;
-      const int W = 10;
-      const int D = 5;
-      buffer<int, 3> in_buf({W, H, D});
-      init_random(in_buf);
+  // Run the pipeline.
+  const int M = 20;
+  const int N = 10;
+  buffer<int, 1> a_buf({M});
+  buffer<int, 1> b_buf({N});
+  init_random(a_buf);
+  init_random(b_buf);
 
-      buffer<int, 2> sum_x_buf({H, D});
-      buffer<int, 1> sum_xy_buf({D});
-      sum_x_buf.allocate();
-      sum_xy_buf.allocate();
-      const raw_buffer* inputs[] = {&in_buf};
-      const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
-      test_context eval_ctx;
-      p.evaluate(inputs, outputs, eval_ctx);
+  buffer<int, 2> out_buf({M, N});
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&a_buf, &b_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
 
-      for (int z = 0; z < D; ++z) {
-        int expected_xy = 0;
-        for (int y = 0; y < H; ++y) {
-          int expected_x = 0;
-          for (int x = 0; x < W; ++x) {
-            expected_x += in_buf(x, y, z);
-            expected_xy += in_buf(x, y, z);
-          }
-          ASSERT_EQ(sum_x_buf(y, z), expected_x);
-        }
-        ASSERT_EQ(sum_xy_buf(z), expected_xy);
-      }
-
-      if (split == 1 && lm == loop_mode::serial) {
-        check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
-      }
+  for (int j = 0; j < N; ++j) {
+    for (int i = 0; i < M; ++i) {
+      ASSERT_EQ(out_buf(i, j), a_buf(i) * b_buf(j));
     }
   }
 }
 
-TEST(pipeline, outer_product) {
-  for (int split_i : {0, 1, 2, 3}) {
-    for (int split_j : {0, 1, 2, 3}) {
-      for (loop_mode lm : {loop_mode::serial, loop_mode::parallel}) {
-        // Make the pipeline
-        node_context ctx;
-
-        auto a = buffer_expr::make(ctx, "a", 1, sizeof(int));
-        auto b = buffer_expr::make(ctx, "b", 1, sizeof(int));
-        auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
-
-        var i(ctx, "i");
-        var j(ctx, "j");
-
-        func outer = func::make(outer_product<int>, {{a, {point(i)}}, {b, {point(j)}}}, {{out, {i, j}}});
-
-        std::vector<func::loop_info> loops;
-        if (split_i > 0) loops.emplace_back(i, split_i, lm);
-        if (split_j > 0) loops.emplace_back(j, split_j, lm);
-        outer.loops(loops);
-
-        pipeline p = build_pipeline(ctx, {a, b}, {out});
-
-        // Run the pipeline.
-        const int M = 20;
-        const int N = 10;
-        buffer<int, 1> a_buf({M});
-        buffer<int, 1> b_buf({N});
-        init_random(a_buf);
-        init_random(b_buf);
-
-        buffer<int, 2> out_buf({M, N});
-        out_buf.allocate();
-        const raw_buffer* inputs[] = {&a_buf, &b_buf};
-        const raw_buffer* outputs[] = {&out_buf};
-        test_context eval_ctx;
-        p.evaluate(inputs, outputs, eval_ctx);
-
-        for (int j = 0; j < N; ++j) {
-          for (int i = 0; i < M; ++i) {
-            ASSERT_EQ(out_buf(i, j), a_buf(i) * b_buf(j));
-          }
-        }
-      }
-    }
-  }
-}
-
-TEST(pipeline, unrelated) {
+TEST(unrelated, pipeline) {
   // Make the pipeline
   auto make_pipeline = []() {
     node_context ctx;
@@ -1082,126 +1081,133 @@ TEST(pipeline, unrelated) {
   }
 }
 
-TEST(pipeline, copied_result) {
-  for (int schedule : {0, 1, 2}) {
-    // Make the pipeline
-    node_context ctx;
+class copied_result : public testing::TestWithParam<int> {};
 
-    auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
-    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+INSTANTIATE_TEST_SUITE_P(schedule, copied_result, testing::Range(0, 3));
 
-    auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+TEST_P(copied_result, pipeline) {
+  int schedule = GetParam();
 
-    var x(ctx, "x");
-    var y(ctx, "y");
+  // Make the pipeline
+  node_context ctx;
 
-    // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-    func stencil = func::make(sum3x3<short>, {{in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm, {x, y}}});
-    func padded = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    switch (schedule) {
-    case 0: break;
-    case 1:
-      padded.loops({y});
-      stencil.compute_root();
-      break;
-    case 2: padded.loops({y}); break;
-    }
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
-    pipeline p = build_pipeline(ctx, {in}, {out});
+  var x(ctx, "x");
+  var y(ctx, "y");
 
-    // Run the pipeline.
-    const int W = 20;
-    const int H = 10;
-    buffer<short, 2> in_buf({W + 2, H + 2});
-    in_buf.translate(-1, -1);
-    buffer<short, 2> out_buf({W, H});
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func stencil = func::make(sum3x3<short>, {{in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm, {x, y}}});
+  func padded = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
 
-    init_random(in_buf);
-    out_buf.allocate();
+  switch (schedule) {
+  case 0: break;
+  case 1:
+    padded.loops({y});
+    stencil.compute_root();
+    break;
+  case 2: padded.loops({y}); break;
+  }
 
-    // Not having span(std::initializer_list<T>) is unfortunate.
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        int correct = 0;
-        for (int dy = -1; dy <= 1; ++dy) {
-          for (int dx = -1; dx <= 1; ++dx) {
-            correct += in_buf(x + dx, y + dy);
-          }
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 2, H + 2});
+  in_buf.translate(-1, -1);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          correct += in_buf(x + dx, y + dy);
         }
-        ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
       }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
 }
 
-TEST(pipeline, concatenated_result) {
-  for (bool no_alias_buffers : {false, true}) {
-    // Make the pipeline
-    node_context ctx;
+class concatenated_result : public testing::TestWithParam<bool> {};
 
-    auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
-    auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
-    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+INSTANTIATE_TEST_SUITE_P(schedule, concatenated_result, testing::Values(false, true));
 
-    auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
-    auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+TEST_P(concatenated_result, pipeline) {
+  bool no_alias_buffers = GetParam();
+  // Make the pipeline
+  node_context ctx;
 
-    var x(ctx, "x");
-    var y(ctx, "y");
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
-    func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
-    func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
-    func concatenated =
-        func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
 
-    pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+  var x(ctx, "x");
+  var y(ctx, "y");
 
-    // Run the pipeline.
-    const int W = 20;
-    const int H1 = 4;
-    const int H2 = 7;
-    buffer<short, 2> in1_buf({W, H1});
-    buffer<short, 2> in2_buf({W, H2});
-    init_random(in1_buf);
-    init_random(in2_buf);
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
+  func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
+  func concatenated =
+      func::make_concat({intm1, intm2}, {out, {x, y}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
 
-    buffer<short, 2> out_buf({W, H1 + H2});
-    out_buf.allocate();
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
-    // Not having span(std::initializer_list<T>) is unfortunate.
-    const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    if (!no_alias_buffers) {
-      ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  // Run the pipeline.
+  const int W = 20;
+  const int H1 = 4;
+  const int H2 = 7;
+  buffer<short, 2> in1_buf({W, H1});
+  buffer<short, 2> in2_buf({W, H2});
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<short, 2> out_buf({W, H1 + H2});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  }
+
+  for (int y = 0; y < H1 + H2; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
     }
+  }
 
-    for (int y = 0; y < H1 + H2; ++y) {
-      for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
-      }
-    }
+  // Also visualize this pipeline.
+  visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
 
-    // Also visualize this pipeline.
-    visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
-
-    if (no_alias_buffers == true) {
-      check_replica_pipeline(
-          define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}));
-    }
+  if (no_alias_buffers == true) {
+    check_replica_pipeline(
+        define_replica_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers}));
   }
 }
 
-TEST(pipeline, stacked_result) {
+TEST(stacked_result, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -1251,82 +1257,86 @@ TEST(pipeline, stacked_result) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
-TEST(pipeline, padded_stencil) {
-  for (int schedule : {0, 1, 2}) {
-    // Make the pipeline
-    node_context ctx;
+class padded_stencil : public testing::TestWithParam<int> {};
 
-    auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
-    auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+INSTANTIATE_TEST_SUITE_P(schedule, padded_stencil, testing::Range(0, 3));
 
-    auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
-    auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
+TEST_P(padded_stencil, pipeline) {
+  int schedule = GetParam();
 
-    var x(ctx, "x");
-    var y(ctx, "y");
+  // Make the pipeline
+  node_context ctx;
 
-    func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-    func padded = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {padded_intm, {x, y}}, {{6, 0}});
-    func stencil = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-    switch (schedule) {
-    case 0: break;
-    case 1:
-      stencil.loops({y});
-      padded.compute_root();
-      break;
-    case 2: stencil.loops({y}); break;
-    }
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
 
-    pipeline p = build_pipeline(ctx, {in}, {out});
+  var x(ctx, "x");
+  var y(ctx, "y");
 
-    // Run the pipeline.
-    const int W = 20;
-    const int H = 30;
-    buffer<short, 2> in_buf({W, H});
-    buffer<short, 2> out_buf({W, H});
+  func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func padded = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {padded_intm, {x, y}}, {{6, 0}});
+  func stencil = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
-    init_random(in_buf);
-    out_buf.allocate();
+  switch (schedule) {
+  case 0: break;
+  case 1:
+    stencil.loops({y});
+    padded.compute_root();
+    break;
+  case 2: stencil.loops({y}); break;
+  }
 
-    // Not having span(std::initializer_list<T>) is unfortunate.
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    if (schedule == 2) {
-      // TODO: We need to be able to find the upper bound of
-      // max((x + 1), buffer_min(a, b)) - min((x + 1), buffer_max(a, b)) to fold this.
-      // ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
-      ASSERT_EQ(eval_ctx.heap.total_count, 2);
-    }
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        int correct = 0;
-        for (int dy = -1; dy <= 1; ++dy) {
-          for (int dx = -1; dx <= 1; ++dx) {
-            if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
-              correct += in_buf(x + dx, y + dy) + 1;
-            } else {
-              correct += 6;
-            }
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (schedule == 2) {
+    // TODO: We need to be able to find the upper bound of
+    // max((x + 1), buffer_min(a, b)) - min((x + 1), buffer_max(a, b)) to fold this.
+    // ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
+    ASSERT_EQ(eval_ctx.heap.total_count, 2);
+  }
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
+            correct += in_buf(x + dx, y + dy) + 1;
+          } else {
+            correct += 6;
           }
         }
-        ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
       }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
+  }
 
-    // Also visualize this pipeline.
-    visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+  // Also visualize this pipeline.
+  visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
 
-    if (schedule == 1) {
-      check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
-    }
+  if (schedule == 1) {
+    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
   }
 }
 
-TEST(pipeline, constant) {
+TEST(constant, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -1369,14 +1379,110 @@ TEST(pipeline, constant) {
   }
 }
 
-TEST(pipeline, parallel_stencils) {
-  for (int schedule : {0, 1, 2}) {
-    // Make the pipeline
+class parallel_stencils : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 3));
+
+TEST_P(parallel_stencils, pipeline) {
+  int schedule = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+  auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
+  auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  func mul2 = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
+  func diff =
+      func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  if (schedule == 0) {
+    diff.loops({{y, 1}});
+  } else if (schedule == 1) {
+    diff.loops({{y, 2}});
+    stencil1.loops({{y, 1}});
+    stencil2.loops({{y, 2}});
+    add1.compute_root();
+    mul2.compute_at({&diff, y});
+  } else if (schedule == 2) {
+    diff.loops({{y, 2}});
+    stencil1.loops({{y, 2}});
+    stencil2.loops({{y, 2}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in1_buf({W + 2, H + 2});
+  buffer<short, 2> in2_buf({W + 4, H + 4});
+  in1_buf.translate(-1, -1);
+  in2_buf.translate(-2, -2);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in1_buf);
+  init_random(in2_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // Run the pipeline stages manually to get the reference result.
+  buffer<short, 2> ref_intm1({W + 2, H + 2});
+  buffer<short, 2> ref_intm2({W + 4, H + 4});
+  buffer<short, 2> ref_intm3({W, H});
+  buffer<short, 2> ref_intm4({W, H});
+  buffer<short, 2> ref_out({W, H});
+  ref_intm1.translate(-1, -1);
+  ref_intm2.translate(-2, -2);
+  ref_intm1.allocate();
+  ref_intm2.allocate();
+  ref_intm3.allocate();
+  ref_intm4.allocate();
+  ref_out.allocate();
+
+  add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
+  multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
+  sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
+  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    }
+  }
+
+  // Also visualize this pipeline
+  visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
+}
+
+class diamond_stencils : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 3));
+
+TEST_P(diamond_stencils, pipeline) {
+  int schedule = GetParam();
+
+  auto make_pipeline = [schedule]() {
     node_context ctx;
 
-    auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(short));
-    auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(short));
-    auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+    auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
     auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
     auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
     auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
@@ -1385,9 +1491,8 @@ TEST(pipeline, parallel_stencils) {
     var x(ctx, "x");
     var y(ctx, "y");
 
-    func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-    func mul2 = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-    func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
+    func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
+    func stencil1 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
     func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
     func diff =
         func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
@@ -1395,149 +1500,62 @@ TEST(pipeline, parallel_stencils) {
     if (schedule == 0) {
       diff.loops({{y, 1}});
     } else if (schedule == 1) {
-      diff.loops({{y, 2}});
-      stencil1.loops({{y, 1}});
-      stencil2.loops({{y, 2}});
-      add1.compute_root();
-      mul2.compute_at({&diff, y});
-    } else if (schedule == 2) {
-      diff.loops({{y, 2}});
+      diff.loops({{y, 1}});
       stencil1.loops({{y, 2}});
       stencil2.loops({{y, 2}});
+    } else if (schedule == 2) {
+      diff.loops({{y, 1}});
+      stencil1.loops({{y, 2}});
+      stencil2.loops({{y, 2}});
+      mul2.compute_root();
     }
 
-    pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+    return build_pipeline(ctx, {in}, {out});
+  };
+  pipeline p = make_pipeline();
+  pipeline p2 = make_pipeline();
+  ASSERT_TRUE(match(p.body, p2.body));
 
-    // Run the pipeline.
-    const int W = 20;
-    const int H = 30;
-    buffer<short, 2> in1_buf({W + 2, H + 2});
-    buffer<short, 2> in2_buf({W + 4, H + 4});
-    in1_buf.translate(-1, -1);
-    in2_buf.translate(-2, -2);
-    buffer<short, 2> out_buf({W, H});
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 4, H + 4});
+  in_buf.translate(-2, -2);
+  buffer<short, 2> out_buf({W, H});
 
-    init_random(in1_buf);
-    init_random(in2_buf);
-    out_buf.allocate();
+  init_random(in_buf);
+  out_buf.allocate();
 
-    // Not having span(std::initializer_list<T>) is unfortunate.
-    const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
 
-    // Run the pipeline stages manually to get the reference result.
-    buffer<short, 2> ref_intm1({W + 2, H + 2});
-    buffer<short, 2> ref_intm2({W + 4, H + 4});
-    buffer<short, 2> ref_intm3({W, H});
-    buffer<short, 2> ref_intm4({W, H});
-    buffer<short, 2> ref_out({W, H});
-    ref_intm1.translate(-1, -1);
-    ref_intm2.translate(-2, -2);
-    ref_intm1.allocate();
-    ref_intm2.allocate();
-    ref_intm3.allocate();
-    ref_intm4.allocate();
-    ref_out.allocate();
+  // Run the pipeline stages manually to get the reference result.
+  buffer<short, 2> ref_intm2({W + 4, H + 4});
+  buffer<short, 2> ref_intm3({W, H});
+  buffer<short, 2> ref_intm4({W, H});
+  buffer<short, 2> ref_out({W, H});
+  ref_intm2.translate(-2, -2);
+  ref_intm2.allocate();
+  ref_intm3.allocate();
+  ref_intm4.allocate();
+  ref_out.allocate();
 
-    add_1<short>(in1_buf.cast<const short>(), ref_intm1.cast<short>());
-    multiply_2<short>(in2_buf.cast<const short>(), ref_intm2.cast<short>());
-    sum3x3<short>(ref_intm1.cast<const short>(), ref_intm3.cast<short>());
-    sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-    subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
+  multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
+  sum3x3<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
+  sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
+  subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
 
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(ref_out(x, y), out_buf(x, y));
-      }
-    }
-
-    // Also visualize this pipeline
-    visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
-  }
-}
-
-TEST(pipeline, diamond_stencils) {
-  for (int schedule : {0, 1, 2}) {
-    auto make_pipeline = [schedule]() {
-      node_context ctx;
-
-      auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
-      auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
-      auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
-      auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
-      auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
-
-      var x(ctx, "x");
-      var y(ctx, "y");
-
-      func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
-      func stencil1 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
-      func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
-      func diff =
-          func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
-
-      if (schedule == 0) {
-        diff.loops({{y, 1}});
-      } else if (schedule == 1) {
-        diff.loops({{y, 1}});
-        stencil1.loops({{y, 2}});
-        stencil2.loops({{y, 2}});
-      } else if (schedule == 2) {
-        diff.loops({{y, 1}});
-        stencil1.loops({{y, 2}});
-        stencil2.loops({{y, 2}});
-        mul2.compute_root();
-      }
-
-      return build_pipeline(ctx, {in}, {out});
-    };
-    pipeline p = make_pipeline();
-    pipeline p2 = make_pipeline();
-    ASSERT_TRUE(match(p.body, p2.body));
-
-    // Run the pipeline.
-    const int W = 20;
-    const int H = 10;
-    buffer<short, 2> in_buf({W + 4, H + 4});
-    in_buf.translate(-2, -2);
-    buffer<short, 2> out_buf({W, H});
-
-    init_random(in_buf);
-    out_buf.allocate();
-
-    // Not having span(std::initializer_list<T>) is unfortunate.
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-
-    // Run the pipeline stages manually to get the reference result.
-    buffer<short, 2> ref_intm2({W + 4, H + 4});
-    buffer<short, 2> ref_intm3({W, H});
-    buffer<short, 2> ref_intm4({W, H});
-    buffer<short, 2> ref_out({W, H});
-    ref_intm2.translate(-2, -2);
-    ref_intm2.allocate();
-    ref_intm3.allocate();
-    ref_intm4.allocate();
-    ref_out.allocate();
-
-    multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
-    sum3x3<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
-    sum5x5<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-    subtract<short>(ref_intm3.cast<const short>(), ref_intm4.cast<const short>(), ref_out.cast<short>());
-
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(ref_out(x, y), out_buf(x, y));
-      }
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
     }
   }
 }
 
-TEST(pipeline, Y) {
+TEST(fork, pipeline) {
   // Make the pipeline
   node_context ctx;
 
