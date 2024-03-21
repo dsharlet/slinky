@@ -30,7 +30,7 @@ std::string test_params_to_string(const testing::TestParamInfo<T>& info) {
   return test_params_to_string_impl(info.param, std::make_index_sequence<n>());
 }
 
-std::string read_entire_file(const std::string& pathname) {
+inline std::string read_entire_file(const std::string& pathname) {
   std::ifstream f(pathname, std::ios::in | std::ios::binary);
   std::string result;
 
@@ -47,11 +47,11 @@ std::string read_entire_file(const std::string& pathname) {
   return result;
 }
 
-std::string read_entire_runfile(const std::string& rlocation) {
+inline std::string read_entire_runfile(const std::string& rlocation) {
   return read_entire_file(get_bazel_file_path(rlocation));
 }
 
-std::string remove_windows_newlines(std::string s) {
+inline std::string remove_windows_newlines(std::string s) {
   s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
   return s;
 }
