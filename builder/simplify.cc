@@ -510,6 +510,7 @@ public:
   }
 
   void visit(const allocate* op) override {
+    expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
     box_expr bounds;
     dims.reserve(op->dims.size());
@@ -549,9 +550,9 @@ public:
       }
     }
 
-    if (changed || !body.same_as(op->body)) {
+    if (changed || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(block::make({std::move(before),
-          allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)), std::move(after)}));
+          allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)), std::move(after)}));
     } else {
       set_result(op);
     }
