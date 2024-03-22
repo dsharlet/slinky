@@ -15,6 +15,10 @@
 #include "runtime/visualize.h"
 
 namespace slinky {
+    
+std::string read_entire_runfile(const std::string& rlocation) {
+  return read_entire_file(get_bazel_file_path(rlocation));
+}
 
 std::string get_replica_golden() {
   static std::string golden = remove_windows_newlines(read_entire_runfile("builder/replica_pipeline_test.cc"));

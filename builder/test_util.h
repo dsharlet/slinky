@@ -1,6 +1,7 @@
 #ifndef SLINKY_BUILDER_TEST_UTIL_H
 #define SLINKY_BUILDER_TEST_UTIL_H
 
+#include <fstream>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -45,10 +46,6 @@ inline std::string read_entire_file(const std::string& pathname) {
   }
   f.close();
   return result;
-}
-
-inline std::string read_entire_runfile(const std::string& rlocation) {
-  return read_entire_file(get_bazel_file_path(rlocation));
 }
 
 inline std::string remove_windows_newlines(std::string s) {
