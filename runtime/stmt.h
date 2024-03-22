@@ -190,13 +190,13 @@ class allocate : public stmt_node<allocate> {
 public:
   memory_type storage;
   symbol_id sym;
-  std::size_t elem_size;
+  expr elem_size;
   std::vector<dim_expr> dims;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(symbol_id sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::allocate;
 };

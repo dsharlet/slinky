@@ -109,7 +109,7 @@ public:
         }
       }
       stmt result = make_buffer::make(
-          op->sym, buffer_at(target_var, at), static_cast<index_t>(op->elem_size), std::move(dims), std::move(body));
+          op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target.first](const copy_stmt* op) {
         if (op->src != src || op->dst != dst) {

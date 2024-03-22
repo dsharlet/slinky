@@ -114,7 +114,7 @@ public:
     expr alloc_var = variable::make(op->sym);
 
     box_expr& bounds = *infer[op->sym];
-    expr stride = static_cast<index_t>(op->elem_size);
+    expr stride = op->elem_size;
     for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
       const interval_expr& bounds_d = bounds[d];
 

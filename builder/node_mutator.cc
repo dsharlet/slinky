@@ -159,6 +159,7 @@ void node_mutator::visit(const copy_stmt* op) {
   }
 }
 void node_mutator::visit(const allocate* op) {
+  expr elem_size = mutate(op->elem_size);
   std::vector<dim_expr> dims;
   dims.reserve(op->dims.size());
   bool changed = false;
@@ -168,10 +169,10 @@ void node_mutator::visit(const allocate* op) {
     changed = changed || !dims.back().same_as(i);
   }
   stmt body = mutate(op->body);
-  if (!changed && body.same_as(op->body)) {
+  if (!changed && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)));
+    set_result(allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)));
   }
 }
 void node_mutator::visit(const make_buffer* op) {

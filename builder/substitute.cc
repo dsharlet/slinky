@@ -470,6 +470,7 @@ public:
     }
   }
   void visit(const allocate* op) override {
+    expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
     dims.reserve(op->dims.size());
     bool changed = false;
@@ -479,10 +480,10 @@ public:
       changed = changed || !dims.back().same_as(i);
     }
     stmt body = mutate_decl_body(op->sym, op->body);
-    if (!changed && body.same_as(op->body)) {
+    if (!changed && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), std::move(body)));
+      set_result(allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)));
     }
   }
   void visit(const make_buffer* op) override {
