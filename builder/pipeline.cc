@@ -25,8 +25,8 @@
 
 namespace slinky {
 
-buffer_expr::buffer_expr(symbol_id sym, std::size_t rank, index_t elem_size)
-    : sym_(sym), elem_size_(elem_size), producer_(nullptr), constant_(nullptr) {
+buffer_expr::buffer_expr(symbol_id sym, std::size_t rank, expr elem_size)
+    : sym_(sym), elem_size_(std::move(elem_size)), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
   auto var = variable::make(sym);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
@@ -38,7 +38,8 @@ buffer_expr::buffer_expr(symbol_id sym, std::size_t rank, index_t elem_size)
 }
 
 buffer_expr::buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer)
-    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr), constant_(std::move(constant_buffer)) {
+    : sym_(sym), elem_size_(static_cast<index_t>(constant_buffer->elem_size)), producer_(nullptr),
+      constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
   dims_.reserve(constant_->rank);
 
@@ -51,12 +52,20 @@ buffer_expr::buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer)
   }
 }
 
+buffer_expr_ptr buffer_expr::make(symbol_id sym, std::size_t rank, expr elem_size) {
+  return buffer_expr_ptr(new buffer_expr(sym, rank, std::move(elem_size)));
+}
+
 buffer_expr_ptr buffer_expr::make(symbol_id sym, std::size_t rank, index_t elem_size) {
-  return buffer_expr_ptr(new buffer_expr(sym, rank, elem_size));
+  return make(sym, rank, expr(elem_size));
+}
+
+buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size) {
+  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), rank, std::move(elem_size)));
 }
 
 buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size) {
-  return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), rank, elem_size));
+  return make(ctx, sym, rank, expr(elem_size));
 }
 
 buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
@@ -516,7 +525,7 @@ class pipeline_builder {
         expr alloc_var = variable::make(b->sym());
 
         box_expr& bounds = *allocation_bounds_[b->sym()];
-        expr stride = static_cast<index_t>(b->elem_size());
+        expr stride = b->elem_size();
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           const interval_expr& bounds_d = bounds[d];
 
