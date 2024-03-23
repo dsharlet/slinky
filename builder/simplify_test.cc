@@ -169,6 +169,7 @@ TEST(simplify, buffer_intrinsics) {
   test_simplify((buffer_max(x, 0) - buffer_min(x, 0) + 1) * 4, buffer_extent(x, 0) * 4);
   test_simplify(buffer_max(x, 0) - buffer_min(x, 1) + 1, buffer_max(x, 0) - buffer_min(x, 1) + 1);
   test_simplify(max(buffer_max(x, 0) + 1, buffer_min(x, 0) - 1), buffer_max(x, 0) + 1);
+  test_simplify(buffer_max(x, 1) - buffer_min(x, 1) + 1 <= y, buffer_extent(x, 1) <= y);
 }
 
 TEST(simplify, bounds) {
