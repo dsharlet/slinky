@@ -753,13 +753,6 @@ public:
   }
 
   stmt add_input_checks(stmt body) {
-    return body;
-    // for (symbol_id i : input_syms_) {
-    //   const std::optional<box_expr>& bounds = allocation_bounds_[i];
-    //   assert(bounds);
-    //   body = crop_buffer::make(i, *bounds, body);
-    // }
-
     // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
     std::vector<stmt> checks;
     for (symbol_id i : input_syms_) {
@@ -827,7 +820,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
 
-  std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
+  // std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
 
   result = infer_bounds(result, ctx, builder.input_syms());
 
