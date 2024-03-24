@@ -527,8 +527,6 @@ stmt substitute_uncropped(stmt s, const symbol_map<symbol_id>& uncropped_subs) {
 class pipeline_builder {
   node_context& ctx;
 
-  std::set<buffer_expr_ptr> allocated;
-
   // Topologically sorted functions.
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
@@ -540,13 +538,14 @@ class pipeline_builder {
   symbol_map<std::vector<interval_expr>> inferred_bounds_;
 
   std::vector<symbol_id> input_syms_;
+  std::set<symbol_id> output_syms_;
 
   void substitute_func_dims() {
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
       for (const auto& o : f->outputs()) {
         const auto& b = o.buffer;
-        if (allocated.count(b)) continue;
+        if (output_syms_.count(b->sym())) continue;
 
         std::vector<std::pair<expr, expr>> substitutions;
 
@@ -645,7 +644,7 @@ class pipeline_builder {
 
         for (const auto& o : f->outputs()) {
           const auto& b = o.buffer;
-          if (allocated.count(b)) continue;
+          if (output_syms_.count(b->sym())) continue;
           if (!inferred_bounds_[b->sym()]) continue;
           body = crop_buffer::make(b->sym(), *inferred_bounds_[b->sym()], body);
         }
@@ -672,14 +671,13 @@ public:
   pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
       const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants)
       : ctx(ctx) {
-    // To start with, we need to produce the outputs.
-    for (auto& i : outputs) {
-      allocated.insert(i);
-    }
-
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
     topological_sort(outputs, order_, deps, constants);
+
+    for (auto& i : outputs) {
+      output_syms_.insert(i->sym());
+    }
 
     for (const buffer_expr_ptr& i : inputs) {
       input_syms_.push_back(i->sym());
@@ -736,7 +734,7 @@ public:
       const auto& f = order_[ix];
       for (const auto& o : f->outputs()) {
         const auto& b = o.buffer;
-        if (allocated.count(b)) continue;
+        if (output_syms_.count(b->sym())) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
           symbol_id uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
