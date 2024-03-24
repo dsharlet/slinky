@@ -772,11 +772,9 @@ public:
 
       for (const auto& o : f->outputs()) {
         const auto& b = o.buffer;
-
         std::optional<std::vector<dim_expr>> maybe_dims = inferred_shapes_[b->sym()];
-        if (maybe_dims) {
-          body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
-        }
+        if (!maybe_dims) continue;
+        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
       }
     }
     return body;
@@ -848,6 +846,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   if (options.no_checks) {
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
+    result = simplify(result);
   }
 
   if (is_verbose()) {
