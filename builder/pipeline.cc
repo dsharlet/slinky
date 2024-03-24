@@ -590,21 +590,8 @@ class pipeline_builder {
 
   // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
   stmt add_input_crops(stmt result, const func* f) {
-    // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
-    // output associated with a particular dimension.
-    // assert(!f->outputs().empty());
-    // symbol_map<expr> output_mins, output_maxs;
-    // get_output_bounds(f->outputs(), output_mins, output_maxs);
-
-    // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
     for (const func::input& i : f->inputs()) {
-      // We want to take the union of this crop with any existing crop of this buffer.
-      // box_expr crop = compute_input_bounds(f, i, output_mins, output_maxs);
-      // result = add_crop_union(result, i.sym(), *inferred_bounds_[i.sym()]);
-      if (inferred_bounds_[i.sym()]) {
-      } else {
-        std::cout << "No bounds for - " << i.sym() << std::endl;
-      }
+      assert(inferred_bounds_[i.sym()]);
       result = crop_buffer::make(i.sym(), *inferred_bounds_[i.sym()], result);
     }
     return result;
