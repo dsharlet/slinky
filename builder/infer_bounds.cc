@@ -377,8 +377,7 @@ stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
   result = slide_and_fold_storage(ctx).mutate(result);
-  std::cout << "after storage_folding: \n" << std::tie(result, ctx) << std::endl;
-
+  // std::cout << "after storage_folding: \n" << std::tie(result, ctx) << std::endl;
 
   return result;
 }
