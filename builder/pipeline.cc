@@ -262,41 +262,6 @@ box_expr compute_input_bounds(
   return crop;
 }
 
-class unionize_crop : public node_mutator {
-  symbol_id target;
-  const box_expr& crop;
-
-public:
-  bool found = false;
-
-  unionize_crop(symbol_id target, const box_expr& crop) : target(target), crop(crop) {}
-
-  void visit(const crop_buffer* op) override {
-    if (op->sym != target) {
-      node_mutator::visit(op);
-      return;
-    }
-
-    // Don't recursively mutate, once we crop the buffer here, it doesn't need to be cropped again.
-    slinky::box_expr new_crop = crop | op->bounds;
-    for (int d = 0; d < static_cast<int>(new_crop.size()); d++) {
-      new_crop[d] = simplify(new_crop[d]);
-    }
-    set_result(crop_buffer::make(target, new_crop, op->body));
-    found = true;
-  }
-};
-
-// Expand an existing crop for `target` to include `crop`, or add a new crop if there was no existing crop.
-stmt add_crop_union(stmt s, symbol_id target, const box_expr& crop) {
-  unionize_crop m(target, crop);
-  s = m.mutate(s);
-  if (!m.found) {
-    s = crop_buffer::make(target, crop, s);
-  }
-  return s;
-}
-
 bool operator==(const loop_id& a, const loop_id& b) {
   if (!a.func) {
     return !b.func;
