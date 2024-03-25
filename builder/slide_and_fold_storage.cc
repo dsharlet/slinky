@@ -1,4 +1,4 @@
-#include "builder/infer_bounds.h"
+#include "builder/slide_and_fold_storage.h"
 
 #include <cassert>
 #include <cstddef>

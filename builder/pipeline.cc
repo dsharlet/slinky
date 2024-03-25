@@ -13,9 +13,9 @@
 #include <utility>
 #include <vector>
 
-#include "builder/infer_bounds.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
+#include "builder/slide_and_fold_storage.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/evaluate.h"
