@@ -95,7 +95,7 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
 // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
-class slide_and_fold_storage : public node_mutator {
+class slide_and_fold : public node_mutator {
 public:
   node_context& ctx;
   symbol_map<std::vector<expr>> fold_factors;
@@ -117,7 +117,7 @@ public:
 
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
-  slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
+  slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
     loops.emplace_back(0, expr(), interval_expr::none(), expr());
   }
 
@@ -376,12 +376,12 @@ public:
 
 }  // namespace
 
-stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
+stmt slide_and_fold_storage(const stmt& s, node_context& ctx) {
   stmt result = s;
 
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
-  result = slide_and_fold_storage(ctx).mutate(result);
+  result = slide_and_fold(ctx).mutate(result);
 
   return result;
 }

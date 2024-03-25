@@ -7,7 +7,7 @@
 
 namespace slinky {
 
-stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs);
+stmt slide_and_fold_storage(const stmt& s, node_context& ctx);
 
 }  // namespace slinky
 

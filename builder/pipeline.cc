@@ -798,7 +798,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
 
-  result = infer_bounds(result, ctx, builder.input_syms());
+  result = slide_and_fold_storage(result, ctx);
 
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
