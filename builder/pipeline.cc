@@ -676,7 +676,7 @@ public:
 
     // Build the functions computed at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const auto& f = order_[ix];
+      const func* f = order_[ix];
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
@@ -696,7 +696,7 @@ public:
     symbol_map<symbol_id> uncropped_subs;
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const auto& f = order_[ix];
+      const func* f = order_[ix];
       for (const auto& o : f->outputs()) {
         const auto& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
@@ -706,8 +706,8 @@ public:
           uncropped_subs[b->sym()] = uncropped;
           result = clone_buffer::make(uncropped, b->sym(), result);
 
-          const auto& dims = *inferred_dims_[b->sym()];
-          const auto& bounds = *allocation_bounds_[b->sym()];
+          const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
+          const box_expr& bounds = *allocation_bounds_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
           std::vector<stmt> checks;
