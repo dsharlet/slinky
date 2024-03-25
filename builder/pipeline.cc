@@ -707,7 +707,20 @@ public:
           symbol_id uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
           uncropped_subs[b->sym()] = uncropped;
           result = clone_buffer::make(uncropped, b->sym(), result);
-          result = allocate::make(b->sym(), b->storage(), b->elem_size(), *inferred_dims_[b->sym()], result);
+
+          const auto& dims = *inferred_dims_[b->sym()];
+          const auto& bounds = *allocation_bounds_[b->sym()];
+          result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
+
+          std::vector<stmt> checks;
+          for (std::size_t d = 0; d < dims.size(); ++d) {
+            if (d < bounds.size()) {
+              checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+              checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+            }
+          }
+
+          result = block::make(std::move(checks), result);
         }
       }
     }
@@ -720,7 +733,7 @@ public:
   }
 
   // Add checks that the inputs are sufficient based on inferred bounds.
-  stmt add_input_checks(stmt body) {    
+  stmt add_input_checks(stmt body) {
     std::vector<stmt> checks;
     for (symbol_id i : input_syms_) {
       expr buf_var = variable::make(i);
