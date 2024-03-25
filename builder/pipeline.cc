@@ -820,15 +820,13 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
 
+  if (options.no_checks) {
+    result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
+  }
+
   result = simplify(result);
 
   result = fix_buffer_races(result);
-
-  if (options.no_checks) {
-    result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
-    // Simplify because some of the bodies might become empty after removing asserts.
-    result = simplify(result);
-  }
 
   if (is_verbose()) {
     std::cout << std::tie(result, ctx) << std::endl;
