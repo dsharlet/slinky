@@ -81,6 +81,7 @@ cc_test(
     srcs = [
         "pipeline_test.cc", 
         "bazel_util.h",
+        "test_util.h",
     ],
     data = ["replica_pipeline_test.cc"],
     deps = [

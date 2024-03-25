@@ -36,7 +36,7 @@ void init_random(buffer<T, N>& x) {
   });
 }
 
-TEST(copy, trivial_scalar) {
+TEST(trivial_scalar, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -65,7 +65,7 @@ TEST(copy, trivial_scalar) {
   ASSERT_EQ(out_buf(), in_buf());
 }
 
-TEST(copy, trivial_1d) {
+TEST(trivial_1d, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -108,7 +108,7 @@ TEST(copy, trivial_1d) {
   }
 }
 
-TEST(copy, trivial_2d) {
+TEST(trivial_2d, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -155,7 +155,7 @@ TEST(copy, trivial_2d) {
   }
 }
 
-TEST(copy, trivial_3d) {
+TEST(trivial_3d, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -194,7 +194,7 @@ TEST(copy, trivial_3d) {
   }
 }
 
-TEST(copy, padded) {
+TEST(padded, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -244,7 +244,7 @@ TEST(copy, padded) {
   }
 }
 
-TEST(copy, flip_x) {
+TEST(flip_x, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -276,97 +276,105 @@ TEST(copy, flip_x) {
   }
 }
 
-TEST(copy, flip_y) {
-  for (int split : {-1, 1, 2, 3}) {
-    // Make the pipeline
-    node_context ctx;
+class flip_y : public testing::TestWithParam<int> {};
 
-    auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
-    auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+INSTANTIATE_TEST_SUITE_P(split, flip_y, testing::Range(0, 5));
 
-    var x(ctx, "x");
-    var y(ctx, "y");
-    var z(ctx, "z");
+TEST_P(flip_y, copy) {
+  int split = GetParam();
 
-    func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
+  // Make the pipeline
+  node_context ctx;
 
-    if (split > 0) {
-      flip.loops({{y, split}});
-    }
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
-    pipeline p = build_pipeline(ctx, {in}, {out});
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
 
-    // Run the pipeline.
-    const int H = 20;
-    const int W = 10;
-    const int D = 10;
-    buffer<int, 3> in_buf({W, H, D});
-    init_random(in_buf);
+  func flip = func::make_copy({in, {point(x), point(-y), point(z)}}, {out, {x, y, z}});
 
-    buffer<int, 3> out_buf({W, H, D});
-    out_buf.dim(1).translate(-H + 1);
-    out_buf.allocate();
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    // TODO: This could be expressed with a single copy with a negative stride in y.
-    ASSERT_EQ(eval_ctx.copy_calls, H);
-
-    for (int z = 0; z < D; ++z) {
-      for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-          ASSERT_EQ(out_buf(x, -y, z), in_buf(x, y, z));
-        }
-      }
-    }
+  if (split > 0) {
+    flip.loops({{y, split}});
   }
-}
 
-TEST(copy, upsample_y) {
-  for (int split : {-1, 1, 2, 4}) {
-    // Make the pipeline
-    node_context ctx;
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-    auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
-    auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  const int D = 10;
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
 
-    var x(ctx, "x");
-    var y(ctx, "y");
+  buffer<int, 3> out_buf({W, H, D});
+  out_buf.dim(1).translate(-H + 1);
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  // TODO: This could be expressed with a single copy with a negative stride in y.
+  ASSERT_EQ(eval_ctx.copy_calls, H);
 
-    func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
-
-    if (split > 0) {
-      upsample.loops({{y, split}});
-    }
-
-    pipeline p = build_pipeline(ctx, {in}, {out});
-
-    // Run the pipeline.
-    const int H = 20;
-    const int W = 10;
-    buffer<int, 2> in_buf({W, H / 2});
-    init_random(in_buf);
-
-    buffer<int, 2> out_buf({W, H});
-    out_buf.allocate();
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    // This copy should be implemented with a loop over y, and a call to copy at each y.
-    // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
-    ASSERT_EQ(eval_ctx.copy_calls, H);
-
+  for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y), in_buf(x, y / 2));
+        ASSERT_EQ(out_buf(x, -y, z), in_buf(x, y, z));
       }
     }
   }
 }
 
-TEST(copy, transpose) {
+class upsample_y : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(split, upsample_y, testing::Range(0, 5));
+
+TEST_P(upsample_y, copy) {
+  int split = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func upsample = func::make_copy({in, {point(x), point(y / 2)}}, {out, {x, y}});
+
+  if (split > 0) {
+    upsample.loops({{y, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  buffer<int, 2> in_buf({W, H / 2});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  // This copy should be implemented with a loop over y, and a call to copy at each y.
+  // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
+  ASSERT_EQ(eval_ctx.copy_calls, H);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y / 2));
+    }
+  }
+}
+
+TEST(transpose, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -406,107 +414,111 @@ TEST(copy, transpose) {
   }
 }
 
-TEST(copy, broadcast) {
-  for (int dim = 0; dim < 3; ++dim) {
-    // Make the pipeline
-    node_context ctx;
+class broadcast : public testing::TestWithParam<int> {};
 
-    auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
-    auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+INSTANTIATE_TEST_SUITE_P(dim, broadcast, testing::Range(0, 3));
 
-    var x(ctx, "x");
-    var y(ctx, "y");
-    var z(ctx, "z");
+TEST_P(broadcast, copy) {
+  int dim = GetParam();
 
-    box_expr bounds = {point(x), point(y), point(z)};
-    bounds[dim] = point(0);
-    func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+  // Make the pipeline
+  node_context ctx;
 
-    pipeline p = build_pipeline(ctx, {in}, {out});
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
-    const int W = 8;
-    const int H = 5;
-    const int D = 3;
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
 
-    // Run the pipeline.
-    buffer<int, 3> in_buf({W, H, D});
-    in_buf.dim(dim).set_extent(1);
-    init_random(in_buf);
+  box_expr bounds = {point(x), point(y), point(z)};
+  bounds[dim] = point(0);
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
 
-    // Ask for an output padded in every direction.
-    buffer<int, 3> out_buf({W, H, D});
-    out_buf.allocate();
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    ASSERT_EQ(eval_ctx.copy_calls, 1);
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
 
-    for (int z = 0; z < D; ++z) {
-      for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-          index_t i[] = {x, y, z};
-          i[dim] = 0;
-          ASSERT_EQ(out_buf(x, y, z), in_buf(i));
-        }
+  // Run the pipeline.
+  buffer<int, 3> in_buf({W, H, D});
+  in_buf.dim(dim).set_extent(1);
+  init_random(in_buf);
+
+  // Ask for an output padded in every direction.
+  buffer<int, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        index_t i[] = {x, y, z};
+        i[dim] = 0;
+        ASSERT_EQ(out_buf(x, y, z), in_buf(i));
       }
     }
   }
 }
 
-TEST(copy, broadcast_sliced) {
-  for (int dim = 0; dim < 3; ++dim) {
-    // Make the pipeline
-    node_context ctx;
+TEST_P(broadcast, copy_sliced) {
+  int dim = GetParam();
 
-    auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
-    auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+  // Make the pipeline
+  node_context ctx;
 
-    var x(ctx, "x");
-    var y(ctx, "y");
-    var z(ctx, "z");
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
-    box_expr bounds = {point(x), point(y), point(z)};
-    bounds.erase(bounds.begin() + dim);
-    func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
 
-    pipeline p = build_pipeline(ctx, {in}, {out});
+  box_expr bounds = {point(x), point(y), point(z)};
+  bounds.erase(bounds.begin() + dim);
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
 
-    const int W = 8;
-    const int H = 5;
-    const int D = 3;
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-    // Run the pipeline.
-    std::vector<index_t> in_extents = {W, H, D};
-    in_extents.erase(in_extents.begin() + dim);
-    buffer<int, 2> in_buf({in_extents[0], in_extents[1]});
-    init_random(in_buf);
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
 
-    // Ask for an output padded in every direction.
-    buffer<int, 3> out_buf({W, H, D});
-    out_buf.allocate();
+  // Run the pipeline.
+  std::vector<index_t> in_extents = {W, H, D};
+  in_extents.erase(in_extents.begin() + dim);
+  buffer<int, 2> in_buf({in_extents[0], in_extents[1]});
+  init_random(in_buf);
 
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
-    ASSERT_EQ(eval_ctx.copy_calls, 1);
+  // Ask for an output padded in every direction.
+  buffer<int, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
 
-    for (int z = 0; z < D; ++z) {
-      for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-          std::vector<index_t> i = {x, y, z};
-          i.erase(i.begin() + dim);
-          ASSERT_EQ(out_buf(x, y, z), in_buf(i));
-        }
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        std::vector<index_t> i = {x, y, z};
+        i.erase(i.begin() + dim);
+        ASSERT_EQ(out_buf(x, y, z), in_buf(i));
       }
     }
   }
 }
 
-TEST(copy, concatenate) {
+TEST(concatenate, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -551,7 +563,7 @@ TEST(copy, concatenate) {
   }
 }
 
-TEST(copy, split) {
+TEST(split, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -598,7 +610,7 @@ TEST(copy, split) {
   }
 }
 
-TEST(copy, stack) {
+TEST(stack, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -640,7 +652,7 @@ TEST(copy, stack) {
   }
 }
 
-TEST(copy, reshape) {
+TEST(reshape, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -696,7 +708,7 @@ TEST(copy, reshape) {
   }
 }
 
-TEST(copy, batch_reshape) {
+TEST(batch_reshape, copy) {
   // Make the pipeline
   node_context ctx;
 
