@@ -483,10 +483,9 @@ public:
   }
 };
 
-stmt substitute_uncropped(stmt s, const symbol_map<symbol_id>& uncropped_subs) {
+stmt substitute_uncropped(const stmt& s, const symbol_map<symbol_id>& uncropped_subs) {
   substitute_call_inputs m(uncropped_subs);
-  s = m.mutate(s);
-  return s;
+  return m.mutate(s);
 }
 
 class pipeline_builder {
@@ -552,7 +551,7 @@ class pipeline_builder {
     }
   }
 
-  // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
+  // Add crops to the inputs of f using previously inferred bounds.
   stmt add_input_crops(stmt result, const func* f) {
     for (const func::input& i : f->inputs()) {
       assert(inferred_bounds_[i.sym()]);
@@ -610,7 +609,6 @@ class pipeline_builder {
 
         for (const auto& o : f->outputs()) {
           const auto& b = o.buffer;
-          if (output_syms_.count(b->sym())) continue;
           if (!inferred_bounds_[b->sym()]) continue;
           body = crop_buffer::make(b->sym(), *inferred_bounds_[b->sym()], body);
         }
@@ -673,7 +671,7 @@ public:
   //   with the necessary loops defined for this function. For each
   //   of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  stmt build(stmt body, const func* base_f, const loop_id& at) {
+  stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     stmt result;
 
     // Build the functions computed at this loop level.
@@ -733,7 +731,7 @@ public:
   }
 
   // Add checks that the inputs are sufficient based on inferred bounds.
-  stmt add_input_checks(stmt body) {
+  stmt add_input_checks(const stmt& body) {
     std::vector<stmt> checks;
     for (symbol_id i : input_syms_) {
       expr buf_var = variable::make(i);
