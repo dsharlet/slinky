@@ -255,6 +255,9 @@ public:
     merge_crop(bounds, op->bounds);
     if (bounds) {
       substitute_bounds(*bounds, current_buffer_bounds());
+      for (auto& b : *bounds) {
+        b = simplify(b);
+      }
     }
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
@@ -271,6 +274,10 @@ public:
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->dim, op->bounds);
     substitute_bounds(*bounds, current_buffer_bounds());
+    for (auto& b : *bounds) {
+      b = simplify(b);
+    }
+
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
     interval_expr new_bounds = (*current_buffer_bounds()[op->sym])[op->dim];
