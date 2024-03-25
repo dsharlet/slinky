@@ -753,7 +753,7 @@ public:
 
       for (const auto& o : f->outputs()) {
         const auto& b = o.buffer;
-        std::optional<std::vector<dim_expr>> maybe_dims = inferred_shapes_[b->sym()];
+        const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
         if (!maybe_dims) continue;
         body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
       }
