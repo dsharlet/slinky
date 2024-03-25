@@ -505,7 +505,7 @@ class pipeline_builder {
   std::vector<symbol_id> input_syms_;
   std::set<symbol_id> output_syms_;
 
-  void substitute_func_dims() {
+  void substitute_buffer_dims() {
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
       for (const auto& o : f->outputs()) {
@@ -599,6 +599,7 @@ class pipeline_builder {
       // And make the actual loop.
       body = loop::make(loop.sym(), loop.mode, get_loop_bounds(f, loop), loop.step, body);
 
+      // Wrap loop into crops.
       for (symbol_id i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
         body = crop_buffer::make(i, *allocation_bounds_[i], body);
@@ -657,7 +658,8 @@ public:
     // Compute allocation bounds.
     compute_allocation_bounds(order_, allocation_bounds_);
 
-    substitute_func_dims();
+    // Substitute inferred bounds into user provided dims.
+    substitute_buffer_dims();
   }
 
   // This function works together with the produce() function to
@@ -710,13 +712,15 @@ public:
       }
     }
 
+    // Substitute references to the intermediate buffers with the 'name.uncropped' when they
+    // are used as an input arguments.
     result = substitute_uncropped(result, uncropped_subs);
 
     return result;
   }
 
-  stmt add_input_checks(stmt body) {
-    // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
+  // Add checks that the inputs are sufficient based on inferred bounds.
+  stmt add_input_checks(stmt body) {    
     std::vector<stmt> checks;
     for (symbol_id i : input_syms_) {
       expr buf_var = variable::make(i);
@@ -731,6 +735,7 @@ public:
     return block::make(std::move(checks), std::move(body));
   }
 
+  // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const auto& f = order_[ix];
@@ -780,8 +785,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
 
-  // std::cout << "Initial IR:\n" << std::tie(result, ctx) << std::endl;
-
   result = infer_bounds(result, ctx, builder.input_syms());
 
   // Add checks that the buffer constraints the user set are satisfied.
@@ -810,6 +813,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   if (options.no_checks) {
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
+    // Simplify because some of the bodies might become empty after removing asserts.
     result = simplify(result);
   }
 
