@@ -34,6 +34,7 @@ public:
   std::function<void(const task&)> enqueue_many;
   std::function<void(int, const task&)> enqueue;
   std::function<void(std::function<bool()>)> wait_for;
+  std::function<void(task)> atomic_call;
 
   // Functions implementing buffer data movement:
   // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.

@@ -200,6 +200,53 @@ public:
     return result;
   }
 
+  index_t eval_semaphore_init(const call* op) {
+    assert(op->args.size() == 2);
+    index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
+    index_t count = eval_expr(op->args[1], 0);
+    context.atomic_call([=]() { *sem = count; });
+    return 1;
+  }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_signal(const call* op) {
+    assert(op->args.size() % 2 == 0);
+    std::size_t sem_count = op->args.size() / 2;
+    index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
+    index_t* counts = SLINKY_ALLOCA(index_t, sem_count);
+    for (std::size_t i = 0; i < sem_count; ++i) {
+      sems[i] = reinterpret_cast<index_t*>(eval_expr(op->args[i * 2 + 0]));
+      counts[i] = eval_expr(op->args[i * 2 + 1], 1);
+    }
+    context.atomic_call([=]() {
+      for (std::size_t i = 0; i < sem_count; ++i) {
+        *sems[i] += counts[i];
+      }
+    });
+    return 1;
+  }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_wait(const call* op) {
+    assert(op->args.size() % 2 == 0);
+    std::size_t sem_count = op->args.size() / 2;
+    index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
+    index_t* counts = SLINKY_ALLOCA(index_t, sem_count);
+    for (std::size_t i = 0; i < sem_count; ++i) {
+      sems[i] = reinterpret_cast<index_t*>(eval_expr(op->args[i * 2 + 0]));
+      counts[i] = eval_expr(op->args[i * 2 + 1], 1);
+    }
+    context.wait_for([=]() {  
+      // Check we can acquire all of the semaphores before acquiring any of them.
+      for (std::size_t i = 0; i < sem_count; ++i) {
+        if (*sems[i] < counts[i]) return false;
+      }
+      // Acquire them all.
+      for (std::size_t i = 0; i < sem_count; ++i) {
+        *sems[i] -= counts[i];
+      }
+      return true;
+    });
+    return 1;
+  }
 
   void visit(const call* op) override {
     switch (op->intrinsic) {
@@ -223,6 +270,10 @@ public:
     case intrinsic::buffer_fold_factor: result = eval_dim_metadata(op); return;
 
     case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(op)); return;
+
+    case intrinsic::semaphore_init: result = eval_semaphore_init(op); return;
+    case intrinsic::semaphore_signal: result = eval_semaphore_signal(op); return;
+    case intrinsic::semaphore_wait: result = eval_semaphore_wait(op); return;
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
   }

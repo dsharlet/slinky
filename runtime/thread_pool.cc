@@ -16,8 +16,7 @@ thread_pool::thread_pool(int workers) : stop_(false) {
 }
 
 thread_pool::~thread_pool() {
-  stop_ = true;
-  cv_.notify_all();
+  atomic_call([this]() { stop_ = true; });
   for (std::thread& i : workers_) {
     i.join();
   }
@@ -62,6 +61,12 @@ void thread_pool::wait_for(std::function<bool()> condition) {
       cv_.wait(l);
     }
   }
+}
+
+void thread_pool::atomic_call(task t) {
+  std::unique_lock l(mutex_);
+  t();
+  cv_.notify_all();
 }
 
 void thread_pool::enqueue(int n, const task& t) {

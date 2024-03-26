@@ -39,7 +39,9 @@ public:
   void enqueue(int n, const task& t);
   void enqueue(task t);
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
+  // The condition is executed atomically.
   void wait_for(std::function<bool()> condition);
+  void atomic_call(task t);
 };
 
 }  // namespace slinky

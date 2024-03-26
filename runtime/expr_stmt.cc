@@ -461,11 +461,6 @@ stmt check::make(expr condition) {
   return n;
 }
 
-namespace {
-
-
-}  // namespace
-
 const expr& positive_infinity() {
   static expr e = call::make(intrinsic::positive_infinity, {});
   return e;
@@ -573,11 +568,43 @@ bool is_buffer_max(const expr& x, symbol_id sym, int dim) {
   return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
 }
 
+expr semaphore_init(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
+}
+expr semaphore_signal(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_signal, {std::move(sem), std::move(count)});
+}
+expr semaphore_wait(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_wait, {std::move(sem), std::move(count)});
+}
+
+namespace {
+
+expr semaphore_helper(intrinsic fn, span<const expr> sems, span<const expr> counts) {
+  std::vector<expr> args(sems.size() * 2);
+  for (std::size_t i = 0; i < sems.size(); ++i) {
+    args[i * 2 + 0] = sems[i];
+    if (i < counts.size()) {
+      args[i * 2 + 1] = counts[i];
+    }
+  }
+  return call::make(fn, std::move(args));
+}
+
+}  // namespace
+
+expr semaphore_signal(span<const expr> sems, span<const expr> counts) {
+  return semaphore_helper(intrinsic::semaphore_signal, sems, counts);
+}
+expr semaphore_wait(span<const expr> sems, span<const expr> counts) {
+  return semaphore_helper(intrinsic::semaphore_wait, sems, counts);
+}
+
 namespace {
 
 symbol_id undef_var = std::numeric_limits<symbol_id>::max();
 
-}
+}  // namespace
 
 var::var() : sym_(undef_var) {}
 var::var(symbol_id sym) : sym_(sym) {}

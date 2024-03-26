@@ -32,6 +32,9 @@ std::string to_string(intrinsic fn) {
   case intrinsic::buffer_fold_factor: return "buffer_fold_factor";
   case intrinsic::buffer_extent: return "buffer_extent";
   case intrinsic::buffer_at: return "buffer_at";
+  case intrinsic::semaphore_init: return "semaphore_init";
+  case intrinsic::semaphore_signal: return "semaphore_signal";
+  case intrinsic::semaphore_wait: return "semaphore_wait";
 
   default: return "<invalid intrinsic>";
   }
