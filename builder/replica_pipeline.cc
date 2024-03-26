@@ -95,28 +95,11 @@ public:
   void visit(const class select* op) override { fail("unimplemented select"); }
 
   void visit(const call* op) override {
-    std::string call_name;
-    switch (op->intrinsic) {
-    case intrinsic::positive_infinity: call_name = "positive_infinity"; break;
-    case intrinsic::negative_infinity: call_name = "negative_infinity"; break;
-    case intrinsic::indeterminate: call_name = "indeterminate"; break;
-    case intrinsic::abs: call_name = "abs"; break;
-    case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
-    case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
-    case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
-    case intrinsic::buffer_min: call_name = "buffer_min"; break;
-    case intrinsic::buffer_max: call_name = "buffer_max"; break;
-    case intrinsic::buffer_extent: call_name = "buffer_extent"; break;
-    case intrinsic::buffer_stride: call_name = "buffer_stride"; break;
-    case intrinsic::buffer_fold_factor: call_name = "buffer_fold_factor"; break;
-    case intrinsic::buffer_at: call_name = "buffer_at"; break;
-    default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
-    }
     std::vector<std::string> args;
     for (const auto& arg : op->args) {
       args.push_back(print_expr_maybe_inlined(arg));
     }
-    name_ = print_expr_maybe_inlined(call_name, "(", print_vector_elements(args), ")");
+    name_ = print_expr_maybe_inlined(to_string(op->intrinsic), "(", print_vector_elements(args), ")");
   }
 
   std::string print(const var& v) {
@@ -157,31 +140,24 @@ public:
     }
     buffers_emitted_.insert(bep->sym());
 
-    std::string size_code;
-    switch (bep->elem_size()) {
-    case 1: size_code = "sizeof(uint8_t)"; break;
-    case 2: size_code = "sizeof(uint16_t)"; break;
-    case 4: size_code = "sizeof(uint32_t)"; break;
-    case 8: size_code = "sizeof(uint64_t)"; break;
-    default: size_code = to_string(bep->elem_size()); break;
-    }
+    (void)print_assignment_explicit(
+        name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", bep->elem_size(), ")");
 
-    (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", ", bep->rank(), ", ", size_code, ")");
-
-    for (std::size_t d = 0; d < bep->rank(); d++) {
-      if (!match(bep->dim(d).bounds.min, buffer_min(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+    expr bep_sym = variable::make(bep->sym());
+    for (index_t d = 0; d < static_cast<index_t>(bep->rank()); d++) {
+      if (!match(bep->dim(d).bounds.min, buffer_min(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").min = " << e << ";\n";
       }
-      if (!match(bep->dim(d).bounds.max, buffer_max(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).bounds.max, buffer_max(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").max = " << e << ";\n";
       }
-      if (!match(bep->dim(d).stride, buffer_stride(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).stride, buffer_stride(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
-      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = " << e << ";\n";
       }
