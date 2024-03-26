@@ -197,6 +197,31 @@ public:
     return result;
   }
 
+  index_t eval_semaphore_signal(const call* op) {
+    assert(op->args.size() == 2);
+    index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
+    index_t count = eval_expr(op->args[1], 1);
+    context.atomic_call([=]() {
+      __atomic_add_fetch(sem, count, __ATOMIC_SEQ_CST);
+    });
+    return 1;
+  }
+
+  index_t eval_semaphore_wait(const call* op) {
+    assert(op->args.size() == 2);
+    index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
+    index_t count = eval_expr(op->args[1], 1);
+    context.wait_for([=]() {
+      if (__atomic_load_n(sem, __ATOMIC_SEQ_CST) >= count) {
+        __atomic_sub_fetch(sem, count, __ATOMIC_SEQ_CST);
+        return true;
+      } else {
+        return false;
+      }
+    });
+    return 1;
+  }
+
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
@@ -219,6 +244,9 @@ public:
     case intrinsic::buffer_fold_factor: result = eval_dim_metadata(op); return;
 
     case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(op)); return;
+
+    case intrinsic::semaphore_signal: result = eval_semaphore_signal(op); return;
+    case intrinsic::semaphore_wait: result = eval_semaphore_wait(op); return;
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
   }
