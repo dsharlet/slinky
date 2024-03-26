@@ -724,7 +724,9 @@ public:
     }
 
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
-    // are used as an input arguments.
+    // are used as an input arguments. This does a batch substitution by replacing multiple
+    // buffer names at once and relies on the fact that the same symbol_id can't be written 
+    // by two different funcs.
     result = substitute_uncropped(result, uncropped_subs);
 
     return result;

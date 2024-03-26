@@ -255,6 +255,8 @@ public:
     merge_crop(bounds, op->bounds);
     if (bounds) {
       substitute_bounds(*bounds, current_buffer_bounds());
+      // This simplify can be heavy, but is really useful in reducing the size of the
+      // expressions.
       for (auto& b : *bounds) {
         b = simplify(b);
       }
@@ -274,6 +276,8 @@ public:
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->dim, op->bounds);
     substitute_bounds(*bounds, current_buffer_bounds());
+    // This simplify can be heavy, but is really useful in reducing the size of the
+    // expressions.
     for (auto& b : *bounds) {
       b = simplify(b);
     }
