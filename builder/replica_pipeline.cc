@@ -140,31 +140,24 @@ public:
     }
     buffers_emitted_.insert(bep->sym());
 
-    std::string size_code;
-    switch (bep->elem_size()) {
-    case 1: size_code = "sizeof(uint8_t)"; break;
-    case 2: size_code = "sizeof(uint16_t)"; break;
-    case 4: size_code = "sizeof(uint32_t)"; break;
-    case 8: size_code = "sizeof(uint64_t)"; break;
-    default: size_code = to_string(bep->elem_size()); break;
-    }
+    (void)print_assignment_explicit(
+        name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", bep->elem_size(), ")");
 
-    (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", ", bep->rank(), ", ", size_code, ")");
-
-    for (std::size_t d = 0; d < bep->rank(); d++) {
-      if (!match(bep->dim(d).bounds.min, buffer_min(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+    expr bep_sym = variable::make(bep->sym());
+    for (index_t d = 0; d < static_cast<index_t>(bep->rank()); d++) {
+      if (!match(bep->dim(d).bounds.min, buffer_min(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").min = " << e << ";\n";
       }
-      if (!match(bep->dim(d).bounds.max, buffer_max(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).bounds.max, buffer_max(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").max = " << e << ";\n";
       }
-      if (!match(bep->dim(d).stride, buffer_stride(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).stride, buffer_stride(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
-      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(variable::make(bep->sym()), static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(bep_sym, d))) {
         std::string e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = " << e << ";\n";
       }
