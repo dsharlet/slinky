@@ -13,10 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include "builder/infer_bounds.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
 #include "builder/simplify.h"
+#include "builder/slide_and_fold_storage.h"
 #include "builder/substitute.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
@@ -62,7 +62,8 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std
 buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(sym, std::move(constant_buffer)));
 }
-buffer_expr_ptr buffer_expr::make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer) {
+buffer_expr_ptr buffer_expr::make_constant(
+    node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), std::move(constant_buffer)));
 }
 
@@ -216,39 +217,49 @@ func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t d
 
 namespace {
 
-class unionize_crop : public node_mutator {
-  symbol_id target;
-  const box_expr& crop;
-
-public:
-  bool found = false;
-
-  unionize_crop(symbol_id target, const box_expr& crop) : target(target), crop(crop) {}
-
-  void visit(const crop_buffer* op) override {
-    if (op->sym != target) {
-      node_mutator::visit(op);
-      return;
+void get_output_bounds(
+    const std::vector<func::output>& outputs, symbol_map<expr>& output_mins, symbol_map<expr>& output_maxs) {
+  for (const func::output& o : outputs) {
+    for (std::size_t d = 0; d < o.dims.size(); ++d) {
+      expr dim_min = o.buffer->dim(d).min();
+      expr dim_max = o.buffer->dim(d).max();
+      std::optional<expr>& min = output_mins[o.dims[d]];
+      std::optional<expr>& max = output_maxs[o.dims[d]];
+      min = min ? slinky::min(*min, dim_min) : dim_min;
+      max = max ? slinky::max(*max, dim_max) : dim_max;
     }
+  }
+}
 
-    // Don't recursively mutate, once we crop the buffer here, it doesn't need to be cropped again.
-    slinky::box_expr new_crop = crop | op->bounds;
-    for (int d = 0; d < static_cast<int>(new_crop.size()); d++) {
-      new_crop[d] = simplify(new_crop[d]);
+box_expr compute_input_bounds(
+    const func* f, const func::input& i, const symbol_map<expr>& output_mins, const symbol_map<expr>& output_maxs) {
+  symbol_map<expr> output_mins_i = output_mins;
+  symbol_map<expr> output_maxs_i = output_maxs;
+  if (!i.output_crop.empty()) {
+    const box_expr& crop = i.output_crop;
+    assert(f->outputs().size() == 1);
+    const func::output& o = f->outputs()[0];
+    // We have an output crop for this input. Apply it to our bounds.
+    // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
+    // difficult to do because it could be used in several places, each with a different output crop to apply.
+    for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
+      std::optional<expr>& min = output_mins_i[o.dims[d]];
+      std::optional<expr>& max = output_maxs_i[o.dims[d]];
+      assert(min);
+      assert(max);
+      if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
+      if (crop[d].max.defined()) max = slinky::min(*max, crop[d].max);
     }
-    set_result(crop_buffer::make(target, new_crop, op->body));
-    found = true;
   }
-};
 
-// Expand an existing crop for `target` to include `crop`, or add a new crop if there was no existing crop.
-stmt add_crop_union(stmt s, symbol_id target, const box_expr& crop) {
-  unionize_crop m(target, crop);
-  s = m.mutate(s);
-  if (!m.found) {
-    s = crop_buffer::make(target, crop, s);
+  box_expr crop(i.buffer->rank());
+  for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
+    expr min = substitute(i.bounds[d].min, output_mins_i);
+    expr max = substitute(i.bounds[d].max, output_maxs_i);
+    // The bounds may have been negated.
+    crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
   }
-  return s;
+  return crop;
 }
 
 bool operator==(const loop_id& a, const loop_id& b) {
@@ -414,60 +425,137 @@ void compute_innermost_locations(const std::vector<const func*>& order,
   }
 }
 
+void compute_allocation_bounds(const std::vector<const func*>& order, symbol_map<box_expr>& allocation_bounds) {
+  for (const func* f : order) {
+    symbol_map<expr> output_mins, output_maxs;
+    get_output_bounds(f->outputs(), output_mins, output_maxs);
+
+    for (const auto& i : f->inputs()) {
+      box_expr crop = compute_input_bounds(f, i, output_mins, output_maxs);
+      auto& bound = allocation_bounds[i.sym()];
+      if (bound) {
+        *bound = *bound | crop;
+      } else {
+        allocation_bounds[i.sym()] = crop;
+      }
+    }
+  }
+}
+
+// Update dims vector by substittuting expression from the map.
+std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
+  for (dim_expr& dim : dims) {
+    dim_expr new_dim = dim;
+    for (const std::pair<expr, expr>& j : substitutions) {
+      new_dim.bounds.min = substitute(new_dim.bounds.min, j.first, j.second);
+      new_dim.bounds.max = substitute(new_dim.bounds.max, j.first, j.second);
+      new_dim.stride = substitute(new_dim.stride, j.first, j.second);
+      new_dim.fold_factor = substitute(new_dim.fold_factor, j.first, j.second);
+    }
+    dim = new_dim;
+  }
+  return dims;
+}
+
+class substitute_call_inputs : public node_mutator {
+  const symbol_map<symbol_id>& uncropped_subs;
+
+public:
+  substitute_call_inputs(const symbol_map<symbol_id>& uncropped_subs) : uncropped_subs(uncropped_subs) {}
+
+  void visit(const call_stmt* op) override {
+    bool changed = false;
+    call_stmt::symbol_list inputs;
+    for (const auto& i : op->inputs) {
+      if (uncropped_subs[i]) {
+        changed = true;
+        inputs.push_back(*uncropped_subs[i]);
+      } else {
+        inputs.push_back(i);
+      }
+    }
+
+    if (changed) {
+      set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->attrs));
+    } else {
+      set_result(op);
+    }
+  }
+};
+
+stmt substitute_uncropped(const stmt& s, const symbol_map<symbol_id>& uncropped_subs) {
+  substitute_call_inputs m(uncropped_subs);
+  return m.mutate(s);
+}
+
 class pipeline_builder {
-  std::set<buffer_expr_ptr> allocated;
+  node_context& ctx;
 
   // Topologically sorted functions.
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
   std::map<const func*, loop_id> compute_at_levels_;
 
-  // Add crops to the inputs of f, using buffer intrinsics to get the bounds of the output.
-  stmt add_input_crops(stmt result, const func* f) {
-    // Find the bounds of the outputs required in each dimension. This is the union of the all the intervals from each
-    // output associated with a particular dimension.
-    assert(!f->outputs().empty());
-    symbol_map<expr> output_mins, output_maxs;
-    for (const func::output& o : f->outputs()) {
-      for (std::size_t d = 0; d < o.dims.size(); ++d) {
-        expr dim_min = o.buffer->dim(d).min();
-        expr dim_max = o.buffer->dim(d).max();
-        std::optional<expr>& min = output_mins[o.dims[d]];
-        std::optional<expr>& max = output_maxs[o.dims[d]];
-        min = min ? slinky::min(*min, dim_min) : dim_min;
-        max = max ? slinky::max(*max, dim_max) : dim_max;
+  symbol_map<box_expr> allocation_bounds_;
+  symbol_map<std::vector<dim_expr>> inferred_dims_;
+  symbol_map<std::vector<dim_expr>> inferred_shapes_;
+  symbol_map<std::vector<interval_expr>> inferred_bounds_;
+
+  std::vector<symbol_id> input_syms_;
+  std::set<symbol_id> output_syms_;
+
+  void substitute_buffer_dims() {
+    for (int ix = order_.size() - 1; ix >= 0; ix--) {
+      const func* f = order_[ix];
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (output_syms_.count(b->sym())) continue;
+
+        std::vector<std::pair<expr, expr>> substitutions;
+
+        expr alloc_var = variable::make(b->sym());
+
+        box_expr& bounds = *allocation_bounds_[b->sym()];
+        expr stride = static_cast<index_t>(b->elem_size());
+        for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
+          const interval_expr& bounds_d = bounds[d];
+
+          substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
+          substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
+          substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
+
+          // We didn't initially set up the buffer with an extent, but the user might have used it.
+          expr extent = bounds_d.extent();
+          substitutions.emplace_back(buffer_extent(alloc_var, d), extent);
+          stride *= min(extent, buffer_fold_factor(alloc_var, d));
+        }
+        std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
+
+        std::vector<dim_expr> shape;
+        std::vector<interval_expr> tmp;
+        for (const auto& d : dims) {
+          shape.push_back({d.bounds});
+          tmp.push_back({d.bounds});
+        }
+
+        // Record the inferred dims.
+        inferred_dims_[b->sym()] = dims;
+        inferred_shapes_[b->sym()] = shape;
+        inferred_bounds_[b->sym()] = tmp;
       }
     }
-    // Use the output bounds, and the bounds expressions of the inputs, to determine the bounds required of the input.
-    for (const func::input& i : f->inputs()) {
-      symbol_map<expr> output_mins_i = output_mins;
-      symbol_map<expr> output_maxs_i = output_maxs;
-      if (!i.output_crop.empty()) {
-        const box_expr& crop = i.output_crop;
-        assert(f->outputs().size() == 1);
-        const func::output& o = f->outputs()[0];
-        // We have an output crop for this input. Apply it to our bounds.
-        // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
-        // difficult to do because it could be used in several places, each with a different output crop to apply.
-        for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
-          std::optional<expr>& min = output_mins_i[o.dims[d]];
-          std::optional<expr>& max = output_maxs_i[o.dims[d]];
-          assert(min);
-          assert(max);
-          if (crop[d].min.defined()) min = slinky::max(*min, crop[d].min);
-          if (crop[d].max.defined()) max = slinky::min(*max, crop[d].max);
-        }
-      }
 
-      box_expr crop(i.buffer->rank());
-      for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-        expr min = substitute(i.bounds[d].min, output_mins_i);
-        expr max = substitute(i.bounds[d].max, output_maxs_i);
-        // The bounds may have been negated.
-        crop[d] = simplify(slinky::bounds(min, max) | slinky::bounds(max, min));
-      }
-      // We want to take the union of this crop with any existing crop of this buffer.
-      result = add_crop_union(result, i.sym(), crop);
+    for (symbol_id i : input_syms_) {
+      assert(allocation_bounds_[i]);
+      inferred_bounds_[i] = allocation_bounds_[i];
+    }
+  }
+
+  // Add crops to the inputs of f using previously inferred bounds.
+  stmt add_input_crops(stmt result, const func* f) {
+    for (const func::input& i : f->inputs()) {
+      assert(inferred_bounds_[i.sym()]);
+      result = crop_buffer::make(i.sym(), *inferred_bounds_[i.sym()], result);
     }
     return result;
   }
@@ -509,6 +597,22 @@ class pipeline_builder {
       body = crop_for_loop(body, f, loop);
       // And make the actual loop.
       body = loop::make(loop.sym(), loop.mode, get_loop_bounds(f, loop), loop.step, body);
+
+      // Wrap loop into crops.
+      for (symbol_id i : input_syms_) {
+        if (!allocation_bounds_[i]) continue;
+        body = crop_buffer::make(i, *allocation_bounds_[i], body);
+      }
+
+      for (int ix = order_.size() - 1; ix >= 0; ix--) {
+        const func* f = order_[ix];
+
+        for (const func::output& o : f->outputs()) {
+          const buffer_expr_ptr& b = o.buffer;
+          if (!inferred_bounds_[b->sym()]) continue;
+          body = crop_buffer::make(b->sym(), *inferred_bounds_[b->sym()], body);
+        }
+      }
     }
     return body;
   }
@@ -528,19 +632,32 @@ class pipeline_builder {
   }
 
 public:
-  pipeline_builder(const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-      std::set<buffer_expr_ptr>& constants) {
-    // To start with, we need to produce the outputs.
-    for (auto& i : outputs) {
-      allocated.insert(i);
-    }
-
+  pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+      const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants)
+      : ctx(ctx) {
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
     topological_sort(outputs, order_, deps, constants);
 
+    for (auto& i : outputs) {
+      output_syms_.insert(i->sym());
+    }
+
+    for (const buffer_expr_ptr& i : inputs) {
+      input_syms_.push_back(i->sym());
+    }
+    for (const buffer_expr_ptr& i : constants) {
+      input_syms_.push_back(i->sym());
+    }
+
     // Build a loop nest tree and computes compute_at locations when neccessary.
     compute_innermost_locations(order_, deps, compute_at_levels_);
+
+    // Compute allocation bounds.
+    compute_allocation_bounds(order_, allocation_bounds_);
+
+    // Substitute inferred bounds into user provided dims.
+    substitute_buffer_dims();
   }
 
   // This function works together with the produce() function to
@@ -554,12 +671,12 @@ public:
   //   with the necessary loops defined for this function. For each
   //   of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  stmt build(stmt body, const func* base_f, const loop_id& at) {
+  stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     stmt result;
-    std::vector<stmt> produced_stmt;
+
     // Build the functions computed at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const auto& f = order_[ix];
+      const func* f = order_[ix];
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
@@ -576,21 +693,77 @@ public:
       result = add_input_crops(result, base_f);
     }
 
+    symbol_map<symbol_id> uncropped_subs;
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const auto& f = order_[ix];
-      for (const auto& o : f->outputs()) {
-        const auto& b = o.buffer;
-        if (allocated.count(b)) continue;
+      const func* f = order_[ix];
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (output_syms_.count(b->sym())) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          result = allocate::make(b->sym(), b->storage(), b->elem_size(), b->dims(), result);
+          symbol_id uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
+          uncropped_subs[b->sym()] = uncropped;
+          result = clone_buffer::make(uncropped, b->sym(), result);
+
+          const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
+          const box_expr& bounds = *allocation_bounds_[b->sym()];
+          result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
+
+          std::vector<stmt> checks;
+          for (std::size_t d = 0; d < dims.size(); ++d) {
+            if (d < bounds.size()) {
+              checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+              checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+            }
+          }
+
+          result = block::make(std::move(checks), result);
         }
       }
     }
 
+    // Substitute references to the intermediate buffers with the 'name.uncropped' when they
+    // are used as an input arguments. This does a batch substitution by replacing multiple
+    // buffer names at once and relies on the fact that the same symbol_id can't be written 
+    // by two different funcs.
+    result = substitute_uncropped(result, uncropped_subs);
+
     return result;
   }
+
+  // Add checks that the inputs are sufficient based on inferred bounds.
+  stmt add_input_checks(const stmt& body) {
+    std::vector<stmt> checks;
+    for (symbol_id i : input_syms_) {
+      expr buf_var = variable::make(i);
+      const std::optional<box_expr>& bounds = allocation_bounds_[i];
+      assert(bounds);
+      for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+        checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
+        checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
+        checks.push_back(check::make((*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)));
+      }
+    }
+    return block::make(std::move(checks), std::move(body));
+  }
+
+  // Wrap the statement into make_buffer-s to define the bounds of allocations.
+  stmt make_buffers(stmt body) {
+    for (int ix = order_.size() - 1; ix >= 0; ix--) {
+      const func* f = order_[ix];
+
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
+        if (!maybe_dims) continue;
+        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
+      }
+    }
+    return body;
+  }
+
+  const std::vector<symbol_id>& input_syms() { return input_syms_; }
 };
 
 void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
@@ -618,20 +791,14 @@ bool is_verbose() {
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
-  pipeline_builder builder(inputs, outputs, constants);
+  pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  result = builder.add_input_checks(result);
+  result = builder.make_buffers(result);
 
-  std::vector<symbol_id> input_syms;
-  input_syms.reserve(inputs.size());
-  for (const buffer_expr_ptr& i : inputs) {
-    input_syms.push_back(i->sym());
-  }
-  for (const buffer_expr_ptr& i : constants) {
-    input_syms.push_back(i->sym());
-  }
-  result = infer_bounds(result, ctx, input_syms);
+  result = slide_and_fold_storage(result, ctx);
 
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
@@ -653,13 +820,13 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
 
-  result = simplify(result);
-
-  result = fix_buffer_races(result);
-
   if (options.no_checks) {
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
   }
+
+  result = simplify(result);
+
+  result = fix_buffer_races(result);
 
   if (is_verbose()) {
     std::cout << std::tie(result, ctx) << std::endl;

@@ -15,7 +15,7 @@
 #include "runtime/visualize.h"
 
 namespace slinky {
-    
+
 std::string read_entire_runfile(const std::string& rlocation) {
   return read_entire_file(get_bazel_file_path(rlocation));
 }

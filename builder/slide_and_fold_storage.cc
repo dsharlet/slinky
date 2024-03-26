@@ -1,4 +1,4 @@
-#include "builder/infer_bounds.h"
+#include "builder/slide_and_fold_storage.h"
 
 #include <cassert>
 #include <cstddef>
@@ -82,196 +82,6 @@ std::vector<dim_expr> recursive_substitute(
   }
 }
 
-// This pass tries to identify where call_stmt operations need to run to satisfy the requirements of their consumers (or
-// the output buffers). It updates `allocate` nodes to allocate enough memory for the uses of the allocation, and crops
-// producers to the required region.
-class bounds_inferrer : public node_mutator {
-public:
-  node_context& ctx;
-
-  symbol_map<box_expr> infer;
-  symbol_map<box_expr> crops;
-
-  // A map of buffers that should be substituted in for consumers.
-  symbol_map<symbol_id> consumer_subs;
-
-  bounds_inferrer(node_context& ctx) : ctx(ctx) {}
-
-  void visit(const allocate* op) override {
-    symbol_id uncropped = ctx.insert_unique(ctx.name(op->sym) + ".uncropped");
-    auto set_consumer_subs = set_value_in_scope(consumer_subs, op->sym, uncropped);
-    auto set_bounds = set_value_in_scope(infer, op->sym, box_expr());
-    stmt body = mutate(op->body);
-    body = clone_buffer::make(uncropped, op->sym, body);
-    // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
-    // (This is a little janky because the buffers they are loading from don't exist where they are used.)
-    // Here, we are building a list of replacements for those expressions. This way, if the user did something
-    // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
-    // inferred value.
-    // TODO: Is this actually a good design...?
-    std::vector<std::pair<expr, expr>> substitutions;
-
-    expr alloc_var = variable::make(op->sym);
-
-    box_expr& bounds = *infer[op->sym];
-    expr stride = static_cast<index_t>(op->elem_size);
-    for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-      const interval_expr& bounds_d = bounds[d];
-
-      substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
-      substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
-      substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
-
-      // We didn't initially set up the buffer with an extent, but the user might have used it.
-      expr extent = bounds_d.extent();
-      substitutions.emplace_back(buffer_extent(alloc_var, d), extent);
-      stride *= min(extent, buffer_fold_factor(alloc_var, d));
-    }
-    std::vector<dim_expr> dims = recursive_substitute(op->dims, substitutions);
-
-    // Check that the actual bounds we generated are bigger than the inferred bounds (in case the
-    // user set the bounds to something too small).
-    std::vector<stmt> checks;
-    for (std::size_t d = 0; d < dims.size(); ++d) {
-      if (d < bounds.size()) {
-        checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-        checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-      }
-    }
-
-    // Substitute the allocation bounds in any remaining inferred bounds.
-    for (std::optional<box_expr>& i : infer) {
-      if (!i) continue;
-      for (interval_expr& j : *i) {
-        for (const auto& k : substitutions) {
-          j.min = substitute(j.min, k.first, k.second);
-          j.max = substitute(j.max, k.first, k.second);
-        }
-      }
-    }
-
-    stmt s = allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body);
-    set_result(block::make(std::move(checks), std::move(s)));
-  }
-
-  symbol_id propagate_bounds(symbol_id buf) {
-    const std::optional<symbol_id>& sub = consumer_subs[buf];
-    std::optional<box_expr>& infer_i = infer[buf];
-    const std::optional<box_expr>& crop_i = crops[buf];
-    if (infer_i && crop_i) {
-      if (infer_i->empty()) {
-        infer_i = crop_i;
-      } else {
-        *infer_i = *infer_i | *crop_i;
-      }
-    }
-    return sub ? *sub : buf;
-  }
-
-  void visit(const call_stmt* op) override {
-    // Record the bounds we currently have from the crops.
-    call_stmt::symbol_list new_inputs;
-    new_inputs.reserve(op->inputs.size());
-    for (symbol_id input : op->inputs) {
-      new_inputs.push_back(propagate_bounds(input));
-    }
-    set_result(call_stmt::make(op->target, std::move(new_inputs), op->outputs, op->attrs));
-  }
-
-  void visit(const copy_stmt* op) override {
-    // Record the bounds we currently have from the crops.
-    symbol_id src = op->src;
-    if (infer.contains(op->src)) {
-      src = propagate_bounds(op->src);
-    }
-    if (src == op->src) {
-      set_result(op);
-    } else {
-      set_result(copy_stmt::make(src, op->src_x, op->dst, op->dst_x, op->padding));
-    }
-  }
-
-  void visit(const crop_buffer* op) override {
-    std::optional<box_expr> crop = crops[op->sym];
-    merge_crop(crop, op->bounds);
-    auto set_crop = set_value_in_scope(crops, op->sym, crop);
-    node_mutator::visit(op);
-  }
-
-  void visit(const crop_dim* op) override {
-    std::optional<box_expr> crop = crops[op->sym];
-    merge_crop(crop, op->dim, op->bounds);
-    auto set_crop = set_value_in_scope(crops, op->sym, crop);
-    node_mutator::visit(op);
-  }
-
-  void visit(const slice_buffer* op) override {
-    std::optional<box_expr> bounds = crops[op->sym];
-    for (int d = 0; d < static_cast<int>(op->at.size()); ++d) {
-      if (!op->at[d].defined()) continue;
-      interval_expr& bounds_d = vector_at(bounds, d);
-      bounds_d |= point(op->at[d]);
-    }
-
-    std::optional<box_expr> sliced = bounds;
-    if (sliced) {
-      for (int d = op->at.size() - 1; d >= 0; --d) {
-        if (!op->at[d].defined()) continue;
-        sliced->erase(sliced->begin() + d);
-      }
-    }
-
-    auto set_bounds = set_value_in_scope(crops, op->sym, sliced);
-    node_mutator::visit(op);
-  }
-  void visit(const slice_dim* op) override {
-    std::optional<box_expr> bounds = crops[op->sym];
-    interval_expr& bounds_d = vector_at(bounds, op->dim);
-    bounds_d |= point(op->at);
-
-    std::optional<box_expr> sliced = bounds;
-    sliced->erase(sliced->begin() + op->dim);
-
-    auto set_bounds = set_value_in_scope(crops, op->sym, sliced);
-    node_mutator::visit(op);
-  }
-  void visit(const truncate_rank*) override { std::abort(); }
-
-  void visit(const loop* op) override {
-    stmt body = mutate(op->body);
-
-    stmt result;
-    if (body.same_as(op->body)) {
-      result = op;
-    } else {
-      // We rewrote the loop min.
-      result = loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body));
-    }
-    // We're leaving the body of op. If any of the bounds used that loop variable, we need
-    // to replace those uses with the bounds of the loop.
-    for (symbol_id buf = 0; buf < infer.size(); ++buf) {
-      std::optional<box_expr>& inferring = infer[buf];
-      if (!inferring) continue;
-
-      for (interval_expr& j : *inferring) {
-        // We need to be careful of the case where min > max, such as when a pipeline
-        // flips a dimension.
-        // TODO: This seems janky/possibly not right.
-        if (depends_on(j.min, op->sym).any()) {
-          j.min = simplify(static_cast<const class min*>(nullptr), substitute(j.min, op->sym, op->bounds.min),
-              substitute(j.min, op->sym, op->bounds.max));
-        }
-        if (depends_on(j.max, op->sym).any()) {
-          j.max = simplify(static_cast<const class max*>(nullptr), substitute(j.max, op->sym, op->bounds.min),
-              substitute(j.max, op->sym, op->bounds.max));
-        }
-      }
-      result = crop_buffer::make(buf, *inferring, result);
-    }
-    set_result(result);
-  }
-};
-
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
   for (symbol_id i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
@@ -285,7 +95,7 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
 // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
-class slide_and_fold_storage : public node_mutator {
+class slide_and_fold : public node_mutator {
 public:
   node_context& ctx;
   symbol_map<std::vector<expr>> fold_factors;
@@ -307,7 +117,7 @@ public:
 
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
-  slide_and_fold_storage(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
+  slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
     loops.emplace_back(0, expr(), interval_expr::none(), expr());
   }
 
@@ -445,6 +255,11 @@ public:
     merge_crop(bounds, op->bounds);
     if (bounds) {
       substitute_bounds(*bounds, current_buffer_bounds());
+      // This simplify can be heavy, but is really useful in reducing the size of the
+      // expressions.
+      for (auto& b : *bounds) {
+        b = simplify(b);
+      }
     }
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
@@ -461,6 +276,12 @@ public:
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->dim, op->bounds);
     substitute_bounds(*bounds, current_buffer_bounds());
+    // This simplify can be heavy, but is really useful in reducing the size of the
+    // expressions.
+    for (auto& b : *bounds) {
+      b = simplify(b);
+    }
+
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     stmt body = mutate(op->body);
     interval_expr new_bounds = (*current_buffer_bounds()[op->sym])[op->dim];
@@ -557,38 +378,14 @@ public:
   }
 };
 
-stmt infer_bounds_impl(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
-  // Tell the bounds inferrer that we are inferring the bounds of the inputs too.
-  bounds_inferrer infer(ctx);
-  for (symbol_id i : inputs) {
-    infer.infer[i] = box_expr();
-  }
-  stmt result = infer.mutate(s);
-
-  // Now we should know the bounds required of the inputs. Add checks that the inputs are sufficient.
-  std::vector<stmt> checks;
-  for (symbol_id i : inputs) {
-    expr buf_var = variable::make(i);
-    const std::optional<box_expr>& bounds = infer.infer[i];
-    assert(bounds);
-    for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-      checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
-      checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
-      checks.push_back(check::make((*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)));
-    }
-  }
-  return block::make(std::move(checks), std::move(result));
-}
-
 }  // namespace
 
-stmt infer_bounds(const stmt& s, node_context& ctx, const std::vector<symbol_id>& inputs) {
+stmt slide_and_fold_storage(const stmt& s, node_context& ctx) {
   stmt result = s;
 
-  result = infer_bounds_impl(s, ctx, inputs);
   // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
   // of producers while we still understand the dependencies between stages.
-  result = slide_and_fold_storage(ctx).mutate(result);
+  result = slide_and_fold(ctx).mutate(result);
 
   return result;
 }
