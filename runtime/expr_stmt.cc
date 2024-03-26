@@ -461,11 +461,6 @@ stmt check::make(expr condition) {
   return n;
 }
 
-namespace {
-
-
-}  // namespace
-
 const expr& positive_infinity() {
   static expr e = call::make(intrinsic::positive_infinity, {});
   return e;
@@ -571,6 +566,16 @@ bool is_buffer_max(const expr& x, symbol_id sym, int dim) {
 
   assert(c->args.size() == 2);
   return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
+}
+
+expr semaphore_init(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
+}
+expr semaphore_signal(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_signal, {std::move(sem), std::move(count)});
+}
+expr semaphore_wait(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_wait, {std::move(sem), std::move(count)});
 }
 
 namespace {
