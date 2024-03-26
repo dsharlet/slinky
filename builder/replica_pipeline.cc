@@ -95,28 +95,11 @@ public:
   void visit(const class select* op) override { fail("unimplemented select"); }
 
   void visit(const call* op) override {
-    std::string call_name;
-    switch (op->intrinsic) {
-    case intrinsic::positive_infinity: call_name = "positive_infinity"; break;
-    case intrinsic::negative_infinity: call_name = "negative_infinity"; break;
-    case intrinsic::indeterminate: call_name = "indeterminate"; break;
-    case intrinsic::abs: call_name = "abs"; break;
-    case intrinsic::buffer_rank: call_name = "buffer_rank"; break;
-    case intrinsic::buffer_elem_size: call_name = "buffer_elem_size"; break;
-    case intrinsic::buffer_size_bytes: call_name = "buffer_size_bytes"; break;
-    case intrinsic::buffer_min: call_name = "buffer_min"; break;
-    case intrinsic::buffer_max: call_name = "buffer_max"; break;
-    case intrinsic::buffer_extent: call_name = "buffer_extent"; break;
-    case intrinsic::buffer_stride: call_name = "buffer_stride"; break;
-    case intrinsic::buffer_fold_factor: call_name = "buffer_fold_factor"; break;
-    case intrinsic::buffer_at: call_name = "buffer_at"; break;
-    default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
-    }
     std::vector<std::string> args;
     for (const auto& arg : op->args) {
       args.push_back(print_expr_maybe_inlined(arg));
     }
-    name_ = print_expr_maybe_inlined(call_name, "(", print_vector_elements(args), ")");
+    name_ = print_expr_maybe_inlined(to_string(op->intrinsic), "(", print_vector_elements(args), ")");
   }
 
   std::string print(const var& v) {
