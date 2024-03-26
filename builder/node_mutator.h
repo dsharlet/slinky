@@ -65,6 +65,7 @@ public:
 
   void visit(const block*) override;
   void visit(const loop*) override;
+  void visit(const async*) override;
   void visit(const call_stmt*) override;
   void visit(const copy_stmt*) override;
   void visit(const allocate*) override;
@@ -80,6 +81,7 @@ public:
 
 // This is helpful for writing templated mutators.
 stmt clone_with_new_body(const loop* op, stmt new_body);
+stmt clone_with_new_body(const async* op, stmt new_body);
 stmt clone_with_new_body(const let_stmt* op, stmt new_body);
 stmt clone_with_new_body(const allocate* op, stmt new_body);
 stmt clone_with_new_body(const make_buffer* op, stmt new_body);

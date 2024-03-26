@@ -43,6 +43,7 @@ expr mutate_binary(node_mutator* this_, const T* op) {
 stmt clone_with_new_body(const loop* op, stmt new_body) {
   return loop::make(op->sym, op->mode, op->bounds, op->step, std::move(new_body));
 }
+stmt clone_with_new_body(const async* op, stmt new_body) { return async::make(std::move(new_body)); }
 stmt clone_with_new_body(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body)); }
 stmt clone_with_new_body(const allocate* op, stmt new_body) {
   return allocate::make(op->sym, op->storage, op->elem_size, op->dims, std::move(new_body));
@@ -141,6 +142,14 @@ void node_mutator::visit(const loop* op) {
     set_result(op);
   } else {
     set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
+  }
+}
+void node_mutator::visit(const async* op) {
+  stmt body = mutate(op->body);
+  if (body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(async::make(std::move(body)));
   }
 }
 void node_mutator::visit(const call_stmt* op) { set_result(op); }

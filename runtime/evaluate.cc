@@ -201,9 +201,7 @@ public:
     assert(op->args.size() == 2);
     index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
     index_t count = eval_expr(op->args[1], 1);
-    context.atomic_call([=]() {
-      __atomic_add_fetch(sem, count, __ATOMIC_SEQ_CST);
-    });
+    context.atomic_call([=]() { __atomic_add_fetch(sem, count, __ATOMIC_SEQ_CST); });
     return 1;
   }
 
@@ -319,6 +317,12 @@ public:
       }
       context[op->sym] = old_value;
     }
+  }
+
+  void visit(const async* op) override {
+    assert(context.enqueue_one);
+    context.enqueue_one([body = op->body, context = this->context]() mutable { evaluate(body, context); });
+    result = 0;
   }
 
   void visit(const call_stmt* op) override {

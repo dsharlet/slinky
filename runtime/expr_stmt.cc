@@ -385,6 +385,12 @@ stmt loop::make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, 
   return l;
 }
 
+stmt async::make(stmt body) {
+  auto s = new async();
+  s->body = std::move(body);
+  return s;
+}
+
 stmt allocate::make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
   n->sym = sym;
@@ -657,6 +663,9 @@ void recursive_node_visitor::visit(const loop* op) {
   op->bounds.min.accept(this);
   op->bounds.max.accept(this);
   if (op->step.defined()) op->step.accept(this);
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const async* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const call_stmt* op) {}

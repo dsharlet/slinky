@@ -224,6 +224,12 @@ public:
     if (!try_match(ls->body, op->body)) return;
   }
 
+  void visit(const async* op) override {
+    const async* ls = static_cast<const async*>(self);
+
+    if (!try_match(ls->body, op->body)) return;
+  }
+
   void visit(const call_stmt* op) override {
     if (match) return;
     const call_stmt* cs = static_cast<const call_stmt*>(self);

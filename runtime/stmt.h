@@ -19,6 +19,7 @@ enum class stmt_node_type {
   let_stmt,
   block,
   loop,
+  async,
   allocate,
   make_buffer,
   clone_buffer,
@@ -183,6 +184,17 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };
 
+class async : public stmt_node<async> {
+public:
+  stmt body;
+
+  void accept(stmt_visitor* v) const override;
+
+  static stmt make(stmt body);
+
+  static constexpr stmt_node_type static_type = stmt_node_type::async;
+};
+
 // Allocates memory and creates a buffer pointing to that memory. When control flow exits `body`, the buffer is freed.
 // `sym` refers to a pointer to a `raw_buffer` object, the fields are initialized by the corresponding expressions in
 // this node (`rank` is the size of `dims`).
@@ -331,6 +343,7 @@ public:
   virtual void visit(const let_stmt*) = 0;
   virtual void visit(const block*) = 0;
   virtual void visit(const loop*) = 0;
+  virtual void visit(const async*) = 0;
   virtual void visit(const call_stmt*) = 0;
   virtual void visit(const copy_stmt*) = 0;
   virtual void visit(const allocate*) = 0;
@@ -370,6 +383,7 @@ public:
   void visit(const let_stmt* op) override;
   void visit(const block* op) override;
   void visit(const loop* op) override;
+  void visit(const async* op) override;
   void visit(const call_stmt* op) override;
   void visit(const copy_stmt* op) override;
   void visit(const allocate* op) override;
@@ -386,6 +400,7 @@ public:
 inline void let_stmt::accept(stmt_visitor* v) const { v->visit(this); }
 inline void block::accept(stmt_visitor* v) const { v->visit(this); }
 inline void loop::accept(stmt_visitor* v) const { v->visit(this); }
+inline void async::accept(stmt_visitor* v) const { v->visit(this); }
 inline void call_stmt::accept(stmt_visitor* v) const { v->visit(this); }
 inline void copy_stmt::accept(stmt_visitor* v) const { v->visit(this); }
 inline void allocate::accept(stmt_visitor* v) const { v->visit(this); }

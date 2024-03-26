@@ -200,6 +200,11 @@ public:
     *this << indent() << "}\n";
   }
 
+  void visit(const async*) override {
+    std::cerr << "Cannot visualize pipelines with async stmts\n";
+    std::abort();
+  }
+
   void visit(const call_stmt* n) override {
     for (symbol_id i : n->inputs) {
       *this << indent() << "consume(" << i << ");\n";

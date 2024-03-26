@@ -213,6 +213,12 @@ public:
     *this << indent() << "}\n";
   }
 
+  void visit(const async* s) override {
+    *this << indent() << "async {\n";
+    *this << s->body;
+    *this << indent() << "}\n";
+  }
+
   void visit(const call_stmt* n) override {
     *this << indent() << "call(<fn>, {" << n->inputs << "}, {" << n->outputs << "})\n";
   }
