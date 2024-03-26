@@ -15,8 +15,8 @@
 
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
-#include "builder/slide_and_fold_storage.h"
 #include "builder/simplify.h"
+#include "builder/slide_and_fold_storage.h"
 #include "builder/substitute.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
@@ -442,7 +442,7 @@ void compute_allocation_bounds(const std::vector<const func*>& order, symbol_map
   }
 }
 
-//
+// Update dims vector by substittuting expression from the map.
 std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
   for (dim_expr& dim : dims) {
     dim_expr new_dim = dim;
@@ -506,9 +506,9 @@ class pipeline_builder {
 
   void substitute_buffer_dims() {
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const auto& f = order_[ix];
-      for (const auto& o : f->outputs()) {
-        const auto& b = o.buffer;
+      const func* f = order_[ix];
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
 
         std::vector<std::pair<expr, expr>> substitutions;
@@ -605,10 +605,10 @@ class pipeline_builder {
       }
 
       for (int ix = order_.size() - 1; ix >= 0; ix--) {
-        const auto& f = order_[ix];
+        const func* f = order_[ix];
 
-        for (const auto& o : f->outputs()) {
-          const auto& b = o.buffer;
+        for (const func::output& o : f->outputs()) {
+          const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
           body = crop_buffer::make(b->sym(), *inferred_bounds_[b->sym()], body);
         }
@@ -697,8 +697,8 @@ public:
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const func* f = order_[ix];
-      for (const auto& o : f->outputs()) {
-        const auto& b = o.buffer;
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
@@ -749,10 +749,10 @@ public:
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const auto& f = order_[ix];
+      const func* f = order_[ix];
 
-      for (const auto& o : f->outputs()) {
-        const auto& b = o.buffer;
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
         const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
         if (!maybe_dims) continue;
         body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
