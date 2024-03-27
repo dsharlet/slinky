@@ -18,6 +18,7 @@ public:
 
   template <typename Fn>
   void update_deps(symbol_id i, Fn fn) {
+    if (std::find(shadowed.begin(), shadowed.end(), i) != shadowed.end()) return;
     for (const auto& v : var_deps) {
       if (v.first == i) {
         fn(v.second);
@@ -57,11 +58,11 @@ public:
   }
 
   template <typename T>
-  void visit_sym_body(const T* op) {
+  void visit_sym_body(const T* op, bool shadow = true) {
     if (!op->body.defined()) return;
-    shadowed.push_back(op->sym);
+    if (shadow) shadowed.push_back(op->sym);
     op->body.accept(this);
-    shadowed.pop_back();
+    if (shadow) shadowed.pop_back();
   }
 
   void visit(const loop* op) override {
@@ -114,7 +115,6 @@ public:
 
   void visit(const clone_buffer* op) override {
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta_read = true; });
-    update_deps(op->sym, [](depends_on_result& deps) { deps.buffer_meta_mutated = true; });
     visit_sym_body(op);
   }
 
@@ -147,7 +147,7 @@ public:
       deps.buffer_meta_read = true;
       deps.buffer_meta_mutated = true;
     });
-    visit_sym_body(op);
+    visit_sym_body(op, /*shadow=*/false);
   }
   void visit(const crop_dim* op) override {
     if (op->bounds.min.defined()) op->bounds.min.accept(this);
@@ -156,23 +156,23 @@ public:
       deps.buffer_meta_read = true;
       deps.buffer_meta_mutated = true;
     });
-    visit_sym_body(op);
+    visit_sym_body(op, /*shadow=*/false);
   }
   void visit(const slice_buffer* op) override {
     for (const expr& i : op->at) {
       if (i.defined()) i.accept(this);
     }
     update_deps(op->sym, [](depends_on_result& deps) { deps.buffer_meta_mutated = true; });
-    visit_sym_body(op);
+    visit_sym_body(op, /*shadow=*/false);
   }
   void visit(const slice_dim* op) override {
     op->at.accept(this);
     update_deps(op->sym, [](depends_on_result& deps) { deps.buffer_meta_mutated = true; });
-    visit_sym_body(op);
+    visit_sym_body(op, /*shadow=*/false);
   }
   void visit(const truncate_rank* op) override {
     update_deps(op->sym, [](depends_on_result& deps) { deps.buffer_meta_mutated = true; });
-    visit_sym_body(op);
+    visit_sym_body(op, /*shadow=*/false);
   }
 };
 
