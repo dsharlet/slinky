@@ -239,12 +239,6 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
 
-  if (dst.rank == 0) {
-    // The buffers are scalar.
-    memcpy(dst.base, src.base, dst.elem_size);
-    return;
-  }
-
   const char* src_base = reinterpret_cast<const char*>(src.base);
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
@@ -277,17 +271,17 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   }
 
   rank = optimize_copy_dims(dims, rank);
+  if (rank <= 0) {
+    // The buffers are scalar.
+    memcpy(dst.base, src.base, dst.elem_size);
+    return;
+  }
 
   // Now we have an optimized set of dimensions to copy. Run the copy.
   copy(src_base, dst_base, dims, dst.elem_size, padding, rank - 1);
 }
 
 SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
-  if (dst.rank == 0) {
-    // The buffer is scalar.
-    return;
-  }
-
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to pad.
@@ -305,18 +299,16 @@ SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, 
   }
 
   rank = optimize_copy_dims(dims, rank);
+  if (rank <= 0) {
+    // The buffer is scalar.
+    return;
+  }
 
   // Now we have an optimized set of dimensions to pad. Run the pad.
   copy(nullptr, dst_base, dims, dst.elem_size, padding, rank - 1);
 }
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
-  if (dst.rank == 0) {
-    // The buffer is scalar.
-    memcpy(dst.base, value, dst.elem_size);
-    return;
-  }
-
   char* dst_base = reinterpret_cast<char*>(dst.base);
 
   // Make a list of pointers to dims that we are going to copy.
@@ -337,6 +329,11 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   }
 
   rank = optimize_copy_dims(dims, rank);
+  if (rank <= 0) {
+    // The buffer is scalar.
+    memcpy(dst.base, value, dst.elem_size);
+    return;
+  }
 
   fill(dst_base, dims, dst.elem_size, value, rank - 1);
 }
