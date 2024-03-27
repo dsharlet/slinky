@@ -66,6 +66,16 @@ cc_test(
 )
 
 cc_test(
+    name = "depends_on_test",
+    srcs = ["depends_on_test.cc"],
+    deps = [
+        ":runtime",
+        "@googletest//:gtest_main",
+    ],
+    size="small",
+)
+
+cc_test(
     name = "evaluate_test",
     srcs = ["evaluate_test.cc"],
     deps = [
