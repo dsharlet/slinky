@@ -108,8 +108,12 @@ public:
     int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
-    int stages = 0;
+    // How many stages we've added synchronization for.
+    int sync_stages = 0;
 
+    // We can't insert this directly, because there might be a loop between the loop we're sliding over and the call or
+    // copy. So, we need to make the synchronization statements, and save them until they can be added to the IR (the
+    // innermost location that is outside any other loops).
     std::vector<stmt> sync_before, sync_after;
 
     loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
@@ -138,7 +142,10 @@ public:
 
     loop_info& l = loops.back();
     if (!l.sync_before.empty() || !l.sync_after.empty()) {
+      // There are synchronization statements for the loop we're in, add them now.
       result = block::make({block::make(std::move(l.sync_before)), result, block::make(std::move(l.sync_after))});
+      assert(l.sync_before.empty());
+      assert(l.sync_after.empty());
     }
 
     return result;
@@ -187,7 +194,7 @@ public:
         // This loop is parallel. We need to add synchronization.
         // TODO: We should only do this for stages that access buffers that aren't allocated inside this loop(?)
         expr loop_var = variable::make(loop.sym);
-        int stage = loop.stages++;
+        int stage = loop.sync_stages++;
         // Wait for the previous iteration to complete. Note that this will access one before the loop min,
         // and that semaphore should be initialized to 1.
         loop.sync_before.push_back(
@@ -396,9 +403,9 @@ public:
 
     stmt result = loop::make(op->sym, op->max_workers, loop_bounds, op->step, std::move(body));
 
-    if (loops.back().stages > 0) {
+    if (loops.back().sync_stages > 0) {
       // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
-      interval_expr sem_bounds = {0, loops.back().stages - 1};
+      interval_expr sem_bounds = {0, loops.back().sync_stages - 1};
 
       auto fill_semaphores = [&](index_t value) {
         return call_stmt::make(
@@ -409,15 +416,20 @@ public:
             },
             {}, {semaphores.sym()}, {});
       };
-      // Fill the semaphores with 0, and then fill one before the first loop iteration with 1.
+      index_t sem_size = sizeof(index_t);
       stmt init_sems = block::make({
+          // Set all the semaphores to 0.
           fill_semaphores(0),
+          // Set the semaphores for the iteration one before the min to be 1. This allows the first "real" iteration to
+          // be unblocked.
           slice_dim::make(semaphores.sym(), 0, loop_bounds.min - 1, fill_semaphores(1)),
       });
-      index_t sem_size = sizeof(index_t);
       std::vector<dim_expr> sem_dims = {
-          {{loop_bounds.min - 1, loop_bounds.max}, sem_size},  // TODO: Can we fold this dimension?
-          {sem_bounds, sem_size * (loop_bounds.extent() + 1)},
+          // TODO: We should be able to fold this dimension, I think by 2. The semaphores end up 0
+          // which is what we need to initialize them to as well (except for the one iteration before the first loop
+          // iteration).
+          {{loop_bounds.min - 1, loop_bounds.max}, sem_size},
+          {sem_bounds, sem_size * 2},
       };
       result = allocate::make(
           semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
