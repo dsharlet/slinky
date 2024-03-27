@@ -8,8 +8,11 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "runtime/buffer.h"
@@ -286,6 +289,25 @@ public:
         // The first non-zero result is stored here.
         std::atomic<index_t> result;
 
+        // Which threads are working on this loop.
+        std::set<std::thread::id> working_threads;
+        std::mutex m;
+
+        // This should be called when entering a worker. If it returns false, we are already in the call stack of a
+        // worker on this loop, and should return to work on other tasks instead.
+        bool begin_work() {
+          std::unique_lock l(m);
+          std::thread::id tid = std::this_thread::get_id();
+          return working_threads.emplace(tid).second;
+        }
+
+        void end_work() {
+          std::unique_lock l(m);
+          auto i = working_threads.find(std::this_thread::get_id());
+          assert(i != working_threads.end());
+          working_threads.erase(i);
+        }
+
         shared_state(index_t min, index_t max, index_t step)
             : i(min), done(min), min(min), max(max), step(step), result(0) {}
       };
@@ -294,6 +316,10 @@ public:
       // in this scope.
       // TODO: Can we do this without capturing context by value?
       auto worker = [state, context = this->context, op]() mutable {
+        if (!state->begin_work()) {
+          return;
+        }
+
         while (state->result == 0) {
           index_t i = state->i.fetch_add(state->step);
           if (!(state->min <= i && i <= state->max)) break;
@@ -306,6 +332,8 @@ public:
           }
           state->done += state->step;
         }
+
+        state->end_work();
       };
       // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
       context.enqueue_many(worker);
