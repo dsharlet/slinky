@@ -11,6 +11,7 @@
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"
+#include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/util.h"
 
@@ -107,6 +108,10 @@ public:
     int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
+    int stages = 0;
+
+    std::vector<stmt> sync_before, sync_after;
+
     loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
@@ -116,10 +121,27 @@ public:
   // We need an unknown to make equations of.
   var x;
 
+  // We need a symbol for buffers of semaphores. We can re-use the same symbol for multiple nested loops because
+  // shadowing does what we need (all accesses to this buffer are before an inner loop inside a loop with
+  // synchronization).
+  var semaphores;
+
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
-  slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
+  slide_and_fold(node_context& ctx)
+      : ctx(ctx), x(ctx.insert_unique("_x")), semaphores(ctx.insert_unique("_semaphores")) {
     loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
+  }
+
+  stmt mutate(const stmt& s) override {
+    stmt result = node_mutator::mutate(s);
+
+    loop_info& l = loops.back();
+    if (!l.sync_before.empty() || !l.sync_after.empty()) {
+      result = block::make({block::make(std::move(l.sync_before)), result, block::make(std::move(l.sync_after))});
+    }
+
+    return result;
   }
 
   void visit(const allocate* op) override {
@@ -156,8 +178,25 @@ public:
   }
 
   template <typename T>
-  void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
+  void visit_call_or_copy(const T* op, span<const symbol_id> inputs, span<const symbol_id> outputs) {
     set_result(op);
+    std::vector<stmt> result;
+    for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
+      loop_info& loop = loops[loop_index];
+      if (loop.max_workers != loop::serial) {
+        // This loop is parallel. We need to add synchronization.
+        // TODO: We should only do this for stages that access buffers that aren't allocated inside this loop(?)
+        expr loop_var = variable::make(loop.sym);
+        int stage = loop.stages++;
+        // Wait for the previous iteration to complete. Note that this will access one before the loop min,
+        // and that semaphore should be initialized to 1.
+        loop.sync_before.push_back(
+            check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{loop_var - 1, stage}))));
+        // Signal we've done this iteration.
+        loop.sync_after.push_back(
+            check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{loop_var, stage}))));
+      }
+    }
     for (symbol_id output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
@@ -165,12 +204,6 @@ public:
         loop_info& loop = loops[loop_index];
         std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
-
-        if (loop.max_workers != loop::serial) {
-          // TODO: We can handle parallel loops if we add some synchronization
-          // https://github.com/dsharlet/slinky/issues/18
-          continue;
-        }
 
         expr loop_var = variable::make(loop.sym);
 
@@ -199,6 +232,10 @@ public:
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop.sym).any()) {
+              if (loop.max_workers != loop::serial) {
+                // We need an extra fold when parallelizing the loop.
+                fold_factor *= 2;
+              }
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -220,6 +257,11 @@ public:
               if (!depends_on(fold_factor, loop.sym).any()) {
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 fold_factor = simplify(align_up(fold_factor, loop.step));
+                if (loop.max_workers != loop::serial) {
+                  // We need an extra fold when parallelizing the loop.
+                  // TODO: This should only need (cur_bounds_d.max - new_min + 1) more, not 2x.
+                  fold_factor *= 2;
+                }
                 vector_at(fold_factors[output], d) = fold_factor;
                 did_overlapped_fold = true;
               } else {
@@ -252,8 +294,8 @@ public:
     }
   }
 
-  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
-  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->dst, 1}); }
+  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->inputs, op->outputs); }
+  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->src, 1}, {&op->dst, 1}); }
 
   void visit(const crop_buffer* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
@@ -341,25 +383,52 @@ public:
     current_buffer_bounds() = last_buffer_bounds;
 
     stmt body = mutate(op->body);
-    expr loop_min = loops.back().bounds.min;
-    loops.pop_back();
+    interval_expr loop_bounds = {loops.back().bounds.min, op->bounds.max};
 
-    if (loop_min.same_as(orig_min)) {
-      loop_min = op->bounds.min;
-    }
-
-    if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym()).any()) {
-      // We rewrote or used the loop min.
-      stmt result = loop::make(op->sym, op->max_workers, {loop_min, op->bounds.max}, op->step, std::move(body));
-      set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
-      return;
+    if (loop_bounds.min.same_as(orig_min)) {
+      loop_bounds.min = op->bounds.min;
     }
 
     if (body.same_as(op->body)) {
       set_result(op);
-    } else {
-      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
+      return;
     }
+
+    stmt result = loop::make(op->sym, op->max_workers, loop_bounds, op->step, std::move(body));
+
+    if (loops.back().stages > 0) {
+      // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
+      interval_expr sem_bounds = {0, loops.back().stages - 1};
+
+      auto fill_semaphores = [&](index_t value) {
+        return call_stmt::make(
+            [=](const call_stmt* s, eval_context& ctx) -> index_t {
+              raw_buffer* b = reinterpret_cast<raw_buffer*>(*ctx.lookup(s->outputs[0]));
+              fill(*b, &value);
+              return 0;
+            },
+            {}, {semaphores.sym()}, {});
+      };
+      // Fill the semaphores with 0, and then fill one before the first loop iteration with 1.
+      stmt init_sems = block::make({
+          fill_semaphores(0),
+          slice_dim::make(semaphores.sym(), 0, loop_bounds.min - 1, fill_semaphores(1)),
+      });
+      index_t sem_size = sizeof(index_t);
+      std::vector<dim_expr> sem_dims = {
+          {{loop_bounds.min - 1, loop_bounds.max}, sem_size},  // TODO: Can we fold this dimension?
+          {sem_bounds, sem_size * (loop_bounds.extent() + 1)},
+      };
+      result = allocate::make(
+          semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+    }
+    if (!is_variable(loop_bounds.min, orig_min.sym()) || depends_on(result, orig_min.sym()).any()) {
+      // We rewrote or used the loop min.
+      result = let_stmt::make(orig_min.sym(), op->bounds.min, result);
+    }
+
+    set_result(std::move(result));
+    loops.pop_back();
   }
 
   void visit(const block* op) override {
