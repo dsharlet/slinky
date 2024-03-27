@@ -577,9 +577,9 @@ std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
 box_expr dims_bounds(span<const dim_expr> dims);
 
-expr semaphore_init(expr sem, expr count = 0);
-expr semaphore_signal(expr sem, expr count = 1);
-expr semaphore_wait(expr sem, expr count = 1);
+expr semaphore_init(expr sem, expr count = expr());
+expr semaphore_signal(expr sem, expr count = expr());
+expr semaphore_wait(expr sem, expr count = expr());
 
 template <typename T>
 class symbol_map {
