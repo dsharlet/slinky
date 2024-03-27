@@ -198,7 +198,7 @@ public:
         // Wait for the previous iteration to complete. Note that this will access one before the loop min,
         // and that semaphore should be initialized to 1.
         loop.sync_before.push_back(
-            check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{loop_var - 1, stage}))));
+            check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{loop_var - loop.step, stage}))));
         // Signal we've done this iteration.
         loop.sync_after.push_back(
             check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{loop_var, stage}))));
@@ -422,13 +422,13 @@ public:
           fill_semaphores(0),
           // Set the semaphores for the iteration one before the min to be 1. This allows the first "real" iteration to
           // be unblocked.
-          slice_dim::make(semaphores.sym(), 0, loop_bounds.min - 1, fill_semaphores(1)),
+          slice_dim::make(semaphores.sym(), 0, loop_bounds.min - op->step, fill_semaphores(1)),
       });
       std::vector<dim_expr> sem_dims = {
           // TODO: We should be able to fold this dimension, I think by 2. The semaphores end up 0
           // which is what we need to initialize them to as well (except for the one iteration before the first loop
           // iteration).
-          {{loop_bounds.min - 1, loop_bounds.max}, sem_size},
+          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size},
           {sem_bounds, sem_size * 2},
       };
       result = allocate::make(
