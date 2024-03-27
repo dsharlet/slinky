@@ -15,28 +15,31 @@ namespace slinky {
 class thread_pool {
 public:
   using task = std::function<void()>;
+  using task_id = std::size_t;
 
 private:
   std::vector<std::thread> workers_;
   std::atomic<bool> stop_;
 
-  using queued_task = std::pair<int, task>;
+  std::atomic<task_id> next_task_id_{1};
+  using queued_task = std::tuple<int, task, task_id>;
   std::deque<queued_task> task_queue_;
   std::mutex mutex_;
   std::condition_variable cv_;
 
-  bool dequeue(task& t, std::vector<const queued_task*>& task_stack);
+  bool dequeue(task& t, std::vector<task_id>& task_stack);
 
 public:
   thread_pool(int workers = 3);
   ~thread_pool();
 
   int thread_count() const { return workers_.size(); }
+  // Generate a unique task id. Two tasks with the same valid id will not run in the same call stack.
+  task_id unique_task_id() { return next_task_id_++; }
 
-  // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
-  // be run recursively on the same thread while in `wait_for`.
-  void enqueue(int n, const task& t);
-  void enqueue(task t);
+  // Enqueues `n` copies of task `t` on the thread pool queue.
+  void enqueue(int n, const task& t, task_id id = 0);
+  void enqueue(task t, task_id id = 0);
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   void wait_for(std::function<bool()> condition);

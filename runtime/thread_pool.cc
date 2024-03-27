@@ -22,22 +22,22 @@ thread_pool::~thread_pool() {
   }
 }
 
-bool thread_pool::dequeue(task& t, std::vector<const queued_task*>& task_stack) {
+bool thread_pool::dequeue(task& t, std::vector<thread_pool::task_id>& task_stack) {
   for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
-    if (std::find(task_stack.begin(), task_stack.end(), &*i) != task_stack.end()) {
+    if (std::find(task_stack.begin(), task_stack.end(), std::get<2>(*i)) != task_stack.end()) {
       // Don't enqueue the same task multiple times on the same thread.
       continue;
     }
-    if (i->first == 1) {
-      t = std::move(i->second);
+    if (std::get<0>(*i) == 1) {
+      t = std::move(std::get<1>(*i));
       task_queue_.erase(i);
-      task_stack.push_back(nullptr);
+      task_stack.push_back(0);
       return true;
     } else {
-      assert(i->first > 1);
-      i->first -= 1;
-      task_stack.push_back(&*i);
-      t = i->second;
+      assert(std::get<0>(*i) > 1);
+      std::get<0>(*i) -= 1;
+      task_stack.push_back(std::get<2>(*i));
+      t = std::get<1>(*i);
       return true;
     }
   }
@@ -45,7 +45,7 @@ bool thread_pool::dequeue(task& t, std::vector<const queued_task*>& task_stack) 
 }
 
 void thread_pool::wait_for(std::function<bool()> condition) {
-  thread_local std::vector<const queued_task*> task_stack;
+  thread_local std::vector<std::size_t> task_stack;
   std::unique_lock l(mutex_);
   while (!condition()) {
     task t;
@@ -69,15 +69,16 @@ void thread_pool::atomic_call(task t) {
   cv_.notify_all();
 }
 
-void thread_pool::enqueue(int n, const task& t) {
+void thread_pool::enqueue(int n, const task& t, task_id id) {
+  if (n <= 0) return;
   std::unique_lock l(mutex_);
-  task_queue_.push_back({n, t});
+  task_queue_.push_back({n, t, id});
   cv_.notify_all();
 }
 
-void thread_pool::enqueue(task t) {
+void thread_pool::enqueue(task t, task_id id) {
   std::unique_lock l(mutex_);
-  task_queue_.push_back({1, std::move(t)});
+  task_queue_.push_back({1, std::move(t), id});
   cv_.notify_one();
 }
 
