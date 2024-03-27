@@ -1,5 +1,6 @@
 #include "runtime/thread_pool.h"
 
+#include <cassert>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -22,12 +23,24 @@ thread_pool::~thread_pool() {
   }
 }
 
+thread_pool::task thread_pool::dequeue() {
+  auto& next = task_queue_.front();
+  if (next.first == 1) {
+    task t = std::move(next.second);
+    task_queue_.pop_front();
+    return t;
+  } else {
+    assert(next.first > 1);
+    next.first -= 1;
+    return next.second;
+  }
+}
+
 void thread_pool::wait_for(std::function<bool()> condition) {
   std::unique_lock l(mutex_);
   while (!condition()) {
     if (!task_queue_.empty()) {
-      auto task = std::move(task_queue_.front());
-      task_queue_.pop_front();
+      task t = dequeue();
       l.unlock();
       task();
       l.lock();
@@ -42,13 +55,13 @@ void thread_pool::wait_for(std::function<bool()> condition) {
 
 void thread_pool::enqueue(int n, const task& t) {
   std::unique_lock l(mutex_);
-  task_queue_.insert(task_queue_.end(), n, t);
+  task_queue_.push_back({n, t});
   cv_.notify_all();
 }
 
 void thread_pool::enqueue(task t) {
   std::unique_lock l(mutex_);
-  task_queue_.push_back(std::move(t));
+  task_queue_.push_back({1, std::move(t)});
   cv_.notify_one();
 }
 

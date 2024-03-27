@@ -20,9 +20,11 @@ private:
   std::vector<std::thread> workers_;
   std::atomic<bool> stop_;
 
-  std::deque<task> task_queue_;
+  std::deque<std::pair<int, task>> task_queue_;
   std::mutex mutex_;
   std::condition_variable cv_;
+
+  task dequeue();
 
 public:
   thread_pool(int workers = 3);
