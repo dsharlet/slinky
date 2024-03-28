@@ -113,6 +113,19 @@ public:
     // If we need synchronization around this stage, which stage it is.
     std::optional<int> stage;
 
+    bool synchronize() {
+      if (max_workers == loop::serial) {
+        // Not a parallel loop, we don't need synchronization.
+        return false;
+      }
+
+      // We need synchronization, but we might already have it.
+      if (!stage) {
+        stage = sync_stages++;
+      }
+      return true;
+    }
+
     // We can't insert this directly, because there might be a loop between the loop we're sliding over and the call or
     // copy. So, we need to make the synchronization statements, and save them until they can be added to the IR (the
     // innermost location that is outside any other loops).
@@ -196,18 +209,6 @@ public:
   void visit_call_or_copy(const T* op, span<const symbol_id> inputs, span<const symbol_id> outputs) {
     set_result(op);
     std::vector<stmt> result;
-    for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
-      loop_info& loop = loops[loop_index];
-      if (loop.max_workers != loop::serial) {
-        // This loop is parallel. We need to add synchronization.
-        // TODO: We should only do this for stages that access buffers that aren't allocated inside this loop(?)
-        expr loop_var = variable::make(loop.sym);
-        if (!loop.stage) {
-          // Mark this as needing synchronization if it hasn't been marked already.
-          loop.stage = loop.sync_stages++;
-        }
-      }
-    }
     for (symbol_id output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
@@ -243,7 +244,7 @@ public:
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop.sym).any()) {
-              if (loop.max_workers != loop::serial) {
+              if (loop.synchronize()) {
                 // We need an extra fold when parallelizing the loop.
                 fold_factor *= 2;
               }
@@ -268,7 +269,7 @@ public:
               if (!depends_on(fold_factor, loop.sym).any()) {
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 fold_factor = simplify(align_up(fold_factor, loop.step));
-                if (loop.max_workers != loop::serial) {
+                if (loop.synchronize()) {
                   // We need an extra fold when parallelizing the loop.
                   // TODO: This should only need (cur_bounds_d.max - new_min + 1) more, not 2x.
                   fold_factor *= 2;
