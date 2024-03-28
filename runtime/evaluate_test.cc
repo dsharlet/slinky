@@ -97,8 +97,8 @@ TEST(evaluate, semaphore) {
   index_t produce_sem = fold_factor;
   index_t produced_sem = 0;
 
-  std::atomic<int> buffer[fold_factor];
-  std::fill_n(buffer, fold_factor, min - 1);
+  std::atomic<int> data[fold_factor];
+  std::fill_n(data, fold_factor, min - 1);
   constexpr index_t elem_size = sizeof(int);
 
   auto make_eval_ctx = [&]() {
@@ -112,9 +112,9 @@ TEST(evaluate, semaphore) {
 
   stmt produce = call_stmt::make(
       [&](const call_stmt*, eval_context& ctx) -> index_t {
-        raw_buffer* b = reinterpret_cast<raw_buffer*>(*ctx.lookup(buf.sym()));
-        for (index_t x = b->dim(0).begin(); x < b->dim(0).end(); ++x) {
-          *reinterpret_cast<std::atomic<int>*>(b->address_at(x)) = x;
+        buffer<std::atomic<int>>& b = *reinterpret_cast<buffer<std::atomic<int>>*>(*ctx.lookup(buf.sym()));
+        for (index_t x = b.dim(0).begin(); x < b.dim(0).end(); ++x) {
+          b(x) = x;
         }
         return 0;
       },
@@ -127,14 +127,14 @@ TEST(evaluate, semaphore) {
   produce = crop_dim::make(buf.sym(), 0, {x, x}, produce);
   produce = loop::make(x.sym(), loop_mode::serial, {min, max}, 1, produce);
   produce = make_buffer::make(
-      buf.sym(), reinterpret_cast<index_t>(&buffer[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, produce);
+      buf.sym(), reinterpret_cast<index_t>(&data[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, produce);
 
   index_t sum = 0;
   stmt consume = call_stmt::make(
       [&](const call_stmt*, eval_context& ctx) -> index_t {
-        raw_buffer* b = reinterpret_cast<raw_buffer*>(*ctx.lookup(buf.sym()));
-        for (index_t x = b->dim(0).begin(); x < b->dim(0).end(); ++x) {
-          sum += *reinterpret_cast<std::atomic<int>*>(b->address_at(x));
+        buffer<std::atomic<int>>& b = *reinterpret_cast<buffer<std::atomic<int>>*>(*ctx.lookup(buf.sym()));
+        for (index_t x = b.dim(0).begin(); x < b.dim(0).end(); ++x) {
+          sum += b(x);
         }
         return 0;
       },
@@ -147,7 +147,7 @@ TEST(evaluate, semaphore) {
   consume = crop_dim::make(buf.sym(), 0, {x, x}, consume);
   consume = loop::make(x.sym(), loop_mode::serial, {min, max}, 1, consume);
   consume = make_buffer::make(
-      buf.sym(), reinterpret_cast<index_t>(&buffer[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, consume);
+      buf.sym(), reinterpret_cast<index_t>(&data[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, consume);
 
   std::atomic<bool> done = false;
 
