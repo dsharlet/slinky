@@ -147,11 +147,9 @@ public:
       // Wait for the previous iteration to complete. Note that this will access one step before the loop min,
       // and that semaphore should be initialized to 1.
       expr loop_var = variable::make(l.sym);
-      stmt before =
-          check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{loop_var - l.step, *l.stage})));
+      stmt before = check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var - l.step})));
       // Signal we've done this iteration.
-      stmt after =
-          check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{loop_var, *l.stage})));
+      stmt after = check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var})));
 
       // There are synchronization statements for the loop we're in, add them now.
       result = block::make({before, result, after});
@@ -409,33 +407,31 @@ public:
 
     stmt result = loop::make(op->sym, op->max_workers, loop_bounds, op->step, std::move(body));
 
-    if (loops.back().sync_stages > 0) {
+    const int stage_count = loops.back().sync_stages;
+    if (stage_count > 0) {
       // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
-      interval_expr sem_bounds = {0, loops.back().sync_stages - 1};
+      interval_expr sem_bounds = {0, stage_count - 1};
 
-      auto fill_semaphores = [&](index_t value) {
-        return call_stmt::make(
-            [=](const call_stmt* s, eval_context& ctx) -> index_t {
-              raw_buffer* b = reinterpret_cast<raw_buffer*>(*ctx.lookup(s->outputs[0]));
-              fill(*b, &value);
-              return 0;
-            },
-            {}, {semaphores.sym()}, {});
-      };
       index_t sem_size = sizeof(index_t);
-      stmt init_sems = block::make({
-          // Set all the semaphores to 0.
-          fill_semaphores(0),
-          // Set the semaphores for the iteration one before the min to be 1. This allows the first "real" iteration to
-          // be unblocked.
-          slice_dim::make(semaphores.sym(), 0, loop_bounds.min - op->step, fill_semaphores(1)),
-      });
+      stmt init_sems = call_stmt::make(
+          [](const call_stmt* s, eval_context& ctx) -> index_t {
+            buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
+            assert(sems.rank == 2);
+            memset(sems.base(), 0, sems.size_bytes());
+            // Initialize the first semaphore for each stage (the one before the loop min) to 1,
+            // unblocking the first iteration.
+            for (index_t i = sems.dim(0).begin(); i < sems.dim(0).end(); ++i) {
+              sems(i, sems.dim(1).min()) = 1;
+            }
+            return 0;
+          },
+          {}, {semaphores.sym()}, {});
       std::vector<dim_expr> sem_dims = {
-          // TODO: We should be able to fold this dimension, I think by 2. The semaphores end up 0
-          // which is what we need to initialize them to as well (except for the one iteration before the first loop
-          // iteration).
-          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size},
-          {sem_bounds, sem_size * 2},
+          {sem_bounds, sem_size},
+          // TODO: We should be able to fold this dimension by the number of worker threads, which we should also limit
+          // to the number of stages. The semaphores end up 0 which is what we need to initialize them to as well
+          // (except for the one iteration before the first loop iteration).
+          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent()},
       };
       result = allocate::make(
           semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
