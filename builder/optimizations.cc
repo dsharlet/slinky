@@ -388,6 +388,8 @@ class race_condition_fixer : public node_mutator {
 
 public:
   void visit(const loop* op) override {
+    // TODO: This inserts clone_buffer ops even for pipelined loops that don't need them, because we know that that
+    // particular stage of the pipeline will not be executed by more than one thread concurrently.
     if (op->is_serial()) {
       node_mutator::visit(op);
       return;
