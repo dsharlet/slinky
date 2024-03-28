@@ -55,22 +55,35 @@ enum class expr_node_type {
 };
 
 enum class intrinsic {
+  // Some mathematical constants are expressed as calls to functions with no arguments.
   negative_infinity,
   positive_infinity,
   indeterminate,
+
+  // Common arithmetic functions.
   abs,
 
+  // Functions with arguments (buf) that return buffer metadata.
   buffer_rank,
   buffer_elem_size,
   buffer_size_bytes,
 
+  // Functions with arguments (buf, dim) that return dim metadata of a buffer.
   buffer_min,
   buffer_max,
   buffer_stride,
   buffer_fold_factor,
   buffer_extent,
 
+  // This function returns the address of the element x in (buf, x_0, x_1, ...). x can be any rank, including 0.
   buffer_at,
+
+  // These functions implement counting semaphores.
+  // The first argument of all of these semaphore helpers is a pointer to an index_t that will be used as the semaphore,
+  // and the second argument is a count.
+  semaphore_init,
+  semaphore_signal,
+  semaphore_wait,
 };
 
 class expr_visitor;
@@ -566,6 +579,10 @@ dim_expr buffer_dim(const expr& buf, const expr& dim);
 std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
 box_expr dims_bounds(span<const dim_expr> dims);
+
+expr semaphore_init(expr sem, expr count = expr());
+expr semaphore_signal(expr sem, expr count = expr());
+expr semaphore_wait(expr sem, expr count = expr());
 
 template <typename T>
 class symbol_map {

@@ -8,8 +8,11 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "runtime/buffer.h"
@@ -197,6 +200,37 @@ public:
     return result;
   }
 
+  index_t eval_semaphore_init(const call* op) {
+    assert(op->args.size() == 2);
+    index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
+    index_t count = eval_expr(op->args[1], 0);
+    context.atomic_call([=]() { *sem = count; });
+    return 1;
+  }
+
+  index_t eval_semaphore_signal(const call* op) {
+    assert(op->args.size() == 2);
+    index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
+    index_t count = eval_expr(op->args[1], 1);
+    context.atomic_call([=]() { *sem += count; });
+    return 1;
+  }
+
+  index_t eval_semaphore_wait(const call* op) {
+    assert(op->args.size() == 2);
+    index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
+    index_t count = eval_expr(op->args[1], 1);
+    context.wait_for([=]() {
+      if (*sem >= count) {
+        *sem -= count;
+        return true;
+      } else {
+        return false;
+      }
+    });
+    return 1;
+  }
+
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
@@ -219,6 +253,11 @@ public:
     case intrinsic::buffer_fold_factor: result = eval_dim_metadata(op); return;
 
     case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(op)); return;
+
+    case intrinsic::semaphore_init: result = eval_semaphore_init(op); return;
+    case intrinsic::semaphore_signal: result = eval_semaphore_signal(op); return;
+    case intrinsic::semaphore_wait: result = eval_semaphore_wait(op); return;
+
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
   }
@@ -234,8 +273,9 @@ public:
     index_t min = eval_expr(op->bounds.min);
     index_t max = eval_expr(op->bounds.max);
     index_t step = eval_expr(op->step, 1);
-    if (op->mode == loop_mode::parallel) {
+    if (op->max_workers > 1) {
       assert(context.enqueue_many);
+      assert(context.enqueue);
       assert(context.wait_for);
       struct shared_state {
         // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
@@ -251,6 +291,25 @@ public:
         // The first non-zero result is stored here.
         std::atomic<index_t> result;
 
+        // Which threads are working on this loop.
+        std::set<std::thread::id> working_threads;
+        std::mutex m;
+
+        // This should be called when entering a worker. If it returns false, we are already in the call stack of a
+        // worker on this loop, and should return to work on other tasks instead.
+        bool begin_work() {
+          std::unique_lock l(m);
+          std::thread::id tid = std::this_thread::get_id();
+          return working_threads.emplace(tid).second;
+        }
+
+        void end_work() {
+          std::unique_lock l(m);
+          auto i = working_threads.find(std::this_thread::get_id());
+          assert(i != working_threads.end());
+          working_threads.erase(i);
+        }
+
         shared_state(index_t min, index_t max, index_t step)
             : i(min), done(min), min(min), max(max), step(step), result(0) {}
       };
@@ -259,6 +318,10 @@ public:
       // in this scope.
       // TODO: Can we do this without capturing context by value?
       auto worker = [state, context = this->context, op]() mutable {
+        if (!state->begin_work()) {
+          return;
+        }
+
         while (state->result == 0) {
           index_t i = state->i.fetch_add(state->step);
           if (!(state->min <= i && i <= state->max)) break;
@@ -271,15 +334,20 @@ public:
           }
           state->done += state->step;
         }
+
+        state->end_work();
       };
-      // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
-      context.enqueue_many(worker);
+      if (op->max_workers == loop::parallel) {
+        // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
+        context.enqueue_many(worker);
+      } else {
+        context.enqueue(op->max_workers - 1, worker);
+      }
       worker();
       // While the loop still isn't done, work on other tasks.
       context.wait_for([&]() { return state->result != 0 || !(min <= state->done && state->done <= max); });
       result = state->result;
     } else {
-      assert(op->mode == loop_mode::serial);
       // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
       // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's

@@ -375,10 +375,10 @@ stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
   return make(std::move(stmts));
 }
 
-stmt loop::make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body) {
+stmt loop::make(symbol_id sym, int max_workers, interval_expr bounds, expr step, stmt body) {
   auto l = new loop();
   l->sym = sym;
-  l->mode = mode;
+  l->max_workers = max_workers;
   l->bounds = std::move(bounds);
   l->step = std::move(step);
   l->body = std::move(body);
@@ -460,11 +460,6 @@ stmt check::make(expr condition) {
   n->condition = std::move(condition);
   return n;
 }
-
-namespace {
-
-
-}  // namespace
 
 const expr& positive_infinity() {
   static expr e = call::make(intrinsic::positive_infinity, {});
@@ -571,6 +566,16 @@ bool is_buffer_max(const expr& x, symbol_id sym, int dim) {
 
   assert(c->args.size() == 2);
   return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
+}
+
+expr semaphore_init(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
+}
+expr semaphore_signal(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_signal, {std::move(sem), std::move(count)});
+}
+expr semaphore_wait(expr sem, expr count) {
+  return call::make(intrinsic::semaphore_wait, {std::move(sem), std::move(count)});
 }
 
 namespace {

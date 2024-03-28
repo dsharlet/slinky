@@ -141,16 +141,16 @@ TEST(simplify, let) {
   test_simplify(let::make(x.sym(), buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
 
   test_simplify(
-    let_stmt::make(x.sym(), y, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
-    loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
+    let_stmt::make(x.sym(), y, loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(x))),
+    loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
 
   // lets that should be kept
   test_simplify(
       let::make(x.sym(), y * 2, (x + 1) / x), let::make(x.sym(), y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 
   test_simplify(
-    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))),
-    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop_mode::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
+    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(x))),
+    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
 
   test_simplify(
     let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})),
@@ -173,8 +173,8 @@ TEST(simplify, buffer_intrinsics) {
 }
 
 TEST(simplify, bounds) {
-  test_simplify(loop::make(x.sym(), loop_mode::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)), stmt());
-  test_simplify(loop::make(x.sym(), loop_mode::serial, min_extent(x, z), z, check::make(y)), check::make(y));
+  test_simplify(loop::make(x.sym(), loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)), stmt());
+  test_simplify(loop::make(x.sym(), loop::serial, min_extent(x, z), z, check::make(y)), check::make(y));
 
   test_simplify(
       allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)),
