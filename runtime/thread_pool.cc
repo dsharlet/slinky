@@ -69,15 +69,17 @@ void thread_pool::atomic_call(task t) {
   cv_.notify_all();
 }
 
-void thread_pool::enqueue(int n, const task& t, task_id id) {
+void thread_pool::enqueue(int n, const task& t) {
   if (n <= 0) return;
   std::unique_lock l(mutex_);
+  task_id id = next_task_id_++;
   task_queue_.push_back({n, t, id});
   cv_.notify_all();
 }
 
-void thread_pool::enqueue(task t, task_id id) {
+void thread_pool::enqueue(task t) {
   std::unique_lock l(mutex_);
+  task_id id = next_task_id_++;
   task_queue_.push_back({1, std::move(t), id});
   cv_.notify_one();
 }

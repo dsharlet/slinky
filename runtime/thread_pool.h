@@ -21,7 +21,7 @@ private:
   std::vector<std::thread> workers_;
   std::atomic<bool> stop_;
 
-  std::atomic<task_id> next_task_id_{1};
+  task_id next_task_id_ = 1;
   using queued_task = std::tuple<int, task, task_id>;
   std::deque<queued_task> task_queue_;
   std::mutex mutex_;
@@ -34,12 +34,10 @@ public:
   ~thread_pool();
 
   int thread_count() const { return workers_.size(); }
-  // Generate a unique task id. Two tasks with the same valid id will not run in the same call stack.
-  task_id unique_task_id() { return next_task_id_++; }
 
   // Enqueues `n` copies of task `t` on the thread pool queue.
-  void enqueue(int n, const task& t, task_id id = 0);
-  void enqueue(task t, task_id id = 0);
+  void enqueue(int n, const task& t);
+  void enqueue(task t);
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   void wait_for(std::function<bool()> condition);
