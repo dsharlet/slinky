@@ -614,7 +614,7 @@ TEST_P(stencil, pipeline) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   if (split > 0) {
-    const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
+    const int parallel_extra = max_workers != loop::serial ? split : 0;
     ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short));
   }
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
@@ -742,7 +742,7 @@ TEST_P(stencil_chain, pipeline) {
   p.evaluate(inputs, outputs, eval_ctx);
 
   if (split > 0) {
-    const int parallel_extra = max_workers != loop::serial ? split * 3 : 0;
+    const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
     ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short) +
                                             (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short));
   }
