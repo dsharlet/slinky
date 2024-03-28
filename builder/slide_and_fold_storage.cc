@@ -110,6 +110,8 @@ public:
 
     // How many stages we've added synchronization for.
     int sync_stages = 0;
+    // If we need synchronization around this stage, which stage it is.
+    std::optional<int> stage;
 
     // We can't insert this directly, because there might be a loop between the loop we're sliding over and the call or
     // copy. So, we need to make the synchronization statements, and save them until they can be added to the IR (the
@@ -141,11 +143,19 @@ public:
     stmt result = node_mutator::mutate(s);
 
     loop_info& l = loops.back();
-    if (!l.sync_before.empty() || !l.sync_after.empty()) {
+    if (l.stage) {
+      // Wait for the previous iteration to complete. Note that this will access one step before the loop min,
+      // and that semaphore should be initialized to 1.
+      expr loop_var = variable::make(l.sym);
+      stmt before =
+          check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{loop_var - l.step, *l.stage})));
+      // Signal we've done this iteration.
+      stmt after =
+          check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{loop_var, *l.stage})));
+
       // There are synchronization statements for the loop we're in, add them now.
-      result = block::make({block::make(std::move(l.sync_before)), result, block::make(std::move(l.sync_after))});
-      assert(l.sync_before.empty());
-      assert(l.sync_after.empty());
+      result = block::make({before, result, after});
+      l.stage = std::nullopt;
     }
 
     return result;
@@ -194,14 +204,10 @@ public:
         // This loop is parallel. We need to add synchronization.
         // TODO: We should only do this for stages that access buffers that aren't allocated inside this loop(?)
         expr loop_var = variable::make(loop.sym);
-        int stage = loop.sync_stages++;
-        // Wait for the previous iteration to complete. Note that this will access one before the loop min,
-        // and that semaphore should be initialized to 1.
-        loop.sync_before.push_back(
-            check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{loop_var - loop.step, stage}))));
-        // Signal we've done this iteration.
-        loop.sync_after.push_back(
-            check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{loop_var, stage}))));
+        if (!loop.stage) {
+          // Mark this as needing synchronization if it hasn't been marked already.
+          loop.stage = loop.sync_stages++;
+        }
       }
     }
     for (symbol_id output : outputs) {
