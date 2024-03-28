@@ -349,15 +349,13 @@ public:
 
         state->end_work();
       };
-      // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
       if (max_workers) {
         context.enqueue(*max_workers - 1, worker);
         max_workers = std::nullopt;
       } else {
+        // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
         context.enqueue_many(worker);
       }
-      // TODO: This call could end up calling wait_for and running the worker recursively, which will deadlock
-      // in parallel loops with synchronization.
       worker();
       // While the loop still isn't done, work on other tasks.
       context.wait_for([&]() { return state->result != 0 || !(min <= state->done && state->done <= max); });
