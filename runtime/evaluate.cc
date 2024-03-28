@@ -353,8 +353,8 @@ public:
 
         state->end_work();
       };
-      // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
       if (op->max_workers == loop::parallel) {
+        // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
         context.enqueue_many(worker);
       } else {
         context.enqueue(op->max_workers - 1, worker);

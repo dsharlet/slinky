@@ -113,7 +113,7 @@ public:
     // If we need synchronization around this stage, which stage it is.
     std::optional<int> stage;
 
-    bool synchronize() {
+    bool add_synchronization() {
       if (max_workers == loop::serial) {
         // Not a parallel loop, we don't need synchronization.
         return false;
@@ -150,6 +150,8 @@ public:
   stmt mutate(const stmt& s) override {
     stmt result = node_mutator::mutate(s);
 
+    // The loop at the back of the loops vector is the immediately containing loop. So, we know there are no
+    // intervening loops, and we can add any synchronization that has been requested.
     loop_info& l = loops.back();
     if (l.stage) {
       // Wait for the previous iteration to complete. Note that this will access one step before the loop min,
@@ -159,7 +161,6 @@ public:
       // Signal we've done this iteration.
       stmt after = check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var})));
 
-      // There are synchronization statements for the loop we're in, add them now.
       result = block::make({before, result, after});
       l.stage = std::nullopt;
     }
@@ -201,9 +202,8 @@ public:
   }
 
   template <typename T>
-  void visit_call_or_copy(const T* op, span<const symbol_id> inputs, span<const symbol_id> outputs) {
+  void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
     set_result(op);
-    std::vector<stmt> result;
     for (symbol_id output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
@@ -239,7 +239,7 @@ public:
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop.sym).any()) {
-              if (loop.synchronize()) {
+              if (loop.add_synchronization()) {
                 // We need an extra fold when parallelizing the loop.
                 fold_factor *= 2;
               }
@@ -264,7 +264,7 @@ public:
               if (!depends_on(fold_factor, loop.sym).any()) {
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 fold_factor = simplify(align_up(fold_factor, loop.step));
-                if (loop.synchronize()) {
+                if (loop.add_synchronization()) {
                   // We need an extra fold when parallelizing the loop.
                   // TODO: This should only need (cur_bounds_d.max - new_min + 1) more, not 2x.
                   fold_factor *= 2;
@@ -301,8 +301,8 @@ public:
     }
   }
 
-  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->inputs, op->outputs); }
-  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->src, 1}, {&op->dst, 1}); }
+  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
+  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->dst, 1}); }
 
   void visit(const crop_buffer* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
@@ -428,6 +428,7 @@ public:
       expr sem_fold_factor = stage_count * loops.back().step;
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size},
+          // TODO: We should just let dimensions like this have undefined bounds.
           {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
       result = allocate::make(semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims),
