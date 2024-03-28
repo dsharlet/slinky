@@ -399,7 +399,9 @@ struct dim_expr {
   expr fold_factor;
 
   const expr& min() const { return bounds.min; }
+  expr& min() { return bounds.min; }
   const expr& max() const { return bounds.max; }
+  expr& max() { return bounds.max; }
   expr extent() const { return bounds.extent(); }
 
   bool same_as(const dim_expr& r) const {

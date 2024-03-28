@@ -1501,6 +1501,9 @@ TEST_P(diamond_stencils, pipeline) {
     func diff =
         func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
+    in->dim(0).min() = (in->dim(0).min() / 4) * 4;
+    // in->dim(0).max() = (in->dim(0).max() / 4) * 4;
+
     if (schedule == 0) {
       diff.loops({{y, 1}});
     } else if (schedule == 1) {
@@ -1516,6 +1519,7 @@ TEST_P(diamond_stencils, pipeline) {
 
     return build_pipeline(ctx, {in}, {out});
   };
+
   pipeline p = make_pipeline();
   pipeline p2 = make_pipeline();
   ASSERT_TRUE(match(p.body, p2.body));
@@ -1523,8 +1527,8 @@ TEST_P(diamond_stencils, pipeline) {
   // Run the pipeline.
   const int W = 20;
   const int H = 10;
-  buffer<short, 2> in_buf({W + 4, H + 4});
-  in_buf.translate(-2, -2);
+  buffer<short, 2> in_buf({W + 8, H + 8});
+  in_buf.translate(-4, -4);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
