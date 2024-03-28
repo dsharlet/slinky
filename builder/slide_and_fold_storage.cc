@@ -128,11 +128,6 @@ public:
       return true;
     }
 
-    // We can't insert this directly, because there might be a loop between the loop we're sliding over and the call or
-    // copy. So, we need to make the synchronization statements, and save them until they can be added to the IR (the
-    // innermost location that is outside any other loops).
-    std::vector<stmt> sync_before, sync_after;
-
     loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, loop_mode mode)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), mode(mode),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
