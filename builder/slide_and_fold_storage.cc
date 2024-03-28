@@ -158,8 +158,6 @@ public:
     // intervening loops, and we can add any synchronization that has been requested.
     loop_info& l = loops.back();
     if (l.stage) {
-      // Wait for the previous iteration to complete. Note that this will access one step before the loop min,
-      // and that semaphore should be initialized to 1.
       expr loop_var = variable::make(l.sym);
       stmt before = check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var - l.step})));
       // Signal we've done this iteration.
@@ -450,8 +448,8 @@ public:
           // TODO: We should just let dimensions like this have undefined bounds.
           {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
-      result = allocate::make(semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims),
-          block::make({init_sems, result}));
+      result = allocate::make(
+          semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
     }
     if (!is_variable(loop_bounds.min, orig_min.sym()) || depends_on(result, orig_min.sym()).any()) {
       // We rewrote or used the loop min.
