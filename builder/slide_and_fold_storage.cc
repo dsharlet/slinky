@@ -429,6 +429,7 @@ public:
       expr sem_fold_factor = stage_count * loops.back().step;
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size},
+          // TODO: We should just let dimensions like this have undefined bounds.
           {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
       stmt set_max_workers = check::make(call::make(intrinsic::set_max_workers, {stage_count}));
