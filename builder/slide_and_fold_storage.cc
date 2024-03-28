@@ -159,11 +159,13 @@ public:
     loop_info& l = loops.back();
     if (l.stage) {
       expr loop_var = variable::make(l.sym);
-      stmt before = check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var - l.step})));
-      // Signal we've done this iteration.
-      stmt after = check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var})));
-
-      result = block::make({before, result, after});
+      result = block::make({
+          // Wait for the previous iteration of this stage to complete.
+          check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var - l.step}))),
+          result,
+          // Signal we've done this iteration.
+          check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var}))),
+      });
       l.stage = std::nullopt;
     }
 
