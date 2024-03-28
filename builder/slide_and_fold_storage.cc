@@ -107,7 +107,7 @@ public:
     expr orig_min;
     interval_expr bounds;
     expr step;
-    loop_mode mode;
+    int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
     // How many stages we've added synchronization for.
@@ -116,8 +116,8 @@ public:
     std::optional<int> stage;
 
     bool add_synchronization() {
-      if (mode != loop_mode::parallel) {
-        // Not a parallel loop, we don't need synchronization.
+      if (sync_stages + 1 >= max_workers) {
+        // We can't add any more stages to this loop.
         return false;
       }
 
@@ -128,8 +128,8 @@ public:
       return true;
     }
 
-    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, loop_mode mode)
-        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), mode(mode),
+    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
   std::vector<loop_info> loops;
@@ -150,7 +150,7 @@ public:
   slide_and_fold(node_context& ctx)
       : ctx(ctx), x(ctx.insert_unique("_x")), semaphores(ctx.insert_unique("_semaphores")),
         worker_count(ctx.insert_unique("_worker_count")) {
-    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop_mode::serial);
+    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   stmt mutate(const stmt& s) override {
@@ -249,7 +249,7 @@ public:
                 // We need a fold per worker when parallelizing the loop.
                 // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                 // If we can figure out how to add some synchronization to limit the number of workers that
-                // work on a single stage at a time, we should be able to reduce this extra folding. 
+                // work on a single stage at a time, we should be able to reduce this extra folding.
                 fold_factor *= worker_count;
               }
               vector_at(fold_factors[output], d) = fold_factor;
@@ -275,7 +275,7 @@ public:
                   // We need an extra fold per worker when parallelizing the loop.
                   // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                   // If we can figure out how to add some synchronization to limit the number of workers that
-                  // work on a single stage at a time, we should be able to reduce this extra folding. 
+                  // work on a single stage at a time, we should be able to reduce this extra folding.
                   fold_factor += worker_count * ignore_loop_max(cur_bounds_d.max - new_min + 1);
                 }
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
@@ -396,7 +396,7 @@ public:
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
-    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->mode);
+    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
 
     stmt body = mutate(op->body);
@@ -411,18 +411,19 @@ public:
       return;
     }
 
-    stmt result = loop::make(op->sym, op->mode, loop_bounds, op->step, std::move(body));
-
     const int stage_count = loops.back().sync_stages;
+    const int max_workers = stage_count > 0 ? stage_count : op->max_workers;
+    stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
+
     if (stage_count > 0) {
       // Substitute the placeholder worker_count.
-      result = substitute(result, worker_count.sym(), stage_count);
+      result = substitute(result, worker_count.sym(), max_workers);
       // We need to do this in the fold factors too. This works with nested loops because any inner loops must have
       // already substituted their worker count, and we haven't made any fold factors for outer loops yet.
       for (std::optional<std::vector<expr>>& i : fold_factors) {
         if (!i) continue;
         for (expr& j : *i) {
-          j = substitute(j, worker_count.sym(), stage_count);
+          j = substitute(j, worker_count.sym(), max_workers);
         }
       }
 
@@ -451,9 +452,8 @@ public:
           // TODO: We should just let dimensions like this have undefined bounds.
           {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
-      stmt set_max_workers = check::make(call::make(intrinsic::set_max_workers, {stage_count}));
-      result = allocate::make(semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims),
-          block::make({init_sems, set_max_workers, result}));
+      result = allocate::make(
+          semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
     }
     if (!is_variable(loop_bounds.min, orig_min.sym()) || depends_on(result, orig_min.sym()).any()) {
       // We rewrote or used the loop min.

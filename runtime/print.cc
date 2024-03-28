@@ -17,14 +17,6 @@ std::string to_string(memory_type type) {
   }
 }
 
-std::string to_string(loop_mode mode) {
-  switch (mode) {
-  case loop_mode::serial: return "serial";
-  case loop_mode::parallel: return "parallel";
-  default: return "<invalid loop_mode>";
-  }
-}
-
 std::string to_string(intrinsic fn) {
   switch (fn) {
   case intrinsic::positive_infinity: return "oo";
@@ -43,15 +35,12 @@ std::string to_string(intrinsic fn) {
   case intrinsic::semaphore_init: return "semaphore_init";
   case intrinsic::semaphore_signal: return "semaphore_signal";
   case intrinsic::semaphore_wait: return "semaphore_wait";
-  case intrinsic::set_max_workers: return "set_max_workers";
 
   default: return "<invalid intrinsic>";
   }
 }
 
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
-
-std::ostream& operator<<(std::ostream& os, loop_mode mode) { return os << to_string(mode); }
 
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
 
@@ -206,7 +195,13 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << l->mode << " loop(" << l->sym << " in " << l->bounds;
+    *this << indent() << "loop(" << l->sym << ", ";
+    switch (l->max_workers) {
+    case loop::serial: *this << "loop::serial"; break;
+    case loop::parallel: *this << "loop::parallel"; break;
+    default: *this << l->max_workers; break;
+    }
+    *this << ", " << l->bounds;
     if (l->step.defined()) {
       *this << ", " << l->step;
     }

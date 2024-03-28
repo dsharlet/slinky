@@ -67,7 +67,7 @@ TEST(evaluate, loop) {
   eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
   eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
 
-  for (loop_mode type : {loop_mode::serial, loop_mode::parallel}) {
+  for (int max_workers : {loop::serial, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
     stmt c = call_stmt::make(
         [&](const call_stmt*, eval_context& ctx) -> index_t {
@@ -76,7 +76,7 @@ TEST(evaluate, loop) {
         },
         {}, {}, {});
 
-    stmt l = loop::make(x.sym(), type, range(2, 12), 3, c);
+    stmt l = loop::make(x.sym(), max_workers, range(2, 12), 3, c);
 
     int result = evaluate(l, eval_ctx);
     ASSERT_EQ(result, 0);
@@ -125,7 +125,7 @@ TEST(evaluate, semaphore) {
       check::make(semaphore_signal(reinterpret_cast<index_t>(&produced_sem), buffer_extent(buf, 0))),
   });
   produce = crop_dim::make(buf.sym(), 0, {x, x}, produce);
-  produce = loop::make(x.sym(), loop_mode::serial, {min, max}, 1, produce);
+  produce = loop::make(x.sym(), loop::serial, {min, max}, 1, produce);
   produce = make_buffer::make(
       buf.sym(), reinterpret_cast<index_t>(&data[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, produce);
 
@@ -145,7 +145,7 @@ TEST(evaluate, semaphore) {
       check::make(semaphore_signal(reinterpret_cast<index_t>(&produce_sem), buffer_extent(buf, 0))),
   });
   consume = crop_dim::make(buf.sym(), 0, {x, x}, consume);
-  consume = loop::make(x.sym(), loop_mode::serial, {min, max}, 1, consume);
+  consume = loop::make(x.sym(), loop::serial, {min, max}, 1, consume);
   consume = make_buffer::make(
       buf.sym(), reinterpret_cast<index_t>(&data[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, consume);
 

@@ -22,7 +22,6 @@ std::ostream& operator<<(std::ostream& os, const interval_expr& i);
 std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, memory_type type);
-std::ostream& operator<<(std::ostream& os, loop_mode mode);
 
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);
 std::ostream& operator<<(std::ostream& os, const dim& d);
@@ -32,7 +31,6 @@ std::ostream& operator<<(std::ostream& os, const dim& d);
 // to_string() calls.
 std::string to_string(intrinsic fn);
 std::string to_string(memory_type type);
-std::string to_string(loop_mode mode);
 
 }  // namespace slinky
 
