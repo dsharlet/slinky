@@ -613,10 +613,11 @@ TEST_P(stencil, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (max_workers == loop::serial && split > 0) {
-    //ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
+  if (split > 0) {
+    const int parallel_factor = max_workers != loop::serial ? 2 : 1;
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * parallel_factor * sizeof(short));
   }
-  //ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || max_workers == loop::serial ? 1 : 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -739,11 +740,13 @@ TEST_P(stencil_chain, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (split > 0 && max_workers == loop::serial) {
-    //ASSERT_EQ(eval_ctx.heap.total_size,
-    //    (W + 2) * align_up(split + 2, split) * sizeof(short) + (W + 4) * align_up(split + 2, split) * sizeof(short));
+
+  if (split > 0) {
+    const int parallel_factor = max_workers != loop::serial ? 2 : 1;
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * parallel_factor * sizeof(short) +
+                                            (W + 4) * align_up(split + 2, split) * parallel_factor * sizeof(short));
   }
-  //ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || max_workers == loop::serial ? 2 : 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
   // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});
