@@ -81,6 +81,8 @@ enum class intrinsic {
   semaphore_init,
   semaphore_signal,
   semaphore_wait,
+
+  set_max_workers,
 };
 
 class expr_visitor;

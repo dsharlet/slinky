@@ -43,6 +43,7 @@ std::string to_string(intrinsic fn) {
   case intrinsic::semaphore_init: return "semaphore_init";
   case intrinsic::semaphore_signal: return "semaphore_signal";
   case intrinsic::semaphore_wait: return "semaphore_wait";
+  case intrinsic::set_max_workers: return "set_max_workers";
 
   default: return "<invalid intrinsic>";
   }

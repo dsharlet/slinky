@@ -193,7 +193,7 @@ void BM_parallel_loop(benchmark::State& state) {
 
   eval_context eval_ctx;
   eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
+  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
   eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
 
   for (auto _ : state) {

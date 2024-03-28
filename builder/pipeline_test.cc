@@ -76,7 +76,7 @@ public:
     };
 
     enqueue_many = [&](const thread_pool::task& t) { threads.enqueue(threads.thread_count(), t); };
-    enqueue_one = [&](thread_pool::task t) { threads.enqueue(std::move(t)); };
+    enqueue = [&](int n, const thread_pool::task& t) { threads.enqueue(n, t); };
     wait_for = [&](std::function<bool()> condition) { return threads.wait_for(std::move(condition)); };
     atomic_call = [&](thread_pool::task t) { return threads.atomic_call(std::move(t)); };
   }

@@ -53,6 +53,11 @@ void dump_context_for_expr(
 
 namespace {
 
+// TODO: This is part of a disgusting hack. We need a way to communicate a max number of threads to work
+// on parallel loops. Adding a field to `loop` seems too messy/heavyweight. This is a temporary workaround until we
+// think of something better.
+thread_local std::optional<index_t> max_workers;
+
 // TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/T_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.
@@ -231,6 +236,12 @@ public:
     return 1;
   }
 
+  index_t eval_set_max_workers(const call* op) {
+    assert(op->args.size() == 1);
+    max_workers = eval_expr(op->args[0], std::numeric_limits<index_t>::max());
+    return 1;
+  }
+
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
@@ -257,6 +268,8 @@ public:
     case intrinsic::semaphore_init: result = eval_semaphore_init(op); return;
     case intrinsic::semaphore_signal: result = eval_semaphore_signal(op); return;
     case intrinsic::semaphore_wait: result = eval_semaphore_wait(op); return;
+
+    case intrinsic::set_max_workers: result = eval_set_max_workers(op); return;
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
   }
@@ -274,6 +287,7 @@ public:
     index_t step = eval_expr(op->step, 1);
     if (op->mode == loop_mode::parallel) {
       assert(context.enqueue_many);
+      assert(context.enqueue);
       assert(context.wait_for);
       struct shared_state {
         // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
@@ -336,7 +350,12 @@ public:
         state->end_work();
       };
       // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
-      context.enqueue_many(worker);
+      if (max_workers) {
+        context.enqueue(*max_workers - 1, worker);
+        max_workers = std::nullopt;
+      } else {
+        context.enqueue_many(worker);
+      }
       // TODO: This call could end up calling wait_for and running the worker recursively, which will deadlock
       // in parallel loops with synchronization.
       worker();

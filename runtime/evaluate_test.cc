@@ -64,7 +64,7 @@ TEST(evaluate, loop) {
 
   eval_context eval_ctx;
   eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
+  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
   eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
 
   for (loop_mode type : {loop_mode::serial, loop_mode::parallel}) {
@@ -104,7 +104,7 @@ TEST(evaluate, semaphore) {
   auto make_eval_ctx = [&]() {
     eval_context eval_ctx;
     eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-    eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
+    eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
     eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
     eval_ctx.atomic_call = [&](thread_pool::task f) { t.atomic_call(std::move(f)); };
     return eval_ctx;

@@ -428,15 +428,16 @@ public:
             return 0;
           },
           {}, {semaphores.sym()}, {});
+      // We can fold the semaphores array by the number of threads we'll use.
+      // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
+      expr sem_fold_factor = stage_count * loops.back().step;
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size},
-          // TODO: We should be able to fold this dimension by the number of worker threads, which we should also limit
-          // to the number of stages. The semaphores end up 0 which is what we need to initialize them to as well
-          // (except for the one iteration before the first loop iteration).
-          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent()},
+          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
-      result = allocate::make(
-          semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+      stmt set_max_workers = check::make(call::make(intrinsic::set_max_workers, {stage_count}));
+      result = allocate::make(semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims),
+          block::make({init_sems, set_max_workers, result}));
     }
     if (!is_variable(loop_bounds.min, orig_min.sym()) || depends_on(result, orig_min.sym()).any()) {
       // We rewrote or used the loop min.
