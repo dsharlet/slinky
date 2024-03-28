@@ -104,11 +104,11 @@ public:
     expr orig_min;
     interval_expr bounds;
     expr step;
-    loop_mode mode;
+    int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
-    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, loop_mode mode)
-        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), mode(mode),
+    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
   std::vector<loop_info> loops;
@@ -119,7 +119,7 @@ public:
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop_mode::serial);
+    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   void visit(const allocate* op) override {
@@ -166,7 +166,7 @@ public:
         std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
 
-        if (loop.mode == loop_mode::parallel) {
+        if (loop.max_workers != loop::serial) {
           // TODO: We can handle parallel loops if we add some synchronization
           // https://github.com/dsharlet/slinky/issues/18
           continue;
@@ -337,7 +337,7 @@ public:
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
-    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->mode);
+    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
 
     stmt body = mutate(op->body);
@@ -350,7 +350,7 @@ public:
 
     if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym()).any()) {
       // We rewrote or used the loop min.
-      stmt result = loop::make(op->sym, op->mode, {loop_min, op->bounds.max}, op->step, std::move(body));
+      stmt result = loop::make(op->sym, op->max_workers, {loop_min, op->bounds.max}, op->step, std::move(body));
       set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
       return;
     }
@@ -358,7 +358,7 @@ public:
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body)));
+      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
     }
   }
 

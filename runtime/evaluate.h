@@ -27,12 +27,12 @@ public:
   // Functions implementing parallelism:
   // - `enqueue_many` should enqueue the task N times for asynchronous execution, where N is the maximum number of
   // instances that could be expected to run simultaneously.
-  // - `enqueue_one` should enqueue a single task for asynchronous execution.
+  // - `enqueue` should enqueue a task N times.
   // - `wait_for` should wait until the given condition becomes true, executing tasks previously enqueued until it does.
   // These functions must be implemented if the statement being evaluated includes asynchronous nodes (parallel loops).
   using task = std::function<void()>;
   std::function<void(const task&)> enqueue_many;
-  std::function<void(task)> enqueue_one;
+  std::function<void(int, const task&)> enqueue;
   std::function<void(std::function<bool()>)> wait_for;
 
   // Functions implementing buffer data movement:

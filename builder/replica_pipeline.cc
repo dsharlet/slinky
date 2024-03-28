@@ -140,8 +140,8 @@ public:
     }
     buffers_emitted_.insert(bep->sym());
 
-    (void)print_assignment_explicit(
-        name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", bep->elem_size(), ")");
+    (void)print_assignment_explicit(name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(),
+        ", /*elem_size=*/", bep->elem_size(), ")");
 
     expr bep_sym = variable::make(bep->sym());
     for (index_t d = 0; d < static_cast<index_t>(bep->rank()); d++) {
@@ -222,13 +222,19 @@ public:
     return print_vector(fout_names);
   }
 
-  std::string print(const loop_mode& mode) { return "loop_mode::" + to_string(mode); }
+  std::string print_max_workers(int x) {
+    switch (x) {
+    case loop::serial: return "loop::serial";
+    case loop::parallel: return "loop::parallel";
+    default: return std::to_string(x);
+    }
+  }
 
   std::string print(const func::loop_info& loopinfo) {
     std::string v = print(loopinfo.var);
     std::string step = print_expr_maybe_inlined(loopinfo.step);
-    std::string mode = print(loopinfo.mode);
-    return print_string_vector({v, step, mode});
+    std::string max_workers = print_max_workers(loopinfo.max_workers);
+    return print_string_vector({v, step, max_workers});
   }
 
   std::string print(const std::vector<func::loop_info>& loopinfos) {

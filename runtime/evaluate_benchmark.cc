@@ -30,7 +30,7 @@ stmt make_call_counter(std::atomic<int>& calls) {
       {}, {}, {});
 }
 
-stmt make_loop(stmt body) { return loop::make(x.sym(), loop_mode::serial, range(0, iterations), 1, body); }
+stmt make_loop(stmt body) { return loop::make(x.sym(), loop::serial, range(0, iterations), 1, body); }
 
 // For nodes that need a buffer, we can add a buffer outside that loop, the cost of constructing it will be negligible.
 stmt make_buf(int rank, stmt body) {
@@ -187,13 +187,13 @@ BENCHMARK(BM_buffer_metadata);
 
 void BM_parallel_loop(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt body = loop::make(x.sym(), loop_mode::parallel, range(0, iterations), 1, make_call_counter(calls));
+  stmt body = loop::make(x.sym(), loop::parallel, range(0, iterations), 1, make_call_counter(calls));
 
   thread_pool t(state.range(0));
 
   eval_context eval_ctx;
   eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
+  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
   eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
 
   for (auto _ : state) {

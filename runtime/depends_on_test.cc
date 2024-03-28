@@ -33,7 +33,7 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(x + y, x.sym()), (depends_on_result{.var = true, .ref_count = 1}));
   ASSERT_EQ(depends_on(x + x, x.sym()), (depends_on_result{.var = true, .ref_count = 2}));
 
-  stmt loop_x = loop::make(x.sym(), loop_mode::serial, {y, z}, 1, check::make(x && z));
+  stmt loop_x = loop::make(x.sym(), loop::serial, {y, z}, 1, check::make(x && z));
   ASSERT_EQ(depends_on(loop_x, x.sym()), depends_on_result{});
   ASSERT_EQ(depends_on(loop_x, y.sym()), (depends_on_result{.var = true, .ref_count = 1}));
 

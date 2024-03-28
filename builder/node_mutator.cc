@@ -41,7 +41,7 @@ expr mutate_binary(node_mutator* this_, const T* op) {
 }  // namespace
 
 stmt clone_with_new_body(const loop* op, stmt new_body) {
-  return loop::make(op->sym, op->mode, op->bounds, op->step, std::move(new_body));
+  return loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(new_body));
 }
 stmt clone_with_new_body(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body)); }
 stmt clone_with_new_body(const allocate* op, stmt new_body) {
@@ -140,7 +140,7 @@ void node_mutator::visit(const loop* op) {
   if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
+    set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
   }
 }
 void node_mutator::visit(const call_stmt* op) { set_result(op); }

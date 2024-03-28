@@ -85,7 +85,7 @@ public:
     };
 
     enqueue_many = [&](const thread_pool::task& t) { threads.enqueue(threads.thread_count(), t); };
-    enqueue_one = [&](thread_pool::task t) { threads.enqueue(std::move(t)); };
+    enqueue = [&](int n, const thread_pool::task& t) { threads.enqueue(n, t); };
     wait_for = [&](std::function<bool()> condition) { return threads.wait_for(std::move(condition)); };
   }
 };
@@ -210,16 +210,16 @@ index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
   return sum_stencil<T, -2, -2, 2, 2>(in, out);
 }
 
-const auto loop_modes = testing::Values(loop_mode::serial, loop_mode::parallel);
+const auto loop_modes = testing::Values(loop::serial, loop::parallel);
 
-class trivial : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
+class trivial : public testing::TestWithParam<std::tuple<int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(
     split_mode, trivial, testing::Combine(loop_modes, testing::Range(0, 4)), test_params_to_string<trivial::ParamType>);
 
 // A trivial pipeline with one stage
 TEST_P(trivial, pipeline) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -233,7 +233,7 @@ TEST_P(trivial, pipeline) {
   func mul =
       func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
   if (split > 0) {
-    mul.loops({{x, split, lm}});
+    mul.loops({{x, split, max_workers}});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -262,7 +262,7 @@ TEST_P(trivial, pipeline) {
   }
 }
 
-class elementwise : public testing::TestWithParam<std::tuple<loop_mode, int, bool>> {};
+class elementwise : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_schedule_mode, elementwise,
     testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true)),
@@ -270,7 +270,7 @@ INSTANTIATE_TEST_SUITE_P(split_schedule_mode, elementwise,
 
 // An example of two 1D elementwise operations in sequence.
 TEST_P(elementwise, pipeline_1d) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   bool schedule_storage = std::get<2>(GetParam());
 
@@ -295,7 +295,7 @@ TEST_P(elementwise, pipeline_1d) {
       func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::callable_attrs{.allow_in_place = true});
 
   if (split > 0) {
-    add.loops({{x, split, lm}});
+    add.loops({{x, split, max_workers}});
     if (schedule_storage) {
       intm->store_at({&add, x});
       intm->store_in(memory_type::stack);
@@ -332,7 +332,7 @@ TEST_P(elementwise, pipeline_1d) {
 
 // An example of two 2D elementwise operations in sequence.
 TEST_P(elementwise, pipeline_2d) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   bool schedule_storage = std::get<2>(GetParam());
 
@@ -357,7 +357,7 @@ TEST_P(elementwise, pipeline_2d) {
       call_stmt::callable_attrs{.allow_in_place = true});
 
   if (split > 0) {
-    add.loops({{x, split, lm}, {y, split, lm}});
+    add.loops({{x, split, max_workers}, {y, split, max_workers}});
     if (schedule_storage) {
       intm->store_at({&add, x});
       intm->store_in(memory_type::stack);
@@ -399,14 +399,14 @@ TEST_P(elementwise, pipeline_2d) {
   }
 }
 
-class matmuls : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
+class matmuls : public testing::TestWithParam<std::tuple<int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(
     split_mode, matmuls, testing::Combine(loop_modes, testing::Range(0, 4)), test_params_to_string<matmuls::ParamType>);
 
 // Two matrix multiplies: D = (A x B) x C.
 TEST_P(matmuls, pipeline) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -441,9 +441,9 @@ TEST_P(matmuls, pipeline) {
   ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
 
   if (split > 0) {
-    matmul_abc.loops({{i, split, lm}});
+    matmul_abc.loops({{i, split, max_workers}});
 
-    if (lm == loop_mode::parallel) {
+    if (max_workers != loop::serial) {
       ab->store_at({&matmul_abc, i});
     }
   }
@@ -474,7 +474,7 @@ TEST_P(matmuls, pipeline) {
   const raw_buffer* outputs[] = {&abc_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (split > 0 && lm == loop_mode::serial) {
+  if (split > 0 && max_workers == loop::serial) {
     ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int) * split);
   }
 
@@ -492,7 +492,7 @@ TEST_P(matmuls, pipeline) {
     }
   }
 
-  if (split == 1 && lm == loop_mode::serial) {
+  if (split == 1 && max_workers == loop::serial) {
     check_replica_pipeline(define_replica_pipeline(ctx, {a, b, c}, {abc}));
   }
 }
@@ -559,14 +559,14 @@ TEST(pyramid, pipeline) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
 
-class stencil : public testing::TestWithParam<std::tuple<loop_mode, int, int>> {};
+class stencil : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil,
     testing::Combine(loop_modes, testing::Range(0, 4), testing::Range(0, 4)),
     test_params_to_string<stencil::ParamType>);
 
 TEST_P(stencil, pipeline) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   int split_intermediate = std::get<2>(GetParam());
 
@@ -588,15 +588,15 @@ TEST_P(stencil, pipeline) {
   func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
   if (split > 0) {
-    stencil.loops({{y, split, lm}});
-    if (lm == loop_mode::parallel) {
+    stencil.loops({{y, split, max_workers}});
+    if (max_workers == loop::parallel) {
       intm->store_at({&stencil, y});
       intm->store_in(memory_type::stack);
     }
   }
 
   if (split_intermediate > 0) {
-    add.loops({{t, split_intermediate, loop_mode::serial}});
+    add.loops({{t, split_intermediate, loop::serial}});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -616,10 +616,10 @@ TEST_P(stencil, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (lm == loop_mode::serial && split > 0) {
+  if (max_workers == loop::serial && split > 0) {
     ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
   }
-  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 1 : 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || max_workers == loop::serial ? 1 : 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -634,7 +634,7 @@ TEST_P(stencil, pipeline) {
   }
 
   // Also visualize this pipeline.
-  if (lm == loop_mode::serial && split_intermediate == 0) {
+  if (max_workers == loop::serial && split_intermediate == 0) {
     check_visualize("stencil_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
   }
 }
@@ -696,13 +696,13 @@ TEST(slide_2d, pipeline) {
   }
 }
 
-class stencil_chain : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
+class stencil_chain : public testing::TestWithParam<std::tuple<int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_modes, testing::Range(0, 3)),
     test_params_to_string<stencil_chain::ParamType>);
 
 TEST_P(stencil_chain, pipeline) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -722,8 +722,8 @@ TEST_P(stencil_chain, pipeline) {
   func stencil2 = func::make(sum3x3<short>, {{intm2, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
   if (split > 0) {
-    stencil2.loops({{y, split, lm}});
-    if (lm == loop_mode::parallel) {
+    stencil2.loops({{y, split, max_workers}});
+    if (max_workers == loop::parallel) {
       intm->store_at({&stencil2, y});
       intm2->store_at({&stencil2, y});
       intm->store_in(memory_type::stack);
@@ -748,11 +748,11 @@ TEST_P(stencil_chain, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (split > 0 && lm == loop_mode::serial) {
+  if (split > 0 && max_workers == loop::serial) {
     ASSERT_EQ(eval_ctx.heap.total_size,
         (W + 2) * align_up(split + 2, split) * sizeof(short) + (W + 4) * align_up(split + 2, split) * sizeof(short));
   }
-  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || lm == loop_mode::serial ? 2 : 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || max_workers == loop::serial ? 2 : 0);
 
   // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});
@@ -775,7 +775,7 @@ TEST_P(stencil_chain, pipeline) {
   }
 
   // Also visualize this pipeline.
-  if (lm == loop_mode::serial) {
+  if (max_workers == loop::serial) {
     check_visualize("stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
   }
 }
@@ -876,13 +876,13 @@ TEST(padded_copy, pipeline) {
   }
 }
 
-class multiple_outputs : public testing::TestWithParam<std::tuple<loop_mode, int>> {};
+class multiple_outputs : public testing::TestWithParam<std::tuple<int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_mode, multiple_outputs, testing::Combine(loop_modes, testing::Range(0, 4)),
     test_params_to_string<multiple_outputs::ParamType>);
 
 TEST_P(multiple_outputs, pipeline) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -918,7 +918,7 @@ TEST_P(multiple_outputs, pipeline) {
   func sums = func::make(std::move(sum_x_xy), {{in, {X, Y, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}});
 
   if (split > 0) {
-    sums.loops({{z, split, lm}});
+    sums.loops({{z, split, max_workers}});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
@@ -952,19 +952,19 @@ TEST_P(multiple_outputs, pipeline) {
     ASSERT_EQ(sum_xy_buf(z), expected_xy);
   }
 
-  if (split == 1 && lm == loop_mode::serial) {
+  if (split == 1 && max_workers == loop::serial) {
     check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
   }
 }
 
-class outer_product : public testing::TestWithParam<std::tuple<loop_mode, int, int>> {};
+class outer_product : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_split_mode, outer_product,
     testing::Combine(loop_modes, testing::Range(0, 4), testing::Range(0, 4)),
     test_params_to_string<outer_product::ParamType>);
 
 TEST_P(outer_product, pipeline) {
-  loop_mode lm = std::get<0>(GetParam());
+  int max_workers = std::get<0>(GetParam());
   int split_i = std::get<1>(GetParam());
   int split_j = std::get<2>(GetParam());
 
@@ -990,8 +990,8 @@ TEST_P(outer_product, pipeline) {
       {{a, {point(i)}}, {b, {point(j)}}}, {{out, {i, j}}});
 
   std::vector<func::loop_info> loops;
-  if (split_i > 0) loops.emplace_back(i, split_i, lm);
-  if (split_j > 0) loops.emplace_back(j, split_j, lm);
+  if (split_i > 0) loops.emplace_back(i, split_i, max_workers);
+  if (split_j > 0) loops.emplace_back(j, split_j, max_workers);
   outer.loops(loops);
 
   pipeline p = build_pipeline(ctx, {a, b}, {out});
