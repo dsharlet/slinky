@@ -204,7 +204,7 @@ public:
     assert(op->args.size() == 2);
     index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
     index_t count = eval_expr(op->args[1], 0);
-    context.atomic_call([=]() { __atomic_store_n(sem, count, __ATOMIC_SEQ_CST); });
+    context.atomic_call([=]() { *sem = count; });
     return 1;
   }
 
@@ -212,7 +212,7 @@ public:
     assert(op->args.size() == 2);
     index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
     index_t count = eval_expr(op->args[1], 1);
-    context.atomic_call([=]() { __atomic_add_fetch(sem, count, __ATOMIC_SEQ_CST); });
+    context.atomic_call([=]() { *sem += count; });
     return 1;
   }
 
@@ -221,8 +221,8 @@ public:
     index_t* sem = reinterpret_cast<index_t*>(eval_expr(op->args[0]));
     index_t count = eval_expr(op->args[1], 1);
     context.wait_for([=]() {
-      if (__atomic_load_n(sem, __ATOMIC_SEQ_CST) >= count) {
-        __atomic_sub_fetch(sem, count, __ATOMIC_SEQ_CST);
+      if (*sem >= count) {
+        *sem -= count;
         return true;
       } else {
         return false;
