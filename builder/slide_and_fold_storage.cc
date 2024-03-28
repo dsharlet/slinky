@@ -114,8 +114,8 @@ public:
     std::optional<int> stage;
 
     bool add_synchronization() {
-      if (max_workers == loop::serial) {
-        // Not a parallel loop, we don't need synchronization.
+      if (sync_stages + 1 >= max_workers) {
+        // We can't add any more stages to this loop.
         return false;
       }
 
@@ -140,10 +140,14 @@ public:
   // synchronization).
   var semaphores;
 
+  // When parallelizing loops with synchronization, we need to know how many workers there are.
+  var worker_count;
+
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold(node_context& ctx)
-      : ctx(ctx), x(ctx.insert_unique("_x")), semaphores(ctx.insert_unique("_semaphores")) {
+      : ctx(ctx), x(ctx.insert_unique("_x")), semaphores(ctx.insert_unique("_semaphores")),
+        worker_count(ctx.insert_unique("_worker_count")) {
     loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
@@ -240,8 +244,11 @@ public:
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
             if (!depends_on(fold_factor, loop.sym).any()) {
               if (loop.add_synchronization()) {
-                // We need an extra fold when parallelizing the loop.
-                fold_factor *= 2;
+                // We need a fold per worker when parallelizing the loop.
+                // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+                // If we can figure out how to add some synchronization to limit the number of workers that
+                // work on a single stage at a time, we should be able to reduce this extra folding.
+                fold_factor *= worker_count;
               }
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
@@ -262,14 +269,15 @@ public:
             if (!did_overlapped_fold) {
               expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
               if (!depends_on(fold_factor, loop.sym).any()) {
-                // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-                fold_factor = simplify(align_up(fold_factor, loop.step));
                 if (loop.add_synchronization()) {
-                  // We need an extra fold when parallelizing the loop.
-                  // TODO: This should only need (cur_bounds_d.max - new_min + 1) more, not 2x.
-                  fold_factor *= 2;
+                  // We need an extra fold per worker when parallelizing the loop.
+                  // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+                  // If we can figure out how to add some synchronization to limit the number of workers that
+                  // work on a single stage at a time, we should be able to reduce this extra folding.
+                  fold_factor += worker_count * ignore_loop_max(cur_bounds_d.max - new_min + 1);
                 }
-                vector_at(fold_factors[output], d) = fold_factor;
+                // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+                vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
                 did_overlapped_fold = true;
               } else {
                 // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -406,6 +414,17 @@ public:
     stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
 
     if (stage_count > 0) {
+      // Substitute the placeholder worker_count.
+      result = substitute(result, worker_count.sym(), max_workers);
+      // We need to do this in the fold factors too. This works with nested loops because any inner loops must have
+      // already substituted their worker count, and we haven't made any fold factors for outer loops yet.
+      for (std::optional<std::vector<expr>>& i : fold_factors) {
+        if (!i) continue;
+        for (expr& j : *i) {
+          j = substitute(j, worker_count.sym(), max_workers);
+        }
+      }
+
       // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
       interval_expr sem_bounds = {0, stage_count - 1};
 
