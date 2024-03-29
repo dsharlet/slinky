@@ -637,7 +637,17 @@ TEST_P(stencil, pipeline) {
   }
 }
 
-TEST(slide_2d, pipeline) {
+class slide_2d : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(split_split_mode, slide_2d,
+    testing::Combine(loop_modes, loop_modes),
+    test_params_to_string<slide_2d::ParamType>);
+
+
+TEST_P(slide_2d, pipeline) {
+  int max_workers_x = std::get<0>(GetParam());
+  int max_workers_y = std::get<1>(GetParam());
+
   // Make the pipeline
   node_context ctx;
 
@@ -649,7 +659,7 @@ TEST(slide_2d, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  int add_count = 0;
+  std::atomic<int> add_count = 0;
   auto add_counter = [&add_count](const buffer<const short>& in, const buffer<short>& out) -> index_t {
     add_count += out.dim(0).extent() * out.dim(1).extent();
     return add_1<short>(in, out);
@@ -658,7 +668,7 @@ TEST(slide_2d, pipeline) {
   func add = func::make(std::move(add_counter), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
-  stencil.loops({{x, 1}, {y, 1}});
+  stencil.loops({{x, 1, max_workers_x}, {y, 1, max_workers_y}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

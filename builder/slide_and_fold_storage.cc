@@ -108,6 +108,9 @@ public:
     int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
+    var semaphores;
+    var worker_count;
+
     // How many stages we've added synchronization for.
     int sync_stages = 0;
     // If we need synchronization around this stage, which stage it is.
@@ -126,29 +129,20 @@ public:
       return true;
     }
 
-    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+    loop_info(node_context& ctx, symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
-          buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
+          buffer_bounds(std::make_unique<symbol_map<box_expr>>()), semaphores(ctx, ctx.name(sym) + "_semaphores"),
+          worker_count(ctx, ctx.name(sym) + "_worker_count") {}
   };
   std::vector<loop_info> loops;
 
   // We need an unknown to make equations of.
   var x;
 
-  // We need a symbol for buffers of semaphores. We can re-use the same symbol for multiple nested loops because
-  // shadowing does what we need (all accesses to this buffer are before an inner loop inside a loop with
-  // synchronization).
-  var semaphores;
-
-  // When parallelizing loops with synchronization, we need to know how many workers there are.
-  var worker_count;
-
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
-  slide_and_fold(node_context& ctx)
-      : ctx(ctx), x(ctx.insert_unique("_x")), semaphores(ctx.insert_unique("_semaphores")),
-        worker_count(ctx.insert_unique("_worker_count")) {
-    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
+  slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
+    loops.emplace_back(ctx, 0, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   stmt mutate(const stmt& s) override {
@@ -161,10 +155,10 @@ public:
       expr loop_var = variable::make(l.sym);
       result = block::make({
           // Wait for the previous iteration of this stage to complete.
-          check::make(semaphore_wait(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var - l.step}))),
+          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, loop_var - l.step}))),
           result,
           // Signal we've done this iteration.
-          check::make(semaphore_signal(buffer_at(semaphores, std::vector<expr>{*l.stage, loop_var}))),
+          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, loop_var}))),
       });
       l.stage = std::nullopt;
     }
@@ -248,7 +242,7 @@ public:
                 // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                 // If we can figure out how to add some synchronization to limit the number of workers that
                 // work on a single stage at a time, we should be able to reduce this extra folding.
-                fold_factor *= worker_count;
+                fold_factor *= loop.worker_count;
               }
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
@@ -266,15 +260,17 @@ public:
             expr old_min = cur_bounds_d.min;
             expr new_min = simplify(prev_bounds_d.max + 1);
 
+            bool synchronize = loop.add_synchronization();
+
             if (!did_overlapped_fold) {
               expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
               if (!depends_on(fold_factor, loop.sym).any()) {
-                if (loop.add_synchronization()) {
+                if (synchronize) {
                   // We need an extra fold per worker when parallelizing the loop.
                   // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                   // If we can figure out how to add some synchronization to limit the number of workers that
                   // work on a single stage at a time, we should be able to reduce this extra folding.
-                  fold_factor += (worker_count - 1) * ignore_loop_max(cur_bounds_d.max - new_min + 1);
+                  fold_factor += (loop.worker_count - 1) * ignore_loop_max(cur_bounds_d.max - new_min + 1);
                 }
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
@@ -394,7 +390,7 @@ public:
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
-    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
+    loops.emplace_back(ctx, op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
 
     stmt body = mutate(op->body);
@@ -409,50 +405,56 @@ public:
       return;
     }
 
-    const int stage_count = loops.back().sync_stages;
+    const loop_info& l = loops.back();
+    const int stage_count = l.sync_stages;
     const int max_workers = stage_count > 0 ? stage_count : op->max_workers;
     stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
 
     if (stage_count > 0) {
       // Substitute the placeholder worker_count.
-      result = substitute(result, worker_count.sym(), max_workers);
-      // We need to do this in the fold factors too. This works with nested loops because any inner loops must have
-      // already substituted their worker count, and we haven't made any fold factors for outer loops yet.
+      result = substitute(result, l.worker_count.sym(), max_workers);
+      // We need to do this in the fold factors too.
       for (std::optional<std::vector<expr>>& i : fold_factors) {
         if (!i) continue;
         for (expr& j : *i) {
-          j = substitute(j, worker_count.sym(), max_workers);
+          j = substitute(j, l.worker_count.sym(), max_workers);
         }
       }
 
-      // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
-      interval_expr sem_bounds = {0, stage_count - 1};
+      if (stage_count > 1) {
+        // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
+        interval_expr sem_bounds = {0, stage_count - 1};
 
-      index_t sem_size = sizeof(index_t);
-      stmt init_sems = call_stmt::make(
-          [](const call_stmt* s, eval_context& ctx) -> index_t {
-            buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
-            assert(sems.rank == 2);
-            memset(sems.base(), 0, sems.size_bytes());
-            // Initialize the first semaphore for each stage (the one before the loop min) to 1,
-            // unblocking the first iteration.
-            for (index_t i = sems.dim(0).begin(); i < sems.dim(0).end(); ++i) {
-              sems(i, sems.dim(1).min()) = 1;
-            }
-            return 0;
-          },
-          {}, {semaphores.sym()}, {});
-      // We can fold the semaphores array by the number of threads we'll use.
-      // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
-      expr sem_fold_factor = stage_count * loops.back().step;
-      std::vector<dim_expr> sem_dims = {
-          {sem_bounds, sem_size},
-          // TODO: We should just let dimensions like this have undefined bounds.
-          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
-      };
-      result = allocate::make(
-          semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+        index_t sem_size = sizeof(index_t);
+        stmt init_sems = call_stmt::make(
+            [](const call_stmt* s, eval_context& ctx) -> index_t {
+              buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
+              assert(sems.rank == 2);
+              memset(sems.base(), 0, sems.size_bytes());
+              // Initialize the first semaphore for each stage (the one before the loop min) to 1,
+              // unblocking the first iteration.
+              for (index_t i = sems.dim(0).begin(); i < sems.dim(0).end(); ++i) {
+                sems(i, sems.dim(1).min()) = 1;
+              }
+              return 0;
+            },
+            {}, {l.semaphores.sym()}, {});
+        // We can fold the semaphores array by the number of threads we'll use.
+        // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
+        expr sem_fold_factor = stage_count * op->step;
+        std::vector<dim_expr> sem_dims = {
+            {sem_bounds, sem_size},
+            // TODO: We should just let dimensions like this have undefined bounds.
+            {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
+        };
+        result = allocate::make(
+            l.semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+      } else {
+        // We only have one stage, there's no need for semaphores.
+        result = substitute(result, l.semaphores.sym(), expr());
+      }
     }
+
     if (!is_variable(loop_bounds.min, orig_min.sym()) || depends_on(result, orig_min.sym()).any()) {
       // We rewrote or used the loop min.
       result = let_stmt::make(orig_min.sym(), op->bounds.min, result);
