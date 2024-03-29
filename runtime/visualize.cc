@@ -364,6 +364,7 @@ var __heap_map = [];
 var __event_t = 1;
 function min(a, b) { return Math.min(a, b); }
 function max(a, b) { return Math.max(a, b); }
+function abs(a) { return Math.abs(a); }
 function clamp(x, a, b) { return min(max(x, a), b); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function lerp_color(a, b, t) {
