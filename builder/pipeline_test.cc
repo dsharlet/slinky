@@ -602,7 +602,7 @@ TEST_P(stencil, pipeline) {
 
   // Run the pipeline.
   const int W = 20;
-  const int H = 10;
+  const int H = 30;
   buffer<short, 2> in_buf({W + 2, H + 2});
   in_buf.translate(-1, -1);
   buffer<short, 2> out_buf({W, H});
@@ -630,6 +630,11 @@ TEST_P(stencil, pipeline) {
       }
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
+  }
+
+  // Also visualize this pipeline.
+  if (lm == loop_mode::serial && split_intermediate == 0) {
+    check_visualize("stencil_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
   }
 }
 
