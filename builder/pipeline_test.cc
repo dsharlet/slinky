@@ -39,8 +39,9 @@ void check_visualize(const std::string& filename, const pipeline& p, pipeline::b
   std::string golden_path = get_bazel_file_path("builder/visualize/" + filename);
   if (is_bazel_test()) {
     std::string golden = read_entire_file(golden_path);
-    ASSERT_EQ(golden.size(), viz.size());
-    ASSERT_TRUE(golden == viz) << golden;
+    // If this check fails, and you believe the changes to the visualization is correct, run this
+    // test outside of bazel from the root of the repo to update the golden files.
+    ASSERT_TRUE(golden == viz);
   } else {
     std::ofstream file(golden_path);
     file << viz;
