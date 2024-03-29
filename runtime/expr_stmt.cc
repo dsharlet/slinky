@@ -735,7 +735,11 @@ void recursive_node_visitor::visit(const slice_dim* op) {
   op->at.accept(this);
   if (op->body.defined()) op->body.accept(this);
 }
-void recursive_node_visitor::visit(const truncate_rank* op) { op->body.accept(this); }
-void recursive_node_visitor::visit(const check* op) { op->condition.accept(this); }
+void recursive_node_visitor::visit(const truncate_rank* op) {
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const check* op) {
+  if (op->condition.defined()) op->condition.accept(this);
+}
 
 }  // namespace slinky
