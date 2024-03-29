@@ -83,7 +83,7 @@ cc_test(
         "bazel_util.h",
         "test_util.h",
     ],
-    data = ["replica_pipeline_test.cc"],
+    data = ["replica_pipeline_test.cc"] + glob(["visualize/*.html"]),
     deps = [
         ":builder",
         ":replica_pipeline",

@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -365,6 +364,7 @@ var __heap_map = [];
 var __event_t = 1;
 function min(a, b) { return Math.min(a, b); }
 function max(a, b) { return Math.max(a, b); }
+function abs(a) { return Math.abs(a); }
 function clamp(x, a, b) { return min(max(x, a), b); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function lerp_color(a, b, t) {
@@ -572,25 +572,24 @@ setInterval(function() {
 
 }  // namespace
 
-void visualize(const std::string& filename, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
+void visualize(std::ostream& dst, const pipeline& p, pipeline::scalars args, pipeline::buffers inputs,
     pipeline::buffers outputs, const node_context* ctx) {
-  std::ofstream file(filename.c_str());
-  file << header;
-  js_printer jsp(file, ctx);
+  dst << header;
+  js_printer jsp(dst, ctx);
 
   // Print function declaration.
-  file << "function pipeline(";
+  dst << "function pipeline(";
   std::vector<var> symbols = p.args;
   symbols.insert(symbols.end(), p.inputs.begin(), p.inputs.end());
   symbols.insert(symbols.end(), p.outputs.begin(), p.outputs.end());
   jsp.print_vector(symbols);
-  file << ") {\n";
+  dst << ") {\n";
 
   // Print body.
   jsp.depth++;
   jsp << p.body;
   jsp.depth--;
-  file << "}\n";
+  dst << "}\n";
 
   // Define arguments.
   for (index_t i = 0; i < static_cast<index_t>(p.args.size()); ++i) {
@@ -613,12 +612,12 @@ void visualize(const std::string& filename, const pipeline& p, pipeline::scalars
   jsp << "pipeline(";
   jsp.print_vector(symbols);
   jsp << ");\n";
-  file << footer << std::endl;
+  dst << footer << std::endl;
 }
 
-void visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
+void visualize(std::ostream& dst, const pipeline& p, pipeline::buffers inputs, pipeline::buffers outputs,
     const node_context* ctx) {
-  visualize(filename, p, {}, inputs, outputs, ctx);
+  visualize(dst, p, {}, inputs, outputs, ctx);
 }
 
 }  // namespace slinky

@@ -7,9 +7,13 @@
 
 namespace slinky {
 
+inline bool is_bazel_test() {
+  return getenv("BAZEL_TEST") != nullptr;
+}
+
 // Get the path to a file relative to the root of the repo in the current bazel invocation.
 inline std::string get_bazel_file_path(const std::string& repo_path) {
-  if (getenv("BAZEL_TEST") != nullptr) {
+  if (is_bazel_test()) {
     using bazel::tools::cpp::runfiles::Runfiles;
 
     std::string error;

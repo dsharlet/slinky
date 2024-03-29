@@ -21,7 +21,7 @@ std::string read_entire_runfile(const std::string& rlocation) {
 }
 
 std::string get_replica_golden() {
-  static std::string golden = remove_windows_newlines(read_entire_runfile("builder/replica_pipeline_test.cc"));
+  static std::string golden = read_entire_runfile("builder/replica_pipeline_test.cc");
   return golden;
 }
 
@@ -30,12 +30,21 @@ void check_replica_pipeline(const std::string& replica_text) {
   ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
 }
 
-std::string viz_dir() {
-  const char* outputs = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
-  if (outputs) {
-    return std::string(outputs) + "/";
+void check_visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs,
+    pipeline::buffers outputs, const node_context* ctx) {
+  std::stringstream viz_stream;
+  visualize(viz_stream, p, inputs, outputs, ctx);
+  std::string viz = viz_stream.str();
+
+  std::string golden_path = get_bazel_file_path("builder/visualize/" + filename);
+  if (is_bazel_test()) {
+    std::string golden = read_entire_file(golden_path);
+    // If this check fails, and you believe the changes to the visualization is correct, run this
+    // test outside of bazel from the root of the repo to update the golden files.
+    ASSERT_TRUE(golden == viz);
   } else {
-    return "";
+    std::ofstream file(golden_path);
+    file << viz;
   }
 }
 
@@ -594,7 +603,7 @@ TEST_P(stencil, pipeline) {
 
   // Run the pipeline.
   const int W = 20;
-  const int H = 10;
+  const int H = 30;
   buffer<short, 2> in_buf({W + 2, H + 2});
   in_buf.translate(-1, -1);
   buffer<short, 2> out_buf({W, H});
@@ -622,6 +631,11 @@ TEST_P(stencil, pipeline) {
       }
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
+  }
+
+  // Also visualize this pipeline.
+  if (lm == loop_mode::serial && split_intermediate == 0) {
+    check_visualize("stencil_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
   }
 }
 
@@ -762,7 +776,7 @@ TEST_P(stencil_chain, pipeline) {
 
   // Also visualize this pipeline.
   if (lm == loop_mode::serial) {
-    visualize(viz_dir() + "stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
+    check_visualize("stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
   }
 }
 
@@ -1203,7 +1217,7 @@ TEST_P(concatenated_result, pipeline) {
   }
 
   // Also visualize this pipeline.
-  visualize(viz_dir() + "concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
+  check_visualize("concatenate_" + std::to_string(no_alias_buffers) + ".html", p, inputs, outputs, &ctx);
 
   if (no_alias_buffers == true) {
     check_replica_pipeline(
@@ -1333,7 +1347,7 @@ TEST_P(padded_stencil, pipeline) {
   }
 
   // Also visualize this pipeline.
-  visualize(viz_dir() + "padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+  check_visualize("padded_stencil_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
 
   if (schedule == 1) {
     check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
@@ -1473,7 +1487,7 @@ TEST_P(parallel_stencils, pipeline) {
   }
 
   // Also visualize this pipeline
-  visualize(viz_dir() + "parallel_stencils.html", p, inputs, outputs, &ctx);
+  check_visualize("parallel_stencils_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
 }
 
 class diamond_stencils : public testing::TestWithParam<int> {};

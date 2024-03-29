@@ -31,26 +31,16 @@ std::string test_params_to_string(const testing::TestParamInfo<T>& info) {
   return test_params_to_string_impl(info.param, std::make_index_sequence<n>());
 }
 
-inline std::string read_entire_file(const std::string& pathname) {
-  std::ifstream f(pathname, std::ios::in | std::ios::binary);
-  std::string result;
-
-  f.seekg(0, std::ifstream::end);
-  size_t size = f.tellg();
-  result.resize(size);
-  f.seekg(0, std::ifstream::beg);
-  f.read(result.data(), result.size());
-  if (!f.good()) {
-    std::cerr << "Unable to read file: " << pathname;
-    std::abort();
-  }
-  f.close();
-  return result;
-}
-
 inline std::string remove_windows_newlines(std::string s) {
   s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
   return s;
+}
+
+inline std::string read_entire_file(const std::string& pathname) {
+  std::ifstream f(pathname);
+  std::stringstream buffer;
+  buffer << f.rdbuf();
+  return remove_windows_newlines(buffer.str());
 }
 
 }  // namespace slinky
