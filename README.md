@@ -125,7 +125,7 @@ pipeline p = build_pipeline(ctx, {in}, {out});
 - The output of both stages is indexed by `x, y`. The first stage is similar to the previous elementwise example, but the stencil has bounds `[x - 1, x + 1], [y - 1, y + 1]`. 
 
 The typical way that many systems would execute such a pipeline is to run all of `add_1`, followed by all of `sum3x3`, storing the intermediate result in a buffer equal to the size of the input.
-Here is a [visualization of this strategy](https://html-preview.github.io/?url=https://github.com/dsharlet/slinky/blob/ds/git-viz/builder/visualize/stencil_split_0.html).
+Here is a [visualization of this strategy](https://html-preview.github.io/?url=https://github.com/dsharlet/slinky/blob/main/builder/visualize/stencil_split_0.html).
 
 An interesting way to implement this pipeline is to compute rows of `out` at a time, keeping the window of rows required from `add` in memory.
 This can be expressed with the following schedule:
@@ -167,7 +167,7 @@ This program does the following:
 - Because we started the loop two iterations of `y` early, lines `y-1` and `y` have already been produced for the first value of `y` of `out`. For these two "warmup" iterations, the `sum3x3` call's crop of `out` will be an empty buffer (because crops clamp to the original bounds).
 - Because we only need lines `[y-1,y+1]`, we can "fold" the storage of `intm`, by rewriting all accesses `y` to be `y%3`.
 
-Here is a [visualization of this strategy](https://html-preview.github.io/?url=https://github.com/dsharlet/slinky/blob/ds/git-viz/builder/visualize/stencil_split_1.html).
+Here is a [visualization of this strategy](https://html-preview.github.io/?url=https://github.com/dsharlet/slinky/blob/main/builder/visualize/stencil_split_1.html).
 
 ### Matrix multiply example
 
