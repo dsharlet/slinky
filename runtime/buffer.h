@@ -144,12 +144,12 @@ public:
 
   template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 == rank);
+    assert(sizeof...(indices) + 1 <= rank);
     return flat_offset_bytes_impl(dims, i0, indices...);
   }
   template <typename... Indices>
   void* address_at(index_t i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 == rank);
+    assert(sizeof...(indices) + 1 <= rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
   std::ptrdiff_t flat_offset_bytes() const { return 0; }
@@ -157,13 +157,13 @@ public:
 
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
-    assert(sizeof...(indices) + 1 == rank);
+    assert(sizeof...(indices) + 1 <= rank);
     return contains_impl(dims, i0, indices...);
   }
   bool contains() const { return true; }
 
   std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
-    assert(indices.size() == rank);
+    assert(indices.size() <= rank);
     index_t offset = 0;
     for (std::size_t i = 0; i < indices.size(); ++i) {
       offset += dims[i].flat_offset_bytes(indices[i]);
@@ -172,7 +172,7 @@ public:
   }
   void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
   bool contains(span<const index_t> indices) const {
-    assert(indices.size() == rank);
+    assert(indices.size() <= rank);
     bool result = true;
     for (std::size_t i = 0; i < indices.size(); ++i) {
       result = result && dims[i].contains(indices[i]);

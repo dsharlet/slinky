@@ -427,15 +427,16 @@ public:
 
         index_t sem_size = sizeof(index_t);
         stmt init_sems = call_stmt::make(
-            [](const call_stmt* s, eval_context& ctx) -> index_t {
+            [stage_count](const call_stmt* s, eval_context& ctx) -> index_t {
               buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
               assert(sems.rank == 2);
+              assert(sems.dim(0).min() == 0);
+              assert(sems.dim(0).extent() == stage_count);
               memset(sems.base(), 0, sems.size_bytes());
               // Initialize the first semaphore for each stage (the one before the loop min) to 1,
               // unblocking the first iteration.
-              for (index_t i = sems.dim(0).begin(); i < sems.dim(0).end(); ++i) {
-                sems(i, sems.dim(1).min()) = 1;
-              }
+              assert(sems.dim(0).stride() == sizeof(index_t));
+              std::fill_n(&sems(0), stage_count, 1);
               return 0;
             },
             {}, {l.semaphores.sym()}, {});
