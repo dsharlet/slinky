@@ -150,8 +150,6 @@ TEST(evaluate, semaphore) {
   consume = make_buffer::make(
       buf.sym(), reinterpret_cast<index_t>(&data[0]), elem_size, {{{min, max}, elem_size, fold_factor}}, consume);
 
-  std::atomic<bool> done = false;
-
   std::thread consume_t([&]() {
     eval_context eval_ctx = make_eval_ctx();
     int result = evaluate(consume, eval_ctx);
