@@ -94,20 +94,26 @@ TEST(evaluate, semaphore) {
 
   index_t sem1 = 0;
   index_t sem2 = 0;
-  stmt wait_sem1 = check::make(semaphore_wait(reinterpret_cast<index_t>(&sem1)));
-  stmt wait_sem2 = check::make(semaphore_wait(reinterpret_cast<index_t>(&sem2)));
-  stmt signal_sem1 = check::make(semaphore_signal(reinterpret_cast<index_t>(&sem1)));
-  stmt signal_sem2 = check::make(semaphore_signal(reinterpret_cast<index_t>(&sem2)));
+  index_t sem3 = 0;
+  auto make_wait = [&](index_t& sem) { return check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))); };
+  auto make_signal = [&](index_t& sem) { return check::make(semaphore_signal(reinterpret_cast<index_t>(&sem))); };
+
+  std::atomic<int> state = 0;
 
   std::thread th([&]() { 
-    evaluate(wait_sem1, eval_ctx);
-    evaluate(signal_sem2, eval_ctx);
+    evaluate(make_wait(sem1), eval_ctx);
+    state++;
+    evaluate(make_signal(sem2), eval_ctx);
+    evaluate(make_wait(sem3), eval_ctx);
+    state++;
   });
-
-  evaluate(signal_sem1, eval_ctx);
-  evaluate(wait_sem2, eval_ctx);
-
+  ASSERT_EQ(state, 0);
+  evaluate(make_signal(sem1), eval_ctx);
+  evaluate(make_wait(sem2), eval_ctx);
+  ASSERT_EQ(state, 1);
+  evaluate(make_signal(sem3), eval_ctx);
   th.join();
+  ASSERT_EQ(state, 2);
 }
 
 TEST(evaluate_constant, arithmetic) {
