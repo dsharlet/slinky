@@ -59,10 +59,10 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), rank, elem_size));
 }
 
-buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
+buffer_expr_ptr buffer_expr::make(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(sym, std::move(constant_buffer)));
 }
-buffer_expr_ptr buffer_expr::make_constant(
+buffer_expr_ptr buffer_expr::make(
     node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), std::move(constant_buffer)));
 }

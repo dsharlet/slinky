@@ -1367,12 +1367,12 @@ TEST(constant, pipeline) {
   dims[1].set_bounds(0, H);
   dims[1].set_stride(W * sizeof(short));
 
-  auto constant_buf = raw_buffer::make_allocated(2, sizeof(short), dims);
+  auto constant_buf = raw_buffer::make(2, sizeof(short), dims);
   fill_random<short>(*constant_buf);
 
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-  auto constant = buffer_expr::make_constant(ctx, "constant", std::move(constant_buf));
+  auto constant = buffer_expr::make(ctx, "constant", std::move(constant_buf));
 
   var x(ctx, "x");
   var y(ctx, "y");
