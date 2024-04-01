@@ -48,8 +48,8 @@ public:
   static buffer_expr_ptr make(symbol_id sym, std::size_t rank, index_t elem_size);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size);
   // Make a constant buffer_expr. It takes ownership of the buffer from the caller.
-  static buffer_expr_ptr make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer);
-  static buffer_expr_ptr make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make(symbol_id sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
 
   symbol_id sym() const { return sym_; }
   index_t elem_size() const { return elem_size_; }

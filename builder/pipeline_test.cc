@@ -1372,7 +1372,7 @@ TEST(constant, pipeline) {
 
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
-  auto constant = buffer_expr::make_constant(ctx, "constant", std::move(constant_buf));
+  auto constant = buffer_expr::make(ctx, "constant", std::move(constant_buf));
 
   var x(ctx, "x");
   var y(ctx, "y");

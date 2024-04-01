@@ -70,7 +70,7 @@ public:
     auto value = raw_buffer::make(Rank, sizeof(T), dims);
     assert(value->size_bytes() == sizeof(T));
     memcpy(value->base, &c->value, sizeof(T));
-    result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
+    result = buffer_expr::make(ctx, "c" + std::to_string(c->value), std::move(value));
     constants.push_back(result);
   }
 
