@@ -64,10 +64,10 @@ TEST(evaluate, loop) {
 
   eval_context eval_ctx;
   eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue_one = [&](thread_pool::task f) { t.enqueue(std::move(f)); };
+  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
   eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
 
-  for (loop_mode type : {loop_mode::serial, loop_mode::parallel}) {
+  for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
     stmt c = call_stmt::make(
         [&](const call_stmt*, eval_context& ctx) -> index_t {
@@ -76,7 +76,7 @@ TEST(evaluate, loop) {
         },
         {}, {}, {});
 
-    stmt l = loop::make(x.sym(), type, range(2, 12), 3, c);
+    stmt l = loop::make(x.sym(), max_workers, range(2, 12), 3, c);
 
     int result = evaluate(l, eval_ctx);
     ASSERT_EQ(result, 0);

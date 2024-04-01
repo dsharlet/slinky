@@ -422,7 +422,7 @@ public:
       return;
     }
 
-    if (op->mode == loop_mode::serial) {
+    if (op->is_serial()) {
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
@@ -477,7 +477,7 @@ public:
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
     }
   }
 
