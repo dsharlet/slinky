@@ -67,7 +67,7 @@ public:
       dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
     }
 
-    auto value = raw_buffer::make_allocated(Rank, sizeof(T), dims);
+    auto value = raw_buffer::make(Rank, sizeof(T), dims);
     assert(value->size_bytes() == sizeof(T));
     memcpy(value->base, &c->value, sizeof(T));
     result = buffer_expr::make_constant(ctx, "c" + std::to_string(c->value), std::move(value));
