@@ -372,7 +372,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 
   for (const std::pair<symbol_id, int>& d : dst_x) {
     result = slice_dim::make(op->dst, d.second, var(d.first), result);
-    result = loop::make(d.first, loop_mode::serial, buffer_bounds(dst_var, d.second), 1, result);
+    result = loop::make(d.first, loop::serial, buffer_bounds(dst_var, d.second), 1, result);
   }
   return let_stmt::make(std::move(lets), result);
 }
@@ -388,7 +388,7 @@ class race_condition_fixer : public node_mutator {
 
 public:
   void visit(const loop* op) override {
-    if (op->mode != loop_mode::parallel) {
+    if (op->is_serial()) {
       node_mutator::visit(op);
       return;
     }
@@ -404,7 +404,7 @@ public:
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body)));
+      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
     }
   }
 

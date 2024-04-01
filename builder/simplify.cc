@@ -422,7 +422,7 @@ public:
       return;
     }
 
-    if (op->mode == loop_mode::serial) {
+    if (op->is_serial()) {
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
@@ -477,7 +477,7 @@ public:
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, op->mode, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
     }
   }
 
@@ -518,9 +518,6 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (!is_zero(new_dim.stride) && prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
-        new_dim.stride = 0;
-      }
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
@@ -569,9 +566,6 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (!is_zero(new_dim.stride) && prove_true(new_dim.fold_factor == 1 || new_dim.bounds.extent() == 1)) {
-        new_dim.stride = 0;
-      }
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));

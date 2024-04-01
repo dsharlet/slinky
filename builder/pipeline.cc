@@ -68,10 +68,10 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std
   return make(ctx, sym, rank, expr(elem_size));
 }
 
-buffer_expr_ptr buffer_expr::make_constant(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
+buffer_expr_ptr buffer_expr::make(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(sym, std::move(constant_buffer)));
 }
-buffer_expr_ptr buffer_expr::make_constant(
+buffer_expr_ptr buffer_expr::make(
     node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), std::move(constant_buffer)));
 }
@@ -605,7 +605,7 @@ class pipeline_builder {
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, f, loop);
       // And make the actual loop.
-      body = loop::make(loop.sym(), loop.mode, get_loop_bounds(f, loop), loop.step, body);
+      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(f, loop), loop.step, body);
 
       // Wrap loop into crops.
       for (symbol_id i : input_syms_) {

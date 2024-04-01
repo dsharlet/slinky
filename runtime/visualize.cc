@@ -161,8 +161,8 @@ public:
   void visit(const add* op) override { visit_bin_op(op, " + "); }
   void visit(const sub* op) override { visit_bin_op(op, " - "); }
   void visit(const mul* op) override { visit_bin_op(op, " * "); }
-  void visit(const div* op) override { visit_bin_op(op, " / "); }
-  void visit(const mod* op) override { visit_bin_op(op, " % "); }
+  void visit(const div* op) override { *this << "euclidean_div(" << op->a << ", " << op->b << ")"; }
+  void visit(const mod* op) override { *this << "euclidean_mod(" << op->a << ", " << op->b << ")"; }
   void visit(const equal* op) override { visit_bin_op(op, " == "); }
   void visit(const not_equal* op) override { visit_bin_op(op, " != "); }
   void visit(const less* op) override { visit_bin_op(op, " < "); }
@@ -361,6 +361,8 @@ var __buffers = document.getElementById('buffers');
 let __template = document.getElementById('template');
 var __heap_map = [];
 var __event_t = 1;
+function euclidean_div(a, b) { return Math.floor(a / b); }
+function euclidean_mod(a, b) { return Math.round(a - b * euclidean_div(a, b)); }
 function min(a, b) { return Math.min(a, b); }
 function max(a, b) { return Math.max(a, b); }
 function abs(a) { return Math.abs(a); }
@@ -372,11 +374,19 @@ function lerp_color(a, b, t) {
 function make_color(a) {
   return 'rgb(' + a[0] + ', ' + a[1] + ', ' + a[2] + ')';
 }
+function buffer_min(b, d) { return b.dims[d].bounds.min; }
+function buffer_max(b, d) { return b.dims[d].bounds.max; }
+function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
+function buffer_stride(b, d) { return b.dims[d].stride; }
+function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
+function buffer_rank(b) { return b.dims.length; }
+function buffer_elem_size(b) { return b.elem_size; }
+function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
 function unpack_dim(at, dim) {
   if (dim.stride == 0) {
     return 0;
   } else {
-    return Math.floor(at / dim.stride) % (dim.bounds.max - dim.bounds.min + 1);
+    return euclidean_mod(euclidean_div(at, dim.stride), dim.bounds.max - dim.bounds.min + 1);
   }
 }
 function add_label(buf, name, dims, color) {
@@ -426,11 +436,9 @@ function add_mapping(buffer) {
 function for_each_offset_dim(buf, at, dim, fn) {
   for (let i = buf.dims[dim].bounds.min; i <= buf.dims[dim].bounds.max; ++i) {
     if (dim == 0) {
-      fn(at);
-      at += buf.dims[dim].stride;
+      fn(at + flat_offset_dim(buf.dims[dim], i));
     } else {
-      for_each_offset_dim(buf, at, dim - 1, fn);
-      at += buf.dims[dim].stride;
+      for_each_offset_dim(buf, at + flat_offset_dim(buf.dims[dim], i), dim - 1, fn);
     }
   }
 }
@@ -456,14 +464,6 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
-function buffer_min(b, d) { return b.dims[d].bounds.min; }
-function buffer_max(b, d) { return b.dims[d].bounds.max; }
-function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
-function buffer_stride(b, d) { return b.dims[d].stride; }
-function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
-function buffer_rank(b) { return b.dims.length; }
-function buffer_elem_size(b) { return b.elem_size; }
-function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {
@@ -515,7 +515,9 @@ function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
   let new_min = max(b.dims[d].bounds.min, bounds.min);
   let new_max = min(b.dims[d].bounds.max, bounds.max);
-  b.base += flat_offset_dim(b.dims[d], new_min);
+  if (new_max >= new_min) {
+    b.base += flat_offset_dim(b.dims[d], new_min);
+  }
   b.dims[d].bounds.min = new_min;
   b.dims[d].bounds.max = new_max;
   return result;

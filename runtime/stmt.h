@@ -30,11 +30,6 @@ enum class stmt_node_type {
   check,
 };
 
-enum class loop_mode {
-  serial,
-  parallel,
-};
-
 enum class memory_type {
   stack,
   heap,
@@ -171,14 +166,21 @@ public:
 class loop : public stmt_node<loop> {
 public:
   symbol_id sym;
-  loop_mode mode;
+  int max_workers;
   interval_expr bounds;
   expr step;
   stmt body;
 
+  static constexpr int serial = 1;
+  static constexpr int parallel = std::numeric_limits<int>::max();
+
+  bool is_serial() const { return max_workers == serial; }
+  bool is_parallel() const { return max_workers > 1; }
+
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, loop_mode mode, interval_expr bounds, expr step, stmt body);
+  static stmt make(
+      symbol_id sym, int max_workers, interval_expr bounds, expr step, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };

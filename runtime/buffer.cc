@@ -27,33 +27,29 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
 
 std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, dims); }
 
-raw_buffer_ptr raw_buffer::make_allocated(std::size_t rank, std::size_t elem_size, const class dim* dims) {
-  char* mem = reinterpret_cast<char*>(
-      malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank + alloc_size(rank, elem_size, dims)));
+raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims) {
+  std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank;
+  if (dims) {
+    size += alloc_size(rank, elem_size, dims);
+  }
+  char* mem = reinterpret_cast<char*>(malloc(size));
   raw_buffer* buf = new (mem) raw_buffer();
   mem += sizeof(raw_buffer);
   buf->rank = rank;
   buf->elem_size = elem_size;
   buf->dims = reinterpret_cast<slinky::dim*>(mem);
-  memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
-  mem += sizeof(slinky::dim) * rank;
-  buf->base = mem;
-  return raw_buffer_ptr(buf, free);
-}
-
-raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size) {
-  char* mem = reinterpret_cast<char*>(malloc(sizeof(raw_buffer) + sizeof(slinky::dim) * rank));
-  raw_buffer* buf = new (mem) raw_buffer();
-  mem += sizeof(raw_buffer);
-  buf->rank = rank;
-  buf->elem_size = elem_size;
-  buf->dims = reinterpret_cast<slinky::dim*>(mem);
-  new (buf->dims) slinky::dim[buf->rank];
+  if (dims) {
+    memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
+    mem += sizeof(slinky::dim) * rank;
+    buf->base = mem;
+  } else {
+    new (buf->dims) slinky::dim[buf->rank];
+  }
   return raw_buffer_ptr(buf, free);
 }
 
 raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
-  auto buf = make_allocated(src.rank, src.elem_size, src.dims);
+  auto buf = make(src.rank, src.elem_size, src.dims);
   copy(src, *buf);
   return buf;
 }

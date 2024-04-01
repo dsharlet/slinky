@@ -15,14 +15,19 @@ namespace slinky {
 class thread_pool {
 public:
   using task = std::function<void()>;
+  using task_id = std::size_t;
 
 private:
   std::vector<std::thread> workers_;
   std::atomic<bool> stop_;
 
-  std::deque<task> task_queue_;
+  task_id next_task_id_ = 1;
+  using queued_task = std::tuple<int, task, task_id>;
+  std::deque<queued_task> task_queue_;
   std::mutex mutex_;
   std::condition_variable cv_;
+
+  bool dequeue(task& t, std::vector<task_id>& task_stack);
 
 public:
   thread_pool(int workers = 3);

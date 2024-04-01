@@ -104,10 +104,11 @@ public:
     expr orig_min;
     interval_expr bounds;
     expr step;
+    int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
-    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step)
-        : sym(sym), orig_min(orig_min), bounds(bounds), step(step),
+    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
   std::vector<loop_info> loops;
@@ -118,7 +119,7 @@ public:
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(0, expr(), interval_expr::none(), expr());
+    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   void visit(const allocate* op) override {
@@ -161,39 +162,43 @@ public:
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
       for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
-        std::optional<box_expr>& bounds = (*loops[loop_index].buffer_bounds)[output];
+        loop_info& loop = loops[loop_index];
+        std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
 
-        symbol_id loop_sym = loops[loop_index].sym;
-        expr loop_var = variable::make(loop_sym);
-        const expr& loop_max = loops[loop_index].bounds.max;
-        const expr& loop_step = loops[loop_index].step;
+        if (loop.max_workers != loop::serial) {
+          // TODO: We can handle parallel loops if we add some synchronization
+          // https://github.com/dsharlet/slinky/issues/18
+          continue;
+        }
+
+        expr loop_var = variable::make(loop.sym);
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
           interval_expr cur_bounds_d = (*bounds)[d];
-          if (!depends_on(cur_bounds_d, loop_sym).any()) {
+          if (!depends_on(cur_bounds_d, loop.sym).any()) {
             // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
             // just compute it once.
             continue;
           }
 
           interval_expr prev_bounds_d = {
-              substitute(cur_bounds_d.min, loop_sym, loop_var - loop_step),
-              substitute(cur_bounds_d.max, loop_sym, loop_var - loop_step),
+              substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
+              substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),
           };
 
           // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
           // some expression that is bounded by the loop bounds. This min simplifies away if we know that x <= loop_max,
           // but the simplifier can't figure that out. As a hopefully temporary workaround, we can just substitute
           // infinity for the loop max.
-          auto ignore_loop_max = [=](const expr& e) { return substitute(e, loop_max, positive_infinity()); };
+          auto ignore_loop_max = [&](const expr& e) { return substitute(e, loop.bounds.max, positive_infinity()); };
 
           interval_expr overlap = prev_bounds_d & cur_bounds_d;
           if (prove_true(ignore_loop_max(overlap.empty()))) {
             // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
-            if (!depends_on(fold_factor, loop_sym).any()) {
+            if (!depends_on(fold_factor, loop.sym).any()) {
               vector_at(fold_factors[output], d) = fold_factor;
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -212,9 +217,9 @@ public:
 
             if (!did_overlapped_fold) {
               expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
-              if (!depends_on(fold_factor, loop_sym).any()) {
+              if (!depends_on(fold_factor, loop.sym).any()) {
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-                fold_factor = simplify(align_up(fold_factor, loop_step));
+                fold_factor = simplify(align_up(fold_factor, loop.step));
                 vector_at(fold_factors[output], d) = fold_factor;
                 did_overlapped_fold = true;
               } else {
@@ -224,19 +229,19 @@ public:
 
             // Now that we're only computing the newly required parts of the domain, we need
             // to move the loop min back so we compute the whole required region.
-            expr new_min_at_new_loop_min = substitute(new_min, loop_sym, x);
-            expr old_min_at_loop_min = substitute(old_min, loop_sym, loops[loop_index].bounds.min);
+            expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
+            expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
             expr new_loop_min =
                 where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
             if (!is_negative_infinity(new_loop_min)) {
-              loops[loop_index].bounds.min = new_loop_min;
+              loop.bounds.min = new_loop_min;
 
               (*bounds)[d].min = new_min;
             } else {
               // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
               // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
               // effectively not slide while running before the original loop min.
-              (*bounds)[d].min = select(loop_var <= loops[loop_index].orig_min, old_min, new_min);
+              (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
             }
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
             // TODO: We could also try to slide when the bounds are monotonically
@@ -329,15 +334,10 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 
   void visit(const loop* op) override {
-    if (op->mode == loop_mode::parallel) {
-      // Don't try sliding window or storage folding on parallel loops.
-      node_mutator::visit(op);
-      return;
-    }
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
-    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step);
+    loops.emplace_back(op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
 
     stmt body = mutate(op->body);
@@ -350,7 +350,7 @@ public:
 
     if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym()).any()) {
       // We rewrote or used the loop min.
-      stmt result = loop::make(op->sym, op->mode, {loop_min, op->bounds.max}, op->step, std::move(body));
+      stmt result = loop::make(op->sym, op->max_workers, {loop_min, op->bounds.max}, op->step, std::move(body));
       set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
       return;
     }
@@ -358,7 +358,7 @@ public:
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, op->mode, op->bounds, op->step, std::move(body)));
+      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
     }
   }
 
@@ -380,14 +380,6 @@ public:
 
 }  // namespace
 
-stmt slide_and_fold_storage(const stmt& s, node_context& ctx) {
-  stmt result = s;
-
-  // We cannot simplify between infer_bounds and fold_storage, because we need to be able to rewrite the bounds
-  // of producers while we still understand the dependencies between stages.
-  result = slide_and_fold(ctx).mutate(result);
-
-  return result;
-}
+stmt slide_and_fold_storage(const stmt& s, node_context& ctx) { return slide_and_fold(ctx).mutate(s); }
 
 }  // namespace slinky
