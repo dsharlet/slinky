@@ -385,11 +385,11 @@ stmt loop::make(symbol_id sym, int max_workers, interval_expr bounds, expr step,
   return l;
 }
 
-stmt allocate::make(symbol_id sym, memory_type storage, std::size_t elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(symbol_id sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
   n->sym = sym;
   n->storage = storage;
-  n->elem_size = elem_size;
+  n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
   n->body = std::move(body);
   return n;
@@ -664,6 +664,7 @@ void recursive_node_visitor::visit(const copy_stmt* op) {
   }
 }
 void recursive_node_visitor::visit(const allocate* op) {
+  op->elem_size.accept(this);
   for (const dim_expr& i : op->dims) {
     i.bounds.min.accept(this);
     i.bounds.max.accept(this);
