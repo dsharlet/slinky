@@ -398,7 +398,7 @@ public:
   void visit(const allocate* op) override {
     std::size_t rank = op->dims.size();
     raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->elem_size = op->elem_size;
+    buffer->elem_size = eval_expr(op->elem_size);
     buffer->rank = rank;
     buffer->dims = SLINKY_ALLOCA(dim, rank);
 

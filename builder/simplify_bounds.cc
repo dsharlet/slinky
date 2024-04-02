@@ -84,6 +84,20 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
     };
   }
 }
+
+namespace {
+
+expr negate(expr a) { return simplify(static_cast<const sub*>(nullptr), 0, std::move(a)); }
+
+interval_expr union_x_negate_x(interval_expr x) {
+  return {
+      simplify(static_cast<const class min*>(nullptr), x.min, negate(x.max)),
+      simplify(static_cast<const class max*>(nullptr), x.max, negate(x.min)),
+  };
+}
+
+}  // namespace
+
 interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
@@ -92,19 +106,33 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
     return {0, 0};
   } else if (is_positive(b.min)) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
-    return (a | -a) / b.min;
+    if (is_positive(a.min)) {
+      return {simplify(op, a.min, b.max), simplify(op, a.max, b.min)};
+    } else if (is_negative(a.max)) {
+      return {simplify(op, a.min, b.min), simplify(op, a.max, b.max)};
+    } else {
+      a = union_x_negate_x(std::move(a));
+      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
+    }
   } else if (is_negative(b.max)) {
     // b < 0 => the biggest result in absolute value occurs at the max of b.
-    return (a | -a) / b.max;
+    if (is_positive(a.min)) {
+      return {simplify(op, a.max, b.max), simplify(op, a.min, b.min)};
+    } else if (is_negative(a.max)) {
+      return {simplify(op, a.max, b.min), simplify(op, a.min, b.max)};
+    } else {
+      a = union_x_negate_x(std::move(a));
+      return {simplify(op, a.max, b.max), simplify(op, a.min, b.max)};
+    }
   } else {
-    return a | -a;
+    return union_x_negate_x(std::move(a));
   }
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   return {0, simplify(static_cast<const class max*>(nullptr),
                  simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
                  simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}))};
-  }
+}
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
   return bounds_of_linear(op, std::move(a), std::move(b));
@@ -156,6 +184,8 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
     assert(args.size() == 1);
     if (is_positive(args[0].min)) {
       return {args[0].min, args[0].max};
+    } else if (is_negative(args[0].max)) {
+      return {negate(args[0].max), negate(args[0].min)};
     } else {
       expr abs_min = simplify(op, intrinsic::abs, {args[0].min});
       expr abs_max = simplify(op, intrinsic::abs, {args[0].max});

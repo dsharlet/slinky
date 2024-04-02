@@ -121,6 +121,7 @@ public:
   }
 
   void visit(const allocate* op) override {
+    op->elem_size.accept(this);
     for (const dim_expr& i : op->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);

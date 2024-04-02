@@ -248,6 +248,10 @@ TEST(simplify, bounds_of) {
 
             interval_expr bounds_e = bounds_of(e, bounds);
 
+            // These bounds should be fully simplified (constants in this case).
+            ASSERT_TRUE(as_constant(bounds_e.min));
+            ASSERT_TRUE(as_constant(bounds_e.max));
+
             eval_context ctx;
             for (int y_val = y_min; y_val <= y_max; ++y_val) {
               for (int x_val = x_min; x_val <= x_max; ++x_val) {
