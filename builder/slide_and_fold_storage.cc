@@ -242,6 +242,14 @@ public:
                 // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                 // If we can figure out how to add some synchronization to limit the number of workers that
                 // work on a single stage at a time, we should be able to reduce this extra folding.
+                // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
+                // This synchronization will cause the loop to run only as fast as the slowest stage, which is
+                // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
+                // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
+                // run at once, so the storage folding here works as intended. If we could instead find a way to give
+                // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
+                // doable by making the worker index available to the loop body, and using that to grab a slice of this
+                // buffer, so each worker can get its own fold.
                 fold_factor *= loop.worker_count;
               }
               vector_at(fold_factors[output], d) = fold_factor;
