@@ -63,10 +63,10 @@ TEST(evaluate, loop) {
   thread_pool t;
 
   eval_context eval_ctx;
-  eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
-  eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
-  eval_ctx.atomic_call = [&](thread_pool::task f) { t.atomic_call(std::move(f)); };
+  eval_ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
+  eval_ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
+  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
@@ -89,8 +89,8 @@ TEST(evaluate, semaphore) {
   thread_pool t;
 
   eval_context eval_ctx;
-  eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
-  eval_ctx.atomic_call = [&](thread_pool::task f) { t.atomic_call(std::move(f)); };
+  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
 
   index_t sem1 = 0;
   index_t sem2 = 0;

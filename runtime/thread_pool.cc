@@ -44,7 +44,7 @@ bool thread_pool::dequeue(task& t, std::vector<thread_pool::task_id>& task_stack
   return false;
 }
 
-void thread_pool::wait_for(std::function<bool()> condition) {
+void thread_pool::wait_for(const std::function<bool()>& condition) {
   thread_local std::vector<std::size_t> task_stack;
   std::unique_lock l(mutex_);
   while (!condition()) {
@@ -63,17 +63,17 @@ void thread_pool::wait_for(std::function<bool()> condition) {
   }
 }
 
-void thread_pool::atomic_call(task t) {
+void thread_pool::atomic_call(const task& t) {
   std::unique_lock l(mutex_);
   t();
   cv_.notify_all();
 }
 
-void thread_pool::enqueue(int n, const task& t) {
+void thread_pool::enqueue(int n, task t) {
   if (n <= 0) return;
   std::unique_lock l(mutex_);
   task_id id = next_task_id_++;
-  task_queue_.push_back({n, t, id});
+  task_queue_.push_back({n, std::move(t), id});
   cv_.notify_all();
 }
 

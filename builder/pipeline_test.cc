@@ -84,10 +84,10 @@ public:
       heap.track_free(b->size_bytes());
     };
 
-    enqueue_many = [&](const thread_pool::task& t) { threads.enqueue(threads.thread_count(), t); };
-    enqueue = [&](int n, const thread_pool::task& t) { threads.enqueue(n, t); };
-    wait_for = [&](std::function<bool()> condition) { return threads.wait_for(std::move(condition)); };
-    atomic_call = [&](thread_pool::task t) { return threads.atomic_call(std::move(t)); };
+    enqueue_many = [&](thread_pool::task t) { threads.enqueue(threads.thread_count(), std::move(t)); };
+    enqueue = [&](int n, thread_pool::task t) { threads.enqueue(n, std::move(t)); };
+    wait_for = [&](const std::function<bool()>& condition) { return threads.wait_for(condition); };
+    atomic_call = [&](const thread_pool::task& t) { return threads.atomic_call(t); };
   }
 };
 
