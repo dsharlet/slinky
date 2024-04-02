@@ -1403,7 +1403,7 @@ TEST(constant, pipeline) {
 
 class parallel_stencils : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 3));
+INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 4));
 
 TEST_P(parallel_stencils, pipeline) {
   int schedule = GetParam();
@@ -1441,6 +1441,8 @@ TEST_P(parallel_stencils, pipeline) {
     diff.loops({{y, 2}});
     stencil1.loops({{y, 2}});
     stencil2.loops({{y, 2}});
+  } else if (schedule == 3) {
+    diff.loops({{y, 1, loop::parallel}});
   }
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
@@ -1491,12 +1493,14 @@ TEST_P(parallel_stencils, pipeline) {
   }
 
   // Also visualize this pipeline
-  check_visualize("parallel_stencils_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+  if (schedule < 3) {
+    check_visualize("parallel_stencils_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+  }
 }
 
 class diamond_stencils : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 3));
+INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 4));
 
 TEST_P(diamond_stencils, pipeline) {
   int schedule = GetParam();
@@ -1530,6 +1534,8 @@ TEST_P(diamond_stencils, pipeline) {
       stencil1.loops({{y, 2}});
       stencil2.loops({{y, 2}});
       mul2.compute_root();
+    } else if (schedule == 3) {
+      diff.loops({{y, 1, loop::parallel}});
     }
 
     return build_pipeline(ctx, {in}, {out});
