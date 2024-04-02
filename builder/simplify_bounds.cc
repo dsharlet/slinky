@@ -107,40 +107,22 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   } else if (is_positive(b.min)) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
     if (is_positive(a.min)) {
-      return {
-          simplify(op, a.min, b.max),
-          simplify(op, a.max, b.min),
-      };
+      return {simplify(op, a.min, b.max), simplify(op, a.max, b.min)};
     } else if (is_negative(a.max)) {
-      return {
-          simplify(op, a.min, b.min),
-          simplify(op, a.max, b.max),
-      };
+      return {simplify(op, a.min, b.min), simplify(op, a.max, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
-      return {
-          simplify(op, a.min, b.min),
-          simplify(op, a.max, b.min),
-      };
+      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
     }
   } else if (is_negative(b.max)) {
     // b < 0 => the biggest result in absolute value occurs at the max of b.
     if (is_positive(a.min)) {
-      return {
-          simplify(op, a.max, b.max),
-          simplify(op, a.min, b.min),
-      };
+      return {simplify(op, a.max, b.max), simplify(op, a.min, b.min)};
     } else if (is_negative(a.max)) {
-      return {
-          simplify(op, a.max, b.min),
-          simplify(op, a.min, b.max),
-      };
+      return {simplify(op, a.max, b.min), simplify(op, a.min, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
-      return {
-          simplify(op, a.max, b.max),
-          simplify(op, a.min, b.max),
-      };
+      return {simplify(op, a.max, b.max), simplify(op, a.min, b.max)};
     }
   } else {
     return union_x_negate_x(std::move(a));
