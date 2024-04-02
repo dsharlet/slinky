@@ -102,8 +102,14 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
-  if (b.is_point() && is_zero(b.min)) {
-    return {0, 0};
+  if (b.is_point()) {
+    if (is_zero(b.min)) {
+      return {0, 0};
+    } else if (is_positive(b.min)) {
+      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
+    } else if (is_negative(b.min)) {
+      return {simplify(op, a.max, b.min), simplify(op, a.min, b.min)};
+    }
   } else if (is_positive(b.min)) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
     if (is_positive(a.min)) {
@@ -124,9 +130,8 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
       a = union_x_negate_x(std::move(a));
       return {simplify(op, a.max, b.max), simplify(op, a.min, b.max)};
     }
-  } else {
-    return union_x_negate_x(std::move(a));
   }
+  return union_x_negate_x(std::move(a));
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   return {0, simplify(static_cast<const class max*>(nullptr),
