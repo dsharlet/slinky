@@ -728,6 +728,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   if (r.rewrite(abs(x * c0), abs(x) * c0, c0 > 0) ||
       r.rewrite(abs(x * c0), abs(x) * eval(-c0), c0 < 0) ||
       r.rewrite(abs(c0 - x), abs(x + eval(-c0))) ||
+      r.rewrite(abs(buffer_extent(x, y)), buffer_extent(x, y)) ||
       false) {
     return r.result;
   }

@@ -134,9 +134,17 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   return union_x_negate_x(std::move(a));
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
-  return {0, simplify(static_cast<const class max*>(nullptr),
-                 simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
-                 simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}))};
+  if (is_non_negative(b.min)) {
+    return {0, b.max};
+  } else if (is_non_negative(b.max)) {
+    return {0, simplify(static_cast<const class max*>(nullptr),
+                   simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
+                   b.max)};
+  } else {
+    return {0, simplify(static_cast<const class max*>(nullptr),
+                   simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
+                   simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}))};
+  }
 }
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
