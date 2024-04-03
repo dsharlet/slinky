@@ -223,11 +223,13 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << n->sym << " = allocate(" << n->storage << ", " << n->elem_size << ", {\n";
-    *this << indent(2);
-    print_vector(n->dims, ",\n" + indent(2));
-    *this << "\n";
-    *this << indent() << "}) {\n";
+    *this << indent() << n->sym << " = allocate(" << n->storage << ", " << n->elem_size << ", {";
+    if (!n->dims.empty()) {
+      *this << "\n" << indent(2);
+      print_vector(n->dims, ",\n" + indent(2));
+      *this << "\n" << indent();
+    }
+    *this << "}) {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
@@ -235,11 +237,9 @@ public:
   void visit(const make_buffer* n) override {
     *this << indent() << n->sym << " = make_buffer(" << n->base << ", " << n->elem_size << ", {";
     if (!n->dims.empty()) {
-      *this << "\n";
-      *this << indent(2);
+      *this << "\n" << indent(2);
       print_vector(n->dims, ",\n" + indent(2));
-      *this << "\n";
-      *this << indent();
+      *this << "\n" << indent();
     }
     *this << "}) {\n";
     *this << n->body;
