@@ -134,17 +134,27 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   return union_x_negate_x(std::move(a));
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
+  expr max_b;
   if (is_non_negative(b.min)) {
-    return {0, b.max};
-  } else if (is_non_negative(b.max)) {
-    return {0, simplify(static_cast<const class max*>(nullptr),
-                   simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
-                   b.max)};
+    max_b = b.max;
+  } else if (b.is_point()) {
+    assert(!is_non_negative(b.max));
+    max_b = simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max});
   } else {
-    return {0, simplify(static_cast<const class max*>(nullptr),
-                   simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
-                   simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}))};
+    if (is_non_negative(b.max)) {
+      max_b = simplify(static_cast<const class max*>(nullptr),
+          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}), b.max);
+    } else {
+      max_b = simplify(static_cast<const class max*>(nullptr),
+          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.min}),
+          simplify(static_cast<const class call*>(nullptr), intrinsic::abs, {b.max}));
+    }
   }
+  // The bounds here are weird. The bounds of a % b are [0, max(abs(b))), note the open interval at the max.
+  // So, we need to subtract 1 from the max value of b, but we need a special case for b = 0, where we define a % 0 to
+  // be 0.
+  return {0, simplify(static_cast<const class max*>(nullptr),
+                 simplify(static_cast<const sub*>(nullptr), std::move(max_b), 1), 0)};
 }
 
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b) {
@@ -195,9 +205,9 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
   switch (op->intrinsic) {
   case intrinsic::abs:
     assert(args.size() == 1);
-    if (is_positive(args[0].min)) {
+    if (is_non_negative(args[0].min)) {
       return {args[0].min, args[0].max};
-    } else if (is_negative(args[0].max)) {
+    } else if (is_non_positive(args[0].max)) {
       return {negate(args[0].max), negate(args[0].min)};
     } else {
       expr abs_min = simplify(op, intrinsic::abs, {args[0].min});
