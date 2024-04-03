@@ -228,9 +228,6 @@ namespace {
 void get_output_bounds(const std::vector<func::output>& outputs, bounds_map& output_bounds) {
   for (const func::output& o : outputs) {
     for (std::size_t d = 0; d < o.dims.size(); ++d) {
-      expr dim_min = o.buffer->dim(d).min();
-      expr dim_max = o.buffer->dim(d).max();
-
       std::optional<interval_expr>& output_bounds_d = output_bounds[o.dims[d]];
       if (!output_bounds_d) {
         output_bounds_d = o.buffer->dim(d).bounds;
