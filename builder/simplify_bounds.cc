@@ -105,9 +105,9 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   if (b.is_point()) {
     if (is_zero(b.min)) {
       return {0, 0};
-    } else if (is_positive(b.min)) {
+    } else if (is_non_negative(b.min)) {
       return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
-    } else if (is_negative(b.min)) {
+    } else if (is_non_positive(b.min)) {
       return {simplify(op, a.max, b.min), simplify(op, a.min, b.min)};
     }
   } else if (is_positive(b.min)) {
