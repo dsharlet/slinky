@@ -478,7 +478,7 @@ struct for_each_slice_dim {
 index_t make_for_each_contiguous_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
-bool make_for_each_slice_dims(index_t slice_rank, span<const raw_buffer*> bufs, void** bases,
+bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
     for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
@@ -608,13 +608,15 @@ template <typename F, typename... Bufs>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs;
-  // Slice any extra leading dimensions from bufs.
+  // Remove the sliced dimensions from the bufs.
   std::array<raw_buffer, BufsSize> aligned_bufs = {buf, bufs...};
   for (std::size_t i = 0; i < BufsSize; ++i) {
-    if (aligned_bufs[i].rank > buf.rank) {
-      std::size_t extra_dims = aligned_bufs[i].rank - buf.rank;
-      aligned_bufs[i].rank -= extra_dims;
-      aligned_bufs[i].dims += extra_dims;
+    std::size_t slice_rank_i = slice_rank + std::max(aligned_bufs[i].rank, buf.rank) - buf.rank;
+    if (aligned_bufs[i].rank > slice_rank_i) {
+      aligned_bufs[i].rank -= slice_rank_i;
+      aligned_bufs[i].dims += slice_rank_i;
+    } else {
+      aligned_bufs[i].rank = 0;
     }
     buf_ptrs[i] = &aligned_bufs[i];
   }
@@ -623,7 +625,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, buf.rank + 1);
   auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, buf.rank * BufsSize);
   std::array<void*, BufsSize> bases;
-  index_t slice_extent = internal::make_for_each_slice_dims(slice_rank, buf_ptrs, bases.data(), slice_dims, dims);
+  index_t slice_extent = internal::make_for_each_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
   if (slice_extent < 0) {
     return;
   }

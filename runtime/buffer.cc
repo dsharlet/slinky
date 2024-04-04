@@ -390,7 +390,7 @@ bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
 static dim stride_0_dim;
 
 template <bool SkipContiguous, std::size_t BufsSize>
-index_t make_for_each_slice_dims_impl(index_t min_rank, const raw_buffer* const* bufs, void** bases,
+index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
     std::size_t bufs_size_dynamic, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
@@ -401,7 +401,7 @@ index_t make_for_each_slice_dims_impl(index_t min_rank, const raw_buffer* const*
   auto* next_dims = dims;
   index_t slice_extent = 1;
   index_t extent = 1;
-  for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= min_rank; --d) {
+  for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
     if (buf_dim.max() > buf_dim.min() && any_folded(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers.
@@ -426,7 +426,7 @@ index_t make_for_each_slice_dims_impl(index_t min_rank, const raw_buffer* const*
       }
     }
 
-    if (d > min_rank && buf_dim.min() == buf_dim.max()) {
+    if (d > 0 && buf_dim.min() == buf_dim.max()) {
       // This dimension has only one element, nothing to do.
     } else if (buf_dim.max() < buf_dim.min()) {
       // The dimension (and the entire buffer) is empty.
@@ -435,7 +435,7 @@ index_t make_for_each_slice_dims_impl(index_t min_rank, const raw_buffer* const*
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
-    } else if (d > min_rank && can_fuse(bufs, bufs_size, d)) {
+    } else if (d > 0 && can_fuse(bufs, bufs_size, d)) {
       // Let this dimension fuse with the next dimension.
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
@@ -467,14 +467,14 @@ index_t make_for_each_contiguous_slice_dims(
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: return make_for_each_slice_dims_impl<true, 1>(0, bufs.data(), bases, 0, slice_dims, dims);
-  case 2: return make_for_each_slice_dims_impl<true, 2>(0, bufs.data(), bases, 0, slice_dims, dims);
-  case 3: return make_for_each_slice_dims_impl<true, 3>(0, bufs.data(), bases, 0, slice_dims, dims);
-  default: return make_for_each_slice_dims_impl<true, 0>(0, bufs.data(), bases, bufs.size(), slice_dims, dims);
+  case 1: return make_for_each_slice_dims_impl<true, 1>(bufs.data(), bases, 0, slice_dims, dims);
+  case 2: return make_for_each_slice_dims_impl<true, 2>(bufs.data(), bases, 0, slice_dims, dims);
+  case 3: return make_for_each_slice_dims_impl<true, 3>(bufs.data(), bases, 0, slice_dims, dims);
+  default: return make_for_each_slice_dims_impl<true, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims);
   }
 }
 
-bool make_for_each_slice_dims(index_t slice_rank, span<const raw_buffer*> bufs, void** bases,
+bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
     for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   for (std::size_t n = 1; n < bufs.size(); n++) {
     assert(can_slice_with(*bufs[0], *bufs[n]));
@@ -484,11 +484,11 @@ bool make_for_each_slice_dims(index_t slice_rank, span<const raw_buffer*> bufs, 
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: return make_for_each_slice_dims_impl<false, 1>(slice_rank, bufs.data(), bases, 0, slice_dims, dims) >= 0;
-  case 2: return make_for_each_slice_dims_impl<false, 2>(slice_rank, bufs.data(), bases, 0, slice_dims, dims) >= 0;
-  case 3: return make_for_each_slice_dims_impl<false, 3>(slice_rank, bufs.data(), bases, 0, slice_dims, dims) >= 0;
+  case 1: return make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
+  case 2: return make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
+  case 3: return make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
   default:
-    return make_for_each_slice_dims_impl<false, 0>(slice_rank, bufs.data(), bases, bufs.size(), slice_dims, dims) >= 0;
+    return make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims) >= 0;
   }
 }
 
