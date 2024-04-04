@@ -478,8 +478,8 @@ struct for_each_slice_dim {
 index_t make_for_each_contiguous_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
-bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
-    for_each_slice_dim* slice_dims, dim_or_stride* dims);
+bool make_for_each_slice_dims(
+    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
 void for_each_slice_impl(
@@ -609,16 +609,16 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs;
   // Remove the sliced dimensions from the bufs.
-  std::array<raw_buffer, BufsSize> aligned_bufs = {buf, bufs...};
+  std::array<raw_buffer, BufsSize> sliced_bufs = {buf, bufs...};
   for (std::size_t i = 0; i < BufsSize; ++i) {
-    std::size_t slice_rank_i = slice_rank + std::max(aligned_bufs[i].rank, buf.rank) - buf.rank;
-    if (aligned_bufs[i].rank > slice_rank_i) {
-      aligned_bufs[i].rank -= slice_rank_i;
-      aligned_bufs[i].dims += slice_rank_i;
+    std::size_t slice_rank_i = slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank;
+    if (sliced_bufs[i].rank > slice_rank_i) {
+      sliced_bufs[i].rank -= slice_rank_i;
+      sliced_bufs[i].dims += slice_rank_i;
     } else {
-      aligned_bufs[i].rank = 0;
+      sliced_bufs[i].rank = 0;
     }
-    buf_ptrs[i] = &aligned_bufs[i];
+    buf_ptrs[i] = &sliced_bufs[i];
   }
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
@@ -630,8 +630,9 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
     return;
   }
 
-  // TODO: It's annoying we need to make two (shallow) copies of the bufs here.
-  std::array<raw_buffer, BufsSize> sliced_bufs = {buf, bufs...};
+  // TODO: We only need to copy dims and rank here. `elem_size` should already be set, and `base` is set below.
+  // I'm not sure if fixing this would be much of an improvement.
+  sliced_bufs = {buf, bufs...};
   for (std::size_t i = 0; i < BufsSize; ++i) {
     if (sliced_bufs[i].rank > buf.rank) {
       index_t extra_dims = sliced_bufs[i].rank - buf.rank;
