@@ -500,6 +500,31 @@ TEST(buffer, for_each_slice_sum) {
   });
 }
 
+TEST(buffer, for_each_slice_broadcasted_slice) {
+  buffer<int, 1> src({10});
+  init_random(src);
+
+  buffer<int, 3> dst({10, 4, 3});
+  dst.allocate();
+
+  for_each_slice(
+      2, dst,
+      [&](const raw_buffer& dst_slice, const raw_buffer& src_slice) {
+        ASSERT_EQ(src_slice.rank, 1);
+        ASSERT_EQ(dst_slice.rank, 2);
+        auto& dst_t = dst_slice.cast<int>();
+        auto& src_t = src_slice.cast<int>();
+        for (index_t i = dst_t.dim(1).begin(); i < dst_t.dim(1).end(); ++i) {
+          for (index_t j = dst_t.dim(0).begin(); j < dst_t.dim(0).end(); ++j) {
+            dst_t(j, i) = src_t(j);
+          }
+        }
+      },
+      src);
+
+  for_each_index(dst, [&](auto i) { ASSERT_EQ(dst(i), src(i[0])); });
+}
+
 template <typename T, std::size_t N>
 void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding = nullptr, bool broadcast = false) {
   index_t stride = broadcast ? 0 : buf.elem_size;
@@ -707,9 +732,8 @@ TEST(fuse_contiguous_dims, copy) {
     dst_reshaped.rank = dst.rank;
 
     int errors = 0;
-    for_each_index(dst, [&](auto i) {
-      errors += memcmp(dst.address_at(i), dst_reshaped.address_at(i), elem_size) ? 1 : 0;
-    });
+    for_each_index(
+        dst, [&](auto i) { errors += memcmp(dst.address_at(i), dst_reshaped.address_at(i), elem_size) ? 1 : 0; });
     ASSERT_EQ(errors, 0);
   }
   ASSERT_GT(optimized, 0);

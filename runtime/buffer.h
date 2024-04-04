@@ -634,7 +634,8 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   // I'm not sure if fixing this would be much of an improvement.
   sliced_bufs = {buf, bufs...};
   for (std::size_t i = 0; i < BufsSize; ++i) {
-    sliced_bufs[i].rank = slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank;
+    sliced_bufs[i].rank =
+        std::min(sliced_bufs[i].rank, slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank);
   }
 
   internal::for_each_slice_impl(bases, slice_dims, dims, [&](const std::array<void*, BufsSize>& bases) {
