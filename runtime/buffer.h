@@ -607,8 +607,9 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
 template <typename F, typename... Bufs>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
-  std::array<raw_buffer, BufsSize> aligned_bufs = {buf, bufs...};
   std::array<const raw_buffer*, BufsSize> buf_ptrs;
+  // Slice any extra leading dimensions from bufs.
+  std::array<raw_buffer, BufsSize> aligned_bufs = {buf, bufs...};
   for (std::size_t i = 0; i < BufsSize; ++i) {
     if (aligned_bufs[i].rank > buf.rank) {
       std::size_t extra_dims = aligned_bufs[i].rank - buf.rank;
