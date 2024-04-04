@@ -15,6 +15,8 @@ std::mt19937& rng() {
 
 namespace slinky {
 
+bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
+
 int random(int min, int max) { return rng()() % (max - min + 1) + min; }
 
 template <typename T, std::size_t N>
@@ -120,6 +122,19 @@ TEST(buffer, buffer) {
   for (int i = 0; i < 10 * 20; ++i) {
     ASSERT_EQ(i, buf.base()[i]);
   }
+}
+
+TEST(buffer, shallow_copy) {
+  buffer<int, 2> buf({10, 20});
+  init_random(buf);
+  buffer<int, 2> buf2 = buf;
+  ASSERT_EQ(buf.base(), buf2.base());
+  ASSERT_EQ(buf.elem_size, buf2.elem_size);
+  ASSERT_EQ(buf.rank, buf2.rank);
+  ASSERT_EQ(buf.dim(0), buf2.dim(0));
+  ASSERT_EQ(buf.dim(1), buf2.dim(1));
+
+  ASSERT_NE(buf.dims, buf2.dims);
 }
 
 TEST(buffer, folded) {
@@ -294,7 +309,8 @@ void test_for_each_contiguous_slice_add() {
         }
       },
       a, b);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
+  for_each_index(dst,
+      [&](const auto i) { ASSERT_EQ(dst(i), saturate_add<Dst>(a(i.subspan(0, a.rank)), b(i.subspan(0, b.rank)))); });
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
@@ -565,6 +581,138 @@ TEST(buffer, copy) {
       }
     });
   }
+}
+
+TEST(fuse_contiguous_dims, same_rank) {
+  buffer<int, 1> r1;
+  buffer<int, 2> r2;
+  buffer<int, 3> r3;
+
+  ASSERT_TRUE(internal::same_rank(r1));
+  ASSERT_TRUE(internal::same_rank(r2, r2));
+  ASSERT_FALSE(internal::same_rank(r2, r1, r2));
+  ASSERT_TRUE(internal::same_rank(r3, r3, r3));
+}
+
+TEST(fuse_contiguous_dims, fuse0) {
+  buffer<int, 1> a({}), b({});
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 0);
+  ASSERT_EQ(b.rank, 0);
+}
+
+TEST(fuse_contiguous_dims, fuse1) {
+  buffer<int, 1> a({3}), b({3});
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 3);
+  ASSERT_EQ(b.dim(0).extent(), 3);
+}
+
+TEST(fuse_contiguous_dims, fuse2) {
+  buffer<int, 2> a({4, 5}), b({4, 5});
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 4 * 5);
+  ASSERT_EQ(b.dim(0).extent(), 4 * 5);
+}
+
+TEST(fuse_contiguous_dims, fuse3) {
+  buffer<int, 3> a({6, 7, 8}), b({6, 7, 8});
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 6 * 7 * 8);
+  ASSERT_EQ(b.dim(0).extent(), 6 * 7 * 8);
+}
+
+TEST(fuse_contiguous_dims, cant_fuse) {
+  buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
+  ASSERT_NE(a.dim(0).stride(), 0);
+  ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
+  std::swap(a.dim(2), a.dim(3));
+  std::swap(b.dim(2), b.dim(3));
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 3);
+  ASSERT_EQ(b.rank, 3);
+  ASSERT_EQ(a.dim(0).extent(), 6);
+  ASSERT_EQ(a.dim(1).extent(), 5);
+  ASSERT_EQ(a.dim(2).extent(), 4);
+  ASSERT_EQ(b.dim(0).extent(), 6);
+  ASSERT_EQ(b.dim(1).extent(), 5);
+  ASSERT_EQ(b.dim(2).extent(), 4);
+}
+
+TEST(fuse_contiguous_dims, fuse_sets) {
+  buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
+  ASSERT_NE(a.dim(0).stride(), 0);
+  ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
+  const int dims_sets[] = {0, 0, 0, 1};
+  fuse_contiguous_dims(dims_sets, a, b);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(a.dim(0).extent(), 24);
+  ASSERT_EQ(a.dim(1).extent(), 5);
+  ASSERT_EQ(b.dim(0).extent(), 24);
+  ASSERT_EQ(b.dim(1).extent(), 5);
+}
+
+TEST(fuse_contiguous_dims, cant_fuse_sets) {
+  buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
+  ASSERT_NE(a.dim(0).stride(), 0);
+  ASSERT_NE(a.dim(0).stride(), a.dim(1).stride());
+  const int dims_sets[] = {0, 1, 0, 1};
+  fuse_contiguous_dims(dims_sets, a, b);
+  ASSERT_EQ(a.rank, 4);
+  ASSERT_EQ(b.rank, 4);
+}
+
+TEST(fuse_contiguous_dims, copy) {
+  constexpr int max_rank = 4;
+  int optimized = 0;
+  for (int cases = 0; cases < 10000; ++cases) {
+    int rank = random(0, max_rank);
+    int elem_size = random(1, 12);
+
+    std::vector<char> padding(elem_size);
+    std::fill(padding.begin(), padding.end(), 7);
+
+    buffer<void, max_rank> src(rank, elem_size);
+    for (std::size_t d = 0; d < src.rank; ++d) {
+      src.dim(d).set_min_extent(0, 5);
+    }
+    randomize_strides_and_padding(src, {-1, 1, true, false});
+    init_random(src);
+    buffer<void, max_rank> src_opt = src;
+
+    buffer<void, max_rank> dst(rank, elem_size);
+    for (std::size_t d = 0; d < src.rank; ++d) {
+      dst.dim(d) = src.dim(d);
+    }
+    randomize_strides_and_padding(dst, {-1, 1, false, false});
+    buffer<void, max_rank> dst_opt = dst;
+    dst.allocate();
+    dst_opt.allocate();
+
+    slinky::copy(src, dst, padding.data());
+
+    fuse_contiguous_dims(dst_opt, src_opt);
+    slinky::copy(src_opt, dst_opt, padding.data());
+    optimized += dst_opt.rank != dst.rank ? 1 : 0;
+
+    raw_buffer dst_reshaped = dst_opt;
+    dst_reshaped.dims = dst.dims;
+    dst_reshaped.rank = dst.rank;
+
+    int errors = 0;
+    for_each_index(dst, [&](auto i) {
+      errors += memcmp(dst.address_at(i), dst_reshaped.address_at(i), elem_size) ? 1 : 0;
+    });
+    ASSERT_EQ(errors, 0);
+  }
+  ASSERT_GT(optimized, 0);
 }
 
 }  // namespace slinky
