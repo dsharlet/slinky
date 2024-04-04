@@ -343,8 +343,8 @@ bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
   if (other_buf.rank > buf.rank) return false;
   for (std::size_t d = 0; d < other_buf.rank; d++) {
     const dim& other_dim = other_buf.dim(d);
-    
-    // Allow stride 0 dimensions to be accessed "out of bounds". 
+
+    // Allow stride 0 dimensions to be accessed "out of bounds".
     if (other_dim.stride() == 0) continue;
 
     const dim& buf_dim = buf.dim(d);
@@ -357,7 +357,8 @@ bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
 
 bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
   for (std::size_t n = 0; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank) || bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) return false;
+    if (d >= static_cast<int>(bufs[n]->rank) || bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size))
+      return false;
   }
   return true;
 }
@@ -389,8 +390,8 @@ bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
 static dim stride_0_dim;
 
 template <std::size_t BufsSize>
-bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
-    std::size_t bufs_size_dynamic, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+index_t make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
+    std::size_t bufs_size_dynamic, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
   for (std::size_t n = 0; n < bufs_size; ++n) {
@@ -405,7 +406,7 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
     if (buf_dim.max() > buf_dim.min() && any_folded(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers.
       assert(extent == 1);
-      next->impl = for_each_contiguous_slice_dim::loop_folded;
+      next->impl = for_each_slice_dim::loop_folded;
       next->extent = buf_dim.extent();
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
@@ -430,7 +431,7 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
       continue;
     } else if (buf_dim.max() < buf_dim.min()) {
       // The dimension (and the entire buffer) is empty.
-      return false;
+      return -1;
     } else if (is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
       slice_extent = extent;
@@ -440,7 +441,7 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf_dim.min() / buf_dim.fold_factor() == buf_dim.max() / buf_dim.fold_factor());
-      next->impl = for_each_contiguous_slice_dim::loop_linear;
+      next->impl = for_each_slice_dim::loop_linear;
       next->extent = extent;
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
@@ -450,15 +451,14 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
       extent = 1;
     }
   }
-  next->impl = for_each_contiguous_slice_dim::call_f;
-  next->extent = slice_extent;
-  return true;
+  next->impl = for_each_slice_dim::call_f;
+  return slice_extent;
 }
 
 }  // namespace
 
-bool make_for_each_contiguous_slice_dims(
-    span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+index_t make_for_each_contiguous_slice_dims(
+    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   for (std::size_t n = 1; n < bufs.size(); n++) {
     assert(can_slice_with(*bufs[0], *bufs[n]));
   }
