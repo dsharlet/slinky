@@ -578,8 +578,8 @@ void for_each_index(const raw_buffer& buf, const F& f) {
   for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
-// Call `f(void* base, index_t extent[, void* other_bases, ...])` for each contiguous slice in the domain of `buf[,
-// other_bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
+// Call `f(index_t extent, void* base[, void* bases, ...])` for each contiguous slice in the domain of `buf[,
+// bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
 //
 // When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
 // lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
