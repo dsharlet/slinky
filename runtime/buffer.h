@@ -227,6 +227,19 @@ private:
   void* to_free;
   slinky::dim dims_storage[DimsSize];
 
+  void assign_dims(int rank, const slinky::dim* src = nullptr) {
+    assert(rank <= static_cast<int>(DimsSize));
+    this->rank = rank;
+    if (DimsSize > 0) {
+      dims = dims_storage;
+    } else {
+      dims = nullptr;
+    }
+    if (src) {
+      memcpy(dims, src, rank * sizeof(slinky::dim));
+    }
+  }
+
 public:
   using raw_buffer::cast;
   using raw_buffer::dim;
@@ -237,26 +250,15 @@ public:
   buffer() {
     raw_buffer::base = nullptr;
     to_free = nullptr;
-    rank = DimsSize;
+    assign_dims(DimsSize);
     elem_size = internal::default_elem_size<T>::value;
-    if (DimsSize > 0) {
-      dims = dims_storage;
-    } else {
-      dims = nullptr;
-    }
   }
 
   explicit buffer(std::size_t rank, std::size_t elem_size = internal::default_elem_size<T>::value) {
     raw_buffer::base = nullptr;
     to_free = nullptr;
-    assert(rank <= DimsSize);
-    this->rank = rank;
+    assign_dims(rank);
     this->elem_size = elem_size;
-    if (DimsSize > 0) {
-      dims = dims_storage;
-    } else {
-      dims = nullptr;
-    }
   }
 
   // Construct a buffer with extents, and strides computed such that the stride of dimension
@@ -277,11 +279,24 @@ public:
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
   ~buffer() { free(); }
 
-  buffer(const buffer&) = delete;
-  buffer(buffer&& m) { *this = std::move(m); }
-  void operator=(const buffer&) = delete;
+  // This is a shallow copy.
+  buffer(const buffer& c) : buffer() {
+    raw_buffer::base = c.base();
+    elem_size = c.elem_size;
+    assign_dims(c.rank, c.dims);
+  }
+  void operator=(const buffer& c) {
+    if (this == &c) return;
+    free();
+    raw_buffer::base = c.base();
+    elem_size = c.elem_size;
+    assign_dims(c.rank, c.dims);
+  }
 
+  buffer(buffer&& m) { *this = std::move(m); }
   buffer& operator=(buffer&& m) {
+    if (this == &m) return *this;
+    free();
     memcpy(static_cast<raw_buffer*>(this), static_cast<const raw_buffer*>(&m), sizeof(raw_buffer));
     if (DimsSize > 0) {
       memcpy(dims_storage, m.dims_storage, DimsSize * sizeof(slinky::dim));
@@ -339,8 +354,93 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
 
-// Value for use in tile tuples indicating the dimension should be passed unmodified.
-static constexpr index_t all = std::numeric_limits<index_t>::max();
+namespace internal {
+
+// Returns true if all buffers have the same rank.
+inline bool same_rank(const raw_buffer&) { return true; }
+inline bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1) { return buf0.rank == buf1.rank; }
+template <typename... Bufs>
+bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+  return buf0.rank == buf1.rank && same_rank(buf1, bufs...);
+}
+
+inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.extent() == b.extent(); }
+
+// Returns true if all buffers have the same bounds in dimension d.
+inline bool same_bounds(int, const raw_buffer&) { return true; }
+inline bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1) {
+  return same_bounds(buf0.dim(d), buf1.dim(d));
+}
+template <typename... Bufs>
+bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+  return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
+}
+
+// Returns true if the two dimensions can be fused.
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (outer.fold_factor() != dim::unfolded || inner.fold_factor() != dim::unfolded) return false;
+  if (inner.stride() * inner.extent() != outer.stride()) return false;
+  return true;
+}
+
+// Returns true if two dimensions of all buffers can be fused.
+inline bool can_fuse(int inner, int outer, const raw_buffer& buf) { return can_fuse(buf.dim(inner), buf.dim(outer)); }
+template <typename... Bufs>
+bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) {
+  return can_fuse(inner, outer, buf) && can_fuse(inner, outer, bufs...);
+}
+
+// Fuse two dimensions of all buffers.
+inline void fuse(int inner, int outer, raw_buffer& buf) {
+  dim& i = buf.dim(inner);
+  const dim& o = buf.dim(outer);
+  i.set_min_extent(o.min() * i.extent(), o.extent() * i.extent());
+  // Delete the outer dimension.
+  for (std::size_t i = outer; i + 1 < buf.rank; ++i) {
+    buf.dim(i) = buf.dim(i + 1);
+  }
+  buf.rank -= 1;
+}
+template <typename... Bufs>
+void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+  fuse(inner, outer, buf);
+  fuse(inner, outer, bufs...);
+}
+
+}  // namespace internal
+
+// This helper fuses the dimensions of a set of buffers where the dimensions are contiguous in memory. It only fuses a
+// dimension if the same dimension can be fused in all buffers. After this function runs, the buffers may have lower
+// rank, but still address the same memory as the original buffers. For "shift invariant" operations, operating on such
+// fused buffers is likely to be more efficient.
+// `dim_sets` is an optional span of integers that indicates sets of dimensions that are eligible for fusion. By
+// default, all dimensions are considered to be part of the same set.
+template <typename... Bufs>
+void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+  const int rank = buf.rank;
+  assert(internal::same_rank(buf, bufs...));
+  for (int d = rank - 1; d > 0; --d) {
+    const int inner = d - 1;
+    const int outer = d;
+    if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
+      // These two dims are not part of the same set. Don't fuse them.
+      continue;
+    }
+    if (!internal::same_bounds(inner, buf, bufs...)) {
+      // We can't fuse the dimensions if the inner dimension doesn't have the same bounds in all buffers.
+      continue;
+    }
+    if (!internal::can_fuse(inner, outer, buf, bufs...)) {
+      // We can't fuse these dimensions in one of the buffers.
+      continue;
+    }
+    internal::fuse(inner, outer, buf, bufs...);
+  }
+}
+template <typename... Bufs>
+void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
+  fuse_contiguous_dims({}, buf, bufs...);
+}
 
 namespace internal {
 
@@ -573,6 +673,9 @@ SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw
 
   internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
 }
+
+// Value for use in tile tuples indicating the dimension should be passed unmodified.
+static constexpr index_t all = std::numeric_limits<index_t>::max();
 
 }  // namespace slinky
 
