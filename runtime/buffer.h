@@ -622,8 +622,8 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   }
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, buf.rank + 1);
-  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, buf.rank * BufsSize);
+  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, (buf.rank - slice_rank) + 1);
+  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, (buf.rank - slice_rank) * BufsSize);
   std::array<void*, BufsSize> bases;
   index_t slice_extent = internal::make_for_each_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
   if (slice_extent < 0) {
