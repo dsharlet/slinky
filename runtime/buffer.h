@@ -227,6 +227,19 @@ private:
   void* to_free;
   slinky::dim dims_storage[DimsSize];
 
+  void assign_dims(int rank, const slinky::dim* src = nullptr) {
+    assert(rank <= static_cast<int>(DimsSize));
+    this->rank = rank;
+    if (DimsSize > 0) {
+      dims = dims_storage;
+    } else {
+      dims = nullptr;
+    }
+    if (src) {
+      memcpy(dims, src, rank * sizeof(slinky::dim));
+    }
+  }
+
 public:
   using raw_buffer::cast;
   using raw_buffer::dim;
@@ -237,26 +250,15 @@ public:
   buffer() {
     raw_buffer::base = nullptr;
     to_free = nullptr;
-    rank = DimsSize;
+    assign_dims(DimsSize);
     elem_size = internal::default_elem_size<T>::value;
-    if (DimsSize > 0) {
-      dims = dims_storage;
-    } else {
-      dims = nullptr;
-    }
   }
 
   explicit buffer(std::size_t rank, std::size_t elem_size = internal::default_elem_size<T>::value) {
     raw_buffer::base = nullptr;
     to_free = nullptr;
-    assert(rank <= DimsSize);
-    this->rank = rank;
+    assign_dims(rank);
     this->elem_size = elem_size;
-    if (DimsSize > 0) {
-      dims = dims_storage;
-    } else {
-      dims = nullptr;
-    }
   }
 
   // Construct a buffer with extents, and strides computed such that the stride of dimension
@@ -277,11 +279,24 @@ public:
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
   ~buffer() { free(); }
 
-  buffer(const buffer&) = delete;
-  buffer(buffer&& m) { *this = std::move(m); }
-  void operator=(const buffer&) = delete;
+  // This is a shallow copy.
+  buffer(const buffer& c) : buffer() {
+    raw_buffer::base = c.base();
+    elem_size = c.elem_size;
+    assign_dims(c.rank, c.dims);
+  }
+  void operator=(const buffer& c) {
+    if (this == &c) return;
+    free();
+    raw_buffer::base = c.base();
+    elem_size = c.elem_size;
+    assign_dims(c.rank, c.dims);
+  }
 
+  buffer(buffer&& m) { *this = std::move(m); }
   buffer& operator=(buffer&& m) {
+    if (this == &m) return *this;
+    free();
     memcpy(static_cast<raw_buffer*>(this), static_cast<const raw_buffer*>(&m), sizeof(raw_buffer));
     if (DimsSize > 0) {
       memcpy(dims_storage, m.dims_storage, DimsSize * sizeof(slinky::dim));
@@ -339,8 +354,93 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
 
-// Value for use in tile tuples indicating the dimension should be passed unmodified.
-static constexpr index_t all = std::numeric_limits<index_t>::max();
+namespace internal {
+
+// Returns true if all buffers have the same rank.
+inline bool same_rank(const raw_buffer&) { return true; }
+inline bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1) { return buf0.rank == buf1.rank; }
+template <typename... Bufs>
+bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+  return buf0.rank == buf1.rank && same_rank(buf1, bufs...);
+}
+
+inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.extent() == b.extent(); }
+
+// Returns true if all buffers have the same bounds in dimension d.
+inline bool same_bounds(int, const raw_buffer&) { return true; }
+inline bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1) {
+  return same_bounds(buf0.dim(d), buf1.dim(d));
+}
+template <typename... Bufs>
+bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+  return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
+}
+
+// Returns true if the two dimensions can be fused.
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (outer.fold_factor() != dim::unfolded || inner.fold_factor() != dim::unfolded) return false;
+  if (inner.stride() * inner.extent() != outer.stride()) return false;
+  return true;
+}
+
+// Returns true if two dimensions of all buffers can be fused.
+inline bool can_fuse(int inner, int outer, const raw_buffer& buf) { return can_fuse(buf.dim(inner), buf.dim(outer)); }
+template <typename... Bufs>
+bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) {
+  return can_fuse(inner, outer, buf) && can_fuse(inner, outer, bufs...);
+}
+
+// Fuse two dimensions of all buffers.
+inline void fuse(int inner, int outer, raw_buffer& buf) {
+  dim& i = buf.dim(inner);
+  const dim& o = buf.dim(outer);
+  i.set_min_extent(o.min() * i.extent(), o.extent() * i.extent());
+  // Delete the outer dimension.
+  for (std::size_t i = outer; i + 1 < buf.rank; ++i) {
+    buf.dim(i) = buf.dim(i + 1);
+  }
+  buf.rank -= 1;
+}
+template <typename... Bufs>
+void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+  fuse(inner, outer, buf);
+  fuse(inner, outer, bufs...);
+}
+
+}  // namespace internal
+
+// This helper fuses the dimensions of a set of buffers where the dimensions are contiguous in memory. It only fuses a
+// dimension if the same dimension can be fused in all buffers. After this function runs, the buffers may have lower
+// rank, but still address the same memory as the original buffers. For "shift invariant" operations, operating on such
+// fused buffers is likely to be more efficient.
+// `dim_sets` is an optional span of integers that indicates sets of dimensions that are eligible for fusion. By
+// default, all dimensions are considered to be part of the same set.
+template <typename... Bufs>
+void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+  const int rank = buf.rank;
+  assert(internal::same_rank(buf, bufs...));
+  for (int d = rank - 1; d > 0; --d) {
+    const int inner = d - 1;
+    const int outer = d;
+    if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
+      // These two dims are not part of the same set. Don't fuse them.
+      continue;
+    }
+    if (!internal::same_bounds(inner, buf, bufs...)) {
+      // We can't fuse the dimensions if the inner dimension doesn't have the same bounds in all buffers.
+      continue;
+    }
+    if (!internal::can_fuse(inner, outer, buf, bufs...)) {
+      // We can't fuse these dimensions in one of the buffers.
+      continue;
+    }
+    internal::fuse(inner, outer, buf, bufs...);
+  }
+}
+template <typename... Bufs>
+void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
+  fuse_contiguous_dims({}, buf, bufs...);
+}
 
 namespace internal {
 
@@ -359,56 +459,6 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   }
 }
 
-inline void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src) { *dst = src; }
-
-template <typename... Bufs>
-void shallow_copy_bufs(raw_buffer* dst, const raw_buffer& src, const Bufs&... bufs) {
-  *dst = src;
-  shallow_copy_bufs(dst + 1, bufs...);
-}
-
-template <size_t N, typename F>
-void for_each_slice(std::size_t slice_rank, std::array<raw_buffer, N>& bufs, const F& f) {
-  if (bufs[0].rank <= slice_rank) {
-    // We're done slicing.
-    std::apply(f, bufs);
-    return;
-  }
-
-  const slinky::dim& dim = bufs[0].dim(bufs[0].rank - 1);
-
-  index_t min = dim.min();
-  index_t max = dim.max();
-  if (min > max) {
-    // Dimension (and the buffer) is empty.
-    return;
-  }
-
-  std::array<void*, N> old_bases;
-  for (std::size_t n = 0; n < N; ++n) {
-    old_bases[n] = bufs[n].base;
-    bufs[n].rank -= 1;
-  }
-
-  // TODO: If performance is an issue here, we can make a plan (like `for_each_contiguous_slice` does) that avoids
-  // folding overhead.
-  index_t stride = dim.stride();
-  assert(dim.min() / dim.fold_factor() == dim.max() / dim.fold_factor());
-  for (index_t i = min; i <= max; ++i, bufs[0].base = offset_bytes(bufs[0].base, stride)) {
-    for (std::size_t n = 1; n < N; ++n) {
-      const slinky::dim& dim_n = bufs[n].dims[bufs[n].rank];
-      bufs[n].base = offset_bytes(old_bases[n], dim_n.flat_offset_bytes(i));
-    }
-    for_each_slice(slice_rank, bufs, f);
-  }
-
-  // Restore the buffers' base and rank.
-  for (std::size_t n = 0; n < N; ++n) {
-    bufs[n].base = old_bases[n];
-    bufs[n].rank += 1;
-  }
-}
-
 union dim_or_stride {
   // For loop_folded to call flat_offset_bytes
   const slinky::dim* dim;
@@ -416,7 +466,7 @@ union dim_or_stride {
   index_t stride;
 };
 
-struct for_each_contiguous_slice_dim {
+struct for_each_slice_dim {
   enum {
     call_f,       // Uses extent
     loop_linear,  // Uses stride, extent
@@ -425,34 +475,37 @@ struct for_each_contiguous_slice_dim {
   index_t extent;
 };
 
-bool make_for_each_contiguous_slice_dims(
-    span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims);
+index_t make_for_each_contiguous_slice_dims(
+    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
+
+bool make_for_each_slice_dims(
+    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
-void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_each_contiguous_slice_dim* slice_dim,
-    const dim_or_stride* dims, const F& f) {
-  if (slice_dim->impl == for_each_contiguous_slice_dim::call_f) {
-    std::apply(f, std::tuple_cat(std::make_tuple(slice_dim->extent), bases));
-  } else if (slice_dim->impl == for_each_contiguous_slice_dim::loop_linear) {
+void for_each_slice_impl(
+    std::array<void*, NumBufs> bases, const for_each_slice_dim* slice_dim, const dim_or_stride* dims, const F& f) {
+  if (slice_dim->impl == for_each_slice_dim::call_f) {
+    f(bases);
+  } else if (slice_dim->impl == for_each_slice_dim::loop_linear) {
     const auto* next = slice_dim + 1;
-    if (next->impl == for_each_contiguous_slice_dim::call_f) {
+    if (next->impl == for_each_slice_dim::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = 0; i < slice_dim->extent; ++i) {
-        std::apply(f, std::tuple_cat(std::make_tuple(next->extent), bases));
+        f(bases);
         for (std::size_t n = 0; n < NumBufs; n++) {
           bases[n] = offset_bytes(bases[n], dims[n].stride);
         }
       }
     } else {
       for (index_t i = 0; i < slice_dim->extent; ++i) {
-        for_each_contiguous_slice_impl(bases, slice_dim + 1, dims + NumBufs, f);
+        for_each_slice_impl(bases, slice_dim + 1, dims + NumBufs, f);
         for (std::size_t n = 0; n < NumBufs; n++) {
           bases[n] = offset_bytes(bases[n], dims[n].stride);
         }
       }
     }
   } else {
-    assert(slice_dim->impl == for_each_contiguous_slice_dim::loop_folded);
+    assert(slice_dim->impl == for_each_slice_dim::loop_folded);
 
     std::array<void*, NumBufs> offset_bases;
 
@@ -466,7 +519,7 @@ void for_each_contiguous_slice_impl(std::array<void*, NumBufs> bases, const for_
       for (std::size_t n = 0; n < NumBufs; n++) {
         offset_bases[n] = offset_bytes(bases[n], dims[n].dim->flat_offset_bytes(i));
       }
-      for_each_contiguous_slice_impl(offset_bases, slice_dim + 1, dims + NumBufs, f);
+      for_each_slice_impl(offset_bases, slice_dim + 1, dims + NumBufs, f);
     }
   }
 }
@@ -525,34 +578,72 @@ void for_each_index(const raw_buffer& buf, const F& f) {
   for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
-// Call `f(void* base, index_t extent[, void* other_bases, ...])` for each contiguous slice in the domain of `buf[,
-// other_bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
+// Call `f(index_t extent, void* base[, void* bases, ...])` for each contiguous slice in the domain of `buf[,
+// bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
 //
 // When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
 // lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
-template <typename F, typename... Args>
-SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Args&... other_bufs) {
-  constexpr std::size_t NumBufs = sizeof...(Args) + 1;
-  std::array<const raw_buffer*, NumBufs> bufs = {&buf, &other_bufs...};
+template <typename F, typename... Bufs>
+SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Bufs&... bufs) {
+  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_contiguous_slice_dim, bufs[0]->rank + 1);
-  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, bufs[0]->rank * NumBufs);
-  std::array<void*, NumBufs> bases;
-  if (!internal::make_for_each_contiguous_slice_dims(bufs, bases.data(), slice_dims, dims)) return;
+  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, buf.rank + 1);
+  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, buf.rank * BufsSize);
+  std::array<void*, BufsSize> bases;
+  index_t slice_extent = internal::make_for_each_contiguous_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
+  if (slice_extent < 0) {
+    return;
+  }
 
-  internal::for_each_contiguous_slice_impl(bases, slice_dims, dims, f);
+  internal::for_each_slice_impl(bases, slice_dims, dims, [&f, slice_extent](const std::array<void*, BufsSize>& bases) {
+    std::apply(f, std::tuple_cat(std::make_tuple(slice_extent), bases));
+  });
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
 // sliced at the same indices as `buf`. Assumes that all of the sliced dimensions of `buf` are in bounds in `bufs...`.
 template <typename F, typename... Bufs>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
-  std::array<raw_buffer, sizeof...(Bufs) + 1> bufs_;
-  // Shallow copy is OK because we don't modify the dims.
-  internal::shallow_copy_bufs(bufs_.data(), buf, bufs...);
+  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  std::array<const raw_buffer*, BufsSize> buf_ptrs;
+  // Remove the sliced dimensions from the bufs.
+  std::array<raw_buffer, BufsSize> sliced_bufs = {buf, bufs...};
+  for (std::size_t i = 0; i < BufsSize; ++i) {
+    std::size_t slice_rank_i = slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank;
+    if (sliced_bufs[i].rank > slice_rank_i) {
+      sliced_bufs[i].rank -= slice_rank_i;
+      sliced_bufs[i].dims += slice_rank_i;
+    } else {
+      sliced_bufs[i].rank = 0;
+    }
+    buf_ptrs[i] = &sliced_bufs[i];
+  }
 
-  internal::for_each_slice(slice_rank, bufs_, f);
+  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
+  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, (buf.rank - slice_rank) + 1);
+  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, (buf.rank - slice_rank) * BufsSize);
+  std::array<void*, BufsSize> bases;
+  index_t slice_extent = internal::make_for_each_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
+  if (slice_extent < 0) {
+    return;
+  }
+
+  // TODO: We only need to copy dims and rank here. `elem_size` should already be set, and `base` is set below.
+  // I'm not sure if fixing this would be much of an improvement.
+  sliced_bufs = {buf, bufs...};
+  for (std::size_t i = 0; i < BufsSize; ++i) {
+    sliced_bufs[i].rank =
+        std::min(sliced_bufs[i].rank, slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank);
+  }
+
+  internal::for_each_slice_impl(bases, slice_dims, dims, [&](const std::array<void*, BufsSize>& bases) {
+    for (std::size_t i = 0; i < BufsSize; ++i) {
+      sliced_bufs[i].base = bases[i];
+    }
+    std::apply(f, sliced_bufs);
+  });
 }
 
 // Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
@@ -573,6 +664,9 @@ SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw
 
   internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
 }
+
+// Value for use in tile tuples indicating the dimension should be passed unmodified.
+static constexpr index_t all = std::numeric_limits<index_t>::max();
 
 }  // namespace slinky
 

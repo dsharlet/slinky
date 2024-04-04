@@ -343,8 +343,8 @@ bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
   if (other_buf.rank > buf.rank) return false;
   for (std::size_t d = 0; d < other_buf.rank; d++) {
     const dim& other_dim = other_buf.dim(d);
-    
-    // Allow stride 0 dimensions to be accessed "out of bounds". 
+
+    // Allow stride 0 dimensions to be accessed "out of bounds".
     if (other_dim.stride() == 0) continue;
 
     const dim& buf_dim = buf.dim(d);
@@ -357,7 +357,8 @@ bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
 
 bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
   for (std::size_t n = 0; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank) || bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) return false;
+    if (d >= static_cast<int>(bufs[n]->rank) || bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size))
+      return false;
   }
   return true;
 }
@@ -388,9 +389,9 @@ bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
 
 static dim stride_0_dim;
 
-template <std::size_t BufsSize>
-bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
-    std::size_t bufs_size_dynamic, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+template <bool SkipContiguous, std::size_t BufsSize>
+index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
+    std::size_t bufs_size_dynamic, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
   for (std::size_t n = 0; n < bufs_size; ++n) {
@@ -400,16 +401,16 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
   auto* next_dims = dims;
   index_t slice_extent = 1;
   index_t extent = 1;
-  for (int d = static_cast<int>(buf->rank) - 1; d >= 0; --d) {
+  for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
     if (buf_dim.max() > buf_dim.min() && any_folded(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers.
       assert(extent == 1);
-      next->impl = for_each_contiguous_slice_dim::loop_folded;
+      next->impl = for_each_slice_dim::loop_folded;
       next->extent = buf_dim.extent();
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims->dim = d < static_cast<int>(bufs[n]->rank) ? &bufs[n]->dim(d) : &stride_0_dim;
+        next_dims->dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &stride_0_dim;
         ++next_dims;
       }
       extent = 1;
@@ -419,19 +420,18 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
     extent *= buf_dim.extent();
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
-      if (d < static_cast<int>(bufs[n]->rank)) {
+      if (d < static_cast<index_t>(bufs[n]->rank)) {
         index_t offset = bufs[n]->dim(d).flat_offset_bytes(buf_dim.min());
         bases[n] = offset_bytes(bases[n], offset);
       }
     }
 
-    if (buf_dim.min() == buf_dim.max()) {
+    if (d > 0 && buf_dim.min() == buf_dim.max()) {
       // This dimension has only one element, nothing to do.
-      continue;
     } else if (buf_dim.max() < buf_dim.min()) {
       // The dimension (and the entire buffer) is empty.
-      return false;
-    } else if (is_contiguous_slice(bufs, bufs_size, d)) {
+      return -1;
+    } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
       slice_extent = extent;
       extent = 1;
@@ -440,25 +440,25 @@ bool make_for_each_contiguous_slice_dims_impl(const raw_buffer* const* bufs, voi
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf_dim.min() / buf_dim.fold_factor() == buf_dim.max() / buf_dim.fold_factor());
-      next->impl = for_each_contiguous_slice_dim::loop_linear;
+      next->impl = for_each_slice_dim::loop_linear;
       next->extent = extent;
       ++next;
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims->stride = d < static_cast<int>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+        next_dims->stride = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
         ++next_dims;
       }
       extent = 1;
     }
   }
-  next->impl = for_each_contiguous_slice_dim::call_f;
-  next->extent = slice_extent;
-  return true;
+  next->impl = for_each_slice_dim::call_f;
+  assert(extent == 1);
+  return slice_extent;
 }
 
 }  // namespace
 
-bool make_for_each_contiguous_slice_dims(
-    span<const raw_buffer*> bufs, void** bases, for_each_contiguous_slice_dim* slice_dims, dim_or_stride* dims) {
+index_t make_for_each_contiguous_slice_dims(
+    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   for (std::size_t n = 1; n < bufs.size(); n++) {
     assert(can_slice_with(*bufs[0], *bufs[n]));
   }
@@ -467,10 +467,28 @@ bool make_for_each_contiguous_slice_dims(
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: return make_for_each_contiguous_slice_dims_impl<1>(bufs.data(), bases, 0, slice_dims, dims);
-  case 2: return make_for_each_contiguous_slice_dims_impl<2>(bufs.data(), bases, 0, slice_dims, dims);
-  case 3: return make_for_each_contiguous_slice_dims_impl<3>(bufs.data(), bases, 0, slice_dims, dims);
-  default: return make_for_each_contiguous_slice_dims_impl<0>(bufs.data(), bases, bufs.size(), slice_dims, dims);
+  case 1: return make_for_each_slice_dims_impl<true, 1>(bufs.data(), bases, 0, slice_dims, dims);
+  case 2: return make_for_each_slice_dims_impl<true, 2>(bufs.data(), bases, 0, slice_dims, dims);
+  case 3: return make_for_each_slice_dims_impl<true, 3>(bufs.data(), bases, 0, slice_dims, dims);
+  default: return make_for_each_slice_dims_impl<true, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims);
+  }
+}
+
+bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
+    for_each_slice_dim* slice_dims, dim_or_stride* dims) {
+  for (std::size_t n = 1; n < bufs.size(); n++) {
+    assert(can_slice_with(*bufs[0], *bufs[n]));
+  }
+
+  // The implementation of this function benefits from knowing the size of the bufs span is constant.
+  // By far the common case of this function is implementing elementwise unary or binary operations.
+  // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
+  switch (bufs.size()) {
+  case 1: return make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
+  case 2: return make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
+  case 3: return make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
+  default:
+    return make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims) >= 0;
   }
 }
 
