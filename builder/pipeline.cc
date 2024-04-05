@@ -166,7 +166,6 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
   assert(in.size() + 1 == bounds.size());
   std::size_t rank = out.buffer->rank();
 
-  std::vector<box_expr> crops;
   std::vector<func::input> inputs;
   for (std::size_t i = 0; i < in.size(); ++i) {
     // Prepare the input.
@@ -199,7 +198,6 @@ func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t d
   assert(rank > 0);
   dim = std::min(rank - 1, dim);
 
-  std::vector<box_expr> crops;
   std::vector<func::input> inputs;
   for (std::size_t i = 0; i < in.size(); ++i) {
     // Prepare the input.
