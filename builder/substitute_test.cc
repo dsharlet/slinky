@@ -17,6 +17,7 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var u(symbols, "u");
 
 }  // namespace
 
@@ -69,9 +70,16 @@ TEST(substitute, shadowed) {
       slice_dim::make(x.sym(), 2, 0, check::make(expr() == buffer_min(x, 3))));
   test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1),
       slice_dim::make(x.sym(), 2, 0, check::make(buffer_max(x, 1) == buffer_min(x, 3))));
+
+  test_substitute(copy_stmt::make(x.sym(), {y, z}, w.sym(), {y.sym(), z.sym()}, {}), y, z,
+      copy_stmt::make(x.sym(), {y, z}, w.sym(), {y.sym(), z.sym()}, {}));
+  test_substitute(copy_stmt::make(x.sym(), {y}, w.sym(), {y.sym()}, {}), y, z,
+      copy_stmt::make(x.sym(), {y}, w.sym(), {y.sym()}, {}));
+  test_substitute(copy_stmt::make(x.sym(), {y}, w.sym(), {z.sym()}, {}), y, u,
+      copy_stmt::make(x.sym(), {u}, w.sym(), {z.sym()}, {}));
 }
 
-TEST(substitution, implicit_bounds) {
+TEST(substitute, implicit_bounds) {
   test_substitute(crop_dim::make(x.sym(), 0, bounds(y, z), check::make(x)), buffer_min(x, 0), w,
       crop_dim::make(x.sym(), 0, bounds(max(y, w), z), check::make(x)));
   test_substitute(crop_dim::make(x.sym(), 0, bounds(y, z), check::make(x)), buffer_max(x, 0), w,

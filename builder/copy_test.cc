@@ -530,7 +530,7 @@ TEST(concatenate, copy) {
   var y(ctx, "y");
   var z(ctx, "z");
 
-  func concat = func::make_concat({in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).extent(), out->dim(1).extent()});
+  func concat = func::make_concat({in1, in2}, {out, {x, y, z}}, 1, {0, in1->dim(1).max() + 1, out->dim(1).extent()});
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
