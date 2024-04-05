@@ -496,35 +496,34 @@ std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const
   return dims;
 }
 
-class substitute_call_inputs : public node_mutator {
-  const symbol_map<symbol_id>& uncropped_subs;
+// Perform a substitute limited to call inputs only.
+stmt substitute_call_inputs(const stmt& s, const symbol_map<symbol_id>& subs) {
+  class m : public node_mutator {
+    const symbol_map<symbol_id>& subs;
 
-public:
-  substitute_call_inputs(const symbol_map<symbol_id>& uncropped_subs) : uncropped_subs(uncropped_subs) {}
+  public:
+    m(const symbol_map<symbol_id>& subs) : subs(subs) {}
 
-  void visit(const call_stmt* op) override {
-    bool changed = false;
-    call_stmt::symbol_list inputs;
-    for (const auto& i : op->inputs) {
-      if (uncropped_subs[i]) {
-        changed = true;
-        inputs.push_back(*uncropped_subs[i]);
+    void visit(const call_stmt* op) override {
+      bool changed = false;
+      call_stmt::symbol_list inputs;
+      for (const auto& i : op->inputs) {
+        if (subs[i]) {
+          changed = true;
+          inputs.push_back(*subs[i]);
+        } else {
+          inputs.push_back(i);
+        }
+      }
+
+      if (changed) {
+        set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->attrs));
       } else {
-        inputs.push_back(i);
+        set_result(op);
       }
     }
-
-    if (changed) {
-      set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->attrs));
-    } else {
-      set_result(op);
-    }
-  }
-};
-
-stmt substitute_uncropped(const stmt& s, const symbol_map<symbol_id>& uncropped_subs) {
-  substitute_call_inputs m(uncropped_subs);
-  return m.mutate(s);
+  };
+  return m(subs).mutate(s);
 }
 
 class pipeline_builder {
@@ -765,7 +764,7 @@ public:
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same symbol_id can't be written
     // by two different funcs.
-    result = substitute_uncropped(result, uncropped_subs);
+    result = substitute_call_inputs(result, uncropped_subs);
 
     return result;
   }
