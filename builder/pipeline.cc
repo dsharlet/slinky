@@ -463,24 +463,6 @@ void compute_innermost_locations(const std::vector<const func*>& order,
   }
 }
 
-void compute_allocation_bounds(
-    const std::vector<const func*>& order, symbol_map<box_expr>& allocation_bounds, lift_buffer_metadata& sanitizer) {
-  for (const func* f : order) {
-    bounds_map output_bounds;
-    get_output_bounds(f->outputs(), output_bounds);
-
-    for (const auto& i : f->inputs()) {
-      box_expr crop = compute_input_bounds(f, i, output_bounds, sanitizer);
-      auto& bound = allocation_bounds[i.sym()];
-      if (bound) {
-        *bound = *bound | crop;
-      } else {
-        allocation_bounds[i.sym()] = crop;
-      }
-    }
-  }
-}
-
 // Update dims vector by substittuting expression from the map.
 std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
   for (dim_expr& dim : dims) {
@@ -654,6 +636,23 @@ class pipeline_builder {
     return body;
   }
 
+  void compute_allocation_bounds() {
+    for (const func* f : order_) {
+      bounds_map output_bounds;
+      get_output_bounds(f->outputs(), output_bounds);
+
+      for (const auto& i : f->inputs()) {
+        box_expr crop = compute_input_bounds(f, i, output_bounds, sanitizer_);
+        auto& bound = allocation_bounds_[i.sym()];
+        if (bound) {
+          *bound = *bound | crop;
+        } else {
+          allocation_bounds_[i.sym()] = crop;
+        }
+      }
+    }
+  }
+
   stmt produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
     if (f->loops().empty()) {
@@ -691,7 +690,7 @@ public:
     compute_innermost_locations(order_, deps, compute_at_levels_);
 
     // Compute allocation bounds.
-    compute_allocation_bounds(order_, allocation_bounds_, sanitizer_);
+    compute_allocation_bounds();
 
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
