@@ -670,8 +670,18 @@ public:
   void visit(const copy_stmt* op) override {
     symbol_id src = visit_symbol(op->src);
     symbol_id dst = visit_symbol(op->dst);
-    if (src != op->src || dst != op->dst) {
-      set_result(copy_stmt::make(src, op->src_x, dst, op->dst_x, op->padding));
+
+    // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
+    shadowed.insert(shadowed.end(), op->dst_x.begin(), op->dst_x.end());
+    std::vector<expr> src_x(op->src_x.size());
+    bool changed = false;
+    for (std::size_t i = 0; i < op->src_x.size(); ++i) {
+      src_x[i] = mutate(op->src_x[i]);
+      changed = changed || !src_x[i].same_as(op->src_x[i]);
+    }
+    shadowed.resize(shadowed.size() - op->dst_x.size());
+    if (changed || src != op->src || dst != op->dst) {
+      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->padding));
     } else {
       set_result(op);
     }
