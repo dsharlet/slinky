@@ -165,11 +165,7 @@ TEST(simplify, let) {
 }
 
 TEST(simplify, buffer_intrinsics) {
-  test_simplify(buffer_extent(x, 0) >= 0, true);
-  test_simplify((buffer_max(x, 0) - buffer_min(x, 0) + 1) * 4, buffer_extent(x, 0) * 4);
-  test_simplify(buffer_max(x, 0) - buffer_min(x, 1) + 1, buffer_max(x, 0) - buffer_min(x, 1) + 1);
   test_simplify(max(buffer_max(x, 0) + 1, buffer_min(x, 0) - 1), buffer_max(x, 0) + 1);
-  test_simplify(buffer_max(x, 1) - buffer_min(x, 1) + 1 <= y, buffer_extent(x, 1) <= y);
 }
 
 TEST(simplify, bounds) {
@@ -327,10 +323,9 @@ constexpr int max_abs_constant = 256;
 index_t random_constant() { return (rand() & (2 * max_abs_constant - 1)) - max_abs_constant; }
 
 expr random_buffer_intrinsic() {
-  switch (rand() % 3) {
+  switch (rand() % 2) {
   case 0: return buffer_min(random_pick(bufs), rand() % max_rank);
-  case 1: return buffer_extent(random_pick(bufs), rand() % max_rank);
-  case 2: return buffer_max(random_pick(bufs), rand() % max_rank);
+  case 1: return buffer_max(random_pick(bufs), rand() % max_rank);
   default: return buffer_at(random_pick(bufs));
   }
 }

@@ -365,7 +365,6 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   for (int d = 0; d < static_cast<index_t>(op->dst_x.size()); ++d) {
     do_substitute(buffer_min(dst_var, d));
     do_substitute(buffer_max(dst_var, d));
-    do_substitute(buffer_extent(dst_var, d));
     do_substitute(buffer_stride(dst_var, d));
     do_substitute(buffer_fold_factor(dst_var, d));
   }

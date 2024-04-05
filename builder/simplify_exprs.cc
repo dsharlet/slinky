@@ -221,10 +221,6 @@ expr simplify(const add* op, expr a, expr b) {
       r.rewrite(select(x, c0 - y, z + c1) + c2, select(x, eval(c0 + c2) - y, z + eval(c1 + c2))) ||
       r.rewrite(select(x, y + c0, c1 - z) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2) - z)) ||
       r.rewrite(select(x, c0 - y, c1 - z) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2) - z)) ||
-
-      r.rewrite(buffer_min(x, y) + buffer_extent(x, y), buffer_max(x, y) + 1) ||
-      r.rewrite((z - buffer_max(x, y)) + buffer_min(x, y), (z - buffer_extent(x, y)) + 1) ||
-      r.rewrite((z - buffer_min(x, y)) + buffer_max(x, y), (z + buffer_extent(x, y)) + -1) || 
       false) {
     return r.result;
   }
@@ -291,10 +287,6 @@ expr simplify(const sub* op, expr a, expr b) {
     
       r.rewrite(max(x, y) - min(x, y), abs(x - y)) ||
       r.rewrite(min(x, y) - max(x, y), -abs(x - y)) ||
-
-      r.rewrite(buffer_max(x, y) - buffer_min(x, y), buffer_extent(x, y) + -1) ||
-      r.rewrite(buffer_max(x, y) - (z + buffer_min(x, y)), (buffer_extent(x, y) - z) + -1) ||
-      r.rewrite((z + buffer_max(x, y)) - buffer_min(x, y), (z + buffer_extent(x, y)) + -1) ||
       false) {
     return r.result;
   }
@@ -497,9 +489,6 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(min(x, y) < max(x, y), x != y) ||
       r.rewrite(max(x, y) < min(x, y), false) ||
       r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
-
-      r.rewrite(buffer_extent(x, y) < c0, false, eval(c0 <= 0)) ||
-      r.rewrite(c0 < buffer_extent(x, y), true, eval(c0 < 0)) ||
       false) {
     return r.result;
   }
@@ -728,7 +717,6 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   if (r.rewrite(abs(x * c0), abs(x) * c0, c0 > 0) ||
       r.rewrite(abs(x * c0), abs(x) * eval(-c0), c0 < 0) ||
       r.rewrite(abs(c0 - x), abs(x + eval(-c0))) ||
-      r.rewrite(abs(buffer_extent(x, y)), buffer_extent(x, y)) ||
       false) {
     return r.result;
   }

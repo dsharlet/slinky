@@ -265,27 +265,27 @@ function pipeline(in1, in2, out) {
   check((out != 0));
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 2));
-  check((buffer_extent(out, 0) <= buffer_fold_factor(out, 0)));
-  check((buffer_extent(out, 1) <= buffer_fold_factor(out, 1)));
+  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(out, 0)));
+  check((((buffer_max(out, 1) - buffer_min(out, 1)) + 1) <= buffer_fold_factor(out, 1)));
   check((buffer_min(in1, 0) <= buffer_min(out, 0)));
   check((buffer_max(out, 0) <= buffer_max(in1, 0)));
-  check((buffer_extent(out, 0) <= buffer_fold_factor(in1, 0)));
+  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(in1, 0)));
   check((buffer_min(in1, 1) <= max(buffer_min(out, 1), 0)));
-  check((min((buffer_extent(in1, 1) + -1), buffer_max(out, 1)) <= buffer_max(in1, 1)));
-  check((((min((buffer_extent(in1, 1) + -1), buffer_max(out, 1)) - max(buffer_min(out, 1), 0)) + 1) <= buffer_fold_factor(in1, 1)));
+  check((min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1)) <= buffer_max(in1, 1)));
+  check((((min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1)) - max(buffer_min(out, 1), 0)) + 1) <= buffer_fold_factor(in1, 1)));
   check((buffer_min(in2, 0) <= buffer_min(out, 0)));
   check((buffer_max(out, 0) <= buffer_max(in2, 0)));
-  check((buffer_extent(out, 0) <= buffer_fold_factor(in2, 0)));
-  check((buffer_min(in2, 1) <= (max(buffer_extent(in1, 1), buffer_min(out, 1)) - buffer_extent(in1, 1))));
-  check(((min((buffer_extent(out, 1) + -1), buffer_max(out, 1)) - buffer_extent(in1, 1)) <= buffer_max(in2, 1)));
-  check((((min((buffer_extent(out, 1) + -1), buffer_max(out, 1)) - max(buffer_extent(in1, 1), buffer_min(out, 1))) + 1) <= buffer_fold_factor(in2, 1)));
+  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(in2, 0)));
+  check((buffer_min(in2, 1) <= (max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1) + -1)));
+  check((((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) + -1) <= buffer_max(in2, 1)));
+  check(((((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) - max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1)) + 1) <= buffer_fold_factor(in2, 1)));
   { let intm2 = allocate('intm2', 2, [
       {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:2, fold_factor:9223372036854775807},
-      {bounds:{min:(max(buffer_extent(in1, 1), buffer_min(out, 1)) - buffer_extent(in1, 1)), max:(min((buffer_extent(out, 1) + -1), buffer_max(out, 1)) - buffer_extent(in1, 1))}, stride:(buffer_extent(out, 0) * 2), fold_factor:9223372036854775807}
+      {bounds:{min:(max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1) + -1), max:((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) + -1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 2), fold_factor:9223372036854775807}
     ]);
     { let intm1 = allocate('intm1', 2, [
         {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:2, fold_factor:9223372036854775807},
-        {bounds:{min:max(buffer_min(out, 1), 0), max:min((buffer_extent(in1, 1) + -1), buffer_max(out, 1))}, stride:(buffer_extent(out, 0) * 2), fold_factor:9223372036854775807}
+        {bounds:{min:max(buffer_min(out, 1), 0), max:min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1))}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 2), fold_factor:9223372036854775807}
       ]);
       consume(in1);
       produce(intm1);
@@ -296,14 +296,17 @@ function pipeline(in1, in2, out) {
       free(intm1);
     }
     {
-      let __base = buffer_at(intm2, buffer_min(out, 0), (max(buffer_extent(in1, 1), buffer_min(out, 1)) - buffer_extent(in1, 1)));
-      let __elem_size = buffer_elem_size(intm2);
-      let __dims = [
-          {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:buffer_stride(intm2, 0), fold_factor:buffer_fold_factor(intm2, 0)},
-          {bounds:{min:max(buffer_extent(in1, 1), buffer_min(out, 1)), max:min((buffer_extent(out, 1) + -1), buffer_max(out, 1))}, stride:buffer_stride(intm2, 1), fold_factor:buffer_fold_factor(intm2, 1)}
-      ];
-      { let intm2 = make_buffer('intm2', __base, __elem_size, __dims);        consume(intm2);
-        produce(out);
+      let _6 = buffer_min(out, 1);
+      {
+        let __base = buffer_at(intm2, buffer_min(out, 0), (max((_6 + (buffer_min(in1, 1) - buffer_max(in1, 1))), max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1)) + -1));
+        let __elem_size = buffer_elem_size(intm2);
+        let __dims = [
+            {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:buffer_stride(intm2, 0), fold_factor:buffer_fold_factor(intm2, 0)},
+            {bounds:{min:max(_6, (max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1) - (buffer_min(in1, 1) - buffer_max(in1, 1)))), max:min(((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) - (buffer_min(in1, 1) - buffer_max(in1, 1))), buffer_max(out, 1))}, stride:buffer_stride(intm2, 1), fold_factor:buffer_fold_factor(intm2, 1)}
+        ];
+        { let intm2 = make_buffer('intm2', __base, __elem_size, __dims);          consume(intm2);
+          produce(out);
+        }
       }
     }
     free(intm2);

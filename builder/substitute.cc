@@ -759,7 +759,6 @@ public:
     case intrinsic::buffer_max:
     case intrinsic::buffer_stride:
     case intrinsic::buffer_fold_factor:
-    case intrinsic::buffer_extent:
       if (is_variable(op->args[0], sym)) {
         const index_t* dim = as_constant(op->args[1]);
         assert(dim);
