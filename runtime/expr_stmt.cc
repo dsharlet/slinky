@@ -485,7 +485,7 @@ expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size,
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
 expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
 expr buffer_extent(expr buf, expr dim) {
-  return call::make(intrinsic::buffer_extent, {std::move(buf), std::move(dim)});
+  return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1;
 }
 expr buffer_stride(expr buf, expr dim) {
   return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)});
@@ -538,7 +538,6 @@ bool is_buffer_intrinsic(intrinsic fn) {
   case intrinsic::buffer_max:
   case intrinsic::buffer_stride:
   case intrinsic::buffer_fold_factor:
-  case intrinsic::buffer_extent:
   case intrinsic::buffer_at: return true;
   default: return false;
   }

@@ -262,17 +262,17 @@ function pipeline(__in, out) {
   check((out != 0));
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 2));
-  check((buffer_extent(out, 0) <= buffer_fold_factor(out, 0)));
-  check((buffer_extent(out, 1) <= buffer_fold_factor(out, 1)));
+  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(out, 0)));
+  check((((buffer_max(out, 1) - buffer_min(out, 1)) + 1) <= buffer_fold_factor(out, 1)));
   check((buffer_min(__in, 0) <= (buffer_min(out, 0) + -1)));
   check(((buffer_max(out, 0) + 1) <= buffer_max(__in, 0)));
-  check(((buffer_extent(out, 0) + 2) <= buffer_fold_factor(__in, 0)));
+  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 3) <= buffer_fold_factor(__in, 0)));
   check((buffer_min(__in, 1) <= (buffer_min(out, 1) + -1)));
   check(((buffer_max(out, 1) + 1) <= buffer_max(__in, 1)));
-  check(((buffer_extent(out, 1) + 2) <= buffer_fold_factor(__in, 1)));
+  check((((buffer_max(out, 1) - buffer_min(out, 1)) + 3) <= buffer_fold_factor(__in, 1)));
   { let intm = allocate('intm', 2, [
       {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:2, fold_factor:9223372036854775807},
-      {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:((buffer_extent(out, 0) * 2) + 4), fold_factor:4}
+      {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 6), fold_factor:4}
     ]);
     { let intm_uncropped = clone_buffer(intm);
       for(let y = (buffer_min(out, 1) + -2); y <= buffer_max(out, 1); y += 2) {

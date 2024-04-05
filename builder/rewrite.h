@@ -371,9 +371,6 @@ inline auto buffer_min(const pattern_wildcard& buf, const pattern_wildcard& dim)
 inline auto buffer_max(const pattern_wildcard& buf, const pattern_wildcard& dim) {
   return buffer_dim_meta{intrinsic::buffer_max, {buf, dim}};
 }
-inline auto buffer_extent(const pattern_wildcard& buf, const pattern_wildcard& dim) {
-  return buffer_dim_meta{intrinsic::buffer_extent, {buf, dim}};
-}
 
 template <typename T>
 auto eval(const T& x) {
