@@ -81,8 +81,8 @@ enum class intrinsic {
   // The first argument of all of these semaphore helpers is a pointer to an index_t that will be used as the semaphore,
   // and the second argument is a count.
   semaphore_init,
+  // wait and signal can take multiple semaphores as a sequence of (sem, count) pairs of arguments.
   semaphore_signal,
-  // Semaphore wait can take multiple semaphores as a sequence of (sem, count) pairs of arguments.
   semaphore_wait,
 };
 

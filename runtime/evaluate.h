@@ -29,6 +29,9 @@ public:
   // instances that could be expected to run simultaneously.
   // - `enqueue` should enqueue a task N times.
   // - `wait_for` should wait until the given condition becomes true, executing tasks previously enqueued until it does.
+  // - `atomic_call` runs a task on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for`
+  //    conditions.
+  // 
   // These functions must be implemented if the statement being evaluated includes asynchronous nodes (parallel loops).
   using task = std::function<void()>;
   std::function<void(const task&)> enqueue_many;

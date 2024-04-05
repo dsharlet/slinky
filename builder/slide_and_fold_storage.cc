@@ -108,17 +108,23 @@ public:
     int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
+    // The next few fields relate to implementing synchronization in pipelined loops. In a pipelined loop, we
+    // treat a sequence of stmts as "stages" in the pipeline, where we add synchronization to cause the loop
+    // to appear to be executed serially to the stages: a stage can assume the same stage for a previous iteration has
+    // completed, and can assume that all previous stages for the same iteration have completed.
     var semaphores;
     var worker_count;
 
-    // How many stages we've added synchronization for.
+    // How many stages we've added synchronization for in total so far.
     int sync_stages = 0;
-    // If we need synchronization around this stage, which stage it is.
+    // We only track the stage we're currently working on. This optional being present indicates the current stage needs
+    // synchronization, and the value indicates which stage it is.
     std::optional<int> stage;
 
     bool add_synchronization() {
       if (sync_stages + 1 >= max_workers) {
-        // We can't add any more stages to this loop.
+        // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
+        // add more synchronization overhead.
         return false;
       }
 
@@ -149,7 +155,8 @@ public:
     stmt result = node_mutator::mutate(s);
 
     // The loop at the back of the loops vector is the immediately containing loop. So, we know there are no
-    // intervening loops, and we can add any synchronization that has been requested.
+    // intervening loops, and we can add any synchronization that has been requested. Doing so completes the current
+    // pipeline stage.
     loop_info& l = loops.back();
     if (l.stage) {
       expr loop_var = variable::make(l.sym);

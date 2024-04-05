@@ -37,11 +37,12 @@ public:
 
   // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
   // be run recursively on the same thread while in `wait_for`.
-  void enqueue(int n, task t);
+  void enqueue(int n, task t); 
   void enqueue(task t);
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   void wait_for(const std::function<bool()>& condition);
+  // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
   void atomic_call(const task& t);
 };
 
