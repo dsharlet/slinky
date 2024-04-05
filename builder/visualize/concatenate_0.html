@@ -267,38 +267,42 @@ function pipeline(in1, in2, out) {
   check((buffer_elem_size(out) == 2));
   check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(out, 0)));
   check((((buffer_max(out, 1) - buffer_min(out, 1)) + 1) <= buffer_fold_factor(out, 1)));
-  check((buffer_min(in1, 0) <= buffer_min(out, 0)));
-  check((buffer_max(out, 0) <= buffer_max(in1, 0)));
-  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(in1, 0)));
-  check((buffer_min(in1, 1) <= max(buffer_min(out, 1), 0)));
-  check((min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1)) <= buffer_max(in1, 1)));
-  check((((min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1)) - max(buffer_min(out, 1), 0)) + 1) <= buffer_fold_factor(in1, 1)));
-  check((buffer_min(in2, 0) <= buffer_min(out, 0)));
-  check((buffer_max(out, 0) <= buffer_max(in2, 0)));
-  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(in2, 0)));
-  check((buffer_min(in2, 1) <= (max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1) + -1)));
-  check((((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) + -1) <= buffer_max(in2, 1)));
-  check(((((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) - max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1)) + 1) <= buffer_fold_factor(in2, 1)));
   {
-    let __base = buffer_at(out, NaN, max(buffer_min(out, 1), 0));
-    let __elem_size = 2;
-    let __dims = [
-        {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:buffer_stride(out, 0), fold_factor:buffer_fold_factor(out, 0)},
-        {bounds:{min:max(buffer_min(out, 1), 0), max:min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1))}, stride:buffer_stride(out, 1), fold_factor:buffer_fold_factor(out, 1)}
-    ];
-    { let intm1 = make_buffer('intm1', __base, __elem_size, __dims);      consume(in1);
-      produce(intm1);
+    let g0 = buffer_min(in1, 1);
+    let g = buffer_max(in1, 1);
+    check((buffer_min(in1, 0) <= buffer_min(out, 0)));
+    check((buffer_max(out, 0) <= buffer_max(in1, 0)));
+    check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(in1, 0)));
+    check((buffer_min(in1, 1) <= max(buffer_min(out, 1), 0)));
+    check((min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1)) <= buffer_max(in1, 1)));
+    check((((min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1)) - max(buffer_min(out, 1), 0)) + 1) <= buffer_fold_factor(in1, 1)));
+    check((buffer_min(in2, 0) <= buffer_min(out, 0)));
+    check((buffer_max(out, 0) <= buffer_max(in2, 0)));
+    check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(in2, 0)));
+    check((buffer_min(in2, 1) <= ((max(((buffer_max(in1, 1) - buffer_min(in1, 1)) + 1), buffer_min(out, 1)) - (g - g0)) + -1)));
+    check((((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (g - g0)) + -1) <= buffer_max(in2, 1)));
+    check((((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - max(((buffer_max(in1, 1) - buffer_min(in1, 1)) + 1), buffer_min(out, 1))) + 1) <= buffer_fold_factor(in2, 1)));
+    {
+      let __base = buffer_at(out, NaN, max(buffer_min(out, 1), 0));
+      let __elem_size = 2;
+      let __dims = [
+          {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:buffer_stride(out, 0), fold_factor:buffer_fold_factor(out, 0)},
+          {bounds:{min:max(buffer_min(out, 1), 0), max:min((buffer_max(in1, 1) - buffer_min(in1, 1)), buffer_max(out, 1))}, stride:buffer_stride(out, 1), fold_factor:buffer_fold_factor(out, 1)}
+      ];
+      { let intm1 = make_buffer('intm1', __base, __elem_size, __dims);        consume(in1);
+        produce(intm1);
+      }
     }
-  }
-  {
-    let __base = buffer_at(out, NaN, (max(((buffer_min(out, 1) - (buffer_min(in1, 1) - buffer_max(in1, 1))) + 2), max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1)) + -1));
-    let __elem_size = 2;
-    let __dims = [
-        {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:buffer_stride(out, 0), fold_factor:buffer_fold_factor(out, 0)},
-        {bounds:{min:max((max((buffer_min(out, 1) - (buffer_max(in1, 1) - buffer_min(in1, 1))), 1) + -1), buffer_min(out, 1)), max:min(((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (buffer_max(in1, 1) - buffer_min(in1, 1))) + -1), buffer_max(out, 1))}, stride:buffer_stride(out, 1), fold_factor:buffer_fold_factor(out, 1)}
-    ];
-    { let intm2 = make_buffer('intm2', __base, __elem_size, __dims);      consume(in2);
-      produce(intm2);
+    {
+      let __base = buffer_at(out, NaN, (max(((buffer_min(out, 1) - (g0 - g)) + 2), (max(((buffer_max(in1, 1) - buffer_min(in1, 1)) + 1), buffer_min(out, 1)) - (g - g0))) + -1));
+      let __elem_size = 2;
+      let __dims = [
+          {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:buffer_stride(out, 0), fold_factor:buffer_fold_factor(out, 0)},
+          {bounds:{min:max(((max(((buffer_max(in1, 1) - buffer_min(in1, 1)) + 1), buffer_min(out, 1)) - (g - g0)) + -1), buffer_min(out, 1)), max:min(((min((buffer_max(out, 1) - buffer_min(out, 1)), buffer_max(out, 1)) - (g - g0)) + -1), buffer_max(out, 1))}, stride:buffer_stride(out, 1), fold_factor:buffer_fold_factor(out, 1)}
+      ];
+      { let intm2 = make_buffer('intm2', __base, __elem_size, __dims);        consume(in2);
+        produce(intm2);
+      }
     }
   }
 }
