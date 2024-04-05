@@ -30,7 +30,6 @@ std::string to_string(intrinsic fn) {
   case intrinsic::buffer_max: return "buffer_max";
   case intrinsic::buffer_stride: return "buffer_stride";
   case intrinsic::buffer_fold_factor: return "buffer_fold_factor";
-  case intrinsic::buffer_extent: return "buffer_extent";
   case intrinsic::buffer_at: return "buffer_at";
 
   default: return "<invalid intrinsic>";

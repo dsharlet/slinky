@@ -529,10 +529,7 @@ class pipeline_builder {
           substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
           substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
 
-          // We didn't initially set up the buffer with an extent, but the user might have used it.
-          expr extent = bounds_d.extent();
-          substitutions.emplace_back(buffer_extent(alloc_var, d), extent);
-          stride *= min(extent, buffer_fold_factor(alloc_var, d));
+          stride *= min(bounds_d.extent(), buffer_fold_factor(alloc_var, d));
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
 

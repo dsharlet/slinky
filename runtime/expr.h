@@ -68,7 +68,6 @@ enum class intrinsic {
   buffer_max,
   buffer_stride,
   buffer_fold_factor,
-  buffer_extent,
 
   buffer_at,
 };
@@ -516,7 +515,6 @@ inline bool is_positive(const expr& x) {
 
 inline bool is_non_negative(const expr& x) {
   if (is_positive_infinity(x)) return true;
-  if (is_intrinsic(x, intrinsic::buffer_extent)) return true;
   const index_t* c = as_constant(x);
   return c ? *c >= 0 : false;
 }

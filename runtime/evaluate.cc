@@ -180,7 +180,6 @@ public:
     switch (op->intrinsic) {
     case intrinsic::buffer_min: return dim.min();
     case intrinsic::buffer_max: return dim.max();
-    case intrinsic::buffer_extent: return dim.extent();
     case intrinsic::buffer_stride: return dim.stride();
     case intrinsic::buffer_fold_factor: return dim.fold_factor();
     default: std::abort();
@@ -218,7 +217,6 @@ public:
 
     case intrinsic::buffer_min:
     case intrinsic::buffer_max:
-    case intrinsic::buffer_extent:
     case intrinsic::buffer_stride:
     case intrinsic::buffer_fold_factor: result = eval_dim_metadata(op); return;
 

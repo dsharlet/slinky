@@ -113,6 +113,8 @@ public:
   void visit(const variable* op) override {
     std::optional<interval_expr> bounds = expr_bounds[op->sym];
     if (bounds) {
+      if (!bounds->min.defined()) bounds->min = op;
+      if (!bounds->max.defined()) bounds->max = op;
       set_result(op, std::move(*bounds));
     } else {
       set_result(op, {op, op});
@@ -276,8 +278,7 @@ public:
       args_bounds.push_back(std::move(i_bounds));
     }
 
-    if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max ||
-        op->intrinsic == intrinsic::buffer_extent) {
+    if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
       assert(op->args.size() == 2);
       const symbol_id* buf = as_variable(op->args[0]);
       const index_t* dim = as_constant(op->args[1]);
@@ -291,9 +292,6 @@ public:
           return;
         } else if (op->intrinsic == intrinsic::buffer_max && dim_bounds.max.defined()) {
           mutate_and_set_result(dim_bounds.max);
-          return;
-        } else if (op->intrinsic == intrinsic::buffer_extent && dim_bounds.min.defined() && dim_bounds.max.defined()) {
-          mutate_and_set_result(dim_bounds.extent());
           return;
         }
       }
@@ -316,22 +314,7 @@ public:
     }
   }
 
-  // Expression is trivial if it is a constant, var or buffer_min / buffer_max
-  static bool is_trivial_let_value(expr& e) {
-    if (e.as<constant>() || e.as<variable>()) {
-      return true;
-    }
-
-    const call* c = e.as<call>();
-    if (c && (c->intrinsic == intrinsic::buffer_min || c->intrinsic == intrinsic::buffer_max)) {
-      assert(c->args.size() == 2);
-      assert(c->args[0].as<variable>());
-      assert(c->args[1].as<constant>());
-      return true;
-    }
-
-    return false;
-  }
+  static bool is_trivial_let_value(expr& e) { return e.as<constant>() || e.as<variable>(); }
 
   template <typename T>
   void visit_let(const T* op) {
@@ -549,7 +532,8 @@ public:
 
     if (changed || !elem_size.same_as(op->elem_size) || !body.same_as(op->body)) {
       set_result(block::make({std::move(before),
-          allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)), std::move(after)}));
+          allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)),
+          std::move(after)}));
     } else {
       set_result(op);
     }
@@ -695,6 +679,17 @@ public:
     return deps.buffer_output || deps.buffer_src || deps.buffer_dst;
   }
 
+  // Simplify bounds, assuming they will be clamped to outer_bounds.
+  interval_expr simplify_redundant_bounds(interval_expr bounds, const interval_expr& outer_bounds) {
+    if (bounds.min.defined() && outer_bounds.min.defined() && prove_true(bounds.min <= outer_bounds.min)) {
+      bounds.min = expr();
+    }
+    if (bounds.max.defined() && outer_bounds.max.defined() && prove_true(bounds.max >= outer_bounds.max)) {
+      bounds.max = expr();
+    }
+    return bounds;
+  }
+
   void visit(const crop_buffer* op) override {
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
@@ -708,8 +703,7 @@ public:
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
       interval_expr bounds_i = simplify_crop_bounds(mutate(op->bounds[i]), op->sym, i);
-      if (prove_true(bounds_i.min <= buffer_min(sym_var, i))) bounds_i.min = expr();
-      if (prove_true(bounds_i.max >= buffer_max(sym_var, i))) bounds_i.max = expr();
+      bounds_i = simplify_redundant_bounds(bounds_i, slinky::buffer_bounds(sym_var, i));
       changed = changed || !bounds_i.same_as(op->bounds[i]);
 
       bounds[i] = bounds_i;
@@ -717,8 +711,7 @@ public:
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
       if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
-        if (prove_true(bounds_i.min <= (*prev_bounds)[i].min)) bounds_i.min = expr();
-        if (prove_true(bounds_i.max >= (*prev_bounds)[i].max)) bounds_i.max = expr();
+        bounds_i = simplify_redundant_bounds(bounds_i, (*prev_bounds)[i]);
       }
       if (bounds_i.min.defined()) new_bounds[i].min = bounds_i.min;
       if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
@@ -768,10 +761,9 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->sym, op->dim);
     expr sym_var = variable::make(op->sym);
-    if (prove_true(bounds.min <= buffer_min(sym_var, op->dim))) bounds.min = expr();
-    if (prove_true(bounds.max >= buffer_max(sym_var, op->dim))) bounds.max = expr();
+    interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->sym, op->dim);
+    bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(sym_var, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
       set_result(mutate(op->body));
       return;
@@ -779,18 +771,17 @@ public:
 
     std::optional<box_expr> buf_bounds = buffer_bounds[op->sym];
     if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
-      interval_expr& dim = (*buf_bounds)[op->dim];
-      if (prove_true(bounds.min <= dim.min)) bounds.min = expr();
-      if (prove_true(bounds.max >= dim.max)) bounds.max = expr();
+      interval_expr& buf_bounds_dim = (*buf_bounds)[op->dim];
+      bounds = simplify_redundant_bounds(bounds, buf_bounds_dim);
 
       if (!bounds.min.defined() && !bounds.max.defined()) {
         // This crop is a no-op.
         set_result(mutate(op->body));
         return;
       }
-      if (bounds.min.defined()) (*buf_bounds)[op->dim].min = bounds.min;
-      if (bounds.max.defined()) (*buf_bounds)[op->dim].max = bounds.max;
-      clear_shadowed_bounds(op->sym, (*buf_bounds)[op->dim]);
+      if (bounds.min.defined()) buf_bounds_dim.min = bounds.min;
+      if (bounds.max.defined()) buf_bounds_dim.max = bounds.max;
+      clear_shadowed_bounds(op->sym, buf_bounds_dim);
     }
 
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
