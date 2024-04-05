@@ -41,12 +41,12 @@ symbol_id node_context::insert_unique(const std::string& prefix) {
 }
 std::optional<symbol_id> node_context::lookup(const std::string& name) const {
   // TODO: At some point we might need a better data structure than doing this linear search.
-  for (symbol_id i = 0; i < sym_to_name.size(); ++i) {
+  for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
     if (sym_to_name[i] == name) {
-      return i;
+      return symbol_id(i);
     }
   }
-  return {};
+  return std::nullopt;
 }
 
 template <typename T>
