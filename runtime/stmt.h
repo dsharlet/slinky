@@ -120,8 +120,8 @@ public:
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x,
-      std::optional<std::vector<char>> padding);
+  static stmt make(
+      var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, std::optional<std::vector<char>> padding);
 
   static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };
@@ -179,8 +179,7 @@ public:
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(
-      var sym, int max_workers, interval_expr bounds, expr step, stmt body);
+  static stmt make(var sym, int max_workers, interval_expr bounds, expr step, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };

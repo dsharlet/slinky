@@ -38,14 +38,12 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(loop_x, y), (depends_on_result{.var = true, .ref_count = 1}));
 
   stmt call = call_stmt::make(nullptr, {x}, {y}, {});
-  ASSERT_EQ(
-      depends_on(call, x), (depends_on_result{.buffer_input = true, .buffer_meta_read = true, .ref_count = 1}));
-  ASSERT_EQ(
-      depends_on(call, y), (depends_on_result{.buffer_output = true, .buffer_meta_read = true, .ref_count = 1}));
+  ASSERT_EQ(depends_on(call, x), (depends_on_result{.buffer_input = true, .buffer_meta_read = true, .ref_count = 1}));
+  ASSERT_EQ(depends_on(call, y), (depends_on_result{.buffer_output = true, .buffer_meta_read = true, .ref_count = 1}));
 
   stmt crop = crop_dim::make(x, 1, {y, z}, check::make(y));
-  ASSERT_EQ(depends_on(crop, x),
-      (depends_on_result{.buffer_meta_read = true, .buffer_meta_mutated = true, .ref_count = 1}));
+  ASSERT_EQ(
+      depends_on(crop, x), (depends_on_result{.buffer_meta_read = true, .buffer_meta_mutated = true, .ref_count = 1}));
 
   stmt make_buffer = make_buffer::make(x, 0, 1, {{{y, z}, w}}, check::make(x && z));
   ASSERT_EQ(depends_on(make_buffer, x), (depends_on_result{}));

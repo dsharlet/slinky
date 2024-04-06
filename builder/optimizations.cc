@@ -108,8 +108,8 @@ public:
           dims[d].bounds &= op->dims[d].bounds;
         }
       }
-      stmt result = make_buffer::make(
-          op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
+      stmt result =
+          make_buffer::make(op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target_var](const copy_stmt* op) {
         if (op->src != src || op->dst != dst) {

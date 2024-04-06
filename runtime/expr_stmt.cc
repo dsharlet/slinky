@@ -317,8 +317,8 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   return n;
 }
 
-stmt copy_stmt::make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x,
-    std::optional<std::vector<char>> padding) {
+stmt copy_stmt::make(
+    var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, std::optional<std::vector<char>> padding) {
   auto n = new copy_stmt();
   n->src = src;
   n->src_x = std::move(src_x);
@@ -466,10 +466,7 @@ stmt check::make(expr condition) {
   return n;
 }
 
-namespace {
-
-
-}  // namespace
+namespace {}  // namespace
 
 const expr& positive_infinity() {
   static expr e = call::make(intrinsic::positive_infinity, {});
@@ -494,9 +491,7 @@ expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::mov
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
 expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
-expr buffer_extent(expr buf, expr dim) {
-  return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1;
-}
+expr buffer_extent(expr buf, expr dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
 expr buffer_stride(expr buf, expr dim) {
   return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)});
 }

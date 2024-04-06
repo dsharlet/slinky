@@ -9,9 +9,7 @@
 
 namespace slinky {
 
-std::string to_string(var sym) {
-  return "<" + std::to_string(sym.id) + ">";
-}
+std::string to_string(var sym) { return "<" + std::to_string(sym.id) + ">"; }
 
 std::string to_string(memory_type type) {
   switch (type) {

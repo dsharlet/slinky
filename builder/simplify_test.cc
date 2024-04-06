@@ -286,9 +286,7 @@ void test_where(const expr& test, var x, const interval_expr& expected) {
   }
 }
 
-void test_where_true(const expr& test, var x, const interval_expr& expected) {
-  test_where(test, x, expected);
-}
+void test_where_true(const expr& test, var x, const interval_expr& expected) { test_where(test, x, expected); }
 
 TEST(simplify, where_true) {
   test_where_true(x < 5, x, bounds(negative_infinity(), 4));

@@ -352,7 +352,7 @@ bool match(const dim_expr& a, const dim_expr& b) {
   return match(a.bounds, b.bounds) && match(a.stride, b.stride) && match(a.fold_factor, b.fold_factor);
 }
 
-int compare(const var& a, const var& b) { 
+int compare(const var& a, const var& b) {
   matcher m;
   m.try_match(a, b);
   return m.match;

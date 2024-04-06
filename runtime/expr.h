@@ -32,6 +32,8 @@ public:
 
   expr operator-() const;
 
+  // TODO: This are risky. Someone could write var(x) == var(y) expecting to get an `expr` that compares the values of
+  // the variables when evaluated, but this compares the variable ids instead.
   bool operator==(var r) const { return id == r.id; }
   bool operator!=(var r) const { return id != r.id; }
   bool operator<(var r) const { return id < r.id; }
@@ -650,8 +652,7 @@ public:
     old_value_ = std::move(ctx_value);
     ctx_value = std::move(value);
   }
-  scoped_value_in_symbol_map(symbol_map<T>& context, var sym, std::optional<T> value)
-      : context_(&context), sym_(sym) {
+  scoped_value_in_symbol_map(symbol_map<T>& context, var sym, std::optional<T> value) : context_(&context), sym_(sym) {
     std::optional<T>& ctx_value = context[sym];
     old_value_ = std::move(ctx_value);
     ctx_value = std::move(value);

@@ -390,8 +390,8 @@ bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
 static dim stride_0_dim;
 
 template <bool SkipContiguous, std::size_t BufsSize>
-index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** bases,
-    std::size_t bufs_size_dynamic, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
+index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic,
+    for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
   for (std::size_t n = 0; n < bufs_size; ++n) {
@@ -474,8 +474,8 @@ index_t make_for_each_contiguous_slice_dims(
   }
 }
 
-bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
-    for_each_slice_dim* slice_dims, dim_or_stride* dims) {
+bool make_for_each_slice_dims(
+    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   for (std::size_t n = 1; n < bufs.size(); n++) {
     assert(can_slice_with(*bufs[0], *bufs[n]));
   }
@@ -487,8 +487,7 @@ bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
   case 1: return make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
   case 2: return make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
   case 3: return make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
-  default:
-    return make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims) >= 0;
+  default: return make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims) >= 0;
   }
 }
 
