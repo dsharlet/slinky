@@ -18,6 +18,7 @@ std::ostream& operator<<(std::ostream& os, const stmt& s);
 std::ostream& operator<<(std::ostream& os, const std::tuple<const expr&, const node_context&>& e);
 std::ostream& operator<<(std::ostream& os, const std::tuple<const stmt&, const node_context&>& s);
 
+std::ostream& operator<<(std::ostream& os, symbol_id sym);
 std::ostream& operator<<(std::ostream& os, const interval_expr& i);
 std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
@@ -29,6 +30,7 @@ std::ostream& operator<<(std::ostream& os, const dim& d);
 // It's not legal to overload std::to_string(), or anything else in std;
 // intended usage here is to do `using std::to_string;` followed by naked
 // to_string() calls.
+std::string to_string(symbol_id sym);
 std::string to_string(intrinsic fn);
 std::string to_string(memory_type type);
 

@@ -194,7 +194,8 @@ public:
   }
 
   void merge_alias_info(symbol_map<buffer_info> add) {
-    for (symbol_id i = 0; i < add.size(); ++i) {
+    alias_info.reserve(std::max(alias_info.size(), add.size()));
+    for (std::size_t i = 0; i < add.size(); ++i) {
       if (!add[i]) continue;
       std::optional<buffer_info>& info = alias_info[i];
       if (!info) {
@@ -209,9 +210,9 @@ public:
 
   void visit(const slice_buffer* op) override {
     // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alias_info;
+    symbol_map<buffer_info> old_alias_info(alias_info.size());
     std::swap(old_alias_info, alias_info);
-    for (symbol_id i = 0; i < old_alias_info.size(); ++i) {
+    for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
       if (old_alias_info[i]) {
         alias_info[i] = buffer_info();
       }
@@ -238,9 +239,9 @@ public:
 
   void visit(const slice_dim* op) override {
     // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alias_info;
+    symbol_map<buffer_info> old_alias_info(alias_info.size());
     std::swap(old_alias_info, alias_info);
-    for (symbol_id i = 0; i < old_alias_info.size(); ++i) {
+    for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
       if (old_alias_info[i]) {
         alias_info[i] = buffer_info();
       }
@@ -395,9 +396,9 @@ public:
     // We've hit a parallel loop. The buffers that are allocated outside this loop, but mutated inside this loop, will
     // be true in the mutated map. We need to make copies of these buffers upon entering the loop.
     stmt body = mutate(op->body);
-    for (symbol_id i = 0; i < mutated.size(); ++i) {
+    for (std::size_t i = 0; i < mutated.size(); ++i) {
       if (mutated[i] && *mutated[i]) {
-        body = clone_buffer::make(i, i, body);
+        body = clone_buffer::make(symbol_id(i), symbol_id(i), body);
       }
     }
     if (body.same_as(op->body)) {

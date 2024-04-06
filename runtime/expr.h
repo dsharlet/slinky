@@ -13,7 +13,23 @@
 
 namespace slinky {
 
-using symbol_id = std::size_t;
+class symbol_id {
+public:
+  using type = std::size_t;
+
+  static constexpr type invalid = -1;
+
+  type s;
+
+  symbol_id() : s(invalid) {}
+  explicit symbol_id(type s) : s(s) {}
+
+  bool defined() const { return s != invalid; }
+
+  bool operator==(symbol_id r) const { return s == r.s; }
+  bool operator!=(symbol_id r) const { return s != r.s; }
+  bool operator<(symbol_id r) const { return s < r.s; }
+};
 
 // We don't want to be doing string lookups in the inner loops. A node_context
 // uniquely maps strings to symbol_id.
@@ -578,6 +594,7 @@ class symbol_map {
 
 public:
   symbol_map() = default;
+  symbol_map(std::size_t reserve) : values(reserve) {}
   symbol_map(std::initializer_list<std::pair<symbol_id, T>> init) {
     for (const std::pair<symbol_id, T>& i : init) {
       operator[](i.first) = i.second;
@@ -585,8 +602,8 @@ public:
   }
 
   std::optional<T> lookup(symbol_id sym) const {
-    if (sym < values.size()) {
-      return values[sym];
+    if (sym.s < values.size()) {
+      return values[sym.s];
     }
     return std::nullopt;
   }
@@ -603,20 +620,30 @@ public:
   std::optional<T> operator[](symbol_id sym) const { return lookup(sym); }
   std::optional<T> operator[](const var& v) const { return lookup(v.sym()); }
   std::optional<T>& operator[](symbol_id sym) {
-    grow(sym);
-    return values[sym];
+    grow(sym.s);
+    return values[sym.s];
   }
   std::optional<T>& operator[](const var& v) { return operator[](v.sym()); }
 
   bool contains(symbol_id sym) const {
-    if (sym >= values.size()) {
+    if (sym.s >= values.size()) {
       return false;
     }
-    return !!values[sym];
+    return !!values[sym.s];
   }
   bool contains(const var& v) const { return contains(v.sym()); }
 
+  std::optional<T> operator[](std::size_t i) const {
+    assert(i < values.size());
+    return values[i];
+  }
+  std::optional<T>& operator[](std::size_t i) {
+    assert(i < values.size());
+    return values[i];
+  }
+
   std::size_t size() const { return values.size(); }
+  void reserve(std::size_t size) { values.resize(std::max(values.size(), size)); }
   auto begin() { return values.begin(); }
   auto end() { return values.end(); }
   auto begin() const { return values.begin(); }

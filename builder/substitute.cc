@@ -33,7 +33,7 @@ public:
     assert(match == 0);
     if (self < op) {
       match = -1;
-    } else if (self > op) {
+    } else if (op < self) {
       match = 1;
     }
     return match == 0;
@@ -360,7 +360,7 @@ namespace {
 
 class substitutor : public node_mutator {
   const symbol_map<expr>* replacements = nullptr;
-  symbol_id target_var = -1;
+  symbol_id target_var;
   expr replacement;
   span<const std::pair<expr, expr>> expr_replacements;
 

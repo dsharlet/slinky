@@ -83,11 +83,11 @@ std::vector<dim_expr> recursive_substitute(
 }
 
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
-  for (symbol_id i = 0; i < buffers.size(); ++i) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     for (interval_expr& j : bounds) {
-      if (j.min.defined()) j.min = substitute_bounds(j.min, i, *buffers[i]);
-      if (j.max.defined()) j.max = substitute_bounds(j.max, i, *buffers[i]);
+      if (j.min.defined()) j.min = substitute_bounds(j.min, symbol_id(i), *buffers[i]);
+      if (j.max.defined()) j.max = substitute_bounds(j.max, symbol_id(i), *buffers[i]);
     }
   }
 }
@@ -119,7 +119,7 @@ public:
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
+    loops.emplace_back(symbol_id(), expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   void visit(const allocate* op) override {

@@ -53,7 +53,7 @@ public:
     if (context) {
       return context->name(sym);
     } else {
-      return "_" + std::to_string(sym);
+      return "_" + std::to_string(sym.s);
     }
   }
 

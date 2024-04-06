@@ -16,17 +16,17 @@
 namespace slinky {
 
 std::string node_context::name(symbol_id i) const {
-  if (i < sym_to_name.size()) {
-    return sym_to_name[i];
+  if (i.s < sym_to_name.size()) {
+    return sym_to_name[i.s];
   } else {
-    return "<" + std::to_string(i) + ">";
+    return "<" + std::to_string(i.s) + ">";
   }
 }
 
 symbol_id node_context::insert(const std::string& name) {
   std::optional<symbol_id> sym = lookup(name);
   if (!sym) {
-    sym = sym_to_name.size();
+    sym = symbol_id(sym_to_name.size());
     sym_to_name.push_back(name);
   }
   return *sym;
@@ -582,7 +582,7 @@ var::var() : sym_(undef_var) {}
 var::var(symbol_id sym) : sym_(sym) {}
 var::var(node_context& ctx, const std::string& sym) : sym_(ctx.insert(sym)) {}
 
-bool var::defined() const { return sym_ != undef_var; }
+bool var::defined() const { return sym_.defined(); }
 
 symbol_id var::sym() const {
   assert(defined());
@@ -590,7 +590,7 @@ symbol_id var::sym() const {
 }
 
 var::operator expr() const {
-  assert(sym_ != undef_var);
+  assert(defined());
   return expr(variable::make(sym_));
 }
 

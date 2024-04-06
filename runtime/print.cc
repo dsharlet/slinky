@@ -9,6 +9,10 @@
 
 namespace slinky {
 
+std::string to_string(symbol_id sym) {
+  return "<" + std::to_string(sym.s) + ">";
+}
+
 std::string to_string(memory_type type) {
   switch (type) {
   case memory_type::stack: return "stack";
@@ -36,8 +40,8 @@ std::string to_string(intrinsic fn) {
   }
 }
 
+std::ostream& operator<<(std::ostream& os, symbol_id sym) { return os << to_string(sym); }
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
-
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
