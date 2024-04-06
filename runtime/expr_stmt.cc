@@ -19,7 +19,7 @@ var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(nam
 
 expr var::operator-() const { return -expr(*this); }
 
-std::string node_context::name(symbol_id i) const {
+std::string node_context::name(var i) const {
   if (i.s < sym_to_name.size()) {
     return sym_to_name[i.s];
   } else {
@@ -27,15 +27,15 @@ std::string node_context::name(symbol_id i) const {
   }
 }
 
-symbol_id node_context::insert(const std::string& name) {
-  std::optional<symbol_id> sym = lookup(name);
+var node_context::insert(const std::string& name) {
+  std::optional<var> sym = lookup(name);
   if (!sym) {
-    sym = symbol_id(sym_to_name.size());
+    sym = var(sym_to_name.size());
     sym_to_name.push_back(name);
   }
   return *sym;
 }
-symbol_id node_context::insert_unique(const std::string& prefix) {
+var node_context::insert_unique(const std::string& prefix) {
   std::string name = prefix;
   for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
     if (!lookup(name)) break;
@@ -43,11 +43,11 @@ symbol_id node_context::insert_unique(const std::string& prefix) {
   }
   return insert(name);
 }
-std::optional<symbol_id> node_context::lookup(const std::string& name) const {
+std::optional<var> node_context::lookup(const std::string& name) const {
   // TODO: At some point we might need a better data structure than doing this linear search.
   for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
     if (sym_to_name[i] == name) {
-      return symbol_id(i);
+      return var(i);
     }
   }
   return std::nullopt;
@@ -66,7 +66,7 @@ const T* make_bin_op(expr a, expr b) {
 }
 
 template <typename T, typename Body>
-const T* make_let(std::vector<std::pair<symbol_id, expr>> lets, Body body) {
+const T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   auto n = new T();
   n->lets = std::move(lets);
   if (const T* l = body.template as<T>()) {
@@ -78,15 +78,15 @@ const T* make_let(std::vector<std::pair<symbol_id, expr>> lets, Body body) {
   return n;
 }
 
-expr let::make(std::vector<std::pair<symbol_id, expr>> lets, expr body) {
+expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
   return make_let<let>(std::move(lets), std::move(body));
 }
 
-stmt let_stmt::make(std::vector<std::pair<symbol_id, expr>> lets, stmt body) {
+stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
-const variable* make_variable(symbol_id sym) {
+const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
   return n;
@@ -99,9 +99,9 @@ const constant* make_constant(index_t value) {
 }
 
 expr::expr(index_t x) : expr(make_constant(x)) {}
-expr::expr(symbol_id sym) : expr(make_variable(sym)) {}
+expr::expr(var sym) : expr(make_variable(sym)) {}
 
-expr variable::make(symbol_id sym) { return make_variable(sym); }
+expr variable::make(var sym) { return make_variable(sym); }
 
 expr constant::make(index_t value) { return make_constant(value); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
@@ -317,7 +317,7 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   return n;
 }
 
-stmt copy_stmt::make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
+stmt copy_stmt::make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x,
     std::optional<std::vector<char>> padding) {
   auto n = new copy_stmt();
   n->src = src;
@@ -380,7 +380,7 @@ stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
   return make(std::move(stmts));
 }
 
-stmt loop::make(symbol_id sym, int max_workers, interval_expr bounds, expr step, stmt body) {
+stmt loop::make(var sym, int max_workers, interval_expr bounds, expr step, stmt body) {
   auto l = new loop();
   l->sym = sym;
   l->max_workers = max_workers;
@@ -390,7 +390,7 @@ stmt loop::make(symbol_id sym, int max_workers, interval_expr bounds, expr step,
   return l;
 }
 
-stmt allocate::make(symbol_id sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new allocate();
   n->sym = sym;
   n->storage = storage;
@@ -400,7 +400,7 @@ stmt allocate::make(symbol_id sym, memory_type storage, expr elem_size, std::vec
   return n;
 }
 
-stmt make_buffer::make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
+stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
   auto n = new make_buffer();
   n->sym = sym;
   n->base = std::move(base);
@@ -410,7 +410,7 @@ stmt make_buffer::make(symbol_id sym, expr base, expr elem_size, std::vector<dim
   return n;
 }
 
-stmt clone_buffer::make(symbol_id sym, symbol_id src, stmt body) {
+stmt clone_buffer::make(var sym, var src, stmt body) {
   auto n = new clone_buffer();
   n->sym = sym;
   n->src = src;
@@ -418,7 +418,7 @@ stmt clone_buffer::make(symbol_id sym, symbol_id src, stmt body) {
   return n;
 }
 
-stmt crop_buffer::make(symbol_id sym, std::vector<interval_expr> bounds, stmt body) {
+stmt crop_buffer::make(var sym, std::vector<interval_expr> bounds, stmt body) {
   auto n = new crop_buffer();
   n->sym = sym;
   n->bounds = std::move(bounds);
@@ -426,7 +426,7 @@ stmt crop_buffer::make(symbol_id sym, std::vector<interval_expr> bounds, stmt bo
   return n;
 }
 
-stmt crop_dim::make(symbol_id sym, int dim, interval_expr bounds, stmt body) {
+stmt crop_dim::make(var sym, int dim, interval_expr bounds, stmt body) {
   auto n = new crop_dim();
   n->sym = sym;
   n->dim = dim;
@@ -435,7 +435,7 @@ stmt crop_dim::make(symbol_id sym, int dim, interval_expr bounds, stmt body) {
   return n;
 }
 
-stmt slice_buffer::make(symbol_id sym, std::vector<expr> at, stmt body) {
+stmt slice_buffer::make(var sym, std::vector<expr> at, stmt body) {
   auto n = new slice_buffer();
   n->sym = sym;
   n->at = std::move(at);
@@ -443,7 +443,7 @@ stmt slice_buffer::make(symbol_id sym, std::vector<expr> at, stmt body) {
   return n;
 }
 
-stmt slice_dim::make(symbol_id sym, int dim, expr at, stmt body) {
+stmt slice_dim::make(var sym, int dim, expr at, stmt body) {
   auto n = new slice_dim();
   n->sym = sym;
   n->dim = dim;
@@ -452,7 +452,7 @@ stmt slice_dim::make(symbol_id sym, int dim, expr at, stmt body) {
   return n;
 }
 
-stmt truncate_rank::make(symbol_id sym, int rank, stmt body) {
+stmt truncate_rank::make(var sym, int rank, stmt body) {
   auto n = new truncate_rank();
   n->sym = sym;
   n->rank = rank;
@@ -561,7 +561,7 @@ bool is_finite(const expr& x) {
   return false;
 }
 
-bool is_buffer_min(const expr& x, symbol_id sym, int dim) {
+bool is_buffer_min(const expr& x, var sym, int dim) {
   const call* c = x.as<call>();
   if (!c || c->intrinsic != intrinsic::buffer_min) return false;
 
@@ -569,7 +569,7 @@ bool is_buffer_min(const expr& x, symbol_id sym, int dim) {
   return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
 }
 
-bool is_buffer_max(const expr& x, symbol_id sym, int dim) {
+bool is_buffer_max(const expr& x, var sym, int dim) {
   const call* c = x.as<call>();
   if (!c || c->intrinsic != intrinsic::buffer_max) return false;
 

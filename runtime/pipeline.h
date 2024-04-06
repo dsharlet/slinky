@@ -13,10 +13,10 @@ class eval_context;
 // This object essentially only stores the mapping of arguments to symbols.
 class pipeline {
 public:
-  std::vector<symbol_id> args;
-  std::vector<symbol_id> inputs;
-  std::vector<symbol_id> outputs;
-  std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constants;
+  std::vector<var> args;
+  std::vector<var> inputs;
+  std::vector<var> outputs;
+  std::vector<std::pair<var, const_raw_buffer_ptr>> constants;
 
   stmt body;
 

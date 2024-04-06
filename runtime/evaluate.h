@@ -15,8 +15,8 @@ public:
   // passing the result of `allocate` in addition to the buffer.
   // If these functions are not defined, the default handler will call
   // `raw_buffer::allocate` and `::free`.
-  std::function<void*(symbol_id, raw_buffer*)> allocate;
-  std::function<void(symbol_id, raw_buffer*, void*)> free;
+  std::function<void*(var, raw_buffer*)> allocate;
+  std::function<void(var, raw_buffer*, void*)> free;
 
   // Functions called when there is a failure in the pipeline.
   // If these functions are not defined, the default handler will write a
@@ -41,7 +41,7 @@ public:
   std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy = slinky::copy;
   std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad = slinky::pad;
 
-  const raw_buffer* lookup_buffer(symbol_id id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
+  const raw_buffer* lookup_buffer(var id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
 
 index_t evaluate(const expr& e, eval_context& context);

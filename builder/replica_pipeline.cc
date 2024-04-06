@@ -362,9 +362,9 @@ private:
   std::ostringstream os_;
   std::string name_;
   uint32_t next_id_ = 0;
-  std::set<symbol_id> buffers_emitted_;
-  std::map<symbol_id, std::string> buffer_variables_emitted_;
-  std::map<symbol_id, std::string> vars_emitted_;
+  std::set<var> buffers_emitted_;
+  std::map<var, std::string> buffer_variables_emitted_;
+  std::map<var, std::string> vars_emitted_;
   std::map<const func*, std::string> funcs_emitted_;
   bool exprs_inlined_ = false;
 

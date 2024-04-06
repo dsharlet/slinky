@@ -34,7 +34,7 @@ class elementwise_pipeline_builder : public expr_visitor {
 
   std::string name(const buffer_expr_ptr& b) const { return ctx.name(b->sym()); }
 
-  std::map<symbol_id, buffer_expr_ptr> vars;
+  std::map<var, buffer_expr_ptr> vars;
   std::vector<buffer_expr_ptr> constants;
 
 public:

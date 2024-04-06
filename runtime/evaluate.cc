@@ -34,8 +34,8 @@ bool can_evaluate(intrinsic fn) {
 void dump_context_for_expr(
     std::ostream& s, const symbol_map<index_t>& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
   for (std::size_t i = 0; i < ctx.size(); ++i) {
-    std::string sym = symbols ? symbols->name(symbol_id(i)) : "<" + std::to_string(i) + ">";
-    auto deps = depends_on(deps_of, symbol_id(i));
+    std::string sym = symbols ? symbols->name(var(i)) : "<" + std::to_string(i) + ">";
+    auto deps = depends_on(deps_of, var(i));
     if (!deps_of.defined() || deps.var) {
       if (ctx[i]) {
         s << "  " << sym << " = " << *ctx[i] << std::endl;
@@ -313,7 +313,7 @@ public:
     } else {
       // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
-      // fully traverse the expression to find the max symbol_id, and pre-allocate the context up front. It's
+      // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
       // not clear this optimization is necessary yet.
       std::optional<index_t> old_value = context[op->sym];
       for (index_t i = min; result == 0 && min <= i && i <= max; i += step) {

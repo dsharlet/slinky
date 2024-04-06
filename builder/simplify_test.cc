@@ -32,7 +32,7 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
   for (std::size_t n = 0; n < m.size(); ++n) {
     const std::optional<T>& value = m[n];
     if (value) {
-      s << "  " << symbols.name(symbol_id(n)) << " = " << *value << std::endl;
+      s << "  " << symbols.name(var(n)) << " = " << *value << std::endl;
     }
   }
 }
@@ -273,8 +273,8 @@ TEST(simplify, bounds_of) {
   }
 }
 
-void test_where(const expr& test, symbol_id var, const interval_expr& expected) {
-  interval_expr result = where_true(test, var);
+void test_where(const expr& test, var x, const interval_expr& expected) {
+  interval_expr result = where_true(test, x);
   if (!match(result, expected)) {
     std::cout << "where_true failed " << std::endl;
     std::cout << test << std::endl;
@@ -286,8 +286,8 @@ void test_where(const expr& test, symbol_id var, const interval_expr& expected) 
   }
 }
 
-void test_where_true(const expr& test, symbol_id var, const interval_expr& expected) {
-  test_where(test, var, expected);
+void test_where_true(const expr& test, var x, const interval_expr& expected) {
+  test_where(test, x, expected);
 }
 
 TEST(simplify, where_true) {

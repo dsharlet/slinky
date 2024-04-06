@@ -9,7 +9,7 @@
 
 namespace slinky {
 
-std::string to_string(symbol_id sym) {
+std::string to_string(var sym) {
   return "<" + std::to_string(sym.s) + ">";
 }
 
@@ -40,7 +40,7 @@ std::string to_string(intrinsic fn) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, symbol_id sym) { return os << to_string(sym); }
+std::ostream& operator<<(std::ostream& os, var sym) { return os << to_string(sym); }
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
 
@@ -75,7 +75,7 @@ public:
     return *this;
   }
 
-  printer& operator<<(symbol_id sym) {
+  printer& operator<<(var sym) {
     if (context) {
       os << context->name(sym);
     } else {
@@ -99,7 +99,7 @@ public:
     return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
   }
 
-  printer& operator<<(const std::pair<symbol_id, expr>& let) { return *this << let.first << " = " << let.second; }
+  printer& operator<<(const std::pair<var, expr>& let) { return *this << let.first << " = " << let.second; }
 
   template <typename T>
   void print_vector(const std::vector<T>& v, const std::string& sep = ", ") {

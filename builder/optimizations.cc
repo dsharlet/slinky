@@ -25,7 +25,7 @@ namespace slinky {
 namespace {
 
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(expr src_x, symbol_id dst_x, expr& offset) {
+bool is_copy(expr src_x, var dst_x, expr& offset) {
   offset = simplify(src_x - dst_x);
   return !depends_on(offset, dst_x).any();
 }
@@ -47,20 +47,20 @@ class buffer_aliaser : public node_mutator {
 
   class buffer_info {
   public:
-    std::map<symbol_id, buffer_alias> can_alias_;
-    std::set<symbol_id> cannot_alias_;
+    std::map<var, buffer_alias> can_alias_;
+    std::set<var> cannot_alias_;
 
   public:
-    std::map<symbol_id, buffer_alias>& can_alias() { return can_alias_; }
-    const std::map<symbol_id, buffer_alias>& can_alias() const { return can_alias_; }
+    std::map<var, buffer_alias>& can_alias() { return can_alias_; }
+    const std::map<var, buffer_alias>& can_alias() const { return can_alias_; }
 
-    void maybe_alias(symbol_id s, buffer_alias a) {
+    void maybe_alias(var s, buffer_alias a) {
       if (!cannot_alias_.count(s)) {
         can_alias_[s] = std::move(a);
       }
     }
 
-    void do_not_alias(symbol_id s) {
+    void do_not_alias(var s) {
       can_alias_.erase(s);
       cannot_alias_.insert(s);
     }
@@ -89,11 +89,11 @@ public:
     // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alias_info, op->sym, buffer_info());
     stmt body = mutate(op->body);
-    const std::map<symbol_id, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
+    const std::map<var, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
 
     if (!can_alias.empty()) {
-      const std::pair<symbol_id, buffer_alias>& target = *can_alias.begin();
-      symbol_id target_var = target.first;
+      const std::pair<var, buffer_alias>& target = *can_alias.begin();
+      var target_var = target.first;
 
       // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
       // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
@@ -152,13 +152,13 @@ public:
 
   void visit(const call_stmt* op) override {
     set_result(op);
-    for (symbol_id o : op->outputs) {
+    for (var o : op->outputs) {
       std::optional<bool> no_alias = do_not_alias[o];
       if (no_alias && *no_alias) {
         continue;
       }
 
-      for (symbol_id i : op->inputs) {
+      for (var i : op->inputs) {
         std::optional<buffer_info>& info = alias_info[i];
         if (!info) continue;
 
@@ -302,7 +302,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 
   std::vector<expr> src_x = op->src_x;
   std::vector<dim_expr> src_dims;
-  std::vector<std::pair<symbol_id, int>> dst_x;
+  std::vector<std::pair<var, int>> dst_x;
 
   // If we just leave these two arrays alone, the copy will be correct, but slow.
   // We can speed it up by finding dimensions we can let pass through to the copy.
@@ -350,8 +350,8 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
   // the body, we'll make lets of the buffer metadata outside the loops.
   // TODO: Is this really the right thing to do, or is it an artifact of a bad idea/implementation?
-  std::vector<std::pair<symbol_id, expr>> lets;
-  symbol_id let_id = ctx.insert_unique();
+  std::vector<std::pair<var, expr>> lets;
+  var let_id = ctx.insert_unique();
   auto do_substitute = [&](const expr& value) {
     stmt new_result = substitute(result, value, variable::make(let_id));
     if (!new_result.same_as(result)) {
@@ -367,7 +367,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
     do_substitute(buffer_fold_factor(op->dst, d));
   }
 
-  for (const std::pair<symbol_id, int>& d : dst_x) {
+  for (const std::pair<var, int>& d : dst_x) {
     result = slice_dim::make(op->dst, d.second, d.first, result);
     result = loop::make(d.first, loop::serial, buffer_bounds(op->dst, d.second), 1, result);
   }
@@ -395,7 +395,7 @@ public:
     stmt body = mutate(op->body);
     for (std::size_t i = 0; i < mutated.size(); ++i) {
       if (mutated[i] && *mutated[i]) {
-        body = clone_buffer::make(symbol_id(i), symbol_id(i), body);
+        body = clone_buffer::make(var(i), var(i), body);
       }
     }
     if (body.same_as(op->body)) {

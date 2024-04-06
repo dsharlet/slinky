@@ -86,7 +86,7 @@ public:
   // TODO: I think it would be cleaner to pass two spans for the input and output symbol lists here, but the overhead
   // might be significant.
   using callable = std::function<index_t(const call_stmt*, eval_context&)>;
-  using symbol_list = std::vector<symbol_id>;
+  using symbol_list = std::vector<var>;
 
   struct callable_attrs {
     // Allow inputs and outputs to this call to be aliased to the same buffer.
@@ -109,10 +109,10 @@ public:
 
 class copy_stmt : public stmt_node<copy_stmt> {
 public:
-  symbol_id src;
+  var src;
   std::vector<expr> src_x;
-  symbol_id dst;
-  std::vector<symbol_id> dst_x;
+  var dst;
+  std::vector<var> dst_x;
   // padding = nullopt => no padding
   // padding = {} => padding is uninitialized
   // padding = <elem_size bytes> => value to put in padding
@@ -120,26 +120,26 @@ public:
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id src, std::vector<expr> src_x, symbol_id dst, std::vector<symbol_id> dst_x,
+  static stmt make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x,
       std::optional<std::vector<char>> padding);
 
   static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };
 
-// Allows lifting a list of common subexpressions (specified by symbol_id/stmt pairs)
+// Allows lifting a list of common subexpressions (specified by var/stmt pairs)
 // out of another stmt.
 class let_stmt : public stmt_node<let_stmt> {
 public:
   // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
   // list can use the values defined by earlier lets in the list.
-  std::vector<std::pair<symbol_id, expr>> lets;
+  std::vector<std::pair<var, expr>> lets;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(std::vector<std::pair<symbol_id, expr>> lets, stmt body);
+  static stmt make(std::vector<std::pair<var, expr>> lets, stmt body);
 
-  static stmt make(symbol_id sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
+  static stmt make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
   static constexpr stmt_node_type static_type = stmt_node_type::let_stmt;
 };
@@ -165,7 +165,7 @@ public:
 // Runs `body` for each value i in the interval `bounds` with `sym` set to i.
 class loop : public stmt_node<loop> {
 public:
-  symbol_id sym;
+  var sym;
   int max_workers;
   interval_expr bounds;
   expr step;
@@ -180,7 +180,7 @@ public:
   void accept(stmt_visitor* v) const override;
 
   static stmt make(
-      symbol_id sym, int max_workers, interval_expr bounds, expr step, stmt body);
+      var sym, int max_workers, interval_expr bounds, expr step, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };
@@ -191,14 +191,14 @@ public:
 class allocate : public stmt_node<allocate> {
 public:
   memory_type storage;
-  symbol_id sym;
+  var sym;
   expr elem_size;
   std::vector<dim_expr> dims;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::allocate;
 };
@@ -207,7 +207,7 @@ public:
 // node (`rank` is the size of `dims`).
 class make_buffer : public stmt_node<make_buffer> {
 public:
-  symbol_id sym;
+  var sym;
   expr base;
   expr elem_size;
   std::vector<dim_expr> dims;
@@ -215,7 +215,7 @@ public:
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
+  static stmt make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::make_buffer;
 };
@@ -225,13 +225,13 @@ public:
 // a better way to do this.
 class clone_buffer : public stmt_node<clone_buffer> {
 public:
-  symbol_id sym;
-  symbol_id src;
+  var sym;
+  var src;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, symbol_id src, stmt body);
+  static stmt make(var sym, var src, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::clone_buffer;
 };
@@ -241,13 +241,13 @@ public:
 // than the rank, the missing values are considered undefined.
 class crop_buffer : public stmt_node<crop_buffer> {
 public:
-  symbol_id sym;
+  var sym;
   std::vector<interval_expr> bounds;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, std::vector<interval_expr> bounds, stmt body);
+  static stmt make(var sym, std::vector<interval_expr> bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_buffer;
 };
@@ -255,14 +255,14 @@ public:
 // Similar to `crop_buffer`, but only crops the dimension `dim`.
 class crop_dim : public stmt_node<crop_dim> {
 public:
-  symbol_id sym;
+  var sym;
   int dim;
   interval_expr bounds;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, int dim, interval_expr bounds, stmt body);
+  static stmt make(var sym, int dim, interval_expr bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_dim;
 };
@@ -273,13 +273,13 @@ public:
 // of the buffer, the missing values are considered undefined.
 class slice_buffer : public stmt_node<slice_buffer> {
 public:
-  symbol_id sym;
+  var sym;
   std::vector<expr> at;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, std::vector<expr> at, stmt body);
+  static stmt make(var sym, std::vector<expr> at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_buffer;
 };
@@ -288,14 +288,14 @@ public:
 // buffer.
 class slice_dim : public stmt_node<slice_dim> {
 public:
-  symbol_id sym;
+  var sym;
   int dim;
   expr at;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, int dim, expr at, stmt body);
+  static stmt make(var sym, int dim, expr at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_dim;
 };
@@ -303,13 +303,13 @@ public:
 // Within `body`, remove the dimensions of the buffer `sym` above `rank`.
 class truncate_rank : public stmt_node<truncate_rank> {
 public:
-  symbol_id sym;
+  var sym;
   int rank;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(symbol_id sym, int rank, stmt body);
+  static stmt make(var sym, int rank, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::truncate_rank;
 };

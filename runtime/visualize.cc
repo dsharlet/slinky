@@ -199,10 +199,10 @@ public:
   }
 
   void visit(const call_stmt* n) override {
-    for (symbol_id i : n->inputs) {
+    for (var i : n->inputs) {
       *this << indent() << "consume(" << i << ");\n";
     }
-    for (symbol_id i : n->outputs) {
+    for (var i : n->outputs) {
       *this << indent() << "produce(" << i << ");\n";
     }
   }
@@ -579,7 +579,7 @@ void visualize(std::ostream& dst, const pipeline& p, pipeline::scalars args, pip
 
   // Print function declaration.
   dst << "function pipeline(";
-  std::vector<symbol_id> symbols = p.args;
+  std::vector<var> symbols = p.args;
   symbols.insert(symbols.end(), p.inputs.begin(), p.inputs.end());
   symbols.insert(symbols.end(), p.outputs.begin(), p.outputs.end());
   jsp.print_vector(symbols);

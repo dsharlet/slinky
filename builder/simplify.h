@@ -22,7 +22,7 @@ bool prove_true(const expr& condition, const bounds_map& bounds = bounds_map());
 bool prove_false(const expr& condition, const bounds_map& bounds = bounds_map());
 
 // Find the interval for `var` that makes `e` true.
-interval_expr where_true(const expr& condition, symbol_id var);
+interval_expr where_true(const expr& condition, var x);
 
 // Helpers for producing simplified versions of ops. These do not recursively simplify their
 // operands. `op` is an existing node that may be returned if op is equivalent. `op` may be null.
