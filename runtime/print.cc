@@ -79,7 +79,7 @@ public:
     if (context) {
       os << context->name(sym);
     } else {
-      os << "<" << sym << ">";
+      os << sym;
     }
     return *this;
   }
