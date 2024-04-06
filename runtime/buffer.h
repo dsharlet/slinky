@@ -483,7 +483,7 @@ struct for_each_slice_dim {
 index_t make_for_each_contiguous_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
-bool make_for_each_slice_dims(
+void make_for_each_slice_dims(
     span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
 
 template <typename F, std::size_t NumBufs>
@@ -598,9 +598,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
   auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, buf.rank * BufsSize);
   std::array<void*, BufsSize> bases;
   index_t slice_extent = internal::make_for_each_contiguous_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
-  if (slice_extent < 0) {
-    return;
-  }
 
   internal::for_each_slice_impl(bases, slice_dims, dims, [&f, slice_extent](const std::array<void*, BufsSize>& bases) {
     std::apply(f, std::tuple_cat(std::make_tuple(slice_extent), bases));
@@ -616,13 +613,10 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   // Remove the sliced dimensions from the bufs.
   std::array<raw_buffer, BufsSize> sliced_bufs = {buf, bufs...};
   for (std::size_t i = 0; i < BufsSize; ++i) {
-    std::size_t slice_rank_i = slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank;
-    if (sliced_bufs[i].rank > slice_rank_i) {
-      sliced_bufs[i].rank -= slice_rank_i;
-      sliced_bufs[i].dims += slice_rank_i;
-    } else {
-      sliced_bufs[i].rank = 0;
-    }
+    std::size_t slice_rank_i =
+        std::min(sliced_bufs[i].rank, slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank);
+    sliced_bufs[i].rank -= slice_rank_i;
+    sliced_bufs[i].dims += slice_rank_i;
     buf_ptrs[i] = &sliced_bufs[i];
   }
 
@@ -630,10 +624,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, (buf.rank - slice_rank) + 1);
   auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, (buf.rank - slice_rank) * BufsSize);
   std::array<void*, BufsSize> bases;
-  index_t slice_extent = internal::make_for_each_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
-  if (slice_extent < 0) {
-    return;
-  }
+  internal::make_for_each_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
 
   // TODO: We only need to copy dims and rank here. `elem_size` should already be set, and `base` is set below.
   // I'm not sure if fixing this would be much of an improvement.

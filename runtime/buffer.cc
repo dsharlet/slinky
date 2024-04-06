@@ -430,7 +430,10 @@ index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** base
       // This dimension has only one element, nothing to do.
     } else if (buf_dim.max() < buf_dim.min()) {
       // The dimension (and the entire buffer) is empty.
-      return -1;
+      // Make an empty for_each_slice_dim, which will stop the loop nest without doing anything.
+      slice_dims->impl = for_each_slice_dim::loop_linear;
+      slice_dims->extent = 0;
+      return 0;
     } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
       slice_extent = extent;
@@ -474,7 +477,7 @@ index_t make_for_each_contiguous_slice_dims(
   }
 }
 
-bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
+void make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
     for_each_slice_dim* slice_dims, dim_or_stride* dims) {
   for (std::size_t n = 1; n < bufs.size(); n++) {
     assert(can_slice_with(*bufs[0], *bufs[n]));
@@ -484,11 +487,10 @@ bool make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases,
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: return make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
-  case 2: return make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
-  case 3: return make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, slice_dims, dims) >= 0;
-  default:
-    return make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims) >= 0;
+  case 1: make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, slice_dims, dims); return;
+  case 2: make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, slice_dims, dims); return;
+  case 3: make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, slice_dims, dims); return;
+  default: make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), slice_dims, dims); return;
   }
 }
 
