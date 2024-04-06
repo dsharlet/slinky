@@ -13,7 +13,10 @@
 
 namespace slinky {
 
-class symbol_id {
+class node_context;
+class expr;
+
+class var {
 public:
   using type = std::size_t;
 
@@ -21,15 +24,21 @@ public:
 
   type s;
 
-  symbol_id() : s(invalid) {}
-  explicit symbol_id(type s) : s(s) {}
+  var() : s(invalid) {}
+  explicit var(type s) : s(s) {}
+  var(node_context& ctx, const std::string& name);
 
   bool defined() const { return s != invalid; }
 
-  bool operator==(symbol_id r) const { return s == r.s; }
-  bool operator!=(symbol_id r) const { return s != r.s; }
-  bool operator<(symbol_id r) const { return s < r.s; }
+  expr operator-() const;
+
+  bool operator==(var r) const { return s == r.s; }
+  bool operator!=(var r) const { return s != r.s; }
+  bool operator<(var r) const { return s < r.s; }
 };
+
+// TODO: Remove, deprecated
+using symbol_id = var;
 
 // We don't want to be doing string lookups in the inner loops. A node_context
 // uniquely maps strings to symbol_id.
@@ -548,22 +557,6 @@ inline bool is_non_positive(const expr& x) {
   return c ? *c <= 0 : false;
 }
 
-// This is an expr-like wrapper for use where only a `variable` expr is allowed.
-class var {
-  symbol_id sym_;
-
-public:
-  var();
-  var(symbol_id sym);
-  var(node_context& ctx, const std::string& sym);
-
-  bool defined() const;
-  symbol_id sym() const;
-
-  operator expr() const;
-  expr operator-() const { return -static_cast<expr>(*this); }
-};
-
 expr abs(expr x);
 
 expr buffer_rank(expr buf);
@@ -602,37 +595,32 @@ public:
     }
   }
 
-  std::optional<T> lookup(symbol_id sym) const {
-    if (sym.s < values.size()) {
-      return values[sym.s];
+  std::optional<T> lookup(var v) const {
+    if (v.s < values.size()) {
+      return values[v.s];
     }
     return std::nullopt;
   }
-  std::optional<T> lookup(const var& v) const { return lookup(v.sym()); }
 
-  const T& lookup(symbol_id sym, const T& def) const {
-    if (sym < values.size() && values[sym]) {
-      return *values[sym];
+  const T& lookup(var v, const T& def) const {
+    if (v.s < values.size() && values[v.s]) {
+      return *values[v.s];
     }
     return def;
   }
-  const T& lookup(const var& v, const T& def) const { return lookup(v.sym(), def); }
 
-  std::optional<T> operator[](symbol_id sym) const { return lookup(sym); }
-  std::optional<T> operator[](const var& v) const { return lookup(v.sym()); }
-  std::optional<T>& operator[](symbol_id sym) {
-    grow(sym.s);
-    return values[sym.s];
+  std::optional<T> operator[](var v) const { return lookup(v); }
+  std::optional<T>& operator[](var v) {
+    grow(v.s);
+    return values[v.s];
   }
-  std::optional<T>& operator[](const var& v) { return operator[](v.sym()); }
 
-  bool contains(symbol_id sym) const {
-    if (sym.s >= values.size()) {
+  bool contains(var v) const {
+    if (v.s >= values.size()) {
       return false;
     }
-    return !!values[sym.s];
+    return !!values[v.s];
   }
-  bool contains(const var& v) const { return contains(v.sym()); }
 
   std::optional<T> operator[](std::size_t i) const {
     assert(i < values.size());

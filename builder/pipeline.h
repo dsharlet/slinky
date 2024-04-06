@@ -18,7 +18,8 @@ struct loop_id {
   slinky::var var;
 
   bool root() const { return !func; }
-  symbol_id sym() const { return var.sym(); }
+  // TODO: Deprecated
+  slinky::var sym() const { return var; }
 };
 
 // Represents a symbolic buffer in a pipeline.
@@ -130,7 +131,7 @@ public:
     loop_info(slinky::var var, expr step = 1, int max_workers = loop::serial)
         : var(var), step(step), max_workers(max_workers) {}
 
-    symbol_id sym() const { return var.sym(); }
+    symbol_id sym() const { return var; }
 
     bool defined() const { return var.defined() && step.defined(); }
   };

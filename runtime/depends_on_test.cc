@@ -30,27 +30,27 @@ bool operator==(const depends_on_result& l, const depends_on_result& r) {
 }
 
 TEST(depends_on, basic) {
-  ASSERT_EQ(depends_on(x + y, x.sym()), (depends_on_result{.var = true, .ref_count = 1}));
-  ASSERT_EQ(depends_on(x + x, x.sym()), (depends_on_result{.var = true, .ref_count = 2}));
+  ASSERT_EQ(depends_on(x + y, x), (depends_on_result{.var = true, .ref_count = 1}));
+  ASSERT_EQ(depends_on(x + x, x), (depends_on_result{.var = true, .ref_count = 2}));
 
-  stmt loop_x = loop::make(x.sym(), loop::serial, {y, z}, 1, check::make(x && z));
-  ASSERT_EQ(depends_on(loop_x, x.sym()), depends_on_result{});
-  ASSERT_EQ(depends_on(loop_x, y.sym()), (depends_on_result{.var = true, .ref_count = 1}));
+  stmt loop_x = loop::make(x, loop::serial, {y, z}, 1, check::make(x && z));
+  ASSERT_EQ(depends_on(loop_x, x), depends_on_result{});
+  ASSERT_EQ(depends_on(loop_x, y), (depends_on_result{.var = true, .ref_count = 1}));
 
-  stmt call = call_stmt::make(nullptr, {x.sym()}, {y.sym()}, {});
+  stmt call = call_stmt::make(nullptr, {x}, {y}, {});
   ASSERT_EQ(
-      depends_on(call, x.sym()), (depends_on_result{.buffer_input = true, .buffer_meta_read = true, .ref_count = 1}));
+      depends_on(call, x), (depends_on_result{.buffer_input = true, .buffer_meta_read = true, .ref_count = 1}));
   ASSERT_EQ(
-      depends_on(call, y.sym()), (depends_on_result{.buffer_output = true, .buffer_meta_read = true, .ref_count = 1}));
+      depends_on(call, y), (depends_on_result{.buffer_output = true, .buffer_meta_read = true, .ref_count = 1}));
 
-  stmt crop = crop_dim::make(x.sym(), 1, {y, z}, check::make(y));
-  ASSERT_EQ(depends_on(crop, x.sym()),
+  stmt crop = crop_dim::make(x, 1, {y, z}, check::make(y));
+  ASSERT_EQ(depends_on(crop, x),
       (depends_on_result{.buffer_meta_read = true, .buffer_meta_mutated = true, .ref_count = 1}));
 
-  stmt make_buffer = make_buffer::make(x.sym(), 0, 1, {{{y, z}, w}}, check::make(x && z));
-  ASSERT_EQ(depends_on(make_buffer, x.sym()), (depends_on_result{}));
-  ASSERT_EQ(depends_on(make_buffer, y.sym()), (depends_on_result{.var = true, .ref_count = 1}));
-  ASSERT_EQ(depends_on(make_buffer, z.sym()), (depends_on_result{.var = true, .ref_count = 2}));
+  stmt make_buffer = make_buffer::make(x, 0, 1, {{{y, z}, w}}, check::make(x && z));
+  ASSERT_EQ(depends_on(make_buffer, x), (depends_on_result{}));
+  ASSERT_EQ(depends_on(make_buffer, y), (depends_on_result{.var = true, .ref_count = 1}));
+  ASSERT_EQ(depends_on(make_buffer, z), (depends_on_result{.var = true, .ref_count = 2}));
 }
 
 }  // namespace slinky

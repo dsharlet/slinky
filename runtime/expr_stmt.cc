@@ -15,6 +15,10 @@
 
 namespace slinky {
 
+var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(name)) {}
+
+expr var::operator-() const { return -expr(*this); }
+
 std::string node_context::name(symbol_id i) const {
   if (i.s < sym_to_name.size()) {
     return sym_to_name[i.s];
@@ -571,28 +575,6 @@ bool is_buffer_max(const expr& x, symbol_id sym, int dim) {
 
   assert(c->args.size() == 2);
   return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
-}
-
-namespace {
-
-symbol_id undef_var = std::numeric_limits<symbol_id>::max();
-
-}
-
-var::var() : sym_(undef_var) {}
-var::var(symbol_id sym) : sym_(sym) {}
-var::var(node_context& ctx, const std::string& sym) : sym_(ctx.insert(sym)) {}
-
-bool var::defined() const { return sym_.defined(); }
-
-symbol_id var::sym() const {
-  assert(defined());
-  return sym_;
-}
-
-var::operator expr() const {
-  assert(defined());
-  return expr(variable::make(sym_));
 }
 
 void recursive_node_visitor::visit(const variable*) {}

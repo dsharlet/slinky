@@ -231,8 +231,7 @@ public:
             // to move the loop min back so we compute the whole required region.
             expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
             expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-            expr new_loop_min =
-                where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
+            expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
             if (!is_negative_infinity(new_loop_min)) {
               loop.bounds.min = new_loop_min;
 
@@ -348,10 +347,10 @@ public:
       loop_min = op->bounds.min;
     }
 
-    if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym()).any()) {
+    if (!is_variable(loop_min, orig_min) || depends_on(body, orig_min).any()) {
       // We rewrote or used the loop min.
       stmt result = loop::make(op->sym, op->max_workers, {loop_min, op->bounds.max}, op->step, std::move(body));
-      set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
+      set_result(let_stmt::make(orig_min, op->bounds.min, result));
       return;
     }
 

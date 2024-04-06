@@ -107,13 +107,13 @@ public:
       return "var()";
     }
 
-    auto it = vars_emitted_.find(v.sym());
+    auto it = vars_emitted_.find(v);
     if (it != vars_emitted_.end()) {
       return it->second;
     }
 
-    const auto& name = ctx_.name(v.sym());
-    vars_emitted_[v.sym()] = name;
+    const auto& name = ctx_.name(v);
+    vars_emitted_[v] = name;
     return print_assignment_explicit(name, "var(ctx, \"", name, "\")");
   }
 

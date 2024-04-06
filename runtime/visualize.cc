@@ -49,19 +49,18 @@ public:
     return s;
   }
 
-  std::string name(symbol_id sym) const {
+  std::string name(var v) const {
     if (context) {
-      return context->name(sym);
+      return context->name(v);
     } else {
-      return "_" + std::to_string(sym.s);
+      return "_" + std::to_string(v.s);
     }
   }
 
-  js_printer& operator<<(symbol_id sym) {
-    os << sanitize(name(sym));
+  js_printer& operator<<(var v) {
+    os << sanitize(name(v));
     return *this;
   }
-  js_printer& operator<<(const var& v) { return *this << v.sym(); }
 
   js_printer& operator<<(const expr& e) {
     if (e.defined()) {

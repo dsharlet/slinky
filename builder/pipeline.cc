@@ -149,7 +149,7 @@ stmt func::make_call() const {
         src_x.push_back(i.min);
       }
       for (const var& i : outputs_[0].dims) {
-        dst_x.push_back(i.sym());
+        dst_x.push_back(i);
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
       if (!input.output_slice.empty()) {
@@ -305,7 +305,7 @@ bool operator==(const loop_id& a, const loop_id& b) {
   } else if (a.func == b.func) {
     assert(a.var.defined());
     assert(b.var.defined());
-    return a.var.sym() == b.var.sym();
+    return a.var == b.var;
   } else {
     return false;
   }
@@ -582,7 +582,7 @@ class pipeline_builder {
     // Crop all the outputs of this buffer for this loop.
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d].sym() == loop.sym()) {
+        if (o.dims[d] == loop.sym()) {
           expr loop_max = buffer_max(o.sym(), d);
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
           body = crop_dim::make(o.sym(), d, bounds, body);
@@ -596,7 +596,7 @@ class pipeline_builder {
     interval_expr bounds = interval_expr::union_identity();
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d].sym() == loop.sym()) {
+        if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
@@ -882,15 +882,6 @@ std::vector<symbol_id> vars(const std::vector<buffer_expr_ptr>& bufs) {
   return result;
 }
 
-std::vector<symbol_id> vars(const std::vector<var>& vars) {
-  std::vector<symbol_id> result;
-  result.reserve(vars.size());
-  for (const var& i : vars) {
-    result.push_back(i.sym());
-  }
-  return result;
-}
-
 std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constant_map(const std::set<buffer_expr_ptr>& constants) {
   std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> result;
   result.reserve(constants.size());
@@ -907,7 +898,7 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
   std::set<buffer_expr_ptr> constants;
   stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
   pipeline p;
-  p.args = vars(args);
+  p.args = args;
   p.inputs = vars(inputs);
   p.outputs = vars(outputs);
   p.constants = constant_map(constants);
