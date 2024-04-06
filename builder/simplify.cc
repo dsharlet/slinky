@@ -422,16 +422,16 @@ public:
           };
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            // If the crop negates the loop variable, the min could become the max. Just do both and take the union.
-            interval_expr new_crop_a = {
-                substitute(crop->bounds.min, op->sym, bounds.min),
-                substitute(crop->bounds.max, op->sym, bounds.max),
-            };
-            interval_expr new_crop_b = {
-                substitute(crop->bounds.min, op->sym, bounds.max),
-                substitute(crop->bounds.max, op->sym, bounds.min),
-            };
-            new_crops.emplace_back(crop->sym, crop->dim, new_crop_a | new_crop_b);
+
+            interval_expr bounds_of_min = bounds_of(crop->bounds.min, {{op->sym, bounds}});
+            interval_expr bounds_of_max = bounds_of(crop->bounds.max, {{op->sym, bounds}});
+
+            interval_expr new_crop;
+
+            new_crop.min = simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min);
+            new_crop.max = simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max);
+
+            new_crops.emplace_back(crop->sym, crop->dim, new_crop);
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
