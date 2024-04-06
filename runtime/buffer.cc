@@ -403,7 +403,7 @@ index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** base
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.max() > buf_dim.min() && any_folded(bufs, bufs_size, d)) {
+    if (buf_dim.extent() > 1 && any_folded(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;
@@ -426,9 +426,9 @@ index_t make_for_each_slice_dims_impl(const raw_buffer* const* bufs, void** base
       }
     }
 
-    if (d > 0 && buf_dim.min() == buf_dim.max()) {
+    if (d > 0 && buf_dim.extent() == 1) {
       // This dimension has only one element, nothing to do.
-    } else if (buf_dim.max() < buf_dim.min()) {
+    } else if (buf_dim.extent() <= 0) {
       // The dimension (and the entire buffer) is empty.
       // Make an empty for_each_slice_dim, which will stop the loop nest without doing anything.
       slice_dims->impl = for_each_slice_dim::loop_linear;
