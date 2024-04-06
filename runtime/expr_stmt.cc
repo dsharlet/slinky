@@ -95,6 +95,7 @@ const constant* make_constant(index_t value) {
 }
 
 expr::expr(index_t x) : expr(make_constant(x)) {}
+expr::expr(symbol_id sym) : expr(make_variable(sym)) {}
 
 expr variable::make(symbol_id sym) { return make_variable(sym); }
 

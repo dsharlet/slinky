@@ -28,11 +28,10 @@ namespace slinky {
 buffer_expr::buffer_expr(symbol_id sym, std::size_t rank, expr elem_size)
     : sym_(sym), elem_size_(std::move(elem_size)), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
-  auto var = variable::make(sym);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
-    interval_expr bounds = buffer_bounds(var, i);
-    expr stride = buffer_stride(var, i);
-    expr fold_factor = buffer_fold_factor(var, i);
+    interval_expr bounds = buffer_bounds(sym, i);
+    expr stride = buffer_stride(sym, i);
+    expr fold_factor = buffer_fold_factor(sym, i);
     dims_.push_back({bounds, stride, fold_factor});
   }
 }
@@ -584,7 +583,7 @@ class pipeline_builder {
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d].sym() == loop.sym()) {
-          expr loop_max = buffer_max(var(o.sym()), d);
+          expr loop_max = buffer_max(o.sym(), d);
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
           body = crop_dim::make(o.sym(), d, bounds, body);
         }
@@ -874,11 +873,20 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   return result;
 }
 
-std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
-  std::vector<var> result;
+std::vector<symbol_id> vars(const std::vector<buffer_expr_ptr>& bufs) {
+  std::vector<symbol_id> result;
   result.reserve(bufs.size());
   for (const buffer_expr_ptr& i : bufs) {
     result.push_back(i->sym());
+  }
+  return result;
+}
+
+std::vector<symbol_id> vars(const std::vector<var>& vars) {
+  std::vector<symbol_id> result;
+  result.reserve(vars.size());
+  for (const var& i : vars) {
+    result.push_back(i.sym());
   }
   return result;
 }
@@ -899,7 +907,7 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
   std::set<buffer_expr_ptr> constants;
   stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
   pipeline p;
-  p.args = std::move(args);
+  p.args = vars(args);
   p.inputs = vars(inputs);
   p.outputs = vars(outputs);
   p.constants = constant_map(constants);

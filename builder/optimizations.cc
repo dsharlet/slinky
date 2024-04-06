@@ -25,9 +25,9 @@ namespace slinky {
 namespace {
 
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(expr src_x, var dst_x, expr& offset) {
+bool is_copy(expr src_x, symbol_id dst_x, expr& offset) {
   offset = simplify(src_x - dst_x);
-  return !depends_on(offset, dst_x.sym()).any();
+  return !depends_on(offset, dst_x).any();
 }
 
 // Same as above, applied to each dimension of the copy.
@@ -93,7 +93,7 @@ public:
 
     if (!can_alias.empty()) {
       const std::pair<symbol_id, buffer_alias>& target = *can_alias.begin();
-      var target_var(target.first);
+      symbol_id target_var = target.first;
 
       // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
       // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
@@ -111,7 +111,7 @@ public:
       stmt result = make_buffer::make(
           op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target.first](const copy_stmt* op) {
+      stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target_var](const copy_stmt* op) {
         if (op->src != src || op->dst != dst) {
           // Not this copy.
           return stmt(op);
@@ -300,9 +300,6 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       },
       {op->src}, {op->dst}, {});
 
-  var src_var(op->src);
-  var dst_var(op->dst);
-
   std::vector<expr> src_x = op->src_x;
   std::vector<dim_expr> src_dims;
   std::vector<std::pair<symbol_id, int>> dst_x;
@@ -323,16 +320,16 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
       // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
       // dimensions than the output) or not.
-      src_dims.push_back({buffer_bounds(dst_var, d), 0, expr()});
+      src_dims.push_back({buffer_bounds(op->dst, d), 0, expr()});
       handled = true;
     } else if (dep_count == 1) {
       expr offset;
       if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
-        interval_expr dst_bounds = buffer_bounds(dst_var, d);
-        interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
+        interval_expr dst_bounds = buffer_bounds(op->dst, d);
+        interval_expr src_bounds = buffer_bounds(op->src, src_d) - offset;
         src_dims.push_back(
-            {dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d)});
-        src_x[src_d] = max(buffer_min(dst_var, d) + offset, buffer_min(src_var, src_d));
+            {dst_bounds & src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
+        src_x[src_d] = max(buffer_min(op->dst, d) + offset, buffer_min(op->src, src_d));
         handled = true;
       }
     }
@@ -343,11 +340,11 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 
   // TODO: Try to optimize reshapes, where the index of the input is an "unpacking" of a flat index of the output.
   // This will require the simplifier to understand the constraints implied by the checks on the buffer metadata
-  // at the beginning of the pipeline, e.g. that buffer_stride(dst_var, d) == buffer_stride(dst_var, d - 1) *
-  // buffer_extent(dst_var, d - 1).
+  // at the beginning of the pipeline, e.g. that buffer_stride(op->dst, d) == buffer_stride(op->dst, d - 1) *
+  // buffer_extent(op->dst, d - 1).
 
   // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
-  result = make_buffer::make(op->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
+  result = make_buffer::make(op->src, buffer_at(op->src, src_x), buffer_elem_size(op->src), src_dims, result);
 
   // Any dimensions left need loops and slices.
   // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
@@ -364,15 +361,15 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
     }
   };
   for (int d = 0; d < static_cast<index_t>(op->dst_x.size()); ++d) {
-    do_substitute(buffer_min(dst_var, d));
-    do_substitute(buffer_max(dst_var, d));
-    do_substitute(buffer_stride(dst_var, d));
-    do_substitute(buffer_fold_factor(dst_var, d));
+    do_substitute(buffer_min(op->dst, d));
+    do_substitute(buffer_max(op->dst, d));
+    do_substitute(buffer_stride(op->dst, d));
+    do_substitute(buffer_fold_factor(op->dst, d));
   }
 
   for (const std::pair<symbol_id, int>& d : dst_x) {
-    result = slice_dim::make(op->dst, d.second, var(d.first), result);
-    result = loop::make(d.first, loop::serial, buffer_bounds(dst_var, d.second), 1, result);
+    result = slice_dim::make(op->dst, d.second, d.first, result);
+    result = loop::make(d.first, loop::serial, buffer_bounds(op->dst, d.second), 1, result);
   }
   return let_stmt::make(std::move(lets), result);
 }

@@ -580,7 +580,7 @@ void visualize(std::ostream& dst, const pipeline& p, pipeline::scalars args, pip
 
   // Print function declaration.
   dst << "function pipeline(";
-  std::vector<var> symbols = p.args;
+  std::vector<symbol_id> symbols = p.args;
   symbols.insert(symbols.end(), p.inputs.begin(), p.inputs.end());
   symbols.insert(symbols.end(), p.outputs.begin(), p.outputs.end());
   jsp.print_vector(symbols);
@@ -597,13 +597,13 @@ void visualize(std::ostream& dst, const pipeline& p, pipeline::scalars args, pip
     jsp << "let " << p.args[i] << " = " << args[i] << ";\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.inputs.size()); ++i) {
-    jsp << "let " << p.inputs[i] << " = allocate('" << jsp.name(p.inputs[i].sym()) << "', "
+    jsp << "let " << p.inputs[i] << " = allocate('" << jsp.name(p.inputs[i]) << "', "
         << static_cast<index_t>(inputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(inputs[i]->dims, inputs[i]->rank));
     jsp << "], true);\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.outputs.size()); ++i) {
-    jsp << "let " << p.outputs[i] << " = allocate('" << jsp.name(p.outputs[i].sym()) << "', "
+    jsp << "let " << p.outputs[i] << " = allocate('" << jsp.name(p.outputs[i]) << "', "
         << static_cast<index_t>(outputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(outputs[i]->dims, outputs[i]->rank));
     jsp << "]);\n";

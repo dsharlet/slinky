@@ -417,8 +417,8 @@ public:
         if (const crop_dim* crop = result.as<crop_dim>()) {
           // Find the bounds of the crop on the next iteration.
           interval_expr next_iter = {
-              substitute(crop->bounds.min, op->sym, var(op->sym) + op->step),
-              substitute(crop->bounds.max, op->sym, var(op->sym) + op->step),
+              substitute(crop->bounds.min, op->sym, expr(op->sym) + op->step),
+              substitute(crop->bounds.max, op->sym, expr(op->sym) + op->step),
           };
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
@@ -569,11 +569,10 @@ public:
         // Check if this make_buffer is truncate_rank, or a clone.
         const symbol_id* src_buf = as_variable(bc->args[0]);
         if (src_buf) {
-          var buf(*src_buf);
-          if (match(elem_size, buffer_elem_size(buf))) {
+          if (match(elem_size, buffer_elem_size(*src_buf))) {
             bool is_clone = true;
             for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-              is_clone = is_clone && match(dims[d], buffer_dim(buf, d));
+              is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
             }
             if (is_clone) {
               if (*src_buf == op->sym) {
@@ -592,8 +591,8 @@ public:
       }
 
       // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
-      var buf(op->sym);
-      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
+      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], op->sym) &&
+          match(elem_size, buffer_elem_size(op->sym))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
         std::size_t dim = 0;
@@ -606,7 +605,7 @@ public:
           } else {
             // This arg is undefined. We need to find the next dimension here to be a slice.
             ++slice_rank;
-            is_slice = is_slice && match(dims[dim], buffer_dim(buf, d));
+            is_slice = is_slice && match(dims[dim], buffer_dim(op->sym, d));
           }
         }
         if (is_slice && slice_rank == dims.size()) {
@@ -619,8 +618,8 @@ public:
         bool is_crop = bc->args.size() <= dims.size() + 1;
         box_expr crop_bounds(dims.size());
         for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-          if (!match(dims[d].stride, buffer_stride(buf, d)) ||
-              !match(dims[d].fold_factor, buffer_fold_factor(buf, d))) {
+          if (!match(dims[d].stride, buffer_stride(op->sym, d)) ||
+              !match(dims[d].fold_factor, buffer_fold_factor(op->sym, d))) {
             is_crop = false;
             break;
           }
@@ -628,7 +627,7 @@ public:
           // If the argument is defined, we need the min to be the same as the argument.
           // If it is not defined, it must be buffer_min(buf, d).
           bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
-          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(buf, d);
+          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(op->sym, d);
           if (match(dims[d].bounds.min, crop_min)) {
             crop_bounds[d] = dims[d].bounds;
           } else {

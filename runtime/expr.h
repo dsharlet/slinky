@@ -151,6 +151,7 @@ public:
   // Make a new constant expression.
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
+  expr(symbol_id sym);
 
   // Make an `expr` referencing an existing node.
   expr(const base_expr_node* n) : n_(n) {}
