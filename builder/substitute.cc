@@ -41,9 +41,9 @@ public:
 
   bool try_match(const var& self, const var& op) {
     assert(match == 0);
-    if (self.s < op.s) {
+    if (self.id < op.id) {
       match = -1;
-    } else if (op.s < self.s) {
+    } else if (op.id < self.id) {
       match = 1;
     }
     return match == 0;

@@ -53,7 +53,7 @@ public:
     if (context) {
       return context->name(v);
     } else {
-      return "_" + std::to_string(v.s);
+      return "_" + std::to_string(v.id);
     }
   }
 

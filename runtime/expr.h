@@ -22,19 +22,19 @@ public:
 
   static constexpr type invalid = -1;
 
-  type s;
+  type id;
 
-  var() : s(invalid) {}
-  explicit var(type s) : s(s) {}
+  var() : id(invalid) {}
+  explicit var(type id) : id(id) {}
   var(node_context& ctx, const std::string& name);
 
-  bool defined() const { return s != invalid; }
+  bool defined() const { return id != invalid; }
 
   expr operator-() const;
 
-  bool operator==(var r) const { return s == r.s; }
-  bool operator!=(var r) const { return s != r.s; }
-  bool operator<(var r) const { return s < r.s; }
+  bool operator==(var r) const { return id == r.id; }
+  bool operator!=(var r) const { return id != r.id; }
+  bool operator<(var r) const { return id < r.id; }
 };
 
 // We don't want to be doing string lookups in the inner loops. A node_context
@@ -593,30 +593,30 @@ public:
   }
 
   std::optional<T> lookup(var v) const {
-    if (v.s < values.size()) {
-      return values[v.s];
+    if (v.id < values.size()) {
+      return values[v.id];
     }
     return std::nullopt;
   }
 
   const T& lookup(var v, const T& def) const {
-    if (v.s < values.size() && values[v.s]) {
-      return *values[v.s];
+    if (v.id < values.size() && values[v.id]) {
+      return *values[v.id];
     }
     return def;
   }
 
   std::optional<T> operator[](var v) const { return lookup(v); }
   std::optional<T>& operator[](var v) {
-    grow(v.s);
-    return values[v.s];
+    grow(v.id);
+    return values[v.id];
   }
 
   bool contains(var v) const {
-    if (v.s >= values.size()) {
+    if (v.id >= values.size()) {
       return false;
     }
-    return !!values[v.s];
+    return !!values[v.id];
   }
 
   std::optional<T> operator[](std::size_t i) const {

@@ -19,11 +19,11 @@ var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(nam
 
 expr var::operator-() const { return -expr(*this); }
 
-std::string node_context::name(var i) const {
-  if (i.s < sym_to_name.size()) {
-    return sym_to_name[i.s];
+std::string node_context::name(var v) const {
+  if (v.id < sym_to_name.size()) {
+    return sym_to_name[v.id];
   } else {
-    return "<" + std::to_string(i.s) + ">";
+    return "<" + std::to_string(v.id) + ">";
   }
 }
 
