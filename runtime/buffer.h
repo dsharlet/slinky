@@ -407,6 +407,23 @@ void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
   fuse(inner, outer, bufs...);
 }
 
+template <typename... Bufs>
+SLINKY_ALWAYS_INLINE inline void attempt_fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+  if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
+    fuse(inner, outer, buf, bufs...);
+  }
+}
+
+template <typename... Bufs>
+SLINKY_ALWAYS_INLINE inline void attempt_fuse(
+    int inner, int outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+  if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
+    // These two dims are not part of the same set. Don't fuse them.
+    return;
+  }
+  attempt_fuse(inner, outer, buf, bufs...);
+}
+
 }  // namespace internal
 
 // This helper fuses the dimensions of a set of buffers where the dimensions are contiguous in memory. It only fuses a
@@ -417,29 +434,17 @@ void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
 // default, all dimensions are considered to be part of the same set.
 template <typename... Bufs>
 void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
-  const int rank = buf.rank;
   assert(internal::same_rank(buf, bufs...));
-  for (int d = rank - 1; d > 0; --d) {
-    const int inner = d - 1;
-    const int outer = d;
-    if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
-      // These two dims are not part of the same set. Don't fuse them.
-      continue;
-    }
-    if (!internal::same_bounds(inner, buf, bufs...)) {
-      // We can't fuse the dimensions if the inner dimension doesn't have the same bounds in all buffers.
-      continue;
-    }
-    if (!internal::can_fuse(inner, outer, buf, bufs...)) {
-      // We can't fuse these dimensions in one of the buffers.
-      continue;
-    }
-    internal::fuse(inner, outer, buf, bufs...);
+  for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
+    internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
   }
 }
 template <typename... Bufs>
 void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
-  fuse_contiguous_dims({}, buf, bufs...);
+  assert(internal::same_rank(buf, bufs...));
+  for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
+    internal::attempt_fuse(d - 1, d, buf, bufs...);
+  }
 }
 
 namespace internal {
