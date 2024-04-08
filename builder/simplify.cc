@@ -1014,8 +1014,6 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
   interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
   interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
 
-  interval_expr bounds;
-
   return {
     simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
     simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
