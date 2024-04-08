@@ -422,15 +422,7 @@ public:
           };
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-
-            interval_expr bounds_of_min = bounds_of(crop->bounds.min, {{op->sym, bounds}});
-            interval_expr bounds_of_max = bounds_of(crop->bounds.max, {{op->sym, bounds}});
-
-            interval_expr new_crop;
-
-            new_crop.min = simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min);
-            new_crop.max = simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max);
-
+            interval_expr new_crop = bounds_of(crop->bounds, {{op->sym, bounds}});
             new_crops.emplace_back(crop->sym, crop->dim, new_crop);
           } else {
             // This crop was not contiguous, we can't drop the loop.
@@ -1015,6 +1007,18 @@ interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
   interval_expr bounds;
   s.mutate(x, &bounds);
+  return bounds;
+}
+
+interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
+  interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
+  interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
+
+  interval_expr bounds;
+
+  bounds.min = simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min);
+  bounds.max = simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max);
+
   return bounds;
 }
 
