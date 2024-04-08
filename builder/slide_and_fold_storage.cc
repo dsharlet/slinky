@@ -83,11 +83,11 @@ std::vector<dim_expr> recursive_substitute(
 }
 
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
-  for (symbol_id i = 0; i < buffers.size(); ++i) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     for (interval_expr& j : bounds) {
-      if (j.min.defined()) j.min = substitute_bounds(j.min, i, *buffers[i]);
-      if (j.max.defined()) j.max = substitute_bounds(j.max, i, *buffers[i]);
+      if (j.min.defined()) j.min = substitute_bounds(j.min, var(i), *buffers[i]);
+      if (j.max.defined()) j.max = substitute_bounds(j.max, var(i), *buffers[i]);
     }
   }
 }
@@ -100,14 +100,14 @@ public:
   node_context& ctx;
   symbol_map<std::vector<expr>> fold_factors;
   struct loop_info {
-    symbol_id sym;
+    var sym;
     expr orig_min;
     interval_expr bounds;
     expr step;
     int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
 
-    loop_info(symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+    loop_info(var sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()) {}
   };
@@ -119,7 +119,7 @@ public:
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(0, expr(), interval_expr::none(), expr(), loop::serial);
+    loops.emplace_back(var(), expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   void visit(const allocate* op) override {
@@ -156,9 +156,9 @@ public:
   }
 
   template <typename T>
-  void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
+  void visit_call_or_copy(const T* op, span<const var> outputs) {
     set_result(op);
-    for (symbol_id output : outputs) {
+    for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
       for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
@@ -231,8 +231,7 @@ public:
             // to move the loop min back so we compute the whole required region.
             expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
             expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-            expr new_loop_min =
-                where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
+            expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
             if (!is_negative_infinity(new_loop_min)) {
               loop.bounds.min = new_loop_min;
 
@@ -348,10 +347,10 @@ public:
       loop_min = op->bounds.min;
     }
 
-    if (!is_variable(loop_min, orig_min.sym()) || depends_on(body, orig_min.sym()).any()) {
+    if (!is_variable(loop_min, orig_min) || depends_on(body, orig_min).any()) {
       // We rewrote or used the loop min.
       stmt result = loop::make(op->sym, op->max_workers, {loop_min, op->bounds.max}, op->step, std::move(body));
-      set_result(let_stmt::make(orig_min.sym(), op->bounds.min, result));
+      set_result(let_stmt::make(orig_min, op->bounds.min, result));
       return;
     }
 

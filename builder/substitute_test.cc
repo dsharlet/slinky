@@ -50,40 +50,36 @@ void test_substitute(const stmt& test, T target, const expr& replacement, const 
 }
 
 TEST(substitute, basic) {
-  test_substitute(x + y, x.sym(), z, z + y);
-  test_substitute(check::make(y == buffer_min(x, 3)), buffer_min(x, 3), z, check::make(y == z));
+  test_substitute(x + y, x, z, z + y);
+  test_substitute(check::make(y == buffer_min(x, 3)), buffer_min(x, 3), z, check::make(expr(y) == expr(z)));
 }
 
 TEST(substitute, shadowed) {
-  test_substitute(let::make(x.sym(), y, x + z), x.sym(), w, let::make(x.sym(), y, x + z));
-  test_substitute(let::make({{x.sym(), 1}, {y.sym(), 2}}, z + 1), z.sym(), z + w,
-      let::make({{x.sym(), 1}, {y.sym(), 2}}, z + w + 1));
+  test_substitute(let::make(x, y, x + z), x, w, let::make(x, y, x + z));
+  test_substitute(let::make({{x, 1}, {y, 2}}, z + 1), z, z + w, let::make({{x, 1}, {y, 2}}, z + w + 1));
 
-  test_substitute(crop_dim::make(x.sym(), 1, {y, z}, check::make(0 < buffer_min(x, 1))), buffer_min(x, 1), w,
-      crop_dim::make(x.sym(), 1, {max(y, w), z}, check::make(0 < buffer_min(x, 1))));
+  test_substitute(crop_dim::make(x, 1, {y, z}, check::make(0 < buffer_min(x, 1))), buffer_min(x, 1), w,
+      crop_dim::make(x, 1, {max(y, w), z}, check::make(0 < buffer_min(x, 1))));
 
-  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(buffer_min(x, 3) == 0)), buffer_min(x, 3), 1,
-      slice_dim::make(x.sym(), 2, 0, check::make(buffer_min(x, 3) == 0)));
-  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3),
-      slice_dim::make(x.sym(), 2, 0, check::make(buffer_max(x, 2) == buffer_min(x, 3))));
-  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 2),
-      slice_dim::make(x.sym(), 2, 0, check::make(expr() == buffer_min(x, 3))));
-  test_substitute(slice_dim::make(x.sym(), 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1),
-      slice_dim::make(x.sym(), 2, 0, check::make(buffer_max(x, 1) == buffer_min(x, 3))));
+  test_substitute(slice_dim::make(x, 2, 0, check::make(buffer_min(x, 3) == 0)), buffer_min(x, 3), 1,
+      slice_dim::make(x, 2, 0, check::make(buffer_min(x, 3) == 0)));
+  test_substitute(slice_dim::make(x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3),
+      slice_dim::make(x, 2, 0, check::make(buffer_max(x, 2) == buffer_min(x, 3))));
+  test_substitute(slice_dim::make(x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 2),
+      slice_dim::make(x, 2, 0, check::make(expr() == buffer_min(x, 3))));
+  test_substitute(slice_dim::make(x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1),
+      slice_dim::make(x, 2, 0, check::make(buffer_max(x, 1) == buffer_min(x, 3))));
 
-  test_substitute(copy_stmt::make(x.sym(), {y, z}, w.sym(), {y.sym(), z.sym()}, {}), y, z,
-      copy_stmt::make(x.sym(), {y, z}, w.sym(), {y.sym(), z.sym()}, {}));
-  test_substitute(copy_stmt::make(x.sym(), {y}, w.sym(), {y.sym()}, {}), y, z,
-      copy_stmt::make(x.sym(), {y}, w.sym(), {y.sym()}, {}));
-  test_substitute(copy_stmt::make(x.sym(), {y}, w.sym(), {z.sym()}, {}), y, u,
-      copy_stmt::make(x.sym(), {u}, w.sym(), {z.sym()}, {}));
+  test_substitute(copy_stmt::make(x, {y, z}, w, {y, z}, {}), y, z, copy_stmt::make(x, {y, z}, w, {y, z}, {}));
+  test_substitute(copy_stmt::make(x, {y}, w, {y}, {}), y, z, copy_stmt::make(x, {y}, w, {y}, {}));
+  test_substitute(copy_stmt::make(x, {y}, w, {z}, {}), y, u, copy_stmt::make(x, {u}, w, {z}, {}));
 }
 
 TEST(substitute, implicit_bounds) {
-  test_substitute(crop_dim::make(x.sym(), 0, bounds(y, z), check::make(x)), buffer_min(x, 0), w,
-      crop_dim::make(x.sym(), 0, bounds(max(y, w), z), check::make(x)));
-  test_substitute(crop_dim::make(x.sym(), 0, bounds(y, z), check::make(x)), buffer_max(x, 0), w,
-      crop_dim::make(x.sym(), 0, bounds(y, min(z, w)), check::make(x)));
+  test_substitute(crop_dim::make(x, 0, bounds(y, z), check::make(x)), buffer_min(x, 0), w,
+      crop_dim::make(x, 0, bounds(max(y, w), z), check::make(x)));
+  test_substitute(crop_dim::make(x, 0, bounds(y, z), check::make(x)), buffer_max(x, 0), w,
+      crop_dim::make(x, 0, bounds(y, min(z, w)), check::make(x)));
   test_substitute(buffer_at(x), buffer_min(x, 2), y, buffer_at(x, std::vector<expr>{expr(), expr(), expr(y)}));
 }
 

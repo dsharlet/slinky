@@ -25,19 +25,18 @@
 
 namespace slinky {
 
-buffer_expr::buffer_expr(symbol_id sym, std::size_t rank, expr elem_size)
+buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
     : sym_(sym), elem_size_(std::move(elem_size)), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
-  auto var = variable::make(sym);
   for (index_t i = 0; i < static_cast<index_t>(rank); ++i) {
-    interval_expr bounds = buffer_bounds(var, i);
-    expr stride = buffer_stride(var, i);
-    expr fold_factor = buffer_fold_factor(var, i);
+    interval_expr bounds = buffer_bounds(sym, i);
+    expr stride = buffer_stride(sym, i);
+    expr fold_factor = buffer_fold_factor(sym, i);
     dims_.push_back({bounds, stride, fold_factor});
   }
 }
 
-buffer_expr::buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer)
+buffer_expr::buffer_expr(var sym, const_raw_buffer_ptr constant_buffer)
     : sym_(sym), elem_size_(static_cast<index_t>(constant_buffer->elem_size)), producer_(nullptr),
       constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
@@ -52,11 +51,11 @@ buffer_expr::buffer_expr(symbol_id sym, const_raw_buffer_ptr constant_buffer)
   }
 }
 
-buffer_expr_ptr buffer_expr::make(symbol_id sym, std::size_t rank, expr elem_size) {
+buffer_expr_ptr buffer_expr::make(var sym, std::size_t rank, expr elem_size) {
   return buffer_expr_ptr(new buffer_expr(sym, rank, std::move(elem_size)));
 }
 
-buffer_expr_ptr buffer_expr::make(symbol_id sym, std::size_t rank, index_t elem_size) {
+buffer_expr_ptr buffer_expr::make(var sym, std::size_t rank, index_t elem_size) {
   return make(sym, rank, expr(elem_size));
 }
 
@@ -68,7 +67,7 @@ buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std
   return make(ctx, sym, rank, expr(elem_size));
 }
 
-buffer_expr_ptr buffer_expr::make(symbol_id sym, const_raw_buffer_ptr constant_buffer) {
+buffer_expr_ptr buffer_expr::make(var sym, const_raw_buffer_ptr constant_buffer) {
   return buffer_expr_ptr(new buffer_expr(sym, std::move(constant_buffer)));
 }
 buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer) {
@@ -144,13 +143,13 @@ stmt func::make_call() const {
     for (const func::input& input : inputs_) {
       assert(outputs_.size() == 1);
       std::vector<expr> src_x;
-      std::vector<symbol_id> dst_x;
+      std::vector<var> dst_x;
       for (const interval_expr& i : input.bounds) {
         assert(match(i.min, i.max));
         src_x.push_back(i.min);
       }
       for (const var& i : outputs_[0].dims) {
-        dst_x.push_back(i.sym());
+        dst_x.push_back(i);
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
       if (!input.output_slice.empty()) {
@@ -232,12 +231,12 @@ namespace {
 class lift_buffer_metadata : public node_mutator {
 public:
   node_context& ctx;
-  std::map<expr, symbol_id, node_less> replacements;
+  std::map<expr, var, node_less> replacements;
 
   lift_buffer_metadata(node_context& ctx) : ctx(ctx) {}
 
   stmt define_replacements(stmt s) const {
-    std::vector<std::pair<symbol_id, expr>> lets;
+    std::vector<std::pair<var, expr>> lets;
     lets.reserve(replacements.size());
     for (const auto& i : replacements) {
       lets.push_back({i.second, i.first});
@@ -250,7 +249,7 @@ public:
       node_mutator::visit(op);
       return;
     }
-    auto i = replacements.insert(std::pair<const expr, symbol_id>(op, 0));
+    auto i = replacements.insert(std::pair<const expr, var>(op, 0));
     if (i.second) {
       i.first->second = ctx.insert_unique("g");
     }
@@ -303,7 +302,7 @@ bool operator==(const loop_id& a, const loop_id& b) {
   } else if (a.func == b.func) {
     assert(a.var.defined());
     assert(b.var.defined());
-    return a.var.sym() == b.var.sym();
+    return a.var == b.var;
   } else {
     return false;
   }
@@ -476,12 +475,12 @@ std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const
 }
 
 // Perform a substitute limited to call inputs only.
-stmt substitute_call_inputs(const stmt& s, const symbol_map<symbol_id>& subs) {
+stmt substitute_call_inputs(const stmt& s, const symbol_map<var>& subs) {
   class m : public node_mutator {
-    const symbol_map<symbol_id>& subs;
+    const symbol_map<var>& subs;
 
   public:
-    m(const symbol_map<symbol_id>& subs) : subs(subs) {}
+    m(const symbol_map<var>& subs) : subs(subs) {}
 
     void visit(const call_stmt* op) override {
       bool changed = false;
@@ -518,8 +517,8 @@ class pipeline_builder {
   symbol_map<std::vector<dim_expr>> inferred_shapes_;
   symbol_map<std::vector<interval_expr>> inferred_bounds_;
 
-  std::vector<symbol_id> input_syms_;
-  std::set<symbol_id> output_syms_;
+  std::vector<var> input_syms_;
+  std::set<var> output_syms_;
 
   lift_buffer_metadata sanitizer_;
 
@@ -561,7 +560,7 @@ class pipeline_builder {
       }
     }
 
-    for (symbol_id i : input_syms_) {
+    for (var i : input_syms_) {
       assert(allocation_bounds_[i]);
       inferred_bounds_[i] = allocation_bounds_[i];
     }
@@ -580,8 +579,8 @@ class pipeline_builder {
     // Crop all the outputs of this buffer for this loop.
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d].sym() == loop.sym()) {
-          expr loop_max = buffer_max(var(o.sym()), d);
+        if (o.dims[d] == loop.sym()) {
+          expr loop_max = buffer_max(o.sym(), d);
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
           body = crop_dim::make(o.sym(), d, bounds, body);
         }
@@ -594,7 +593,7 @@ class pipeline_builder {
     interval_expr bounds = interval_expr::union_identity();
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
-        if (o.dims[d].sym() == loop.sym()) {
+        if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
           bounds |= o.buffer->dim(d).bounds;
         }
@@ -615,7 +614,7 @@ class pipeline_builder {
       body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(f, loop), loop.step, body);
 
       // Wrap loop into crops.
-      for (symbol_id i : input_syms_) {
+      for (var i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
         body = crop_buffer::make(i, *allocation_bounds_[i], body);
       }
@@ -726,7 +725,7 @@ public:
       result = add_input_crops(result, base_f);
     }
 
-    symbol_map<symbol_id> uncropped_subs;
+    symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
       const func* f = order_[ix];
@@ -735,7 +734,7 @@ public:
         if (output_syms_.count(b->sym())) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          symbol_id uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
+          var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
           uncropped_subs[b->sym()] = uncropped;
           result = clone_buffer::make(uncropped, b->sym(), result);
 
@@ -758,7 +757,7 @@ public:
 
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
-    // buffer names at once and relies on the fact that the same symbol_id can't be written
+    // buffer names at once and relies on the fact that the same var can't be written
     // by two different funcs.
     result = substitute_call_inputs(result, uncropped_subs);
 
@@ -770,7 +769,7 @@ public:
   // Add checks that the inputs are sufficient based on inferred bounds.
   stmt add_input_checks(const stmt& body) {
     std::vector<stmt> checks;
-    for (symbol_id i : input_syms_) {
+    for (var i : input_syms_) {
       expr buf_var = variable::make(i);
       const std::optional<box_expr>& bounds = allocation_bounds_[i];
       assert(bounds);
@@ -798,7 +797,7 @@ public:
     return body;
   }
 
-  const std::vector<symbol_id>& input_syms() { return input_syms_; }
+  const std::vector<var>& input_syms() { return input_syms_; }
 };
 
 void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
@@ -880,8 +879,8 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
   return result;
 }
 
-std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> constant_map(const std::set<buffer_expr_ptr>& constants) {
-  std::vector<std::pair<symbol_id, const_raw_buffer_ptr>> result;
+std::vector<std::pair<var, const_raw_buffer_ptr>> constant_map(const std::set<buffer_expr_ptr>& constants) {
+  std::vector<std::pair<var, const_raw_buffer_ptr>> result;
   result.reserve(constants.size());
   for (const buffer_expr_ptr& i : constants) {
     result.push_back({i->sym(), i->constant()});
@@ -896,7 +895,7 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
   std::set<buffer_expr_ptr> constants;
   stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
   pipeline p;
-  p.args = std::move(args);
+  p.args = args;
   p.inputs = vars(inputs);
   p.outputs = vars(outputs);
   p.constants = constant_map(constants);

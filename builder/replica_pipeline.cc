@@ -107,13 +107,13 @@ public:
       return "var()";
     }
 
-    auto it = vars_emitted_.find(v.sym());
+    auto it = vars_emitted_.find(v);
     if (it != vars_emitted_.end()) {
       return it->second;
     }
 
-    const auto& name = ctx_.name(v.sym());
-    vars_emitted_[v.sym()] = name;
+    const auto& name = ctx_.name(v);
+    vars_emitted_[v] = name;
     return print_assignment_explicit(name, "var(ctx, \"", name, "\")");
   }
 
@@ -362,9 +362,9 @@ private:
   std::ostringstream os_;
   std::string name_;
   uint32_t next_id_ = 0;
-  std::set<symbol_id> buffers_emitted_;
-  std::map<symbol_id, std::string> buffer_variables_emitted_;
-  std::map<symbol_id, std::string> vars_emitted_;
+  std::set<var> buffers_emitted_;
+  std::map<var, std::string> buffer_variables_emitted_;
+  std::map<var, std::string> vars_emitted_;
   std::map<const func*, std::string> funcs_emitted_;
   bool exprs_inlined_ = false;
 

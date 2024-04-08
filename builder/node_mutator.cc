@@ -11,7 +11,7 @@ namespace {
 
 template <typename T>
 auto mutate_let(node_mutator* this_, const T* op) {
-  std::vector<std::pair<symbol_id, expr>> lets;
+  std::vector<std::pair<var, expr>> lets;
   lets.reserve(op->lets.size());
   bool changed = false;
   for (const auto& s : op->lets) {

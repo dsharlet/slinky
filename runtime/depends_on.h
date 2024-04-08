@@ -37,15 +37,15 @@ struct depends_on_result {
 
 // Check if the node depends on a symbol or set of symbols.
 
-void depends_on(const expr& e, span<const std::pair<symbol_id, depends_on_result&>> var_deps);
-void depends_on(const stmt& s, span<const std::pair<symbol_id, depends_on_result&>> var_deps);
-void depends_on(const expr& e, symbol_id var, depends_on_result& deps);
-void depends_on(const stmt& s, symbol_id var, depends_on_result& deps);
-depends_on_result depends_on(const expr& e, symbol_id var);
-depends_on_result depends_on(const interval_expr& e, symbol_id var);
-depends_on_result depends_on(const stmt& s, symbol_id var);
-depends_on_result depends_on(const expr& e, span<const symbol_id> vars);
-depends_on_result depends_on(const stmt& s, span<const symbol_id> vars);
+void depends_on(const expr& e, span<const std::pair<var, depends_on_result&>> var_deps);
+void depends_on(const stmt& s, span<const std::pair<var, depends_on_result&>> var_deps);
+void depends_on(const expr& e, var x, depends_on_result& deps);
+void depends_on(const stmt& s, var x, depends_on_result& deps);
+depends_on_result depends_on(const expr& e, var x);
+depends_on_result depends_on(const interval_expr& e, var x);
+depends_on_result depends_on(const stmt& s, var x);
+depends_on_result depends_on(const expr& e, span<const var> xs);
+depends_on_result depends_on(const stmt& s, span<const var> xs);
 
 }  // namespace slinky
 

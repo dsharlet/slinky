@@ -13,21 +13,45 @@
 
 namespace slinky {
 
-using symbol_id = std::size_t;
+class node_context;
+class expr;
+
+class var {
+public:
+  using type = std::size_t;
+
+  static constexpr type invalid = -1;
+
+  type id;
+
+  var() : id(invalid) {}
+  explicit var(type id) : id(id) {}
+  var(node_context& ctx, const std::string& name);
+
+  bool defined() const { return id != invalid; }
+
+  expr operator-() const;
+
+  // TODO: This are risky. Someone could write var(x) == var(y) expecting to get an `expr` that compares the values of
+  // the variables when evaluated, but this compares the variable ids instead.
+  bool operator==(var r) const { return id == r.id; }
+  bool operator!=(var r) const { return id != r.id; }
+  bool operator<(var r) const { return id < r.id; }
+};
 
 // We don't want to be doing string lookups in the inner loops. A node_context
-// uniquely maps strings to symbol_id.
+// uniquely maps strings to var.
 class node_context {
   std::vector<std::string> sym_to_name;
 
 public:
-  // Get the name of a symbol_id.
-  std::string name(symbol_id i) const;
+  // Get the name of a var.
+  std::string name(var i) const;
 
-  // Get or insert a new symbol_id for a name.
-  symbol_id insert(const std::string& name);
-  symbol_id insert_unique(const std::string& prefix = "_");
-  std::optional<symbol_id> lookup(const std::string& name) const;
+  // Get or insert a new var for a name.
+  var insert(const std::string& name);
+  var insert_unique(const std::string& prefix = "_");
+  std::optional<var> lookup(const std::string& name) const;
 };
 
 enum class expr_node_type {
@@ -135,6 +159,7 @@ public:
   // Make a new constant expression.
   expr(index_t x);
   expr(int x) : expr(static_cast<index_t>(x)) {}
+  expr(var sym);
 
   // Make an `expr` referencing an existing node.
   expr(const base_expr_node* n) : n_(n) {}
@@ -263,31 +288,31 @@ using box_expr = std::vector<interval_expr>;
 box_expr operator|(box_expr a, const box_expr& b);
 box_expr operator&(box_expr a, const box_expr& b);
 
-// Allows lifting a list of common subexpressions (specified by symbol_id/expr pairs)
+// Allows lifting a list of common subexpressions (specified by var/expr pairs)
 // out of another expression.
 class let : public expr_node<let> {
 public:
   // Conceptually, these are evaluated and placed on the stack in order, i.e. lets later in this
   // list can use the values defined by earlier lets in the list.
-  std::vector<std::pair<symbol_id, expr>> lets;
+  std::vector<std::pair<var, expr>> lets;
   expr body;
 
   void accept(expr_visitor* v) const override;
 
-  static expr make(std::vector<std::pair<symbol_id, expr>> lets, expr body);
+  static expr make(std::vector<std::pair<var, expr>> lets, expr body);
 
-  static expr make(symbol_id sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
+  static expr make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
   static constexpr expr_node_type static_type = expr_node_type::let;
 };
 
 class variable : public expr_node<variable> {
 public:
-  symbol_id sym;
+  var sym;
 
   void accept(expr_visitor* v) const override;
 
-  static expr make(symbol_id sym);
+  static expr make(var sym);
 
   static constexpr expr_node_type static_type = expr_node_type::variable;
 };
@@ -457,14 +482,14 @@ SLINKY_ALWAYS_INLINE inline const index_t* as_constant(const expr& x) {
   return cx ? &cx->value : nullptr;
 }
 
-// If `x` is a variable, returns the `symbol_id` of the variable, otherwise `nullptr`.
-SLINKY_ALWAYS_INLINE inline const symbol_id* as_variable(const expr& x) {
+// If `x` is a variable, returns the `var` of the variable, otherwise `nullptr`.
+SLINKY_ALWAYS_INLINE inline const var* as_variable(const expr& x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->sym : nullptr;
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-SLINKY_ALWAYS_INLINE inline bool is_variable(const expr& x, symbol_id sym) {
+SLINKY_ALWAYS_INLINE inline bool is_variable(const expr& x, var sym) {
   const variable* vx = x.as<variable>();
   return vx ? vx->sym == sym : false;
 }
@@ -487,8 +512,8 @@ inline bool is_intrinsic(const expr& x, intrinsic fn) {
   const call* c = x.as<call>();
   return c ? c->intrinsic == fn : false;
 }
-bool is_buffer_min(const expr& x, symbol_id sym, int dim);
-bool is_buffer_max(const expr& x, symbol_id sym, int dim);
+bool is_buffer_min(const expr& x, var sym, int dim);
+bool is_buffer_max(const expr& x, var sym, int dim);
 bool is_buffer_intrinsic(intrinsic fn);
 
 inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
@@ -531,22 +556,6 @@ inline bool is_non_positive(const expr& x) {
   return c ? *c <= 0 : false;
 }
 
-// This is an expr-like wrapper for use where only a `variable` expr is allowed.
-class var {
-  symbol_id sym_;
-
-public:
-  var();
-  var(symbol_id sym);
-  var(node_context& ctx, const std::string& sym);
-
-  bool defined() const;
-  symbol_id sym() const;
-
-  operator expr() const;
-  expr operator-() const { return -static_cast<expr>(*this); }
-};
-
 expr abs(expr x);
 
 expr buffer_rank(expr buf);
@@ -578,45 +587,51 @@ class symbol_map {
 
 public:
   symbol_map() = default;
-  symbol_map(std::initializer_list<std::pair<symbol_id, T>> init) {
-    for (const std::pair<symbol_id, T>& i : init) {
+  symbol_map(std::size_t reserve) : values(reserve) {}
+  symbol_map(std::initializer_list<std::pair<var, T>> init) {
+    for (const std::pair<var, T>& i : init) {
       operator[](i.first) = i.second;
     }
   }
 
-  std::optional<T> lookup(symbol_id sym) const {
-    if (sym < values.size()) {
-      return values[sym];
+  std::optional<T> lookup(var v) const {
+    if (v.id < values.size()) {
+      return values[v.id];
     }
     return std::nullopt;
   }
-  std::optional<T> lookup(const var& v) const { return lookup(v.sym()); }
 
-  const T& lookup(symbol_id sym, const T& def) const {
-    if (sym < values.size() && values[sym]) {
-      return *values[sym];
+  const T& lookup(var v, const T& def) const {
+    if (v.id < values.size() && values[v.id]) {
+      return *values[v.id];
     }
     return def;
   }
-  const T& lookup(const var& v, const T& def) const { return lookup(v.sym(), def); }
 
-  std::optional<T> operator[](symbol_id sym) const { return lookup(sym); }
-  std::optional<T> operator[](const var& v) const { return lookup(v.sym()); }
-  std::optional<T>& operator[](symbol_id sym) {
-    grow(sym);
-    return values[sym];
+  std::optional<T> operator[](var v) const { return lookup(v); }
+  std::optional<T>& operator[](var v) {
+    grow(v.id);
+    return values[v.id];
   }
-  std::optional<T>& operator[](const var& v) { return operator[](v.sym()); }
 
-  bool contains(symbol_id sym) const {
-    if (sym >= values.size()) {
+  bool contains(var v) const {
+    if (v.id >= values.size()) {
       return false;
     }
-    return !!values[sym];
+    return !!values[v.id];
   }
-  bool contains(const var& v) const { return contains(v.sym()); }
+
+  std::optional<T> operator[](std::size_t i) const {
+    assert(i < values.size());
+    return values[i];
+  }
+  std::optional<T>& operator[](std::size_t i) {
+    assert(i < values.size());
+    return values[i];
+  }
 
   std::size_t size() const { return values.size(); }
+  void reserve(std::size_t size) { values.resize(std::max(values.size(), size)); }
   auto begin() { return values.begin(); }
   auto end() { return values.end(); }
   auto begin() const { return values.begin(); }
@@ -628,17 +643,16 @@ public:
 template <typename T>
 class scoped_value_in_symbol_map {
   symbol_map<T>* context_;
-  symbol_id sym_;
+  var sym_;
   std::optional<T> old_value_;
 
 public:
-  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, T value) : context_(&context), sym_(sym) {
+  scoped_value_in_symbol_map(symbol_map<T>& context, var sym, T value) : context_(&context), sym_(sym) {
     std::optional<T>& ctx_value = context[sym];
     old_value_ = std::move(ctx_value);
     ctx_value = std::move(value);
   }
-  scoped_value_in_symbol_map(symbol_map<T>& context, symbol_id sym, std::optional<T> value)
-      : context_(&context), sym_(sym) {
+  scoped_value_in_symbol_map(symbol_map<T>& context, var sym, std::optional<T> value) : context_(&context), sym_(sym) {
     std::optional<T>& ctx_value = context[sym];
     old_value_ = std::move(ctx_value);
     ctx_value = std::move(value);
@@ -672,11 +686,11 @@ public:
 };
 
 template <typename T>
-scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id sym, T value) {
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym, T value) {
   return scoped_value_in_symbol_map<T>(context, sym, value);
 }
 template <typename T>
-scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, symbol_id sym, std::optional<T> value) {
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym, std::optional<T> value) {
   return scoped_value_in_symbol_map<T>(context, sym, value);
 }
 

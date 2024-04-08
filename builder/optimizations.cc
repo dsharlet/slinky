@@ -27,7 +27,7 @@ namespace {
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
 bool is_copy(expr src_x, var dst_x, expr& offset) {
   offset = simplify(src_x - dst_x);
-  return !depends_on(offset, dst_x.sym()).any();
+  return !depends_on(offset, dst_x).any();
 }
 
 // Same as above, applied to each dimension of the copy.
@@ -47,20 +47,20 @@ class buffer_aliaser : public node_mutator {
 
   class buffer_info {
   public:
-    std::map<symbol_id, buffer_alias> can_alias_;
-    std::set<symbol_id> cannot_alias_;
+    std::map<var, buffer_alias> can_alias_;
+    std::set<var> cannot_alias_;
 
   public:
-    std::map<symbol_id, buffer_alias>& can_alias() { return can_alias_; }
-    const std::map<symbol_id, buffer_alias>& can_alias() const { return can_alias_; }
+    std::map<var, buffer_alias>& can_alias() { return can_alias_; }
+    const std::map<var, buffer_alias>& can_alias() const { return can_alias_; }
 
-    void maybe_alias(symbol_id s, buffer_alias a) {
+    void maybe_alias(var s, buffer_alias a) {
       if (!cannot_alias_.count(s)) {
         can_alias_[s] = std::move(a);
       }
     }
 
-    void do_not_alias(symbol_id s) {
+    void do_not_alias(var s) {
       can_alias_.erase(s);
       cannot_alias_.insert(s);
     }
@@ -89,11 +89,11 @@ public:
     // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alias_info, op->sym, buffer_info());
     stmt body = mutate(op->body);
-    const std::map<symbol_id, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
+    const std::map<var, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
 
     if (!can_alias.empty()) {
-      const std::pair<symbol_id, buffer_alias>& target = *can_alias.begin();
-      var target_var(target.first);
+      const std::pair<var, buffer_alias>& target = *can_alias.begin();
+      var target_var = target.first;
 
       // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
       // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
@@ -108,10 +108,10 @@ public:
           dims[d].bounds &= op->dims[d].bounds;
         }
       }
-      stmt result = make_buffer::make(
-          op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
+      stmt result =
+          make_buffer::make(op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target.first](const copy_stmt* op) {
+      stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target_var](const copy_stmt* op) {
         if (op->src != src || op->dst != dst) {
           // Not this copy.
           return stmt(op);
@@ -152,13 +152,13 @@ public:
 
   void visit(const call_stmt* op) override {
     set_result(op);
-    for (symbol_id o : op->outputs) {
+    for (var o : op->outputs) {
       std::optional<bool> no_alias = do_not_alias[o];
       if (no_alias && *no_alias) {
         continue;
       }
 
-      for (symbol_id i : op->inputs) {
+      for (var i : op->inputs) {
         std::optional<buffer_info>& info = alias_info[i];
         if (!info) continue;
 
@@ -194,7 +194,8 @@ public:
   }
 
   void merge_alias_info(symbol_map<buffer_info> add) {
-    for (symbol_id i = 0; i < add.size(); ++i) {
+    alias_info.reserve(std::max(alias_info.size(), add.size()));
+    for (std::size_t i = 0; i < add.size(); ++i) {
       if (!add[i]) continue;
       std::optional<buffer_info>& info = alias_info[i];
       if (!info) {
@@ -209,9 +210,9 @@ public:
 
   void visit(const slice_buffer* op) override {
     // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alias_info;
+    symbol_map<buffer_info> old_alias_info(alias_info.size());
     std::swap(old_alias_info, alias_info);
-    for (symbol_id i = 0; i < old_alias_info.size(); ++i) {
+    for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
       if (old_alias_info[i]) {
         alias_info[i] = buffer_info();
       }
@@ -238,9 +239,9 @@ public:
 
   void visit(const slice_dim* op) override {
     // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alias_info;
+    symbol_map<buffer_info> old_alias_info(alias_info.size());
     std::swap(old_alias_info, alias_info);
-    for (symbol_id i = 0; i < old_alias_info.size(); ++i) {
+    for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
       if (old_alias_info[i]) {
         alias_info[i] = buffer_info();
       }
@@ -299,12 +300,9 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       },
       {op->src}, {op->dst}, {});
 
-  var src_var(op->src);
-  var dst_var(op->dst);
-
   std::vector<expr> src_x = op->src_x;
   std::vector<dim_expr> src_dims;
-  std::vector<std::pair<symbol_id, int>> dst_x;
+  std::vector<std::pair<var, int>> dst_x;
 
   // If we just leave these two arrays alone, the copy will be correct, but slow.
   // We can speed it up by finding dimensions we can let pass through to the copy.
@@ -322,16 +320,16 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
       // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
       // dimensions than the output) or not.
-      src_dims.push_back({buffer_bounds(dst_var, d), 0, expr()});
+      src_dims.push_back({buffer_bounds(op->dst, d), 0, expr()});
       handled = true;
     } else if (dep_count == 1) {
       expr offset;
       if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
-        interval_expr dst_bounds = buffer_bounds(dst_var, d);
-        interval_expr src_bounds = buffer_bounds(src_var, src_d) - offset;
+        interval_expr dst_bounds = buffer_bounds(op->dst, d);
+        interval_expr src_bounds = buffer_bounds(op->src, src_d) - offset;
         src_dims.push_back(
-            {dst_bounds & src_bounds, buffer_stride(src_var, src_d), buffer_fold_factor(src_var, src_d)});
-        src_x[src_d] = max(buffer_min(dst_var, d) + offset, buffer_min(src_var, src_d));
+            {dst_bounds & src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
+        src_x[src_d] = max(buffer_min(op->dst, d) + offset, buffer_min(op->src, src_d));
         handled = true;
       }
     }
@@ -342,18 +340,18 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 
   // TODO: Try to optimize reshapes, where the index of the input is an "unpacking" of a flat index of the output.
   // This will require the simplifier to understand the constraints implied by the checks on the buffer metadata
-  // at the beginning of the pipeline, e.g. that buffer_stride(dst_var, d) == buffer_stride(dst_var, d - 1) *
-  // buffer_extent(dst_var, d - 1).
+  // at the beginning of the pipeline, e.g. that buffer_stride(op->dst, d) == buffer_stride(op->dst, d - 1) *
+  // buffer_extent(op->dst, d - 1).
 
   // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
-  result = make_buffer::make(op->src, buffer_at(src_var, src_x), buffer_elem_size(src_var), src_dims, result);
+  result = make_buffer::make(op->src, buffer_at(op->src, src_x), buffer_elem_size(op->src), src_dims, result);
 
   // Any dimensions left need loops and slices.
   // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
   // the body, we'll make lets of the buffer metadata outside the loops.
   // TODO: Is this really the right thing to do, or is it an artifact of a bad idea/implementation?
-  std::vector<std::pair<symbol_id, expr>> lets;
-  symbol_id let_id = ctx.insert_unique();
+  std::vector<std::pair<var, expr>> lets;
+  var let_id = ctx.insert_unique();
   auto do_substitute = [&](const expr& value) {
     stmt new_result = substitute(result, value, variable::make(let_id));
     if (!new_result.same_as(result)) {
@@ -363,15 +361,15 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
     }
   };
   for (int d = 0; d < static_cast<index_t>(op->dst_x.size()); ++d) {
-    do_substitute(buffer_min(dst_var, d));
-    do_substitute(buffer_max(dst_var, d));
-    do_substitute(buffer_stride(dst_var, d));
-    do_substitute(buffer_fold_factor(dst_var, d));
+    do_substitute(buffer_min(op->dst, d));
+    do_substitute(buffer_max(op->dst, d));
+    do_substitute(buffer_stride(op->dst, d));
+    do_substitute(buffer_fold_factor(op->dst, d));
   }
 
-  for (const std::pair<symbol_id, int>& d : dst_x) {
-    result = slice_dim::make(op->dst, d.second, var(d.first), result);
-    result = loop::make(d.first, loop::serial, buffer_bounds(dst_var, d.second), 1, result);
+  for (const std::pair<var, int>& d : dst_x) {
+    result = slice_dim::make(op->dst, d.second, d.first, result);
+    result = loop::make(d.first, loop::serial, buffer_bounds(op->dst, d.second), 1, result);
   }
   return let_stmt::make(std::move(lets), result);
 }
@@ -395,9 +393,9 @@ public:
     // We've hit a parallel loop. The buffers that are allocated outside this loop, but mutated inside this loop, will
     // be true in the mutated map. We need to make copies of these buffers upon entering the loop.
     stmt body = mutate(op->body);
-    for (symbol_id i = 0; i < mutated.size(); ++i) {
+    for (std::size_t i = 0; i < mutated.size(); ++i) {
       if (mutated[i] && *mutated[i]) {
-        body = clone_buffer::make(i, i, body);
+        body = clone_buffer::make(var(i), var(i), body);
       }
     }
     if (body.same_as(op->body)) {
