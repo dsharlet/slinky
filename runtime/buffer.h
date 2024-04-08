@@ -464,6 +464,20 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
   }
 }
 
+// The following few helpers implement traversing a mult-dimensional loop nest and then calling a function.
+// We often will have two dimensions that traverse memory as if it was one loop, and it is valuable to do so
+// to reduce overhead/improve performance.
+// To implement this, we first examine the buffers and generate a "plan". The plan is a sequence of these objects
+// laid out in memory contiguous, like so:
+//
+// struct loop_desc {
+//   for_each_slice_dim loop;
+//   dim_or_stride[buffer_count];
+// };
+// loop_desc loops[rank];
+//
+// We don't actually have this struct, because buffer_count needs to be a runtime variable, but we can emulate
+// this memory layout with pointer arithmetic.
 union dim_or_stride {
   // For loop_folded to call flat_offset_bytes
   const slinky::dim* dim;
@@ -480,51 +494,61 @@ struct for_each_slice_dim {
   index_t extent;
 };
 
-index_t make_for_each_contiguous_slice_dims(
-    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
+inline std::size_t size_of_plan(std::size_t rank, std::size_t bufs) {
+  return (rank + 1) * sizeof(for_each_slice_dim) + rank * bufs * sizeof(dim_or_stride);
+}
 
-void make_for_each_slice_dims(
-    span<const raw_buffer*> bufs, void** bases, for_each_slice_dim* slice_dims, dim_or_stride* dims);
+index_t make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan);
+void make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan);
+
+template <typename T>
+SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1) {
+  const T* result = reinterpret_cast<const T*>(x);
+  x = offset_bytes(x, sizeof(T) * n);
+  return result;
+}
 
 template <typename F, std::size_t NumBufs>
-void for_each_slice_impl(
-    std::array<void*, NumBufs> bases, const for_each_slice_dim* slice_dim, const dim_or_stride* dims, const F& f) {
+void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
+  const for_each_slice_dim* slice_dim = read_plan<for_each_slice_dim>(plan);
   if (slice_dim->impl == for_each_slice_dim::call_f) {
     f(bases);
   } else if (slice_dim->impl == for_each_slice_dim::loop_linear) {
-    const auto* next = slice_dim + 1;
+    const index_t* strides = read_plan<index_t>(plan, NumBufs);
+    const for_each_slice_dim* next = reinterpret_cast<const for_each_slice_dim*>(plan);
+    std::array<void*, NumBufs> bases_i = bases;
     if (next->impl == for_each_slice_dim::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = 0; i < slice_dim->extent; ++i) {
-        f(bases);
+        f(bases_i);
         for (std::size_t n = 0; n < NumBufs; n++) {
-          bases[n] = offset_bytes(bases[n], dims[n].stride);
+          bases_i[n] = offset_bytes(bases_i[n], strides[n]);
         }
       }
     } else {
       for (index_t i = 0; i < slice_dim->extent; ++i) {
-        for_each_slice_impl(bases, slice_dim + 1, dims + NumBufs, f);
+        for_each_slice_impl(bases_i, plan, f);
         for (std::size_t n = 0; n < NumBufs; n++) {
-          bases[n] = offset_bytes(bases[n], dims[n].stride);
+          bases_i[n] = offset_bytes(bases_i[n], strides[n]);
         }
       }
     }
   } else {
     assert(slice_dim->impl == for_each_slice_dim::loop_folded);
 
-    std::array<void*, NumBufs> offset_bases;
-
+    dim* const* dims = read_plan<dim*>(plan, NumBufs);
     // TODO: If any buffer if folded in a given dimension, we just take the slow path
     // that handles either folded or unfolded for *all* the buffers in that dimension.
     // It's possible we could special-case and improve the situation somewhat if we
     // see common cases (eg main buffer never folded and one 'other' buffer that is folded).
-    index_t begin = dims[0].dim->begin();
+    index_t begin = dims[0]->begin();
     index_t end = begin + slice_dim->extent;
     for (index_t i = begin; i < end; ++i) {
+      std::array<void*, NumBufs> bases_i;
       for (std::size_t n = 0; n < NumBufs; n++) {
-        offset_bases[n] = offset_bytes(bases[n], dims[n].dim->flat_offset_bytes(i));
+        bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
       }
-      for_each_slice_impl(offset_bases, slice_dim + 1, dims + NumBufs, f);
+      for_each_slice_impl(bases_i, plan, f);
     }
   }
 }
@@ -594,12 +618,11 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, buf.rank + 1);
-  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, buf.rank * BufsSize);
+  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
   std::array<void*, BufsSize> bases;
-  index_t slice_extent = internal::make_for_each_contiguous_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
+  index_t slice_extent = internal::make_for_each_contiguous_slice_dims(buf_ptrs, bases.data(), plan);
 
-  internal::for_each_slice_impl(bases, slice_dims, dims, [&f, slice_extent](const std::array<void*, BufsSize>& bases) {
+  internal::for_each_slice_impl(bases, plan, [&f, slice_extent](const std::array<void*, BufsSize>& bases) {
     std::apply(f, std::tuple_cat(std::make_tuple(slice_extent), bases));
   });
 }
@@ -621,10 +644,9 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   }
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* slice_dims = SLINKY_ALLOCA(internal::for_each_slice_dim, (buf.rank - slice_rank) + 1);
-  auto* dims = SLINKY_ALLOCA(internal::dim_or_stride, (buf.rank - slice_rank) * BufsSize);
+  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank - slice_rank, BufsSize));
   std::array<void*, BufsSize> bases;
-  internal::make_for_each_slice_dims(buf_ptrs, bases.data(), slice_dims, dims);
+  internal::make_for_each_slice_dims(buf_ptrs, bases.data(), plan);
 
   // TODO: We only need to copy dims and rank here. `elem_size` should already be set, and `base` is set below.
   // I'm not sure if fixing this would be much of an improvement.
@@ -634,7 +656,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
         std::min(sliced_bufs[i].rank, slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank);
   }
 
-  internal::for_each_slice_impl(bases, slice_dims, dims, [&](const std::array<void*, BufsSize>& bases) {
+  internal::for_each_slice_impl(bases, plan, [&](const std::array<void*, BufsSize>& bases) {
     for (std::size_t i = 0; i < BufsSize; ++i) {
       sliced_bufs[i].base = bases[i];
     }
