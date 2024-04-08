@@ -305,7 +305,7 @@ public:
 
     if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
       assert(op->args.size() == 2);
-      const symbol_id* buf = as_variable(op->args[0]);
+      const var* buf = as_variable(op->args[0]);
       const index_t* dim = as_constant(op->args[1]);
       assert(buf);
       assert(dim);
@@ -343,7 +343,7 @@ public:
 
   template <typename T>
   void visit_let(const T* op) {
-    std::vector<std::pair<symbol_id, expr>> lets;
+    std::vector<std::pair<var, expr>> lets;
     lets.reserve(op->lets.size());
 
     using sv_type = scoped_value_in_symbol_map<interval_expr>;
@@ -400,13 +400,13 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  stmt mutate_with_bounds(stmt body, symbol_id buf, std::optional<box_expr> bounds) {
+  stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
     auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
     return mutate(body);
   }
 
-  stmt mutate_with_bounds(stmt body, symbol_id var, interval_expr bounds) {
-    auto set_bounds = set_value_in_scope(expr_bounds, var, std::move(bounds));
+  stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
+    auto set_bounds = set_value_in_scope(expr_bounds, v, std::move(bounds));
     return mutate(body);
   }
 
@@ -435,28 +435,20 @@ public:
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
       stmt result = body;
-      std::vector<std::tuple<symbol_id, int, interval_expr>> new_crops;
+      std::vector<std::tuple<var, int, interval_expr>> new_crops;
       bool drop_loop = true;
       while (true) {
         // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
         if (const crop_dim* crop = result.as<crop_dim>()) {
           // Find the bounds of the crop on the next iteration.
           interval_expr next_iter = {
-              substitute(crop->bounds.min, op->sym, var(op->sym) + op->step),
-              substitute(crop->bounds.max, op->sym, var(op->sym) + op->step),
+              substitute(crop->bounds.min, op->sym, expr(op->sym) + op->step),
+              substitute(crop->bounds.max, op->sym, expr(op->sym) + op->step),
           };
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            // If the crop negates the loop variable, the min could become the max. Just do both and take the union.
-            interval_expr new_crop_a = {
-                substitute(crop->bounds.min, op->sym, bounds.min),
-                substitute(crop->bounds.max, op->sym, bounds.max),
-            };
-            interval_expr new_crop_b = {
-                substitute(crop->bounds.min, op->sym, bounds.max),
-                substitute(crop->bounds.max, op->sym, bounds.min),
-            };
-            new_crops.emplace_back(crop->sym, crop->dim, new_crop_a | new_crop_b);
+            interval_expr new_crop = bounds_of(crop->bounds, {{op->sym, bounds}});
+            new_crops.emplace_back(crop->sym, crop->dim, new_crop);
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
@@ -507,11 +499,11 @@ public:
 
   // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
   // if they came from outside the body).
-  static void clear_shadowed_bounds(symbol_id sym, interval_expr& bounds) {
+  static void clear_shadowed_bounds(var sym, interval_expr& bounds) {
     if (depends_on(bounds.min, sym).buffer_meta_read) bounds.min = expr();
     if (depends_on(bounds.max, sym).buffer_meta_read) bounds.max = expr();
   }
-  static void clear_shadowed_bounds(symbol_id sym, box_expr& bounds) {
+  static void clear_shadowed_bounds(var sym, box_expr& bounds) {
     for (interval_expr& i : bounds) {
       clear_shadowed_bounds(sym, i);
     }
@@ -592,13 +584,12 @@ public:
     if (const call* bc = base.as<call>()) {
       if (bc->intrinsic == intrinsic::buffer_at && bc->args.size() == 1) {
         // Check if this make_buffer is truncate_rank, or a clone.
-        const symbol_id* src_buf = as_variable(bc->args[0]);
+        const var* src_buf = as_variable(bc->args[0]);
         if (src_buf) {
-          var buf(*src_buf);
-          if (match(elem_size, buffer_elem_size(buf))) {
+          if (match(elem_size, buffer_elem_size(*src_buf))) {
             bool is_clone = true;
             for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-              is_clone = is_clone && match(dims[d], buffer_dim(buf, d));
+              is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
             }
             if (is_clone) {
               if (*src_buf == op->sym) {
@@ -617,8 +608,8 @@ public:
       }
 
       // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
-      var buf(op->sym);
-      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], buf) && match(elem_size, buffer_elem_size(buf))) {
+      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], op->sym) &&
+          match(elem_size, buffer_elem_size(op->sym))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
         std::size_t dim = 0;
@@ -631,7 +622,7 @@ public:
           } else {
             // This arg is undefined. We need to find the next dimension here to be a slice.
             ++slice_rank;
-            is_slice = is_slice && match(dims[dim], buffer_dim(buf, d));
+            is_slice = is_slice && match(dims[dim], buffer_dim(op->sym, d));
           }
         }
         if (is_slice && slice_rank == dims.size()) {
@@ -644,8 +635,8 @@ public:
         bool is_crop = bc->args.size() <= dims.size() + 1;
         box_expr crop_bounds(dims.size());
         for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-          if (!match(dims[d].stride, buffer_stride(buf, d)) ||
-              !match(dims[d].fold_factor, buffer_fold_factor(buf, d))) {
+          if (!match(dims[d].stride, buffer_stride(op->sym, d)) ||
+              !match(dims[d].fold_factor, buffer_fold_factor(op->sym, d))) {
             is_crop = false;
             break;
           }
@@ -653,7 +644,7 @@ public:
           // If the argument is defined, we need the min to be the same as the argument.
           // If it is not defined, it must be buffer_min(buf, d).
           bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
-          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(buf, d);
+          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(op->sym, d);
           if (match(dims[d].bounds.min, crop_min)) {
             crop_bounds[d] = dims[d].bounds;
           } else {
@@ -683,7 +674,7 @@ public:
   }
 
   // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
-  static expr simplify_crop_bound(expr x, symbol_id sym, int dim) {
+  static expr simplify_crop_bound(expr x, var sym, int dim) {
     if (const class max* m = x.as<class max>()) {
       if (is_buffer_min(m->a, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
       if (is_buffer_min(m->b, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
@@ -694,7 +685,7 @@ public:
     return x;
   }
 
-  static interval_expr simplify_crop_bounds(interval_expr i, symbol_id sym, int dim) {
+  static interval_expr simplify_crop_bounds(interval_expr i, var sym, int dim) {
     return {simplify_crop_bound(i.min, sym, dim), simplify_crop_bound(i.max, sym, dim)};
   }
 
@@ -854,14 +845,14 @@ public:
     }
   }
 
-  static void update_sliced_buffer_metadata(bounds_map& bounds, symbol_id sym, span<const int> sliced) {
+  static void update_sliced_buffer_metadata(bounds_map& bounds, var sym, span<const int> sliced) {
     for (std::optional<interval_expr>& i : bounds) {
       if (!i) continue;
       i->min = slinky::update_sliced_buffer_metadata(i->min, sym, sliced);
       i->max = slinky::update_sliced_buffer_metadata(i->max, sym, sliced);
     }
   }
-  static void update_sliced_buffer_metadata(symbol_map<box_expr>& bounds, symbol_id sym, span<const int> sliced) {
+  static void update_sliced_buffer_metadata(symbol_map<box_expr>& bounds, var sym, span<const int> sliced) {
     for (std::optional<box_expr>& i : bounds) {
       if (!i) continue;
       for (interval_expr& j : *i) {
@@ -1041,6 +1032,16 @@ interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
   return bounds;
 }
 
+interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
+  interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
+  interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
+
+  return {
+    simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
+    simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
+  };
+}
+
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
   return s.attempt_to_prove(condition);
@@ -1056,7 +1057,7 @@ bool prove_false(const expr& condition, const bounds_map& expr_bounds) {
   return s.prove_false(condition);
 }
 
-interval_expr where_true(const expr& condition, symbol_id var) {
+interval_expr where_true(const expr& condition, var x) {
   // TODO: This needs a proper implementation. For now, a ridiculous hack: trial and error.
   // We use the leaves of the expression as guesses around which to search.
   // We could use every node in the expression...
@@ -1087,11 +1088,11 @@ interval_expr where_true(const expr& condition, symbol_id var) {
     for (const expr& j : offsets) {
       if (!result_i.min.defined()) {
         // Find the first offset where the expression is true.
-        if (prove_true(substitute(condition, var, i + j))) {
+        if (prove_true(substitute(condition, x, i + j))) {
           result_i.min = i + j;
           result_i.max = result_i.min;
         }
-      } else if (prove_true(substitute(condition, var, i + j))) {
+      } else if (prove_true(substitute(condition, x, i + j))) {
         // Find the last offset where the expression is true.
         result_i.max = i + j;
       }

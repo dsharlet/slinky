@@ -29,10 +29,10 @@ var w(symbols, "w");
 
 template <typename T>
 void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
-  for (symbol_id n = 0; n < m.size(); ++n) {
+  for (std::size_t n = 0; n < m.size(); ++n) {
     const std::optional<T>& value = m[n];
     if (value) {
-      s << "  " << symbols.name(n) << " = " << *value << std::endl;
+      s << "  " << symbols.name(var(n)) << " = " << *value << std::endl;
     }
   }
 }
@@ -132,36 +132,34 @@ TEST(simplify, basic) {
 
 TEST(simplify, let) {
   // lets that should be removed
-  test_simplify(let::make(x.sym(), y, z), z);                                // Dead let
-  test_simplify(let::make(x.sym(), y * 2, x), y * 2);                        // Single use, substitute
-  test_simplify(let::make(x.sym(), y * w, x), y * w);                        // Single use, substitute
-  test_simplify(let::make(x.sym(), y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
-  test_simplify(let::make(x.sym(), 10, x / x), 1);                           // Trivial value, substitute
-  test_simplify(let::make(x.sym(), buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
-  test_simplify(let::make(x.sym(), buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
+  test_simplify(let::make(x, y, z), z);                                // Dead let
+  test_simplify(let::make(x, y * 2, x), y * 2);                        // Single use, substitute
+  test_simplify(let::make(x, y * w, x), y * w);                        // Single use, substitute
+  test_simplify(let::make(x, y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
+  test_simplify(let::make(x, 10, x / x), 1);                           // Trivial value, substitute
+  test_simplify(let::make(x, buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
+  test_simplify(let::make(x, buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
 
-  test_simplify(
-    let_stmt::make(x.sym(), y, loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(x))),
-    loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
+  test_simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x))),
+      loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
 
   // lets that should be kept
   test_simplify(
-      let::make(x.sym(), y * 2, (x + 1) / x), let::make(x.sym(), y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+      let::make(x, y * 2, (x + 1) / x), let::make(x, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 
-  test_simplify(
-    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(x))),
-    let_stmt::make(x.sym(), y * w, loop::make(z.sym(), loop::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
+  test_simplify(let_stmt::make(x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x))),
+      let_stmt::make(
+          x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
 
-  test_simplify(
-    let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})),
-    let_stmt::make(x.sym(), y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
+  test_simplify(let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)})),
+      let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
 
   // Compound lets with dependencies between let values.
-  test_simplify(let::make({{x.sym(), y}, {z.sym(), x}}, z), y);
-  test_simplify(let::make({{x.sym(), y}, {z.sym(), x * 2}}, z), y * 2);
-  test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), x}}, z), y * 2);
-  test_simplify(let::make({{x.sym(), y * 2}, {z.sym(), y}}, z), y);
-  test_simplify(let::make({{x.sym(), y}, {z.sym(), (x + 1) / x}}, (z + 1) / z), let::make({{z.sym(), (y + 1) / y}}, (z + 1) / z));
+  test_simplify(let::make({{x, y}, {z, x}}, z), y);
+  test_simplify(let::make({{x, y}, {z, x * 2}}, z), y * 2);
+  test_simplify(let::make({{x, y * 2}, {z, x}}, z), y * 2);
+  test_simplify(let::make({{x, y * 2}, {z, y}}, z), y);
+  test_simplify(let::make({{x, y}, {z, (x + 1) / x}}, (z + 1) / z), let::make({{z, (y + 1) / y}}, (z + 1) / z));
 }
 
 TEST(simplify, buffer_intrinsics) {
@@ -169,36 +167,33 @@ TEST(simplify, buffer_intrinsics) {
 }
 
 TEST(simplify, bounds) {
-  test_simplify(loop::make(x.sym(), loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)), stmt());
-  test_simplify(loop::make(x.sym(), loop::serial, min_extent(x, z), z, check::make(y)), check::make(y));
+  test_simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)), stmt());
+  test_simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y)), check::make(y));
 
   test_simplify(
-      allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)),
+      allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)), stmt());
+  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                    clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2))),
       stmt());
-  test_simplify(
-      allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, clone_buffer::make(y.sym(), x.sym(), check::make(buffer_min(y, 0) == 2))),
+  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                    crop_dim::make(x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2))),
       stmt());
-  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    crop_dim::make(x.sym(), 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2))),
-      stmt());
-  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(y, z), 4, 5}},
-                    crop_dim::make(x.sym(), 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2))),
-      allocate::make(x.sym(), memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2)));
+  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
+                    crop_dim::make(x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2))),
+      allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2)));
 }
 
 TEST(simplify, allocate) {
   // Pull statements that don't use the buffer out of allocate nodes.
-  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
                     block::make({check::make(y), check::make(x), check::make(z)})),
-      block::make({check::make(y),
-          allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)}));
+      block::make({check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)),
+          check::make(z)}));
 
   // Make sure clone_buffer doesn't hide uses of buffers or bounds.
-  test_simplify(allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    block::make({check::make(y), clone_buffer::make(w.sym(), x.sym(), check::make(w)), check::make(z)})),
-      block::make({check::make(y),
-          allocate::make(x.sym(), memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-              check::make(x)),
+  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                    block::make({check::make(y), clone_buffer::make(w, x, check::make(w)), check::make(z)})),
+      block::make({check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)),
           check::make(z)}));
 }
 
@@ -278,8 +273,8 @@ TEST(simplify, bounds_of) {
   }
 }
 
-void test_where(const expr& test, symbol_id var, const interval_expr& expected) {
-  interval_expr result = where_true(test, var);
+void test_where(const expr& test, var x, const interval_expr& expected) {
+  interval_expr result = where_true(test, x);
   if (!match(result, expected)) {
     std::cout << "where_true failed " << std::endl;
     std::cout << test << std::endl;
@@ -291,19 +286,17 @@ void test_where(const expr& test, symbol_id var, const interval_expr& expected) 
   }
 }
 
-void test_where_true(const expr& test, symbol_id var, const interval_expr& expected) {
-  test_where(test, var, expected);
-}
+void test_where_true(const expr& test, var x, const interval_expr& expected) { test_where(test, x, expected); }
 
 TEST(simplify, where_true) {
-  test_where_true(x < 5, 0, bounds(negative_infinity(), 4));
-  test_where_true(x < buffer_min(y, 0), 0, bounds(negative_infinity(), buffer_min(y, 0) + -1));
-  test_where_true(x / 2 < 7, 0, bounds(negative_infinity(), 13));
-  test_where_true(min(x, 6) < 7, 0, bounds(negative_infinity(), positive_infinity()));
-  test_where_true(-10 <= x && x < 5, 0, bounds(-10, 4));
-  test_where_true(-x < 5, 0, bounds(-4, positive_infinity()));
-  test_where_true(3 * x < 5, 0, bounds(negative_infinity(), 1));
-  test_where_true(3 * (x + 2) < 5, 0, bounds(negative_infinity(), -1));
+  test_where_true(x < 5, x, bounds(negative_infinity(), 4));
+  test_where_true(x < buffer_min(y, 0), x, bounds(negative_infinity(), buffer_min(y, 0) + -1));
+  test_where_true(x / 2 < 7, x, bounds(negative_infinity(), 13));
+  test_where_true(min(x, 6) < 7, x, bounds(negative_infinity(), positive_infinity()));
+  test_where_true(-10 <= x && x < 5, x, bounds(-10, 4));
+  test_where_true(-x < 5, x, bounds(-4, positive_infinity()));
+  test_where_true(3 * x < 5, x, bounds(negative_infinity(), 1));
+  test_where_true(3 * (x + 2) < 5, x, bounds(negative_infinity(), -1));
 }
 
 std::vector<var> vars = {x, y, z};

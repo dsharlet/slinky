@@ -13,7 +13,8 @@ std::string define_replica_pipeline(node_context& ctx, const std::vector<var>& a
     const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
     const build_options& options = build_options(), const std::string& fname = "p");
 std::string define_replica_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options = build_options(), const std::string& fname = "p");
+    const std::vector<buffer_expr_ptr>& outputs, const build_options& options = build_options(),
+    const std::string& fname = "p");
 
 namespace internal {
 

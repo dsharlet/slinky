@@ -49,19 +49,18 @@ public:
     return s;
   }
 
-  std::string name(symbol_id sym) const {
+  std::string name(var v) const {
     if (context) {
-      return context->name(sym);
+      return context->name(v);
     } else {
-      return "_" + std::to_string(sym);
+      return "_" + std::to_string(v.id);
     }
   }
 
-  js_printer& operator<<(symbol_id sym) {
-    os << sanitize(name(sym));
+  js_printer& operator<<(var v) {
+    os << sanitize(name(v));
     return *this;
   }
-  js_printer& operator<<(const var& v) { return *this << v.sym(); }
 
   js_printer& operator<<(const expr& e) {
     if (e.defined()) {
@@ -200,10 +199,10 @@ public:
   }
 
   void visit(const call_stmt* n) override {
-    for (symbol_id i : n->inputs) {
+    for (var i : n->inputs) {
       *this << indent() << "consume(" << i << ");\n";
     }
-    for (symbol_id i : n->outputs) {
+    for (var i : n->outputs) {
       *this << indent() << "produce(" << i << ");\n";
     }
   }
@@ -597,13 +596,13 @@ void visualize(std::ostream& dst, const pipeline& p, pipeline::scalars args, pip
     jsp << "let " << p.args[i] << " = " << args[i] << ";\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.inputs.size()); ++i) {
-    jsp << "let " << p.inputs[i] << " = allocate('" << jsp.name(p.inputs[i].sym()) << "', "
+    jsp << "let " << p.inputs[i] << " = allocate('" << jsp.name(p.inputs[i]) << "', "
         << static_cast<index_t>(inputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(inputs[i]->dims, inputs[i]->rank));
     jsp << "], true);\n";
   }
   for (index_t i = 0; i < static_cast<index_t>(p.outputs.size()); ++i) {
-    jsp << "let " << p.outputs[i] << " = allocate('" << jsp.name(p.outputs[i].sym()) << "', "
+    jsp << "let " << p.outputs[i] << " = allocate('" << jsp.name(p.outputs[i]) << "', "
         << static_cast<index_t>(outputs[i]->elem_size) << ", [";
     jsp.print_vector(span<dim>(outputs[i]->dims, outputs[i]->rank));
     jsp << "]);\n";

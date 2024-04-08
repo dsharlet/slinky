@@ -506,7 +506,6 @@ TEST_P(broadcast, copy_sliced) {
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 1);
 
-
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
@@ -735,7 +734,7 @@ TEST(batch_reshape, copy) {
   box_expr bounds = {
       point(flat_out % in->dim(0).extent()),
       point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
-      point(flat_out / (in->dim(0).extent() * in->dim(1).extent())  % in->dim(2).extent()),
+      point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
       point(w),
   };
   func crop = func::make_copy({in, bounds}, {out, {x, y, z, w}});

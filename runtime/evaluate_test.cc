@@ -77,7 +77,7 @@ TEST(evaluate, loop) {
         },
         {}, {}, {});
 
-    stmt l = loop::make(x.sym(), max_workers, range(2, 12), 3, c);
+    stmt l = loop::make(x, max_workers, range(2, 12), 3, c);
 
     int result = evaluate(l, eval_ctx);
     ASSERT_EQ(result, 0);

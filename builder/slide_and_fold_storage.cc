@@ -84,11 +84,11 @@ std::vector<dim_expr> recursive_substitute(
 }
 
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
-  for (symbol_id i = 0; i < buffers.size(); ++i) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     for (interval_expr& j : bounds) {
-      if (j.min.defined()) j.min = substitute_bounds(j.min, i, *buffers[i]);
-      if (j.max.defined()) j.max = substitute_bounds(j.max, i, *buffers[i]);
+      if (j.min.defined()) j.min = substitute_bounds(j.min, var(i), *buffers[i]);
+      if (j.max.defined()) j.max = substitute_bounds(j.max, var(i), *buffers[i]);
     }
   }
 }
@@ -101,7 +101,7 @@ public:
   node_context& ctx;
   symbol_map<std::vector<expr>> fold_factors;
   struct loop_info {
-    symbol_id sym;
+    var sym;
     expr orig_min;
     interval_expr bounds;
     expr step;
@@ -135,7 +135,7 @@ public:
       return true;
     }
 
-    loop_info(node_context& ctx, symbol_id sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+    loop_info(node_context& ctx, var sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           buffer_bounds(std::make_unique<symbol_map<box_expr>>()), semaphores(ctx, ctx.name(sym) + "_semaphores"),
           worker_count(ctx, ctx.name(sym) + "_worker_count") {}
@@ -148,7 +148,7 @@ public:
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(ctx, 0, expr(), interval_expr::none(), expr(), loop::serial);
+    loops.emplace_back(ctx, var(), expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   stmt mutate(const stmt& s) override {
@@ -159,13 +159,12 @@ public:
     // pipeline stage.
     loop_info& l = loops.back();
     if (l.stage) {
-      expr loop_var = variable::make(l.sym);
       result = block::make({
           // Wait for the previous iteration of this stage to complete.
-          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, loop_var - l.step}))),
+          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}))),
           result,
           // Signal we've done this iteration.
-          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, loop_var}))),
+          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym}))),
       });
       l.stage = std::nullopt;
     }
@@ -207,9 +206,9 @@ public:
   }
 
   template <typename T>
-  void visit_call_or_copy(const T* op, span<const symbol_id> outputs) {
+  void visit_call_or_copy(const T* op, span<const var> outputs) {
     set_result(op);
-    for (symbol_id output : outputs) {
+    for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
       for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
@@ -299,8 +298,7 @@ public:
             // to move the loop min back so we compute the whole required region.
             expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
             expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-            expr new_loop_min =
-                where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x.sym()).max;
+            expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
             if (!is_negative_infinity(new_loop_min)) {
               loop.bounds.min = new_loop_min;
 
@@ -427,12 +425,12 @@ public:
 
     if (stage_count > 0) {
       // Substitute the placeholder worker_count.
-      result = substitute(result, l.worker_count.sym(), max_workers);
+      result = substitute(result, l.worker_count, max_workers);
       // We need to do this in the fold factors too.
       for (std::optional<std::vector<expr>>& i : fold_factors) {
         if (!i) continue;
         for (expr& j : *i) {
-          j = substitute(j, l.worker_count.sym(), max_workers);
+          j = substitute(j, l.worker_count, max_workers);
         }
       }
 
@@ -454,7 +452,7 @@ public:
               std::fill_n(&sems(0), stage_count, 1);
               return 0;
             },
-            {}, {l.semaphores.sym()}, {});
+            {}, {l.semaphores}, {});
         // We can fold the semaphores array by the number of threads we'll use.
         // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
         expr sem_fold_factor = stage_count * op->step;
@@ -464,16 +462,16 @@ public:
             {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
         };
         result = allocate::make(
-            l.semaphores.sym(), memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+            l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
       } else {
         // We only have one stage, there's no need for semaphores.
-        result = substitute(result, l.semaphores.sym(), expr());
+        result = substitute(result, l.semaphores, expr());
       }
     }
 
-    if (!is_variable(loop_bounds.min, orig_min.sym()) || depends_on(result, orig_min.sym()).any()) {
+    if (!is_variable(loop_bounds.min, orig_min) || depends_on(result, orig_min).any()) {
       // We rewrote or used the loop min.
-      result = let_stmt::make(orig_min.sym(), op->bounds.min, result);
+      result = let_stmt::make(orig_min, op->bounds.min, result);
     }
 
     set_result(std::move(result));
