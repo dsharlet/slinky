@@ -291,12 +291,9 @@ box_expr compute_input_bounds(
     expr min = sanitizer.mutate(i.bounds[d].min);
     expr max = sanitizer.mutate(i.bounds[d].max);
 
-    interval_expr bounds_of_min = bounds_of(min, output_bounds_i);
-    interval_expr bounds_of_max = bounds_of(max, output_bounds_i);
-
-    crop[d].min = simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min);
-    crop[d].max = simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max);
+    crop[d] = bounds_of({min, max}, output_bounds_i);
   }
+
   return crop;
 }
 
