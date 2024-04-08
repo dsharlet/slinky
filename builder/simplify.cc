@@ -1016,10 +1016,10 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
 
   interval_expr bounds;
 
-  bounds.min = simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min);
-  bounds.max = simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max);
-
-  return bounds;
+  return {
+    simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
+    simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
+  };
 }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
