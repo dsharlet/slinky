@@ -33,6 +33,9 @@ std::string to_string(intrinsic fn) {
   case intrinsic::buffer_stride: return "buffer_stride";
   case intrinsic::buffer_fold_factor: return "buffer_fold_factor";
   case intrinsic::buffer_at: return "buffer_at";
+  case intrinsic::semaphore_init: return "semaphore_init";
+  case intrinsic::semaphore_signal: return "semaphore_signal";
+  case intrinsic::semaphore_wait: return "semaphore_wait";
 
   default: return "<invalid intrinsic>";
   }
@@ -221,11 +224,13 @@ public:
   }
 
   void visit(const allocate* n) override {
-    *this << indent() << n->sym << " = allocate(" << n->storage << ", " << n->elem_size << ", {\n";
-    *this << indent(2);
-    print_vector(n->dims, ",\n" + indent(2));
-    *this << "\n";
-    *this << indent() << "}) {\n";
+    *this << indent() << n->sym << " = allocate(" << n->storage << ", " << n->elem_size << ", {";
+    if (!n->dims.empty()) {
+      *this << "\n" << indent(2);
+      print_vector(n->dims, ",\n" + indent(2));
+      *this << "\n" << indent();
+    }
+    *this << "}) {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
@@ -233,11 +238,9 @@ public:
   void visit(const make_buffer* n) override {
     *this << indent() << n->sym << " = make_buffer(" << n->base << ", " << n->elem_size << ", {";
     if (!n->dims.empty()) {
-      *this << "\n";
-      *this << indent(2);
+      *this << "\n" << indent(2);
       print_vector(n->dims, ",\n" + indent(2));
-      *this << "\n";
-      *this << indent();
+      *this << "\n" << indent();
     }
     *this << "}) {\n";
     *this << n->body;

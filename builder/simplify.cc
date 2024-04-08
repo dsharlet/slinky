@@ -278,6 +278,31 @@ public:
       args_bounds.push_back(std::move(i_bounds));
     }
 
+    if (is_buffer_intrinsic(op->intrinsic)) {
+      assert(args.size() >= 1);
+      if (!args[0].defined()) {
+        set_result(expr(), interval_expr());
+        return;
+      }
+    }
+
+    if (op->intrinsic == intrinsic::semaphore_init || op->intrinsic == intrinsic::semaphore_wait ||
+      op->intrinsic == intrinsic::semaphore_signal) {
+      assert(args.size() % 2 == 0);
+      for (std::size_t i = 0; i < args.size();) {
+        // Remove calls to undefined semaphores.
+        if (!args[i].defined()) {
+          args.erase(args.begin() + i, args.begin() + i + 2);
+        } else {
+          i += 2;
+        }
+      }
+      if (args.empty()) {
+        set_result(expr(), interval_expr());
+        return;
+      }
+    }
+
     if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
       assert(op->args.size() == 2);
       const var* buf = as_variable(op->args[0]);
@@ -973,14 +998,12 @@ public:
   }
 
   void visit(const check* op) override {
-    if (!op->condition.defined()) {
-      set_result(op);
-      return;
-    }
-
     interval_expr c_bounds;
     expr c = mutate(op->condition, &c_bounds);
-    if (evaluates_true(c_bounds.min)) {
+
+    if (!c.defined()) {
+      set_result(stmt());
+    } else if (evaluates_true(c_bounds.min)) {
       set_result(stmt());
     } else if (evaluates_false(c_bounds.max)) {
       std::cerr << op->condition << " is statically false." << std::endl;

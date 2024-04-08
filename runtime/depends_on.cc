@@ -33,12 +33,14 @@ public:
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
-      const var* buf = as_variable(op->args[0]);
-      assert(buf);
-      update_deps(*buf, [](depends_on_result& deps) { deps.buffer_meta_read = true; });
+      if (op->args[0].defined()) {
+        const var* buf = as_variable(op->args[0]);
+        assert(buf);
+        update_deps(*buf, [](depends_on_result& deps) { deps.buffer_meta_read = true; });
 
-      for (std::size_t i = 1; i < op->args.size(); ++i) {
-        if (op->args[i].defined()) op->args[i].accept(this);
+        for (std::size_t i = 1; i < op->args.size(); ++i) {
+          if (op->args[i].defined()) op->args[i].accept(this);
+        }
       }
     } else {
       recursive_node_visitor::visit(op);

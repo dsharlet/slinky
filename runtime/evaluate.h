@@ -29,11 +29,15 @@ public:
   // instances that could be expected to run simultaneously.
   // - `enqueue` should enqueue a task N times.
   // - `wait_for` should wait until the given condition becomes true, executing tasks previously enqueued until it does.
+  // - `atomic_call` runs a task on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for`
+  //    conditions.
+  // 
   // These functions must be implemented if the statement being evaluated includes asynchronous nodes (parallel loops).
   using task = std::function<void()>;
   std::function<void(const task&)> enqueue_many;
   std::function<void(int, const task&)> enqueue;
   std::function<void(std::function<bool()>)> wait_for;
+  std::function<void(task)> atomic_call;
 
   // Functions implementing buffer data movement:
   // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.

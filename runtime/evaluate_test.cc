@@ -63,9 +63,10 @@ TEST(evaluate, loop) {
   thread_pool t;
 
   eval_context eval_ctx;
-  eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
-  eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
+  eval_ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
+  eval_ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
+  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
@@ -82,6 +83,37 @@ TEST(evaluate, loop) {
     ASSERT_EQ(result, 0);
     ASSERT_EQ(sum_x, 2 + 5 + 8 + 11);
   }
+}
+
+TEST(evaluate, semaphore) {
+  thread_pool t;
+
+  eval_context eval_ctx;
+  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+
+  index_t sem1 = 0;
+  index_t sem2 = 0;
+  index_t sem3 = 0;
+  auto make_wait = [&](index_t& sem) { return check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))); };
+  auto make_signal = [&](index_t& sem) { return check::make(semaphore_signal(reinterpret_cast<index_t>(&sem))); };
+
+  std::atomic<int> state = 0;
+
+  std::thread th([&]() { 
+    evaluate(make_wait(sem1), eval_ctx);
+    state++;
+    evaluate(make_signal(sem2), eval_ctx);
+    evaluate(make_wait(sem3), eval_ctx);
+    state++;
+  });
+  ASSERT_EQ(state, 0);
+  evaluate(make_signal(sem1), eval_ctx);
+  evaluate(make_wait(sem2), eval_ctx);
+  ASSERT_EQ(state, 1);
+  evaluate(make_signal(sem3), eval_ctx);
+  th.join();
+  ASSERT_EQ(state, 2);
 }
 
 TEST(evaluate_constant, arithmetic) {

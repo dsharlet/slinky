@@ -185,16 +185,26 @@ void BM_buffer_metadata(benchmark::State& state) {
 
 BENCHMARK(BM_buffer_metadata);
 
-void BM_parallel_loop(benchmark::State& state) {
-  std::atomic<int> calls = 0;
-  stmt body = loop::make(x, loop::parallel, range(0, iterations), 1, make_call_counter(calls));
+void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
+  const int workers = state.range(0);
 
-  thread_pool t(state.range(0));
+  std::atomic<int> calls = 0;
+  stmt body = make_call_counter(calls);
+
+  index_t sem = workers;
+  if (synchronize) {
+    body = block::make({check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))), body,
+        check::make(semaphore_signal(reinterpret_cast<index_t>(&sem)))});
+  }
+  body = loop::make(x, workers, range(0, iterations), 1, body);
+
+  thread_pool t(workers);
 
   eval_context eval_ctx;
-  eval_ctx.enqueue_many = [&](const thread_pool::task& f) { t.enqueue(t.thread_count(), f); };
-  eval_ctx.enqueue = [&](int n, const thread_pool::task& f) { t.enqueue(n, f); };
-  eval_ctx.wait_for = [&](std::function<bool()> f) { t.wait_for(std::move(f)); };
+  eval_ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
+  eval_ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
+  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
 
   for (auto _ : state) {
     evaluate(body, eval_ctx);
@@ -203,6 +213,10 @@ void BM_parallel_loop(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_parallel_loop)->RangeMultiplier(2)->Range(2, 16);
+void BM_parallel_loop(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/false); }
+void BM_semaphores(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/true); }
+
+BENCHMARK(BM_parallel_loop)->RangeMultiplier(2)->Range(1, 16);
+BENCHMARK(BM_semaphores)->RangeMultiplier(2)->Range(1, 16);
 
 }  // namespace slinky

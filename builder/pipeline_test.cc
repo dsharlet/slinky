@@ -84,9 +84,10 @@ public:
       heap.track_free(b->size_bytes());
     };
 
-    enqueue_many = [&](const thread_pool::task& t) { threads.enqueue(threads.thread_count(), t); };
-    enqueue = [&](int n, const thread_pool::task& t) { threads.enqueue(n, t); };
-    wait_for = [&](std::function<bool()> condition) { return threads.wait_for(std::move(condition)); };
+    enqueue_many = [&](thread_pool::task t) { threads.enqueue(threads.thread_count(), std::move(t)); };
+    enqueue = [&](int n, thread_pool::task t) { threads.enqueue(n, std::move(t)); };
+    wait_for = [&](const std::function<bool()>& condition) { return threads.wait_for(condition); };
+    atomic_call = [&](const thread_pool::task& t) { return threads.atomic_call(t); };
   }
 };
 
@@ -589,10 +590,6 @@ TEST_P(stencil, pipeline) {
 
   if (split > 0) {
     stencil.loops({{y, split, max_workers}});
-    if (max_workers == loop::parallel) {
-      intm->store_at({&stencil, y});
-      intm->store_in(memory_type::stack);
-    }
   }
 
   if (split_intermediate > 0) {
@@ -616,10 +613,11 @@ TEST_P(stencil, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (max_workers == loop::serial && split > 0) {
-    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + 2, split) * sizeof(short));
+  if (split > 0) {
+    const int parallel_extra = max_workers != loop::serial ? split : 0;
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short));
   }
-  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || max_workers == loop::serial ? 1 : 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -639,7 +637,17 @@ TEST_P(stencil, pipeline) {
   }
 }
 
-TEST(slide_2d, pipeline) {
+class slide_2d : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(split_split_mode, slide_2d,
+    testing::Combine(loop_modes, loop_modes),
+    test_params_to_string<slide_2d::ParamType>);
+
+
+TEST_P(slide_2d, pipeline) {
+  int max_workers_x = std::get<0>(GetParam());
+  int max_workers_y = std::get<1>(GetParam());
+
   // Make the pipeline
   node_context ctx;
 
@@ -651,7 +659,7 @@ TEST(slide_2d, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  int add_count = 0;
+  std::atomic<int> add_count = 0;
   auto add_counter = [&add_count](const buffer<const short>& in, const buffer<short>& out) -> index_t {
     add_count += out.dim(0).extent() * out.dim(1).extent();
     return add_1<short>(in, out);
@@ -660,7 +668,7 @@ TEST(slide_2d, pipeline) {
   func add = func::make(std::move(add_counter), {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
-  stencil.loops({{x, 1}, {y, 1}});
+  stencil.loops({{x, 1, max_workers_x}, {y, 1, max_workers_y}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -723,12 +731,6 @@ TEST_P(stencil_chain, pipeline) {
 
   if (split > 0) {
     stencil2.loops({{y, split, max_workers}});
-    if (max_workers == loop::parallel) {
-      intm->store_at({&stencil2, y});
-      intm2->store_at({&stencil2, y});
-      intm->store_in(memory_type::stack);
-      intm2->store_in(memory_type::stack);
-    }
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -748,11 +750,13 @@ TEST_P(stencil_chain, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (split > 0 && max_workers == loop::serial) {
-    ASSERT_EQ(eval_ctx.heap.total_size,
-        (W + 2) * align_up(split + 2, split) * sizeof(short) + (W + 4) * align_up(split + 2, split) * sizeof(short));
+
+  if (split > 0) {
+    const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short) +
+                                            (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short));
   }
-  ASSERT_EQ(eval_ctx.heap.total_count, split == 0 || max_workers == loop::serial ? 2 : 0);
+  ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
   // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});
@@ -1399,7 +1403,7 @@ TEST(constant, pipeline) {
 
 class parallel_stencils : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 3));
+INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 4));
 
 TEST_P(parallel_stencils, pipeline) {
   int schedule = GetParam();
@@ -1437,6 +1441,8 @@ TEST_P(parallel_stencils, pipeline) {
     diff.loops({{y, 2}});
     stencil1.loops({{y, 2}});
     stencil2.loops({{y, 2}});
+  } else if (schedule == 3) {
+    diff.loops({{y, 1, loop::parallel}});
   }
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
@@ -1487,12 +1493,14 @@ TEST_P(parallel_stencils, pipeline) {
   }
 
   // Also visualize this pipeline
-  check_visualize("parallel_stencils_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+  if (schedule < 3) {
+    check_visualize("parallel_stencils_" + std::to_string(schedule) + ".html", p, inputs, outputs, &ctx);
+  }
 }
 
 class diamond_stencils : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 3));
+INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 4));
 
 TEST_P(diamond_stencils, pipeline) {
   int schedule = GetParam();
@@ -1526,6 +1534,8 @@ TEST_P(diamond_stencils, pipeline) {
       stencil1.loops({{y, 2}});
       stencil2.loops({{y, 2}});
       mul2.compute_root();
+    } else if (schedule == 3) {
+      diff.loops({{y, 1, loop::parallel}});
     }
 
     return build_pipeline(ctx, {in}, {out});
