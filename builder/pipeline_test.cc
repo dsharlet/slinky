@@ -55,7 +55,6 @@ void setup_tracing(eval_context& ctx, const std::string& filename) {
     // Store the trace in a stringstream and write it at the end, to avoid overhead influencing the trace.
     std::stringstream buffer;
     chrome_trace trace;
-    std::map<index_t, const char*> tokens;
 
     tracer(const std::string& filename) : trace_file(filename), trace(buffer) {}
     ~tracer() {
