@@ -43,7 +43,7 @@ cc_test(
         "bazel_util.h",
         "util.h",
     ],
-    data = ["replica_pipeline.cc"] + glob(["builder/visualize/*.html"]),
+    data = ["replica_pipeline.cc"] + glob(["visualize/*.html"]),
     deps = [
         "//builder",
         "//builder:replica_pipeline",
