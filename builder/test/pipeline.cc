@@ -557,6 +557,61 @@ TEST(pyramid, pipeline) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
 }
 
+TEST(pyramid_multi, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  auto down0 = buffer_expr::make(ctx, "down0", 2, sizeof(int));
+  auto down1 = buffer_expr::make(ctx, "down1", 2, sizeof(int));
+  auto down2 = buffer_expr::make(ctx, "down2", 2, sizeof(int));
+  auto down3 = buffer_expr::make(ctx, "down3", 2, sizeof(int));
+  auto up3 = buffer_expr::make(ctx, "up3", 2, sizeof(int));
+  auto up2 = buffer_expr::make(ctx, "up2", 2, sizeof(int));
+  auto up1 = buffer_expr::make(ctx, "up1", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func downsample0 = func::make(downsample2x, {{in, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{down0, {x, y}}});
+  func downsample1 =
+      func::make(downsample2x, {{down0, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{down1, {x, y}}});
+  func downsample2 =
+      func::make(downsample2x, {{down1, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{down2, {x, y}}});
+  func downsample3 =
+      func::make(downsample2x, {{down2, {2 * x + bounds(0, 1), 2 * y + bounds(0, 1)}}}, {{down3, {x, y}}});
+  func upsample3 = func::make(pyramid_upsample2x,
+      {{down2, {point(x), point(y)}}, {down3, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{up3, {x, y}}});
+  func upsample2 = func::make(pyramid_upsample2x,
+      {{down1, {point(x), point(y)}}, {up3, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{up2, {x, y}}});
+  func upsample1 = func::make(pyramid_upsample2x,
+      {{down0, {point(x), point(y)}}, {up2, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{up1, {x, y}}});
+  func upsample = func::make(pyramid_upsample2x,
+      {{in, {point(x), point(y)}}, {up1, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
+
+  upsample.loops({{y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 15;
+  const int H = 11;
+  buffer<int, 2> in_buf({W + 64, H + 64});
+  in_buf.translate(-32, -32);
+  buffer<int, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+}
+
 class stencil : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil,
