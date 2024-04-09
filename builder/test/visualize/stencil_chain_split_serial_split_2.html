@@ -286,13 +286,13 @@ function pipeline(__in, out) {
           ]);
           { let add_result_uncropped = clone_buffer(add_result);
             {
-              let __trace_token = trace_begin(buffer_at(__trace_names, 22));
+              let __trace_token = trace_begin(buffer_at(__trace_names, 17));
               for(let y = (buffer_min(out, 1) + -4); y <= buffer_max(out, 1); y += 2) {
                 {
                   let __trace_token = trace_begin(buffer_at(__trace_names, 0));
                   { let __add_result = crop_dim(add_result, 1, {min:(y + 2), max:(min((y + 1), buffer_max(out, 1)) + 2)});
                     {
-                      let __trace_token = trace_begin(buffer_at(__trace_names, 17));
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
                       consume(__in);
                       produce(add_result);
                       check(trace_end(__trace_token));
@@ -301,7 +301,7 @@ function pipeline(__in, out) {
                   }
                   { let __stencil1_result = crop_dim(stencil1_result, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)});
                     {
-                      let __trace_token = trace_begin(buffer_at(__trace_names, 17));
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
                       consume(add_result_uncropped);
                       produce(stencil1_result);
                       check(trace_end(__trace_token));
@@ -310,7 +310,7 @@ function pipeline(__in, out) {
                   }
                   { let __out = crop_dim(out, 1, {min:y, max:(y + 1)});
                     {
-                      let __trace_token = trace_begin(buffer_at(__trace_names, 17));
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
                       consume(stencil1_result_uncropped);
                       produce(out);
                       check(trace_end(__trace_token));
