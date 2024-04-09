@@ -285,10 +285,11 @@ box_expr compute_input_bounds(
     }
   }
 
-  box_expr crop(std::min(i.bounds.size(), i.buffer->rank()));
-  for (std::size_t d = 0; d < crop.size(); ++d) {
+  box_expr crop(i.buffer->rank());
+  for (std::size_t d = 0; d < std::min(i.bounds.size(), crop.size()); ++d) {
     expr min = sanitizer.mutate(i.bounds[d].min);
     expr max = sanitizer.mutate(i.bounds[d].max);
+
     crop[d] = bounds_of({min, max}, output_bounds_i);
   }
 
