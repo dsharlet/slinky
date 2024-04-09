@@ -286,7 +286,7 @@ box_expr compute_input_bounds(
   }
 
   box_expr crop(i.buffer->rank());
-  for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
+  for (std::size_t d = 0; d < std::min(i.bounds.size(), crop.size()); ++d) {
     expr min = sanitizer.mutate(i.bounds[d].min);
     expr max = sanitizer.mutate(i.bounds[d].max);
 
