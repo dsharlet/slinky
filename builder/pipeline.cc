@@ -860,11 +860,11 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
 
     void visit(const call_stmt* op) override { set_result(add_trace(op, get_trace_arg(op))); }
     void visit(const loop* op) override {
-      stmt body = mutate(op->body);
-      body = add_trace(std::move(body), get_trace_arg("loop " + ctx.name(op->sym) + " iteration"));
+      expr iter_name = get_trace_arg("loop " + ctx.name(op->sym) + " iteration");
+      expr loop_name = get_trace_arg("loop " + ctx.name(op->sym));
+      stmt body = add_trace(mutate(op->body), iter_name);
       stmt result = clone_with_new_body(op, std::move(body));
-      result = add_trace(std::move(result), get_trace_arg("loop " + ctx.name(op->sym)));
-      set_result(std::move(result));
+      set_result(add_trace(std::move(result), loop_name));
     }
   };
 
