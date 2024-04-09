@@ -8,8 +8,8 @@
 #include "builder/substitute.h"
 #include "builder/test/bazel_util.h"
 #include "builder/test/util.h"
-#include "runtime/expr.h"
 #include "runtime/chrome_trace.h"
+#include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
 #include "runtime/thread_pool.h"
@@ -543,7 +543,12 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-TEST(pyramid, pipeline) {
+class pyramid : public testing::TestWithParam<std::tuple<int>> {};
+
+INSTANTIATE_TEST_SUITE_P(mode, pyramid, testing::Combine(loop_modes), test_params_to_string<pyramid::ParamType>);
+
+TEST_P(pyramid, pipeline) {
+  int max_workers = std::get<0>(GetParam());
   // Make the pipeline
   node_context ctx;
 
@@ -559,7 +564,7 @@ TEST(pyramid, pipeline) {
   func upsample = func::make(pyramid_upsample2x,
       {{in, {point(x), point(y)}}, {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
 
-  upsample.loops({{y, 1}});
+  upsample.loops({{y, 1, max_workers}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -578,10 +583,14 @@ TEST(pyramid, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
+
+  const int parallel_extra = max_workers != loop::serial ? 1 : 0;
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * (2 + parallel_extra) * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
-  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+  if (max_workers == loop::serial) {
+    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+  }
 }
 
 class stencil : public testing::TestWithParam<std::tuple<int, int, int>> {};

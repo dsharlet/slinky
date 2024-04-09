@@ -284,7 +284,8 @@ public:
                   // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                   // If we can figure out how to add some synchronization to limit the number of workers that
                   // work on a single stage at a time, we should be able to reduce this extra folding.
-                  fold_factor += (loop.worker_count - 1) * ignore_loop_max(cur_bounds_d.max - new_min + 1);
+                  fold_factor += (loop.worker_count - 1) *
+                                 simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1)).max);
                 }
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
