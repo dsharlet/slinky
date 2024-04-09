@@ -45,6 +45,10 @@ public:
   std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy = slinky::copy;
   std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad = slinky::pad;
 
+  // Functions called every time a stmt begins or ends evaluation.
+  std::function<index_t(const char*)> trace_begin;
+  std::function<void(index_t)> trace_end;
+
   const raw_buffer* lookup_buffer(var id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
 

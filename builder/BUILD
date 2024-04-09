@@ -90,6 +90,7 @@ cc_test(
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest_main",
         "//runtime",
+        "//runtime:chrome_trace",
         "//runtime:thread_pool",
         "//runtime:visualize",
     ],

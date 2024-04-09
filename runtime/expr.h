@@ -108,6 +108,10 @@ enum class intrinsic {
   // wait and signal can take multiple semaphores as a sequence of (sem, count) pairs of arguments.
   semaphore_signal,
   semaphore_wait,
+
+  // Calls the tracing callback with the first argument. Returns a token that should be passed to end_trace.
+  trace_begin,
+  trace_end,
 };
 
 class expr_visitor;
