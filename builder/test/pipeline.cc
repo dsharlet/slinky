@@ -3,13 +3,13 @@
 #include <cassert>
 #include <fstream>
 
-#include "builder/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
-#include "builder/test_util.h"
-#include "runtime/chrome_trace.h"
+#include "builder/test/bazel_util.h"
+#include "builder/test/util.h"
 #include "runtime/expr.h"
+#include "runtime/chrome_trace.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
 #include "runtime/thread_pool.h"
@@ -17,12 +17,8 @@
 
 namespace slinky {
 
-std::string read_entire_runfile(const std::string& rlocation) {
-  return read_entire_file(get_bazel_file_path(rlocation));
-}
-
 std::string get_replica_golden() {
-  static std::string golden = read_entire_runfile("builder/replica_pipeline_test.cc");
+  static std::string golden = read_entire_file(get_bazel_file_path("builder/test/replica_pipeline.cc"));
   return golden;
 }
 
@@ -37,9 +33,10 @@ void check_visualize(const std::string& filename, const pipeline& p, pipeline::b
   visualize(viz_stream, p, inputs, outputs, ctx);
   std::string viz = viz_stream.str();
 
-  std::string golden_path = get_bazel_file_path("builder/visualize/" + filename);
+  std::string golden_path = get_bazel_file_path("builder/test/visualize/" + filename);
   if (is_bazel_test()) {
     std::string golden = read_entire_file(golden_path);
+    ASSERT_FALSE(golden.empty());
     // If this check fails, and you believe the changes to the visualization is correct, run this
     // test outside of bazel from the root of the repo to update the golden files.
     ASSERT_TRUE(golden == viz);
