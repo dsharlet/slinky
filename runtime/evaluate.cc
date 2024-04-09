@@ -250,14 +250,14 @@ public:
   index_t eval_trace_begin(const call* op) {
     assert(op->args.size() == 1);
     const char* name = reinterpret_cast<const char*>(eval_expr(op->args[0]));
-    assert(context.trace_begin);
-    return context.trace_begin(name);
+    return context.trace_begin ? context.trace_begin(name) : 0;
   }
 
   index_t eval_trace_end(const call* op) {
     assert(op->args.size() == 1);
-    assert(context.trace_end);
-    context.trace_end(eval_expr(op->args[0]));
+    if (context.trace_end) {
+      context.trace_end(eval_expr(op->args[0]));
+    }
     return 1;
   }
 
