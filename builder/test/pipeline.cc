@@ -3,11 +3,11 @@
 #include <cassert>
 #include <fstream>
 
-#include "builder/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
-#include "builder/test_util.h"
+#include "builder/test/bazel_util.h"
+#include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
@@ -21,7 +21,7 @@ std::string read_entire_runfile(const std::string& rlocation) {
 }
 
 std::string get_replica_golden() {
-  static std::string golden = read_entire_runfile("builder/replica_pipeline_test.cc");
+  static std::string golden = read_entire_runfile("builder/test/replica_pipeline.cc");
   return golden;
 }
 
