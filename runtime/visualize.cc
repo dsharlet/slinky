@@ -552,7 +552,10 @@ function produce(b) {
     m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
   }
 }
-function consume(b) {};
+function consume(b) {}
+function trace_begin(x) { return x; }
+function trace_end(x) { return 1; }
+let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
 )html";
 const char* footer = R"html(
 let __end_t = __event_t;

@@ -272,6 +272,9 @@ struct build_options {
 
   // Disable aliasing buffers.
   bool no_alias_buffers = false;
+
+  // Generate trace_begin/trace_end calls to log the pipeline execution.
+  bool trace = false;
 };
 
 // Constructs a body and a pipeline object for a graph described by input and output buffers.
