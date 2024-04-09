@@ -255,6 +255,9 @@ public:
     }
     set_result(variable::make(i.first->second));
   }
+
+  using node_mutator::mutate;
+  interval_expr mutate(const interval_expr& i) { return {mutate(i.min), mutate(i.max)}; }
 };
 
 void get_output_bounds(const std::vector<func::output>& outputs, bounds_map& output_bounds) {
@@ -285,12 +288,10 @@ box_expr compute_input_bounds(
     }
   }
 
+  assert(i.bounds.size() == i.buffer->rank());
   box_expr crop(i.buffer->rank());
-  for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-    expr min = sanitizer.mutate(i.bounds[d].min);
-    expr max = sanitizer.mutate(i.bounds[d].max);
-
-    crop[d] = bounds_of({min, max}, output_bounds_i);
+  for (std::size_t d = 0; d < crop.size(); ++d) {
+    crop[d] = bounds_of(sanitizer.mutate(i.bounds[d]), output_bounds_i);
   }
 
   return crop;
@@ -379,14 +380,14 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 
   // For each of the nodes find the path to the root of the tree.
   std::vector<std::vector<int>> paths_from_root(parent_ids.size());
-  for (int ix = 0; ix < static_cast<int>(parent_ids.size()); ix++) {
+  for (std::size_t ix = 0; ix < parent_ids.size(); ix++) {
     find_path_from_root(loop_tree, parent_ids[ix], paths_from_root[ix]);
   }
 
   // Compare paths to the root node until the diverge. The last node before
   // the diversion point is the least common ancestor.
   int max_match = paths_from_root[0].size() - 1;
-  for (int ix = 1; ix < static_cast<int>(paths_from_root.size()); ix++) {
+  for (std::size_t ix = 1; ix < paths_from_root.size(); ix++) {
     max_match = compare_paths_up_to(paths_from_root[0], paths_from_root[ix], max_match);
   }
 
