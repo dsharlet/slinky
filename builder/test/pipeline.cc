@@ -39,7 +39,7 @@ void check_visualize(const std::string& filename, const pipeline& p, pipeline::b
     ASSERT_FALSE(golden.empty());
     // If this check fails, and you believe the changes to the visualization is correct, run this
     // test outside of bazel from the root of the repo to update the golden files.
-    ASSERT_TRUE(golden == viz) << "\n\n------" << golden << "\n------\n" << viz << "------\n\n";
+    ASSERT_TRUE(golden == viz);
   } else {
     std::ofstream file(golden_path);
     file << viz;
