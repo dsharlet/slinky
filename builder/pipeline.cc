@@ -255,6 +255,9 @@ public:
     }
     set_result(variable::make(i.first->second));
   }
+
+  using node_mutator::mutate;
+  interval_expr mutate(const interval_expr& i) { return {mutate(i.min), mutate(i.max)}; }
 };
 
 void get_output_bounds(const std::vector<func::output>& outputs, bounds_map& output_bounds) {
@@ -285,12 +288,10 @@ box_expr compute_input_bounds(
     }
   }
 
+  assert(i.bounds.size() == i.buffer->rank());
   box_expr crop(i.buffer->rank());
-  for (int d = 0; d < static_cast<int>(crop.size()); ++d) {
-    expr min = sanitizer.mutate(i.bounds[d].min);
-    expr max = sanitizer.mutate(i.bounds[d].max);
-
-    crop[d] = bounds_of({min, max}, output_bounds_i);
+  for (std::size_t d = 0; d < crop.size(); ++d) {
+    crop[d] = bounds_of(sanitizer.mutate(i.bounds[d]), output_bounds_i);
   }
 
   return crop;
@@ -379,14 +380,14 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 
   // For each of the nodes find the path to the root of the tree.
   std::vector<std::vector<int>> paths_from_root(parent_ids.size());
-  for (int ix = 0; ix < static_cast<int>(parent_ids.size()); ix++) {
+  for (std::size_t ix = 0; ix < parent_ids.size(); ix++) {
     find_path_from_root(loop_tree, parent_ids[ix], paths_from_root[ix]);
   }
 
   // Compare paths to the root node until the diverge. The last node before
   // the diversion point is the least common ancestor.
   int max_match = paths_from_root[0].size() - 1;
-  for (int ix = 1; ix < static_cast<int>(paths_from_root.size()); ix++) {
+  for (std::size_t ix = 1; ix < paths_from_root.size(); ix++) {
     max_match = compare_paths_up_to(paths_from_root[0], paths_from_root[ix], max_match);
   }
 
@@ -823,6 +824,59 @@ bool is_verbose() {
   return (s && std::atoi(s) == 1);
 }
 
+// This function inserts calls to trace_begin and trace_end around calls and loops.
+stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& constants) {
+  class injector : public node_mutator {
+  public:
+    node_context& ctx;
+    var token;
+    var names_buf;
+    std::vector<char> names;
+    std::map<std::string, index_t> name_to_offset;
+
+    injector(node_context& ctx) : ctx(ctx), token(ctx, "__trace_token"), names_buf(ctx, "__trace_names") {}
+
+    // Returns a pointer to the names buffer for the argument.
+    expr get_trace_arg(const std::string& arg) {
+      // If we already have this name, use it. Otherwise, add it to the names buffer.
+      auto i = name_to_offset.insert(std::pair<std::string, index_t>(arg, names.size()));
+      if (i.second) {
+        names.insert(names.end(), arg.begin(), arg.end());
+        names.push_back(0);
+      }
+      expr args[] = {i.first->second};
+      return buffer_at(names_buf, args);
+    }
+
+    expr get_trace_arg(const call_stmt* op) {
+      // TODO: If we add some kind of description to call_stmt::attrs, use it here.
+      return get_trace_arg("call");
+    }
+
+    stmt add_trace(stmt s, expr trace_arg) {
+      expr trace_begin = call::make(intrinsic::trace_begin, {trace_arg});
+      expr trace_end = call::make(intrinsic::trace_end, {token});
+      return let_stmt::make({{token, trace_begin}}, block::make({std::move(s), check::make(trace_end)}));
+    }
+
+    void visit(const call_stmt* op) override { set_result(add_trace(op, get_trace_arg(op))); }
+    void visit(const loop* op) override {
+      expr iter_name = get_trace_arg("loop " + ctx.name(op->sym) + " iteration");
+      expr loop_name = get_trace_arg("loop " + ctx.name(op->sym));
+      stmt body = add_trace(mutate(op->body), iter_name);
+      stmt result = clone_with_new_body(op, std::move(body));
+      set_result(add_trace(std::move(result), loop_name));
+    }
+  };
+
+  injector m(ctx);
+  stmt result = m.mutate(s);
+  result = m.add_trace(result, m.get_trace_arg("pipeline"));
+  buffer<char, 1> names_const_buf(m.names.data(), m.names.size());
+  constants.insert(buffer_expr::make(m.names_buf, raw_buffer::make_copy(names_const_buf)));
+  return result;
+}
+
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
   pipeline_builder builder(ctx, inputs, outputs, constants);
@@ -862,6 +916,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = simplify(result);
 
   result = fix_buffer_races(result);
+
+  if (options.trace) {
+    result = inject_traces(result, ctx, constants);
+  }
 
   if (is_verbose()) {
     std::cout << std::tie(result, ctx) << std::endl;

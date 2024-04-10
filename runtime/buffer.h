@@ -277,6 +277,8 @@ public:
     }
   }
   buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
+  // TODO: A more general version of this constructor would probably be useful.
+  buffer(T* base, index_t size) : buffer({size}) { raw_buffer::base = base; }
   ~buffer() { free(); }
 
   // This is a shallow copy.

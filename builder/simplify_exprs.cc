@@ -700,6 +700,15 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     }
   }
 
+  if (fn == intrinsic::abs) {
+    assert(args.size() == 1);
+    if (is_non_negative(args[0])) {
+      return args[0];
+    } else if (is_non_positive(args[0])) {
+      return simplify(static_cast<const sub*>(nullptr), 0, std::move(args[0]));
+    }
+  }
+
   expr e;
   if (!changed) {
     assert(op);

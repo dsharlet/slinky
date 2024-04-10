@@ -48,6 +48,7 @@ cc_test(
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
+        "//runtime:chrome_trace",
         "//runtime:thread_pool",
         "//runtime:visualize",
         "@bazel_tools//tools/cpp/runfiles",

@@ -8,6 +8,7 @@
 #include "builder/substitute.h"
 #include "builder/test/bazel_util.h"
 #include "builder/test/util.h"
+#include "runtime/chrome_trace.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
@@ -43,6 +44,32 @@ void check_visualize(const std::string& filename, const pipeline& p, pipeline::b
     std::ofstream file(golden_path);
     file << viz;
   }
+}
+
+void setup_tracing(eval_context& ctx, const std::string& filename) {
+  struct tracer {
+    std::string trace_file;
+    // Store the trace in a stringstream and write it at the end, to avoid overhead influencing the trace.
+    std::stringstream buffer;
+    chrome_trace trace;
+
+    tracer(const std::string& filename) : trace_file(filename), trace(buffer) {}
+    ~tracer() {
+      std::ofstream file(trace_file);
+      file << buffer.str();
+    }
+  };
+
+  auto t = std::make_shared<tracer>(filename);
+
+  ctx.trace_begin = [t](const char* op) -> index_t {
+    t->trace.begin(op);
+    // chrome_trace expects trace_begin and trace_end to pass the string, while slinky's API expects to pass a token to
+    // trace_end returned by trace_begin. Because `index_t` must be able to hold a pointer, we'll just use the token to
+    // store the pointer.
+    return reinterpret_cast<index_t>(op);
+  };
+  ctx.trace_end = [t](index_t token) { t->trace.end(reinterpret_cast<const char*>(token)); };
 }
 
 thread_pool threads;
@@ -516,7 +543,12 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-TEST(pyramid, pipeline) {
+class pyramid : public testing::TestWithParam<std::tuple<int>> {};
+
+INSTANTIATE_TEST_SUITE_P(mode, pyramid, testing::Combine(loop_modes), test_params_to_string<pyramid::ParamType>);
+
+TEST_P(pyramid, pipeline) {
+  int max_workers = std::get<0>(GetParam());
   // Make the pipeline
   node_context ctx;
 
@@ -532,7 +564,7 @@ TEST(pyramid, pipeline) {
   func upsample = func::make(pyramid_upsample2x,
       {{in, {point(x), point(y)}}, {intm, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
 
-  upsample.loops({{y, 1}});
+  upsample.loops({{y, 1, max_workers}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -551,10 +583,14 @@ TEST(pyramid, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * 2 * sizeof(int));
+
+  const int parallel_extra = max_workers != loop::serial ? 1 : 0;
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * (2 + parallel_extra) * sizeof(int));
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
-  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+  if (max_workers == loop::serial) {
+    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+  }
 }
 
 TEST(pyramid_multi, pipeline) {
@@ -783,7 +819,7 @@ TEST_P(stencil_chain, pipeline) {
     stencil2.loops({{y, split, max_workers}});
   }
 
-  pipeline p = build_pipeline(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.trace = true});
 
   // Run the pipeline.
   const int W = 20;
@@ -799,6 +835,11 @@ TEST_P(stencil_chain, pipeline) {
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
+
+  std::string test_name = "stencil_chain_split_" + std::string(max_workers == loop::serial ? "serial" : "parallel") +
+                          "_split_" + std::to_string(split);
+  setup_tracing(eval_ctx, test_name + ".json");
+
   p.evaluate(inputs, outputs, eval_ctx);
 
   if (split > 0) {
@@ -830,7 +871,7 @@ TEST_P(stencil_chain, pipeline) {
 
   // Also visualize this pipeline.
   if (max_workers == loop::serial) {
-    check_visualize("stencil_chain_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
+    check_visualize(test_name + ".html", p, inputs, outputs, &ctx);
   }
 }
 

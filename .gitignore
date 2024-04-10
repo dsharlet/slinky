@@ -42,6 +42,9 @@ bazel-*
 # perf outputs
 perf.data*
 
+# Tracing outputs
+*.json
+
 # Local helper scripts used by some contributors
 run-clang-format.sh
 run-clang-tidy.sh

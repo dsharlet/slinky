@@ -38,6 +38,13 @@ cc_library(
 )
 
 cc_library(
+    name = "chrome_trace",
+    srcs = ["chrome_trace.cc"],
+    hdrs = ["chrome_trace.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "visualize",
     srcs = ["visualize.cc"],
     hdrs = ["visualize.h"],

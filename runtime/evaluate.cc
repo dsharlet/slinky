@@ -247,6 +247,20 @@ public:
     return 1;
   }
 
+  index_t eval_trace_begin(const call* op) {
+    assert(op->args.size() == 1);
+    const char* name = reinterpret_cast<const char*>(eval_expr(op->args[0]));
+    return context.trace_begin ? context.trace_begin(name) : 0;
+  }
+
+  index_t eval_trace_end(const call* op) {
+    assert(op->args.size() == 1);
+    if (context.trace_end) {
+      context.trace_end(eval_expr(op->args[0]));
+    }
+    return 1;
+  }
+
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
@@ -272,6 +286,10 @@ public:
     case intrinsic::semaphore_init: result = eval_semaphore_init(op); return;
     case intrinsic::semaphore_signal: result = eval_semaphore_signal(op); return;
     case intrinsic::semaphore_wait: result = eval_semaphore_wait(op); return;
+
+    case intrinsic::trace_begin: result = eval_trace_begin(op); return;
+    case intrinsic::trace_end: result = eval_trace_end(op); return;
+
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
   }
