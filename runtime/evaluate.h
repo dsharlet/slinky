@@ -55,6 +55,9 @@ std::optional<index_t> evaluate_constant(const expr& e);
 // Returns true if `fn` can be evaluated.
 bool can_evaluate(intrinsic fn);
 
+bool is_valid(const expr& e, span<var> inputs, const node_context* symbols);
+bool is_valid(const stmt& s, span<var> inputs, const node_context* symbols);
+
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_EVALUATE_H
