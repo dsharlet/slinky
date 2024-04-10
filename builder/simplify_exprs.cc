@@ -269,8 +269,17 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite((x - y) - (x - z), z - y) ||
       r.rewrite((c0 - x) - (y - z), ((z - x) - y) + c0) ||
       r.rewrite((x + c0) - (y + c1), (x - y) + eval(c0 - c1)) ||
-
-      r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, eval(c0 > 0)) ||
+    
+      // These rules taken from https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Sub.cpp#L411-L421
+      r.rewrite((x + y)/c0 - (x + c1)/c0, ((y - c1) + ((x + eval(c1 % c0)) % c0))/c0, eval(c0 > 0)) ||
+      r.rewrite((x + c1)/c0 - (x + y)/c0, ((eval(c0 + c1 - 1) - y) - ((x + eval(c1 % c0)) % c0))/c0, eval(c0 > 0)) ||
+      r.rewrite((x - y)/c0 - (x + c1)/c0, (((x + eval(c1 % c0)) % c0) - y - c1)/c0, eval(c0 > 0)) ||
+      r.rewrite((x + c1)/c0 - (x - y)/c0, ((y + eval(c0 + c1 - 1)) - ((x + eval(c1 % c0)) % c0))/c0, eval(c0 > 0)) ||
+      r.rewrite(x/c0 - (x + y)/c0, ((eval(c0 - 1) - y) - (x % c0))/c0, eval(c0 > 0)) ||
+      r.rewrite((x + y)/c0 - x/c0, (y + (x % c0))/c0, eval(c0 > 0)) ||
+      r.rewrite(x/c0 - (x - y)/c0, ((y + eval(c0 - 1)) - (x % c0))/c0, eval(c0 > 0)) ||
+      r.rewrite((x - y)/c0 - x/c0, ((x % c0) - y)/c0, eval(c0 > 0)) ||
+      r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, eval(eval(c0 > 0))) ||
 
       r.rewrite(min(x, y + z) - z, min(y, x - z)) ||
       r.rewrite(max(x, y + z) - z, max(y, x - z)) ||
@@ -425,8 +434,9 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
-      r.rewrite((x + c0) / c1 < x / c1, eval(c0 < 0), eval(c1 > 0)) ||
-      r.rewrite(x / c1 < (x + c0) / c1, eval(c1 <= c0), eval(c1 > 0)) ||
+      r.rewrite((x + c0) / c2 < (x + c1) / c2, eval(c0 < c1), eval(c2 > 0)) ||
+      r.rewrite(x / c2 < (x + c1) / c2, eval(0 < c1), eval(c2 > 0)) ||
+      r.rewrite((x + c0) / c2 < x / c2, eval(c0 < 0), eval(c2 > 0)) ||
     
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
