@@ -571,8 +571,7 @@ TEST_P(pyramid, pipeline) {
   // Run the pipeline.
   const int W = 10;
   const int H = 10;
-  buffer<int, 2> in_buf({W + 4, H + 4});
-  in_buf.translate(-2, -2);
+  buffer<int, 2> in_buf({W + 2, H + 2});
   buffer<int, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -632,10 +631,9 @@ TEST(pyramid_multi, pipeline) {
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
-  const int W = 15;
-  const int H = 11;
-  buffer<int, 2> in_buf({W + 64, H + 64});
-  in_buf.translate(-32, -32);
+  const int W = 21;
+  const int H = 15;
+  buffer<int, 2> in_buf({W + 32, H + 32});
   buffer<int, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -646,6 +644,40 @@ TEST(pyramid_multi, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
+
+  // Run the pipeline stages manually to get the reference result.
+  buffer<int, 2> ref_down0({(W + 32) / 2, (H + 32) / 2});
+  buffer<int, 2> ref_down1({(W + 32) / 4, (H + 32) / 4});
+  buffer<int, 2> ref_down2({(W + 32) / 8, (H + 32) / 8});
+  buffer<int, 2> ref_down3({(W + 32) / 16, (H + 32) / 16});
+  buffer<int, 2> ref_up3({(W + 7) / 8 + 1, (H + 7) / 8 + 1});
+  buffer<int, 2> ref_up2({(W + 3) / 4 + 1, (H + 3) / 4 + 1});
+  buffer<int, 2> ref_up1({(W + 1) / 2 + 1, (H + 1) / 2 + 1});
+  buffer<int, 2> ref_out({W, H});
+
+  ref_down0.allocate();
+  ref_down1.allocate();
+  ref_down2.allocate();
+  ref_down3.allocate();
+  ref_up3.allocate();
+  ref_up2.allocate();
+  ref_up1.allocate();
+  ref_out.allocate();
+
+  downsample2x(in_buf.cast<const int>(), ref_down0.cast<int>());
+  downsample2x(ref_down0.cast<const int>(), ref_down1.cast<int>());
+  downsample2x(ref_down1.cast<const int>(), ref_down2.cast<int>());
+  downsample2x(ref_down2.cast<const int>(), ref_down3.cast<int>());
+  pyramid_upsample2x(ref_down2.cast<const int>(), ref_down3.cast<const int>(), ref_up3.cast<int>());
+  pyramid_upsample2x(ref_down1.cast<const int>(), ref_up3.cast<const int>(), ref_up2.cast<int>());
+  pyramid_upsample2x(ref_down0.cast<const int>(), ref_up2.cast<const int>(), ref_up1.cast<int>());
+  pyramid_upsample2x(in_buf.cast<const int>(), ref_up1.cast<const int>(), ref_out.cast<int>());
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(ref_out(x, y), out_buf(x, y));
+    }
+  }
 }
 
 class stencil : public testing::TestWithParam<std::tuple<int, int, int>> {};
