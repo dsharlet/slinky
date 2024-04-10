@@ -107,6 +107,7 @@ public:
     expr step;
     int max_workers;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
+    std::unique_ptr<symbol_map<interval_expr>> expr_bounds;
 
     // The next few fields relate to implementing synchronization in pipelined loops. In a pipelined loop, we
     // treat a sequence of stmts as "stages" in the pipeline, where we add synchronization to cause the loop
@@ -137,7 +138,8 @@ public:
 
     loop_info(node_context& ctx, var sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
-          buffer_bounds(std::make_unique<symbol_map<box_expr>>()), semaphores(ctx, ctx.name(sym) + "_semaphores"),
+          buffer_bounds(std::make_unique<symbol_map<box_expr>>()),
+          expr_bounds(std::make_unique<symbol_map<interval_expr>>()), semaphores(ctx, ctx.name(sym) + "_semaphores"),
           worker_count(ctx, ctx.name(sym) + "_worker_count") {}
   };
   std::vector<loop_info> loops;
@@ -146,6 +148,7 @@ public:
   var x;
 
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
+  symbol_map<interval_expr>& current_expr_bounds() { return *loops.back().expr_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
     loops.emplace_back(ctx, var(), expr(), interval_expr::none(), expr(), loop::serial);
@@ -170,6 +173,21 @@ public:
     }
 
     return result;
+  }
+
+  void visit(const let_stmt* op) override { 
+    auto& bounds = current_expr_bounds();
+    std::vector<scoped_value_in_symbol_map<interval_expr>> values;
+    values.reserve(op->lets.size());
+    for (const auto& i : op->lets) {
+      values.push_back(set_value_in_scope(bounds, i.first, bounds_of(i.second, bounds)));
+    }
+    stmt body = mutate(op->body);
+    if (!body.same_as(op->body)) {
+      set_result(let_stmt::make(op->lets, std::move(body)));
+    } else {
+      set_result(op);
+    }
   }
 
   void visit(const allocate* op) override {
@@ -241,7 +259,7 @@ public:
           if (prove_true(ignore_loop_max(overlap.empty()))) {
             // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
             // can fold the storage.
-            expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
+            expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
             if (!depends_on(fold_factor, loop.sym).any()) {
               if (loop.add_synchronization()) {
                 // We need a fold per worker when parallelizing the loop.
@@ -277,15 +295,16 @@ public:
             bool synchronize = loop.add_synchronization();
 
             if (!did_overlapped_fold) {
-              expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent())).max);
+              expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
               if (!depends_on(fold_factor, loop.sym).any()) {
                 if (synchronize) {
                   // We need an extra fold per worker when parallelizing the loop.
                   // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
                   // If we can figure out how to add some synchronization to limit the number of workers that
                   // work on a single stage at a time, we should be able to reduce this extra folding.
-                  fold_factor += (loop.worker_count - 1) *
-                                 simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1)).max);
+                  fold_factor +=
+                      (loop.worker_count - 1) *
+                      simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
                 }
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
@@ -404,10 +423,16 @@ public:
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
+    symbol_map<interval_expr> last_expr_bounds = current_expr_bounds();
     loops.emplace_back(ctx, op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
+    current_expr_bounds() = last_expr_bounds;
 
-    stmt body = mutate(op->body);
+    stmt body;
+    {
+      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, op->bounds);
+      body = mutate(op->body);
+    }
     interval_expr loop_bounds = {loops.back().bounds.min, op->bounds.max};
 
     if (loop_bounds.min.same_as(orig_min)) {
