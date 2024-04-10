@@ -526,9 +526,9 @@ inline bool is_true(const expr& x) {
 SLINKY_ALWAYS_INLINE inline bool is_false(const expr& x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
-inline bool is_intrinsic(const expr& x, intrinsic fn) {
+inline const call* is_intrinsic(const expr& x, intrinsic fn) {
   const call* c = x.as<call>();
-  return c ? c->intrinsic == fn : false;
+  return c && c->intrinsic == fn ? c : nullptr;
 }
 bool is_buffer_min(const expr& x, var sym, int dim);
 bool is_buffer_max(const expr& x, var sym, int dim);
@@ -552,12 +552,14 @@ const expr& indeterminate();
 
 inline bool is_positive(const expr& x) {
   if (is_positive_infinity(x)) return true;
+  if (const call* c = is_intrinsic(x, intrinsic::abs)) return is_positive(c);
   const index_t* c = as_constant(x);
   return c ? *c > 0 : false;
 }
 
 inline bool is_non_negative(const expr& x) {
   if (is_positive_infinity(x)) return true;
+  if (is_intrinsic(x, intrinsic::abs)) return true;
   const index_t* c = as_constant(x);
   return c ? *c >= 0 : false;
 }
