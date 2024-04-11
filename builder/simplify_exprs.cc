@@ -20,6 +20,8 @@ pattern_wildcard w{3};
 pattern_constant c0{0};
 pattern_constant c1{1};
 pattern_constant c2{2};
+pattern_constant c3{3};
+pattern_constant c4{4};
 
 }  // namespace
 
@@ -54,6 +56,17 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
       r.rewrite(min(abs(x), c0), c0, c0 <= 0) ||
       r.rewrite(min(c1 - abs(x), c0), c1 - abs(x), c1 <= c0) ||
+      r.rewrite(min(x + c0, (y + c1) / c2), min(x, (y + eval(c1 - c0 * c2)) / c2) + c0) ||
+
+      // These rules taken from: https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Min.cpp#L305-L311
+      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, x / c1), x/c1, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min(x / c1 + c0, (x / c3) * c4), (x / c3) * c4, eval(c0 > 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min((x / c3) * c4, x / c1), (x / c3) * c4, eval(c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
 
       // Algebraic simplifications
       r.rewrite(min(x, x), x) ||
@@ -127,6 +140,17 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
       r.rewrite(max(abs(x), c0), abs(x), c0 <= 0) ||
       r.rewrite(max(c1 - abs(x), c0), c0, c1 <= c0) ||
+      r.rewrite(max(x + c0, (y + c1) / c2), max(x, (y + eval(c1 - c0 * c2)) / c2) + c0) ||
+ 
+      // These rules taken from: https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Max.cpp#L294-L300
+      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, x / c1), x/c1, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max(x / c1 + c0, (x / c3) * c4), x / c1 + c0, eval(c0 > 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max((x / c3) * c4, x / c1), x / c1, eval(c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
 
       // Algebraic simplifications
       r.rewrite(max(x, x), x) ||
@@ -208,6 +232,10 @@ expr simplify(const add* op, expr a, expr b) {
       r.rewrite(x + (c0 - y), (x - y) + c0) ||
       r.rewrite(x + (y + c0), (x + y) + c0) ||
       r.rewrite((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
+    
+      r.rewrite(((x + c0) / c1) * c2 + c3, ((x + eval((c3 / c2) * c1 + c0)) / c1) * c2, eval(c3 % c2 == 0)) ||
+      r.rewrite((x + c0) * c2 + c3, (x + eval(c3 / c2 + c0)) * c2, eval(c3 % c2 == 0)) ||
+      r.rewrite((x + c0) / c1 + c3, (x + eval(c3 * c1 + c0)) / c1) ||
 
       r.rewrite(z + min(x, y - z), min(y, x + z)) ||
       r.rewrite(z + max(x, y - z), max(y, x + z)) ||
@@ -437,13 +465,15 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite((x + c0) / c2 < (x + c1) / c2, eval(c0 < c1), eval(c2 > 0)) ||
       r.rewrite(x / c2 < (x + c1) / c2, eval(0 < c1), eval(c2 > 0)) ||
       r.rewrite((x + c0) / c2 < x / c2, eval(c0 < 0), eval(c2 > 0)) ||
-    
+
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
       r.rewrite(x < x - y, y < 0) ||
       r.rewrite(x - y < y, x < y * 2) ||
       r.rewrite(y < x - y, y * 2 < x) ||
+      r.rewrite(x * c0 < y * c0, x < y, eval(c0 > 0)) ||
+      r.rewrite(x * c0 < y * c0, y < x, eval(c0 < 0)) ||
 
       r.rewrite(x + y < x + z, y < z) ||
       r.rewrite(x - y < x - z, z < y) ||
@@ -539,6 +569,7 @@ expr simplify(const equal* op, expr a, expr b) {
   if (r.rewrite(x == x, true) ||
       r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
       r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
+      r.rewrite(x * c0 == y * c0, x == y, eval(c0 != 0)) ||
       false) {
     return r.result;
   }

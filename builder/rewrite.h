@@ -12,7 +12,7 @@ namespace rewrite {
 
 // The maximum number of values pattern_wildcard::idx and pattern_constant::idx can have, starting from 0.
 constexpr int symbol_count = 4;
-constexpr int constant_count = 3;
+constexpr int constant_count = 5;
 
 struct match_context {
   const base_expr_node* vars[symbol_count];
