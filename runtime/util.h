@@ -44,8 +44,7 @@ T euclidean_mod(T a, T b) {
     return 0;
   }
   T r = a % b;
-  T sign_mask = r >> (sizeof(T) * 8 - 1);
-  return r + (sign_mask & std::abs(b));
+  return r >= 0 ? r : (b < 0 ? r - b : r + b);
 }
 
 // Compute a / b, rounding down.
