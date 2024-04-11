@@ -234,6 +234,9 @@ public:
         std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
 
+        // We don't want to use the bounds of the loop we are sliding over here.
+        auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
+
         expr loop_var = variable::make(loop.sym);
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
@@ -260,7 +263,7 @@ public:
             // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
-            if (!depends_on(fold_factor, loop.sym).any()) {
+            if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
               if (loop.add_synchronization()) {
                 // We need a fold per worker when parallelizing the loop.
                 // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
@@ -296,7 +299,7 @@ public:
 
             if (!did_overlapped_fold) {
               expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
-              if (!depends_on(fold_factor, loop.sym).any()) {
+              if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
                 if (synchronize) {
                   // We need an extra fold per worker when parallelizing the loop.
                   // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
