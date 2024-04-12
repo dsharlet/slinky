@@ -409,7 +409,7 @@ void fill(const raw_buffer& dst, const void* value);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.fold_factor() != dim::unfolded || inner.fold_factor() != dim::unfolded) return false;
+  if (inner.fold_factor() != dim::unfolded) return false;
   if (inner.stride() * inner.extent() != outer.stride()) return false;
   return true;
 }
@@ -448,7 +448,9 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
   return buf0.rank == buf1.rank && same_rank(buf1, bufs...);
 }
 
-inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.extent() == b.extent(); }
+inline bool same_bounds(const dim& a, const dim& b) {
+  return a.min() == b.min() && a.extent() == b.extent() && a.fold_factor() == b.fold_factor();
+}
 
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(int, const raw_buffer&) { return true; }
