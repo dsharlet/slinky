@@ -504,18 +504,7 @@ public:
       old_bounds[d].min = old_min;
       old_bounds[d].max = old_max;
 
-      // Allow these expressions to be undefined, and if so, they default to their existing values.
-      index_t min = std::max(old_min, eval_expr(op->bounds[d].min, old_min));
-      index_t max = std::min(old_max, eval_expr(op->bounds[d].max, old_max));
-
-      if (max >= min) {
-        index_t offset = dim.flat_offset_bytes(min);
-        // Crops can't span a folding boundary if they move the base pointer.
-        assert(offset == 0 || (max - old_min) / dim.fold_factor() == (min - old_min) / dim.fold_factor());
-        buffer->base = offset_bytes(buffer->base, offset);
-      }
-
-      dim.set_bounds(min, max);
+      buffer->crop(d, eval_expr(op->bounds[d].min, old_min), eval_expr(op->bounds[d].max, old_max));
     }
 
     visit(op->body);
@@ -533,19 +522,9 @@ public:
     slinky::dim& dim = buffer->dims[op->dim];
     index_t old_min = dim.min();
     index_t old_max = dim.max();
-
-    index_t min = std::max(old_min, eval_expr(op->bounds.min, old_min));
-    index_t max = std::min(old_max, eval_expr(op->bounds.max, old_max));
-
     void* old_base = buffer->base;
-    if (max >= min) {
-      buffer->base = offset_bytes(buffer->base, dim.flat_offset_bytes(min));
-      // Crops can't span a folding boundary if they move the base pointer.
-      assert(buffer->base == old_base || (max - old_min) / dim.fold_factor() == (min - old_min) / dim.fold_factor());
-    }
 
-    dim.set_bounds(min, max);
-
+    buffer->crop(op->dim, eval_expr(op->bounds.min, old_min), eval_expr(op->bounds.max, old_max));
     visit(op->body);
 
     buffer->base = old_base;
@@ -584,7 +563,7 @@ public:
   SLINKY_NO_STACK_PROTECTOR void visit(const slice_dim* op) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
-
+    
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     dim* old_dims = buffer->dims;
 

@@ -192,6 +192,43 @@ public:
     }
   }
 
+  // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
+  // `at` is dim(d).min() by default.
+  // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
+  raw_buffer& slice(std::size_t d) {
+    assert(d < rank);
+    if (d == 0) {
+      dims += 1;
+    } else {
+      // Erase the sliced dim from the list.
+      std::copy(dims + d + 1, dims + rank, dims + d);
+    }
+    rank -= 1;
+    return *this;
+  }
+  raw_buffer& slice(std::size_t d, index_t at) {
+    base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+    return slice(d);
+  }
+
+  // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
+  // Updates the base pointer to point to the new min.
+  raw_buffer& crop(std::size_t d, index_t min, index_t max) {
+    min = std::max(min, dim(d).min());
+    max = std::min(max, dim(d).max());
+
+    index_t offset = 0;
+    if (max >= min) {
+      offset = dim(d).flat_offset_bytes(min);
+      base = offset_bytes(base, offset);
+    }
+
+    dim(d).set_bounds(min, max);
+    // Crops can't span a folding boundary if they move the base pointer.
+    assert(offset == 0 || dim(d).min() / dim(d).fold_factor() == dim(d).max() / dim(d).fold_factor());
+    return *this;
+  }
+
   std::size_t size_bytes() const;
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
@@ -329,6 +366,21 @@ public:
   auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
 
+  // Insert a new dimension `dim` at index d, increasing the rank by 1.
+  buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
+    assert(d <= rank);
+    if (d == 0) {
+      assert(&dims_storage[0] <= dims - 1 && dims < &dims_storage[DimsSize]);
+      dims -= 1;
+    } else {
+      assert(&dims_storage[0] <= dims && dims + 1 < &dims_storage[DimsSize]);
+      std::copy_backward(dims + d, dims + rank, dims + rank + 1);
+    }
+    rank += 1;
+    dims[d] = dim;
+    return *this;
+  }
+
   void allocate() {
     assert(!to_free);
     to_free = raw_buffer::allocate();
@@ -356,6 +408,37 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
 
+// Returns true if the two dimensions can be fused.
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (inner.fold_factor() != dim::unfolded) return false;
+  if (inner.stride() * inner.extent() != outer.stride()) return false;
+  return true;
+}
+
+enum class fuse_type {
+  // Leave the outer dimension in its place in an undefined state.
+  undef,
+  // Replace the outer dimension with a dimension of extent 1 and min 0, preserving the rank.
+  keep,
+  // Remove the outer dimension, reducing the rank by 1.
+  remove,
+};
+
+// Fuse two dimensions of a buffer.
+inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
+  dim& id = buf.dim(inner);
+  dim& od = buf.dim(outer);
+  assert(can_fuse(id, od));
+  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
+  if (type == fuse_type::keep) {
+    od.set_min_extent(0, 1);
+  } else if (type == fuse_type::remove) {
+    buf.slice(outer);
+  } else {
+    assert(type == fuse_type::undef);
+  }
+}
+
 namespace internal {
 
 // Returns true if all buffers have the same rank.
@@ -366,7 +449,9 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
   return buf0.rank == buf1.rank && same_rank(buf1, bufs...);
 }
 
-inline bool same_bounds(const dim& a, const dim& b) { return a.min() == b.min() && a.extent() == b.extent(); }
+inline bool same_bounds(const dim& a, const dim& b) {
+  return a.min() == b.min() && a.extent() == b.extent() && a.fold_factor() == b.fold_factor();
+}
 
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(int, const raw_buffer&) { return true; }
@@ -378,13 +463,6 @@ bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bu
   return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
 }
 
-// Returns true if the two dimensions can be fused.
-inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.fold_factor() != dim::unfolded || inner.fold_factor() != dim::unfolded) return false;
-  if (inner.stride() * inner.extent() != outer.stride()) return false;
-  return true;
-}
-
 // Returns true if two dimensions of all buffers can be fused.
 inline bool can_fuse(int inner, int outer, const raw_buffer& buf) { return can_fuse(buf.dim(inner), buf.dim(outer)); }
 template <typename... Bufs>
@@ -393,16 +471,7 @@ bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) 
 }
 
 // Fuse two dimensions of all buffers.
-inline void fuse(int inner, int outer, raw_buffer& buf) {
-  dim& i = buf.dim(inner);
-  const dim& o = buf.dim(outer);
-  i.set_min_extent(o.min() * i.extent(), o.extent() * i.extent());
-  // Delete the outer dimension.
-  for (std::size_t i = outer; i + 1 < buf.rank; ++i) {
-    buf.dim(i) = buf.dim(i + 1);
-  }
-  buf.rank -= 1;
-}
+inline void fuse(int inner, int outer, raw_buffer& buf) { fuse(fuse_type::remove, inner, outer, buf); }
 template <typename... Bufs>
 void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
   fuse(inner, outer, buf);
