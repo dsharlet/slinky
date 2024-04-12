@@ -407,6 +407,37 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
 
+// Returns true if the two dimensions can be fused.
+inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (outer.fold_factor() != dim::unfolded || inner.fold_factor() != dim::unfolded) return false;
+  if (inner.stride() * inner.extent() != outer.stride()) return false;
+  return true;
+}
+
+enum class fuse_type {
+  // Leave the outer dimension in its place in an undefined state.
+  undef,
+  // Replace the outer dimension with a dimension of extent 1 and min 0, preserving the rank.
+  keep,
+  // Remove the outer dimension, reducing the rank by 1.
+  remove,
+};
+
+// Fuse two dimensions of a buffer.
+inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
+  dim& id = buf.dim(inner);
+  dim& od = buf.dim(outer);
+  assert(can_fuse(id, od));
+  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
+  if (type == fuse_type::keep) {
+    od.set_min_extent(0, 1);
+  } else if (type == fuse_type::remove) {
+    buf.slice(outer);
+  } else {
+    assert(type == fuse_type::undef);
+  }
+}
+
 namespace internal {
 
 // Returns true if all buffers have the same rank.
@@ -429,13 +460,6 @@ bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bu
   return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
 }
 
-// Returns true if the two dimensions can be fused.
-inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.fold_factor() != dim::unfolded || inner.fold_factor() != dim::unfolded) return false;
-  if (inner.stride() * inner.extent() != outer.stride()) return false;
-  return true;
-}
-
 // Returns true if two dimensions of all buffers can be fused.
 inline bool can_fuse(int inner, int outer, const raw_buffer& buf) { return can_fuse(buf.dim(inner), buf.dim(outer)); }
 template <typename... Bufs>
@@ -444,16 +468,7 @@ bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) 
 }
 
 // Fuse two dimensions of all buffers.
-inline void fuse(int inner, int outer, raw_buffer& buf) {
-  dim& i = buf.dim(inner);
-  const dim& o = buf.dim(outer);
-  i.set_min_extent(o.min() * i.extent(), o.extent() * i.extent());
-  // Delete the outer dimension.
-  for (std::size_t i = outer; i + 1 < buf.rank; ++i) {
-    buf.dim(i) = buf.dim(i + 1);
-  }
-  buf.rank -= 1;
-}
+inline void fuse(int inner, int outer, raw_buffer& buf) { fuse(fuse_type::remove, inner, outer, buf); }
 template <typename... Bufs>
 void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
   fuse(inner, outer, buf);
