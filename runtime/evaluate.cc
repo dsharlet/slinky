@@ -563,16 +563,30 @@ public:
   SLINKY_NO_STACK_PROTECTOR void visit(const slice_dim* op) override {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
+    
+    // The rank of the result is equal to the current rank, less any sliced dimensions.
+    dim* old_dims = buffer->dims;
 
+    buffer->dims = SLINKY_ALLOCA(dim, buffer->rank - 1);
+
+    index_t at = eval_expr(op->at);
+    index_t offset = old_dims[op->dim].flat_offset_bytes(at);
     void* old_base = buffer->base;
-    // Remember the dim we are deleting.
-    dim old_dim = buffer->dim(op->dim);
+    buffer->base = offset_bytes(buffer->base, offset);
 
-    buffer->slice(op->dim, eval_expr(op->at));
+    for (int d = 0; d < op->dim; ++d) {
+      buffer->dims[d] = old_dims[d];
+    }
+    for (int d = op->dim + 1; d < static_cast<int>(buffer->rank); ++d) {
+      buffer->dims[d - 1] = old_dims[d];
+    }
+    buffer->rank -= 1;
+
     visit(op->body);
 
     buffer->base = old_base;
-    buffer->unslice(op->dim, old_dim);
+    buffer->rank += 1;
+    buffer->dims = old_dims;
   }
 
   void visit(const truncate_rank* op) override {

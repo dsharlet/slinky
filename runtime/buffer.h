@@ -201,7 +201,7 @@ public:
       dims += 1;
     } else {
       // Erase the sliced dim from the list.
-      std::move(dims + d + 1, dims + rank, dims + d);
+      std::copy(dims + d + 1, dims + rank, dims + d);
     }
     rank -= 1;
     return *this;
@@ -209,20 +209,6 @@ public:
   raw_buffer& slice(std::size_t d, index_t at) {
     base = offset_bytes(base, dim(d).flat_offset_bytes(at));
     return slice(d);
-  }
-
-  // Insert a new dimension `dim` at index d, increasing the rank by 1. This assumes that the buffer has previously been
-  // sliced using `slice` above, and will grow the dims array accordingly.
-  raw_buffer& unslice(std::size_t d, const slinky::dim& dim) {
-    assert(d <= rank);
-    if (d == 0) {
-      dims -= 1;
-    } else {
-      std::move_backward(dims + d, dims + rank, dims + rank + 1);
-    }
-    rank += 1;
-    dims[d] = dim;
-    return *this;
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
@@ -379,6 +365,21 @@ public:
 
   auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
+
+  // Insert a new dimension `dim` at index d, increasing the rank by 1.
+  raw_buffer& unslice(std::size_t d, const slinky::dim& dim) {
+    assert(d <= rank);
+    if (d == 0) {
+      assert(&dims_storage[0] <= dims - 1 && dims < &dims_storage[DimsSize]);
+      dims -= 1;
+    } else {
+      assert(&dims_storage[0] <= dims && dims + 1 < &dims_storage[DimsSize]);
+      std::copy_backward(dims + d, dims + rank, dims + rank + 1);
+    }
+    rank += 1;
+    dims[d] = dim;
+    return *this;
+  }
 
   void allocate() {
     assert(!to_free);
