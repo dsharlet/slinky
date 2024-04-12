@@ -14,11 +14,18 @@ namespace rewrite {
 constexpr int symbol_count = 4;
 constexpr int constant_count = 5;
 
+class pattern_wildcard;
+class pattern_constant;
+
 struct match_context {
   const base_expr_node* vars[symbol_count];
   const index_t* constants[constant_count];
   int variant;
   int variant_bits;
+
+  const base_expr_node* matched(const pattern_wildcard& p) const;
+  const index_t* matched(const pattern_constant& p) const;
+  index_t matched(const pattern_constant& p, index_t def) const;
 };
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
@@ -88,6 +95,10 @@ inline index_t substitute(const pattern_constant& p, const match_context& ctx) {
   assert(ctx.constants[p.idx]);
   return *ctx.constants[p.idx];
 }
+
+inline const base_expr_node* match_context::matched(const pattern_wildcard& p) const { return vars[p.idx]; }
+inline const index_t* match_context::matched(const pattern_constant& p) const { return constants[p.idx]; }
+inline index_t match_context::matched(const pattern_constant& p, index_t def) const { return constants[p.idx] ? *constants[p.idx] : def; }
 
 template <typename T, typename A, typename B>
 class pattern_binary {
@@ -377,26 +388,36 @@ auto eval(const T& x) {
   return replacement_eval<T>{x};
 }
 
+template <typename Pattern, typename T>
+bool match_any_variant(const Pattern& p, const T& x, match_context& ctx) {
+  // We'll find out how many variant bits we have when we try to match.
+  // This can grow if we fail early due to a commutative variant that doesn't match near the root
+  // of the expression, so we track the max we've seen.
+  int max_variant_bits = 0;
+  for (int variant = 0; variant < (1 << max_variant_bits); ++variant) {
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.variant = variant;
+    if (match(p, x, ctx)) {
+      return true;
+    }
+    max_variant_bits = std::max(max_variant_bits, ctx.variant_bits);
+  }
+  return false;
+}
+
+template <typename Pattern, typename T, typename Predicate>
+bool match(match_context& ctx, const Pattern& p, const T& x, const Predicate& pr) {
+  return match_any_variant(p, x, ctx) && substitute(pr, ctx);
+}
+
+template <typename Pattern, typename T>
+bool match(match_context& ctx, const Pattern& p, const T& x) {
+  return match_any_variant(p, x, ctx);
+}
+
 template <typename T>
 class base_rewriter {
   T x;
-
-  template <typename Pattern>
-  bool variant_match(const Pattern& p, match_context& ctx) {
-    // We'll find out how many variant bits we have when we try to match.
-    // This can grow if we fail early due to a commutative variant that doesn't match near the root
-    // of the expression, so we track the max we've seen.
-    int max_variant_bits = 0;
-    for (int variant = 0; variant < (1 << max_variant_bits); ++variant) {
-      memset(&ctx, 0, sizeof(ctx));
-      ctx.variant = variant;
-      if (match(p, x, ctx)) {
-        return true;
-      }
-      max_variant_bits = std::max(max_variant_bits, ctx.variant_bits);
-    }
-    return false;
-  }
 
 public:
   expr result;
@@ -406,7 +427,7 @@ public:
   template <typename Pattern, typename Replacement>
   bool rewrite(const Pattern& p, const Replacement& r) {
     match_context ctx;
-    if (!variant_match(p, ctx)) return false;
+    if (!match_any_variant(p, x, ctx)) return false;
 
     result = substitute(r, ctx);
     return true;
@@ -415,7 +436,7 @@ public:
   template <typename Pattern, typename Replacement, typename Predicate>
   bool rewrite(const Pattern& p, const Replacement& r, const Predicate& pr) {
     match_context ctx;
-    if (!variant_match(p, ctx)) return false;
+    if (!match_any_variant(p, x, ctx)) return false;
 
     if (!substitute(pr, ctx)) return false;
 

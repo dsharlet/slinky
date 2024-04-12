@@ -2,11 +2,22 @@
 
 #include <algorithm>
 
+#include "builder/rewrite.h"
 #include "runtime/expr.h"
 
 namespace slinky {
 
+using namespace rewrite;
+
 namespace {
+
+pattern_wildcard x{0};
+
+pattern_constant c0{0};
+pattern_constant c1{1};
+pattern_constant c2{2};
+pattern_constant c3{3};
+pattern_constant c4{4};
 
 template <typename T>
 interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
@@ -37,7 +48,29 @@ interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
   if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
-    return {simplify(op, std::move(a.min), std::move(b.max)), simplify(op, std::move(a.max), std::move(b.min))};
+    interval_expr result = {
+        simplify(op, std::move(a.min), std::move(b.max)),
+        simplify(op, std::move(a.max), std::move(b.min)),
+    };
+    if (op) {
+      match_context ctx;
+      // Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
+      // clang-format off
+      if (match(ctx, ((x + c3) / c0) * c1 - (x + c4) / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) ||
+          match(ctx, (x / c0) * c1 - (x + c4) / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) || 
+          match(ctx, ((x + c3) / c0) * c1 - x / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) || 
+          match(ctx, (x / c0) * c1 - x / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) || 
+          false) {
+        index_t x_max = -ctx.matched(c3, 0);
+        index_t x_min = x_max - 1;
+        index_t min = floor_div(x_min + ctx.matched(c3, 0), *ctx.matched(c0)) * *ctx.matched(c1) - floor_div(x_min + ctx.matched(c4, 0), *ctx.matched(c2));
+        index_t max = floor_div(x_max + ctx.matched(c3, 0), *ctx.matched(c0)) * *ctx.matched(c1) - floor_div(x_max + ctx.matched(c4, 0), *ctx.matched(c2));
+        result.min = simplify(static_cast<const class max*>(nullptr), result.min, min);
+        result.max = simplify(static_cast<const class min*>(nullptr), result.max, max);
+      }
+      // clang-format on
+    }
+    return result;
   }
 }
 interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
