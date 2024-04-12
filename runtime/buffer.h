@@ -192,6 +192,57 @@ public:
     }
   }
 
+  // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
+  // `at` is dim(d).min() by default.
+  // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
+  raw_buffer& slice(std::size_t d) {
+    assert(d < rank);
+    if (d == 0) {
+      dims += 1;
+    } else {
+      // Erase the sliced dim from the list.
+      std::move(dims + d + 1, dims + rank, dims + d);
+    }
+    rank -= 1;
+    return *this;
+  }
+  raw_buffer& slice(std::size_t d, index_t at) {
+    base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+    return slice(d);
+  }
+
+  // Insert a new dimension `dim` at index d, increasing the rank by 1. This assumes that the buffer has previously been
+  // sliced using `slice` above, and will grow the dims array accordingly.
+  raw_buffer& unslice(std::size_t d, const slinky::dim& dim) {
+    assert(d <= rank);
+    if (d == 0) {
+      dims -= 1;
+    } else {
+      std::move_backward(dims + d, dims + rank, dims + rank + 1);
+    }
+    rank += 1;
+    dims[d] = dim;
+    return *this;
+  }
+
+  // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
+  // Updates the base pointer to point to the new min.
+  raw_buffer& crop(std::size_t d, index_t min, index_t max) {
+    min = std::max(min, dim(d).min());
+    max = std::min(max, dim(d).max());
+
+    index_t offset = 0;
+    if (max >= min) {
+      offset = dim(d).flat_offset_bytes(min);
+      base = offset_bytes(base, offset);
+    }
+
+    dim(d).set_bounds(min, max);
+    // Crops can't span a folding boundary if they move the base pointer.
+    assert(offset == 0 || dim(d).min() / dim(d).fold_factor() == dim(d).max() / dim(d).fold_factor());
+    return *this;
+  }
+
   std::size_t size_bytes() const;
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
