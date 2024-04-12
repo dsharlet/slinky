@@ -367,7 +367,7 @@ public:
   auto& operator()(span<const index_t> indices) const { return at(indices); }
 
   // Insert a new dimension `dim` at index d, increasing the rank by 1.
-  raw_buffer& unslice(std::size_t d, const slinky::dim& dim) {
+  buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
     assert(d <= rank);
     if (d == 0) {
       assert(&dims_storage[0] <= dims - 1 && dims < &dims_storage[DimsSize]);
