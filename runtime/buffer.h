@@ -324,12 +324,13 @@ public:
     elem_size = c.elem_size;
     assign_dims(c.rank, c.dims);
   }
-  void operator=(const buffer& c) {
-    if (this == &c) return;
+  buffer& operator=(const buffer& c) {
+    if (this == &c) return *this;
     free();
     raw_buffer::base = c.base();
     elem_size = c.elem_size;
     assign_dims(c.rank, c.dims);
+    return *this;
   }
 
   buffer(buffer&& m) { *this = std::move(m); }
@@ -337,10 +338,7 @@ public:
     if (this == &m) return *this;
     free();
     memcpy(static_cast<raw_buffer*>(this), static_cast<const raw_buffer*>(&m), sizeof(raw_buffer));
-    if (DimsSize > 0) {
-      memcpy(dims_storage, m.dims_storage, DimsSize * sizeof(slinky::dim));
-      dims = dims_storage;
-    }
+    assign_dims(m.rank, m.dims);
     // Take ownership of the data.
     to_free = m.to_free;
     m.to_free = nullptr;
