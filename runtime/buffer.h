@@ -181,34 +181,45 @@ public:
   }
 
   template <typename... Offsets>
-  void translate(index_t o0, Offsets... offsets) {
+  raw_buffer& translate(index_t o0, Offsets... offsets) {
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
+    return *this;
   }
-  void translate(span<const index_t> offsets) {
+  raw_buffer& translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
     }
+    return *this;
   }
+
+  // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
+  raw_buffer& slice(span<const std::size_t> ds) {
+    auto i = ds.begin();
+    std::size_t new_rank = 0;
+    for (std::size_t d = 0; d < rank; ++d) {
+      if (i != ds.end() && *i == d) {
+        // We want to slice this dimension, don't copy it and move to the next slice.
+        ++i;
+      } else {
+        // Copy this dimension (if it isn't already in the right place).
+        if (new_rank != d) dims[new_rank] = dims[d];
+        ++new_rank;
+      }
+    }
+    rank = new_rank;
+    return *this;
+  }
+  raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }
 
   // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
-  raw_buffer& slice(std::size_t d) {
-    assert(d < rank);
-    if (d == 0) {
-      dims += 1;
-    } else {
-      // Erase the sliced dim from the list.
-      std::copy(dims + d + 1, dims + rank, dims + d);
-    }
-    rank -= 1;
-    return *this;
-  }
+  raw_buffer& slice(std::size_t d) { return slice({d}); }
   raw_buffer& slice(std::size_t d, index_t at) {
     base = offset_bytes(base, dim(d).flat_offset_bytes(at));
-    return slice(d);
+    return slice({d});
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
