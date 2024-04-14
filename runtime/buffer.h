@@ -280,11 +280,13 @@ private:
     this->rank = rank;
     if (DimsSize > 0) {
       dims = dims_storage;
+      if (src) {
+        memcpy(dims, src, rank * sizeof(slinky::dim));
+      } else {
+        new (dims) slinky::dim[rank];
+      }
     } else {
       dims = nullptr;
-    }
-    if (src) {
-      memcpy(dims, src, rank * sizeof(slinky::dim));
     }
   }
 
@@ -378,8 +380,8 @@ public:
   // Insert a new dimension `dim` at index d, increasing the rank by 1.
   buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
     assert(d <= rank);
-    if (d == 0) {
-      assert(&dims_storage[0] <= dims - 1 && dims < &dims_storage[DimsSize]);
+    if (d == 0 && &dims_storage[0] <= dims - 1) {
+      assert(dims < &dims_storage[DimsSize]);
       dims -= 1;
     } else {
       assert(&dims_storage[0] <= dims && dims + 1 < &dims_storage[DimsSize]);
