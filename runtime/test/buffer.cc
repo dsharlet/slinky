@@ -137,6 +137,19 @@ TEST(buffer, shallow_copy) {
   ASSERT_NE(buf.dims, buf2.dims);
 }
 
+TEST(buffer, shallow_copy_different_capacity) {
+  buffer<int, 2> buf({10, 20});
+  init_random(buf);
+  buffer<int, 3> buf2 = buf;
+  ASSERT_EQ(buf.base(), buf2.base());
+  ASSERT_EQ(buf.elem_size, buf2.elem_size);
+  ASSERT_EQ(buf.rank, buf2.rank);
+  ASSERT_EQ(buf.dim(0), buf2.dim(0));
+  ASSERT_EQ(buf.dim(1), buf2.dim(1));
+
+  ASSERT_NE(buf.dims, buf2.dims);
+}
+
 TEST(buffer, folded) {
   buffer<char, 2> buf({10, 20});
   ASSERT_EQ(buf.size_bytes(), 10 * 20);

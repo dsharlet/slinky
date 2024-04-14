@@ -290,6 +290,23 @@ private:
     }
   }
 
+  buffer& shallow_copy(const raw_buffer& c) {
+    if (static_cast<void*>(this) == static_cast<const void*>(&c)) return *this;
+    free();
+    raw_buffer::base = c.base;
+    elem_size = c.elem_size;
+    assign_dims(c.rank, c.dims);
+    return *this;
+  }
+
+  template <std::size_t OtherDimsSize>
+  buffer& move(buffer<T, OtherDimsSize>&& m) {
+    shallow_copy(m);
+    // Take ownership of the data.
+    std::swap(to_free, m.to_free);
+    return *this;
+  }
+
 public:
   using raw_buffer::cast;
   using raw_buffer::dim;
@@ -331,31 +348,29 @@ public:
   buffer(T* base, index_t size) : buffer({size}) { raw_buffer::base = base; }
   ~buffer() { free(); }
 
-  // This is a shallow copy.
-  buffer(const buffer& c) : buffer() {
-    raw_buffer::base = c.base();
-    elem_size = c.elem_size;
-    assign_dims(c.rank, c.dims);
+  // All buffer copy/assignment operators are shallow copies.
+  buffer(const raw_buffer& c) : buffer() { shallow_copy(c); }
+  buffer(const buffer& c) : buffer() { shallow_copy(c); }
+  buffer(buffer&& m) : buffer() { move(m); }
+  template <std::size_t OtherDimsSize>
+  buffer(const buffer<T, OtherDimsSize>& c) : buffer() {
+    shallow_copy(c);
   }
-  buffer& operator=(const buffer& c) {
-    if (this == &c) return *this;
-    free();
-    raw_buffer::base = c.base();
-    elem_size = c.elem_size;
-    assign_dims(c.rank, c.dims);
-    return *this;
+  template <std::size_t OtherDimsSize>
+  buffer(buffer<T, OtherDimsSize>&& m) : buffer() {
+    move(m);
   }
 
-  buffer(buffer&& m) { *this = std::move(m); }
-  buffer& operator=(buffer&& m) {
-    if (this == &m) return *this;
-    free();
-    memcpy(static_cast<raw_buffer*>(this), static_cast<const raw_buffer*>(&m), sizeof(raw_buffer));
-    assign_dims(m.rank, m.dims);
-    // Take ownership of the data.
-    to_free = m.to_free;
-    m.to_free = nullptr;
-    return *this;
+  buffer& operator=(const raw_buffer& c) { return shallow_copy(c); }
+  buffer& operator=(const buffer& c) { return shallow_copy(c); }
+  buffer& operator=(buffer&& m) { return move(m); }
+  template <std::size_t OtherDimsSize>
+  buffer& operator=(const buffer<T, OtherDimsSize>& c) {
+    return shallow_copy(c);
+  }
+  template <std::size_t OtherDimsSize>
+  buffer& operator=(buffer<T, OtherDimsSize>&& m) {
+    return move(m);
   }
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
