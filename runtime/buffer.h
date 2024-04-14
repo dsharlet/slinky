@@ -266,6 +266,10 @@ template <>
 struct default_elem_size<void> {
   static constexpr std::size_t value = 0;
 };
+template <>
+struct default_elem_size<const void> {
+  static constexpr std::size_t value = 0;
+};
 
 }  // namespace internal
 
