@@ -202,6 +202,8 @@ public:
       if (i != ds.end() && *i == d) {
         // We want to slice this dimension, don't copy it and move to the next slice.
         ++i;
+        // The values in `ds` must be sorted.
+        assert(i == ds.end() || *i > d);
       } else {
         // Copy this dimension (if it isn't already in the right place).
         if (new_rank != d) dims[new_rank] = dims[d];
