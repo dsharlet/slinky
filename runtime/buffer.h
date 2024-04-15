@@ -181,34 +181,47 @@ public:
   }
 
   template <typename... Offsets>
-  void translate(index_t o0, Offsets... offsets) {
+  raw_buffer& translate(index_t o0, Offsets... offsets) {
     assert(sizeof...(offsets) + 1 <= rank);
     translate_impl(dims, o0, offsets...);
+    return *this;
   }
-  void translate(span<const index_t> offsets) {
+  raw_buffer& translate(span<const index_t> offsets) {
     assert(offsets.size() <= rank);
     for (std::size_t i = 0; i < offsets.size(); ++i) {
       dims[i].translate(offsets[i]);
     }
+    return *this;
   }
+
+  // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
+  raw_buffer& slice(span<const std::size_t> ds) {
+    auto i = ds.begin();
+    std::size_t new_rank = 0;
+    for (std::size_t d = 0; d < rank; ++d) {
+      if (i != ds.end() && *i == d) {
+        // We want to slice this dimension, don't copy it and move to the next slice.
+        ++i;
+        // The values in `ds` must be sorted.
+        assert(i == ds.end() || *i > d);
+      } else {
+        // Copy this dimension (if it isn't already in the right place).
+        if (new_rank != d) dims[new_rank] = dims[d];
+        ++new_rank;
+      }
+    }
+    rank = new_rank;
+    return *this;
+  }
+  raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }
 
   // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
-  raw_buffer& slice(std::size_t d) {
-    assert(d < rank);
-    if (d == 0) {
-      dims += 1;
-    } else {
-      // Erase the sliced dim from the list.
-      std::copy(dims + d + 1, dims + rank, dims + d);
-    }
-    rank -= 1;
-    return *this;
-  }
+  raw_buffer& slice(std::size_t d) { return slice({d}); }
   raw_buffer& slice(std::size_t d, index_t at) {
     base = offset_bytes(base, dim(d).flat_offset_bytes(at));
-    return slice(d);
+    return slice({d});
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
@@ -255,6 +268,10 @@ template <>
 struct default_elem_size<void> {
   static constexpr std::size_t value = 0;
 };
+template <>
+struct default_elem_size<const void> {
+  static constexpr std::size_t value = 0;
+};
 
 }  // namespace internal
 
@@ -269,12 +286,31 @@ private:
     this->rank = rank;
     if (DimsSize > 0) {
       dims = dims_storage;
+      if (src) {
+        memcpy(dims, src, rank * sizeof(slinky::dim));
+      } else {
+        new (dims) slinky::dim[rank];
+      }
     } else {
       dims = nullptr;
     }
-    if (src) {
-      memcpy(dims, src, rank * sizeof(slinky::dim));
-    }
+  }
+
+  buffer& shallow_copy(const raw_buffer& c) {
+    if (static_cast<void*>(this) == static_cast<const void*>(&c)) return *this;
+    free();
+    raw_buffer::base = c.base;
+    elem_size = c.elem_size;
+    assign_dims(c.rank, c.dims);
+    return *this;
+  }
+
+  template <std::size_t OtherDimsSize>
+  buffer& move(buffer<T, OtherDimsSize>&& m) {
+    shallow_copy(m);
+    // Take ownership of the data.
+    std::swap(to_free, m.to_free);
+    return *this;
   }
 
 public:
@@ -318,33 +354,29 @@ public:
   buffer(T* base, index_t size) : buffer({size}) { raw_buffer::base = base; }
   ~buffer() { free(); }
 
-  // This is a shallow copy.
-  buffer(const buffer& c) : buffer() {
-    raw_buffer::base = c.base();
-    elem_size = c.elem_size;
-    assign_dims(c.rank, c.dims);
+  // All buffer copy/assignment operators are shallow copies.
+  buffer(const raw_buffer& c) : buffer() { shallow_copy(c); }
+  buffer(const buffer& c) : buffer() { shallow_copy(c); }
+  buffer(buffer&& m) : buffer() { move(m); }
+  template <std::size_t OtherDimsSize>
+  buffer(const buffer<T, OtherDimsSize>& c) : buffer() {
+    shallow_copy(c);
   }
-  void operator=(const buffer& c) {
-    if (this == &c) return;
-    free();
-    raw_buffer::base = c.base();
-    elem_size = c.elem_size;
-    assign_dims(c.rank, c.dims);
+  template <std::size_t OtherDimsSize>
+  buffer(buffer<T, OtherDimsSize>&& m) : buffer() {
+    move(m);
   }
 
-  buffer(buffer&& m) { *this = std::move(m); }
-  buffer& operator=(buffer&& m) {
-    if (this == &m) return *this;
-    free();
-    memcpy(static_cast<raw_buffer*>(this), static_cast<const raw_buffer*>(&m), sizeof(raw_buffer));
-    if (DimsSize > 0) {
-      memcpy(dims_storage, m.dims_storage, DimsSize * sizeof(slinky::dim));
-      dims = dims_storage;
-    }
-    // Take ownership of the data.
-    to_free = m.to_free;
-    m.to_free = nullptr;
-    return *this;
+  buffer& operator=(const raw_buffer& c) { return shallow_copy(c); }
+  buffer& operator=(const buffer& c) { return shallow_copy(c); }
+  buffer& operator=(buffer&& m) { return move(m); }
+  template <std::size_t OtherDimsSize>
+  buffer& operator=(const buffer<T, OtherDimsSize>& c) {
+    return shallow_copy(c);
+  }
+  template <std::size_t OtherDimsSize>
+  buffer& operator=(buffer<T, OtherDimsSize>&& m) {
+    return move(m);
   }
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
@@ -369,8 +401,8 @@ public:
   // Insert a new dimension `dim` at index d, increasing the rank by 1.
   buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
     assert(d <= rank);
-    if (d == 0) {
-      assert(&dims_storage[0] <= dims - 1 && dims < &dims_storage[DimsSize]);
+    if (d == 0 && &dims_storage[0] <= dims - 1) {
+      assert(dims < &dims_storage[DimsSize]);
       dims -= 1;
     } else {
       assert(&dims_storage[0] <= dims && dims + 1 < &dims_storage[DimsSize]);
@@ -410,6 +442,7 @@ void fill(const raw_buffer& dst, const void* value);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
+  if (outer.extent() == 1) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
   if (inner.stride() * inner.extent() != outer.stride()) return false;
   return true;
@@ -430,6 +463,10 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
   id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
+  if (od.extent() != 1 && od.fold_factor() != dim::unfolded) {
+    assert(id.fold_factor() == dim::unfolded);
+    id.set_fold_factor(od.fold_factor() * id.extent());
+  }
   if (type == fuse_type::keep) {
     od.set_min_extent(0, 1);
   } else if (type == fuse_type::remove) {
