@@ -128,6 +128,8 @@ protected:
   }
 
 public:
+  using pointer = void*;
+
   void* base;
   std::size_t elem_size;
   std::size_t rank;
@@ -314,6 +316,8 @@ private:
   }
 
 public:
+  using pointer = T*;
+
   using raw_buffer::cast;
   using raw_buffer::dim;
   using raw_buffer::elem_size;
@@ -532,14 +536,41 @@ SLINKY_ALWAYS_INLINE inline void attempt_fuse(
   attempt_fuse(inner, outer, buf, bufs...);
 }
 
+inline void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf) { std::swap(buf.dim(i), buf.dim(j)); }
+template <typename... Bufs>
+void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
+  swap_dims(i, j, buf);
+  swap_dims(i, j, bufs...);
+}
+
 }  // namespace internal
 
-// This helper fuses the dimensions of a set of buffers where the dimensions are contiguous in memory. It only fuses a
-// dimension if the same dimension can be fused in all buffers. After this function runs, the buffers may have lower
-// rank, but still address the same memory as the original buffers. For "shift invariant" operations, operating on such
-// fused buffers is likely to be more efficient.
-// `dim_sets` is an optional span of integers that indicates sets of dimensions that are eligible for fusion. By
-// default, all dimensions are considered to be part of the same set.
+// Jointly sort the dimensions of all buffers such that the strides of the first buffer are in ascending order.
+// `dim_sets` is an optional set of integers that indicates the sets that dimensions belong to. Dimensions are only
+// sorted within the same set, where dimension `d` is identified by the value of `dim_sets[d]`. By default, all
+// dimensions are considered to be in the same set.
+template <typename... Bufs>
+void sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+  assert(internal::same_rank(buf, bufs...));
+  for (std::size_t i = 0; i < buf.rank; ++i) {
+    for (std::size_t j = i + 1; j < buf.rank; ++j) {
+      if (j < dim_sets.size() && dim_sets[i] != dim_sets[j]) continue;
+      if (buf.dim(i).stride() > buf.dim(j).stride()) {
+        swap_dims(i, j, buf, bufs...);
+      }
+    }
+  }
+}
+template <typename... Bufs>
+void sort_dims(raw_buffer& buf, Bufs&... bufs) {
+  sort_dims({}, buf, bufs...);
+}
+
+// Fuse the dimensions of a set of buffers where the dimensions are contiguous in memory. It only fuses a dimension if
+// the same dimension can be fused in all buffers. After this function runs, the buffers may have lower rank, but still
+// address the same memory as the original buffers. For "shift invariant" operations, operating on such fused buffers is
+// likely to be more efficient. `dim_sets` is an optional span of integers that indicates sets of dimensions that are
+// eligible for fusion. By default, all dimensions are considered to be part of the same set.
 template <typename... Bufs>
 void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   assert(internal::same_rank(buf, bufs...));
@@ -553,6 +584,18 @@ void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
   for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, buf, bufs...);
   }
+}
+
+// Call both `sort_dims` and `fuse_contiguous_dims` on the buffers.
+template <typename... Bufs>
+void optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+  sort_dims(dim_sets, buf, bufs...);
+  fuse_contiguous_dims(dim_sets, buf, bufs...);
+}
+template <typename... Bufs>
+void optimize_dims(raw_buffer& buf, Bufs&... bufs) {
+  sort_dims(buf, bufs...);
+  fuse_contiguous_dims(buf, bufs...);
 }
 
 namespace internal {
@@ -699,6 +742,11 @@ void for_each_tile(const index_t* tile, raw_buffer& buf, int d, const F& f) {
   }
 }
 
+template <typename... Ts, typename T, std::size_t... Is>
+auto tuple_cast(const T& x, std::index_sequence<Is...>) {
+  return std::make_tuple(static_cast<Ts>(std::get<Is>(x))...);
+}
+
 }  // namespace internal
 
 // Call `f(span<index_t>)` for each index in the domain of `dims`, or the dims of `buf`.
@@ -769,6 +817,23 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
       sliced_bufs[i].base = bases[i];
     }
     std::apply(f, sliced_bufs);
+  });
+}
+
+// Call `f` for each element of `buf`, and the same corresponding elements of `bufs`.
+template <typename F, typename Buf, typename... Bufs>
+void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
+  constexpr std::size_t BufsCount = sizeof...(Bufs) + 1;
+  std::array<const raw_buffer*, BufsCount> buf_ptrs = {&buf, &bufs...};
+
+  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
+  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsCount));
+  std::array<void*, BufsCount> bases;
+  internal::make_for_each_slice_dims(buf_ptrs, bases.data(), plan);
+
+  internal::for_each_slice_impl(bases, plan, [&](const std::array<void*, BufsCount>& bases) {
+    std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
+                      bases, std::make_index_sequence<BufsCount>()));
   });
 }
 

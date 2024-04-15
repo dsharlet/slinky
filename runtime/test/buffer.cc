@@ -429,6 +429,23 @@ TEST(buffer, for_each_tile_all) {
   ASSERT_EQ(tiles, ceil_div<index_t>(buf.dim(1).extent(), slice[1]));
 }
 
+TEST(buffer, for_each_element) {
+  buffer<int, 2> buf({10, 20});
+  buf.allocate();
+  int elements = 0;
+  for_each_element([&](int* elt) {
+    *elt = 7;
+    elements++;
+  }, buf);
+  int expected_elements = 1;
+  for (std::size_t d = 0; d < buf.rank; ++d) {
+    expected_elements *= buf.dim(d).extent();
+  }
+  ASSERT_EQ(elements, expected_elements);
+
+  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
 TEST(buffer, for_each_slice) {
   for (std::size_t slice_rank : {0, 1, 2}) {
     buffer<int, 2> buf({10, 20});
