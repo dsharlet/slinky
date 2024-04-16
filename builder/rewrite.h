@@ -130,22 +130,20 @@ public:
 
 template <typename T, typename A, typename B>
 bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
-  int this_bit = -1;
   if (T::commutative) {
     constexpr expr_node_type ta = pattern_type<A>::value;
     constexpr expr_node_type tb = pattern_type<B>::value;
     if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
-      this_bit = ctx.variant_bits++;
+      const int variant_bit = ctx.variant_bits++;
+      if (variant_bit >= 0 && (ctx.variant & (1 << variant_bit)) != 0) {
+        // We should commute in this variant.
+        return match(p.a, b, ctx) && match(p.b, a, ctx);
+      }
     }
   }
-  if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
-    // We should commute in this variant.
-    return match(p.a, b, ctx) && match(p.b, a, ctx);
-  } else {
-    return match(p.a, a, ctx) && match(p.b, b, ctx);
-  }
+  return match(p.a, a, ctx) && match(p.b, b, ctx);
 }
 
 template <typename T, typename A, typename B>
