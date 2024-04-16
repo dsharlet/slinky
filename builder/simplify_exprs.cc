@@ -348,6 +348,8 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite(c2 - select(x, y + c0, c1 - z), select(x, eval(c2 - c0) - y, z + eval(c2 - c1))) ||
       r.rewrite(c2 - select(x, c0 - y, c1 - z), select(x, y + eval(c2 - c0), z + eval(c2 - c1))) ||
     
+      r.rewrite(max(x, y) / c0 - min(x, y) / c0, abs(x / c0 - y / c0), eval(c0 > 0)) ||
+      r.rewrite(min(x, y) / c0 - max(x, y) / c0, -abs(x / c0 - y / c0), eval(c0 > 0)) ||
       r.rewrite(max(x, y) - min(x, y), abs(x - y)) ||
       r.rewrite(min(x, y) - max(x, y), -abs(x - y)) ||
       false) {
