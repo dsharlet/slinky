@@ -1352,6 +1352,58 @@ TEST_P(concatenated_result, pipeline) {
   }
 }
 
+class transposed_result : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(schedule, transposed_result, testing::Values(false, true));
+
+TEST_P(transposed_result, pipeline) {
+  bool no_alias_buffers = GetParam();
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
+  func transposed = func::make_copy({intm, {point(x), point(z), point(y)}}, {out, {x, y, z}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  const int D = 7;
+  buffer<short, 3> in_buf({W, D, H});
+  init_random(in_buf);
+
+  buffer<short, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  }
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x, z, y) + 1);
+      }
+    }
+  }
+}
+
 TEST(stacked_result, pipeline) {
   // Make the pipeline
   node_context ctx;
