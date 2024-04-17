@@ -273,10 +273,10 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
     assert(args.size() == 1);
     if (is_non_negative(args[0].min)) {
       return {args[0].min, args[0].max};
-    } else if (args[0].is_point()) {
-      return point(simplify(op, intrinsic::abs, {std::move(args[0].min)}));
     } else if (is_non_positive(args[0].max)) {
       return {negate(args[0].max), negate(args[0].min)};
+    } else if (args[0].is_point()) {
+      return {0, simplify(op, intrinsic::abs, {std::move(args[0].min)})};
     } else {
       expr abs_min = simplify(op, intrinsic::abs, {args[0].min});
       expr abs_max = simplify(op, intrinsic::abs, {args[0].max});
