@@ -31,11 +31,21 @@ bool is_copy(expr src_x, var dst_x, expr& offset) {
 }
 
 // Same as above, applied to each dimension of the copy.
-bool is_copy(const copy_stmt* op, std::vector<expr>& offset) {
+bool is_copy(const copy_stmt* op, std::vector<std::size_t>& permutation, std::vector<expr>& offset) {
   if (op->src_x.size() != op->dst_x.size()) return false;
   offset.resize(op->dst_x.size());
-  for (std::size_t d = 0; d < op->dst_x.size(); ++d) {
-    if (!is_copy(op->src_x[d], op->dst_x[d], offset[d])) return false;
+  assert(permutation.empty());
+  permutation.resize(op->dst_x.size());
+  for (std::size_t dst_d = 0; dst_d < op->dst_x.size(); ++dst_d) {
+    bool found = false;
+    for (std::size_t src_d = 0; src_d < op->src_x.size(); ++src_d) {
+      if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d])) {
+        permutation[src_d] = dst_d;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return false;
   }
   return true;
 }
@@ -43,6 +53,7 @@ bool is_copy(const copy_stmt* op, std::vector<expr>& offset) {
 class buffer_aliaser : public node_mutator {
   struct buffer_alias {
     std::vector<expr> offset;
+    std::vector<std::size_t> permutation;
   };
 
   class buffer_info {
@@ -94,12 +105,18 @@ public:
     if (!can_alias.empty()) {
       const std::pair<var, buffer_alias>& target = *can_alias.begin();
       var target_var = target.first;
+      const buffer_alias& alias = target.second;
 
       // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
       // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
       // buffer_at call that is out of bounds.
-      std::vector<expr> at = target.second.offset;
-      std::vector<dim_expr> dims = buffer_dims(target_var, op->dims.size());
+      std::vector<dim_expr> dims;
+      dims.resize(op->dims.size());
+      for (std::size_t d = 0; d < dims.size(); ++d) {
+        const int permuted_d = d < alias.permutation.size() ? alias.permutation[d] : d;
+        dims[d] = buffer_dim(target_var, permuted_d);
+      }
+      std::vector<expr> at = alias.offset;
       at.resize(std::max(at.size(), dims.size()));
       for (int d = 0; d < static_cast<int>(at.size()); ++d) {
         if (!at[d].defined()) at[d] = 0;
@@ -187,7 +204,7 @@ public:
     }
 
     buffer_alias a;
-    if (!is_copy(op, a.offset)) {
+    if (!is_copy(op, a.permutation, a.offset)) {
       return;
     }
     info->maybe_alias(op->dst, std::move(a));

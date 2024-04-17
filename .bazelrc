@@ -3,6 +3,9 @@ build --action_env=BAZEL_CXXOPTS="-std=c++17:-fstrict-aliasing:-Wall:-Wsuggest-o
 build --copt=-fdiagnostics-color=always
 run --copt=-fdiagnostics-color=always
 test --copt=-fdiagnostics-color=always
+build --copt=-g
+run --copt=-g
+test --copt=-g
 # Without --force_pic, bazel compiles a lot of cc files twice, if they are used by PIC and non-PIC targets.
 build --force_pic
 run --force_pic
