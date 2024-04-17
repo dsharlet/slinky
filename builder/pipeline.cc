@@ -89,7 +89,7 @@ box_expr buffer_expr::bounds() const {
 
 func::func(
     call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs)
-    : impl_(std::move(impl)), attrs_(attrs), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
+    : impl_(std::move(impl)), attrs_(std::move(attrs)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   add_this_to_buffers();
 }
 
@@ -110,6 +110,7 @@ func& func::operator=(func&& m) noexcept {
   loops_ = std::move(m.loops_);
   compute_at_ = std::move(m.compute_at_);
   padding_ = std::move(m.padding_);
+  attrs_ = std::move(m.attrs_);
   add_this_to_buffers();
   return *this;
 }
