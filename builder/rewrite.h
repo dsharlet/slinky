@@ -22,8 +22,10 @@ class pattern_constant;
 struct match_context {
   const base_expr_node* vars[symbol_count];
   const index_t* constants[constant_count];
-  int variant;
-  int variant_bits;
+  std::uint16_t variant;
+  std::uint16_t variant_bits;
+  std::uint16_t commuted;
+  std::uint16_t commute_bits;
 
   template <int N>
   const base_expr_node* matched(const pattern_wildcard<N>&) const;
@@ -131,13 +133,15 @@ public:
 template <typename T, typename A, typename B>
 bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
   if (T::commutative) {
+    const std::uint16_t commute_bit = ctx.commute_bits++;
     constexpr expr_node_type ta = pattern_type<A>::value;
     constexpr expr_node_type tb = pattern_type<B>::value;
     if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
-      const int variant_bit = ctx.variant_bits++;
-      if (variant_bit >= 0 && (ctx.variant & (1 << variant_bit)) != 0) {
+      const std::uint16_t variant_bit = ctx.variant_bits++;
+      if ((ctx.variant & (1 << variant_bit)) != 0) {
+        ctx.commuted |= (1 << commute_bit);
         // We should commute in this variant.
         return match(p.a, b, ctx) && match(p.b, a, ctx);
       }
@@ -389,13 +393,34 @@ auto eval(const T& x) {
   return replacement_eval<T>{x};
 }
 
+class replace_lhs {
+public:
+  const expr& a;
+  const expr& b;
+};
+class replace_rhs {
+public:
+  const expr& a;
+  const expr& b;
+};
+
+inline replace_lhs lhs(const expr& a, const expr& b) { return {a, b}; }
+inline replace_rhs rhs(const expr& a, const expr& b) { return {a, b}; }
+
+inline const expr& substitute(const replace_lhs& p, const match_context& ctx) {
+  return (ctx.commuted & 1) != 0 ? p.b : p.a;
+}
+inline const expr& substitute(const replace_rhs& p, const match_context& ctx) {
+  return (ctx.commuted & 1) != 0 ? p.a : p.b;
+}
+
 template <typename Pattern, typename T>
 bool match_any_variant(const Pattern& p, const T& x, match_context& ctx) {
   // We'll find out how many variant bits we have when we try to match.
   // This can grow if we fail early due to a commutative variant that doesn't match near the root
   // of the expression, so we track the max we've seen.
-  int max_variant_bits = 0;
-  for (int variant = 0; variant < (1 << max_variant_bits); ++variant) {
+  std::uint16_t max_variant_bits = 0;
+  for (std::uint16_t variant = 0; variant < (1 << max_variant_bits); ++variant) {
     memset(&ctx, 0, sizeof(ctx));
     ctx.variant = variant;
     if (match(p, x, ctx)) {
