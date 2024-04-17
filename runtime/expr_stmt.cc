@@ -313,7 +313,7 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   n->target = std::move(target);
   n->inputs = std::move(inputs);
   n->outputs = std::move(outputs);
-  n->attrs = attrs;
+  n->attrs = std::move(attrs);
   return n;
 }
 
