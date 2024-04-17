@@ -103,7 +103,7 @@ public:
     const std::map<var, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
 
     if (!can_alias.empty()) {
-      const auto& target = *can_alias.begin();
+      const std::pair<var, buffer_alias>& target = *can_alias.begin();
       var target_var = target.first;
       const buffer_alias& alias = target.second;
 
