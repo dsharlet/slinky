@@ -214,7 +214,13 @@ public:
   }
 
   void visit(const call_stmt* n) override {
-    *this << indent() << "call(<fn>, {" << n->inputs << "}, {" << n->outputs << "})\n";
+    *this << indent() << "call(";
+    if (!n->attrs.name.empty()) {
+      *this << n->attrs.name;
+    } else {
+      *this << "<anonymous function>";
+    }
+    *this << ", {" << n->inputs << "}, {" << n->outputs << "})\n";
   }
 
   void visit(const copy_stmt* n) override {

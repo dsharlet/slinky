@@ -849,8 +849,11 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
     }
 
     expr get_trace_arg(const call_stmt* op) {
-      // TODO: If we add some kind of description to call_stmt::attrs, use it here.
-      return get_trace_arg("call");
+      if (!op->attrs.name.empty()) {
+        return get_trace_arg(op->attrs.name);
+      } else {
+        return get_trace_arg("call");
+      }
     }
 
     stmt add_trace(stmt s, expr trace_arg) {

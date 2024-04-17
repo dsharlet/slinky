@@ -91,6 +91,10 @@ public:
   struct attributes {
     // Allow inputs and outputs to this call to be aliased to the same buffer.
     bool allow_in_place = false;
+
+    // A name for the callable. This is only a tag that is passed through slinky and used for printing, it doesn't
+    // affect any slinky logic.
+    std::string name;
   };
 
   callable target;
