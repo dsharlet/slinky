@@ -56,6 +56,7 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
       r.rewrite(min(x + c0, (y + c1) / c2), min(x, (y + eval(c1 - c0 * c2)) / c2) + c0) ||
       r.rewrite(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
+      r.rewrite(min(x + c0, c1 - y), min(x, eval(c1 - c0) - y) + c0) ||
       r.rewrite(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
       r.rewrite(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
       r.rewrite(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
@@ -121,7 +122,6 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(z - x, z - y), z - max(x, y)) ||
       r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
       r.rewrite(min(x, -x), -abs(x)) ||
-      r.rewrite(min(x + c0, c0 - x), c0 - abs(x)) ||
 
       // Buffer meta simplifications
       // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
@@ -172,6 +172,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
       r.rewrite(max(x + c0, (y + c1) / c2), max(x, (y + eval(c1 - c0 * c2)) / c2) + c0) ||
       r.rewrite(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
+      r.rewrite(max(x + c0, c1 - y), max(x, eval(c1 - c0) - y) + c0) ||
       r.rewrite(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
       r.rewrite(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
       r.rewrite(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
@@ -235,7 +236,6 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x - z, y - z), max(x, y) - z) ||
       r.rewrite(max(z - x, z - y), z - min(x, y)) ||
       r.rewrite(max(x, -x), abs(x)) ||
-      r.rewrite(max(x + c0, c0 - x), abs(x) + c0) ||
 
       // Buffer meta simplifications
       r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)) ||
