@@ -260,7 +260,7 @@ function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   {
-    let __trace_token = trace_begin(buffer_at(__trace_names, 29));
+    let __trace_token = trace_begin(buffer_at(__trace_names, 37));
     check((__in != 0));
     check((buffer_rank(__in) == 2));
     check((buffer_elem_size(__in) == 2));
@@ -301,7 +301,7 @@ function pipeline(__in, out) {
                   }
                   { let __stencil1_result = crop_dim(stencil1_result, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)});
                     {
-                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 30));
                       consume(add_result_uncropped);
                       produce(stencil1_result);
                       check(trace_end(__trace_token));
@@ -310,7 +310,7 @@ function pipeline(__in, out) {
                   }
                   { let __out = crop_dim(out, 1, {min:y, max:(y + 1)});
                     {
-                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 30));
                       consume(stencil1_result_uncropped);
                       produce(out);
                       check(trace_end(__trace_token));

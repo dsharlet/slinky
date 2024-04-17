@@ -88,9 +88,13 @@ public:
   using callable = std::function<index_t(const call_stmt*, eval_context&)>;
   using symbol_list = std::vector<var>;
 
-  struct callable_attrs {
+  struct attributes {
     // Allow inputs and outputs to this call to be aliased to the same buffer.
     bool allow_in_place = false;
+
+    // A name for the callable. This is only a tag that is passed through slinky and used for printing, it doesn't
+    // affect any slinky logic.
+    std::string name;
   };
 
   callable target;
@@ -98,11 +102,11 @@ public:
   // accessed (and how) by the callable.
   symbol_list inputs;
   symbol_list outputs;
-  callable_attrs attrs;
+  attributes attrs;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(callable target, symbol_list inputs, symbol_list outputs, callable_attrs attrs);
+  static stmt make(callable target, symbol_list inputs, symbol_list outputs, attributes attrs);
 
   static constexpr stmt_node_type static_type = stmt_node_type::call_stmt;
 };

@@ -138,7 +138,7 @@ public:
 
 private:
   call_stmt::callable impl_;
-  call_stmt::callable_attrs attrs_;
+  call_stmt::attributes attrs_;
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
@@ -153,7 +153,7 @@ private:
 public:
   func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::callable_attrs attrs = {});
+      call_stmt::attributes attrs = {});
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::optional<std::vector<char>> padding = std::nullopt);
   func(func&&) noexcept;
@@ -209,7 +209,7 @@ public:
   // Version for std::function
   template <typename... T>
   static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::callable_attrs attrs = {}) {
+      call_stmt::attributes attrs = {}) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
 
@@ -217,13 +217,13 @@ public:
       return call_impl<T...>(impl, ctx, op, std::make_index_sequence<sizeof...(T)>());
     };
 
-    return func(std::move(wrapper), std::move(inputs), std::move(outputs), attrs);
+    return func(std::move(wrapper), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Version for lambdas
   template <typename Lambda>
   static func make(
-      Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
+      Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs = {}) {
     // Verify that the lambda returns an index_t; a different return type will fail to match
     // the std::function call and just call this same function in an endless death spiral.
     using sig = lambda_call_signature<Lambda>;
@@ -231,15 +231,15 @@ public:
 
     using std_function_type = typename sig::std_function_type;
     std_function_type impl = std::move(lambda);
-    return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
+    return make(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Version for plain old function ptrs
   template <typename... T>
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::callable_attrs attrs = {}) {
+      call_stmt::attributes attrs = {}) {
     callable<T...> impl = fn;
-    return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
+    return make(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Make a copy from a single input to a single output.

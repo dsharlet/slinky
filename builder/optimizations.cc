@@ -138,6 +138,8 @@ public:
           return stmt();
         }
         // Make a call to `pad`.
+        call_stmt::attributes pad_attrs;
+        pad_attrs.name = "pad";
         return call_stmt::make(
             [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
               const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
@@ -145,7 +147,7 @@ public:
               ctx.pad(src_buf->dims, *dst_buf, padding.data());
               return 0;
             },
-            {src}, {dst}, {});
+            {src}, {dst}, std::move(pad_attrs));
       });
 
       if (pad_result.same_as(result)) {
@@ -307,6 +309,8 @@ stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // Start by making a call to copy.
+  call_stmt::attributes copy_attrs;
+  copy_attrs.name = "copy";
   stmt result = call_stmt::make(
       [padding = op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
         const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
@@ -315,7 +319,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
-      {op->src}, {op->dst}, {});
+      {op->src}, {op->dst}, std::move(copy_attrs));
 
   std::vector<expr> src_x = op->src_x;
   std::vector<dim_expr> src_dims;
