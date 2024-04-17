@@ -122,6 +122,8 @@ TEST(simplify, basic) {
   test_simplify(min(x + 1, z) < x + 2, true);
 
   test_simplify(abs(abs(x)), abs(x));
+  test_simplify(max(abs(x), 0), abs(x));
+  test_simplify(min(abs(x), 0), 0);
 
   test_simplify(select(z == z, x, y), x);
   test_simplify(select(z != z, x, y), y);
