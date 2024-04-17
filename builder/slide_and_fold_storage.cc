@@ -468,6 +468,8 @@ public:
         interval_expr sem_bounds = {0, stage_count - 1};
 
         index_t sem_size = sizeof(index_t);
+        call_stmt::attributes init_sems_attrs;
+        init_sems_attrs.name = "init_semaphores";
         stmt init_sems = call_stmt::make(
             [stage_count](const call_stmt* s, eval_context& ctx) -> index_t {
               buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
@@ -481,7 +483,7 @@ public:
               std::fill_n(&sems(0), stage_count, 1);
               return 0;
             },
-            {}, {l.semaphores}, {});
+            {}, {l.semaphores}, std::move(init_sems_attrs));
         // We can fold the semaphores array by the number of threads we'll use.
         // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
         expr sem_fold_factor = stage_count * op->step;
