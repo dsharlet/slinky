@@ -40,7 +40,7 @@ bool is_copy(const copy_stmt* op, std::vector<std::size_t>& permutation, std::ve
     bool found = false;
     for (std::size_t src_d = 0; src_d < op->src_x.size(); ++src_d) {
       if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d])) {
-        permutation[dst_d] = src_d;
+        permutation[src_d] = dst_d;
         found = true;
         break;
       }

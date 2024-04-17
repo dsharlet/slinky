@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cassert>
+#include <numeric>
 #include <fstream>
 
 #include "builder/pipeline.h"
@@ -1352,12 +1354,31 @@ TEST_P(concatenated_result, pipeline) {
   }
 }
 
-class transposed_result : public testing::TestWithParam<bool> {};
+class transposed_result : public testing::TestWithParam<std::tuple<bool, std::vector<int>>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, transposed_result, testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
+    testing::Combine(testing::Values(false, true), testing::Values(std::vector<int>{0, 1, 2}, std::vector<int>{0, 2, 1},
+                                                       std::vector<int>{1, 2, 0}, std::vector<int>{0, 0, 0})));
+
+template <typename T>
+std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
+  std::vector<T> result(x.size());
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    result[i] = x[p[i]];
+  }
+  return result;
+}
+
+bool is_permutation(span<const int> p) {
+  std::vector<int> unpermuted(p.size());
+  std::iota(unpermuted.begin(), unpermuted.end(), 0);
+  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
+}
 
 TEST_P(transposed_result, pipeline) {
-  bool no_alias_buffers = GetParam();
+  bool no_alias_buffers = std::get<0>(GetParam());
+  const std::vector<int>& permutation = std::get<1>(GetParam());
+
   // Make the pipeline
   node_context ctx;
 
@@ -1372,7 +1393,8 @@ TEST_P(transposed_result, pipeline) {
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm, {x, y, z}}}});
-  func transposed = func::make_copy({intm, {point(x), point(z), point(y)}}, {out, {x, y, z}});
+  func transposed =
+      func::make_copy({intm, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -1380,7 +1402,7 @@ TEST_P(transposed_result, pipeline) {
   const int W = 20;
   const int H = 4;
   const int D = 7;
-  buffer<short, 3> in_buf({W, D, H});
+  buffer<short, 3> in_buf(permute<index_t>(permutation, {W, H, D}));
   init_random(in_buf);
 
   buffer<short, 3> out_buf({W, H, D});
@@ -1391,14 +1413,16 @@ TEST_P(transposed_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (!no_alias_buffers) {
+  if (is_permutation(permutation) && !no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.total_count, 1);
   }
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y, z), in_buf(x, z, y) + 1);
+        ASSERT_EQ(out_buf(x, y, z), in_buf(permute<index_t>(permutation, {x, y, z})) + 1);
       }
     }
   }
