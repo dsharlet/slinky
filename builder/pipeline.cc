@@ -88,7 +88,7 @@ box_expr buffer_expr::bounds() const {
 }
 
 func::func(
-    call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs)
+    call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs)
     : impl_(std::move(impl)), attrs_(attrs), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {
   add_this_to_buffers();
 }

@@ -138,7 +138,7 @@ public:
 
 private:
   call_stmt::callable impl_;
-  call_stmt::callable_attrs attrs_;
+  call_stmt::attributes attrs_;
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
@@ -153,7 +153,7 @@ private:
 public:
   func() = default;
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::callable_attrs attrs = {});
+      call_stmt::attributes attrs = {});
   func(std::vector<input> inputs, output out);
   func(input input, output out, std::optional<std::vector<char>> padding = std::nullopt);
   func(func&&) noexcept;
@@ -209,7 +209,7 @@ public:
   // Version for std::function
   template <typename... T>
   static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::callable_attrs attrs = {}) {
+      call_stmt::attributes attrs = {}) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
 
@@ -223,7 +223,7 @@ public:
   // Version for lambdas
   template <typename Lambda>
   static func make(
-      Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::callable_attrs attrs = {}) {
+      Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs = {}) {
     // Verify that the lambda returns an index_t; a different return type will fail to match
     // the std::function call and just call this same function in an endless death spiral.
     using sig = lambda_call_signature<Lambda>;
@@ -237,7 +237,7 @@ public:
   // Version for plain old function ptrs
   template <typename... T>
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::callable_attrs attrs = {}) {
+      call_stmt::attributes attrs = {}) {
     callable<T...> impl = fn;
     return make(std::move(impl), std::move(inputs), std::move(outputs), attrs);
   }

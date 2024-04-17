@@ -308,7 +308,7 @@ expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   return n;
 }
 
-stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, callable_attrs attrs) {
+stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, attributes attrs) {
   auto n = new call_stmt();
   n->target = std::move(target);
   n->inputs = std::move(inputs);
