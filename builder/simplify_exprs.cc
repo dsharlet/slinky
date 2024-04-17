@@ -105,7 +105,9 @@ expr simplify(const class min* op, expr a, expr b) {
 
       // Algebraic simplifications
       r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
+      r.rewrite(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
       r.rewrite(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
+      r.rewrite(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
       r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
       r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
       r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
@@ -219,7 +221,9 @@ expr simplify(const class max* op, expr a, expr b) {
 
       // Algebraic simplifications
       r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
+      r.rewrite(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
       r.rewrite(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
+      r.rewrite(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
       r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
       r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
       r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
