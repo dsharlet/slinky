@@ -61,7 +61,7 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
       r.rewrite(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
     
-      // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L295
+      // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
       r.rewrite(min(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
       r.rewrite(min(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
 
@@ -81,7 +81,6 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(y / c0 + c1, x / c0), min(x, y + eval(c1 * c0)) / c0, eval(c0 > 0)) ||
       r.rewrite(min(y / c0 + c1, x / c0), max(x, y + eval(c1 * c0)) / c0, eval(c0 < 0)) ||
 
-      // These rules taken from: https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Min.cpp#L305-L311
       r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
       r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
       r.rewrite(min(((x + c2) / c3) * c4, x / c1), x/c1, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
@@ -177,7 +176,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
       r.rewrite(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
 
-      // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L290
+      // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
       r.rewrite(max(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
       r.rewrite(max(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
 
@@ -197,7 +196,6 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(y / c0 + c1, x / c0), max(x, y + eval(c1 * c0)) / c0, eval(c0 > 0)) ||
       r.rewrite(max(y / c0 + c1, x / c0), min(x, y + eval(c1 * c0)) / c0, eval(c0 < 0)) ||
  
-      // These rules taken from: https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Max.cpp#L294-L300
       r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
       r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
       r.rewrite(max(((x + c2) / c3) * c4, x / c1), x/c1, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
