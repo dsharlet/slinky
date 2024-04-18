@@ -906,6 +906,10 @@ TEST_P(stencil_chain, pipeline) {
     }
   }
 
+  if (split == 1 && max_workers == loop::serial) {
+    check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));
+  }
+
   // Also visualize this pipeline.
   if (max_workers == loop::serial) {
     check_visualize(test_name + ".html", p, inputs, outputs, &ctx);

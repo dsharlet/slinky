@@ -261,6 +261,7 @@ public:
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
+  const call_stmt::attributes& attrs() const { return attrs_; }
   const std::optional<std::vector<char>>& padding() const { return padding_; }
 
   stmt make_call() const;
