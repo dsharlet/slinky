@@ -280,27 +280,10 @@ public:
       }
     }
 
-    if (op->intrinsic == intrinsic::semaphore_init || op->intrinsic == intrinsic::semaphore_wait ||
-      op->intrinsic == intrinsic::semaphore_signal) {
-      assert(args.size() % 2 == 0);
-      for (std::size_t i = 0; i < args.size();) {
-        // Remove calls to undefined semaphores.
-        if (!args[i].defined()) {
-          args.erase(args.begin() + i, args.begin() + i + 2);
-        } else {
-          i += 2;
-        }
-      }
-      if (args.empty()) {
-        set_result(expr(), interval_expr());
-        return;
-      }
-    }
-
     if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
-      assert(op->args.size() == 2);
-      const var* buf = as_variable(op->args[0]);
-      const index_t* dim = as_constant(op->args[1]);
+      assert(args.size() == 2);
+      const var* buf = as_variable(args[0]);
+      const index_t* dim = as_constant(args[1]);
       assert(buf);
       assert(dim);
       const std::optional<box_expr>& bounds = buffer_bounds[*buf];

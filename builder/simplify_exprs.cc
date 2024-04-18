@@ -800,7 +800,21 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     changed = changed || !args[i].same_as(op->args[i]);
   }
 
-  if (fn == intrinsic::buffer_at) {
+  if (fn == intrinsic::semaphore_init || fn == intrinsic::semaphore_wait || fn == intrinsic::semaphore_signal) {
+    assert(args.size() % 2 == 0);
+    for (std::size_t i = 0; i < args.size();) {
+      // Remove calls to undefined semaphores.
+      if (!args[i].defined()) {
+        args.erase(args.begin() + i, args.begin() + i + 2);
+        changed = true;
+      } else {
+        i += 2;
+      }
+    }
+    if (args.empty()) {
+      return expr();
+    }
+  } else if (fn == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
       // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_at(b)
@@ -814,9 +828,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
       args.pop_back();
       changed = true;
     }
-  }
-
-  if (fn == intrinsic::abs) {
+  } else if (fn == intrinsic::abs) {
     assert(args.size() == 1);
     if (is_non_negative(args[0])) {
       return args[0];
