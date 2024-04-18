@@ -143,6 +143,7 @@ public:
           worker_count(ctx, ctx.name(sym) + "_worker_count") {}
   };
   std::vector<loop_info> loops;
+  symbol_map<std::size_t> allocation_loop_levels;
 
   // We need an unknown to make equations of.
   var x;
@@ -175,7 +176,7 @@ public:
     return result;
   }
 
-  void visit(const let_stmt* op) override { 
+  void visit(const let_stmt* op) override {
     auto& bounds = current_expr_bounds();
     std::vector<scoped_value_in_symbol_map<interval_expr>> values;
     values.reserve(op->lets.size());
@@ -200,6 +201,7 @@ public:
     // Initialize the fold factors to infinity.
     auto set_fold_factors =
         set_value_in_scope(fold_factors, op->sym, std::vector<expr>(op->dims.size(), positive_infinity()));
+    auto set_loop_level = set_value_in_scope(allocation_loop_levels, op->sym, loops.size());
     stmt body = mutate(op->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -226,11 +228,18 @@ public:
   template <typename T>
   void visit_call_or_copy(const T* op, span<const var> outputs) {
     set_result(op);
+
     for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
-      for (std::size_t loop_index = 1; loop_index < loops.size(); ++loop_index) {
+      // Only consider loops that are inside the allocation of this output for folding.
+      // TODO: It seems like there's probably a more elegant way to do this.
+      std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
+      if (!alloc_loop_level) alloc_loop_level = 1;
+
+      for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
         loop_info& loop = loops[loop_index];
+        loop.add_synchronization();
         std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
 
@@ -295,20 +304,17 @@ public:
             expr old_min = cur_bounds_d.min;
             expr new_min = simplify(prev_bounds_d.max + 1);
 
-            bool synchronize = loop.add_synchronization();
-
             if (!did_overlapped_fold) {
               expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
               if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-                if (synchronize) {
-                  // We need an extra fold per worker when parallelizing the loop.
-                  // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-                  // If we can figure out how to add some synchronization to limit the number of workers that
-                  // work on a single stage at a time, we should be able to reduce this extra folding.
-                  fold_factor +=
-                      (loop.worker_count - 1) *
-                      simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
-                }
+                // We need an extra fold per worker when parallelizing the loop.
+                // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+                // If we can figure out how to add some synchronization to limit the number of workers that
+                // work on a single stage at a time, we should be able to reduce this extra folding.
+                fold_factor +=
+                    (loop.worker_count - 1) *
+                    simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
+
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
                 vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
                 did_overlapped_fold = true;
@@ -452,52 +458,50 @@ public:
     const int max_workers = stage_count > 0 ? stage_count : op->max_workers;
     stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
 
-    if (stage_count > 0) {
-      // Substitute the placeholder worker_count.
-      result = substitute(result, l.worker_count, max_workers);
-      // We need to do this in the fold factors too.
-      for (std::optional<std::vector<expr>>& i : fold_factors) {
-        if (!i) continue;
-        for (expr& j : *i) {
-          j = substitute(j, l.worker_count, max_workers);
-        }
+    // Substitute the placeholder worker_count.
+    result = substitute(result, l.worker_count, max_workers);
+    // We need to do this in the fold factors too.
+    for (std::optional<std::vector<expr>>& i : fold_factors) {
+      if (!i) continue;
+      for (expr& j : *i) {
+        j = substitute(j, l.worker_count, max_workers);
       }
+    }
 
-      if (stage_count > 1) {
-        // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
-        interval_expr sem_bounds = {0, stage_count - 1};
+    if (stage_count > 1) {
+      // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
+      interval_expr sem_bounds = {0, stage_count - 1};
 
-        index_t sem_size = sizeof(index_t);
-        call_stmt::attributes init_sems_attrs;
-        init_sems_attrs.name = "init_semaphores";
-        stmt init_sems = call_stmt::make(
-            [stage_count](const call_stmt* s, eval_context& ctx) -> index_t {
-              buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
-              assert(sems.rank == 2);
-              assert(sems.dim(0).min() == 0);
-              assert(sems.dim(0).extent() == stage_count);
-              memset(sems.base(), 0, sems.size_bytes());
-              // Initialize the first semaphore for each stage (the one before the loop min) to 1,
-              // unblocking the first iteration.
-              assert(sems.dim(0).stride() == sizeof(index_t));
-              std::fill_n(&sems(0), stage_count, 1);
-              return 0;
-            },
-            {}, {l.semaphores}, std::move(init_sems_attrs));
-        // We can fold the semaphores array by the number of threads we'll use.
-        // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
-        expr sem_fold_factor = stage_count * op->step;
-        std::vector<dim_expr> sem_dims = {
-            {sem_bounds, sem_size},
-            // TODO: We should just let dimensions like this have undefined bounds.
-            {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
-        };
-        result = allocate::make(
-            l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
-      } else {
-        // We only have one stage, there's no need for semaphores.
-        result = substitute(result, l.semaphores, expr());
-      }
+      index_t sem_size = sizeof(index_t);
+      call_stmt::attributes init_sems_attrs;
+      init_sems_attrs.name = "init_semaphores";
+      stmt init_sems = call_stmt::make(
+          [stage_count](const call_stmt* s, eval_context& ctx) -> index_t {
+            buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
+            assert(sems.rank == 2);
+            assert(sems.dim(0).min() == 0);
+            assert(sems.dim(0).extent() == stage_count);
+            memset(sems.base(), 0, sems.size_bytes());
+            // Initialize the first semaphore for each stage (the one before the loop min) to 1,
+            // unblocking the first iteration.
+            assert(sems.dim(0).stride() == sizeof(index_t));
+            std::fill_n(&sems(0), stage_count, 1);
+            return 0;
+          },
+          {}, {l.semaphores}, std::move(init_sems_attrs));
+      // We can fold the semaphores array by the number of threads we'll use.
+      // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
+      expr sem_fold_factor = stage_count * op->step;
+      std::vector<dim_expr> sem_dims = {
+          {sem_bounds, sem_size},
+          // TODO: We should just let dimensions like this have undefined bounds.
+          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
+      };
+      result = allocate::make(
+          l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+    } else {
+      // We only have one stage, there's no need for semaphores.
+      result = substitute(result, l.semaphores, expr());
     }
 
     if (!is_variable(loop_bounds.min, orig_min) || depends_on(result, orig_min).any()) {
