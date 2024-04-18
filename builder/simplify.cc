@@ -201,18 +201,12 @@ public:
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
-    const index_t* cb = as_constant(b);
 
-    if (cb && *cb < 0) {
-      // Canonicalize to addition with constants.
-      mutate_and_set_result(a + -*cb);
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (result.same_as(op)) {
+      set_result(std::move(result), bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     } else {
-      expr result = simplify(op, std::move(a), std::move(b));
-      if (result.same_as(op)) {
-        set_result(std::move(result), bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
-      } else {
-        mutate_and_set_result(result);
-      }
+      mutate_and_set_result(result);
     }
   }
 
