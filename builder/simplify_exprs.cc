@@ -42,15 +42,15 @@ expr simplify(const class min* op, expr a, expr b) {
   auto r = make_rewriter(min(pattern_expr{a}, pattern_expr{b}));
   // clang-format off
   if (// One side is the min.
-      r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) ||
-      r.rewrite(min(x, rewrite::positive_infinity()), x) ||
-      r.rewrite(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
-      r.rewrite(min(x, rewrite::negative_infinity()), rewrite::negative_infinity()) ||
-      r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
-      r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
-      r.rewrite(min(x, x), x) ||
-      r.rewrite(min(x, max(x, y)), x) ||
-      r.rewrite(min(x, min(x, y)), min(x, y)) ||
+      r.rewrite(min(x, std::numeric_limits<index_t>::max()), lhs(a, b)) ||
+      r.rewrite(min(x, rewrite::positive_infinity()), lhs(a, b)) ||
+      r.rewrite(min(x, std::numeric_limits<index_t>::min()), rhs(a, b)) ||
+      r.rewrite(min(x, rewrite::negative_infinity()), rhs(a, b)) ||
+      r.rewrite(min(x, x + c0), lhs(a, b), eval(c0 > 0)) ||
+      r.rewrite(min(x, x + c0), rhs(a, b), eval(c0 < 0)) ||
+      r.rewrite(min(x, x), lhs(a, b)) ||
+      r.rewrite(min(x, max(x, y)), lhs(a, b)) ||
+      r.rewrite(min(x, min(x, y)), rhs(a, b)) ||
 
       // Move constants out.
       r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -92,16 +92,16 @@ expr simplify(const class min* op, expr a, expr b) {
 
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
       // Compare x to a stair-step function in x
-      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0 && c0 + c2 <= 0)) ||
-      r.rewrite(min((x / c1) * c1 + c2, (x / c0) * c0), (x / c0) * c0, eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), lhs(a, b), eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), rhs(a, b), eval(c1 > 0 && c0 + c2 <= 0)) ||
+      r.rewrite(min((x / c1) * c1 + c2, (x / c0) * c0), rhs(a, b), eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
       // Special cases where c0 or c2 is zero
-      r.rewrite(min(x, (x / c1) * c1 + c2), x, eval(c1 > 0 && c2 >= c1 - 1)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(min(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0 && c2 <= 0)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0 && c0 <= 0)) ||
+      r.rewrite(min(x, (x / c1) * c1 + c2), lhs(a, b), eval(c1 > 0 && c2 >= c1 - 1)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1), lhs(a, b), eval(c1 > 0 && c0 >= c1 - 1)) ||
+      r.rewrite(min(x, (x / c1) * c1 + c2), rhs(a, b), eval(c1 > 0 && c2 <= 0)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1), rhs(a, b), eval(c1 > 0 && c0 <= 0)) ||
 
-      r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
+      r.rewrite(min(x, (x / c0) * c0), rhs(a, b), eval(c0 > 0)) ||
 
       // Algebraic simplifications
       r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
@@ -125,10 +125,10 @@ expr simplify(const class min* op, expr a, expr b) {
       // Buffer meta simplifications
       // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
       // is true if we disallow empty buffers...
-      r.rewrite(min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), eval(c0 > 0)) ||
-      r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, eval(c0 < 0)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || 
+      r.rewrite(min(buffer_min(x, y), buffer_max(x, y)), lhs(a, b)) ||
+      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), rhs(a, b), eval(c0 > 0)) ||
+      r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), lhs(a, b), eval(c0 < 0)) ||
+      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), rhs(a, b), eval(c0 > c1)) || 
       false) {
     return r.result;
   }
@@ -157,15 +157,15 @@ expr simplify(const class max* op, expr a, expr b) {
   auto r = make_rewriter(max(pattern_expr{a}, pattern_expr{b}));
   // clang-format off
   if (// One side is the max.
-      r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) ||
-      r.rewrite(max(x, rewrite::negative_infinity()), x) ||
-      r.rewrite(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
-      r.rewrite(max(x, rewrite::positive_infinity()), rewrite::positive_infinity()) ||
-      r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
-      r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
-      r.rewrite(max(x, x), x) ||
-      r.rewrite(max(x, min(x, y)), x) ||
-      r.rewrite(max(x, max(x, y)), max(x, y)) ||
+      r.rewrite(max(x, std::numeric_limits<index_t>::min()), lhs(a, b)) ||
+      r.rewrite(max(x, rewrite::negative_infinity()), lhs(a, b)) ||
+      r.rewrite(max(x, std::numeric_limits<index_t>::max()), rhs(a, b)) ||
+      r.rewrite(max(x, rewrite::positive_infinity()), rhs(a, b)) ||
+      r.rewrite(max(x, x + c0), rhs(a, b), eval(c0 > 0)) ||
+      r.rewrite(max(x, x + c0), lhs(a, b), eval(c0 < 0)) ||
+      r.rewrite(max(x, x), lhs(a, b)) ||
+      r.rewrite(max(x, min(x, y)), lhs(a, b)) ||
+      r.rewrite(max(x, max(x, y)), rhs(a, b)) ||
 
       // Move constants out.
       r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -207,16 +207,16 @@ expr simplify(const class max* op, expr a, expr b) {
     
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
       // Compare x to a stair-step function in x
-      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0 && c0 + c2 <= 0)) ||
-      r.rewrite(max((x / c1) * c1 + c2, (x / c0) * c0), (x / c1) * c1 + c2, eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), rhs(a, b), eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), lhs(a, b), eval(c1 > 0 && c0 + c2 <= 0)) ||
+      r.rewrite(max((x / c1) * c1 + c2, (x / c0) * c0), lhs(a, b), eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
       // Special cases where c0 or c2 is zero
-      r.rewrite(max(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0 && c2 >= c1 - 1)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(max(x, (x / c1) * c1 + c2), x, eval(c1 > 0 && c2 <= 0)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 <= 0)) ||
+      r.rewrite(max(x, (x / c1) * c1 + c2), rhs(a, b), eval(c1 > 0 && c2 >= c1 - 1)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1), rhs(a, b), eval(c1 > 0 && c0 >= c1 - 1)) ||
+      r.rewrite(max(x, (x / c1) * c1 + c2), lhs(a, b), eval(c1 > 0 && c2 <= 0)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1), lhs(a, b), eval(c1 > 0 && c0 <= 0)) ||
 
-      r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
+      r.rewrite(max(x, (x / c0) * c0), lhs(a, b), eval(c0 > 0)) ||
 
       // Algebraic simplifications
       r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
@@ -236,10 +236,10 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, -x), abs(x)) ||
 
       // Buffer meta simplifications
-      r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, eval(c0 > 0)) ||
-      r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), eval(c0 < 0)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || 
+      r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), rhs(a, b)) ||
+      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), lhs(a, b), eval(c0 > 0)) ||
+      r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), rhs(a, b), eval(c0 < 0)) ||
+      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), lhs(a, b), eval(c0 > c1)) || 
       false) {
     return r.result;
   }
@@ -270,9 +270,9 @@ expr simplify(const add* op, expr a, expr b) {
 
   auto r = make_rewriter(pattern_expr{a} + pattern_expr{b});
   // clang-format off
-  if (r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      r.rewrite(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
-      r.rewrite(x + 0, x) ||
+  if (r.rewrite(x + rewrite::positive_infinity(), rhs(a, b), is_finite(x)) ||
+      r.rewrite(x + rewrite::negative_infinity(), rhs(a, b), is_finite(x)) ||
+      r.rewrite(x + 0, lhs(a, b)) ||
       r.rewrite(x + x, x * 2) ||
       r.rewrite(x + (x + y), y + x * 2) ||
       r.rewrite(x + (x - y), x * 2 - y) ||
@@ -343,7 +343,7 @@ expr simplify(const sub* op, expr a, expr b) {
   if (r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       r.rewrite(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       r.rewrite(x - x, 0) ||
-      r.rewrite(x - 0, x) ||
+      r.rewrite(x - 0, a) ||
       r.rewrite(x - y * c0, x + y * (-c0)) ||
       r.rewrite(x - (c0 - y), (x + y) - c0) ||
       r.rewrite(c0 - (x - y), (y - x) + c0) ||
@@ -418,12 +418,12 @@ expr simplify(const mul* op, expr a, expr b) {
 
   auto r = make_rewriter(pattern_expr{a} * pattern_expr{b});
   // clang-format off
-  if (r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
-      r.rewrite(rewrite::negative_infinity() * c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
+  if (r.rewrite(rewrite::positive_infinity() * c0, lhs(a, b), eval(c0 > 0)) ||
+      r.rewrite(rewrite::negative_infinity() * c0, lhs(a, b), eval(c0 > 0)) ||
       r.rewrite(rewrite::positive_infinity() * c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
       r.rewrite(rewrite::negative_infinity() * c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
-      r.rewrite(x * 0, 0) ||
-      r.rewrite(x * 1, x) ||
+      r.rewrite(x * 0, rhs(a, b)) ||
+      r.rewrite(x * 1, lhs(a, b)) ||
       r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
       r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) ||
       r.rewrite((c0 - x) * c1, x * eval(-c1) + eval(c0 * c1)) ||
@@ -453,13 +453,13 @@ expr simplify(const div* op, expr a, expr b) {
   // clang-format off
   if (r.rewrite(x / rewrite::positive_infinity(), 0, is_finite(x)) ||
       r.rewrite(x / rewrite::negative_infinity(), 0, is_finite(x)) ||
-      r.rewrite(rewrite::positive_infinity() / c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
-      r.rewrite(rewrite::negative_infinity() / c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
+      r.rewrite(rewrite::positive_infinity() / c0, a, eval(c0 > 0)) ||
+      r.rewrite(rewrite::negative_infinity() / c0, a, eval(c0 > 0)) ||
       r.rewrite(rewrite::positive_infinity() / c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
       r.rewrite(rewrite::negative_infinity() / c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
-      r.rewrite(x / 0, 0) ||
-      r.rewrite(0 / x, 0) ||
-      r.rewrite(x / 1, x) ||
+      r.rewrite(x / 0, b) ||
+      r.rewrite(0 / x, a) ||
+      r.rewrite(x / 1, a) ||
       r.rewrite(x / -1, -x) ||
       r.rewrite(x / x, x != 0) ||
 
@@ -492,7 +492,7 @@ expr simplify(const mod* op, expr a, expr b) {
   auto r = make_rewriter(pattern_expr{a} % pattern_expr{b});
   // clang-format off
   if (r.rewrite(x % 1, 0) || 
-      r.rewrite(x % 0, 0) || 
+      r.rewrite(x % 0, b) || 
       r.rewrite(x % x, 0) ||
       false) {
     return r.result;
