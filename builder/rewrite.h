@@ -413,6 +413,7 @@ inline const expr& substitute(const replace_lhs& p, const match_context& ctx) {
 inline const expr& substitute(const replace_rhs& p, const match_context& ctx) {
   return (ctx.commuted & 1) != 0 ? p.a : p.b;
 }
+inline const expr& substitute(const expr& p, const match_context&) { return p; }
 
 template <typename Pattern, typename T>
 bool match_any_variant(const Pattern& p, const T& x, match_context& ctx) {
