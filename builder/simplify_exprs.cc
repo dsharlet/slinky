@@ -463,11 +463,13 @@ expr simplify(const div* op, expr a, expr b) {
       r.rewrite(x / -1, -x) ||
       r.rewrite(x / x, x != 0) ||
 
+      r.rewrite((y + x / c0) / c1, (x + y * c0) / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
       r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x / c0 + c1) / c2, (x + eval(c1 * c0)) / eval(c0 * c2), eval(c0 > 0 && c2 > 0)) ||
       r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0 && c0 % c1 == 0)) ||
 
+      r.rewrite((x + y * c0) / c1, y * eval(c0 / c1) + x / c1, eval(c0 % c1 == 0)) ||
       r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), eval(c0 % c1 == 0)) ||
+      r.rewrite((y * c0 - x) / c1, y * eval(c0 / c1) + (-x / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
       r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
       false) {
     return r.result;
