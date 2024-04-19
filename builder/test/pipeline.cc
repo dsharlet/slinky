@@ -1166,14 +1166,14 @@ TEST(unrelated, pipeline) {
     var x(ctx, "x");
     var y(ctx, "y");
 
-    func add1 = func::make(
-        add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+    func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
+        call_stmt::attributes{.allow_in_place = true, .name = "add1"});
     func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
 
-    func mul2 =
-        func::make(multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}}, call_stmt::attributes{.allow_in_place = true});
-    func add2 =
-        func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::attributes{.allow_in_place = true});
+    func mul2 = func::make(multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}},
+        call_stmt::attributes{.allow_in_place = true, .name = "mul2"});
+    func add2 = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}},
+        call_stmt::attributes{.allow_in_place = true, .name = "add2"});
 
     stencil1.loops({{y, 2}});
 

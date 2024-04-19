@@ -246,6 +246,18 @@ public:
     return print_vector(loopinfos_vec);
   }
 
+  std::string print(const call_stmt::attributes& attrs) {
+    std::string a;
+    if (attrs.allow_in_place != false) {
+      a += ".allow_in_place = true";
+    }
+    if (!attrs.name.empty()) {
+      if (!a.empty()) a += ", ";
+      a += ".name = \"" + attrs.name + "\"";
+    }
+    return "{" + a + "}";
+  }
+
   std::string print(const loop_id& loopid) {
     if (!loopid.func && !loopid.var.defined()) {
       return "<root>";
@@ -299,8 +311,9 @@ public:
       std::string callback = print_callback(f.inputs(), f.outputs());
       std::string func_inputs = print(f.inputs());
       std::string func_outputs = print(f.outputs());
+      std::string func_attrs = print(f.attrs());
       (void)print_assignment_explicit(
-          fn_name, "func::make(std::move(", callback, "), ", func_inputs, ", ", func_outputs, ")");
+          fn_name, "func::make(std::move(", callback, "), ", func_inputs, ", ", func_outputs, ", ", func_attrs, ")");
     }
     if (!f.loops().empty()) {
       std::string li = print(f.loops());
