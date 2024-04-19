@@ -523,15 +523,14 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x + y < x, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
 
+      r.rewrite(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
+      r.rewrite(x + c0 < c1 - y, x + y < eval(c1 - c0)) ||
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
+      r.rewrite(c0 - x < y + c1, eval(c0 - c1) < x + y) ||
+      r.rewrite(c0 - x < c1 - y, y < x + eval(c1 - c0)) ||
       r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
-      r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
-
-      r.rewrite((x + c0) / c2 < (x + c1) / c2, eval(c0 < c1), eval(c2 > 0)) ||
-      r.rewrite(x / c2 < (x + c1) / c2, eval(0 < c1), eval(c2 > 0)) ||
-      r.rewrite((x + c0) / c2 < x / c2, eval(c0 < 0), eval(c2 > 0)) ||
 
       r.rewrite(x < (x / c0) * c0 + c1, true, eval(c0 > 0 && c1 >= c0 - 1)) ||
       r.rewrite(x < (x / c0) * c0 + c1, false, eval(c0 > 0 && c1 <= 0)) ||
@@ -543,6 +542,10 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite((x / c0) * c0 + c1 < x, false, eval(c0 > 0 && c1 >= c0 - 1)) ||
       r.rewrite(x < (x / c0) * c0, false, eval(c0 > 0)) ||
       r.rewrite((x / c0) * c0 < x, x % c0 != 0, eval(c0 > 0)) ||
+
+      r.rewrite((x + c0) / c2 < (x + c1) / c2, eval(c0 < c1), eval(c2 > 0)) ||
+      r.rewrite(x / c2 < (x + c1) / c2, eval(0 < c1), eval(c2 > 0)) ||
+      r.rewrite((x + c0) / c2 < x / c2, eval(c0 < 0), eval(c2 > 0)) ||
 
       // TODO: These aren't fully simplified, the above rules can be applied to the rewritten result.
       // If we ever added a c2 < 0 version of the above, these would need to be duplicated as well.
