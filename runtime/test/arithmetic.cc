@@ -53,4 +53,14 @@ TEST(arithmetic, saturate) {
   }
 }
 
+TEST(arithmetic, gcd) {
+  ASSERT_EQ(gcd(1, 1), 1);
+  ASSERT_EQ(gcd(2, 1), 1);
+  ASSERT_EQ(gcd(1, 2), 1);
+  ASSERT_EQ(gcd(2, 2), 2);
+  ASSERT_EQ(gcd(3, 5), 1);
+  ASSERT_EQ(gcd(4, 8), 4);
+  ASSERT_EQ(gcd(15, 25), 5);
+}
+
 }  // namespace slinky

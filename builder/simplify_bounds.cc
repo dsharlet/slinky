@@ -16,8 +16,6 @@ pattern_wildcard x{0};
 pattern_constant c0{0};
 pattern_constant c1{1};
 pattern_constant c2{2};
-pattern_constant c3{3};
-pattern_constant c4{4};
 
 template <typename T>
 interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
@@ -39,10 +37,72 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
   }
 }
 
+// Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
+void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
+  match_context lhs, rhs;
+  // Match the LHS and RHS both to the form ((x + a) / b) * c
+  // clang-format off
+  if (!(match(lhs, ((x + c2) / c0) * c1, a, eval(c0 > 0)) ||
+        match(lhs, (x / c0) * c1, a, eval(c0 > 0)) ||
+        match(lhs, (x + c2) / c0, a, eval(c0 > 0)) ||
+        match(lhs, x / c0, a, eval(c0 > 0)))) {
+    return;
+  }
+  if (!(match(rhs, ((x + c2) / c0) * c1, b, eval(c0 > 0)) ||
+        match(rhs, (x / c0) * c1, b, eval(c0 > 0)) ||
+        match(rhs, (x + c2) / c0, b, eval(c0 > 0)) ||
+        match(rhs, x / c0, b, eval(c0 > 0)))) {
+    return;
+  }
+  // clang-format on
+
+  if (!match(lhs.matched(x), rhs.matched(x))) {
+    // The x in the above expressions doesn't match, expressions may not be correlated.
+    return;
+  }
+
+  // We have a sum of two such rational expressions.
+  index_t l_c0 = *lhs.matched(c0);
+  index_t l_c1 = lhs.matched(c1, 1);
+  index_t r_c0 = *rhs.matched(c0);
+  index_t r_c1 = rhs.matched(c1, 1) * sign_b;
+  if (l_c1 * r_c0 != -r_c1 * l_c0) {
+    // The ratios of the two sides aren't the same, we can't tighten the bounds.
+    return;
+  }
+
+  index_t l_c2 = lhs.matched(c2, 0);
+  index_t r_c2 = rhs.matched(c2, 0);
+
+  // The ratios of the two sides are equal. The value of this expression is a periodic pattern.
+  // We need to search the period for the min and max.
+  // If these constants get so big, we need to revisit this algorithm.
+  assert(l_c0 < 1024);
+  assert(r_c0 < 1024);
+  index_t min = std::numeric_limits<index_t>::max();
+  index_t max = std::numeric_limits<index_t>::min();
+  index_t period = lcm(l_c0, r_c0);
+  for (index_t x = 0; x < period; ++x) {
+    index_t y = floor_div(x + l_c2, l_c0) * l_c1 + floor_div(x + r_c2, r_c0) * r_c1;
+    min = std::min(min, y);
+    max = std::max(max, y);
+  }
+  bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, min);
+  bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, max);
+}
+
 }  // namespace
 
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
-  return bounds_of_linear(op, std::move(a), std::move(b));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  } else {
+    interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
+    if (op) {
+      tighten_correlated_bounds(result, op->a, op->b, 1);
+    }
+    return result;
+  }
 }
 interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
   if (a.is_point() && b.is_point()) {
@@ -53,22 +113,7 @@ interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
         simplify(op, std::move(a.max), std::move(b.min)),
     };
     if (op) {
-      match_context ctx;
-      // Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
-      // clang-format off
-      if (match(ctx, ((x + c3) / c0) * c1 - (x + c4) / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) ||
-          match(ctx, (x / c0) * c1 - (x + c4) / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) || 
-          match(ctx, ((x + c3) / c0) * c1 - x / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) || 
-          match(ctx, (x / c0) * c1 - x / c2, op, eval(c1 * c2 == c0 && c0 > 0 && c1 > 0)) || 
-          false) {
-        index_t x_max = -ctx.matched(c3, 0);
-        index_t x_min = x_max - 1;
-        index_t min = floor_div(x_min + ctx.matched(c3, 0), *ctx.matched(c0)) * *ctx.matched(c1) - floor_div(x_min + ctx.matched(c4, 0), *ctx.matched(c2));
-        index_t max = floor_div(x_max + ctx.matched(c3, 0), *ctx.matched(c0)) * *ctx.matched(c1) - floor_div(x_max + ctx.matched(c4, 0), *ctx.matched(c2));
-        result.min = simplify(static_cast<const class max*>(nullptr), result.min, min);
-        result.max = simplify(static_cast<const class min*>(nullptr), result.max, max);
-      }
-      // clang-format on
+      tighten_correlated_bounds(result, op->a, op->b, -1);
     }
     return result;
   }
