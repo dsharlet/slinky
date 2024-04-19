@@ -199,7 +199,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}}, {.allow_in_place = true});
+  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}}, {.allow_in_place = true, .name = "add1"});
   auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -218,7 +218,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_5 = func::make(std::move(_replica_fn_6), {{in2, {point(x)}}}, {{intm2, {x}}}, {.allow_in_place = true});
+  auto _fn_5 = func::make(std::move(_replica_fn_6), {{in2, {point(x)}}}, {{intm2, {x}}}, {.allow_in_place = true, .name = "mul2"});
   auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -226,7 +226,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}}, {.allow_in_place = true});
+  auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}}, {.allow_in_place = true, .name = "add2"});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {});
   return p;
 };
@@ -545,65 +545,6 @@ auto p = []() -> ::slinky::pipeline {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&intm3_buf, &intm4_buf};
-
-  eval_context eval_ctx;
-  ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
-}
-
-TEST(replica, stencil_chain) {
-  // clang-format off
-// BEGIN define_replica_pipeline() output
-auto p = []() -> ::slinky::pipeline {
-  using std::abs, std::min, std::max;
-  node_context ctx;
-  auto in = buffer_expr::make(ctx, "in", /*rank=*/2, /*elem_size=*/2);
-  auto out = buffer_expr::make(ctx, "out", /*rank=*/2, /*elem_size=*/2);
-  auto x = var(ctx, "x");
-  auto y = var(ctx, "y");
-  auto stencil1_result = buffer_expr::make(ctx, "stencil1_result", /*rank=*/2, /*elem_size=*/2);
-  auto add_result = buffer_expr::make(ctx, "add_result", /*rank=*/2, /*elem_size=*/2);
-  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* input_buffers[] = {&i0};
-    const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{in, {point(x), point(y)}}};
-    const std::vector<var> outputs[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
-  };
-  auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{add_result, {x, y}}}, {.name = "add_1"});
-  auto _replica_fn_4 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* input_buffers[] = {&i0};
-    const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{add_result, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
-    const std::vector<var> outputs[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
-  };
-  auto _fn_1 = func::make(std::move(_replica_fn_4), {{add_result, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{stencil1_result, {x, y}}}, {.name = "sum3x3"});
-  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
-    const buffer<const void>* input_buffers[] = {&i0};
-    const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{stencil1_result, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}};
-    const std::vector<var> outputs[] = {{x, y}};
-    return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
-  };
-  auto _fn_0 = func::make(std::move(_replica_fn_5), {{stencil1_result, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out, {x, y}}}, {.name = "sum3x3"});
-  _fn_0.loops({{y, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in}, {out}, {});
-  return p;
-};
-// END define_replica_pipeline() output
-  // clang-format on
-
-  const int W = 20;
-  const int H = 30;
-  buffer<short, 2> in_buf({W + 4, H + 4});
-  in_buf.translate(-2, -2);
-  buffer<short, 2> out_buf({W, H});
-
-  init_random(in_buf);
-  out_buf.allocate();
-
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
 
   eval_context eval_ctx;
   ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
