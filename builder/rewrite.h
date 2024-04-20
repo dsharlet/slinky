@@ -35,7 +35,7 @@ struct match_context {
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
 SLINKY_ALWAYS_INLINE inline index_t substitute(index_t p, const match_context&) { return p; }
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(index_t) { return expr_node_type::constant; }
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(index_t) { return expr_node_type::constant; }
 
 class pattern_expr {
 public:
@@ -57,7 +57,7 @@ template <int N>
 class pattern_wildcard {};
 
 template <int N>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_wildcard<N>&) {
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_wildcard<N>&) {
   return expr_node_type::none;
 }
 
@@ -84,7 +84,7 @@ template <int N>
 class pattern_constant {};
 
 template <int N>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_constant<N>&) {
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_constant<N>&) {
   return expr_node_type::constant;
 }
 
@@ -132,7 +132,7 @@ public:
 };
 
 template <typename T, typename A, typename B>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_binary<T, A, B>&) {
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_binary<T, A, B>&) {
   return T::static_type;
 }
 
@@ -183,7 +183,7 @@ public:
 };
 
 template <typename T, typename A>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_unary<T, A>&) {
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_unary<T, A>&) {
   return T::static_type;
 }
 
@@ -224,7 +224,7 @@ public:
 };
 
 template <typename C, typename T, typename F>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_select<C, T, F>&) {
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_select<C, T, F>&) {
   return expr_node_type::select;
 }
 
@@ -256,7 +256,7 @@ public:
 };
 
 template <typename... Args>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_call<Args...>&) {
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_call<Args...>&) {
   return expr_node_type::call;
 }
 
@@ -310,8 +310,8 @@ public:
 };
 
 template <typename T>
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const replacement_eval<T>&) {
-  return expr_node_type::call;
+SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const replacement_eval<T>&) {
+  return expr_node_type::constant;
 }
 
 template <typename T>
