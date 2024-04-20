@@ -1869,26 +1869,29 @@ TEST_P(aligned_producer, pipeline) {
   // Make the pipeline
   node_context ctx;
 
-  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
-  auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
 
   intm->dim(0).bounds = align(intm->dim(0).bounds, alignment);
 
   var x(ctx, "x");
+  var y(ctx, "y");
 
   index_t produced = 0;
   auto assert_aligned = [&](const buffer<int>& out) -> index_t {
     EXPECT_EQ(out.dim(0).min() % alignment, 0);
     EXPECT_EQ(out.dim(0).extent() % alignment, 0);
-    for (index_t i = out.dim(0).begin(); i < out.dim(0).end(); ++i) {
-      out(i) = i;
+    for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+      for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+        out(x, y) = y * 1000 + x;
+      }
     }
-    produced += out.dim(0).extent();
+    produced += out.dim(0).extent() * out.dim(1).extent();
     return 0;
   };
   func producer =
-      func::make(std::move(assert_aligned), {}, {{intm, {x}}});
-  func consumer = func::make(add_1<int>, {{intm, {point(x)}}}, {{out, {x}}});
+      func::make(std::move(assert_aligned), {}, {{intm, {x, y}}});
+  func consumer = func::make(add_1<int>, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (split > 0) {
     consumer.loops({{x, split}});
@@ -1901,9 +1904,10 @@ TEST_P(aligned_producer, pipeline) {
   pipeline p = build_pipeline(ctx, {}, {out});
 
   // Run the pipeline
-  const int N = 100;
+  const int W = 100;
+  const int H = 5;
 
-  buffer<int, 1> out_buf({N});
+  buffer<int, 2> out_buf({W, H});
   out_buf.allocate();
 
   // Not having span(std::initializer_list<T>) is unfortunate.
@@ -1911,15 +1915,17 @@ TEST_P(aligned_producer, pipeline) {
   test_context eval_ctx;
   p.evaluate({}, outputs, eval_ctx);
 
-  for (int i = 0; i < N; ++i) {
-    ASSERT_EQ(out_buf(i), i + 1);
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), y * 1000 + x + 1);
+    }
   }
 
   if (split % alignment != 0 && schedule_storage) {
     // If we got sliding window, there won't be redundant compute even with the alignment of the producer.
-    ASSERT_GT(produced, N);
+    ASSERT_GT(produced, W * H);
   } else {
-    ASSERT_GE(produced + alignment - 1, N);
+    ASSERT_GE(produced + (alignment - 1) * H, W * H);
   }
 }
 
