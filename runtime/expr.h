@@ -243,7 +243,7 @@ expr min(span<expr> x);
 expr max(span<expr> x);
 
 // Check if a and b should be commuted.
-SLINKY_ALWAYS_INLINE inline bool should_commute(expr_node_type a, expr_node_type b) { return a > b; }
+SLINKY_ALWAYS_INLINE inline constexpr bool should_commute(expr_node_type a, expr_node_type b) { return a > b; }
 inline bool should_commute(const expr& a, const expr& b) { return should_commute(a.type(), b.type()); }
 
 struct interval_expr {

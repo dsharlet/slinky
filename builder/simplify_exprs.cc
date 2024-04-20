@@ -12,16 +12,16 @@ using namespace rewrite;
 
 namespace {
 
-pattern_wildcard x{0};
-pattern_wildcard y{1};
-pattern_wildcard z{2};
-pattern_wildcard w{3};
+pattern_wildcard<0> x;
+pattern_wildcard<1> y;
+pattern_wildcard<2> z;
+pattern_wildcard<3> w;
 
-pattern_constant c0{0};
-pattern_constant c1{1};
-pattern_constant c2{2};
-pattern_constant c3{3};
-pattern_constant c4{4};
+pattern_constant<0> c0;
+pattern_constant<1> c1;
+pattern_constant<2> c2;
+pattern_constant<3> c3;
+pattern_constant<4> c4;
 
 }  // namespace
 
