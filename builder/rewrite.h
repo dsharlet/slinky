@@ -35,22 +35,33 @@ struct match_context {
 
 SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
 SLINKY_ALWAYS_INLINE inline index_t substitute(index_t p, const match_context&) { return p; }
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(index_t) { return expr_node_type::constant; }
+
+template <typename T>
+struct pattern_type {
+  static constexpr expr_node_type value = T::type;
+};
+template <>
+struct pattern_type<int> {
+  static constexpr expr_node_type value = expr_node_type::constant;
+};
+template <>
+struct pattern_type<index_t> {
+  static constexpr expr_node_type value = expr_node_type::constant;
+};
 
 class pattern_expr {
 public:
+  static constexpr expr_node_type type = expr_node_type::none;
   const expr& e;
 };
 
 SLINKY_ALWAYS_INLINE inline const expr& substitute(const pattern_expr& p, const match_context& ctx) { return p.e; }
 
 template <int N>
-class pattern_wildcard {};
-
-template <int N>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_wildcard<N>&) {
-  return expr_node_type::none;
-}
+class pattern_wildcard {
+public:
+  static constexpr expr_node_type type = expr_node_type::none;
+};
 
 template <int N>
 inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
@@ -72,12 +83,10 @@ inline const base_expr_node* substitute(const pattern_wildcard<N>& p, const matc
 }
 
 template <int N>
-class pattern_constant {};
-
-template <int N>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_constant<N>&) {
-  return expr_node_type::constant;
-}
+class pattern_constant {
+public:
+  static constexpr expr_node_type type = expr_node_type::constant;
+};
 
 template <int N>
 inline bool match(const pattern_constant<N>& p, const expr& x, match_context& ctx) {
@@ -114,25 +123,19 @@ inline index_t match_context::matched(const pattern_constant<N>& p, index_t def)
 template <typename T, typename A, typename B>
 class pattern_binary {
 public:
+  static constexpr expr_node_type type = T::static_type;
   A a;
   B b;
 
-  pattern_binary(A a, B b) : a(a), b(b) {
-    assert(!T::commutative || !should_commute(pattern_type(this->a), pattern_type(this->b)));
-  }
+  static_assert(!T::commutative || !should_commute(pattern_type<A>::value, pattern_type<B>::value));
 };
-
-template <typename T, typename A, typename B>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_binary<T, A, B>&) {
-  return T::static_type;
-}
 
 template <typename T, typename A, typename B>
 bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
-    expr_node_type ta = pattern_type(p.a);
-    expr_node_type tb = pattern_type(p.b);
+    constexpr expr_node_type ta = pattern_type<A>::value;
+    constexpr expr_node_type tb = pattern_type<B>::value;
     if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
@@ -170,13 +173,9 @@ auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
 template <typename T, typename A>
 class pattern_unary {
 public:
+  static constexpr expr_node_type type = T::static_type;
   A a;
 };
-
-template <typename T, typename A>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_unary<T, A>&) {
-  return T::static_type;
-}
 
 template <typename T, typename A>
 bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
@@ -209,15 +208,11 @@ auto substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
 template <typename C, typename T, typename F>
 class pattern_select {
 public:
+  static constexpr expr_node_type type = expr_node_type::select;
   C c;
   T t;
   F f;
 };
-
-template <typename C, typename T, typename F>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_select<C, T, F>&) {
-  return expr_node_type::select;
-}
 
 template <typename C, typename T, typename F>
 bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) {
@@ -242,14 +237,10 @@ expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
 template <typename... Args>
 class pattern_call {
 public:
+  static constexpr expr_node_type type = expr_node_type::call;
   slinky::intrinsic fn;
   std::tuple<Args...> args;
 };
-
-template <typename... Args>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const pattern_call<Args...>&) {
-  return expr_node_type::call;
-}
 
 template <typename T, std::size_t... Is>
 bool match_tuple(const T& t, const std::vector<expr>& x, match_context& ctx, std::index_sequence<Is...>) {
@@ -297,13 +288,9 @@ replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
 template <typename T>
 class replacement_eval {
 public:
+  static constexpr expr_node_type type = expr_node_type::constant;
   T a;
 };
-
-template <typename T>
-SLINKY_ALWAYS_INLINE inline constexpr expr_node_type pattern_type(const replacement_eval<T>&) {
-  return expr_node_type::constant;
-}
 
 template <typename T>
 index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
