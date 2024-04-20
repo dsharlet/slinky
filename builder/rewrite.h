@@ -42,16 +42,7 @@ public:
   const expr& e;
 };
 
-SLINKY_ALWAYS_INLINE inline bool match(const pattern_expr& p, const expr& x, match_context& ctx) {
-  // Assume that exprs in patterns are canonical constants.
-  return p.e.same_as(x);
-}
 SLINKY_ALWAYS_INLINE inline const expr& substitute(const pattern_expr& p, const match_context& ctx) { return p.e; }
-SLINKY_ALWAYS_INLINE inline expr_node_type pattern_type(const pattern_expr& p) { return p.e.type(); }
-
-const pattern_expr& positive_infinity();
-const pattern_expr& negative_infinity();
-const pattern_expr& indeterminate();
 
 template <int N>
 class pattern_wildcard {};
@@ -388,6 +379,10 @@ template <typename C, typename T, typename F, bool = typename enable_pattern_ops
 auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>{c, t, f}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
+inline auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
+inline auto negative_infinity() { return pattern_call<>{intrinsic::negative_infinity, {}}; }
+inline auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
+
 template <typename T>
 auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
 template <typename T>

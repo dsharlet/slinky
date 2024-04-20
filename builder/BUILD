@@ -11,7 +11,6 @@ cc_library(
         "pipeline.cc",
         "node_mutator.cc",
         "optimizations.cc",
-        "rewrite.cc",
         "rewrite.h",
         "simplify.cc",
         "simplify_bounds.cc",
