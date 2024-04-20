@@ -11,13 +11,13 @@ using namespace rewrite;
 
 namespace {
 
-pattern_wildcard x{0};
+pattern_wildcard<0> x;
 
-pattern_constant c0{0};
-pattern_constant c1{1};
-pattern_constant c2{2};
-pattern_constant c3{3};
-pattern_constant c4{4};
+pattern_constant<0> c0;
+pattern_constant<1> c1;
+pattern_constant<2> c2;
+pattern_constant<3> c3;
+pattern_constant<4> c4;
 
 template <typename T>
 interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
