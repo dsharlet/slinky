@@ -315,7 +315,7 @@ constexpr int max_rank = 2;
 
 constexpr int max_abs_constant = 256;
 
-index_t random_constant() { return (rand() & (2 * max_abs_constant - 1)) - max_abs_constant; }
+index_t random_constant(int max = max_abs_constant) { return (rand() & (2 * max - 1)) - max; }
 
 expr random_buffer_intrinsic() {
   switch (rand() % 2) {
@@ -436,6 +436,59 @@ TEST(simplify, fuzz) {
           std::cerr << std::endl;
           ASSERT_LE(eval_test, max);
         }
+      }
+    }
+  }
+}
+
+TEST(simplify, fuzz_correlated_bounds) {
+  const int seed = time(nullptr);
+  srand(seed);
+  constexpr int tests = 1000;
+  constexpr int checks = 10;
+
+  eval_context ctx;
+
+  symbol_map<interval_expr> var_bounds;
+  for (const var& v : vars) {
+    var_bounds[v] = {-max_abs_constant, max_abs_constant};
+  }
+
+  for (int i = 0; i < tests; ++i) {
+    index_t a = random_constant(16);
+    index_t b = random_constant(16);
+    index_t c = random_constant(16);
+    index_t d = euclidean_div(b * c, a);
+    expr test = ((x + random_constant()) / a) * b - ((x + random_constant()) / c) * d;
+
+    interval_expr bounds = bounds_of(test, var_bounds);
+
+    for (int j = 0; j < checks; ++j) {
+      for (const var& v : vars) {
+        ctx[v] = random_constant();
+      }
+      index_t eval_test = evaluate(test, ctx);
+      index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
+      index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
+      if (eval_test < min) {
+        std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
+        print(std::cerr, test, &symbols);
+        std::cerr << " -> " << eval_test << std::endl;
+        print(std::cerr, bounds.min, &symbols);
+        std::cerr << " -> " << min << std::endl;
+        dump_context_for_expr(std::cerr, ctx, test, &symbols);
+        std::cerr << std::endl;
+        ASSERT_LE(min, eval_test);
+      }
+      if (eval_test > max) {
+        std::cerr << "bounds_of upper bound failure (seed = " << seed << "): " << std::endl;
+        print(std::cerr, test, &symbols);
+        std::cerr << " -> " << eval_test << std::endl;
+        print(std::cerr, bounds.max, &symbols);
+        std::cerr << " -> " << max << std::endl;
+        dump_context_for_expr(std::cerr, ctx, test, &symbols);
+        std::cerr << std::endl;
+        ASSERT_LE(eval_test, max);
       }
     }
   }

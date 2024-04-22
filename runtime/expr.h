@@ -577,6 +577,10 @@ inline bool is_non_positive(const expr& x) {
 }
 
 expr abs(expr x);
+expr align_down(expr x, expr a);
+expr align_up(expr x, expr a);
+// Expand the interval to have a min and extent aligned to a multiple of a.
+interval_expr align(interval_expr x, expr a);
 
 expr buffer_rank(expr buf);
 expr buffer_elem_size(expr buf);

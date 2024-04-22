@@ -41,6 +41,7 @@ cc_test(
     srcs = [
         "pipeline.cc", 
         "bazel_util.h",
+        "funcs.h",
         "util.h",
     ],
     data = ["replica_pipeline.cc"] + glob(["visualize/*.html"]),
@@ -52,6 +53,21 @@ cc_test(
         "//runtime:thread_pool",
         "//runtime:visualize",
         "@bazel_tools//tools/cpp/runfiles",
+        "@googletest//:gtest_main",
+    ],
+    size="small",
+)
+
+cc_test(
+    name = "aligned_producer",
+    srcs = [
+        "aligned_producer.cc",
+        "funcs.h",
+        "util.h",
+    ],
+    deps = [
+        "//builder",
+        "//runtime",
         "@googletest//:gtest_main",
     ],
     size="small",

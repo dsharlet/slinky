@@ -531,22 +531,28 @@ class pipeline_builder {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
 
-        std::vector<std::pair<expr, expr>> substitutions;
-
         expr alloc_var = variable::make(b->sym());
 
+        // First substitute the bounds.
+        std::vector<std::pair<expr, expr>> substitutions;
         box_expr& bounds = *allocation_bounds_[b->sym()];
-        expr stride = b->elem_size();
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           const interval_expr& bounds_d = bounds[d];
-
           substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
           substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
-          substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
-
-          stride *= min(bounds_d.extent(), buffer_fold_factor(alloc_var, d));
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
+
+        // After substituting the bounds, compute the default strides, and substitute those.
+        // TODO: I think this is bad, if the user sets a stride, we won't see it. I think
+        // maybe allowing users to set strides is just a bad idea.
+        substitutions.clear();
+        expr stride = b->elem_size();
+        for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
+          substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
+          stride *= min(dims[d].bounds.extent(), buffer_fold_factor(alloc_var, d));
+        }
+        dims = substitute_from_map(dims, substitutions);
 
         std::vector<dim_expr> shape;
         std::vector<interval_expr> tmp;

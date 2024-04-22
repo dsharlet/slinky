@@ -140,6 +140,23 @@ inline T saturate_mod(T a, T b) {
   }
 }
 
+template <typename T>
+inline T gcd(T a, T b) {
+  while (a != b) {
+    if (a > b) {
+      a -= b;
+    } else {
+      b -= a;
+    }
+  }
+  return a;
+}
+
+template <typename T>
+inline T lcm(T a, T b) {
+  return (a * b) / gcd(a, b);
+}
+
 // Don't want to depend on C++20, so just provide our own span-like helper. Differences:
 // - const-only
 // - No fixed size extents

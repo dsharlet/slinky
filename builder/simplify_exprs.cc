@@ -463,11 +463,13 @@ expr simplify(const div* op, expr a, expr b) {
       r.rewrite(x / -1, -x) ||
       r.rewrite(x / x, x != 0) ||
 
+      r.rewrite((y + x / c0) / c1, (x + y * c0) / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
       r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x / c0 + c1) / c2, (x + eval(c1 * c0)) / eval(c0 * c2), eval(c0 > 0 && c2 > 0)) ||
       r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0 && c0 % c1 == 0)) ||
 
+      r.rewrite((x + y * c0) / c1, y * eval(c0 / c1) + x / c1, eval(c0 % c1 == 0)) ||
       r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), eval(c0 % c1 == 0)) ||
+      r.rewrite((y * c0 - x) / c1, y * eval(c0 / c1) + (-x / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
       r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
       false) {
     return r.result;
@@ -521,10 +523,25 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x + y < x, y < 0) ||
       r.rewrite(x - y < x, 0 < y) ||
 
+      r.rewrite(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
+      r.rewrite(x + c0 < c1 - y, x + y < eval(c1 - c0)) ||
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
+      r.rewrite(c0 - x < y + c1, eval(c0 - c1) < x + y) ||
+      r.rewrite(c0 - x < c1 - y, y < x + eval(c1 - c0)) ||
       r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
       r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
+
+      r.rewrite(x < (x / c0) * c0 + c1, true, eval(c0 > 0 && c1 >= c0 - 1)) ||
+      r.rewrite(x < (x / c0) * c0 + c1, false, eval(c0 > 0 && c1 <= 0)) ||
+      r.rewrite(x + c1 < (x / c0) * c0, true, eval(c0 > 0 && c1 <= -c0 + 1)) ||
+      r.rewrite(x + c1 < (x / c0) * c0, false, eval(c0 > 0 && c1 >= 0)) ||
+      r.rewrite((x / c0) * c0 < x + c1, true, eval(c0 > 0 && c1 > 0)) ||
+      r.rewrite((x / c0) * c0 < x + c1, false, eval(c0 > 0 && -c1 >= c0 - 1)) ||
+      r.rewrite((x / c0) * c0 + c1 < x, true, eval(c0 > 0 && c1 < 0)) ||
+      r.rewrite((x / c0) * c0 + c1 < x, false, eval(c0 > 0 && c1 >= c0 - 1)) ||
+      r.rewrite(x < (x / c0) * c0, false, eval(c0 > 0)) ||
+      r.rewrite((x / c0) * c0 < x, x % c0 != 0, eval(c0 > 0)) ||
 
       r.rewrite((x + c0) / c2 < (x + c1) / c2, eval(c0 < c1), eval(c2 > 0)) ||
       r.rewrite(x / c2 < (x + c1) / c2, eval(0 < c1), eval(c2 > 0)) ||
@@ -638,13 +655,18 @@ expr simplify(const equal* op, expr a, expr b) {
   auto r = make_rewriter(pattern_expr{a} == pattern_expr{b});
   // clang-format off
   if (r.rewrite(x == x, true) ||
-      r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
-      r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
-      r.rewrite(x * c0 == c1, x == eval(c1 / c0), eval(c1 % c0 == 0)) ||
+      r.rewrite(x * y == z * y, x == z) ||
       r.rewrite(x + y == z + y, x == z) ||
       r.rewrite(x - y == z - y, x == z) ||
       r.rewrite(x - y == x - z, y == z) ||
-      r.rewrite(x * c0 == y * c0, x == y, eval(c0 != 0)) ||
+      r.rewrite(x * c0 == y * c1, x == y * eval(c1 / c0), eval(c1 % c0 == 0)) ||
+      r.rewrite(x * c0 == y * c1, y == x * eval(c0 / c1), eval(c0 % c1 == 0)) ||
+      r.rewrite(x * c0 == y / c1, x == y / (c0 * c1)) ||
+      r.rewrite(x * c0 == c1, x == eval(c1 / c0), eval(c1 % c0 == 0)) ||
+      r.rewrite(x + c0 == y + c1, x == y + eval(c1 - c0)) ||
+      r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
+      r.rewrite(x + c0 == c1 - y, x + y == eval(c1 - c0)) ||
+      r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
       false) {
     return r.result;
   }
@@ -800,7 +822,21 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     changed = changed || !args[i].same_as(op->args[i]);
   }
 
-  if (fn == intrinsic::buffer_at) {
+  if (fn == intrinsic::semaphore_init || fn == intrinsic::semaphore_wait || fn == intrinsic::semaphore_signal) {
+    assert(args.size() % 2 == 0);
+    for (std::size_t i = 0; i < args.size();) {
+      // Remove calls to undefined semaphores.
+      if (!args[i].defined()) {
+        args.erase(args.begin() + i, args.begin() + i + 2);
+        changed = true;
+      } else {
+        i += 2;
+      }
+    }
+    if (args.empty()) {
+      return expr();
+    }
+  } else if (fn == intrinsic::buffer_at) {
     // Trailing undefined indices can be removed.
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
       // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_at(b)
@@ -814,9 +850,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
       args.pop_back();
       changed = true;
     }
-  }
-
-  if (fn == intrinsic::abs) {
+  } else if (fn == intrinsic::abs) {
     assert(args.size() == 1);
     if (is_non_negative(args[0])) {
       return args[0];
