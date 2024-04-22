@@ -1,5 +1,5 @@
 #ifndef SLINKY_BUILDER_TEST_FUNCS_H
-#define SLINKY_BUIDLER_TEST_FUNCS_H
+#define SLINKY_BUILDER_TEST_FUNCS_H
 
 #include "runtime/buffer.h"
 
