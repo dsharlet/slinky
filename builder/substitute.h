@@ -15,6 +15,7 @@ expr substitute(const expr& e, const symbol_map<expr>& replacements);
 stmt substitute(const stmt& s, const symbol_map<expr>& replacements);
 expr substitute(const expr& e, var target, const expr& replacement);
 stmt substitute(const stmt& s, var target, const expr& replacement);
+interval_expr substitute(const interval_expr& x, var target, const expr& replacement);
 expr substitute(const expr& e, const expr& target, const expr& replacement);
 stmt substitute(const stmt& s, const expr& target, const expr& replacement);
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds);
@@ -30,6 +31,7 @@ int compare(const stmt& a, const stmt& b);
 
 // Update buffer metadata expressions to account for a slice that has occurred.
 expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices);
+interval_expr update_sliced_buffer_metadata(const interval_expr& x, var buf, span<const int> slices);
 
 // A comparator suitable for using expr/stmt as keys in an std::map/std::set.
 struct node_less {

@@ -180,6 +180,13 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
 namespace {
 
 expr negate(expr a) { return simplify(static_cast<const sub*>(nullptr), 0, std::move(a)); }
+interval_expr negate(interval_expr x) {
+  if (x.is_point()) {
+    return point(negate(x.min));
+  } else {
+    return {negate(x.max), negate(x.min)};
+  }
+}
 
 interval_expr union_x_negate_x(interval_expr x) {
   return {
@@ -319,7 +326,7 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
     if (is_non_negative(args[0].min)) {
       return {args[0].min, args[0].max};
     } else if (is_non_positive(args[0].max)) {
-      return {negate(args[0].max), negate(args[0].min)};
+      return negate(args[0]);
     } else if (args[0].is_point()) {
       return {0, simplify(op, intrinsic::abs, {std::move(args[0].min)})};
     } else {
