@@ -489,14 +489,14 @@ auto p = []() -> ::slinky::pipeline {
   ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
 }
 
-TEST(replica, Y) {
+TEST(replica, fork) {
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
   using std::abs, std::min, std::max;
   node_context ctx;
   auto in1 = buffer_expr::make(ctx, "in1", /*rank=*/2, /*elem_size=*/2);
-  auto intm3 = buffer_expr::make(ctx, "intm3", /*rank=*/2, /*elem_size=*/2);
+  auto out1 = buffer_expr::make(ctx, "out1", /*rank=*/2, /*elem_size=*/2);
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
   auto intm2 = buffer_expr::make(ctx, "intm2", /*rank=*/2, /*elem_size=*/2);
@@ -515,8 +515,8 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}}, {});
-  auto intm4 = buffer_expr::make(ctx, "intm4", /*rank=*/2, /*elem_size=*/2);
+  auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm2, {point(x), point(y)}}}, {{out1, {x, y}}}, {});
+  auto out2 = buffer_expr::make(ctx, "out2", /*rank=*/2, /*elem_size=*/2);
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -524,9 +524,9 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_4 = func::make(std::move(_replica_fn_5), {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}}, {});
+  auto _fn_4 = func::make(std::move(_replica_fn_5), {{intm2, {point(x), point(y)}}}, {{out2, {x, y}}}, {});
   _fn_4.loops({{y, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in1}, {intm3, intm4}, {});
+  auto p = build_pipeline(ctx, {}, {in1}, {out1, out2}, {});
   return p;
 };
 // END define_replica_pipeline() output
