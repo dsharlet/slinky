@@ -21,12 +21,9 @@ class matcher : public expr_visitor, public stmt_visitor {
     const base_expr_node* self_expr;
     const base_stmt_node* self_stmt;
   };
-  symbol_map<expr>* matches;
 
 public:
   int match = 0;
-
-  matcher(symbol_map<expr>* matches = nullptr) : matches(matches) {}
 
   template <typename T>
   bool try_match(T self, T op) {
@@ -39,15 +36,7 @@ public:
     return match == 0;
   }
 
-  bool try_match(const var& self, const var& op) {
-    assert(match == 0);
-    if (self.id < op.id) {
-      match = -1;
-    } else if (op.id < self.id) {
-      match = 1;
-    }
-    return match == 0;
-  }
+  bool try_match(const var& self, const var& op) { return try_match(self.id, op.id); }
 
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
   void visit(const base_expr_node* op) {
@@ -67,10 +56,6 @@ public:
       match = -1;
     } else if (!op) {
       match = 1;
-    } else if (matches && op->type == expr_node_type::variable) {
-      // When we are matching with variables as wildcards, the type doesn't need to match.
-      self_expr = e;
-      visit(reinterpret_cast<const variable*>(op));
     } else if (e->type < op->type) {
       match = -1;
     } else if (e->type > op->type) {
@@ -124,14 +109,7 @@ public:
 
   template <typename T>
   bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
-    if (self.size() < op.size()) {
-      match = -1;
-      return false;
-    } else if (self.size() > op.size()) {
-      match = 1;
-      return false;
-    }
-
+    if (!try_match(self.size(), op.size())) return false;
     for (std::size_t i = 0; i < self.size(); ++i) {
       if (!try_match(self[i], op[i])) return false;
     }
@@ -148,24 +126,8 @@ public:
   }
 
   void visit(const variable* op) override {
-    if (matches) {
-      std::optional<expr>& matched = (*matches)[op->sym];
-      if (matched) {
-        // We already matched this variable. The expression must match.
-        if (!matched->same_as(self_expr)) {
-          symbol_map<expr>* old_matches = matches;
-          matches = nullptr;
-          try_match(matched->get(), self_expr);
-          matches = old_matches;
-        }
-      } else {
-        // This is a new match.
-        matched = self_expr;
-      }
-    } else {
-      const variable* ev = static_cast<const variable*>(self);
-      try_match(ev->sym, op->sym);
-    }
+    const variable* ev = static_cast<const variable*>(self);
+    try_match(ev->sym, op->sym);
   }
 
   void visit(const constant* op) override {
@@ -338,12 +300,6 @@ public:
     try_match(cs->condition, op->condition);
   }
 };
-
-bool match(const expr& p, const expr& e, symbol_map<expr>& matches) {
-  matcher m(&matches);
-  m.try_match(e, p);
-  return m.match == 0;
-}
 
 bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
