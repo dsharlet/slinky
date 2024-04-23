@@ -34,9 +34,9 @@ void setup_tracing(eval_context& ctx, const std::string& filename) {
   ctx.trace_end = [t](index_t token) { t->trace.end(reinterpret_cast<const char*>(token)); };
 }
 
-thread_pool threads;
-
 test_context::test_context() {
+  static thread_pool threads;
+
   allocate = [this](var, raw_buffer* b) {
     void* allocation = b->allocate();
     heap.track_allocate(b->size_bytes());
