@@ -902,7 +902,7 @@ TEST(constant, pipeline) {
   dims[1].set_stride(W * sizeof(short));
 
   auto constant_buf = raw_buffer::make(2, sizeof(short), dims);
-  fill_random<short>(*constant_buf);
+  fill_random(constant_buf->cast<short>());
 
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 

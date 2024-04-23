@@ -8,10 +8,10 @@ namespace slinky {
 // This file provides a number of toy funcs for test pipelines.
 
 // init_random() for raw_buffer requires allocation be done by caller
-template <typename T>
-void fill_random(raw_buffer& x) {
-  assert(x.base != nullptr);
-  for_each_index(x, [&](auto i) { *reinterpret_cast<T*>(x.address_at(i)) = (rand() % 20) - 10; });
+template <typename T, std::size_t N>
+void fill_random(const buffer<T, N>& x) {
+  assert(x.base() != nullptr);
+  for_each_element([&](T* i) { *i = (rand() % 20) - 10; }, x);
 }
 
 template <typename T, std::size_t N>
