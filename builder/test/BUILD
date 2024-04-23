@@ -36,6 +36,17 @@ cc_test(
     size="small",
 )
 
+cc_library(
+    name = "context",
+    srcs = ["context.cc"],
+    hdrs = ["context.h"],
+    deps = [
+        "//runtime",
+        "//runtime:chrome_trace",
+        "//runtime:thread_pool",
+    ],
+)
+
 cc_test(
     name = "pipeline",
     srcs = [
@@ -46,11 +57,10 @@ cc_test(
     ],
     data = ["replica_pipeline.cc"] + glob(["visualize/*.html"]),
     deps = [
+        ":context",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "//runtime:chrome_trace",
-        "//runtime:thread_pool",
         "//runtime:visualize",
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest_main",
@@ -68,6 +78,7 @@ cc_test(
     ],
     data = ["replica_pipeline.cc"],
     deps = [
+        ":context",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
@@ -87,10 +98,10 @@ cc_test(
     ],
     data = ["replica_pipeline.cc"],
     deps = [
+        ":context",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "//runtime:thread_pool",
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest_main",
     ],
@@ -105,6 +116,7 @@ cc_test(
         "util.h",
     ],
     deps = [
+        ":context",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",

@@ -6,6 +6,7 @@
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
 #include "builder/test/bazel_util.h"
+#include "builder/test/context.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"
 #include "runtime/chrome_trace.h"
@@ -45,75 +46,6 @@ void check_visualize(const std::string& filename, const pipeline& p, pipeline::b
     file << viz;
   }
 }
-
-void setup_tracing(eval_context& ctx, const std::string& filename) {
-  struct tracer {
-    std::string trace_file;
-    // Store the trace in a stringstream and write it at the end, to avoid overhead influencing the trace.
-    std::stringstream buffer;
-    chrome_trace trace;
-
-    tracer(const std::string& filename) : trace_file(filename), trace(buffer) {}
-    ~tracer() {
-      std::ofstream file(trace_file);
-      file << buffer.str();
-    }
-  };
-
-  auto t = std::make_shared<tracer>(filename);
-
-  ctx.trace_begin = [t](const char* op) -> index_t {
-    t->trace.begin(op);
-    // chrome_trace expects trace_begin and trace_end to pass the string, while slinky's API expects to pass a token to
-    // trace_end returned by trace_begin. Because `index_t` must be able to hold a pointer, we'll just use the token to
-    // store the pointer.
-    return reinterpret_cast<index_t>(op);
-  };
-  ctx.trace_end = [t](index_t token) { t->trace.end(reinterpret_cast<const char*>(token)); };
-}
-
-thread_pool threads;
-
-struct memory_info {
-  std::atomic<index_t> live_count = 0;
-  std::atomic<index_t> live_size = 0;
-  std::atomic<index_t> total_count = 0;
-  std::atomic<index_t> total_size = 0;
-
-  void track_allocate(index_t size) {
-    live_count += 1;
-    live_size += size;
-    total_count += 1;
-    total_size += size;
-  }
-
-  void track_free(index_t size) {
-    live_count -= 1;
-    live_size -= size;
-  }
-};
-
-class test_context : public eval_context {
-public:
-  memory_info heap;
-
-  test_context() {
-    allocate = [this](var, raw_buffer* b) {
-      void* allocation = b->allocate();
-      heap.track_allocate(b->size_bytes());
-      return allocation;
-    };
-    free = [this](var, raw_buffer* b, void* allocation) {
-      ::free(allocation);
-      heap.track_free(b->size_bytes());
-    };
-
-    enqueue_many = [&](thread_pool::task t) { threads.enqueue(threads.thread_count(), std::move(t)); };
-    enqueue = [&](int n, thread_pool::task t) { threads.enqueue(n, std::move(t)); };
-    wait_for = [&](const std::function<bool()>& condition) { return threads.wait_for(condition); };
-    atomic_call = [&](const thread_pool::task& t) { return threads.atomic_call(t); };
-  }
-};
 
 // Matrix multiplication (not fast!)
 template <typename T>

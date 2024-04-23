@@ -4,6 +4,7 @@
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
 #include "builder/test/bazel_util.h"
+#include "builder/test/context.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
@@ -21,49 +22,6 @@ void check_replica_pipeline(const std::string& replica_text) {
   size_t pos = get_replica_golden().find(replica_text);
   ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
 }
-
-thread_pool threads;
-
-struct memory_info {
-  std::atomic<index_t> live_count = 0;
-  std::atomic<index_t> live_size = 0;
-  std::atomic<index_t> total_count = 0;
-  std::atomic<index_t> total_size = 0;
-
-  void track_allocate(index_t size) {
-    live_count += 1;
-    live_size += size;
-    total_count += 1;
-    total_size += size;
-  }
-
-  void track_free(index_t size) {
-    live_count -= 1;
-    live_size -= size;
-  }
-};
-
-class test_context : public eval_context {
-public:
-  memory_info heap;
-
-  test_context() {
-    allocate = [this](var, raw_buffer* b) {
-      void* allocation = b->allocate();
-      heap.track_allocate(b->size_bytes());
-      return allocation;
-    };
-    free = [this](var, raw_buffer* b, void* allocation) {
-      ::free(allocation);
-      heap.track_free(b->size_bytes());
-    };
-
-    enqueue_many = [&](thread_pool::task t) { threads.enqueue(threads.thread_count(), std::move(t)); };
-    enqueue = [&](int n, thread_pool::task t) { threads.enqueue(n, std::move(t)); };
-    wait_for = [&](const std::function<bool()>& condition) { return threads.wait_for(condition); };
-    atomic_call = [&](const thread_pool::task& t) { return threads.atomic_call(t); };
-  }
-};
 
 // Matrix multiplication (not fast!)
 template <typename T>
