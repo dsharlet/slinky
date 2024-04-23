@@ -182,7 +182,9 @@ const interval_expr& interval_expr::union_identity() { return none(); }
 const interval_expr& interval_expr::intersection_identity() { return all(); }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
-  if (is_non_negative(scale)) {
+  if (is_point()) {
+    min = max = mul::make(min, scale);
+  } else if (is_non_negative(scale)) {
     if (min.defined()) min = mul::make(min, scale);
     if (max.defined()) max = mul::make(max, scale);
   } else if (is_negative(scale)) {
@@ -198,7 +200,9 @@ interval_expr& interval_expr::operator*=(const expr& scale) {
 }
 
 interval_expr& interval_expr::operator/=(const expr& scale) {
-  if (is_non_negative(scale)) {
+  if (is_point()) {
+    min = max = div::make(min, scale);
+  } else if (is_non_negative(scale)) {
     if (min.defined()) min = div::make(min, scale);
     if (max.defined()) max = div::make(max, scale);
   } else if (is_negative(scale)) {
@@ -214,14 +218,22 @@ interval_expr& interval_expr::operator/=(const expr& scale) {
 }
 
 interval_expr& interval_expr::operator+=(const expr& offset) {
-  if (min.defined()) min = add::make(min, offset);
-  if (max.defined()) max = add::make(max, offset);
+  if (is_point()) {
+    min = max = add::make(min, offset);
+  } else {
+    if (min.defined()) min = add::make(min, offset);
+    if (max.defined()) max = add::make(max, offset);
+  }
   return *this;
 }
 
 interval_expr& interval_expr::operator-=(const expr& offset) {
-  if (min.defined()) min = sub::make(min, offset);
-  if (max.defined()) max = sub::make(max, offset);
+  if (is_point()) {
+    min = max = sub::make(min, offset);
+  } else {
+    if (min.defined()) min = sub::make(min, offset);
+    if (max.defined()) max = sub::make(max, offset);
+  }
   return *this;
 }
 

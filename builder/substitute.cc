@@ -702,6 +702,13 @@ expr substitute(const expr& e, var target, const expr& replacement) {
 stmt substitute(const stmt& s, var target, const expr& replacement) {
   return substitutor(target, replacement).mutate(s);
 }
+interval_expr substitute(const interval_expr& x, var target, const expr& replacement) {
+  if (x.is_point()) {
+    return point(substitute(x.min, target, replacement));
+  } else {
+    return {substitute(x.min, target, replacement), substitute(x.max, target, replacement)};
+  }
+}
 
 expr substitute(const expr& e, const expr& target, const expr& replacement) {
   std::pair<expr, expr> subs[] = {{target, replacement}};
@@ -793,6 +800,15 @@ public:
 
 expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices) {
   return slice_updater(buf, slices).mutate(e);
+}
+
+interval_expr update_sliced_buffer_metadata(const interval_expr& x, var buf, span<const int> slices) {
+  slice_updater m(buf, slices);
+  if (x.is_point()) {
+    return point(m.mutate(x.min));
+  } else {
+    return {m.mutate(x.min), m.mutate(x.max)};
+  }
 }
 
 }  // namespace slinky

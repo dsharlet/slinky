@@ -68,12 +68,20 @@ public:
 
   interval_expr mutate(
       const interval_expr& x, interval_expr* min_bounds = nullptr, interval_expr* max_bounds = nullptr) {
-    interval_expr result = {mutate(x.min, min_bounds), mutate(x.max, max_bounds)};
-    if (!result.is_point() && match(result.min, result.max)) {
-      // If the bounds are the same, make sure same_as returns true.
-      result.max = result.min;
+    if (x.is_point()) {
+      expr result = mutate(x.min, min_bounds);
+      if (min_bounds && max_bounds) {
+        *max_bounds = *min_bounds;
+      }
+      return point(result);
+    } else {
+      interval_expr result = {mutate(x.min, min_bounds), mutate(x.max, max_bounds)};
+      if (!result.is_point() && match(result.min, result.max)) {
+        // If the bounds are the same, make sure same_as returns true.
+        result.max = result.min;
+      }
+      return result;
     }
-    return result;
   }
 
   std::optional<bool> attempt_to_prove(const expr& e) {
@@ -409,10 +417,7 @@ public:
         // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
         if (const crop_dim* crop = result.as<crop_dim>()) {
           // Find the bounds of the crop on the next iteration.
-          interval_expr next_iter = {
-              substitute(crop->bounds.min, op->sym, expr(op->sym) + op->step),
-              substitute(crop->bounds.max, op->sym, expr(op->sym) + op->step),
-          };
+          interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
             interval_expr new_crop = bounds_of(crop->bounds, {{op->sym, bounds}});
@@ -816,16 +821,14 @@ public:
   static void update_sliced_buffer_metadata(bounds_map& bounds, var sym, span<const int> sliced) {
     for (std::optional<interval_expr>& i : bounds) {
       if (!i) continue;
-      i->min = slinky::update_sliced_buffer_metadata(i->min, sym, sliced);
-      i->max = slinky::update_sliced_buffer_metadata(i->max, sym, sliced);
+      *i = slinky::update_sliced_buffer_metadata(*i, sym, sliced);
     }
   }
   static void update_sliced_buffer_metadata(symbol_map<box_expr>& bounds, var sym, span<const int> sliced) {
     for (std::optional<box_expr>& i : bounds) {
       if (!i) continue;
       for (interval_expr& j : *i) {
-        j.min = slinky::update_sliced_buffer_metadata(j.min, sym, sliced);
-        j.max = slinky::update_sliced_buffer_metadata(j.max, sym, sliced);
+        j = slinky::update_sliced_buffer_metadata(j, sym, sliced);
       }
     }
   }
@@ -990,7 +993,7 @@ expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bound
 stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
 interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
   simplifier s(bounds);
-  return {s.mutate(e.min, nullptr), s.mutate(e.max, nullptr)};
+  return s.mutate(e);
 }
 
 interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
@@ -1001,13 +1004,17 @@ interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
 }
 
 interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
-  interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
-  interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
+  if (x.is_point()) {
+    return bounds_of(x.min, expr_bounds);
+  } else {
+    interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
+    interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
 
-  return {
-    simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
-    simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
-  };
+    return {
+        simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
+        simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
+    };
+  }
 }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
