@@ -37,9 +37,14 @@ cc_test(
 )
 
 cc_library(
-    name = "context",
+    name = "util",
     srcs = ["context.cc"],
-    hdrs = ["context.h"],
+    hdrs = [
+        "bazel_util.h",
+        "context.h",
+        "funcs.h",
+        "util.h",
+    ],
     deps = [
         "//runtime",
         "//runtime:chrome_trace",
@@ -49,15 +54,10 @@ cc_library(
 
 cc_test(
     name = "pipeline",
-    srcs = [
-        "pipeline.cc", 
-        "bazel_util.h",
-        "funcs.h",
-        "util.h",
-    ],
+    srcs = ["pipeline.cc"],
     data = ["replica_pipeline.cc"] + glob(["visualize/*.html"]),
     deps = [
-        ":context",
+        ":util",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
@@ -70,15 +70,10 @@ cc_test(
 
 cc_test(
     name = "copy_pipeline",
-    srcs = [
-        "copy_pipeline.cc", 
-        "bazel_util.h",
-        "funcs.h",
-        "util.h",
-    ],
+    srcs = ["copy_pipeline.cc"],
     data = ["replica_pipeline.cc"],
     deps = [
-        ":context",
+        ":util",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
@@ -90,15 +85,10 @@ cc_test(
 
 cc_test(
     name = "pyramid",
-    srcs = [
-        "pyramid.cc", 
-        "bazel_util.h",
-        "funcs.h",
-        "util.h",
-    ],
+    srcs = ["pyramid.cc"],
     data = ["replica_pipeline.cc"],
     deps = [
-        ":context",
+        ":util",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
@@ -110,13 +100,9 @@ cc_test(
 
 cc_test(
     name = "aligned_producer",
-    srcs = [
-        "aligned_producer.cc",
-        "funcs.h",
-        "util.h",
-    ],
+    srcs = ["aligned_producer.cc"],
     deps = [
-        ":context",
+        ":util",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",
