@@ -36,15 +36,7 @@ public:
     return match == 0;
   }
 
-  bool try_match(const var& self, const var& op) {
-    assert(match == 0);
-    if (self.id < op.id) {
-      match = -1;
-    } else if (op.id < self.id) {
-      match = 1;
-    }
-    return match == 0;
-  }
+  bool try_match(const var& self, const var& op) { return try_match(self.id, op.id); }
 
   // Skip the visitor pattern (two virtual function calls) for a few node types that are very frequently visited.
   void visit(const base_expr_node* op) {
@@ -117,14 +109,7 @@ public:
 
   template <typename T>
   bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
-    if (self.size() < op.size()) {
-      match = -1;
-      return false;
-    } else if (self.size() > op.size()) {
-      match = 1;
-      return false;
-    }
-
+    if (!try_match(self.size(), op.size())) return false;
     for (std::size_t i = 0; i < self.size(); ++i) {
       if (!try_match(self[i], op[i])) return false;
     }
