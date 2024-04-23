@@ -59,6 +59,25 @@ cc_test(
 )
 
 cc_test(
+    name = "copy_pipeline",
+    srcs = [
+        "copy_pipeline.cc", 
+        "bazel_util.h",
+        "funcs.h",
+        "util.h",
+    ],
+    data = ["replica_pipeline.cc"],
+    deps = [
+        "//builder",
+        "//builder:replica_pipeline",
+        "//runtime",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@googletest//:gtest_main",
+    ],
+    size="small",
+)
+
+cc_test(
     name = "aligned_producer",
     srcs = [
         "aligned_producer.cc",
