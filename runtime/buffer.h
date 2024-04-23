@@ -825,17 +825,17 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
 // Call `f` for each element of `buf`, and the same corresponding elements of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
-  constexpr std::size_t BufsCount = sizeof...(Bufs) + 1;
-  std::array<const raw_buffer*, BufsCount> buf_ptrs = {&buf, &bufs...};
+  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
   // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsCount));
-  std::array<void*, BufsCount> bases;
+  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
+  std::array<void*, BufsSize> bases;
   internal::make_for_each_slice_dims(buf_ptrs, bases.data(), plan);
 
-  internal::for_each_slice_impl(bases, plan, [&](const std::array<void*, BufsCount>& bases) {
+  internal::for_each_slice_impl(bases, plan, [&](const std::array<void*, BufsSize>& bases) {
     std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
-                      bases, std::make_index_sequence<BufsCount>()));
+                      bases, std::make_index_sequence<BufsSize>()));
   });
 }
 
