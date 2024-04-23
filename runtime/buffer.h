@@ -763,13 +763,13 @@ void for_each_index(const raw_buffer& buf, const F& f) {
   for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
-// Call `f(index_t extent, void* base[, void* bases, ...])` for each contiguous slice in the domain of `buf[,
+// Call `f(index_t extent, T* base[, Ts* bases, ...])` for each contiguous slice in the domain of `buf[,
 // bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.
 //
 // When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
 // lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
-template <typename F, typename... Bufs>
-SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, const F& f, const Bufs&... bufs) {
+template <typename Buf, typename F, typename... Bufs>
+SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F& f, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
@@ -779,7 +779,9 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const raw_buffer& buf, 
   index_t slice_extent = internal::make_for_each_contiguous_slice_dims(buf_ptrs, bases.data(), plan);
 
   internal::for_each_slice_impl(bases, plan, [&f, slice_extent](const std::array<void*, BufsSize>& bases) {
-    std::apply(f, std::tuple_cat(std::make_tuple(slice_extent), bases));
+    std::apply(f, std::tuple_cat(std::make_tuple(slice_extent),
+                      internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
+                          bases, std::make_index_sequence<BufsSize>())));
   });
 }
 
