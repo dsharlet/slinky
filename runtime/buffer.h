@@ -822,7 +822,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   });
 }
 
-// Call `f` for each element of `buf`, and the same corresponding elements of `bufs`.
+// Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
