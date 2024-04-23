@@ -40,3 +40,6 @@ jobs:
         
       - name: Build and test with ASAN
         run: bazel test --config=asan --copt=-Os --test_output=errors ...
+
+      - name: Shut down bazel
+        run: bazel shutdown
