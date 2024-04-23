@@ -16,9 +16,9 @@ namespace slinky {
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
-  for_each_contiguous_slice(x, [&](index_t extent, void* base) {
+  for_each_contiguous_slice(x, [&](index_t extent, T* base) {
     for (index_t i = 0; i < extent; ++i) {
-      reinterpret_cast<T*>(base)[i] = (rand() % 20) - 10;
+      base[i] = (rand() % 20) - 10;
     }
   });
 }
