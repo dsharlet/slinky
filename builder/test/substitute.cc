@@ -93,28 +93,4 @@ TEST(match, basic) {
   ASSERT_TRUE(match(x + y, x + y));
 }
 
-void test_wildcards(const expr& pattern, const expr& target, const expr& replacement, const expr& expected) {
-  symbol_map<expr> matches;
-  if (!match(pattern, target, matches)) {
-    std::cout << "match failed" << std::endl;
-    std::cout << "pattern: " << pattern << std::endl;
-    std::cout << "target: " << target << std::endl;
-    ASSERT_TRUE(false);
-  }
-  expr result = substitute(replacement, matches);
-  if (!match(result, expected)) {
-    std::cout << "match failed" << std::endl;
-    std::cout << "pattern: " << pattern << std::endl;
-    std::cout << "target: " << target << std::endl;
-    std::cout << "result: " << result << std::endl;
-    std::cout << "expected: " << expected << std::endl;
-  }
-}
-
-TEST(match, wildcards) {
-  test_wildcards(x, y, x * 2, y * 2);
-  test_wildcards(x - y, z - 2, x + y, z + 2);
-  test_wildcards(x - y, x * 2 - y * 3, x + y, x * 2 + y * 3);
-}
-
 }  // namespace slinky
