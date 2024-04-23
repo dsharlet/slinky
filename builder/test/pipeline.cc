@@ -1119,63 +1119,45 @@ TEST(fork, pipeline) {
 
   auto in = buffer_expr::make(ctx, "in1", 2, sizeof(short));
   auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
-  auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(short));
-  auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(short));
+  auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(short));
+  auto out2 = buffer_expr::make(ctx, "out2", 2, sizeof(short));
 
   var x(ctx, "x");
   var y(ctx, "y");
 
   func mul2 = func::make(multiply_2<short>, {{in, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func add1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
-  func add2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{intm4, {x, y}}});
+  func add1 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{out1, {x, y}}});
+  func add2 = func::make(add_1<short>, {{intm2, {point(x), point(y)}}}, {{out2, {x, y}}});
 
   add2.loops({{y, 1}});
 
-  pipeline p = build_pipeline(ctx, {in}, {intm3, intm4});
+  pipeline p = build_pipeline(ctx, {in}, {out1, out2});
 
   // Run the pipeline.
   const int W = 32;
   const int H = 32;
   buffer<short, 2> in_buf({W, H});
-  buffer<short, 2> intm3_buf({W, H});
-  buffer<short, 2> intm4_buf({W, H});
+  buffer<short, 2> out1_buf({W, H});
+  buffer<short, 2> out2_buf({W, H});
 
   init_random(in_buf);
-  intm3_buf.allocate();
-  intm4_buf.allocate();
+  out1_buf.allocate();
+  out2_buf.allocate();
 
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&intm3_buf, &intm4_buf};
+  const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
-  // Run the pipeline stages manually to get the reference result.
-  buffer<short, 2> ref_intm2({W, H});
-  buffer<short, 2> ref_intm3({W, H});
-  buffer<short, 2> ref_intm4({W, H});
-
-  ref_intm2.allocate();
-  ref_intm3.allocate();
-  ref_intm4.allocate();
-
-  multiply_2<short>(in_buf.cast<const short>(), ref_intm2.cast<short>());
-  add_1<short>(ref_intm2.cast<const short>(), ref_intm3.cast<short>());
-  add_1<short>(ref_intm2.cast<const short>(), ref_intm4.cast<short>());
-
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(ref_intm3(x, y), intm3_buf(x, y));
+      ASSERT_EQ(out1_buf(x, y), in_buf(x, y) * 2 + 1);
+      ASSERT_EQ(out2_buf(x, y), in_buf(x, y) * 2 + 1);
     }
   }
 
-  for (int y = 0; y < W; ++y) {
-    for (int x = 0; x < H; ++x) {
-      ASSERT_EQ(ref_intm4(x, y), intm4_buf(x, y));
-    }
-  }
-
-  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {intm3, intm4}));
+  check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out1, out2}));
 }
 
 }  // namespace slinky
