@@ -68,11 +68,9 @@ inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ct
   if (ctx.vars[N]) {
     // Try pointer comparison first to short circuit the full match.
     return x.get() == ctx.vars[N] || slinky::compare(x.get(), ctx.vars[N]) == 0;
-  } else if (x.get()) {
-    ctx.vars[N] = x.get();
-    return true;
   } else {
-    return false;
+    ctx.vars[N] = x.get();
+    return x.get() != nullptr;
   }
 }
 

@@ -6,10 +6,6 @@
 
 namespace slinky {
 
-// Test if `e` matches `p`, providing a mapping of variables in `p` to expressions in `e`.
-// For example, `match(max(x, y), max(1, z), matches)` returns true, and matches will be `{ {x, 1},
-// {y, z} }`.
-bool match(const expr& p, const expr& e, symbol_map<expr>& matches);
 bool match(const expr& a, const expr& b);
 bool match(const stmt& a, const stmt& b);
 bool match(const interval_expr& a, const interval_expr& b);

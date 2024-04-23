@@ -21,12 +21,9 @@ class matcher : public expr_visitor, public stmt_visitor {
     const base_expr_node* self_expr;
     const base_stmt_node* self_stmt;
   };
-  symbol_map<expr>* matches;
 
 public:
   int match = 0;
-
-  matcher(symbol_map<expr>* matches = nullptr) : matches(matches) {}
 
   template <typename T>
   bool try_match(T self, T op) {
@@ -67,10 +64,6 @@ public:
       match = -1;
     } else if (!op) {
       match = 1;
-    } else if (matches && op->type == expr_node_type::variable) {
-      // When we are matching with variables as wildcards, the type doesn't need to match.
-      self_expr = e;
-      visit(reinterpret_cast<const variable*>(op));
     } else if (e->type < op->type) {
       match = -1;
     } else if (e->type > op->type) {
@@ -148,24 +141,8 @@ public:
   }
 
   void visit(const variable* op) override {
-    if (matches) {
-      std::optional<expr>& matched = (*matches)[op->sym];
-      if (matched) {
-        // We already matched this variable. The expression must match.
-        if (!matched->same_as(self_expr)) {
-          symbol_map<expr>* old_matches = matches;
-          matches = nullptr;
-          try_match(matched->get(), self_expr);
-          matches = old_matches;
-        }
-      } else {
-        // This is a new match.
-        matched = self_expr;
-      }
-    } else {
-      const variable* ev = static_cast<const variable*>(self);
-      try_match(ev->sym, op->sym);
-    }
+    const variable* ev = static_cast<const variable*>(self);
+    try_match(ev->sym, op->sym);
   }
 
   void visit(const constant* op) override {
@@ -338,12 +315,6 @@ public:
     try_match(cs->condition, op->condition);
   }
 };
-
-bool match(const expr& p, const expr& e, symbol_map<expr>& matches) {
-  matcher m(&matches);
-  m.try_match(e, p);
-  return m.match == 0;
-}
 
 bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
