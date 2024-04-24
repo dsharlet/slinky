@@ -38,6 +38,7 @@ cc_test(
 
 cc_library(
     name = "util",
+    testonly = True,
     srcs = ["context.cc"],
     hdrs = [
         "bazel_util.h",
