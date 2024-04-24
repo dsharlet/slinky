@@ -9,11 +9,9 @@
 #include "builder/test/context.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"
-#include "runtime/chrome_trace.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
-#include "runtime/thread_pool.h"
 #include "runtime/visualize.h"
 
 namespace slinky {

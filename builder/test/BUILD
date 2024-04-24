@@ -49,6 +49,7 @@ cc_library(
         "//runtime",
         "//runtime:chrome_trace",
         "//runtime:thread_pool",
+        "@googletest//:gtest",
     ],
 )
 
