@@ -9,7 +9,6 @@
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
-#include "runtime/thread_pool.h"
 
 namespace slinky {
 
