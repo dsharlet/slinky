@@ -210,6 +210,36 @@ TEST(buffer, rank0) {
   ASSERT_EQ(buf(), 3);
 }
 
+TEST(buffer, slice_leading) {
+  buffer<int, 5> buf({1, 2, 3, 4, 5});
+  raw_buffer sliced = buf;
+  
+  sliced.slice(0);
+  ASSERT_EQ(sliced.rank, 4);
+  ASSERT_EQ(sliced.dims, buf.dims + 1);
+  ASSERT_EQ(sliced.dim(0), buf.dim(1));
+  ASSERT_EQ(sliced.dim(1), buf.dim(2));
+  ASSERT_EQ(sliced.dim(2), buf.dim(3));
+  ASSERT_EQ(sliced.dim(3), buf.dim(4));
+  
+  sliced.slice({0, 1});
+  ASSERT_EQ(sliced.rank, 2);
+  ASSERT_EQ(sliced.dims, buf.dims + 3);
+  ASSERT_EQ(sliced.dim(0), buf.dim(3));
+  ASSERT_EQ(sliced.dim(1), buf.dim(4));
+}
+
+TEST(buffer, slice_non_leading) {
+  buffer<int, 3> buf({1, 2, 3});
+  raw_buffer sliced = buf;
+  
+  sliced.slice(1);
+  ASSERT_EQ(sliced.rank, 2);
+  ASSERT_EQ(sliced.dims, buf.dims);
+  ASSERT_EQ(sliced.dim(0), buf.dim(0));
+  ASSERT_EQ(sliced.dim(1), buf.dim(2));
+}
+
 TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
