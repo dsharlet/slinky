@@ -199,13 +199,26 @@ public:
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
   raw_buffer& slice(span<const std::size_t> ds) {
     auto i = ds.begin();
-    std::size_t new_rank = 0;
+    std::size_t slice_leading = 0;
     for (std::size_t d = 0; d < rank; ++d) {
       if (i != ds.end() && *i == d) {
+        // We want to slice this leading dimension. We can do this by just adjusting the dims pointer.
+        ++slice_leading;
+        ++i;
+      } else {
+        break;
+      }
+    }
+    dims += slice_leading;
+    rank -= slice_leading;
+
+    std::size_t new_rank = 0;
+    for (std::size_t d = 0; d < rank; ++d) {
+      if (i != ds.end() && *i == d + slice_leading) {
         // We want to slice this dimension, don't copy it and move to the next slice.
         ++i;
         // The values in `ds` must be sorted.
-        assert(i == ds.end() || *i > d);
+        assert(i == ds.end() || *i > d + slice_leading);
       } else {
         // Copy this dimension (if it isn't already in the right place).
         if (new_rank != d) dims[new_rank] = dims[d];
