@@ -50,6 +50,7 @@ cc_library(
         "//runtime",
         "//runtime:chrome_trace",
         "//runtime:thread_pool",
+        "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest",
     ],
 )
@@ -64,7 +65,7 @@ cc_test(
         "//builder:replica_pipeline",
         "//runtime",
         "//runtime:visualize",
-        "@bazel_tools//tools/cpp/runfiles",
+        "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
     size="small",
@@ -79,7 +80,7 @@ cc_test(
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "@bazel_tools//tools/cpp/runfiles",
+        "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
     size="small",
@@ -94,7 +95,7 @@ cc_test(
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "@bazel_tools//tools/cpp/runfiles",
+        "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
     size="small",
