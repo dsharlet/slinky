@@ -600,21 +600,6 @@ void optimize_dims(raw_buffer& buf, Bufs&... bufs) {
 
 namespace internal {
 
-template <typename F>
-void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
-  if (d == 0) {
-    for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
-      is[0] = i;
-      f(span<const index_t>(is, is + dims.size()));
-    }
-  } else {
-    for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
-      is[d] = i;
-      for_each_index(dims, d - 1, is, f);
-    }
-  }
-}
-
 // The following few helpers implement traversing a mult-dimensional loop nest and then calling a function.
 // We often will have two dimensions that traverse memory as if it was one loop, and it is valuable to do so
 // to reduce overhead/improve performance.
@@ -748,20 +733,6 @@ auto tuple_cast(const T& x, std::index_sequence<Is...>) {
 }
 
 }  // namespace internal
-
-// Call `f(span<index_t>)` for each index in the domain of `dims`, or the dims of `buf`.
-// This function is not fast, use it for non-performance critical code. It is useful for
-// making rank-agnostic algorithms without a recursive wrapper, which is otherwise difficult.
-template <typename F>
-SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) {
-  // Not using alloca for performance, but to avoid including <vector>
-  index_t* i = SLINKY_ALLOCA(index_t, dims.size());
-  internal::for_each_index(dims, dims.size() - 1, i, f);
-}
-template <typename F>
-void for_each_index(const raw_buffer& buf, const F& f) {
-  for_each_index(span<const dim>{buf.dims, buf.rank}, f);
-}
 
 // Call `f(index_t extent, T* base[, Ts* bases, ...])` for each contiguous slice in the domain of `buf[,
 // bufs...]`. This function attempts to be efficient to support production quality implementations of callbacks.

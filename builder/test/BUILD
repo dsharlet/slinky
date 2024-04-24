@@ -3,10 +3,30 @@ package(
     default_visibility = ["//visibility:private"],
 )
 
+cc_library(
+    name = "util",
+    testonly = True,
+    srcs = ["context.cc"],
+    hdrs = [
+        "bazel_util.h",
+        "context.h",
+        "funcs.h",
+        "util.h",
+    ],
+    deps = [
+        "//runtime",
+        "//runtime:chrome_trace",
+        "//runtime:thread_pool",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@googletest//:gtest",
+    ],
+)
+
 cc_test(
     name = "checks",
     srcs = ["checks.cc"],
     deps = [
+        ":util",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",
@@ -34,25 +54,6 @@ cc_test(
         "@googletest//:gtest_main",
     ],
     size="small",
-)
-
-cc_library(
-    name = "util",
-    testonly = True,
-    srcs = ["context.cc"],
-    hdrs = [
-        "bazel_util.h",
-        "context.h",
-        "funcs.h",
-        "util.h",
-    ],
-    deps = [
-        "//runtime",
-        "//runtime:chrome_trace",
-        "//runtime:thread_pool",
-        "@bazel_tools//tools/cpp/runfiles",
-        "@googletest//:gtest",
-    ],
 )
 
 cc_test(
@@ -117,6 +118,7 @@ cc_test(
     name = "replica_pipeline",
     srcs = ["replica_pipeline.cc"],
     deps = [
+        ":util",
         "//builder",
         "//builder:replica_pipeline",
         "@googletest//:gtest_main",

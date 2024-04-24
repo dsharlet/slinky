@@ -4,20 +4,10 @@
 #include <string>
 
 #include "builder/pipeline.h"
+#include "builder/test/funcs.h"
 #include "builder/replica_pipeline.h"
 
 namespace slinky {
-
-std::mt19937& rng() {
-  static std::mt19937 r{static_cast<uint32_t>(time(nullptr))};
-  return r;
-}
-
-template <typename T, std::size_t N>
-void init_random(buffer<T, N>& x) {
-  x.allocate();
-  for_each_index(x, [&](auto i) { x(i) = (rng()() % 20) - 10; });
-}
 
 TEST(replica, matmuls) {
   // clang-format off

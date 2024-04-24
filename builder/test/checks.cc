@@ -3,18 +3,12 @@
 #include <cassert>
 
 #include "builder/pipeline.h"
+#include "builder/test/funcs.h"
 #include "runtime/buffer.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
 namespace slinky {
-
-template <typename T>
-index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
-  assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
-  return 0;
-}
 
 // A trivial pipeline with one stage.
 TEST(pipeline, checks) {
@@ -41,7 +35,8 @@ TEST(pipeline, checks) {
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});
   in_buf.allocate();
-  for_each_index(in_buf, [&](const auto i) { in_buf(i) = 0; });
+  const int zero = 0;
+  fill(in_buf, &zero);
   out_buf.allocate();
 
   const raw_buffer* inputs[] = {&in_buf};
