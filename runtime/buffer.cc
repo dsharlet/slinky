@@ -410,7 +410,12 @@ index_t make_for_each_slice_dims_impl(
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.extent() > 1 && any_folded(bufs, bufs_size, d)) {
+    if (buf_dim.extent() <= 0) {
+      // This dimension (and thus the entire loop nest) contains no elements.
+      next->impl = for_each_slice_dim::loop_linear;
+      next->extent = 0;
+      return 0;
+    } else if (buf_dim.extent() > 1 && any_folded(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;

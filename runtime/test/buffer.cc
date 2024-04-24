@@ -246,8 +246,7 @@ void test_for_each_contiguous_slice_fill() {
   randomize_strides_and_padding(dst, {-1, 1, false, true});
   dst.allocate();
 
-  for_each_contiguous_slice(
-      dst, [&](index_t slice_extent, T* dst) { std::fill_n(dst, slice_extent, 7); });
+  for_each_contiguous_slice(dst, [&](index_t slice_extent, T* dst) { std::fill_n(dst, slice_extent, 7); });
 
   for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), 7); });
 }
@@ -430,10 +429,12 @@ TEST(buffer, for_each_element) {
   buffer<int, 2> buf({10, 20});
   buf.allocate();
   int elements = 0;
-  for_each_element([&](int* elt) {
-    *elt = 7;
-    elements++;
-  }, buf);
+  for_each_element(
+      [&](int* elt) {
+        *elt = 7;
+        elements++;
+      },
+      buf);
   int expected_elements = 1;
   for (std::size_t d = 0; d < buf.rank; ++d) {
     expected_elements *= buf.dim(d).extent();
@@ -441,6 +442,14 @@ TEST(buffer, for_each_element) {
   ASSERT_EQ(elements, expected_elements);
 
   for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+}
+
+TEST(buffer, for_each_element_empty) {
+  buffer<int, 2> buf({0, 20});
+  buf.allocate();
+  int elements = 0;
+  for_each_element([&](int*) { elements++; }, buf);
+  ASSERT_EQ(elements, 0);
 }
 
 TEST(buffer, for_each_slice) {
