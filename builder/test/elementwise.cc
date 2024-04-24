@@ -84,7 +84,7 @@ public:
     result = buffer_expr::make(ctx, name(a) + fn_name + name(b), Rank, sizeof(T));
     func::callable<const T, const T, T> fn = [=](const buffer<const T>& a, const buffer<const T>& b,
                                                  const buffer<T>& c) {
-      for_each_index(c, [&](auto i) { c(i) = impl(a(i), b(i)); });
+      for_each_element([&](T* c, const T* a, const T* b) { *c = impl(*a, *b); }, c, a, b);
       return 0;
     };
     func r = func::make<const T, const T, T>(
@@ -121,7 +121,7 @@ public:
     result = buffer_expr::make(ctx, "select_" + name(c) + "_" + name(t) + "_" + name(f), Rank, sizeof(T));
     func::callable<const T, const T, const T, T> fn = [](const buffer<const T>& c, const buffer<const T>& t,
                                                           const buffer<const T>& f, const buffer<T>& r) -> index_t {
-      for_each_index(c, [&](auto i) { r(i) = c(i) != 0 ? t(i) : f(i); });
+      for_each_element([&](T* r, const T* c, const T* t, const T* f) { *r = *c != 0 ? *t : *f; }, r, c, t, f);
       return 0;
     };
     func r = func::make<const T, const T, const T, T>(std::move(fn), {{c, bounds}, {t, bounds}, {f, bounds}},
@@ -188,7 +188,7 @@ public:
     buffer<T, Rank> a_buf;
     visit_expr(a, a_buf);
     b.accept(this);
-    for_each_index(result, [&](auto i) { result(i) = impl(a_buf(i), result(i)); });
+    for_each_element([&](T* result, const T* a) { *result = impl(*a, *result); }, result, a_buf);
   }
 
   void visit(const class min* op) override {
@@ -214,7 +214,7 @@ public:
     buffer<T, Rank> t_buf;
     visit_expr(op->true_value, t_buf);
     op->false_value.accept(this);
-    for_each_index(result, [&](auto i) { result(i) = c_buf(i) ? t_buf(i) : result(i); });
+    for_each_element([&](T* result, const T* c, const T* t) { *result = *c ? *t : *result; }, result, c_buf, t_buf);
   }
 
   void visit(const let*) override { std::abort(); }
@@ -265,7 +265,7 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   }
   e.accept(&eval);
 
-  for_each_index(output_buf, [&](auto i) { ASSERT_EQ(output_buf(i), eval.result(i)); });
+  for_each_element([&](T* output, T* eval_result) { ASSERT_EQ(*output, *eval_result); }, output_buf, eval.result);
 }
 
 namespace {

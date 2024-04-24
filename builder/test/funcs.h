@@ -53,14 +53,14 @@ index_t flip_y(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i) * 2; });
+  for_each_element([&](T* out, const T* in) { *out = *in * 2; }, out, in);
   return 0;
 }
 
 template <typename T>
 index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = in(i) + 1; });
+  for_each_element([&](T* out, const T* in) { *out = *in + 1; }, out, in);
   return 0;
 }
 
@@ -68,7 +68,7 @@ template <typename T>
 index_t subtract(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
   assert(a.rank == out.rank);
   assert(b.rank == out.rank);
-  for_each_index(out, [&](auto i) { out(i) = a(i) - b(i); });
+  for_each_element([&](T* out, const T* a, const T* b) { *out = *a - *b; }, out, a, b);
   return 0;
 }
 

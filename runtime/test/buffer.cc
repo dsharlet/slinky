@@ -32,6 +32,38 @@ void init_random(buffer<T, N>& buf) {
   }
 }
 
+template <typename F>
+void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
+  if (d == 0) {
+    for (index_t i = dims[0].begin(); i < dims[0].end(); ++i) {
+      is[0] = i;
+      f(span<const index_t>(is, is + dims.size()));
+    }
+  } else {
+    for (index_t i = dims[d].begin(); i < dims[d].end(); ++i) {
+      is[d] = i;
+      for_each_index(dims, d - 1, is, f);
+    }
+  }
+}
+
+template <typename F>
+SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) {
+  index_t* i = SLINKY_ALLOCA(index_t, dims.size());
+  for_each_index(dims, dims.size() - 1, i, f);
+}
+template <typename F>
+void for_each_index(const raw_buffer& buf, const F& f) {
+  for_each_index(span<const dim>{buf.dims, buf.rank}, f);
+}
+
+template <typename T, std::size_t N, typename Value>
+bool is_filled_buffer(const buffer<T, N>& buf, Value value) {
+  int errors = 0;
+  for_each_element([value, &errors](const T* x) { errors += *x != value; }, buf);
+  return errors == 0;
+}
+
 struct randomize_options {
   int padding_min = 0;
   int padding_max = 3;
@@ -90,7 +122,11 @@ TEST(raw_buffer, make_copy) {
   ASSERT_EQ(src.size_bytes(), dst->size_bytes());
   ASSERT_NE(src.base(), dst->base);
 
-  for_each_index(src, [&](auto i) { ASSERT_EQ(src(i), *reinterpret_cast<int*>(dst->address_at(i))); });
+  for (int i = 0; i < dst->dim(1).extent(); ++i) {
+    for (int j = 0; j < dst->dim(0).extent(); ++j) {
+      ASSERT_EQ(src(j, i), *reinterpret_cast<int*>(dst->address_at(j, i)));
+    }
+  }
 }
 
 TEST(buffer, buffer) {
@@ -183,7 +219,7 @@ TEST(buffer, for_each_contiguous_slice) {
     slices++;
   });
   ASSERT_EQ(slices, 1);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
 TEST(buffer, for_each_contiguous_slice_non_zero_min) {
@@ -196,7 +232,7 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
     slices++;
   });
   ASSERT_EQ(slices, 1);
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
 TEST(buffer, for_each_contiguous_folded) {
@@ -211,7 +247,7 @@ TEST(buffer, for_each_contiguous_folded) {
       slices++;
     });
     ASSERT_EQ(slices, crop_extent * 30);
-    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+    ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
 }
 
@@ -221,7 +257,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
     buf.allocate();
     buf.dim(padded_dim).set_bounds(0, 8);
     for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { memset(slice, 7, slice_extent); });
-    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+    ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
 }
 
@@ -248,7 +284,7 @@ void test_for_each_contiguous_slice_fill() {
 
   for_each_contiguous_slice(dst, [&](index_t slice_extent, T* dst) { std::fill_n(dst, slice_extent, 7); });
 
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(dst(i), 7); });
+  ASSERT_TRUE(is_filled_buffer(dst, 7));
 }
 
 TEST(buffer, for_each_contiguous_slice_fill) {
@@ -369,15 +405,15 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
       buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);
   // These should fuse into a single slice
   ASSERT_EQ(slices, 1);
-  for_each_index(buf1, [&](auto i) { ASSERT_EQ(buf1(i), 1); });
-  for_each_index(buf2, [&](auto i) { ASSERT_EQ(buf2(i), 2); });
-  for_each_index(buf3, [&](auto i) { ASSERT_EQ(buf3(i), 3); });
-  for_each_index(buf4, [&](auto i) { ASSERT_EQ(buf4(i), 4); });
-  for_each_index(buf5, [&](auto i) { ASSERT_EQ(buf5(i), 5); });
-  for_each_index(buf6, [&](auto i) { ASSERT_EQ(buf6(i), 6); });
-  for_each_index(buf7, [&](auto i) { ASSERT_EQ(buf7(i), 7); });
-  for_each_index(buf8, [&](auto i) { ASSERT_EQ(buf8(i), 8); });
-  for_each_index(buf9, [&](auto i) { ASSERT_EQ(buf9(i), 9); });
+  ASSERT_TRUE(is_filled_buffer(buf1, 1));
+  ASSERT_TRUE(is_filled_buffer(buf2, 2));
+  ASSERT_TRUE(is_filled_buffer(buf3, 3));
+  ASSERT_TRUE(is_filled_buffer(buf4, 4));
+  ASSERT_TRUE(is_filled_buffer(buf5, 5));
+  ASSERT_TRUE(is_filled_buffer(buf6, 6));
+  ASSERT_TRUE(is_filled_buffer(buf7, 7));
+  ASSERT_TRUE(is_filled_buffer(buf8, 8));
+  ASSERT_TRUE(is_filled_buffer(buf9, 9));
 }
 
 TEST(buffer, for_each_tile_1x1) {
@@ -441,7 +477,7 @@ TEST(buffer, for_each_element) {
   }
   ASSERT_EQ(elements, expected_elements);
 
-  for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
 TEST(buffer, for_each_element_empty) {
@@ -480,7 +516,7 @@ TEST(buffer, for_each_slice) {
     ASSERT_EQ(slices, expected_slices);
     ASSERT_EQ(elements, expected_elements);
 
-    for_each_index(buf, [&](auto i) { ASSERT_EQ(buf(i), 7); });
+    ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
 }
 
