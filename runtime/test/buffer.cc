@@ -348,17 +348,14 @@ void test_for_each_contiguous_slice_copy() {
       },
       src);
 
-  int errors = 0;
   for_each_index(dst, [&](const auto i) {
     auto src_i = i.subspan(0, src.rank);
     if (src.contains(src_i)) {
-      errors += dst(i) != src(src_i);
+      ASSERT_EQ(dst(i), src(src_i));
     } else {
-      errors += dst(i) != 0;
+      ASSERT_EQ(dst(i), 0);
     }
   });
-  assert(errors == 0);
-  ASSERT_EQ(errors, 0);
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
@@ -881,10 +878,9 @@ TEST(fuse_contiguous_dims, copy) {
     dst_reshaped.dims = dst.dims;
     dst_reshaped.rank = dst.rank;
 
-    int errors = 0;
-    for_each_index(
-        dst, [&](auto i) { errors += memcmp(dst.address_at(i), dst_reshaped.address_at(i), elem_size) ? 1 : 0; });
-    ASSERT_EQ(errors, 0);
+    for_each_index(dst, [&](auto i) {
+      ASSERT_EQ(memcmp(dst.address_at(i), dst_reshaped.address_at(i), elem_size), 0);
+    });
   }
   ASSERT_GT(optimized, 0);
 }
