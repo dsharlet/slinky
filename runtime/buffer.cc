@@ -65,7 +65,7 @@ namespace {
 
 void fill(void* dst, const void* value, index_t elem_size, index_t size) {
   switch (elem_size) {
-  case 1: std::fill_n(reinterpret_cast<uint8_t*>(dst), size, *reinterpret_cast<const uint8_t*>(value)); return;
+  case 1: memset(dst, *reinterpret_cast<const uint8_t*>(value), size); return;
   case 2: std::fill_n(reinterpret_cast<uint16_t*>(dst), size, *reinterpret_cast<const uint16_t*>(value)); return;
   case 4: std::fill_n(reinterpret_cast<uint32_t*>(dst), size, *reinterpret_cast<const uint32_t*>(value)); return;
   case 8: std::fill_n(reinterpret_cast<uint64_t*>(dst), size, *reinterpret_cast<const uint64_t*>(value)); return;
@@ -76,13 +76,24 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
   }
 }
 
+bool is_repeated_byte(const void* value, std::size_t size) {
+  const char* bytes = reinterpret_cast<const char*>(value);
+  for (std::size_t i = 1; i < size; ++i) {
+    if (bytes[0] != bytes[i]) {
+      // The value is not the same repeated byte.
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
   const std::size_t rank = dst.rank;
-  const index_t elem_size = dst.elem_size;
+  index_t elem_size = dst.elem_size;
 
   // Make (shallow) copies of the buffers and optimize the dimensions.
   raw_buffer src_opt = src;
@@ -107,11 +118,19 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
         dst_opt, src_opt);
     return;
   }
-
   // The inner dimension is a simple dense copy, possibly with padding. Make a callback to handle that, and slice off
   // that dimension.
-  const dim& dst_dim0 = dst_opt.dim(0);
-  const dim& src_dim0 = src_opt.dim(0);
+
+  dim& dst_dim0 = dst_opt.dim(0);
+  dim& src_dim0 = src_opt.dim(0);
+
+  // If we can, rewrite the buffers to have elem_size 1
+  if (padding && elem_size > 1 && is_repeated_byte(padding, elem_size)) {
+    dst_dim0.set_min_extent(dst_dim0.min() * elem_size, dst_dim0.extent() * elem_size);
+    src_dim0.set_min_extent(src_dim0.min() * elem_size, src_dim0.extent() * elem_size);
+    elem_size = 1;
+  }
+
   const index_t size =
       std::max<index_t>(0, std::min(dst_dim0.end(), src_dim0.end()) - std::max(dst_dim0.begin(), src_dim0.begin()));
   const index_t pad_before = std::max<index_t>(0, src_dim0.begin() - dst_dim0.begin());
@@ -173,7 +192,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   const std::size_t rank = dst.rank;
-  const index_t elem_size = dst.elem_size;
+  index_t elem_size = dst.elem_size;
 
   // Make a (shallow) copy of the buffer and optimize the dimensions.
   raw_buffer dst_opt = dst;
@@ -187,7 +206,14 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
     return;
   }
 
-  const index_t size = dst_opt.dim(0).extent();
+  // If we can, rewrite the buffers to have elem_size 1
+  dim& dst_dim0 = dst_opt.dim(0);
+  if (elem_size > 1 && is_repeated_byte(value, elem_size)) {
+    dst_dim0.set_min_extent(dst_dim0.min() * elem_size, dst_dim0.extent() * elem_size);
+    elem_size = 1;
+  }
+
+  const index_t size = dst_dim0.extent();
   dst_opt.slice(0);
   for_each_element([=](void* dst) { fill(dst, value, elem_size, size); }, dst_opt);
 }

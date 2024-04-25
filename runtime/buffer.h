@@ -574,7 +574,7 @@ void sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
     for (std::size_t j = i + 1; j < buf.rank; ++j) {
       if (j < dim_sets.size() && dim_sets[i] != dim_sets[j]) continue;
       if (buf.dim(i).stride() > buf.dim(j).stride()) {
-      internal::swap_dims(i, j, buf, bufs...);
+        internal::swap_dims(i, j, buf, bufs...);
       }
     }
   }
