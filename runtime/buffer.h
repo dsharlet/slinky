@@ -68,7 +68,7 @@ public:
 
   void translate(index_t offset) { min_ += offset; }
 
-  bool contains(index_t x) const { return min() <= x && x <= max(); }
+  bool contains(index_t x) const { return stride() == 0 || (min() <= x && x <= max()); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
