@@ -350,51 +350,75 @@ namespace internal {
 
 namespace {
 
-#ifndef NDEBUG
-bool can_slice_with(const raw_buffer& buf, const raw_buffer& other_buf) {
-  if (other_buf.rank > buf.rank) return false;
-  for (std::size_t d = 0; d < other_buf.rank; d++) {
-    const dim& other_dim = other_buf.dim(d);
-
-    // Allow stride 0 dimensions to be accessed "out of bounds".
-    if (other_dim.stride() == 0) continue;
-
-    const dim& buf_dim = buf.dim(d);
-    if (other_dim.min() > buf_dim.min()) return false;
-    if (other_dim.max() < buf_dim.max()) return false;
-  }
-  return true;
-}
-#endif
-
 bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
   for (std::size_t n = 0; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank) || bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size))
+    if (d >= static_cast<int>(bufs[n]->rank)) {
+      // This dimension is broadcasted, it's not contiguous.
       return false;
+    } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
+      // This dimension is not contiguous.
+      return false;
+    } else if (!bufs[n]->dim(d).contains(bufs[0]->dim(d))) {
+      // One of the other dimensions is out of bounds, it can't be treated contiguously.
+      return false;
+    }
   }
   return true;
 }
 
 bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   assert(d > 0);
+  const dim& base_outer = bufs[0]->dim(d);
   const dim& base_inner = bufs[0]->dim(d - 1);
   for (std::size_t n = 0; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank)) return false;
+    if (d >= static_cast<int>(bufs[n]->rank)) {
+      // This is an implicitly broadcast dimension, it can't be fused.
+      return false;
+    } 
+    
+    const dim& inner = bufs[n]->dim(d - 1);
+    if (inner.min() != base_inner.min() || inner.extent() != base_inner.extent()) {
+      // The bounds of the inner dimension are not equal.
+      return false;
+    }
 
     const dim& outer = bufs[n]->dim(d);
-    const dim& inner = bufs[n]->dim(d - 1);
-    // Our caller should have ensured this
-    assert(outer.fold_factor() == dim::unfolded);
-    if (inner.fold_factor() != dim::unfolded) return false;
-    if (inner.min() != base_inner.min() || inner.extent() != base_inner.extent()) return false;
-    if (inner.stride() * inner.extent() != outer.stride()) return false;
+    if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
+      // One of the dimensions is folded.
+      return false;
+    } else if (!base_inner.contains(inner) || !base_outer.contains(outer)) {
+      // There are out of bounds values.
+      return false;
+    } else if (inner.stride() * inner.extent() != outer.stride()) {
+      // The dimensions are not contiguous in memory.
+      return false;
+    }
   }
   return true;
 }
 
-bool any_folded(const raw_buffer* const* bufs, std::size_t size, int d) {
+bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, int d) {
+  for (std::size_t i = 1; i < size; ++i) {
+    if (d >= static_cast<int>(bufs[i]->rank)) {
+      // Broadcast dimension.
+      continue;
+    } else if (!bufs[i]->dim(d).contains(bufs[0]->dim(d))) {
+      // One of the extra buffers is out of bounds, use a folded loop.
+      return true;
+    }
+  }
+  if (bufs[0]->dim(d).extent() == 1) {
+    // The output has only extent 1, we don't need a folded loop.
+    return false;
+  }
   for (std::size_t i = 0; i < size; ++i) {
-    if (d < static_cast<int>(bufs[i]->rank) && bufs[i]->dim(d).fold_factor() != dim::unfolded) return true;
+    if (d >= static_cast<int>(bufs[i]->rank)) {
+      // Broadcast dimension.
+      continue;
+    } else if (bufs[i]->dim(d).fold_factor() != dim::unfolded) {
+      // There's a folded buffer, we need a folded loop.
+      return true;
+    }
   }
   return false;
 }
@@ -427,8 +451,8 @@ index_t make_for_each_slice_dims_impl(
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = 0;
       return 0;
-    } else if (buf_dim.extent() > 1 && any_folded(bufs, bufs_size, d)) {
-      // There is a folded dimension in one of the buffers.
+    } else if (use_folded_loop(bufs, bufs_size, d)) {
+      // There is a folded dimension in one of the buffers, or we need to crop one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;
       next->extent = buf_dim.extent();
@@ -450,11 +474,9 @@ index_t make_for_each_slice_dims_impl(
       }
     }
 
-    if (d > 0 && buf_dim.extent() == 1) {
-      // This dimension has only one element, nothing to do.
-    } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
+    if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
-      slice_extent = extent;
+      slice_extent *= extent;
       extent = 1;
     } else if (d > 0 && can_fuse(bufs, bufs_size, d)) {
       // Let this dimension fuse with the next dimension.
@@ -479,10 +501,6 @@ index_t make_for_each_slice_dims_impl(
 }  // namespace
 
 index_t make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan) {
-  for (std::size_t n = 1; n < bufs.size(); n++) {
-    assert(can_slice_with(*bufs[0], *bufs[n]));
-  }
-
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
@@ -495,10 +513,6 @@ index_t make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, void**
 }
 
 void make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan) {
-  for (std::size_t n = 1; n < bufs.size(); n++) {
-    assert(can_slice_with(*bufs[0], *bufs[n]));
-  }
-
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.

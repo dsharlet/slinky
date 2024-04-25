@@ -213,7 +213,7 @@ TEST(buffer, rank0) {
 TEST(buffer, slice_leading) {
   buffer<int, 5> buf({1, 2, 3, 4, 5});
   raw_buffer sliced = buf;
-  
+
   sliced.slice(0);
   ASSERT_EQ(sliced.rank, 4);
   ASSERT_EQ(sliced.dims, buf.dims + 1);
@@ -221,7 +221,7 @@ TEST(buffer, slice_leading) {
   ASSERT_EQ(sliced.dim(1), buf.dim(2));
   ASSERT_EQ(sliced.dim(2), buf.dim(3));
   ASSERT_EQ(sliced.dim(3), buf.dim(4));
-  
+
   sliced.slice({0, 1});
   ASSERT_EQ(sliced.rank, 2);
   ASSERT_EQ(sliced.dims, buf.dims + 3);
@@ -232,7 +232,7 @@ TEST(buffer, slice_leading) {
 TEST(buffer, slice_non_leading) {
   buffer<int, 3> buf({1, 2, 3});
   raw_buffer sliced = buf;
-  
+
   sliced.slice(1);
   ASSERT_EQ(sliced.rank, 2);
   ASSERT_EQ(sliced.dims, buf.dims);
@@ -332,18 +332,33 @@ void test_for_each_contiguous_slice_copy() {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(src, {0, 1, true, true, true});
-  randomize_strides_and_padding(dst, {-1, 0, false, false});
+  randomize_strides_and_padding(src, {-1, 1, true, true, true});
+  randomize_strides_and_padding(dst, {-1, 1, false, false});
   init_random(src);
   dst.allocate();
 
   for_each_contiguous_slice(
       dst,
-      [&](index_t slice_extent, void* dst, const void* src) {
-        std::copy_n(reinterpret_cast<const Src*>(src), slice_extent, reinterpret_cast<Dst*>(dst));
+      [&](index_t slice_extent, Dst* dst, const Src* src) {
+        if (src) {
+          std::copy_n(src, slice_extent, dst);
+        } else {
+          std::fill_n(dst, slice_extent, 0);
+        }
       },
       src);
-  for_each_index(dst, [&](const auto i) { ASSERT_EQ(src(i.subspan(0, src.rank)), dst(i)); });
+
+  int errors = 0;
+  for_each_index(dst, [&](const auto i) {
+    auto src_i = i.subspan(0, src.rank);
+    if (src.contains(src_i)) {
+      errors += dst(i) != src(src_i);
+    } else {
+      errors += dst(i) != 0;
+    }
+  });
+  assert(errors == 0);
+  ASSERT_EQ(errors, 0);
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
@@ -351,6 +366,39 @@ TEST(buffer, for_each_contiguous_slice_copy) {
     test_for_each_contiguous_slice_copy<char, char>();
     test_for_each_contiguous_slice_copy<short, int>();
     test_for_each_contiguous_slice_copy<int, int>();
+  }
+}
+
+template <typename Src, typename Dst>
+void test_for_each_element_copy() {
+  buffer<Src, 4> src;
+  buffer<Dst, 4> dst;
+  for (std::size_t d = 0; d < src.rank; ++d) {
+    src.dim(d).set_min_extent(0, 3);
+    dst.dim(d).set_min_extent(0, 3);
+  }
+  randomize_strides_and_padding(src, {-1, 1, true, true, true});
+  randomize_strides_and_padding(dst, {-1, 1, false, false});
+  init_random(src);
+  dst.allocate();
+
+  for_each_element([&](Dst* dst, const Src* src) { *dst = src ? *src : 0; }, dst, src);
+
+  for_each_index(dst, [&](const auto i) {
+    auto src_i = i.subspan(0, src.rank);
+    if (src.contains(src_i)) {
+      ASSERT_EQ(dst(i), src(src_i));
+    } else {
+      ASSERT_EQ(dst(i), 0);
+    }
+  });
+}
+
+TEST(buffer, for_each_element_copy) {
+  for (int cases = 0; cases < 10000; ++cases) {
+    test_for_each_element_copy<char, char>();
+    test_for_each_element_copy<short, int>();
+    test_for_each_element_copy<int, int>();
   }
 }
 

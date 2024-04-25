@@ -69,6 +69,7 @@ public:
   void translate(index_t offset) { min_ += offset; }
 
   bool contains(index_t x) const { return stride() == 0 || (min() <= x && x <= max()); }
+  bool contains(const dim& other) const { return stride() == 0 || (min() <= other.min() && other.max() <= max()); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
@@ -674,15 +675,17 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = 0; i < slice_dim->extent; ++i) {
         f(bases_i);
-        for (std::size_t n = 0; n < NumBufs; n++) {
-          bases_i[n] = offset_bytes(bases_i[n], strides[n]);
+        bases_i[0] = offset_bytes(bases_i[0], strides[0]);
+        for (std::size_t n = 1; n < NumBufs; n++) {
+          bases_i[n] = bases_i[n] ? offset_bytes(bases_i[n], strides[n]) : nullptr;
         }
       }
     } else {
       for (index_t i = 0; i < slice_dim->extent; ++i) {
         for_each_slice_impl(bases_i, plan, f);
-        for (std::size_t n = 0; n < NumBufs; n++) {
-          bases_i[n] = offset_bytes(bases_i[n], strides[n]);
+        bases_i[0] = offset_bytes(bases_i[0], strides[0]);
+        for (std::size_t n = 1; n < NumBufs; n++) {
+          bases_i[n] = bases_i[n] ? offset_bytes(bases_i[n], strides[n]) : nullptr;
         }
       }
     }
@@ -698,8 +701,13 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     index_t end = begin + slice_dim->extent;
     for (index_t i = begin; i < end; ++i) {
       std::array<void*, NumBufs> bases_i;
-      for (std::size_t n = 0; n < NumBufs; n++) {
-        bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
+      bases_i[0] = offset_bytes(bases[0], dims[0]->flat_offset_bytes(i));
+      for (std::size_t n = 1; n < NumBufs; n++) {
+        if (bases[n] && dims[n]->contains(i)) {
+          bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
+        } else {
+          bases_i[n] = nullptr;
+        }
       }
       for_each_slice_impl(bases_i, plan, f);
     }
@@ -756,6 +764,7 @@ auto tuple_cast(const T& x, std::index_sequence<Is...>) {
 //
 // When additional buffers are passed, they will be sliced in tandem with the 'main' buffer. Additional buffers can be
 // lower rank than the main buffer, these "missing" dimensions are not sliced (i.e. broadcasting in this dimension).
+// If the other buffers are out of bounds for a slice, the corresponding argument to the callback will be `nullptr`.
 template <typename Buf, typename F, typename... Bufs>
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F& f, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
@@ -774,7 +783,8 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
 }
 
 // Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
-// sliced at the same indices as `buf`. Assumes that all of the sliced dimensions of `buf` are in bounds in `bufs...`.
+// sliced at the same indices as `buf`.  If the other buffers are out of bounds for a slice, the corresponding argument
+// to the callback will be `nullptr`.
 template <typename F, typename... Bufs>
 void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
@@ -810,7 +820,8 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
   });
 }
 
-// Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`.
+// Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`, or
+// `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
 void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
