@@ -193,7 +193,10 @@ public:
     assert(op->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
       if (op->args[d + 1].defined()) {
-        result = offset_bytes(result, buf->dims[d].flat_offset_bytes(eval_expr(op->args[d + 1])));
+        index_t offset = eval_expr(op->args[d + 1]);
+        if (result) {
+          result = offset_bytes(result, buf->dims[d].flat_offset_bytes(offset));
+        }
       }
     }
     return result;
@@ -549,7 +552,9 @@ public:
     }
 
     void* old_base = buffer->base;
-    buffer->base = offset_bytes(buffer->base, offset);
+    if (buffer->base) {
+      buffer->base = offset_bytes(buffer->base, offset);
+    }
     std::swap(buffer->rank, rank);
     std::swap(buffer->dims, dims);
 
@@ -572,7 +577,9 @@ public:
     index_t at = eval_expr(op->at);
     index_t offset = old_dims[op->dim].flat_offset_bytes(at);
     void* old_base = buffer->base;
-    buffer->base = offset_bytes(buffer->base, offset);
+    if (buffer->base) {
+      buffer->base = offset_bytes(buffer->base, offset);
+    }
 
     for (int d = 0; d < op->dim; ++d) {
       buffer->dims[d] = old_dims[d];
