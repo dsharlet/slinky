@@ -414,6 +414,9 @@ index_t make_for_each_slice_dims_impl(
       // This dimension (and thus the entire loop nest) contains no elements.
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = 0;
+      // for_each_slice_impl looks ahead, don't leave it uninitialized.
+      next = get_plan<for_each_slice_dim>(plan);
+      next->impl = for_each_slice_dim::call_f;
       return 0;
     } else if (buf_dim.extent() > 1 && any_folded(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers.
