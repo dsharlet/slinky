@@ -16,10 +16,12 @@ using index_t = std::ptrdiff_t;
 // Helper to offset a pointer by a number of bytes.
 template <typename T>
 T* offset_bytes(T* x, std::ptrdiff_t bytes) {
+  assert(x != nullptr || bytes == 0);
   return reinterpret_cast<T*>(reinterpret_cast<char*>(x) + bytes);
 }
 template <typename T>
 const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
+  assert(x != nullptr || bytes == 0);
   return reinterpret_cast<const T*>(reinterpret_cast<const char*>(x) + bytes);
 }
 
@@ -235,7 +237,9 @@ public:
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
   raw_buffer& slice(std::size_t d) { return slice({d}); }
   raw_buffer& slice(std::size_t d, index_t at) {
-    base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+    if (base != nullptr) {
+      base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+    }
     return slice({d});
   }
 
@@ -246,7 +250,7 @@ public:
     max = std::min(max, dim(d).max());
 
     index_t offset = 0;
-    if (max >= min) {
+    if (base != nullptr && max >= min) {
       offset = dim(d).flat_offset_bytes(min);
       base = offset_bytes(base, offset);
     }
