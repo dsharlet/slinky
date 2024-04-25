@@ -62,171 +62,17 @@ void* raw_buffer::allocate() {
 
 namespace {
 
-struct copy_dim {
-  index_t pad_before;
-  index_t size;
-  index_t pad_after;
-  index_t total_size;
-  index_t src_stride;
-  index_t dst_stride;
-
-  bool operator<(const copy_dim& r) const { return dst_stride < r.dst_stride; }
-};
-
-void fill(char* dst, index_t stride, index_t elem_size, const void* value, index_t size) {
-  if (!value) return;
-
-  if (stride == elem_size) {
-    switch (elem_size) {
-    case 1: std::fill_n(reinterpret_cast<uint8_t*>(dst), size, *reinterpret_cast<const uint8_t*>(value)); return;
-    case 2: std::fill_n(reinterpret_cast<uint16_t*>(dst), size, *reinterpret_cast<const uint16_t*>(value)); return;
-    case 4: std::fill_n(reinterpret_cast<uint32_t*>(dst), size, *reinterpret_cast<const uint32_t*>(value)); return;
-    case 8: std::fill_n(reinterpret_cast<uint64_t*>(dst), size, *reinterpret_cast<const uint64_t*>(value)); return;
-    }
+void fill(void* dst, const void* value, index_t elem_size, index_t size) {
+  switch (elem_size) {
+  case 1: std::fill_n(reinterpret_cast<uint8_t*>(dst), size, *reinterpret_cast<const uint8_t*>(value)); return;
+  case 2: std::fill_n(reinterpret_cast<uint16_t*>(dst), size, *reinterpret_cast<const uint16_t*>(value)); return;
+  case 4: std::fill_n(reinterpret_cast<uint32_t*>(dst), size, *reinterpret_cast<const uint32_t*>(value)); return;
+  case 8: std::fill_n(reinterpret_cast<uint64_t*>(dst), size, *reinterpret_cast<const uint64_t*>(value)); return;
   }
   for (index_t i = 0; i < size; ++i) {
     memcpy(dst, value, elem_size);
-    dst += stride;
+    dst = offset_bytes(dst, elem_size);
   }
-}
-
-void copy(const char* src, index_t src_stride, char* dst, index_t dst_stride, index_t elem_size, index_t size) {
-  for (index_t i = 0; i < size; ++i) {
-    memcpy(dst, src, elem_size);
-    dst += dst_stride;
-    src += src_stride;
-  }
-}
-
-void fill(char* dst, const copy_dim* dims, index_t elem_size, const void* value, int dim) {
-  if (!value) return;
-
-  const copy_dim& d = dims[dim];
-  if (dim == 0) {
-    fill(dst, d.dst_stride, elem_size, value, d.total_size);
-  } else {
-    for (index_t i = 0; i < d.total_size; ++i) {
-      fill(dst, dims, elem_size, value, dim - 1);
-      dst += d.dst_stride;
-    }
-  }
-}
-
-void copy(const char* src, char* dst, const copy_dim* dims, index_t elem_size, const void* padding, int dim) {
-  // src can be nullptr, in which case we should only fill the padding.
-  const copy_dim& d = dims[dim];
-  if (dim == 0) {
-    if (d.pad_before > 0) {
-      fill(dst, d.dst_stride, elem_size, padding, d.pad_before);
-      dst += d.dst_stride * d.pad_before;
-    }
-    if (src) {
-      if (d.dst_stride == elem_size && d.src_stride == elem_size) {
-        // src and dst are both dense, this can be implemented by memcpy.
-        memcpy(dst, src, d.size * elem_size);
-      } else if (d.src_stride == 0) {
-        // Special case for broadcasting.
-        fill(dst, d.dst_stride, elem_size, src, d.size);
-      } else {
-        // Need to copy one element at a time to skip padding.
-        copy(src, d.src_stride, dst, d.dst_stride, elem_size, d.size);
-      }
-    }
-    dst += d.size * d.dst_stride;
-    if (d.pad_after > 0) {
-      fill(dst, d.dst_stride, elem_size, padding, d.pad_after);
-    }
-  } else {
-    for (index_t i = 0; i < d.pad_before; ++i) {
-      fill(dst, dims, elem_size, padding, dim - 1);
-      dst += d.dst_stride;
-    }
-    for (index_t i = 0; i < d.size; ++i) {
-      copy(src, dst, dims, elem_size, padding, dim - 1);
-      if (src) src += d.src_stride;
-      dst += d.dst_stride;
-    }
-    for (index_t i = 0; i < d.pad_after; ++i) {
-      fill(dst, dims, elem_size, padding, dim - 1);
-      dst += d.dst_stride;
-    }
-  }
-}
-
-// For sorting tiny arrays of dimension metadata, this is faster than std::sort.
-template <class It>
-void bubble_sort(It begin, It end) {
-  for (It i = begin; i != end; ++i) {
-    for (It j = i; j != end; ++j) {
-      if (*j < *i) {
-        std::swap(*i, *j);
-      }
-    }
-  }
-}
-
-void compute_padding(
-    index_t src_begin, index_t src_end, const dim& dst, copy_dim& dim, index_t src_fold_factor = dim::unfolded) {
-  if (dst.end() <= src_begin || dst.begin() >= src_end) {
-    // This dimension is all padding.
-    dim.pad_before = dim.total_size;
-    dim.size = 0;
-    dim.pad_after = 0;
-  } else {
-    index_t copy_begin = std::max(src_begin, dst.begin());
-    index_t copy_end = std::min(src_end, dst.end());
-    // TODO(https://github.com/dsharlet/slinky/issues/41): Enable storage folding in copies.
-    assert(dst.min() / dst.fold_factor() == dst.max() / dst.fold_factor());
-    assert(copy_begin / src_fold_factor == (copy_end - 1) / src_fold_factor);
-    dim.size = std::max<index_t>(0, copy_end - copy_begin);
-    dim.pad_before = std::max<index_t>(0, copy_begin - dst.begin());
-    dim.pad_after = std::max<index_t>(0, dst.end() - copy_end);
-  }
-  assert(dim.pad_before + dim.pad_after + dim.size == dim.total_size);
-}
-
-int optimize_copy_dims(copy_dim* dims, int rank) {
-  if (rank <= 1) return rank;
-
-  // Sort the dims by (dst) stride.
-  bubble_sort(dims, dims + rank);
-
-  // Find dimensions we can fuse.
-  for (int d = 0; d + 1 < rank;) {
-    copy_dim& a = dims[d];
-    const copy_dim& b = dims[d + 1];
-    if (b.dst_stride != a.dst_stride * a.total_size || b.src_stride != a.src_stride * a.total_size) {
-      // There are gaps between these dimensions, we can't fuse them.
-      ++d;
-      continue;
-    }
-
-    if (a.pad_before == 0 && a.pad_after == 0) {
-      // a is entirely copied in this dimension.
-      assert(a.size == a.total_size);
-      a.pad_before = b.pad_before * a.size;
-      a.pad_after = b.pad_after * a.size;
-      a.total_size = b.total_size * a.size;
-      a.size = b.size * a.size;
-    } else if (a.size == 0 && a.pad_after == 0) {
-      // a is entirely padded in this dimension.
-      assert(a.pad_before == a.total_size);
-      a.pad_before *= b.total_size;
-      a.total_size = a.pad_before;
-    } else {
-      // Make sure we didn't use pad_after for all the padding.
-      assert(a.pad_after < a.total_size);
-      ++d;
-      continue;
-    }
-
-    // Remove the now-fused dimension.
-    for (int i = d + 1; i + 1 < rank; ++i) {
-      dims[i] = dims[i + 1];
-    }
-    --rank;
-  }
-  return rank;
 }
 
 }  // namespace
@@ -234,116 +80,115 @@ int optimize_copy_dims(copy_dim* dims, int rank) {
 SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
+  const std::size_t rank = dst.rank;
+  const index_t elem_size = dst.elem_size;
 
-  const char* src_base = reinterpret_cast<const char*>(src.base);
-  char* dst_base = reinterpret_cast<char*>(dst.base);
+  // Make (shallow) copies of the buffers and optimize the dimensions.
+  raw_buffer src_opt = src;
+  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
+  std::copy_n(src.dims, src.rank, src_opt.dims);
+  raw_buffer dst_opt = dst;
+  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
+  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
 
-  // Make a list of pointers to dims that we are going to copy.
-  copy_dim* dims = SLINKY_ALLOCA(copy_dim, dst.rank);
+  optimize_dims(dst_opt, src_opt);
 
-  int rank = 0;
-  for (std::size_t i = 0; i < dst.rank; ++i) {
-    const dim& dst_dim = dst.dims[i];
-    if (dst_dim.max() < dst_dim.min()) {
-      // Output is empty.
-      return;
-    }
-    const dim& src_dim = src.dims[i];
-    if (dst_dim.stride() == 0) {
-      // Copying a broadcast to a broadcast is OK.
-      assert(src_dim.stride() == 0);
-      continue;
-    } else {
-      dims[rank].src_stride = src_dim.stride();
-      dims[rank].dst_stride = dst_dim.stride();
-      dims[rank].total_size = dst_dim.extent();
-      assert(dst.dims[rank].extent() <= dst.dims[rank].fold_factor());
-      if (src_dim.stride() != 0) {
-        compute_padding(src_dim.begin(), src_dim.end(), dst_dim, dims[rank]);
-        if (src_dim.min() < dst_dim.min() && src_dim.contains(dst_dim.min())) {
-          src_base += src_dim.flat_offset_bytes(dst_dim.min());
-        }
-      } else {
-        dims[rank].size = dims[rank].total_size;
-        dims[rank].pad_before = 0;
-        dims[rank].pad_after = 0;
-      }
-      ++rank;
-    }
-  }
-
-  rank = optimize_copy_dims(dims, rank);
-  if (rank <= 0) {
-    // The buffers are scalar.
-    memcpy(dst.base, src.base, dst.elem_size);
+  if (rank == 0 || dst_opt.dim(0).stride() != elem_size || src_opt.dim(0).stride() != elem_size ||
+      dst_opt.dim(0).fold_factor() != dim::unfolded || src_opt.dim(0).fold_factor() != dim::unfolded) {
+    for_each_element(
+        [elem_size, padding](void* dst, const void* src) {
+          if (src) {
+            memcpy(dst, src, elem_size);
+          } else if (padding) {
+            memcpy(dst, padding, elem_size);
+          }
+        },
+        dst_opt, src_opt);
     return;
   }
 
-  // Now we have an optimized set of dimensions to copy. Run the copy.
-  copy(src_base, dst_base, dims, dst.elem_size, padding, rank - 1);
+  // The inner dimension is a simple dense copy, possibly with padding. Make a callback to handle that, and slice off
+  // that dimension.
+  const dim& dst_dim0 = dst_opt.dim(0);
+  const dim& src_dim0 = src_opt.dim(0);
+  const index_t size =
+      std::max<index_t>(0, std::min(dst_dim0.end(), src_dim0.end()) - std::max(dst_dim0.begin(), src_dim0.begin()));
+  const index_t pad_before = std::max<index_t>(0, src_dim0.begin() - dst_dim0.begin());
+  const index_t pad_after = dst_dim0.extent() - size - pad_before;
+
+  if (src_opt.base && src_dim0.begin() < dst_dim0.begin()) {
+    src_opt.base = offset_bytes(src_opt.base, elem_size * (dst_dim0.begin() - src_dim0.begin()));
+  }
+
+  dst_opt.slice(0);
+  src_opt.slice(0);
+  std::function<void(void*, const void*)> copy_dim0;
+  if (pad_before == 0 && pad_after == 0) {
+    // No padding needed.
+    copy_dim0 = [=](void* dst, const void* src) {
+      if (src) {
+        memcpy(dst, src, size * elem_size);
+      } else if (padding) {
+        fill(dst, padding, elem_size, size);
+      }
+    };
+  } else {
+    copy_dim0 = [=](void* dst, const void* src) {
+      if (padding) {
+        fill(dst, padding, elem_size, pad_before);
+      }
+      dst = offset_bytes(dst, pad_before * elem_size);
+      if (src) {
+        memcpy(dst, src, size * elem_size);
+      } else if (padding) {
+        fill(dst, padding, elem_size, size);
+      }
+      if (padding) {
+        dst = offset_bytes(dst, size * elem_size);
+        fill(dst, padding, elem_size, pad_after);
+      }
+    };
+  }
+
+  for_each_element(copy_dim0, dst_opt, src_opt);
 }
 
-SLINKY_NO_STACK_PROTECTOR void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
-  char* dst_base = reinterpret_cast<char*>(dst.base);
-
-  // Make a list of pointers to dims that we are going to pad.
-  copy_dim* dims = SLINKY_ALLOCA(copy_dim, dst.rank);
-  int rank = 0;
-  for (std::size_t i = 0; i < dst.rank; ++i) {
-    const dim& dst_dim = dst.dims[i];
-    if (dst_dim.max() < dst_dim.min()) return;
-    if (dst_dim.stride() == 0) continue;
-    dims[rank].src_stride = 0;
-    dims[rank].dst_stride = dst_dim.stride();
-    dims[rank].total_size = dst_dim.extent();
-    if (in_bounds[i].stride() != 0) {
-      compute_padding(in_bounds[i].begin(), in_bounds[i].end(), dst_dim, dims[rank]);
-    } else {
-      dims[rank].size = dims[rank].total_size;
-      dims[rank].pad_before = 0;
-      dims[rank].pad_after = 0;
+void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
+  // To implement pad, we'll make a buffer that looks like dst, but cropped to the bounds, and copy it with padding.
+  raw_buffer src = dst;
+  src.dims = SLINKY_ALLOCA(dim, dst.rank);
+  std::copy_n(dst.dims, dst.rank, src.dims);
+  for (std::size_t d = 0; d < dst.rank; ++d) {
+    src.crop(d, in_bounds[d].min(), in_bounds[d].max());
+    if (in_bounds[d].stride() == 0) {
+      // TODO: This seems like a hack. I'm not sure where the conceptual bug is. It seems weird that we pass strides
+      // in for in_bounds at all.
+      src.dim(d).set_stride(0);
     }
-    ++rank;
   }
 
-  rank = optimize_copy_dims(dims, rank);
-  if (rank <= 0) {
-    // The buffer is scalar.
-    return;
-  }
-
-  // Now we have an optimized set of dimensions to pad. Run the pad.
-  copy(nullptr, dst_base, dims, dst.elem_size, padding, rank - 1);
+  copy(src, dst, padding);
 }
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
-  char* dst_base = reinterpret_cast<char*>(dst.base);
+  const std::size_t rank = dst.rank;
+  const index_t elem_size = dst.elem_size;
 
-  // Make a list of pointers to dims that we are going to copy.
-  copy_dim* dims = SLINKY_ALLOCA(copy_dim, dst.rank);
-  int rank = 0;
-  for (std::size_t i = 0; i < dst.rank; ++i) {
-    const dim& dst_dim = dst.dims[i];
-    if (dst_dim.max() < dst_dim.min()) return;
-    if (dst_dim.stride() == 0) continue;
-    dims[rank].dst_stride = dst_dim.stride();
-    dims[rank].src_stride = 0;  // For optimize_copy_dims
-    dims[rank].total_size = dst_dim.extent();
+  // Make a (shallow) copy of the buffer and optimize the dimensions.
+  raw_buffer dst_opt = dst;
+  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
+  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
 
-    dims[rank].pad_before = dims[rank].total_size;
-    dims[rank].size = 0;
-    dims[rank].pad_after = 0;
-    rank++;
-  }
+  optimize_dims(dst_opt);
 
-  rank = optimize_copy_dims(dims, rank);
-  if (rank <= 0) {
-    // The buffer is scalar.
-    memcpy(dst.base, value, dst.elem_size);
+  if (rank == 0 || dst_opt.dim(0).stride() != elem_size || dst_opt.dim(0).fold_factor() != dim::unfolded) {
+    for_each_element([elem_size, value](void* dst) { memcpy(dst, value, elem_size); }, dst_opt);
     return;
   }
 
-  fill(dst_base, dims, dst.elem_size, value, rank - 1);
+  const index_t size = dst_opt.dim(0).extent();
+  dst_opt.slice(0);
+  for_each_element([=](void* dst) { fill(dst, value, elem_size, size); }, dst_opt);
 }
 
 namespace internal {
@@ -374,8 +219,8 @@ bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
     if (d >= static_cast<int>(bufs[n]->rank)) {
       // This is an implicitly broadcast dimension, it can't be fused.
       return false;
-    } 
-    
+    }
+
     const dim& inner = bufs[n]->dim(d - 1);
     if (inner.min() != base_inner.min() || inner.extent() != base_inner.extent()) {
       // The bounds of the inner dimension are not equal.
@@ -470,7 +315,9 @@ index_t make_for_each_slice_dims_impl(
     for (std::size_t n = 1; n < bufs_size; n++) {
       if (d < static_cast<index_t>(bufs[n]->rank)) {
         index_t offset = bufs[n]->dim(d).flat_offset_bytes(buf_dim.min());
-        bases[n] = offset_bytes(bases[n], offset);
+        if (bases[n]) {
+          bases[n] = offset_bytes(bases[n], offset);
+        }
       }
     }
 
