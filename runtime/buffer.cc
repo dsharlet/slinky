@@ -142,35 +142,23 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
 
   dst_opt.slice(0);
   src_opt.slice(0);
-  std::function<void(void*, const void*)> copy_dim0;
-  if (pad_before == 0 && pad_after == 0) {
-    // No padding needed.
-    copy_dim0 = [=](void* dst, const void* src) {
-      if (src) {
-        memcpy(dst, src, size * elem_size);
-      } else if (padding) {
-        fill(dst, padding, elem_size, size);
-      }
-    };
-  } else {
-    copy_dim0 = [=](void* dst, const void* src) {
-      if (padding) {
-        fill(dst, padding, elem_size, pad_before);
-      }
-      dst = offset_bytes(dst, pad_before * elem_size);
-      if (src) {
-        memcpy(dst, src, size * elem_size);
-      } else if (padding) {
-        fill(dst, padding, elem_size, size);
-      }
-      if (padding) {
-        dst = offset_bytes(dst, size * elem_size);
-        fill(dst, padding, elem_size, pad_after);
-      }
-    };
-  }
-
-  for_each_element(copy_dim0, dst_opt, src_opt);
+  for_each_element(
+      [=](void* dst, const void* src) {
+        if (padding) {
+          fill(dst, padding, elem_size, pad_before);
+        }
+        dst = offset_bytes(dst, pad_before * elem_size);
+        if (src) {
+          memcpy(dst, src, size * elem_size);
+        } else if (padding) {
+          fill(dst, padding, elem_size, size);
+        }
+        if (padding) {
+          dst = offset_bytes(dst, size * elem_size);
+          fill(dst, padding, elem_size, pad_after);
+        }
+      },
+      dst_opt, src_opt);
 }
 
 void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
