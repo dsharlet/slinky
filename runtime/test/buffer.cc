@@ -348,17 +348,14 @@ void test_for_each_contiguous_slice_copy() {
       },
       src);
 
-  int errors = 0;
   for_each_index(dst, [&](const auto i) {
     auto src_i = i.subspan(0, src.rank);
     if (src.contains(src_i)) {
-      errors += dst(i) != src(src_i);
+      ASSERT_EQ(dst(i), src(src_i));
     } else {
-      errors += dst(i) != 0;
+      ASSERT_EQ(dst(i), 0);
     }
   });
-  assert(errors == 0);
-  ASSERT_EQ(errors, 0);
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
@@ -618,7 +615,11 @@ TEST(buffer, for_each_slice_copy_folded) {
   int expected_slices = dst.dim(1).extent();
   ASSERT_EQ(slices, expected_slices);
 
-  for_each_index(dst, [&](auto i) { ASSERT_EQ(dst(i), src(i)); });
+  for (index_t y = dst.dim(1).begin(); y < dst.dim(1).end(); ++y) {
+    for (index_t x = dst.dim(0).begin(); x < dst.dim(0).end(); ++x) {
+      ASSERT_EQ(dst(x, y), src(x, y));
+    }
+  }
 }
 
 TEST(buffer, for_each_slice_sum) {
@@ -644,10 +645,12 @@ TEST(buffer, for_each_slice_sum) {
       },
       src);
 
-  for_each_index(dst, [&](auto i) {
-    int correct = src(0, i[0], i[1]) + src(1, i[0], i[1]) + src(2, i[0], i[1]);
-    ASSERT_EQ(dst(i), correct);
-  });
+  for (index_t y = dst.dim(1).begin(); y < dst.dim(1).end(); ++y) {
+    for (index_t x = dst.dim(0).begin(); x < dst.dim(0).end(); ++x) {
+      int correct = src(0, x, y) + src(1, x, y) + src(2, x, y);
+      ASSERT_EQ(dst(x, y), correct);
+    }
+  }
 }
 
 TEST(buffer, for_each_slice_broadcasted_slice) {
@@ -881,10 +884,7 @@ TEST(fuse_contiguous_dims, copy) {
     dst_reshaped.dims = dst.dims;
     dst_reshaped.rank = dst.rank;
 
-    int errors = 0;
-    for_each_index(
-        dst, [&](auto i) { errors += memcmp(dst.address_at(i), dst_reshaped.address_at(i), elem_size) ? 1 : 0; });
-    ASSERT_EQ(errors, 0);
+    for_each_element([=](const void* a, const void* b) { ASSERT_EQ(memcmp(a, b, elem_size), 0); }, dst, dst_reshaped);
   }
   ASSERT_GT(optimized, 0);
 }
