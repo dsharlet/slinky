@@ -87,6 +87,7 @@ bool is_repeated_byte(const void* value, std::size_t size) {
   return true;
 }
 
+// This function modifies the dims of src and dst.
 void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
