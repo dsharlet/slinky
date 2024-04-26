@@ -88,13 +88,27 @@ bool is_repeated_byte(const void* value, std::size_t size) {
 }
 
 void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
+  assert(src.rank == dst.rank);
+  assert(src.elem_size == dst.elem_size);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
-  optimize_dims(dst, src);
+  if (rank == 0) {
+    memcpy(dst.base, src.base, elem_size);
+    return;
+  }
 
-  if (rank == 0 || dst.dim(0).stride() != elem_size || src.dim(0).stride() != elem_size ||
-      dst.dim(0).fold_factor() != dim::unfolded || src.dim(0).fold_factor() != dim::unfolded) {
+  optimize_dims(dst, src);
+  dim& dst_dim0 = dst.dim(0);
+  dim& src_dim0 = src.dim(0);
+
+  if (dst_dim0.extent() <= 0) {
+    // Empty destination, nothing to do.
+    return;
+  }
+
+  if (dst_dim0.fold_factor() != dim::unfolded || src_dim0.fold_factor() != dim::unfolded ||
+      dst_dim0.stride() != elem_size || src_dim0.stride() != elem_size) {
     for_each_element(
         [elem_size, padding](void* dst, const void* src) {
           if (src) {
@@ -109,24 +123,21 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   // The inner dimension is a simple dense copy, possibly with padding. Make a callback to handle that, and slice off
   // that dimension.
 
-  dim& dst_dim0 = dst.dim(0);
-  dim& src_dim0 = src.dim(0);
-
-  // If we can, rewrite the buffers to have elem_size 1
   if (padding && elem_size > 1 && is_repeated_byte(padding, elem_size)) {
+    // Rewrite the buffers to have elem_size 1 if possible, because memset is faster than std::fill
     dst_dim0.set_min_extent(dst_dim0.min() * elem_size, dst_dim0.extent() * elem_size);
+    dst_dim0.set_stride(1);
     src_dim0.set_min_extent(src_dim0.min() * elem_size, src_dim0.extent() * elem_size);
+    src_dim0.set_stride(1);
     elem_size = 1;
   }
 
-  const index_t size =
-      std::max<index_t>(0, std::min(dst_dim0.end(), src_dim0.end()) - std::max(dst_dim0.begin(), src_dim0.begin()));
-  const index_t pad_before = std::max<index_t>(0, src_dim0.begin() - dst_dim0.begin());
-  const index_t pad_after = dst_dim0.extent() - size - pad_before;
+  // Eliminate the case we need to consider where src is bigger than dst.
+  src.crop(0, dst_dim0.min(), dst_dim0.max());
 
-  if (src.base && src_dim0.begin() < dst_dim0.begin()) {
-    src.base = offset_bytes(src.base, elem_size * (dst_dim0.begin() - src_dim0.begin()));
-  }
+  const index_t pad_before = src_dim0.begin() - dst_dim0.begin();
+  const index_t pad_after = dst_dim0.end() - src_dim0.end();
+  const index_t size = dst_dim0.extent() - pad_before - pad_after;
 
   dst.slice(0);
   src.slice(0);
@@ -152,9 +163,6 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
 }  // namespace
 
 SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
-  assert(src.rank == dst.rank);
-  assert(src.elem_size == dst.elem_size);
-
   // Make (shallow) copies of the buffers and optimize the dimensions.
   raw_buffer src_opt = src;
   src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
@@ -191,22 +199,33 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
+  if (rank == 0) {
+    memcpy(dst.base, value, elem_size);
+    return;
+  }
+
   // Make a (shallow) copy of the buffer and optimize the dimensions.
   raw_buffer dst_opt = dst;
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
   std::copy_n(dst.dims, dst.rank, dst_opt.dims);
 
   optimize_dims(dst_opt);
+  dim& dst_dim0 = dst_opt.dim(0);
 
-  if (rank == 0 || dst_opt.dim(0).stride() != elem_size || dst_opt.dim(0).fold_factor() != dim::unfolded) {
+  if (dst_dim0.extent() <= 0) {
+    // Empty destination, nothing to do.
+    return;
+  }
+
+  if (dst_dim0.fold_factor() != dim::unfolded || dst_dim0.stride() != elem_size) {
     for_each_element([elem_size, value](void* dst) { memcpy(dst, value, elem_size); }, dst_opt);
     return;
   }
 
-  // If we can, rewrite the buffers to have elem_size 1
-  dim& dst_dim0 = dst_opt.dim(0);
   if (elem_size > 1 && is_repeated_byte(value, elem_size)) {
+    // Rewrite the buffers to have elem_size 1 if possible, because memset is faster than std::fill
     dst_dim0.set_min_extent(dst_dim0.min() * elem_size, dst_dim0.extent() * elem_size);
+    dst_dim0.set_stride(1);
     elem_size = 1;
   }
 
