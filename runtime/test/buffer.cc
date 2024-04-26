@@ -160,6 +160,28 @@ TEST(buffer, buffer) {
   }
 }
 
+bool test_fill(int elem_size, int size) {
+  buffer<void, 1> buf({size}, elem_size);
+  buf.allocate();
+  std::vector<uint8_t> value(elem_size);
+  std::iota(value.begin(), value.end(), 0);
+  fill(buf, value.data());
+  for (int i = 0; i < size * elem_size; ++i) {
+    if (reinterpret_cast<const uint8_t*>(buf.base())[i] != i % elem_size) {
+      return false;
+    }
+  }
+  return true;
+}
+
+TEST(buffer, fill) {
+  for (int size = 0; size < 100; ++size) {
+    for (int elem_size = 1; elem_size < 12; ++elem_size) {
+      ASSERT_TRUE(test_fill(elem_size, size)) << elem_size << " " << size;
+    }
+  }
+}
+
 TEST(buffer, shallow_copy) {
   buffer<int, 2> buf({10, 20});
   init_random(buf);
