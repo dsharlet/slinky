@@ -184,7 +184,7 @@ void BM_for_each_slice_fused_1x(benchmark::State& state, Fn fn) {
     memcpy(buf_fused.dims, buf.dims, buf.rank * sizeof(slinky::dim));
     // TODO: If this can be made as fast as `for_each_contiguous_slice`, maybe we should just get rid of that helper in
     // favor of this combination.
-    fuse_contiguous_dims(buf_fused);
+    optimize_dims(buf_fused);
     for_each_slice(1, buf, fn_wrapper);
   }
 }
@@ -284,7 +284,7 @@ void BM_for_each_slice_fused_2x(benchmark::State& state, Fn fn) {
     memcpy(src_fused.dims, src.dims, src.rank * sizeof(slinky::dim));
     // TODO: If this can be made as fast as `for_each_contiguous_slice`, maybe we should just get rid of that helper in
     // favor of this combination.
-    fuse_contiguous_dims(dst_fused, src_fused);
+    optimize_dims(dst_fused, src_fused);
     for_each_slice(1, dst_fused, fn_wrapper, src_fused);
   }
 }

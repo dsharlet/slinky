@@ -222,9 +222,9 @@ namespace internal {
 
 namespace {
 
-bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
+SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
   for (std::size_t n = 0; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank)) {
+    if (n > 0 && d >= static_cast<int>(bufs[n]->rank)) {
       // This dimension is broadcasted, it's not contiguous.
       return false;
     } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
@@ -238,12 +238,12 @@ bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d)
   return true;
 }
 
-bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
+SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   assert(d > 0);
   const dim& base_outer = bufs[0]->dim(d);
   const dim& base_inner = bufs[0]->dim(d - 1);
   for (std::size_t n = 0; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank)) {
+    if (n > 0 && d >= static_cast<int>(bufs[n]->rank)) {
       // This is an implicitly broadcast dimension, it can't be fused.
       return false;
     }
@@ -269,26 +269,20 @@ bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   return true;
 }
 
-bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, int d) {
+SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, int d) {
+  if (bufs[0]->dim(d).fold_factor() != dim::unfolded) {
+    // The main buffer is folded.
+    return true;
+  }
   for (std::size_t i = 1; i < size; ++i) {
-    if (d >= static_cast<int>(bufs[i]->rank)) {
-      // Broadcast dimension.
-      continue;
-    } else if (!bufs[i]->dim(d).contains(bufs[0]->dim(d))) {
-      // One of the extra buffers is out of bounds, use a folded loop.
-      return true;
-    }
-  }
-  if (bufs[0]->dim(d).extent() == 1) {
-    // The output has only extent 1, we don't need a folded loop.
-    return false;
-  }
-  for (std::size_t i = 0; i < size; ++i) {
     if (d >= static_cast<int>(bufs[i]->rank)) {
       // Broadcast dimension.
       continue;
     } else if (bufs[i]->dim(d).fold_factor() != dim::unfolded) {
       // There's a folded buffer, we need a folded loop.
+      return true;
+    } else if (!bufs[i]->dim(d).contains(bufs[0]->dim(d))) {
+      // One of the extra buffers is out of bounds, use a folded loop.
       return true;
     }
   }
@@ -326,7 +320,7 @@ index_t make_for_each_slice_dims_impl(
       next = get_plan<for_each_slice_dim>(plan);
       next->impl = for_each_slice_dim::call_f;
       return 0;
-    } else if (use_folded_loop(bufs, bufs_size, d)) {
+    } else if (buf_dim.extent() > 1 && use_folded_loop(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers, or we need to crop one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;
@@ -343,10 +337,16 @@ index_t make_for_each_slice_dims_impl(
     extent *= buf_dim.extent();
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
-      if (d < static_cast<index_t>(bufs[n]->rank)) {
-        index_t offset = bufs[n]->dim(d).flat_offset_bytes(buf_dim.min());
-        if (bases[n]) {
+      if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
+        const dim& buf_n_dim = bufs[n]->dim(d);
+        if (buf_n_dim.contains(buf_dim)) {
+          index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
           bases[n] = offset_bytes(bases[n], offset);
+        } else {
+          // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
+          // use_folded_loop should have returned true above.
+          assert(buf_n_dim.extent() <= 0 || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
+          bases[n] = nullptr;
         }
       }
     }
