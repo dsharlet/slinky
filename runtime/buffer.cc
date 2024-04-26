@@ -87,26 +87,14 @@ bool is_repeated_byte(const void* value, std::size_t size) {
   return true;
 }
 
-}  // namespace
-
-SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
-  assert(src.rank == dst.rank);
-  assert(src.elem_size == dst.elem_size);
+void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
-  // Make (shallow) copies of the buffers and optimize the dimensions.
-  raw_buffer src_opt = src;
-  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
-  std::copy_n(src.dims, src.rank, src_opt.dims);
-  raw_buffer dst_opt = dst;
-  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
-  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
+  optimize_dims(dst, src);
 
-  optimize_dims(dst_opt, src_opt);
-
-  if (rank == 0 || dst_opt.dim(0).stride() != elem_size || src_opt.dim(0).stride() != elem_size ||
-      dst_opt.dim(0).fold_factor() != dim::unfolded || src_opt.dim(0).fold_factor() != dim::unfolded) {
+  if (rank == 0 || dst.dim(0).stride() != elem_size || src.dim(0).stride() != elem_size ||
+      dst.dim(0).fold_factor() != dim::unfolded || src.dim(0).fold_factor() != dim::unfolded) {
     for_each_element(
         [elem_size, padding](void* dst, const void* src) {
           if (src) {
@@ -115,14 +103,14 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
             memcpy(dst, padding, elem_size);
           }
         },
-        dst_opt, src_opt);
+        dst, src);
     return;
   }
   // The inner dimension is a simple dense copy, possibly with padding. Make a callback to handle that, and slice off
   // that dimension.
 
-  dim& dst_dim0 = dst_opt.dim(0);
-  dim& src_dim0 = src_opt.dim(0);
+  dim& dst_dim0 = dst.dim(0);
+  dim& src_dim0 = src.dim(0);
 
   // If we can, rewrite the buffers to have elem_size 1
   if (padding && elem_size > 1 && is_repeated_byte(padding, elem_size)) {
@@ -136,12 +124,12 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   const index_t pad_before = std::max<index_t>(0, src_dim0.begin() - dst_dim0.begin());
   const index_t pad_after = dst_dim0.extent() - size - pad_before;
 
-  if (src_opt.base && src_dim0.begin() < dst_dim0.begin()) {
-    src_opt.base = offset_bytes(src_opt.base, elem_size * (dst_dim0.begin() - src_dim0.begin()));
+  if (src.base && src_dim0.begin() < dst_dim0.begin()) {
+    src.base = offset_bytes(src.base, elem_size * (dst_dim0.begin() - src_dim0.begin()));
   }
 
-  dst_opt.slice(0);
-  src_opt.slice(0);
+  dst.slice(0);
+  src.slice(0);
   for_each_element(
       [=](void* dst, const void* src) {
         if (padding) {
@@ -158,7 +146,24 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
           fill(dst, padding, elem_size, pad_after);
         }
       },
-      dst_opt, src_opt);
+      dst, src);
+}
+
+}  // namespace
+
+SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+  assert(src.rank == dst.rank);
+  assert(src.elem_size == dst.elem_size);
+
+  // Make (shallow) copies of the buffers and optimize the dimensions.
+  raw_buffer src_opt = src;
+  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
+  std::copy_n(src.dims, src.rank, src_opt.dims);
+  raw_buffer dst_opt = dst;
+  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
+  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
+
+  copy_impl(src_opt, dst_opt, padding);
 }
 
 void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
@@ -175,7 +180,11 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
     }
   }
 
-  copy(src, dst, padding);
+  raw_buffer dst_opt = dst;
+  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
+  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
+
+  copy_impl(src, dst_opt, padding);
 }
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
