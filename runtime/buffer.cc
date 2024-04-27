@@ -64,16 +64,16 @@ void* raw_buffer::allocate() {
 namespace {
 
 void fill(void* dst, const void* value, index_t elem_size, index_t size) {
-  switch (elem_size) {
-  case 1: memset(dst, *reinterpret_cast<const uint8_t*>(value), size); return;
-  case 2: std::fill_n(reinterpret_cast<uint16_t*>(dst), size, *reinterpret_cast<const uint16_t*>(value)); return;
-  case 4: std::fill_n(reinterpret_cast<uint32_t*>(dst), size, *reinterpret_cast<const uint32_t*>(value)); return;
-  case 8: std::fill_n(reinterpret_cast<uint64_t*>(dst), size, *reinterpret_cast<const uint64_t*>(value)); return;
+  if (elem_size == 1) {
+    memset(dst, *reinterpret_cast<const uint8_t*>(value), size);
+    return;
   }
-  for (index_t i = 0; i < size; ++i) {
+  while (size >= elem_size) {
     memcpy(dst, value, elem_size);
     dst = offset_bytes(dst, elem_size);
+    size -= elem_size;
   }
+  memcpy(dst, value, size);
 }
 
 bool is_repeated_byte(const void* value, std::size_t size) {
@@ -136,9 +136,9 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   // Eliminate the case we need to consider where src is bigger than dst.
   src.crop(0, dst_dim0.min(), dst_dim0.max());
 
-  const index_t pad_before = src_dim0.begin() - dst_dim0.begin();
-  const index_t pad_after = dst_dim0.end() - src_dim0.end();
-  const index_t size = dst_dim0.extent() - pad_before - pad_after;
+  const index_t pad_before = (src_dim0.begin() - dst_dim0.begin()) * elem_size;
+  const index_t pad_after = (dst_dim0.end() - src_dim0.end()) * elem_size;
+  const index_t size = dst_dim0.extent() * elem_size - pad_before - pad_after;
 
   dst.slice(0);
   src.slice(0);
@@ -147,14 +147,14 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
         if (padding) {
           fill(dst, padding, elem_size, pad_before);
         }
-        dst = offset_bytes(dst, pad_before * elem_size);
+        dst = offset_bytes(dst, pad_before);
         if (src) {
-          memcpy(dst, src, size * elem_size);
+          memcpy(dst, src, size);
         } else if (padding) {
           fill(dst, padding, elem_size, size);
         }
         if (padding) {
-          dst = offset_bytes(dst, size * elem_size);
+          dst = offset_bytes(dst, size);
           fill(dst, padding, elem_size, pad_after);
         }
       },
@@ -230,7 +230,7 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
     elem_size = 1;
   }
 
-  const index_t size = dst_dim0.extent();
+  const index_t size = dst_dim0.extent() * elem_size;
   dst_opt.slice(0);
   for_each_element([=](void* dst) { fill(dst, value, elem_size, size); }, dst_opt);
 }
