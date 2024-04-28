@@ -656,7 +656,6 @@ expr simplify(const equal* op, expr a, expr b) {
   // clang-format off
   if (r.rewrite(x == x, true) ||
       r.rewrite(x * y == x * z, y == z || x == 0) ||
-      r.rewrite(x * y == x / z, y == 1 / z || x == 0) ||
       r.rewrite(x == x * y, y == 1 || x == 0) ||
       r.rewrite(x + y == z + y, x == z) ||
       r.rewrite(x - y == z - y, x == z) ||
