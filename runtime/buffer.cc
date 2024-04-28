@@ -73,7 +73,9 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
     dst = offset_bytes(dst, elem_size);
     size -= elem_size;
   }
-  memcpy(dst, value, size);
+  // We could optimize fills for elem_size != 1 by replicating the element Nx, and copying N at a time. That would
+  // require a final memcpy here to handle the remainder.
+  assert(size == 0);
 }
 
 bool is_repeated_byte(const void* value, std::size_t size) {
@@ -144,18 +146,18 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   src.slice(0);
   for_each_element(
       [=](void* dst, const void* src) {
-        if (padding) {
-          fill(dst, padding, elem_size, pad_before);
-        }
-        dst = offset_bytes(dst, pad_before);
         if (src) {
+          if (padding) {
+            fill(dst, padding, elem_size, pad_before);
+          }
+          dst = offset_bytes(dst, pad_before);
           memcpy(dst, src, size);
+          if (padding) {
+            dst = offset_bytes(dst, size);
+            fill(dst, padding, elem_size, pad_after);
+          }
         } else if (padding) {
-          fill(dst, padding, elem_size, size);
-        }
-        if (padding) {
-          dst = offset_bytes(dst, size);
-          fill(dst, padding, elem_size, pad_after);
+          fill(dst, padding, elem_size, pad_before + size + pad_after);
         }
       },
       dst, src);
