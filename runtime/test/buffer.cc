@@ -176,7 +176,7 @@ bool test_fill(int elem_size, int size) {
 
 TEST(buffer, fill) {
   for (int size = 0; size < 100; ++size) {
-    for (int elem_size = 1; elem_size < 12; ++elem_size) {
+    for (int elem_size : {1, 2, 3, 4, 8, 12, 16, 63, 64, 65}) {
       ASSERT_TRUE(test_fill(elem_size, size)) << elem_size << " " << size;
     }
   }
