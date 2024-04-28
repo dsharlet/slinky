@@ -51,11 +51,11 @@ void BM_memset(benchmark::State& state) {
   delete[] dst;
 }
 
-BENCHMARK(BM_memset)->Arg(1024 * 1024);
+BENCHMARK(BM_memset)->Arg(1024);
 
 void BM_fill(benchmark::State& state) {
-  buffer<char, 4> dst;
-  allocate_buffer(dst, state_to_vector(4, state));
+  buffer<char, 3> dst;
+  allocate_buffer(dst, state_to_vector(3, state));
 
   char five = 0;
 
@@ -64,12 +64,12 @@ void BM_fill(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_fill)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_fill)->Args({32, 32, 256, 4});
+BENCHMARK(BM_fill)->Args({256, 4, -1});
+BENCHMARK(BM_fill)->Args({64, 4, 4});
 
 void BM_fill_padded(benchmark::State& state) {
-  buffer<char, 4> dst;
-  allocate_buffer(dst, state_to_vector(4, state), padding_size);
+  buffer<char, 3> dst;
+  allocate_buffer(dst, state_to_vector(3, state), padding_size);
 
   char five = 0;
 
@@ -78,15 +78,15 @@ void BM_fill_padded(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_fill_padded)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_fill_padded)->Args({32, 32, 256, 4});
+BENCHMARK(BM_fill_padded)->Args({256, 4, -1});
+BENCHMARK(BM_fill_padded)->Args({64, 4, 4});
 
 void BM_pad(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> dst;
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> dst;
   allocate_buffer(dst, extents);
 
-  buffer<char, 4> src(extents);
+  buffer<char, 3> src(extents);
   for (std::size_t d = 0; d < src.rank; ++d) {
     src.dim(d).set_bounds(1, extents[d] - 1);
   }
@@ -98,8 +98,8 @@ void BM_pad(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_pad)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_pad)->Args({32, 32, 256, 4});
+BENCHMARK(BM_pad)->Args({256, 4, -1});
+BENCHMARK(BM_pad)->Args({64, 4, 4});
 
 void BM_memcpy(benchmark::State& state) {
   std::size_t size = state.range(0);
@@ -120,12 +120,12 @@ void BM_memcpy(benchmark::State& state) {
   delete[] dst;
 }
 
-BENCHMARK(BM_memcpy)->Arg(1024 * 1024);
+BENCHMARK(BM_memcpy)->Arg(1024);
 
 void BM_copy(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> src;
-  buffer<char, 4> dst;
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> src;
+  buffer<char, 3> dst;
   allocate_buffer(src, extents);
   allocate_buffer(dst, extents);
 
@@ -134,13 +134,13 @@ void BM_copy(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_copy)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_copy)->Args({32, 32, 256, 4});
+BENCHMARK(BM_copy)->Args({256, 4, -1});
+BENCHMARK(BM_copy)->Args({64, 4, 4});
 
 void BM_copy_padded(benchmark::State& state) {
-  std::vector<index_t> extents = state_to_vector(4, state);
-  buffer<char, 4> src;
-  buffer<char, 4> dst;
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> src;
+  buffer<char, 3> dst;
   allocate_buffer(src, extents);
   allocate_buffer(dst, extents, padding_size);
 
@@ -149,8 +149,8 @@ void BM_copy_padded(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_copy_padded)->Args({1024, 256, 4, -1});
-BENCHMARK(BM_copy_padded)->Args({32, 32, 256, 4});
+BENCHMARK(BM_copy_padded)->Args({256, 4, -1});
+BENCHMARK(BM_copy_padded)->Args({64, 4, 4});
 
 constexpr index_t slice_extent = 64;
 
