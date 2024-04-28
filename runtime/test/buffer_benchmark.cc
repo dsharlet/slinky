@@ -54,24 +54,30 @@ void BM_memset(benchmark::State& state) {
 BENCHMARK(BM_memset)->Arg(1024);
 
 void BM_fill(benchmark::State& state) {
-  buffer<char, 3> dst;
-  allocate_buffer(dst, state_to_vector(3, state));
+  std::vector<index_t> extents = state_to_vector(4, state);
+  buffer<void, 3> dst(3, extents[0]);
+  extents.erase(extents.begin());
+  allocate_buffer(dst, extents);
 
-  char five = 0;
+  int five = 5;
 
   for (auto _ : state) {
     fill(dst, &five);
   }
 }
 
-BENCHMARK(BM_fill)->Args({256, 4, -1});
-BENCHMARK(BM_fill)->Args({64, 4, 4});
+BENCHMARK(BM_fill)->Args({1, 256, 4, -1});
+BENCHMARK(BM_fill)->Args({2, 128, 4, -1});
+BENCHMARK(BM_fill)->Args({4, 64, 4, -1});
+BENCHMARK(BM_fill)->Args({1, 64, 4, 4});
+BENCHMARK(BM_fill)->Args({2, 32, 4, 4});
+BENCHMARK(BM_fill)->Args({4, 16, 4, 4});
 
 void BM_fill_padded(benchmark::State& state) {
   buffer<char, 3> dst;
   allocate_buffer(dst, state_to_vector(3, state), padding_size);
 
-  char five = 0;
+  char five = 5;
 
   for (auto _ : state) {
     fill(dst, &five);
