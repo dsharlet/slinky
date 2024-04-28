@@ -88,7 +88,7 @@ void BM_pad(benchmark::State& state) {
 
   buffer<char, 3> src(extents);
   for (std::size_t d = 0; d < src.rank; ++d) {
-    src.dim(d).set_bounds(1, extents[d] - 1);
+    src.dim(d).set_bounds(1, extents[d] - 2);
   }
 
   char five = 0;
