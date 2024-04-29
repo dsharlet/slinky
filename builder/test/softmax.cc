@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "builder/pipeline.h"
+#include "builder/test/funcs.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
@@ -116,6 +117,7 @@ TEST_P(softmax, pipeline) {
   auto max_in = buffer_expr::make(ctx, "max_in", rank - 1, sizeof(float));
   auto exp_in = buffer_expr::make(ctx, "exp_in", rank, sizeof(float));
   auto sum_exp_in = buffer_expr::make(ctx, "sum_exp_in", rank - 1, sizeof(float));
+  auto softmax_out = buffer_expr::make(ctx, "softmax_out", rank, sizeof(float));
 
   var c(ctx, "c");
   var b(ctx, "b");
@@ -125,7 +127,9 @@ TEST_P(softmax, pipeline) {
   func pass1 = func::make(max_dim0, {{in, {all_c, point(b)}}}, {{max_in, {b}}});
   func pass2 =
       func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}}, {{exp_in, {c, b}}, {sum_exp_in, {b}}});
-  func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{out, {c, b}}});
+  func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}});
+  // Add a trivial consumer so we can keep the inner loop.
+  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}});
 
   std::vector<func::loop_info> loops;
   if (split_c > 0) loops.push_back({c, split_c});
@@ -154,6 +158,7 @@ TEST_P(softmax, pipeline) {
   buffer<float, rank> ref_buf({D, B});
   ref_buf.allocate();
   fused_softmax(in_buf.cast<const float>(), ref_buf.cast<float>());
+  add_1(ref_buf.cast<const float>(), ref_buf.cast<float>());
 
   for (index_t b = 0; b < B; ++b) {
     auto out_b = span<const float>(&out_buf(0, b), D);
