@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <deque>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -404,6 +405,29 @@ public:
     if (!body.defined()) {
       set_result(stmt());
       return;
+    } else if (!depends_on(body, op->sym).any()) {
+      // The body does not depend on the loop, drop the loop.
+      set_result(std::move(body));
+      return;
+    } else if (const block* b = body.as<block>()) {
+      std::deque<stmt> in_loop(b->stmts.begin(), b->stmts.end());
+      std::deque<stmt> before_loop;
+      while (!in_loop.empty() && !depends_on(in_loop.front(), op->sym).any()) {
+        before_loop.push_back(std::move(in_loop.front()));
+        in_loop.pop_front();
+      }
+      // TODO: We could also try to move trailing independent stmts out of the end of the loop, and reorder independent
+      // stmts from in the middle of the loop. However, I'm not if this is something that can really happen in practice,
+      // we might as well wait and see if we need this.
+      assert(!in_loop.empty());  // We should have handled this above.
+      if (!before_loop.empty()) {
+        // Some of the loop did not depend on the loop, we can move it out.
+        stmt before = block::make(std::vector<stmt>(before_loop.begin(), before_loop.end()));
+        stmt in = block::make(std::vector<stmt>(in_loop.begin(), in_loop.end()));
+        set_result(mutate(block::make(
+            {before, loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(in))})));
+        return;
+      }
     }
 
     if (op->is_serial()) {
