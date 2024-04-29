@@ -217,8 +217,10 @@ public:
     *this << indent() << "call(";
     if (!n->attrs.name.empty()) {
       *this << n->attrs.name;
+    } else if (n->target) {
+      *this << "<anonymous target>";
     } else {
-      *this << "<anonymous function>";
+      *this << "<null target>";
     }
     *this << ", {" << n->inputs << "}, {" << n->outputs << "})\n";
   }
