@@ -103,6 +103,18 @@ cc_test(
 )
 
 cc_test(
+    name = "softmax",
+    srcs = ["softmax.cc"],
+    deps = [
+        ":util",
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size="small",
+)
+
+cc_test(
     name = "aligned_producer",
     srcs = ["aligned_producer.cc"],
     deps = [
