@@ -7,6 +7,7 @@
 
 namespace slinky {
 
+// This implementation of softmax is not intended to be fast, it is only intended to model the data dependencies.
 index_t max_dim0(const buffer<const float>& in, const buffer<float>& max_in) {
   for (index_t b = max_in.dim(0).begin(); b < max_in.dim(0).end(); ++b) {
     max_in(b) = -std::numeric_limits<float>::infinity();
