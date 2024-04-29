@@ -359,9 +359,8 @@ public:
   // Construct a buffer with extents, and strides computed such that the stride of dimension
   // n is the product of all the extents of dimensions [0, n) and elem_size, i.e. the first
   // dimension is "innermost".
-  buffer(span<const index_t> extents) : buffer() {
-    assert(extents.size() <= rank);
-    rank = extents.size();
+  buffer(span<const index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
+      : buffer(extents.size(), elem_size) {
     index_t stride = elem_size;
     slinky::dim* d = dims;
     for (index_t extent : extents) {
@@ -371,9 +370,12 @@ public:
       ++d;
     }
   }
-  buffer(std::initializer_list<index_t> extents) : buffer({extents.begin(), extents.end()}) {}
+  buffer(std::initializer_list<index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
+      : buffer({extents.begin(), extents.end()}, elem_size) {}
   // TODO: A more general version of this constructor would probably be useful.
-  buffer(T* base, index_t size) : buffer({size}) { raw_buffer::base = base; }
+  buffer(T* base, index_t size, std::size_t elem_size = internal::default_elem_size<T>::value) : buffer({size}) {
+    raw_buffer::base = base;
+  }
   ~buffer() { free(); }
 
   // All buffer copy/assignment operators are shallow copies.
