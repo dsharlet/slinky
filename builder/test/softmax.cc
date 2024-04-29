@@ -134,7 +134,7 @@ TEST_P(softmax, pipeline) {
   std::vector<func::loop_info> loops;
   if (split_c > 0) loops.push_back({c, split_c});
   if (split_b > 0) loops.push_back({b, split_b});
-  pass3.loops(std::move(loops));
+  pass4.loops(std::move(loops));
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

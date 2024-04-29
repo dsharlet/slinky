@@ -24,6 +24,10 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var b0(symbols, "b0");
+var b1(symbols, "b1");
+var b2(symbols, "b2");
+var b3(symbols, "b3");
 
 }  // namespace
 
@@ -142,16 +146,16 @@ TEST(simplify, let) {
   test_simplify(let::make(x, buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
   test_simplify(let::make(x, buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
 
-  test_simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x))),
-      loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y)));  // Trivial value, substitute
+  test_simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))),
+      loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y + z)));  // Trivial value, substitute
 
   // lets that should be kept
   test_simplify(
       let::make(x, y * 2, (x + 1) / x), let::make(x, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
 
-  test_simplify(let_stmt::make(x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x))),
+  test_simplify(let_stmt::make(x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))),
       let_stmt::make(
-          x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x))));  // Non-trivial, used in loop
+          x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))));  // Non-trivial, used in loop
 
   test_simplify(let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)})),
       let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
@@ -162,6 +166,36 @@ TEST(simplify, let) {
   test_simplify(let::make({{x, y * 2}, {z, x}}, z), y * 2);
   test_simplify(let::make({{x, y * 2}, {z, y}}, z), y);
   test_simplify(let::make({{x, y}, {z, (x + 1) / x}}, (z + 1) / z), let::make({{z, (y + 1) / y}}, (z + 1) / z));
+}
+
+TEST(simplify, licm) {
+  // Use parallel loops so loops of one call don't get rewritten to a single call.
+  auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
+  auto make_loop_y = [](const stmt& body) { return loop::make(y, loop::parallel, bounds(0, 10), 1, body); };
+  auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
+  auto make_crop_x = [](const var& buf, int dim, const stmt& body) { return crop_dim::make(buf, dim, point(x), body); };
+  auto make_crop_y = [](const var& buf, int dim, const stmt& body) { return crop_dim::make(buf, dim, point(y), body); };
+
+  // One call doesn't depend on the loop.
+  test_simplify(make_loop_x(make_call(b0, b1)), make_call(b0, b1));
+  // Two calls don't depend on the loop.
+  test_simplify(make_loop_x(block::make({make_call(b0, b1), make_call(b0, b2)})),
+      block::make({make_call(b0, b1), make_call(b0, b2)}));
+  // Last call depends on the loop, first call does not.
+  test_simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))})),
+      block::make({make_call(b0, b1), make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))}));
+  // A call in the middle of the loop depends on the loop.
+  test_simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)})),
+      block::make(
+          {make_call(b0, b1), make_loop_x(block::make({make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)}))}));
+  // A call in the middle of the loop does not depend on the loop, but does depend on the first call.
+  test_simplify(make_loop_x(block::make({make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2)})),
+      make_loop_x(block::make({make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2)})));
+  // A nested loop.
+  test_simplify(make_loop_y(make_crop_y(
+                    b2, 1, make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))})))),
+      block::make(
+          {make_call(b0, b1), make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))))}));
 }
 
 TEST(simplify, buffer_intrinsics) {
@@ -302,8 +336,6 @@ TEST(simplify, where_true) {
 }
 
 std::vector<var> vars = {x, y, z};
-var b0(symbols, "b0");
-var b1(symbols, "b1");
 std::vector<var> bufs = {b0, b1};
 
 template <typename T>
