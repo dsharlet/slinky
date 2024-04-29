@@ -413,6 +413,7 @@ public:
       std::deque<stmt> in_loop(b->stmts.begin(), b->stmts.end());
       std::deque<stmt> before_loop;
       while (!in_loop.empty() && !depends_on(in_loop.front(), op->sym).any()) {
+        // The first stmt in the loop does not depend on the loop. We can lift it out of the loop.
         before_loop.push_back(std::move(in_loop.front()));
         in_loop.pop_front();
       }
