@@ -162,7 +162,10 @@ inline T lcm(T a, T b) {
 // - No fixed size extents
 template <typename T>
 class span {
+public:
   using value_type = std::remove_const_t<T>;
+
+private:
   const value_type* data_;
   std::size_t size_;
 

@@ -22,28 +22,6 @@ void check_replica_pipeline(const std::string& replica_text) {
   ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
 }
 
-// Matrix multiplication (not fast!)
-template <typename T>
-index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
-  assert(a.rank == 2);
-  assert(b.rank == 2);
-  assert(c.rank == 2);
-  assert(a.dim(1).begin() == b.dim(0).begin());
-  assert(a.dim(1).end() == b.dim(0).end());
-  assert(a.dim(1).stride() == sizeof(T));
-  assert(b.dim(1).stride() == sizeof(T));
-  assert(c.dim(1).stride() == sizeof(T));
-  for (index_t i = c.dim(0).begin(); i < c.dim(0).end(); ++i) {
-    for (index_t j = c.dim(1).begin(); j < c.dim(1).end(); ++j) {
-      c(i, j) = 0;
-      for (index_t k = a.dim(1).begin(); k < a.dim(1).end(); ++k) {
-        c(i, j) += a(i, k) * b(k, j);
-      }
-    }
-  }
-  return 0;
-}
-
 const auto loop_modes = testing::Values(loop::serial, loop::parallel);
 
 index_t pyramid_upsample2x(const buffer<const int>& skip, const buffer<const int>& in, const buffer<int>& out) {
@@ -67,12 +45,12 @@ index_t downsample2x(const buffer<const int>& in, const buffer<int>& out) {
   return 0;
 }
 
-class pyramid : public testing::TestWithParam<std::tuple<int>> {};
+class pyramid : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(mode, pyramid, testing::Combine(loop_modes), test_params_to_string<pyramid::ParamType>);
+INSTANTIATE_TEST_SUITE_P(mode, pyramid, loop_modes);
 
 TEST_P(pyramid, pipeline) {
-  int max_workers = std::get<0>(GetParam());
+  int max_workers = GetParam();
   // Make the pipeline
   node_context ctx;
 
