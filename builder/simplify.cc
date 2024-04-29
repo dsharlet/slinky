@@ -418,8 +418,8 @@ public:
         in_loop.pop_front();
       }
       // TODO: We could also try to move trailing independent stmts out of the end of the loop, and reorder independent
-      // stmts from in the middle of the loop. However, I'm not if this is something that can really happen in practice,
-      // we might as well wait and see if we need this.
+      // stmts from in the middle of the loop. However, I'm not sure if this is something that can really happen in
+      // practice, we might as well wait and see if we need this.
       assert(!in_loop.empty());  // We should have handled this above.
       if (!before_loop.empty()) {
         // Some of the loop did not depend on the loop, we can move it out.
