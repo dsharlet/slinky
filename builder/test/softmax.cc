@@ -126,18 +126,23 @@ TEST_P(softmax, pipeline) {
   interval_expr all_c = out->dim(0).bounds;
 
   // Add a trivial producer so we can have an inner loop here.
-  func pass0 = func::make(add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}});
-  func pass1 = func::make(max_dim0, {{softmax_in, {all_c, point(b)}}}, {{max_in, {b}}});
-  func pass2 =
-      func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}}, {{exp_in, {c, b}}, {sum_exp_in, {b}}});
-  func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}});
+  func pass0 =
+      func::make(add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}}, call_stmt::attributes{.name = "producer"});
+  func pass1 = func::make(
+      max_dim0, {{softmax_in, {all_c, point(b)}}}, {{max_in, {b}}}, call_stmt::attributes{.name = "max_dim0"});
+  func pass2 = func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}},
+      {{exp_in, {c, b}}, {sum_exp_in, {b}}}, call_stmt::attributes{.name = "exp_in"});
+  func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}},
+      call_stmt::attributes{.name = "normalize"});
   // Add a trivial consumer so we can have an inner loop here too.
-  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}});
+  func pass4 = func::make(
+      add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
 
   std::vector<func::loop_info> loops;
   if (split_c > 0) loops.push_back({c, split_c});
   if (split_b > 0) loops.push_back({b, split_b});
-  pass4.loops(std::move(loops));
+  pass0.loops(loops);
+  pass4.loops(loops);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

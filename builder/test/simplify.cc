@@ -187,10 +187,12 @@ TEST(simplify, licm) {
   // A call in the middle of the loop depends on the loop.
   test_simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)})),
       block::make(
-          {make_call(b0, b1), make_loop_x(block::make({make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)}))}));
+          {make_call(b0, b1), make_loop_x(block::make({make_crop_x(b2, 0, make_call(b0, b2))})), make_call(b0, b3)}));
   // A call in the middle of the loop does not depend on the loop, but does depend on the first call.
-  test_simplify(make_loop_x(block::make({make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2)})),
-      make_loop_x(block::make({make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2)})));
+  test_simplify(make_loop_x(block::make(
+                    {make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2), make_crop_x(b3, 0, make_call(b0, b3))})),
+      block::make({make_loop_x(make_crop_x(b1, 0, make_call(b0, b1))), make_call(b1, b2),
+          make_loop_x(make_crop_x(b3, 0, make_call(b0, b3)))}));
   // A nested loop.
   test_simplify(make_loop_y(make_crop_y(
                     b2, 1, make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))})))),
