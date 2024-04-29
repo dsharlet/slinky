@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "builder/pipeline.h"
+#include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
@@ -94,12 +95,15 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<int> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(mode, softmax, testing::Values(0, 1, 2));
+auto split_factors = testing::Values(0, 1, 4);
+INSTANTIATE_TEST_SUITE_P(
+    mode, softmax, testing::Combine(split_factors, split_factors), test_params_to_string<softmax::ParamType>);
 
 TEST_P(softmax, pipeline) {
-  int loop_rank = GetParam();
+  const int split_c = std::get<0>(GetParam());
+  const int split_b = std::get<1>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -123,11 +127,10 @@ TEST_P(softmax, pipeline) {
       func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}}, {{exp_in, {c, b}}, {sum_exp_in, {b}}});
   func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{out, {c, b}}});
 
-  switch (loop_rank) {
-  case 0: break;
-  case 1: pass3.loops({{b}}); break;
-  case 2: pass3.loops({{c}, {b}}); break;
-  }
+  std::vector<func::loop_info> loops;
+  if (split_c > 0) loops.push_back({c, split_c});
+  if (split_b > 0) loops.push_back({b, split_b});
+  pass3.loops(std::move(loops));
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
