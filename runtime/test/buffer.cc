@@ -262,6 +262,16 @@ TEST(buffer, slice_non_leading) {
   ASSERT_EQ(sliced.dim(1), buf.dim(2));
 }
 
+TEST(buffer, slice_leading_and_trailing) {
+  buffer<int, 3> buf({1, 2, 3});
+  raw_buffer sliced = buf;
+
+  sliced.slice({0, 2});
+  ASSERT_EQ(sliced.rank, 1);
+  ASSERT_EQ(sliced.dims, buf.dims + 1);
+  ASSERT_EQ(sliced.dim(0), buf.dim(1));
+}
+
 TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
