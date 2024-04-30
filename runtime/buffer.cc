@@ -263,20 +263,25 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
     } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
       // This dimension is not contiguous.
       return false;
-    } else if (!bufs[n]->dim(d).contains(bufs[0]->dim(d))) {
-      // One of the other dimensions is out of bounds, it can't be treated contiguously.
-      return false;
-    }
+    } 
   }
   return true;
 }
 
 SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
   assert(d > 0);
-  const dim& base_outer = bufs[0]->dim(d);
   const dim& base_inner = bufs[0]->dim(d - 1);
-  for (std::size_t n = 0; n < size; n++) {
-    if (n > 0 && d >= static_cast<int>(bufs[n]->rank)) {
+  const dim& base_outer = bufs[0]->dim(d);
+  if (base_inner.fold_factor() != dim::unfolded) {
+    // One of the dimensions is folded.
+    return false;
+  } else if (base_inner.stride() * base_inner.extent() != base_outer.stride()) {
+    // The dimensions are not contiguous in memory.
+    return false;
+  }
+
+  for (std::size_t n = 1; n < size; n++) {
+    if (d >= static_cast<int>(bufs[n]->rank)) {
       // This is an implicitly broadcast dimension, it can't be fused.
       return false;
     }
@@ -285,16 +290,13 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
     if (inner.min() != base_inner.min() || inner.extent() != base_inner.extent()) {
       // The bounds of the inner dimension are not equal.
       return false;
+    } else if (inner.fold_factor() != dim::unfolded) {
+      // One of the dimensions is folded.
+      return false;
     }
 
     const dim& outer = bufs[n]->dim(d);
-    if (inner.fold_factor() != dim::unfolded || outer.fold_factor() != dim::unfolded) {
-      // One of the dimensions is folded.
-      return false;
-    } else if (!base_inner.contains(inner) || !base_outer.contains(outer)) {
-      // There are out of bounds values.
-      return false;
-    } else if (inner.stride() * inner.extent() != outer.stride()) {
+    if (inner.stride() * inner.extent() != outer.stride()) {
       // The dimensions are not contiguous in memory.
       return false;
     }
