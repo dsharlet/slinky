@@ -360,4 +360,30 @@ BENCHMARK(BM_copy_for_each_element_fused)->Args({slice_extent, 4, 4});
 BENCHMARK(BM_copy_for_each_contiguous_slice)->Args({slice_extent, 4, 4});
 BENCHMARK(BM_copy_for_each_element_hardcoded)->Args({slice_extent, 4, 4});
 
+void BM_fill_batch_dims(benchmark::State& state) {
+  buffer<char, 8> dst;
+  allocate_buffer(dst, {slice_extent, 1, 1, 1, 1, 1, 1, 1});
+
+  char five = 5;
+
+  for (auto _ : state) {
+    fill(dst, &five);
+  }
+}
+
+BENCHMARK(BM_fill_batch_dims);
+
+void BM_for_each_element_batch_dims(benchmark::State& state) {
+  buffer<char, 8> dst;
+  allocate_buffer(dst, {slice_extent, 1, 1, 1, 1, 1, 1, 1});
+
+  for (auto _ : state) {
+    raw_buffer dst_sliced = dst;
+    dst_sliced.slice(0);
+    for_each_element([](void* x) { memset_slice(slice_extent, x); }, dst_sliced);
+  }
+}
+
+BENCHMARK(BM_for_each_element_batch_dims);
+
 }  // namespace slinky

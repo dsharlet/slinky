@@ -569,21 +569,29 @@ void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
 // `dim_sets` is an optional set of integers that indicates the sets that dimensions belong to. Dimensions are only
 // sorted within the same set, where dimension `d` is identified by the value of `dim_sets[d]`. By default, all
 // dimensions are considered to be in the same set.
+// Returns true if the sort changed the ordering of the dimensions.
 template <typename... Bufs>
-void sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+bool sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   assert(internal::same_rank(buf, bufs...));
+  bool modified = false;
+  // A bubble sort is appropriate here, because:
+  // - Typically, buffer ranks are very small.
+  // - To use std::sort or similar, we need to copy the buffer dimensions into a temporary, sort, and copy them back.
+  // - This template will be instantiated very frequently, it's worth attempting to minimize code size.
   for (std::size_t i = 0; i < buf.rank; ++i) {
     for (std::size_t j = i + 1; j < buf.rank; ++j) {
       if (j < dim_sets.size() && dim_sets[i] != dim_sets[j]) continue;
       if (buf.dim(i).stride() > buf.dim(j).stride()) {
         internal::swap_dims(i, j, buf, bufs...);
+        modified = true;
       }
     }
   }
+  return modified;
 }
 template <typename... Bufs>
-void sort_dims(raw_buffer& buf, Bufs&... bufs) {
-  sort_dims({}, buf, bufs...);
+bool sort_dims(raw_buffer& buf, Bufs&... bufs) {
+  return sort_dims({}, buf, bufs...);
 }
 
 // Fuse the dimensions of a set of buffers where the dimensions are contiguous in memory. It only fuses a dimension if
@@ -609,13 +617,19 @@ void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
 // Call both `sort_dims` and `fuse_contiguous_dims` on the buffers.
 template <typename... Bufs>
 void optimize_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
-  sort_dims(dim_sets, buf, bufs...);
+  // The order of operations here is for performance: It's a lot faster to fuse dimensions than sort them. So we fuse
+  // what we can before sorting, then if the sorting changed the order of the dimensions, attempt to fuse again.
   fuse_contiguous_dims(dim_sets, buf, bufs...);
+  if (sort_dims(dim_sets, buf, bufs...)) {
+    fuse_contiguous_dims(dim_sets, buf, bufs...);
+  }
 }
 template <typename... Bufs>
 void optimize_dims(raw_buffer& buf, Bufs&... bufs) {
-  sort_dims(buf, bufs...);
   fuse_contiguous_dims(buf, bufs...);
+  if (sort_dims(buf, bufs...)) {
+    fuse_contiguous_dims(buf, bufs...);
+  }
 }
 
 namespace internal {
