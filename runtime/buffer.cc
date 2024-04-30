@@ -384,12 +384,12 @@ index_t make_for_each_slice_dims_impl(
       }
     }
 
-    if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
+    if (d > 0 && (extent == 1 || can_fuse(bufs, bufs_size, d))) {
+      // Let this fuse with the next dimension.
+    } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
       slice_extent *= extent;
       extent = 1;
-    } else if (d > 0 && can_fuse(bufs, bufs_size, d)) {
-      // Let this dimension fuse with the next dimension.
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(buf_dim.min() / buf_dim.fold_factor() == buf_dim.max() / buf_dim.fold_factor());
