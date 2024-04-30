@@ -410,24 +410,38 @@ public:
       set_result(std::move(body));
       return;
     } else if (const block* b = body.as<block>()) {
-      std::deque<stmt> in_loop(b->stmts.begin(), b->stmts.end());
-      std::deque<stmt> before_loop;
-      while (!in_loop.empty() && !depends_on(in_loop.front(), op->sym).any()) {
-        // The first stmt in the loop does not depend on the loop. We can lift it out of the loop.
-        before_loop.push_back(std::move(in_loop.front()));
-        in_loop.pop_front();
+      // This next bit of logic implements loop invariant code motion. It is allowed to split the loop around invariant
+      // code, turning a loop into possibly multiple loops, with loop invariant code between the loops.
+      std::vector<stmt> result;
+      result.reserve(b->stmts.size());
+
+      // We build loops by adding to their body, and possibly "flushing" to an actual loop if we reach the end of where
+      // we want a loop to be.
+      std::vector<stmt> loop_body;
+      loop_body.reserve(b->stmts.size());
+      auto flush_loop = [&]() {
+        if (loop_body.empty()) return;
+        stmt body = block::make(std::move(loop_body));
+        loop_body.clear();
+        result.push_back(loop::make(op->sym, op->max_workers, bounds, step, std::move(body)));
+      };
+      for (const stmt& i : b->stmts) {
+        if (depends_on(i, op->sym).any()) {
+          // This stmt should be in the loop.
+          loop_body.push_back(i);
+        } else {
+          // This stmt should not be in the loop. If we already have some loop body, we need to make a loop now, and
+          // then put this stmt after that loop.
+          flush_loop();
+          result.push_back(i);
+        }
       }
-      // TODO: We could also try to move trailing independent stmts out of the end of the loop, and reorder independent
-      // stmts from in the middle of the loop. However, I'm not sure if this is something that can really happen in
-      // practice, we might as well wait and see if we need this.
-      assert(!in_loop.empty());  // We should have handled this above.
-      if (!before_loop.empty()) {
-        // Some of the loop did not depend on the loop, we can move it out.
-        stmt before = block::make(std::vector<stmt>(before_loop.begin(), before_loop.end()));
-        stmt in = block::make(std::vector<stmt>(in_loop.begin(), in_loop.end()));
-        set_result(mutate(block::make(
-            {before, loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(in))})));
+      if (!result.empty()) {
+        flush_loop();
+        set_result(mutate(block::make(std::move(result))));
         return;
+      } else {
+        // We didn't find anything to lift out of the loop, proceed on to other possible simplifications.
       }
     }
 

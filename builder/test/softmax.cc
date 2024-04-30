@@ -114,6 +114,7 @@ TEST_P(softmax, pipeline) {
   auto in = buffer_expr::make(ctx, "in", rank, sizeof(float));
   auto out = buffer_expr::make(ctx, "out", rank, sizeof(float));
 
+  auto softmax_in = buffer_expr::make(ctx, "softmax_in", rank, sizeof(float));
   auto max_in = buffer_expr::make(ctx, "max_in", rank - 1, sizeof(float));
   auto exp_in = buffer_expr::make(ctx, "exp_in", rank, sizeof(float));
   auto sum_exp_in = buffer_expr::make(ctx, "sum_exp_in", rank - 1, sizeof(float));
@@ -124,17 +125,24 @@ TEST_P(softmax, pipeline) {
 
   interval_expr all_c = out->dim(0).bounds;
 
-  func pass1 = func::make(max_dim0, {{in, {all_c, point(b)}}}, {{max_in, {b}}});
-  func pass2 =
-      func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}}, {{exp_in, {c, b}}, {sum_exp_in, {b}}});
-  func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}});
-  // Add a trivial consumer so we can keep the inner loop.
-  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}});
+  // Add a trivial producer so we can have an inner loop here.
+  func pass0 =
+      func::make(add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}}, call_stmt::attributes{.name = "producer"});
+  func pass1 = func::make(
+      max_dim0, {{softmax_in, {all_c, point(b)}}}, {{max_in, {b}}}, call_stmt::attributes{.name = "max_dim0"});
+  func pass2 = func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}},
+      {{exp_in, {c, b}}, {sum_exp_in, {b}}}, call_stmt::attributes{.name = "exp_in"});
+  func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}},
+      call_stmt::attributes{.name = "normalize"});
+  // Add a trivial consumer so we can have an inner loop here too.
+  func pass4 = func::make(
+      add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
 
   std::vector<func::loop_info> loops;
   if (split_c > 0) loops.push_back({c, split_c});
   if (split_b > 0) loops.push_back({b, split_b});
-  pass4.loops(std::move(loops));
+  pass0.loops(loops);
+  pass4.loops(loops);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -156,8 +164,11 @@ TEST_P(softmax, pipeline) {
 
   // Compare against the fused pipeline.
   buffer<float, rank> ref_buf({D, B});
+  buffer<float, rank> softmax_in_buf({D, B});
   ref_buf.allocate();
-  fused_softmax(in_buf.cast<const float>(), ref_buf.cast<float>());
+  softmax_in_buf.allocate();
+  add_1(in_buf.cast<const float>(), softmax_in_buf.cast<float>());
+  fused_softmax(softmax_in_buf.cast<const float>(), ref_buf.cast<float>());
   add_1(ref_buf.cast<const float>(), ref_buf.cast<float>());
 
   for (index_t b = 0; b < B; ++b) {
