@@ -431,14 +431,15 @@ TEST_P(stencil, pipeline) {
   }
 }
 
-class slide_2d : public testing::TestWithParam<std::tuple<int, int>> {};
+class slide_2d : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(
-    split_split_mode, slide_2d, testing::Combine(loop_modes, loop_modes), test_params_to_string<slide_2d::ParamType>);
+    split_split_mode, slide_2d, testing::Combine(loop_modes, loop_modes, testing::Values(false, true)), test_params_to_string<slide_2d::ParamType>);
 
 TEST_P(slide_2d, pipeline) {
   int max_workers_x = std::get<0>(GetParam());
   int max_workers_y = std::get<1>(GetParam());
+  bool constrain_min = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -447,6 +448,11 @@ TEST_P(slide_2d, pipeline) {
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+
+  if (constrain_min) {
+    out->dim(0).bounds.min = 0;
+    out->dim(1).bounds.min = 0;
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");

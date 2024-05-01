@@ -261,17 +261,19 @@ public:
   interval_expr mutate(const interval_expr& i) { return {mutate(i.min), mutate(i.max)}; }
 };
 
-void get_output_bounds(const std::vector<func::output>& outputs, bounds_map& output_bounds) {
+bounds_map get_output_bounds(const std::vector<func::output>& outputs) {
+  bounds_map output_bounds;
   for (const func::output& o : outputs) {
-    for (std::size_t d = 0; d < o.dims.size(); ++d) {
+    for (index_t d = 0; d < static_cast<index_t>(o.dims.size()); ++d) {
       std::optional<interval_expr>& output_bounds_d = output_bounds[o.dims[d]];
       if (!output_bounds_d) {
-        output_bounds_d = o.buffer->dim(d).bounds;
+        output_bounds_d = buffer_bounds(o.sym(), d);
       } else {
-        *output_bounds_d |= o.buffer->dim(d).bounds;
+        *output_bounds_d |= buffer_bounds(o.sym(), d);
       }
     }
   }
+  return output_bounds;
 }
 
 box_expr compute_input_bounds(
@@ -642,8 +644,7 @@ class pipeline_builder {
 
   void compute_allocation_bounds() {
     for (const func* f : order_) {
-      bounds_map output_bounds;
-      get_output_bounds(f->outputs(), output_bounds);
+      bounds_map output_bounds = get_output_bounds(f->outputs());
 
       for (const auto& i : f->inputs()) {
         box_expr crop = compute_input_bounds(f, i, output_bounds, sanitizer_);
