@@ -386,6 +386,7 @@ public:
   using raw_buffer::dim;
   using raw_buffer::elem_size;
   using raw_buffer::flat_offset_bytes;
+  using raw_buffer::elem_count;
   using raw_buffer::rank;
 
   buffer() {
