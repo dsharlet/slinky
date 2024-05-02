@@ -605,7 +605,7 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
-          bounds |= o.buffer->dim(d).bounds;
+          bounds |= buffer_bounds(o.sym(), d);
         }
       }
     }
