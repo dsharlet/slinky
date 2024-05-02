@@ -486,11 +486,11 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
-  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
   if (od.extent() != 1 && od.fold_factor() != dim::unfolded) {
     assert(id.fold_factor() == dim::unfolded);
     id.set_fold_factor(od.fold_factor() * id.extent());
   }
+  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
   if (type == fuse_type::keep) {
     od.set_min_extent(0, 1);
   } else if (type == fuse_type::remove) {
