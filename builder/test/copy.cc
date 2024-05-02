@@ -12,11 +12,13 @@ namespace slinky {
 class test_context : public eval_context {
 public:
   int copy_calls = 0;
+  int copy_elements = 0;
   int pad_calls = 0;
 
   test_context() {
     copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
       ++copy_calls;
+      copy_elements += dst.elem_count();
       slinky::copy(src, dst, padding);
     };
     pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
@@ -270,6 +272,7 @@ TEST(flip_x, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, W);
+  ASSERT_EQ(eval_ctx.copy_elements, W);
 
   for (int x = 0; x < W; ++x) {
     ASSERT_EQ(out_buf(-x), in_buf(x));
@@ -317,6 +320,7 @@ TEST_P(flip_y, copy) {
   p.evaluate(inputs, outputs, eval_ctx);
   // TODO: This could be expressed with a single copy with a negative stride in y.
   ASSERT_EQ(eval_ctx.copy_calls, H);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -366,6 +370,7 @@ TEST_P(upsample_y, copy) {
   // This copy should be implemented with a loop over y, and a call to copy at each y.
   // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
   ASSERT_EQ(eval_ctx.copy_calls, H);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -552,6 +557,7 @@ TEST(concatenate, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2) * D);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H1 + H2; ++y) {
@@ -596,6 +602,7 @@ TEST(split, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2));
 
   for (int y = 0; y < H1; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -642,6 +649,7 @@ TEST(stack, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * 2);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -700,6 +708,7 @@ TEST(reshape, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 
   // This should have been a "flat" copy.
   for (int i = 0; i < W * H * D; ++i) {
@@ -759,6 +768,7 @@ TEST(batch_reshape, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
 
   // This should have been a "flat" copy.
   for (int n = 0; n < N; ++n) {

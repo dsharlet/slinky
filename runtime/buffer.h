@@ -264,6 +264,8 @@ public:
 
   std::size_t size_bytes() const;
 
+  std::size_t elem_count() const;
+
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `free`.
   void* allocate();
