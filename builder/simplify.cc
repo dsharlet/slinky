@@ -351,7 +351,7 @@ public:
         // Prune dead lets
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
-      } else if ((deps.ref_count == 1 && !deps.used_in_loop) || is_trivial_let_value(it->second)) {
+      } else if (is_trivial_let_value(it->second)) {
         // Inline single-ref lets outside of a loop, along with lets that are trivial
         body = mutate(substitute(body, it->first, it->second), &body_bounds);
         for (auto inner = lets.rbegin(); inner != it; ++inner) {

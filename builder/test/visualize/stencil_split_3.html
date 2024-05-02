@@ -278,16 +278,19 @@ function pipeline(__in, out) {
       {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 6), fold_factor:6}
     ]);
     { let intm_uncropped = clone_buffer(intm);
-      for(let y = (buffer_min(out, 1) + -2); y <= buffer_max(out, 1); y += 3) {
-        { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(min((y + 2), buffer_max(out, 1)) + 1)});
-          consume(__in);
-          produce(intm);
-          intm = __intm;
-        }
-        { let __out = crop_dim(out, 1, {min:y, max:(y + 2)});
-          consume(intm_uncropped);
-          produce(out);
-          out = __out;
+      {
+        let y_min_orig = buffer_min(out, 1);
+        for(let y = (y_min_orig + -2); y <= buffer_max(out, 1); y += 3) {
+          { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(min((y + 2), buffer_max(out, 1)) + 1)});
+            consume(__in);
+            produce(intm);
+            intm = __intm;
+          }
+          { let __out = crop_dim(out, 1, {min:y, max:(y + 2)});
+            consume(intm_uncropped);
+            produce(out);
+            out = __out;
+          }
         }
       }
     }

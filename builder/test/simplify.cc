@@ -139,12 +139,8 @@ TEST(simplify, basic) {
 TEST(simplify, let) {
   // lets that should be removed
   test_simplify(let::make(x, y, z), z);                                // Dead let
-  test_simplify(let::make(x, y * 2, x), y * 2);                        // Single use, substitute
-  test_simplify(let::make(x, y * w, x), y * w);                        // Single use, substitute
   test_simplify(let::make(x, y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
   test_simplify(let::make(x, 10, x / x), 1);                           // Trivial value, substitute
-  test_simplify(let::make(x, buffer_max(y, 0), x), buffer_max(y, 0));  // buffer_max, substitute
-  test_simplify(let::make(x, buffer_min(y, 0), x), buffer_min(y, 0));  // buffer_min, substitute
 
   test_simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))),
       loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y + z)));  // Trivial value, substitute
@@ -162,8 +158,8 @@ TEST(simplify, let) {
 
   // Compound lets with dependencies between let values.
   test_simplify(let::make({{x, y}, {z, x}}, z), y);
-  test_simplify(let::make({{x, y}, {z, x * 2}}, z), y * 2);
-  test_simplify(let::make({{x, y * 2}, {z, x}}, z), y * 2);
+  test_simplify(let::make({{x, y}, {z, x * 2}}, z), let::make(z, y * 2, z));
+  test_simplify(let::make({{x, y * 2}, {z, x}}, z), let::make(x, y * 2, x));
   test_simplify(let::make({{x, y * 2}, {z, y}}, z), y);
   test_simplify(let::make({{x, y}, {z, (x + 1) / x}}, (z + 1) / z), let::make({{z, (y + 1) / y}}, (z + 1) / z));
 }

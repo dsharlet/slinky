@@ -25,7 +25,6 @@ bool operator==(const depends_on_result& l, const depends_on_result& r) {
   if (l.buffer_meta_read != r.buffer_meta_read) return false;
   if (l.buffer_meta_mutated != r.buffer_meta_mutated) return false;
   if (l.ref_count != r.ref_count) return false;
-  if (l.used_in_loop != r.used_in_loop) return false;
   return true;
 }
 

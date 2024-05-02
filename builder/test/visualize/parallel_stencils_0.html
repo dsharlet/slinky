@@ -302,32 +302,35 @@ function pipeline(in1, in2, out) {
                   {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 6), fold_factor:3}
                 ]);
                 { let intm1_uncropped = clone_buffer(intm1);
-                  for(let y = (buffer_min(out, 1) + -6); y <= buffer_max(out, 1); y += 1) {
-                    { let __intm1 = crop_dim(intm1, 1, {min:(y + 1), max:(y + 1)});
-                      consume(in1);
-                      produce(intm1);
-                      intm1 = __intm1;
-                    }
-                    { let __intm3 = crop_dim(intm3, 1, {min:y, max:y});
-                      consume(intm1_uncropped);
-                      produce(intm3);
-                      intm3 = __intm3;
-                    }
-                    { let __intm2 = crop_dim(intm2, 1, {min:(y + 2), max:(y + 2)});
-                      consume(in2);
-                      produce(intm2);
-                      intm2 = __intm2;
-                    }
-                    { let __intm4 = crop_dim(intm4, 1, {min:y, max:y});
-                      consume(intm2_uncropped);
-                      produce(intm4);
-                      intm4 = __intm4;
-                    }
-                    { let __out = crop_dim(out, 1, {min:y, max:y});
-                      consume(intm3_uncropped);
-                      consume(intm4_uncropped);
-                      produce(out);
-                      out = __out;
+                  {
+                    let y_min_orig = buffer_min(out, 1);
+                    for(let y = (y_min_orig + -6); y <= buffer_max(out, 1); y += 1) {
+                      { let __intm1 = crop_dim(intm1, 1, {min:(y + 1), max:(y + 1)});
+                        consume(in1);
+                        produce(intm1);
+                        intm1 = __intm1;
+                      }
+                      { let __intm3 = crop_dim(intm3, 1, {min:y, max:y});
+                        consume(intm1_uncropped);
+                        produce(intm3);
+                        intm3 = __intm3;
+                      }
+                      { let __intm2 = crop_dim(intm2, 1, {min:(y + 2), max:(y + 2)});
+                        consume(in2);
+                        produce(intm2);
+                        intm2 = __intm2;
+                      }
+                      { let __intm4 = crop_dim(intm4, 1, {min:y, max:y});
+                        consume(intm2_uncropped);
+                        produce(intm4);
+                        intm4 = __intm4;
+                      }
+                      { let __out = crop_dim(out, 1, {min:y, max:y});
+                        consume(intm3_uncropped);
+                        consume(intm4_uncropped);
+                        produce(out);
+                        out = __out;
+                      }
                     }
                   }
                 }

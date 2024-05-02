@@ -278,21 +278,24 @@ function pipeline(__in, out) {
           {bounds:{min:max((buffer_min(out, 0) + -1), buffer_min(__in, 0)), max:min((buffer_max(out, 0) + 1), buffer_max(__in, 0))}, stride:2, fold_factor:9223372036854775807},
           {bounds:{min:max((buffer_min(out, 1) + -1), buffer_min(__in, 1)), max:min((buffer_max(out, 1) + 1), buffer_max(__in, 1))}, stride:(((min((buffer_max(out, 0) + 1), buffer_max(__in, 0)) - max((buffer_min(out, 0) + -1), buffer_min(__in, 0))) * 2) + 2), fold_factor:9223372036854775807}
         ]);
-        for(let y = (buffer_min(out, 1) + -2); y <= buffer_max(out, 1); y += 1) {
-          { let __intm = crop_dim(intm, 1, {min:(max(y, (max(y, buffer_min(out, 1)) + -2)) + 1), max:(y + 1)});
-            consume(__in);
-            produce(intm);
-            intm = __intm;
-          }
-          { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)});
-            consume(intm);
-            produce(padded_intm);
-            padded_intm = __padded_intm;
-          }
-          { let __out = crop_dim(out, 1, {min:y, max:y});
-            consume(padded_intm_uncropped);
-            produce(out);
-            out = __out;
+        {
+          let y_min_orig = buffer_min(out, 1);
+          for(let y = (y_min_orig + -2); y <= buffer_max(out, 1); y += 1) {
+            { let __intm = crop_dim(intm, 1, {min:(max(y, (max(y, buffer_min(out, 1)) + -2)) + 1), max:(y + 1)});
+              consume(__in);
+              produce(intm);
+              intm = __intm;
+            }
+            { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)});
+              consume(intm);
+              produce(padded_intm);
+              padded_intm = __padded_intm;
+            }
+            { let __out = crop_dim(out, 1, {min:y, max:y});
+              consume(padded_intm_uncropped);
+              produce(out);
+              out = __out;
+            }
           }
         }
         free(intm);
