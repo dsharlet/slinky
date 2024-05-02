@@ -865,7 +865,7 @@ TEST(fuse_contiguous_dims, copy) {
     for (std::size_t d = 0; d < src.rank; ++d) {
       src.dim(d).set_min_extent(0, 5);
     }
-    randomize_strides_and_padding(src, {-1, 1, true, false});
+    randomize_strides_and_padding(src, {-1, 1, true, true});
     init_random(src);
     buffer<void, max_rank> src_opt = src;
 
