@@ -70,20 +70,22 @@ public:
 
   void translate(index_t offset) { min_ += offset; }
 
-  bool contains(index_t a, index_t b) const { return stride() == 0 || (min() <= a && b <= max()); }
+  // Returns true if the interval [a, b] is in bounds of this dimension.
+  bool contains(index_t a, index_t b) const {
+    // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
+    // invalid memory. It's a bit messy to allow this, but it feels really overzealous to disallow it when attempting to
+    // implement broadcasting in callbacks.
+    return stride() == 0 || (min() <= a && b <= max());
+  }
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
-    // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
-    // invalid memory. It's a bit messy to allow this, but this assert feels really overzealous when attempting to
-    // implement broadcasting in callbacks.
-    assert(i >= min_ || stride_ == 0);
-    assert(i <= max() || stride_ == 0);
-    if (fold_factor_ == unfolded) {
-      return (i - min_) * stride_;
+    assert(contains(i));
+    if (fold_factor() == unfolded) {
+      return (i - min()) * stride();
     } else {
-      return euclidean_mod(i - min_, fold_factor_) * stride_;
+      return euclidean_mod(i - min(), fold_factor()) * stride();
     }
   }
 };
