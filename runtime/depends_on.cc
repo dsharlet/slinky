@@ -72,18 +72,7 @@ public:
     op->bounds.max.accept(this);
     if (op->step.defined()) op->step.accept(this);
 
-    std::vector<int> old_ref_count(var_deps.size());
-    for (std::size_t i = 0; i < var_deps.size(); ++i) {
-      old_ref_count[i] = var_deps[i].second.ref_count;
-    }
-
     visit_sym_body(op);
-
-    for (std::size_t i = 0; i < var_deps.size(); ++i) {
-      if (var_deps[i].second.ref_count > old_ref_count[i]) {
-        var_deps[i].second.used_in_loop = true;
-      }
-    }
   }
 
   void visit(const call_stmt* op) override {

@@ -68,8 +68,9 @@ public:
 
   void translate(index_t offset) { min_ += offset; }
 
-  bool contains(index_t x) const { return stride() == 0 || (min() <= x && x <= max()); }
-  bool contains(const dim& other) const { return stride() == 0 || (min() <= other.min() && other.max() <= max()); }
+  bool contains(index_t a, index_t b) const { return stride() == 0 || (min() <= a && b <= max()); }
+  bool contains(index_t x) const { return contains(x, x); }
+  bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read

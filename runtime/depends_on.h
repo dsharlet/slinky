@@ -25,9 +25,6 @@ struct depends_on_result {
   // How many references there are.
   int ref_count = 0;
 
-  // True if any reference is in a loop.
-  bool used_in_loop = false;
-
   bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst; }
   bool buffer_meta() const { return buffer_meta_read || buffer_meta_mutated; }
   bool buffer() const { return buffer_data() || buffer_meta(); }
