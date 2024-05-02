@@ -7,8 +7,9 @@
 
 namespace slinky {
 
-// Signed integer division in C/C++ is terrible. These implementations
-// of Euclidean division and mod are taken from:
+// Signed integer division in C/C++ is terrible because it's not Euclidean. This is bad in general, but especially
+// because the remainder is not in [0, |divisor|) for negative dividends. These implementations of Euclidean division
+// and mod are taken from:
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408
 template <typename T>
 T euclidean_div(T a, T b) {
