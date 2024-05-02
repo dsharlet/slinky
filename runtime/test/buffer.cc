@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -20,8 +20,7 @@ template <typename Rng>
 int random(Rng& rng, int min, int max) { return rng() % (max - min + 1) + min; }
 
 template <typename T, std::size_t N, typename Rng>
-void init_random(Rng& rng, buffer<T, N>& buf) {
-  buf.allocate();
+void fill_random(Rng& rng, buffer<T, N>& buf) {
   std::size_t flat_size = buf.size_bytes();
   std::size_t i = 0;
   for (; i + 3 < flat_size; i += 4) {
@@ -30,6 +29,12 @@ void init_random(Rng& rng, buffer<T, N>& buf) {
   for (; i < flat_size; ++i) {
     reinterpret_cast<char*>(buf.base())[i] = rng();
   }
+}
+
+template <typename T, std::size_t N, typename Rng>
+void init_random(Rng& rng, buffer<T, N>& buf) {
+  buf.allocate();
+  fill_random(rng, buf);
 }
 
 template <typename F>
@@ -766,6 +771,15 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
   }
 }
 
+bool is_padded_copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+  assert(src.elem_size == dst.elem_size);
+  int errors = 0;
+  for_each_element([&, elem_size = dst.elem_size](const void* dst,
+                       const void* src) { errors += memcmp(dst, src ? src : padding, elem_size) != 0; },
+      dst, src);
+  return errors == 0;
+}
+
 TEST(buffer, copy) {
   gtest_seeded_mt19937 rng;
 
@@ -789,26 +803,12 @@ TEST(buffer, copy) {
     dst.allocate();
 
     slinky::copy(src, dst, padding.data());
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
-      }
-    });
+    ASSERT_TRUE(is_padded_copy(src, dst, padding.data()));
 
     std::vector<char> new_padding(elem_size);
     std::fill(new_padding.begin(), new_padding.end(), 3);
     pad(src.dims, dst, new_padding.data());
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        // The src should not have been modified.
-        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        // But we should have new padding.
-        ASSERT_EQ(memcmp(dst.address_at(i), new_padding.data(), elem_size), 0);
-      }
-    });
+    ASSERT_TRUE(is_padded_copy(src, dst, new_padding.data()));
   }
 }
 
