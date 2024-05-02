@@ -59,13 +59,6 @@ void for_each_index(const raw_buffer& buf, const F& f) {
   for_each_index(span<const dim>{buf.dims, buf.rank}, f);
 }
 
-template <typename T, std::size_t N, typename Value>
-bool is_filled_buffer(const buffer<T, N>& buf, Value value) {
-  int errors = 0;
-  for_each_element([value, &errors](const T* x) { errors += *x != value; }, buf);
-  return errors == 0;
-}
-
 struct randomize_options {
   int padding_min = 0;
   int padding_max = 3;
@@ -578,7 +571,7 @@ TEST(buffer, for_each_element) {
   }
   ASSERT_EQ(elements, expected_elements);
 
-  ASSERT_TRUE(is_filled_buffer(buf, 7));
+  ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
 }
 
 TEST(buffer, for_each_element_empty) {
@@ -607,17 +600,13 @@ TEST(buffer, for_each_slice) {
       elements += elements_slice;
     });
     int expected_slices = 1;
-    int expected_elements = 1;
-    for (std::size_t d = 0; d < buf.rank; ++d) {
-      if (d >= slice_rank) {
-        expected_slices *= buf.dim(d).extent();
-      }
-      expected_elements *= buf.dim(d).extent();
+    for (std::size_t d = slice_rank; d < buf.rank; ++d) {
+      expected_slices *= buf.dim(d).extent();
     }
     ASSERT_EQ(slices, expected_slices);
-    ASSERT_EQ(elements, expected_elements);
+    ASSERT_EQ(elements, buf.elem_count());
 
-    ASSERT_TRUE(is_filled_buffer(buf, 7));
+    ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
   }
 }
 
