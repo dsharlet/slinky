@@ -2,10 +2,10 @@
 
 #include <numeric>
 
+#include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
-#include "builder/test/bazel_util.h"
 #include "builder/test/context.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"

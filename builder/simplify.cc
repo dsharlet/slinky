@@ -17,7 +17,6 @@
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/print.h"
-#include "runtime/util.h"
 
 namespace slinky {
 

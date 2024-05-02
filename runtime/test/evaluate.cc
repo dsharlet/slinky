@@ -4,7 +4,7 @@
 
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/thread_pool.h"
+#include "base/thread_pool.h"
 
 namespace slinky {
 

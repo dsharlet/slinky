@@ -1,8 +1,8 @@
+#include "base/chrome_trace.h"
+
 #include <chrono>
 #include <cstdint>
 #include <thread>
-
-#include "runtime/chrome_trace.h"
 
 namespace slinky {
 

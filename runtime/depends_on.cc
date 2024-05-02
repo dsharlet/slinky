@@ -3,7 +3,6 @@
 #include <cassert>
 
 #include "runtime/expr.h"
-#include "runtime/util.h"
 
 namespace slinky {
 

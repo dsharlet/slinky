@@ -14,7 +14,6 @@
 #include "runtime/buffer.h"
 #include "runtime/expr.h"
 #include "runtime/print.h"
-#include "runtime/util.h"
 
 // This visualizer works by printing a pipeline's body as javascript, where the calls and copies are implemented by
 // calling a function `produce`. This function is implemented to record the buffers that are produced, and uses those

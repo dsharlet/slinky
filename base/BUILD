@@ -1,0 +1,29 @@
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "base",
+    hdrs = [
+        "arithmetic.h",
+        "ref_count.h",
+        "span.h",
+        "util.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "thread_pool",
+    srcs = ["thread_pool.cc"],
+    hdrs = ["thread_pool.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "chrome_trace",
+    srcs = ["chrome_trace.cc"],
+    hdrs = ["chrome_trace.h"],
+    visibility = ["//visibility:public"],
+)

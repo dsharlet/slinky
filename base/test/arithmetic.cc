@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 
-#include "runtime/util.h"
+#include "base/arithmetic.h"
 
 namespace slinky {
 
