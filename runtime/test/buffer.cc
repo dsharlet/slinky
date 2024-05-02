@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -22,8 +22,7 @@ bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim))
 int random(int min, int max) { return rng()() % (max - min + 1) + min; }
 
 template <typename T, std::size_t N>
-void init_random(buffer<T, N>& buf) {
-  buf.allocate();
+void fill_random(buffer<T, N>& buf) {
   std::size_t flat_size = buf.size_bytes();
   std::size_t i = 0;
   for (; i + 3 < flat_size; i += 4) {
@@ -32,6 +31,12 @@ void init_random(buffer<T, N>& buf) {
   for (; i < flat_size; ++i) {
     reinterpret_cast<char*>(buf.base())[i] = rng()();
   }
+}
+
+template <typename T, std::size_t N>
+void init_random(buffer<T, N>& buf) {
+  buf.allocate();
+  fill_random(buf);
 }
 
 template <typename F>
@@ -706,6 +711,15 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
   }
 }
 
+bool is_padded_copy(const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+  assert(src.elem_size == dst.elem_size);
+  int errors = 0;
+  for_each_element([&, elem_size = dst.elem_size](const void* dst,
+                       const void* src) { errors += memcmp(dst, src ? src : padding, elem_size) != 0; },
+      dst, src);
+  return errors == 0;
+}
+
 TEST(buffer, copy) {
   constexpr int max_rank = 4;
   for (int cases = 0; cases < 10000; ++cases) {
@@ -730,49 +744,12 @@ TEST(buffer, copy) {
     dst.allocate();
 
     slinky::copy(src, dst, padding.data());
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
-      }
-    });
+    ASSERT_TRUE(is_padded_copy(src, dst, padding.data()));
 
-    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent * elem_size; ++i) {
-        reinterpret_cast<char*>(base)[i] += 1;
-      }
-    });
-
+    // Change the src, copy again, without padding. The padding should be unaffected.
+    fill_random(src);
     slinky::copy(src, dst, nullptr);
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        // The copied area should have been copied.
-        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        // The padding should be unchanged.
-        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
-      }
-    });
-
-    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent * elem_size; ++i) {
-        reinterpret_cast<char*>(base)[i] += -1;
-      }
-    });
-
-    std::vector<char> new_padding(elem_size);
-    std::fill(new_padding.begin(), new_padding.end(), 3);
-    pad(src.dims, dst, new_padding.data());
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        // The src should not have been copied.
-        ASSERT_NE(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        // But we should have new padding.
-        ASSERT_EQ(memcmp(dst.address_at(i), new_padding.data(), elem_size), 0);
-      }
-    });
+    ASSERT_TRUE(is_padded_copy(src, dst, padding.data()));
   }
 }
 
