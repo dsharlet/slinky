@@ -20,7 +20,6 @@
 #include "runtime/expr.h"
 #include "runtime/print.h"
 #include "runtime/stmt.h"
-#include "runtime/util.h"
 
 namespace slinky {
 

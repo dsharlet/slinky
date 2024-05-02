@@ -8,15 +8,15 @@ cc_library(
     testonly = True,
     srcs = ["context.cc"],
     hdrs = [
-        "bazel_util.h",
         "context.h",
         "funcs.h",
         "util.h",
     ],
     deps = [
         "//runtime",
-        "//runtime:chrome_trace",
-        "//runtime:thread_pool",
+        "//base:chrome_trace",
+        "//base:thread_pool",
+        "//base/test:util",
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest",
     ],
@@ -31,7 +31,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -42,7 +42,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -53,7 +53,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -69,7 +69,7 @@ cc_test(
         "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -84,7 +84,7 @@ cc_test(
         "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -99,7 +99,7 @@ cc_test(
         "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -111,7 +111,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -123,7 +123,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -135,7 +135,7 @@ cc_test(
         "//builder:replica_pipeline",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -146,7 +146,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -157,5 +157,5 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )

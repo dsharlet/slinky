@@ -11,8 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/util.h"
-
 namespace slinky {
 
 var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(name)) {}

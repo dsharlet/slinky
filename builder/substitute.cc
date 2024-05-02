@@ -10,7 +10,6 @@
 #include "builder/node_mutator.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
-#include "runtime/util.h"
 
 namespace slinky {
 
