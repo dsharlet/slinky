@@ -28,6 +28,14 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
 
 std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, dims); }
 
+std::ptrdiff_t raw_buffer::elem_count() const {
+  std::ptrdiff_t result = 1;
+  for (std::size_t d = 0; d < rank; ++d) {
+    result *= dim(d).extent();
+  }
+  return result;
+}
+
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims) {
   std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank;
   if (dims) {

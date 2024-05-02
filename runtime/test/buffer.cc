@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -7,6 +8,7 @@
 #include <random>
 
 #include "runtime/buffer.h"
+#include "runtime/test/buffer.h"
 
 std::mt19937& rng() {
   static std::mt19937 r{static_cast<uint32_t>(time(nullptr))};
@@ -267,11 +269,11 @@ TEST(buffer, for_each_contiguous_slice) {
   buf.allocate();
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-    memset(slice, 7, slice_extent);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, 1);
-  ASSERT_TRUE(is_filled_buffer(buf, 7));
+  ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
 }
 
 TEST(buffer, for_each_contiguous_slice_non_zero_min) {
@@ -280,11 +282,11 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
   buf.translate(1, 2, 3);
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-    memset(slice, 7, slice_extent);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, 1);
-  ASSERT_TRUE(is_filled_buffer(buf, 7));
+  ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
 }
 
 TEST(buffer, for_each_contiguous_folded) {
@@ -295,11 +297,11 @@ TEST(buffer, for_each_contiguous_folded) {
     buf.dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
     for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-      memset(slice, 7, slice_extent);
+      std::fill_n(slice, slice_extent, 7);
       slices++;
     });
     ASSERT_EQ(slices, crop_extent * 30);
-    ASSERT_TRUE(is_filled_buffer(buf, 7));
+    ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
   }
 }
 
@@ -308,8 +310,8 @@ TEST(buffer, for_each_contiguous_slice_padded) {
     buffer<char, 3> buf({10, 20, 30});
     buf.allocate();
     buf.dim(padded_dim).set_bounds(0, 8);
-    for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { memset(slice, 7, slice_extent); });
-    ASSERT_TRUE(is_filled_buffer(buf, 7));
+    for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { std::fill_n(slice, slice_extent, 7); });
+    ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
   }
 }
 
@@ -319,10 +321,12 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
   std::swap(buf.dim(0), buf.dim(1));
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, int* slice) {
-    ASSERT_EQ(slice_extent, 10);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, buf.dim(0).extent() * buf.dim(2).extent());
+
+  ASSERT_THAT(flatten(buf), testing::Contains(7).Times(buf.elem_count()));
 }
 
 template <typename T>
@@ -336,7 +340,7 @@ void test_for_each_contiguous_slice_fill() {
 
   for_each_contiguous_slice(dst, [&](index_t slice_extent, T* dst) { std::fill_n(dst, slice_extent, 7); });
 
-  ASSERT_TRUE(is_filled_buffer(dst, 7));
+  ASSERT_THAT(flatten(dst), testing::Contains(7).Times(dst.elem_count()));
 }
 
 TEST(buffer, for_each_contiguous_slice_fill) {
@@ -465,15 +469,15 @@ TEST(buffer, for_each_contiguous_slice_add) {
 
 TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
   // TODO: if/when buffer<> gets a move ctor, do this in a vector<>
-  buffer<char, 3> buf1({10, 20, 30});
-  buffer<char, 3> buf2({10, 20, 30});
-  buffer<char, 3> buf3({10, 20, 30});
-  buffer<char, 3> buf4({10, 20, 30});
-  buffer<char, 3> buf5({10, 20, 30});
-  buffer<char, 3> buf6({10, 20, 30});
-  buffer<char, 3> buf7({10, 20, 30});
-  buffer<char, 3> buf8({10, 20, 30});
-  buffer<char, 3> buf9({10, 20, 30});
+  buffer<char, 3> buf1({3, 4, 5});
+  buffer<char, 3> buf2({3, 4, 5});
+  buffer<char, 3> buf3({3, 4, 5});
+  buffer<char, 3> buf4({3, 4, 5});
+  buffer<char, 3> buf5({3, 4, 5});
+  buffer<char, 3> buf6({3, 4, 5});
+  buffer<char, 3> buf7({3, 4, 5});
+  buffer<char, 3> buf8({3, 4, 5});
+  buffer<char, 3> buf9({3, 4, 5});
   buf1.allocate();
   buf2.allocate();
   buf3.allocate();
@@ -488,29 +492,29 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
       buf1,
       [&](index_t slice_extent, char* slice1, char* slice2, char* slice3, char* slice4, char* slice5, char* slice6,
           char* slice7, char* slice8, char* slice9) {
-        memset(slice1, 1, slice_extent);
-        memset(slice2, 2, slice_extent);
-        memset(slice3, 3, slice_extent);
-        memset(slice4, 4, slice_extent);
-        memset(slice5, 5, slice_extent);
-        memset(slice6, 6, slice_extent);
-        memset(slice7, 7, slice_extent);
-        memset(slice8, 8, slice_extent);
-        memset(slice9, 9, slice_extent);
+        std::fill_n(slice1, slice_extent, 1);
+        std::fill_n(slice2, slice_extent, 2);
+        std::fill_n(slice3, slice_extent, 3);
+        std::fill_n(slice4, slice_extent, 4);
+        std::fill_n(slice5, slice_extent, 5);
+        std::fill_n(slice6, slice_extent, 6);
+        std::fill_n(slice7, slice_extent, 7);
+        std::fill_n(slice8, slice_extent, 8);
+        std::fill_n(slice9, slice_extent, 9);
         slices++;
       },
       buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);
   // These should fuse into a single slice
   ASSERT_EQ(slices, 1);
-  ASSERT_TRUE(is_filled_buffer(buf1, 1));
-  ASSERT_TRUE(is_filled_buffer(buf2, 2));
-  ASSERT_TRUE(is_filled_buffer(buf3, 3));
-  ASSERT_TRUE(is_filled_buffer(buf4, 4));
-  ASSERT_TRUE(is_filled_buffer(buf5, 5));
-  ASSERT_TRUE(is_filled_buffer(buf6, 6));
-  ASSERT_TRUE(is_filled_buffer(buf7, 7));
-  ASSERT_TRUE(is_filled_buffer(buf8, 8));
-  ASSERT_TRUE(is_filled_buffer(buf9, 9));
+  ASSERT_THAT(flatten(buf1), testing::Contains(1).Times(buf1.elem_count()));
+  ASSERT_THAT(flatten(buf2), testing::Contains(2).Times(buf2.elem_count()));
+  ASSERT_THAT(flatten(buf3), testing::Contains(3).Times(buf3.elem_count()));
+  ASSERT_THAT(flatten(buf4), testing::Contains(4).Times(buf4.elem_count()));
+  ASSERT_THAT(flatten(buf5), testing::Contains(5).Times(buf5.elem_count()));
+  ASSERT_THAT(flatten(buf6), testing::Contains(6).Times(buf6.elem_count()));
+  ASSERT_THAT(flatten(buf7), testing::Contains(7).Times(buf7.elem_count()));
+  ASSERT_THAT(flatten(buf8), testing::Contains(8).Times(buf8.elem_count()));
+  ASSERT_THAT(flatten(buf9), testing::Contains(9).Times(buf9.elem_count()));
 }
 
 TEST(buffer, for_each_tile_1x1) {

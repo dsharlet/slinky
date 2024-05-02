@@ -15,7 +15,10 @@ cc_test(
 
 cc_test(
     name = "buffer",
-    srcs = ["buffer.cc"],
+    srcs = [
+        "buffer.cc",
+        "buffer.h"
+    ],
     deps = [
         "//runtime",
         "@googletest//:gtest_main",

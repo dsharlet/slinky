@@ -264,6 +264,8 @@ public:
 
   std::size_t size_bytes() const;
 
+  std::ptrdiff_t elem_count() const;
+
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `free`.
   void* allocate();
@@ -340,6 +342,7 @@ public:
   using raw_buffer::dim;
   using raw_buffer::elem_size;
   using raw_buffer::flat_offset_bytes;
+  using raw_buffer::elem_count;
   using raw_buffer::rank;
 
   buffer() {
