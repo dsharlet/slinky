@@ -347,11 +347,9 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
     } else if (dep_count == 1) {
       expr offset;
       if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
-        interval_expr dst_bounds = buffer_bounds(op->dst, d);
-        interval_expr src_bounds = buffer_bounds(op->src, src_d) - offset;
-        src_dims.push_back(
-            {dst_bounds & src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
-        src_x[src_d] = max(buffer_min(op->dst, d) + offset, buffer_min(op->src, src_d));
+        interval_expr src_bounds = (buffer_bounds(op->src, src_d) - offset) & buffer_bounds(op->dst, d);
+        src_dims.push_back({src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
+        src_x[src_d] = src_bounds.min + offset;
         handled = true;
       }
     }
