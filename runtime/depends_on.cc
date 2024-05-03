@@ -78,7 +78,6 @@ public:
     for (var i : op->inputs) {
       update_deps(i, [](depends_on_result& deps) {
         deps.buffer_input = true;
-        deps.buffer_meta_read = true;
       });
     }
     for (var i : op->outputs) {
