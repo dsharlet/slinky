@@ -376,12 +376,28 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
+  // if they came from outside the body).
+  static void clear_shadowed_bounds(var sym, interval_expr& bounds) {
+    if (depends_on(bounds.min, sym).buffer_meta_read) bounds.min = expr();
+    if (depends_on(bounds.max, sym).buffer_meta_read) bounds.max = expr();
+  }
+  static void clear_shadowed_bounds(var sym, box_expr& bounds) {
+    for (interval_expr& i : bounds) {
+      clear_shadowed_bounds(sym, i);
+    }
+  }
+
   stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
+    if (bounds) {
+      clear_shadowed_bounds(buf, *bounds);
+    }
     auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
     return mutate(body);
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
+    clear_shadowed_bounds(v, bounds);
     auto set_bounds = set_value_in_scope(expr_bounds, v, std::move(bounds));
     return mutate(body);
   }
@@ -508,18 +524,6 @@ public:
     }
   }
 
-  // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
-  // if they came from outside the body).
-  static void clear_shadowed_bounds(var sym, interval_expr& bounds) {
-    if (depends_on(bounds.min, sym).buffer_meta_read) bounds.min = expr();
-    if (depends_on(bounds.max, sym).buffer_meta_read) bounds.max = expr();
-  }
-  static void clear_shadowed_bounds(var sym, box_expr& bounds) {
-    for (interval_expr& i : bounds) {
-      clear_shadowed_bounds(sym, i);
-    }
-  }
-
   void visit(const allocate* op) override {
     expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
@@ -533,8 +537,6 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
     }
-    clear_shadowed_bounds(op->sym, bounds);
-
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     if (!body.defined()) {
       set_result(stmt());
@@ -582,8 +584,6 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
     }
-    clear_shadowed_bounds(op->sym, bounds);
-
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -744,8 +744,6 @@ public:
       if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
       dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
-    clear_shadowed_bounds(op->sym, bounds);
-
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -808,7 +806,6 @@ public:
       }
       if (bounds.min.defined()) buf_bounds_dim.min = bounds.min;
       if (bounds.max.defined()) buf_bounds_dim.max = bounds.max;
-      clear_shadowed_bounds(op->sym, buf_bounds_dim);
     }
 
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
@@ -954,7 +951,7 @@ public:
   }
 
   void visit(const truncate_rank* op) override {
-    const std::optional<box_expr>& bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
       if (static_cast<int>(bounds->size()) <= op->rank) {
         // truncate_rank can't add dimensions.
@@ -963,9 +960,10 @@ public:
         set_result(mutate(op->body));
         return;
       }
+      bounds->resize(op->rank);
     }
 
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
