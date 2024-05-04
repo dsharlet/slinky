@@ -198,7 +198,7 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "loop(" << l->sym << ", ";
+    *this << indent() << l->sym << " = loop(";
     switch (l->max_workers) {
     case loop::serial: *this << "serial"; break;
     case loop::parallel: *this << "parallel"; break;
@@ -264,7 +264,7 @@ public:
   }
 
   void visit(const crop_buffer* n) override {
-    *this << indent() << "crop_buffer(" << n->sym << ", {";
+    *this << indent() << n->sym << " = crop_buffer(" << n->src << ", {";
     if (!n->bounds.empty()) {
       *this << "\n";
       *this << indent(2);
@@ -278,25 +278,25 @@ public:
   }
 
   void visit(const crop_dim* n) override {
-    *this << indent() << "crop_dim(" << n->sym << ", " << n->dim << ", " << n->bounds << ") {\n";
+    *this << indent() << n->sym << " = crop_dim(" << n->src << ", " << n->dim << ", " << n->bounds << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const slice_buffer* n) override {
-    *this << indent() << "slice_buffer(" << n->sym << ", {" << n->at << "}) {\n";
+    *this << indent() << n->sym << " = slice_buffer(" << n->src << ", {" << n->at << "}) {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << "slice_dim(" << n->sym << ", " << n->dim << ", " << n->at << ") {\n";
+    *this << indent() << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
 
   void visit(const truncate_rank* n) override {
-    *this << indent() << "truncate_rank(" << n->sym << ", " << n->rank << ") {\n";
+    *this << indent() << n->sym << " = truncate_rank(" << n->src << ", " << n->rank << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }

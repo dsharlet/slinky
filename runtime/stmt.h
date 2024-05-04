@@ -193,8 +193,8 @@ public:
 // this node (`rank` is the size of `dims`).
 class allocate : public stmt_node<allocate> {
 public:
-  memory_type storage;
   var sym;
+  memory_type storage;
   expr elem_size;
   std::vector<dim_expr> dims;
   stmt body;
@@ -245,12 +245,13 @@ public:
 class crop_buffer : public stmt_node<crop_buffer> {
 public:
   var sym;
+  var src;
   std::vector<interval_expr> bounds;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, std::vector<interval_expr> bounds, stmt body);
+  static stmt make(var sym, var src, std::vector<interval_expr> bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_buffer;
 };
@@ -259,13 +260,14 @@ public:
 class crop_dim : public stmt_node<crop_dim> {
 public:
   var sym;
+  var src;
   int dim;
   interval_expr bounds;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int dim, interval_expr bounds, stmt body);
+  static stmt make(var sym, var src, int dim, interval_expr bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_dim;
 };
@@ -277,12 +279,13 @@ public:
 class slice_buffer : public stmt_node<slice_buffer> {
 public:
   var sym;
+  var src;
   std::vector<expr> at;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, std::vector<expr> at, stmt body);
+  static stmt make(var sym, var src, std::vector<expr> at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_buffer;
 };
@@ -292,13 +295,14 @@ public:
 class slice_dim : public stmt_node<slice_dim> {
 public:
   var sym;
+  var src;
   int dim;
   expr at;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int dim, expr at, stmt body);
+  static stmt make(var sym, var src, int dim, expr at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_dim;
 };
@@ -307,12 +311,13 @@ public:
 class truncate_rank : public stmt_node<truncate_rank> {
 public:
   var sym;
+  var src;
   int rank;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int rank, stmt body);
+  static stmt make(var sym, var src, int rank, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::truncate_rank;
 };

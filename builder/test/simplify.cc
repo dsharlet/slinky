@@ -138,9 +138,9 @@ TEST(simplify, basic) {
 
 TEST(simplify, let) {
   // lets that should be removed
-  test_simplify(let::make(x, y, z), z);                                // Dead let
-  test_simplify(let::make(x, y, (x + 1) / x), (y + 1) / y);            // Trivial value, substitute
-  test_simplify(let::make(x, 10, x / x), 1);                           // Trivial value, substitute
+  test_simplify(let::make(x, y, z), z);                      // Dead let
+  test_simplify(let::make(x, y, (x + 1) / x), (y + 1) / y);  // Trivial value, substitute
+  test_simplify(let::make(x, 10, x / x), 1);                 // Trivial value, substitute
 
   test_simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))),
       loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y + z)));  // Trivial value, substitute
@@ -169,8 +169,8 @@ TEST(simplify, licm) {
   auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
   auto make_loop_y = [](const stmt& body) { return loop::make(y, loop::parallel, bounds(0, 10), 1, body); };
   auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
-  auto make_crop_x = [](const var& buf, int dim, const stmt& body) { return crop_dim::make(buf, dim, point(x), body); };
-  auto make_crop_y = [](const var& buf, int dim, const stmt& body) { return crop_dim::make(buf, dim, point(y), body); };
+  auto make_crop_x = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
+  auto make_crop_y = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
 
   // One call doesn't depend on the loop.
   test_simplify(make_loop_x(make_call(b0, b1)), make_call(b0, b1));
@@ -210,11 +210,25 @@ TEST(simplify, bounds) {
                     clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2))),
       stmt());
   test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    crop_dim::make(x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2))),
+                    crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2))),
       stmt());
   test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
-                    crop_dim::make(x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2))),
+                    crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2))),
       allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2)));
+
+  test_simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
+                    crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1)))),
+      check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1))));
+}
+
+TEST(simplify, clone) {
+  // Clone is shadowed
+  test_simplify(clone_buffer::make(x, y, crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))),
+      crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})));
+
+  // Clone should be substituted.
+  test_simplify(clone_buffer::make(x, y, crop_dim::make(x, x, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))),
+      crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})));
 }
 
 TEST(simplify, allocate) {

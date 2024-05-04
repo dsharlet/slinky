@@ -350,7 +350,7 @@ public:
   void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->dst, 1}); }
 
   void visit(const crop_buffer* op) override {
-    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     merge_crop(bounds, op->bounds);
     if (bounds) {
       substitute_bounds(*bounds, current_buffer_bounds());
@@ -365,14 +365,14 @@ public:
     if (current_buffer_bounds()[op->sym]) {
       // If we folded something, the bounds required may have shrank, update the crop.
       box_expr new_bounds = *current_buffer_bounds()[op->sym];
-      set_result(crop_buffer::make(op->sym, std::move(new_bounds), std::move(body)));
+      set_result(crop_buffer::make(op->sym, op->src, std::move(new_bounds), std::move(body)));
     } else {
-      set_result(crop_buffer::make(op->sym, op->bounds, std::move(body)));
+      set_result(crop_buffer::make(op->sym, op->src, op->bounds, std::move(body)));
     }
   }
 
   void visit(const crop_dim* op) override {
-    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     merge_crop(bounds, op->dim, op->bounds);
     substitute_bounds(*bounds, current_buffer_bounds());
     // This simplify can be heavy, but is really useful in reducing the size of the
@@ -388,12 +388,12 @@ public:
     if (body.same_as(op->body) && new_bounds.same_as(op->bounds)) {
       set_result(op);
     } else {
-      set_result(crop_dim::make(op->sym, op->dim, std::move(new_bounds), std::move(body)));
+      set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(new_bounds), std::move(body)));
     }
   }
 
   void visit(const slice_buffer* op) override {
-    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     if (bounds) {
       for (int d = std::min(op->at.size(), bounds->size()) - 1; d >= 0; --d) {
         if (!op->at[d].defined()) continue;
@@ -411,7 +411,7 @@ public:
     }
   }
   void visit(const slice_dim* op) override {
-    std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
+    std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     if (bounds && op->dim < static_cast<int>(bounds->size())) {
       bounds->erase(bounds->begin() + op->dim);
     }

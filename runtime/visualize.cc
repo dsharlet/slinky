@@ -249,7 +249,7 @@ public:
   }
 
   void visit(const crop_buffer* n) override {
-    *this << indent() << "{ let __" << n->sym << " = crop_buffer(" << n->sym << ", [";
+    *this << indent() << "{ let __" << n->sym << " = crop_buffer(" << n->src << ", [";
     if (!n->bounds.empty()) {
       *this << "\n";
       *this << indent(2);
@@ -264,7 +264,7 @@ public:
   }
 
   void visit(const crop_dim* n) override {
-    *this << indent() << "{ let __" << n->sym << " = crop_dim(" << n->sym << ", " << n->dim << ", " << n->bounds
+    *this << indent() << "{ let __" << n->sym << " = crop_dim(" << n->src << ", " << n->dim << ", " << n->bounds
           << ");\n";
     *this << n->body;
     *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
@@ -272,21 +272,21 @@ public:
   }
 
   void visit(const slice_buffer* n) override {
-    *this << indent() << "{ let __" << n->sym << " = slice_buffer(" << n->sym << ", {" << n->at << "});\n";
+    *this << indent() << "{ let __" << n->sym << " = slice_buffer(" << n->src << ", {" << n->at << "});\n";
     *this << n->body;
     *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
     *this << indent() << "}\n";
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << "{ let __" << n->sym << " = slice_dim(" << n->sym << ", " << n->dim << ", " << n->at << ");\n";
+    *this << indent() << "{ let __" << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << ");\n";
     *this << n->body;
     *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
     *this << indent() << "}\n";
   }
 
   void visit(const truncate_rank* n) override {
-    *this << indent() << "{ let __" << n->sym << " = truncate_rank(" << n->sym << ", " << n->rank << ");\n";
+    *this << indent() << "{ let __" << n->sym << " = truncate_rank(" << n->src << ", " << n->rank << ");\n";
     *this << n->body;
     *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
     *this << indent() << "}\n";
