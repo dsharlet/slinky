@@ -26,7 +26,6 @@ public:
     for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
       if (i->first == s) {
         fn(*i->second);
-        i->second->ref_count++;
         return;
       }
     }
@@ -34,16 +33,12 @@ public:
 
   // If a symbol is used as a buffer input or output, that should propagate through aliases of the symbol.
   void propagate_deps(const depends_on_result& deps, var to) {
-    // Go in reverse order to handle shadowed declarations properly.
-    for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
-      if (i->first == to) {
-        i->second->buffer_input = i->second->buffer_input || deps.buffer_input;
-        i->second->buffer_output = i->second->buffer_output || deps.buffer_output;
-        i->second->buffer_src = i->second->buffer_src || deps.buffer_src;
-        i->second->buffer_dst = i->second->buffer_dst || deps.buffer_dst;
-        return;
-      }
-    }
+    update_deps(to, [&](depends_on_result& to_deps) {
+      to_deps.buffer_input = to_deps.buffer_input || deps.buffer_input;
+      to_deps.buffer_output = to_deps.buffer_output || deps.buffer_output;
+      to_deps.buffer_src = to_deps.buffer_src || deps.buffer_src;
+      to_deps.buffer_dst = to_deps.buffer_dst || deps.buffer_dst;
+    });
   }
 
   void visit(const variable* op) override {

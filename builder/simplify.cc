@@ -346,7 +346,7 @@ public:
         depends_on(inner->second, it->first, deps);
       }
 
-      if (deps.ref_count == 0) {
+      if (!deps.any()) {
         // Prune dead lets
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;

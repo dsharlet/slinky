@@ -21,9 +21,6 @@ struct depends_on_result {
   // True if the buffer metadata is read.
   bool buffer_meta = false;
 
-  // How many references there are.
-  int ref_count = 0;
-
   bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst; }
   bool buffer() const { return buffer_data() || buffer_meta; }
 
