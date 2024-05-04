@@ -415,13 +415,13 @@ public:
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
   void visit(const allocate* op) override {
     std::size_t rank = op->dims.size();
-    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->elem_size = eval_expr(op->elem_size);
-    buffer->rank = rank;
-    buffer->dims = SLINKY_ALLOCA(dim, rank);
+    raw_buffer buffer;
+    buffer.elem_size = eval_expr(op->elem_size);
+    buffer.rank = rank;
+    buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t i = 0; i < rank; ++i) {
-      slinky::dim& dim = buffer->dim(i);
+      slinky::dim& dim = buffer.dim(i);
       dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
       dim.set_stride(eval_expr(op->dims[i].stride));
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
@@ -429,24 +429,24 @@ public:
 
     void* heap_allocation = nullptr;
     if (op->storage == memory_type::stack) {
-      buffer->base = alloca(buffer->size_bytes());
+      buffer.base = alloca(buffer.size_bytes());
     } else {
       assert(op->storage == memory_type::heap);
       if (context.allocate) {
         assert(context.free);
-        heap_allocation = context.allocate(op->sym, buffer);
+        heap_allocation = context.allocate(op->sym, &buffer);
       } else {
-        heap_allocation = buffer->allocate();
+        heap_allocation = buffer.allocate();
       }
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     visit(op->body);
 
     if (op->storage == memory_type::heap) {
       if (context.free) {
         assert(context.allocate);
-        context.free(op->sym, buffer, heap_allocation);
+        context.free(op->sym, &buffer, heap_allocation);
       } else {
         free(heap_allocation);
       }
@@ -455,20 +455,20 @@ public:
 
   SLINKY_NO_STACK_PROTECTOR void visit(const make_buffer* op) override {
     std::size_t rank = op->dims.size();
-    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->elem_size = eval_expr(op->elem_size, 0);
-    buffer->base = reinterpret_cast<void*>(eval_expr(op->base, 0));
-    buffer->rank = rank;
-    buffer->dims = SLINKY_ALLOCA(dim, rank);
+    raw_buffer buffer;
+    buffer.elem_size = eval_expr(op->elem_size, 0);
+    buffer.base = reinterpret_cast<void*>(eval_expr(op->base, 0));
+    buffer.rank = rank;
+    buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t i = 0; i < rank; ++i) {
-      slinky::dim& dim = buffer->dim(i);
+      slinky::dim& dim = buffer.dim(i);
       dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
       dim.set_stride(eval_expr(op->dims[i].stride, 0));
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     visit(op->body);
   }
 
