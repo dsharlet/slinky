@@ -102,10 +102,7 @@ auto split_factors = testing::Values(0, 1, 4);
 INSTANTIATE_TEST_SUITE_P(
     mode, softmax, testing::Combine(split_factors, split_factors), test_params_to_string<softmax::ParamType>);
 
-TEST_P(softmax, pipeline) {
-  const int split_c = std::get<0>(GetParam());
-  const int split_b = std::get<1>(GetParam());
-
+void softmax_test_impl(int split_c, int split_b, bool use_compute_at) {
   // Make the pipeline
   node_context ctx;
 
@@ -144,6 +141,10 @@ TEST_P(softmax, pipeline) {
   pass0.loops(loops);
   pass4.loops(loops);
 
+  if (use_compute_at) {
+    pass1.compute_at({&pass4, b});
+  }
+
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
@@ -176,6 +177,17 @@ TEST_P(softmax, pipeline) {
     auto ref_b = span<const float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
   }
+}
+
+TEST_P(softmax, pipeline) {
+  const int split_c = std::get<0>(GetParam());
+  const int split_b = std::get<1>(GetParam());
+
+  softmax_test_impl(split_c, split_b, false);
+}
+
+TEST(fused_softmax, pipeline_compute_at) {
+  softmax_test_impl(1, 1, true);
 }
 
 }  // namespace slinky
