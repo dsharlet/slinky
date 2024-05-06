@@ -534,7 +534,7 @@ TEST_P(stencil_chain, pipeline) {
     stencil2.loops({{y, split, max_workers}});
   }
 
-  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.trace = false});
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.trace = true});
 
   // Run the pipeline.
   const int W = 20;
