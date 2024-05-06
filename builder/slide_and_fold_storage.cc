@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
+#include <iostream>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 #include "runtime/util.h"
 
 namespace slinky {
@@ -93,6 +95,38 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
   }
 }
 
+void substitute_bounds(symbol_map<box_expr>& buffers, var buffer_id, const box_expr& bounds) {
+  for (index_t i = 0; i < buffers.size(); ++i) {
+    if (!buffers[i]) continue;
+    slinky::box_expr& b = *buffers[i];
+    for (interval_expr& j : b) {
+      if (j.min.defined()) j.min = substitute_bounds(j.min, buffer_id, bounds);
+      if (j.max.defined()) j.max = substitute_bounds(j.max, buffer_id, bounds);
+    }
+  }
+}
+
+class check_if_produced : public recursive_node_visitor {
+  var v;
+public:
+  check_if_produced(var v) : v(v) {}
+  bool found = false;
+
+  void visit(const call_stmt* op) override { 
+    for (const auto& o: op->outputs) {
+      found = found || (o == v);
+    }
+  }
+  void visit(const copy_stmt* op) override { 
+    found = found || (op->dst == v);
+  }
+};
+
+bool is_produced_by(var v, const stmt& body) {
+  check_if_produced f(v);
+  body.accept(&f);
+  return f.found;
+}
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
 // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
@@ -123,6 +157,7 @@ public:
     std::optional<int> stage;
 
     bool add_synchronization() {
+      return false;
       if (sync_stages + 1 >= max_workers) {
         // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
         // add more synchronization overhead.
@@ -225,10 +260,7 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
-  template <typename T>
-  void visit_call_or_copy(const T* op, span<const var> outputs) {
-    set_result(op);
-
+  void try_to_fold(span<const var> outputs) {
     for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
       bool did_overlapped_fold = false;
@@ -237,8 +269,8 @@ public:
       std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
       if (!alloc_loop_level) alloc_loop_level = 1;
 
-      for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
-        loop_info& loop = loops[loop_index];
+      // for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
+        loop_info& loop = loops.back();
         loop.add_synchronization();
         std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
@@ -249,7 +281,9 @@ public:
         expr loop_var = variable::make(loop.sym);
 
         for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+          std::cout << "Folded 1 - " << output << " " << loop.sym << std::endl;
           interval_expr cur_bounds_d = (*bounds)[d];
+          std::cout << "Folded 1.1 - " << d << "\n" << cur_bounds_d << std::endl;
           if (!depends_on(cur_bounds_d, loop.sym).any()) {
             // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
             // just compute it once.
@@ -321,6 +355,7 @@ public:
               } else {
                 // The fold factor didn't simplify to something that doesn't depend on the loop variable.
               }
+              std::cout << "Folded 2 - " << fold_factor << std::endl;
             }
 
             // Now that we're only computing the newly required parts of the domain, we need
@@ -329,22 +364,153 @@ public:
             expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
             expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
             if (!is_negative_infinity(new_loop_min)) {
+              std::cout << "Folded 3.1 - " << std::endl;
               loop.bounds.min = new_loop_min;
 
               (*bounds)[d].min = new_min;
             } else {
+              std::cout << "Folded 3.2 - " << std::endl;
               // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
               // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
               // effectively not slide while running before the original loop min.
               (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
             }
+            std::cout << "Folded the end " << output << "\n" << *bounds << std::endl;
           } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
             // TODO: We could also try to slide when the bounds are monotonically
             // decreasing, but this is an unusual case.
           }
         }
-      }
+      // }
     }
+  }
+
+  template <typename T>
+  void visit_call_or_copy(const T* op, span<const var> outputs) {
+    set_result(op);
+
+    // for (var output : outputs) {
+    //   // Start from 1 to skip the 'outermost' loop.
+    //   bool did_overlapped_fold = false;
+    //   // Only consider loops that are inside the allocation of this output for folding.
+    //   // TODO: It seems like there's probably a more elegant way to do this.
+    //   std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
+    //   if (!alloc_loop_level) alloc_loop_level = 1;
+
+    //   for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
+    //     loop_info& loop = loops[loop_index];
+    //     loop.add_synchronization();
+    //     std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
+    //     if (!bounds) continue;
+
+    //     // We don't want to use the bounds of the loop we are sliding over here.
+    //     auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
+
+    //     expr loop_var = variable::make(loop.sym);
+
+    //     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+    //       std::cout << "Folded 1 - " << output << " " << loop.sym << std::endl;
+    //       interval_expr cur_bounds_d = (*bounds)[d];
+    //       std::cout << "Folded 1.1 - " << d << "\n" << cur_bounds_d << std::endl;
+    //       if (!depends_on(cur_bounds_d, loop.sym).any()) {
+    //         // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
+    //         // just compute it once.
+    //         continue;
+    //       }
+
+    //       interval_expr prev_bounds_d = {
+    //           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
+    //           substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),
+    //       };
+
+    //       // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
+    //       // some expression that is bounded by the loop bounds. This min simplifies away if we know that x <= loop_max,
+    //       // but the simplifier can't figure that out. As a hopefully temporary workaround, we can just substitute
+    //       // infinity for the loop max.
+    //       auto ignore_loop_max = [&](const expr& e) { return substitute(e, loop.bounds.max, positive_infinity()); };
+
+    //       interval_expr overlap = prev_bounds_d & cur_bounds_d;
+    //       if (prove_true(ignore_loop_max(overlap.empty()))) {
+    //         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
+    //         // can fold the storage.
+    //         expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
+    //         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
+    //           if (loop.add_synchronization()) {
+    //             // We need a fold per worker when parallelizing the loop.
+    //             // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+    //             // If we can figure out how to add some synchronization to limit the number of workers that
+    //             // work on a single stage at a time, we should be able to reduce this extra folding.
+    //             // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
+    //             // This synchronization will cause the loop to run only as fast as the slowest stage, which is
+    //             // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
+    //             // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
+    //             // run at once, so the storage folding here works as intended. If we could instead find a way to give
+    //             // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
+    //             // doable by making the worker index available to the loop body, and using that to grab a slice of this
+    //             // buffer, so each worker can get its own fold.
+    //             fold_factor *= loop.worker_count;
+    //           }
+    //           vector_at(fold_factors[output], d) = fold_factor;
+    //         } else {
+    //           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+    //         }
+    //         continue;
+    //       }
+
+    //       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
+    //       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
+    //       expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
+    //       if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
+    //         // The bounds for each loop iteration overlap and are monotonically increasing,
+    //         // so we can incrementally compute only the newly required bounds.
+    //         expr old_min = cur_bounds_d.min;
+    //         expr new_min = simplify(prev_bounds_d.max + 1);
+
+    //         if (!did_overlapped_fold) {
+    //           expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
+    //           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
+    //             // We need an extra fold per worker when parallelizing the loop.
+    //             // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+    //             // If we can figure out how to add some synchronization to limit the number of workers that
+    //             // work on a single stage at a time, we should be able to reduce this extra folding.
+    //             fold_factor +=
+    //                 (loop.worker_count - 1) *
+    //                 simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
+
+    //             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+    //             vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
+    //             did_overlapped_fold = true;
+    //           } else {
+    //             // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+    //           }
+    //           std::cout << "Folded 2 - " << fold_factor << std::endl;
+    //         }
+
+    //         // Now that we're only computing the newly required parts of the domain, we need
+    //         // to move the loop min back so we compute the whole required region.
+    //         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
+    //         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
+    //         expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
+    //         if (!is_negative_infinity(new_loop_min)) {
+    //           std::cout << "Folded 3.1 - " << std::endl;
+    //           loop.bounds.min = new_loop_min;
+
+    //           (*bounds)[d].min = new_min;
+    //         } else {
+    //           std::cout << "Folded 3.2 - " << std::endl;
+    //           // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
+    //           // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
+    //           // effectively not slide while running before the original loop min.
+    //           (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
+    //         }
+    //         std::cout << "Folded the end " << output << "\n" << *bounds << std::endl;
+    //       } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
+    //         // TODO: We could also try to slide when the bounds are monotonically
+    //         // decreasing, but this is an unusual case.
+    //       }
+    //     }
+    //   }
+    // }
   }
 
   void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
@@ -355,13 +521,24 @@ public:
     merge_crop(bounds, op->bounds);
     if (bounds) {
       substitute_bounds(*bounds, current_buffer_bounds());
+      // Now do the reverse substitution, because the updated bounds can be used in other
+      // bounds.
+      substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
+
       // This simplify can be heavy, but is really useful in reducing the size of the
       // expressions.
       for (auto& b : *bounds) {
         b = simplify(b);
       }
+      std::cout << "bounds crop_buffer: " << op->sym << "\n" << *bounds << std::endl;
     }
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+
+    if (loops.size() > 1 && is_produced_by(op->sym, op->body)) {
+      std::cout << "trying to fold" << std::endl;
+      try_to_fold({&op->sym, 1});
+    }
+
     stmt body = mutate(op->body);
     if (current_buffer_bounds()[op->sym]) {
       // If we folded something, the bounds required may have shrank, update the crop.
@@ -376,13 +553,17 @@ public:
     std::optional<box_expr> bounds = current_buffer_bounds()[op->sym];
     merge_crop(bounds, op->dim, op->bounds);
     substitute_bounds(*bounds, current_buffer_bounds());
+    // Now do the reverse substitution, because the updated bounds can be used in other
+    // bounds.
+    substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
     // This simplify can be heavy, but is really useful in reducing the size of the
     // expressions.
     for (auto& b : *bounds) {
       b = simplify(b);
     }
-
+    std::cout << "bounds crop_dim: " << op->sym << "\n" << *bounds << std::endl;
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+
     stmt body = mutate(op->body);
     interval_expr new_bounds = (*current_buffer_bounds()[op->sym])[op->dim];
 
