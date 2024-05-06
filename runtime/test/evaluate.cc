@@ -106,7 +106,8 @@ TEST(evaluate, crop_dim) {
   buffer<void, 2> buf({10, 20});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
-  evaluate(crop_dim::make(x, 0, {1, 3}, make_check(x, {3, 20})), ctx);
+  evaluate(crop_dim::make(x, x, 0, {1, 3}, make_check(x, {3, 20})), ctx);
+  evaluate(crop_dim::make(y, x, 0, {1, 3}, block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})), ctx);
   assert_buffer_extents_are(buf, {10, 20});
 }
 
@@ -115,7 +116,10 @@ TEST(evaluate, crop_buffer) {
   buffer<void, 4> buf({10, 20, 30, 40});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
-  evaluate(crop_buffer::make(x, {{1, 3}, {}, {2, 5}}, make_check(x, {3, 20, 4, 40})), ctx);
+  evaluate(crop_buffer::make(x, x, {{1, 3}, {}, {2, 5}}, make_check(x, {3, 20, 4, 40})), ctx);
+  evaluate(crop_buffer::make(y, x, {{1, 3}, {}, {2, 5}},
+               block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {3, 20, 4, 40})})),
+      ctx);
   assert_buffer_extents_are(buf, {10, 20, 30, 40});
 }
 
@@ -124,7 +128,8 @@ TEST(evaluate, slice_dim) {
   buffer<void, 3> buf({10, 20, 30});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
-  evaluate(slice_dim::make(x, 1, 2, make_check(x, {10, 30})), ctx);
+  evaluate(slice_dim::make(x, x, 1, 2, make_check(x, {10, 30})), ctx);
+  evaluate(slice_dim::make(y, x, 1, 2, block::make({make_check(x, {10, 20, 30}), make_check(y, {10, 30})})), ctx);
   assert_buffer_extents_are(buf, {10, 20, 30});
 }
 
@@ -133,7 +138,10 @@ TEST(evaluate, slice_buffer) {
   buffer<void, 4> buf({10, 20, 30, 40});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
-  evaluate(slice_buffer::make(x, {{}, 4, {}, 2}, make_check(x, {10, 30})), ctx);
+  evaluate(slice_buffer::make(x, x, {{}, 4, {}, 2}, make_check(x, {10, 30})), ctx);
+  evaluate(
+      slice_buffer::make(y, x, {{}, 4, {}, 2}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 30})})),
+      ctx);
   assert_buffer_extents_are(buf, {10, 20, 30, 40});
 }
 
@@ -142,7 +150,8 @@ TEST(evaluate, truncate_rank) {
   buffer<void, 4> buf({10, 20, 30, 40});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
-  evaluate(truncate_rank::make(x, 2, make_check(x, {10, 20})), ctx);
+  evaluate(truncate_rank::make(x, x, 2, make_check(x, {10, 20})), ctx);
+  evaluate(truncate_rank::make(y, x, 2, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
   assert_buffer_extents_are(buf, {10, 20, 30, 40});
 }
 

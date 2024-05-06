@@ -346,7 +346,7 @@ public:
         depends_on(inner->second, it->first, deps);
       }
 
-      if (deps.ref_count == 0) {
+      if (!deps.any()) {
         // Prune dead lets
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
@@ -376,12 +376,28 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
+  // if they came from outside the body).
+  static void clear_shadowed_bounds(var sym, interval_expr& bounds) {
+    if (depends_on(bounds.min, sym).buffer_meta) bounds.min = expr();
+    if (depends_on(bounds.max, sym).buffer_meta) bounds.max = expr();
+  }
+  static void clear_shadowed_bounds(var sym, box_expr& bounds) {
+    for (interval_expr& i : bounds) {
+      clear_shadowed_bounds(sym, i);
+    }
+  }
+
   stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
+    if (bounds) {
+      clear_shadowed_bounds(buf, *bounds);
+    }
     auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
     return mutate(body);
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
+    clear_shadowed_bounds(v, bounds);
     auto set_bounds = set_value_in_scope(expr_bounds, v, std::move(bounds));
     return mutate(body);
   }
@@ -449,7 +465,7 @@ public:
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
       stmt result = body;
-      std::vector<std::tuple<var, int, interval_expr>> new_crops;
+      std::vector<std::tuple<var, var, int, interval_expr>> new_crops;
       bool drop_loop = true;
       while (true) {
         // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
@@ -459,7 +475,7 @@ public:
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
             interval_expr new_crop = bounds_of(crop->bounds, {{op->sym, bounds}});
-            new_crops.emplace_back(crop->sym, crop->dim, new_crop);
+            new_crops.emplace_back(crop->sym, crop->src, crop->dim, new_crop);
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
@@ -478,7 +494,7 @@ public:
       if (drop_loop) {
         // Rewrite the crops to cover the whole loop, and drop the loop.
         for (auto i = new_crops.rbegin(); i != new_crops.rend(); ++i) {
-          result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), result);
+          result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), std::get<3>(*i), result);
         }
         set_result(mutate(result));
         return;
@@ -508,18 +524,6 @@ public:
     }
   }
 
-  // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
-  // if they came from outside the body).
-  static void clear_shadowed_bounds(var sym, interval_expr& bounds) {
-    if (depends_on(bounds.min, sym).buffer_meta_read) bounds.min = expr();
-    if (depends_on(bounds.max, sym).buffer_meta_read) bounds.max = expr();
-  }
-  static void clear_shadowed_bounds(var sym, box_expr& bounds) {
-    for (interval_expr& i : bounds) {
-      clear_shadowed_bounds(sym, i);
-    }
-  }
-
   void visit(const allocate* op) override {
     expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
@@ -533,8 +537,6 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
     }
-    clear_shadowed_bounds(op->sym, bounds);
-
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     if (!body.defined()) {
       set_result(stmt());
@@ -582,8 +584,6 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
     }
-    clear_shadowed_bounds(op->sym, bounds);
-
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -596,31 +596,31 @@ public:
       if (bc->intrinsic == intrinsic::buffer_at && bc->args.size() == 1) {
         // Check if this make_buffer is truncate_rank, or a clone.
         const var* src_buf = as_variable(bc->args[0]);
-        if (src_buf) {
-          if (match(elem_size, buffer_elem_size(*src_buf))) {
-            bool is_clone = true;
-            for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-              is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
+        assert(src_buf);
+        if (match(elem_size, buffer_elem_size(*src_buf))) {
+          bool is_clone = true;
+          for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+            is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
+          }
+          if (is_clone) {
+            if (*src_buf == op->sym) {
+              set_result(mutate(truncate_rank::make(op->sym, *src_buf, dims.size(), std::move(body))));
+              return;
             }
-            if (is_clone) {
-              if (*src_buf == op->sym) {
-                set_result(mutate(truncate_rank::make(op->sym, dims.size(), std::move(body))));
-                return;
-              }
-              const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
-              if (src_bounds && src_bounds->size() == dims.size()) {
-                // This is a clone of src_buf.
-                set_result(mutate(clone_buffer::make(op->sym, *src_buf, std::move(body))));
-                return;
-              }
+            const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
+            if (src_bounds && src_bounds->size() == dims.size()) {
+              // This is a clone of src_buf.
+              set_result(mutate(clone_buffer::make(op->sym, *src_buf, std::move(body))));
+              return;
             }
           }
         }
       }
 
       // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
-      if (bc->intrinsic == intrinsic::buffer_at && match(bc->args[0], op->sym) &&
-          match(elem_size, buffer_elem_size(op->sym))) {
+      if (bc->intrinsic == intrinsic::buffer_at && match(elem_size, buffer_elem_size(op->sym))) {
+        const var* src_buf = as_variable(bc->args[0]);
+        assert(src_buf);
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
         std::size_t dim = 0;
@@ -633,12 +633,12 @@ public:
           } else {
             // This arg is undefined. We need to find the next dimension here to be a slice.
             ++slice_rank;
-            is_slice = is_slice && match(dims[dim], buffer_dim(op->sym, d));
+            is_slice = is_slice && match(dims[dim], buffer_dim(*src_buf, d));
           }
         }
         if (is_slice && slice_rank == dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          set_result(mutate(slice_buffer::make(op->sym, std::move(at), std::move(body))));
+          set_result(mutate(slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body))));
           return;
         }
 
@@ -646,8 +646,8 @@ public:
         bool is_crop = bc->args.size() <= dims.size() + 1;
         box_expr crop_bounds(dims.size());
         for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-          if (!match(dims[d].stride, buffer_stride(op->sym, d)) ||
-              !match(dims[d].fold_factor, buffer_fold_factor(op->sym, d))) {
+          if (!match(dims[d].stride, buffer_stride(*src_buf, d)) ||
+              !match(dims[d].fold_factor, buffer_fold_factor(*src_buf, d))) {
             is_crop = false;
             break;
           }
@@ -655,7 +655,7 @@ public:
           // If the argument is defined, we need the min to be the same as the argument.
           // If it is not defined, it must be buffer_min(buf, d).
           bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
-          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(op->sym, d);
+          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
           if (match(dims[d].bounds.min, crop_min)) {
             crop_bounds[d] = dims[d].bounds;
           } else {
@@ -664,7 +664,7 @@ public:
           }
         }
         if (is_crop) {
-          set_result(mutate(crop_buffer::make(op->sym, std::move(crop_bounds), std::move(body))));
+          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
           return;
         }
       }
@@ -729,8 +729,8 @@ public:
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
-      interval_expr bounds_i = simplify_crop_bounds(mutate(op->bounds[i]), op->sym, i);
-      bounds_i = simplify_redundant_bounds(bounds_i, slinky::buffer_bounds(sym_var, i));
+      interval_expr bounds_i = simplify_crop_bounds(mutate(op->bounds[i]), op->src, i);
+      bounds_i = simplify_redundant_bounds(bounds_i, slinky::buffer_bounds(op->src, i));
       changed = changed || !bounds_i.same_as(op->bounds[i]);
 
       bounds[i] = bounds_i;
@@ -744,8 +744,6 @@ public:
       if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
       dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
     }
-    clear_shadowed_bounds(op->sym, bounds);
-
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -772,16 +770,16 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(crop_buffer::make(op->sym, new_bounds, s)));
+        stmts.push_back(mutate(crop_buffer::make(op->sym, op->src, new_bounds, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (dims_count == 1) {
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(new_bounds.size()) - 1;
-      set_result(mutate(crop_dim::make(op->sym, d, std::move(new_bounds[d]), std::move(body))));
+      set_result(mutate(crop_dim::make(op->sym, op->src, d, std::move(new_bounds[d]), std::move(body))));
     } else if (changed || !body.same_as(op->body)) {
-      set_result(crop_buffer::make(op->sym, std::move(new_bounds), std::move(body)));
+      set_result(crop_buffer::make(op->sym, op->src, std::move(new_bounds), std::move(body)));
     } else {
       set_result(op);
     }
@@ -789,8 +787,8 @@ public:
 
   void visit(const crop_dim* op) override {
     expr sym_var = variable::make(op->sym);
-    interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->sym, op->dim);
-    bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(sym_var, op->dim));
+    interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
+    bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
       set_result(mutate(op->body));
       return;
@@ -808,7 +806,6 @@ public:
       }
       if (bounds.min.defined()) buf_bounds_dim.min = bounds.min;
       if (bounds.max.defined()) buf_bounds_dim.max = bounds.max;
-      clear_shadowed_bounds(op->sym, buf_bounds_dim);
     }
 
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
@@ -827,14 +824,14 @@ public:
         // This is a slice of the same dimension of the buffer we just cropped.
         // Don't drop the clamp that crop performs.
         expr at = clamp(slice->at, bounds.min, bounds.max);
-        set_result(mutate(slice_dim::make(op->sym, op->dim, at, slice->body)));
+        set_result(mutate(slice_dim::make(op->sym, op->src, op->dim, at, slice->body)));
         return;
       }
     } else if (const crop_dim* crop = body.as<crop_dim>()) {
       if (crop->sym == op->sym) {
         if (crop->dim == op->dim) {
           // Two nested crops of the same dimension, do one crop of the intersection instead.
-          set_result(mutate(crop_dim::make(op->sym, op->dim, bounds & crop->bounds, crop->body)));
+          set_result(mutate(crop_dim::make(op->sym, op->src, op->dim, bounds & crop->bounds, crop->body)));
           return;
         } else {
           // TODO: This is a nested crop of the same buffer, use crop_buffer instead.
@@ -846,13 +843,13 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(crop_dim::make(op->sym, op->dim, bounds, s)));
+        stmts.push_back(mutate(crop_dim::make(op->sym, op->src, op->dim, bounds, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
+      set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(bounds), std::move(body)));
     }
   }
 
@@ -909,16 +906,16 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(slice_buffer::make(op->sym, at, s)));
+        stmts.push_back(mutate(slice_buffer::make(op->sym, op->src, at, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (sliced_dims.size() == 1) {
       // This slice is of one dimension, replace it with slice_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
       int d = static_cast<int>(at.size()) - 1;
-      set_result(slice_dim::make(op->sym, d, std::move(at[d]), std::move(body)));
+      set_result(slice_dim::make(op->sym, op->src, d, std::move(at[d]), std::move(body)));
     } else if (changed || !body.same_as(op->body)) {
-      set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
+      set_result(slice_buffer::make(op->sym, op->src, std::move(at), std::move(body)));
     } else {
       set_result(op);
     }
@@ -943,18 +940,18 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(slice_dim::make(op->sym, op->dim, at, s)));
+        stmts.push_back(mutate(slice_dim::make(op->sym, op->src, op->dim, at, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
+      set_result(slice_dim::make(op->sym, op->src, op->dim, std::move(at), std::move(body)));
     }
   }
 
   void visit(const truncate_rank* op) override {
-    const std::optional<box_expr>& bounds = buffer_bounds[op->sym];
+    std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
       if (static_cast<int>(bounds->size()) <= op->rank) {
         // truncate_rank can't add dimensions.
@@ -963,9 +960,10 @@ public:
         set_result(mutate(op->body));
         return;
       }
+      bounds->resize(op->rank);
     }
 
-    stmt body = mutate(op->body);
+    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -974,13 +972,13 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(truncate_rank::make(op->sym, op->rank, s)));
+        stmts.push_back(mutate(truncate_rank::make(op->sym, op->src, op->rank, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(truncate_rank::make(op->sym, op->rank, std::move(body)));
+      set_result(truncate_rank::make(op->sym, op->src, op->rank, std::move(body)));
     }
   }
 
@@ -989,9 +987,9 @@ public:
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (!depends_on(body, op->src).buffer_meta_mutated) {
-      // We didn't mutate the original buffer. We can just use that instead.
-      set_result(substitute(body, op->sym, variable::make(op->src)));
+    } else if (!depends_on(body, op->src).any()) {
+      // We didn't use the original buffer. We can just use that instead.
+      set_result(mutate(substitute(body, op->sym, variable::make(op->src))));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());

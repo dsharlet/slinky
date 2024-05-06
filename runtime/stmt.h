@@ -193,8 +193,8 @@ public:
 // this node (`rank` is the size of `dims`).
 class allocate : public stmt_node<allocate> {
 public:
-  memory_type storage;
   var sym;
+  memory_type storage;
   expr elem_size;
   std::vector<dim_expr> dims;
   stmt body;
@@ -224,8 +224,6 @@ public:
 };
 
 // Makes a clone of an existing buffer.
-// TODO: This basically only exists because we cannot use `make_buffer` to clone a buffer of unknown rank. Maybe there's
-// a better way to do this.
 class clone_buffer : public stmt_node<clone_buffer> {
 public:
   var sym;
@@ -239,18 +237,19 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::clone_buffer;
 };
 
-// For the `body` scope, crops the buffer `sym` to `bounds`. If the expressions in `bounds` are undefined, they default
-// to their original values in the existing buffer. The rank of the buffer is unchanged. If the size of `bounds` is less
-// than the rank, the missing values are considered undefined.
+// Makes a new buffer `sym` that is a cropped view of the buffer `src` to `bounds`. If the expressions in `bounds` are
+// undefined, they default to their original values in the existing buffer. The rank of the buffer is unchanged. If the
+// size of `bounds` is less than the rank, the missing values are considered undefined.
 class crop_buffer : public stmt_node<crop_buffer> {
 public:
   var sym;
+  var src;
   std::vector<interval_expr> bounds;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, std::vector<interval_expr> bounds, stmt body);
+  static stmt make(var sym, var src, std::vector<interval_expr> bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_buffer;
 };
@@ -259,30 +258,32 @@ public:
 class crop_dim : public stmt_node<crop_dim> {
 public:
   var sym;
+  var src;
   int dim;
   interval_expr bounds;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int dim, interval_expr bounds, stmt body);
+  static stmt make(var sym, var src, int dim, interval_expr bounds, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::crop_dim;
 };
 
-// For the `body` scope, slices the buffer `sym` at the coordinate `at`. The `at` expressions can be undefined,
-// indicating that the corresponding dimension is preserved in the sliced buffer. The sliced buffer will have `rank`
-// equal to the rank of the existing buffer, less the number of sliced dimensions. If `at` is smaller than the rank
-// of the buffer, the missing values are considered undefined.
+// Makes a new buffer `sym` that is a sliced view of the buffer `src` at the coordinate `at`. The `at` expressions can
+// be undefined, indicating that the corresponding dimension is preserved in the sliced buffer. The sliced buffer will
+// have `rank` equal to the rank of the existing buffer, less the number of sliced dimensions. If `at` is smaller than
+// the rank of the buffer, the missing values are considered undefined.
 class slice_buffer : public stmt_node<slice_buffer> {
 public:
   var sym;
+  var src;
   std::vector<expr> at;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, std::vector<expr> at, stmt body);
+  static stmt make(var sym, var src, std::vector<expr> at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_buffer;
 };
@@ -292,27 +293,29 @@ public:
 class slice_dim : public stmt_node<slice_dim> {
 public:
   var sym;
+  var src;
   int dim;
   expr at;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int dim, expr at, stmt body);
+  static stmt make(var sym, var src, int dim, expr at, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::slice_dim;
 };
 
-// Within `body`, remove the dimensions of the buffer `sym` above `rank`.
+// Make a new buffer `sym` that is a copy of the first `rank` dimensions of `src`.
 class truncate_rank : public stmt_node<truncate_rank> {
 public:
   var sym;
+  var src;
   int rank;
   stmt body;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int rank, stmt body);
+  static stmt make(var sym, var src, int rank, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::truncate_rank;
 };

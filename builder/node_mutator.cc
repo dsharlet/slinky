@@ -54,19 +54,19 @@ stmt clone_with_new_body(const clone_buffer* op, stmt new_body) {
   return clone_buffer::make(op->sym, op->src, std::move(new_body));
 }
 stmt clone_with_new_body(const crop_buffer* op, stmt new_body) {
-  return crop_buffer::make(op->sym, op->bounds, std::move(new_body));
+  return crop_buffer::make(op->sym, op->src, op->bounds, std::move(new_body));
 }
 stmt clone_with_new_body(const crop_dim* op, stmt new_body) {
-  return crop_dim::make(op->sym, op->dim, op->bounds, std::move(new_body));
+  return crop_dim::make(op->sym, op->src, op->dim, op->bounds, std::move(new_body));
 }
 stmt clone_with_new_body(const slice_buffer* op, stmt new_body) {
-  return slice_buffer::make(op->sym, op->at, std::move(new_body));
+  return slice_buffer::make(op->sym, op->src, op->at, std::move(new_body));
 }
 stmt clone_with_new_body(const slice_dim* op, stmt new_body) {
-  return slice_dim::make(op->sym, op->dim, op->at, std::move(new_body));
+  return slice_dim::make(op->sym, op->src, op->dim, op->at, std::move(new_body));
 }
 stmt clone_with_new_body(const truncate_rank* op, stmt new_body) {
-  return truncate_rank::make(op->sym, op->rank, std::move(new_body));
+  return truncate_rank::make(op->sym, op->src, op->rank, std::move(new_body));
 }
 
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
@@ -213,7 +213,7 @@ void node_mutator::visit(const crop_buffer* op) {
   if (!changed && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(crop_buffer::make(op->sym, std::move(bounds), std::move(body)));
+    set_result(crop_buffer::make(op->sym, op->src, std::move(bounds), std::move(body)));
   }
 }
 void node_mutator::visit(const crop_dim* op) {
@@ -222,7 +222,7 @@ void node_mutator::visit(const crop_dim* op) {
   if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
+    set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(bounds), std::move(body)));
   }
 }
 void node_mutator::visit(const slice_buffer* op) {
@@ -237,7 +237,7 @@ void node_mutator::visit(const slice_buffer* op) {
   if (!changed && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
+    set_result(slice_buffer::make(op->sym, op->src, std::move(at), std::move(body)));
   }
 }
 void node_mutator::visit(const slice_dim* op) {
@@ -246,7 +246,7 @@ void node_mutator::visit(const slice_dim* op) {
   if (at.same_as(op->at) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
+    set_result(slice_dim::make(op->sym, op->src, op->dim, std::move(at), std::move(body)));
   }
 }
 void node_mutator::visit(const truncate_rank* op) {
@@ -254,7 +254,7 @@ void node_mutator::visit(const truncate_rank* op) {
   if (body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(truncate_rank::make(op->sym, op->rank, std::move(body)));
+    set_result(truncate_rank::make(op->sym, op->src, op->rank, std::move(body)));
   }
 }
 

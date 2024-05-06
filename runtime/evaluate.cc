@@ -41,7 +41,7 @@ void dump_context_for_expr(
       } else {
         s << "  " << sym << " = <>" << std::endl;
       }
-    } else if (!deps_of.defined() || deps.buffer_meta_read) {
+    } else if (!deps_of.defined() || deps.buffer_meta) {
       if (ctx[i]) {
         const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx[i]);
         s << "  " << sym << " = " << *buf << std::endl;
@@ -235,7 +235,7 @@ public:
       sems[i] = reinterpret_cast<index_t*>(eval_expr(op->args[i * 2 + 0]));
       counts[i] = eval_expr(op->args[i * 2 + 1], 1);
     }
-    context.wait_for([=]() {  
+    context.wait_for([=]() {
       // Check we can acquire all of the semaphores before acquiring any of them.
       for (std::size_t i = 0; i < sem_count; ++i) {
         if (*sems[i] < counts[i]) return false;
@@ -415,13 +415,13 @@ public:
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
   void visit(const allocate* op) override {
     std::size_t rank = op->dims.size();
-    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->elem_size = eval_expr(op->elem_size);
-    buffer->rank = rank;
-    buffer->dims = SLINKY_ALLOCA(dim, rank);
+    raw_buffer buffer;
+    buffer.elem_size = eval_expr(op->elem_size);
+    buffer.rank = rank;
+    buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t i = 0; i < rank; ++i) {
-      slinky::dim& dim = buffer->dim(i);
+      slinky::dim& dim = buffer.dim(i);
       dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
       dim.set_stride(eval_expr(op->dims[i].stride));
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
@@ -429,24 +429,24 @@ public:
 
     void* heap_allocation = nullptr;
     if (op->storage == memory_type::stack) {
-      buffer->base = alloca(buffer->size_bytes());
+      buffer.base = alloca(buffer.size_bytes());
     } else {
       assert(op->storage == memory_type::heap);
       if (context.allocate) {
         assert(context.free);
-        heap_allocation = context.allocate(op->sym, buffer);
+        heap_allocation = context.allocate(op->sym, &buffer);
       } else {
-        heap_allocation = buffer->allocate();
+        heap_allocation = buffer.allocate();
       }
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     visit(op->body);
 
     if (op->storage == memory_type::heap) {
       if (context.free) {
         assert(context.allocate);
-        context.free(op->sym, buffer, heap_allocation);
+        context.free(op->sym, &buffer, heap_allocation);
       } else {
         free(heap_allocation);
       }
@@ -455,38 +455,43 @@ public:
 
   SLINKY_NO_STACK_PROTECTOR void visit(const make_buffer* op) override {
     std::size_t rank = op->dims.size();
-    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->elem_size = eval_expr(op->elem_size, 0);
-    buffer->base = reinterpret_cast<void*>(eval_expr(op->base, 0));
-    buffer->rank = rank;
-    buffer->dims = SLINKY_ALLOCA(dim, rank);
+    raw_buffer buffer;
+    buffer.elem_size = eval_expr(op->elem_size, 0);
+    buffer.base = reinterpret_cast<void*>(eval_expr(op->base, 0));
+    buffer.rank = rank;
+    buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t i = 0; i < rank; ++i) {
-      slinky::dim& dim = buffer->dim(i);
+      slinky::dim& dim = buffer.dim(i);
       dim.set_bounds(eval_expr(op->dims[i].min()), eval_expr(op->dims[i].max()));
       dim.set_stride(eval_expr(op->dims[i].stride, 0));
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     visit(op->body);
   }
 
-  SLINKY_NO_STACK_PROTECTOR void visit(const clone_buffer* op) override {
-    raw_buffer* src = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+  // Call `fn` while a clone of `src` (`sym`) is in scope.
+  template <typename Fn>
+  SLINKY_NO_STACK_PROTECTOR void eval_in_clone(var sym, var src, Fn fn) {
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(src));
 
-    raw_buffer* buffer = SLINKY_ALLOCA(raw_buffer, 1);
-    buffer->dims = SLINKY_ALLOCA(dim, src->rank);
-    buffer->elem_size = src->elem_size;
-    buffer->base = src->base;
-    buffer->rank = src->rank;
-    memcpy(buffer->dims, src->dims, sizeof(dim) * src->rank);
-
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(buffer));
-    visit(op->body);
+    raw_buffer clone;
+    clone.base = src_buf->base;
+    clone.elem_size = src_buf->elem_size;
+    clone.rank = src_buf->rank;
+    clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+    memcpy(clone.dims, src_buf->dims, sizeof(dim) * src_buf->rank);
+    auto set_buffer = set_value_in_scope(context, sym, reinterpret_cast<index_t>(&clone));
+    fn();
   }
 
-  SLINKY_NO_STACK_PROTECTOR void visit(const crop_buffer* op) override {
+  void visit(const clone_buffer* op) override {
+    eval_in_clone(op->sym, op->src, [=]() { visit(op->body); });
+  }
+
+  SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const crop_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
@@ -518,7 +523,7 @@ public:
     }
   }
 
-  void visit(const crop_dim* op) override {
+  void eval_shadowed(const crop_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
     slinky::dim& dim = buffer->dims[op->dim];
@@ -533,7 +538,7 @@ public:
     dim.set_bounds(old_min, old_max);
   }
 
-  SLINKY_NO_STACK_PROTECTOR void visit(const slice_buffer* op) override {
+  SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
@@ -564,10 +569,10 @@ public:
     buffer->dims = dims;
   }
 
-  SLINKY_NO_STACK_PROTECTOR void visit(const slice_dim* op) override {
+  SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
-    
+
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     dim* old_dims = buffer->dims;
 
@@ -595,7 +600,7 @@ public:
     buffer->dims = old_dims;
   }
 
-  void visit(const truncate_rank* op) override {
+  void eval_shadowed(const truncate_rank* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
@@ -606,6 +611,25 @@ public:
 
     buffer->rank = old_rank;
   }
+
+  template <typename T>
+  void visit_maybe_shadowed(const T* op) {
+    if (op->sym == op->src) {
+      // The operation is shadowed, we can use eval_shadowed.
+      eval_shadowed(op);
+    } else {
+      // The operation is not shadowed. Make a clone and use eval_shadowed on the clone. This is not as efficient as it
+      // could be, but the shadowed case should be faster, so we'll optimize for that case, and prefer that case when
+      // constructing programs.
+      eval_in_clone(op->sym, op->src, [=]() { eval_shadowed(op); });
+    }
+  }
+
+  void visit(const crop_buffer* op) override { visit_maybe_shadowed(op); }
+  void visit(const crop_dim* op) override { visit_maybe_shadowed(op); }
+  void visit(const slice_buffer* op) override { visit_maybe_shadowed(op); }
+  void visit(const slice_dim* op) override { visit_maybe_shadowed(op); }
+  void visit(const truncate_rank* op) override { visit_maybe_shadowed(op); }
 
   void visit(const check* op) override {
     result = eval_expr(op->condition, 0) != 0 ? 0 : 1;

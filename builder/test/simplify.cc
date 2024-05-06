@@ -30,6 +30,8 @@ var b1(symbols, "b1");
 var b2(symbols, "b2");
 var b3(symbols, "b3");
 
+MATCHER_P(matches, x, "") { return match(arg, x); }
+
 }  // namespace
 
 template <typename T>
@@ -41,8 +43,6 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
     }
   }
 }
-
-MATCHER_P(matches, x, "") { return match(arg, x); }
 
 TEST(simplify, basic) {
   ASSERT_THAT(simplify(expr() == 1), matches(expr() == 1));
@@ -148,8 +148,8 @@ TEST(simplify, licm) {
   auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
   auto make_loop_y = [](const stmt& body) { return loop::make(y, loop::parallel, bounds(0, 10), 1, body); };
   auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
-  auto make_crop_x = [](const var& buf, int dim, const stmt& body) { return crop_dim::make(buf, dim, point(x), body); };
-  auto make_crop_y = [](const var& buf, int dim, const stmt& body) { return crop_dim::make(buf, dim, point(y), body); };
+  auto make_crop_x = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
+  auto make_crop_y = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
 
   // One call doesn't depend on the loop.
   ASSERT_THAT(simplify(make_loop_x(make_call(b0, b1))), matches(make_call(b0, b1)));
@@ -191,11 +191,27 @@ TEST(simplify, bounds) {
                   clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2)))),
       matches(stmt()));
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                  crop_dim::make(x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
+                  crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
       matches(stmt()));
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
-                  crop_dim::make(x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2)))),
+                  crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2)))),
       matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2))));
+
+  ASSERT_THAT(simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
+                  crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1))))),
+      matches(check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1)))));
+}
+
+TEST(simplify, clone) {
+  // Clone is shadowed
+  ASSERT_THAT(
+      simplify(clone_buffer::make(x, y, crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
+      matches(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))));
+
+  // Clone should be substituted.
+  ASSERT_THAT(
+      simplify(clone_buffer::make(x, y, crop_dim::make(x, x, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
+      matches(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))));
 }
 
 TEST(simplify, allocate) {
