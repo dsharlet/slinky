@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cassert>
@@ -41,127 +42,105 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
   }
 }
 
-void test_simplify(const expr& test, const expr& expected) {
-  expr result = simplify(test);
-  if (!match(result, expected)) {
-    std::cout << "simplify failed" << std::endl;
-    std::cout << test << std::endl;
-    std::cout << "got: " << std::endl;
-    std::cout << result << std::endl;
-    std::cout << "expected: " << std::endl;
-    std::cout << expected << std::endl;
-    ASSERT_TRUE(false);
-  }
-}
-
-void test_simplify(const stmt& test, const stmt& expected) {
-  stmt result = simplify(test);
-  if (!match(result, expected)) {
-    std::cout << "simplify failed" << std::endl;
-    std::cout << test << std::endl;
-    std::cout << "got: " << std::endl;
-    std::cout << result << std::endl;
-    std::cout << "expected: " << std::endl;
-    std::cout << expected << std::endl;
-    ASSERT_TRUE(false);
-  }
-}
+MATCHER_P(matches, x, "") { return match(arg, x); }
 
 TEST(simplify, basic) {
-  test_simplify(expr() == 1, expr() == 1);
-  test_simplify(expr(1) + 2, 3);
-  test_simplify(expr(1) - 2, -1);
-  test_simplify(expr(1) < 2, 1);
-  test_simplify(expr(1) > 2, 0);
-  test_simplify(negative_infinity() + 3, negative_infinity());
-  test_simplify(3 + negative_infinity(), negative_infinity());
-  test_simplify(positive_infinity() + positive_infinity(), positive_infinity());
-  test_simplify(positive_infinity() + negative_infinity(), indeterminate());
-  test_simplify(positive_infinity() * positive_infinity(), positive_infinity());
-  test_simplify(positive_infinity() * negative_infinity(), negative_infinity());
-  test_simplify(abs(negative_infinity()), positive_infinity());
+  ASSERT_THAT(simplify(expr() == 1), matches(expr() == 1));
+  ASSERT_THAT(simplify(expr(1) + 2), matches(3));
+  ASSERT_THAT(simplify(expr(1) - 2), matches(-1));
+  ASSERT_THAT(simplify(expr(1) < 2), matches(1));
+  ASSERT_THAT(simplify(expr(1) > 2), matches(0));
+  ASSERT_THAT(simplify(negative_infinity() + 3), matches(negative_infinity()));
+  ASSERT_THAT(simplify(3 + negative_infinity()), matches(negative_infinity()));
+  ASSERT_THAT(simplify(positive_infinity() + positive_infinity()), matches(positive_infinity()));
+  ASSERT_THAT(simplify(positive_infinity() + negative_infinity()), matches(indeterminate()));
+  ASSERT_THAT(simplify(positive_infinity() * positive_infinity()), matches(positive_infinity()));
+  ASSERT_THAT(simplify(positive_infinity() * negative_infinity()), matches(negative_infinity()));
+  ASSERT_THAT(simplify(abs(negative_infinity())), matches(positive_infinity()));
 
-  test_simplify(min(1, 2), 1);
-  test_simplify(max(1, 2), 2);
-  test_simplify(min(x, y), min(x, y));
-  test_simplify(max(x, y), max(x, y));
-  test_simplify(min(x, x), x);
-  test_simplify(max(x, x), x);
-  test_simplify(min(x / 2, y / 2), min(x, y) / 2);
-  test_simplify(max(x / 2, y / 2), max(x, y) / 2);
-  test_simplify(min(negative_infinity(), x), negative_infinity());
-  test_simplify(max(negative_infinity(), x), x);
-  test_simplify(min(positive_infinity(), x), x);
-  test_simplify(max(positive_infinity(), x), positive_infinity());
-  test_simplify(min(min(x, 7), min(y, 7)), min(min(x, y), 7));
-  test_simplify(min(min(x, 7), min(7, y)), min(min(x, y), 7));
-  test_simplify(min(min(7, x), min(y, 7)), min(min(x, y), 7));
-  test_simplify(min(min(7, x), min(7, y)), min(min(x, y), 7));
+  ASSERT_THAT(simplify(min(1, 2)), matches(1));
+  ASSERT_THAT(simplify(max(1, 2)), matches(2));
+  ASSERT_THAT(simplify(min(x, y)), matches(min(x, y)));
+  ASSERT_THAT(simplify(max(x, y)), matches(max(x, y)));
+  ASSERT_THAT(simplify(min(x, x)), matches(x));
+  ASSERT_THAT(simplify(max(x, x)), matches(x));
+  ASSERT_THAT(simplify(min(x / 2, y / 2)), matches(min(x, y) / 2));
+  ASSERT_THAT(simplify(max(x / 2, y / 2)), matches(max(x, y) / 2));
+  ASSERT_THAT(simplify(min(negative_infinity(), x)), matches(negative_infinity()));
+  ASSERT_THAT(simplify(max(negative_infinity(), x)), matches(x));
+  ASSERT_THAT(simplify(min(positive_infinity(), x)), matches(x));
+  ASSERT_THAT(simplify(max(positive_infinity(), x)), matches(positive_infinity()));
+  ASSERT_THAT(simplify(min(min(x, 7), min(y, 7))), matches(min(min(x, y), 7)));
+  ASSERT_THAT(simplify(min(min(x, 7), min(7, y))), matches(min(min(x, y), 7)));
+  ASSERT_THAT(simplify(min(min(7, x), min(y, 7))), matches(min(min(x, y), 7)));
+  ASSERT_THAT(simplify(min(min(7, x), min(7, y))), matches(min(min(x, y), 7)));
 
-  test_simplify(x + 0, x);
-  test_simplify(x - 0, x);
-  test_simplify(0 + x + 0, x);
-  test_simplify(x - 0, x);
-  test_simplify(1 * x * 1, x);
-  test_simplify(x * 0, 0);
-  test_simplify(0 * x, 0);
-  test_simplify(x / 1, x);
+  ASSERT_THAT(simplify(x + 0), matches(x));
+  ASSERT_THAT(simplify(x - 0), matches(x));
+  ASSERT_THAT(simplify(0 + x + 0), matches(x));
+  ASSERT_THAT(simplify(x - 0), matches(x));
+  ASSERT_THAT(simplify(1 * x * 1), matches(x));
+  ASSERT_THAT(simplify(x * 0), matches(0));
+  ASSERT_THAT(simplify(0 * x), matches(0));
+  ASSERT_THAT(simplify(x / 1), matches(x));
 
-  test_simplify(x / x, x != 0);
-  test_simplify(0 / x, 0);
+  ASSERT_THAT(simplify(x / x), matches(x != 0));
+  ASSERT_THAT(simplify(0 / x), matches(0));
 
-  test_simplify(((x + 1) - (y - 1)) + 1, x - y + 3);
+  ASSERT_THAT(simplify(((x + 1) - (y - 1)) + 1), matches(x - y + 3));
 
-  test_simplify(select(x, y, y), y);
-  test_simplify(select(x == x, y, z), y);
-  test_simplify(select(x != x, y, z), z);
+  ASSERT_THAT(simplify(select(x, y, y)), matches(y));
+  ASSERT_THAT(simplify(select(x == x, y, z)), matches(y));
+  ASSERT_THAT(simplify(select(x != x, y, z)), matches(z));
 
-  test_simplify(x && false, false);
-  test_simplify(x || true, true);
-  test_simplify(false && x, false);
-  test_simplify(true || x, true);
+  ASSERT_THAT(simplify(x && false), matches(false));
+  ASSERT_THAT(simplify(x || true), matches(true));
+  ASSERT_THAT(simplify(false && x), matches(false));
+  ASSERT_THAT(simplify(true || x), matches(true));
 
-  test_simplify(x < x + 1, true);
-  test_simplify(x - 1 < x + 1, true);
-  test_simplify(min(x + 1, z) < x + 2, true);
+  ASSERT_THAT(simplify(x < x + 1), matches(true));
+  ASSERT_THAT(simplify(x - 1 < x + 1), matches(true));
+  ASSERT_THAT(simplify(min(x + 1, z) < x + 2), matches(true));
 
-  test_simplify(abs(abs(x)), abs(x));
-  test_simplify(max(abs(x), 0), abs(x));
-  test_simplify(min(abs(x), 0), 0);
+  ASSERT_THAT(simplify(abs(abs(x))), matches(abs(x)));
+  ASSERT_THAT(simplify(max(abs(x), 0)), matches(abs(x)));
+  ASSERT_THAT(simplify(min(abs(x), 0)), matches(0));
 
-  test_simplify(select(z == z, x, y), x);
-  test_simplify(select(z != z, x, y), y);
+  ASSERT_THAT(simplify(select(z == z, x, y)), matches(x));
+  ASSERT_THAT(simplify(select(z != z, x, y)), matches(y));
 
-  test_simplify(select(x, y + 1, y + 2), y + select(x, 1, 2));
-  test_simplify(select(x, 1, 2) + 1, select(x, 2, 3));
+  ASSERT_THAT(simplify(select(x, y + 1, y + 2)), matches(y + select(x, 1, 2)));
+  ASSERT_THAT(simplify(select(x, 1, 2) + 1), matches(select(x, 2, 3)));
 }
 
 TEST(simplify, let) {
   // lets that should be removed
-  test_simplify(let::make(x, y, z), z);                      // Dead let
-  test_simplify(let::make(x, y, (x + 1) / x), (y + 1) / y);  // Trivial value, substitute
-  test_simplify(let::make(x, 10, x / x), 1);                 // Trivial value, substitute
+  ASSERT_THAT(simplify(let::make(x, y, z)), matches(z));                      // Dead let
+  ASSERT_THAT(simplify(let::make(x, y, (x + 1) / x)), matches((y + 1) / y));  // Trivial value, substitute
+  ASSERT_THAT(simplify(let::make(x, 10, x / x)), matches(1));                 // Trivial value, substitute
 
-  test_simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))),
-      loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y + z)));  // Trivial value, substitute
+  ASSERT_THAT(simplify(let_stmt::make(x, y, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z)))),
+      matches(loop::make(z, loop::serial, bounds(0, 3), 1, check::make(y + z))));  // Trivial value, substitute
 
   // lets that should be kept
-  test_simplify(
-      let::make(x, y * 2, (x + 1) / x), let::make(x, y * 2, (x + 1) / x));  // Non-trivial, used more than once.
+  ASSERT_THAT(simplify(let::make(x, y * 2, (x + 1) / x)),
+      matches(let::make(x, y * 2, (x + 1) / x)));  // Non-trivial, used more than once.
 
-  test_simplify(let_stmt::make(x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))),
-      let_stmt::make(
-          x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z))));  // Non-trivial, used in loop
+  ASSERT_THAT(simplify(let_stmt::make(x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z)))),
+      matches(let_stmt::make(
+          x, y * w, loop::make(z, loop::serial, bounds(0, 3), 1, check::make(x + z)))));  // Non-trivial, used in loop
 
-  test_simplify(let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)})),
-      let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)})));  // Non-trivial, used twice
+  ASSERT_THAT(simplify(let_stmt::make(x, y * w, block::make({check::make(x > 0), check::make(x < 10)}))),
+      matches(let_stmt::make(
+          x, y * w, block::make({check::make(x > 0), check::make(x < 10)}))));  // Non-trivial, used twice
 
   // Compound lets with dependencies between let values.
-  test_simplify(let::make({{x, y}, {z, x}}, z), y);
-  test_simplify(let::make({{x, y}, {z, x * 2}}, z), let::make(z, y * 2, z));
-  test_simplify(let::make({{x, y * 2}, {z, x}}, z), let::make(x, y * 2, x));
-  test_simplify(let::make({{x, y * 2}, {z, y}}, z), y);
-  test_simplify(let::make({{x, y}, {z, (x + 1) / x}}, (z + 1) / z), let::make({{z, (y + 1) / y}}, (z + 1) / z));
+  ASSERT_THAT(simplify(let::make({{x, y}, {z, x}}, z)), matches(y));
+  ASSERT_THAT(simplify(let::make({{x, y}, {z, x * 2}}, z)), matches(let::make(z, y * 2, z)));
+  ASSERT_THAT(simplify(let::make({{x, y * 2}, {z, x}}, z)), matches(let::make(x, y * 2, x)));
+  ASSERT_THAT(simplify(let::make({{x, y * 2}, {z, y}}, z)), matches(y));
+  ASSERT_THAT(simplify(let::make({{x, y}, {z, (x + 1) / x}}, (z + 1) / z)),
+      matches(let::make({{z, (y + 1) / y}}, (z + 1) / z)));
 }
 
 TEST(simplify, licm) {
@@ -173,76 +152,80 @@ TEST(simplify, licm) {
   auto make_crop_y = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
 
   // One call doesn't depend on the loop.
-  test_simplify(make_loop_x(make_call(b0, b1)), make_call(b0, b1));
+  ASSERT_THAT(simplify(make_loop_x(make_call(b0, b1))), matches(make_call(b0, b1)));
   // Two calls don't depend on the loop.
-  test_simplify(make_loop_x(block::make({make_call(b0, b1), make_call(b0, b2)})),
-      block::make({make_call(b0, b1), make_call(b0, b2)}));
+  ASSERT_THAT(simplify(make_loop_x(block::make({make_call(b0, b1), make_call(b0, b2)}))),
+      matches(block::make({make_call(b0, b1), make_call(b0, b2)})));
   // Last call depends on the loop, first call does not.
-  test_simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))})),
-      block::make({make_call(b0, b1), make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))}));
+  ASSERT_THAT(simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))}))),
+      matches(block::make({make_call(b0, b1), make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))})));
   // A call in the middle of the loop depends on the loop.
-  test_simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)})),
-      block::make(
-          {make_call(b0, b1), make_loop_x(block::make({make_crop_x(b2, 0, make_call(b0, b2))})), make_call(b0, b3)}));
+  ASSERT_THAT(
+      simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)}))),
+      matches(block::make(
+          {make_call(b0, b1), make_loop_x(block::make({make_crop_x(b2, 0, make_call(b0, b2))})), make_call(b0, b3)})));
   // A call in the middle of the loop does not depend on the loop, but does depend on the first call.
-  test_simplify(make_loop_x(block::make(
-                    {make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2), make_crop_x(b3, 0, make_call(b0, b3))})),
-      block::make({make_loop_x(make_crop_x(b1, 0, make_call(b0, b1))), make_call(b1, b2),
-          make_loop_x(make_crop_x(b3, 0, make_call(b0, b3)))}));
+  ASSERT_THAT(simplify(make_loop_x(block::make(
+                  {make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2), make_crop_x(b3, 0, make_call(b0, b3))}))),
+      matches(block::make({make_loop_x(make_crop_x(b1, 0, make_call(b0, b1))), make_call(b1, b2),
+          make_loop_x(make_crop_x(b3, 0, make_call(b0, b3)))})));
   // A nested loop.
-  test_simplify(make_loop_y(make_crop_y(
-                    b2, 1, make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))})))),
-      block::make(
-          {make_call(b0, b1), make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))))}));
+  ASSERT_THAT(simplify(make_loop_y(make_crop_y(
+                  b2, 1, make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))}))))),
+      matches(block::make(
+          {make_call(b0, b1), make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))))})));
 }
 
 TEST(simplify, buffer_intrinsics) {
-  test_simplify(max(buffer_max(x, 0) + 1, buffer_min(x, 0) - 1), buffer_max(x, 0) + 1);
+  ASSERT_THAT(simplify(max(buffer_max(x, 0) + 1, buffer_min(x, 0) - 1)), matches(buffer_max(x, 0) + 1));
 }
 
 TEST(simplify, bounds) {
-  test_simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x)), stmt());
-  test_simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y)), check::make(y));
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x))), matches(stmt()));
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y))), matches(check::make(y)));
 
-  test_simplify(
-      allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2)), stmt());
-  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2))),
-      stmt());
-  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2))),
-      stmt());
-  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
-                    crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2))),
-      allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2)));
+  ASSERT_THAT(
+      simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2))),
+      matches(stmt()));
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                  clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2)))),
+      matches(stmt()));
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                  crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
+      matches(stmt()));
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
+                  crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2)))),
+      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2))));
 
-  test_simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
-                    crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1)))),
-      check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1))));
+  ASSERT_THAT(simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
+                  crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1))))),
+      matches(check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1)))));
 }
 
 TEST(simplify, clone) {
   // Clone is shadowed
-  test_simplify(clone_buffer::make(x, y, crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))),
-      crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})));
+  ASSERT_THAT(
+      simplify(clone_buffer::make(x, y, crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
+      matches(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))));
 
   // Clone should be substituted.
-  test_simplify(clone_buffer::make(x, y, crop_dim::make(x, x, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))),
-      crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})));
+  ASSERT_THAT(
+      simplify(clone_buffer::make(x, y, crop_dim::make(x, x, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
+      matches(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))));
 }
 
 TEST(simplify, allocate) {
   // Pull statements that don't use the buffer out of allocate nodes.
-  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    block::make({check::make(y), check::make(x), check::make(z)})),
-      block::make({check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)),
-          check::make(z)}));
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                  block::make({check::make(y), check::make(x), check::make(z)}))),
+      matches(block::make({check::make(y),
+          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)})));
 
   // Make sure clone_buffer doesn't hide uses of buffers or bounds.
-  test_simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                    block::make({check::make(y), clone_buffer::make(w, x, check::make(w)), check::make(z)})),
-      block::make({check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)),
-          check::make(z)}));
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+                  block::make({check::make(y), clone_buffer::make(w, x, check::make(w)), check::make(z)}))),
+      matches(block::make({check::make(y),
+          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)})));
 }
 
 TEST(simplify, bounds_of) {
@@ -321,30 +304,15 @@ TEST(simplify, bounds_of) {
   }
 }
 
-void test_where(const expr& test, var x, const interval_expr& expected) {
-  interval_expr result = where_true(test, x);
-  if (!match(result, expected)) {
-    std::cout << "where_true failed " << std::endl;
-    std::cout << test << std::endl;
-    std::cout << "got: " << std::endl;
-    std::cout << result << std::endl;
-    std::cout << "expected: " << std::endl;
-    std::cout << expected << std::endl;
-    ASSERT_TRUE(false);
-  }
-}
-
-void test_where_true(const expr& test, var x, const interval_expr& expected) { test_where(test, x, expected); }
-
 TEST(simplify, where_true) {
-  test_where_true(x < 5, x, bounds(negative_infinity(), 4));
-  test_where_true(x < buffer_min(y, 0), x, bounds(negative_infinity(), buffer_min(y, 0) + -1));
-  test_where_true(x / 2 < 7, x, bounds(negative_infinity(), 13));
-  test_where_true(min(x, 6) < 7, x, bounds(negative_infinity(), positive_infinity()));
-  test_where_true(-10 <= x && x < 5, x, bounds(-10, 4));
-  test_where_true(-x < 5, x, bounds(-4, positive_infinity()));
-  test_where_true(3 * x < 5, x, bounds(negative_infinity(), 1));
-  test_where_true(3 * (x + 2) < 5, x, bounds(negative_infinity(), -1));
+  ASSERT_THAT(where_true(x < 5, x), matches(bounds(negative_infinity(), 4)));
+  ASSERT_THAT(where_true(x < buffer_min(y, 0), x), matches(bounds(negative_infinity(), buffer_min(y, 0) + -1)));
+  ASSERT_THAT(where_true(x / 2 < 7, x), matches(bounds(negative_infinity(), 13)));
+  ASSERT_THAT(where_true(min(x, 6) < 7, x), matches(bounds(negative_infinity(), positive_infinity())));
+  ASSERT_THAT(where_true(-10 <= x && x < 5, x), matches(bounds(-10, 4)));
+  ASSERT_THAT(where_true(-x < 5, x), matches(bounds(-4, positive_infinity())));
+  ASSERT_THAT(where_true(3 * x < 5, x), matches(bounds(negative_infinity(), 1)));
+  ASSERT_THAT(where_true(3 * (x + 2) < 5, x), matches(bounds(negative_infinity(), -1)));
 }
 
 std::vector<var> vars = {x, y, z};
