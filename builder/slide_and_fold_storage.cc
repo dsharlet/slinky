@@ -127,13 +127,15 @@ bool is_produced_by(var v, const stmt& body) {
   body.accept(&f);
   return f.found;
 }
+// #define OLD_FOLD
+
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
 // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
 class slide_and_fold : public node_mutator {
 public:
   node_context& ctx;
-  symbol_map<std::vector<expr>> fold_factors;
+  symbol_map<std::vector<std::pair<expr, expr>>> fold_factors;
   struct loop_info {
     var sym;
     expr orig_min;
@@ -157,7 +159,6 @@ public:
     std::optional<int> stage;
 
     bool add_synchronization() {
-      return false;
       if (sync_stages + 1 >= max_workers) {
         // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
         // add more synchronization overhead.
@@ -235,7 +236,8 @@ public:
     auto set_buffer_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     // Initialize the fold factors to infinity.
     auto set_fold_factors =
-        set_value_in_scope(fold_factors, op->sym, std::vector<expr>(op->dims.size(), positive_infinity()));
+        set_value_in_scope(fold_factors, op->sym, 
+            std::vector<std::pair<expr, expr>>(op->dims.size(), {positive_infinity(), expr()}));
     auto set_loop_level = set_value_in_scope(allocation_loop_levels, op->sym, loops.size());
     stmt body = mutate(op->body);
 
@@ -245,11 +247,11 @@ public:
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
     // inferred value.
     // TODO: Is this actually a good design...?
-    const std::vector<expr>& fold_info = *fold_factors[op->sym];
+    const std::vector<std::pair<expr, expr>>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
     expr alloc_var = variable::make(op->sym);
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
-      replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d]);
+      replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d].first);
     }
     std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
     // Replace infinite fold factors with undefined.
@@ -260,10 +262,9 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
-  void try_to_fold(span<const var> outputs) {
+  void try_to_fold(span<const var> outputs, bool did_overlapped_fold) {
     for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
-      bool did_overlapped_fold = false;
       // Only consider loops that are inside the allocation of this output for folding.
       // TODO: It seems like there's probably a more elegant way to do this.
       std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
@@ -271,7 +272,6 @@ public:
 
       // for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
         loop_info& loop = loops.back();
-        loop.add_synchronization();
         std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
         if (!bounds) continue;
 
@@ -307,22 +307,8 @@ public:
             // can fold the storage.
             expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
             if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-              if (loop.add_synchronization()) {
-                // We need a fold per worker when parallelizing the loop.
-                // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-                // If we can figure out how to add some synchronization to limit the number of workers that
-                // work on a single stage at a time, we should be able to reduce this extra folding.
-                // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
-                // This synchronization will cause the loop to run only as fast as the slowest stage, which is
-                // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
-                // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
-                // run at once, so the storage folding here works as intended. If we could instead find a way to give
-                // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
-                // doable by making the worker index available to the loop body, and using that to grab a slice of this
-                // buffer, so each worker can get its own fold.
-                fold_factor *= loop.worker_count;
-              }
-              vector_at(fold_factors[output], d) = fold_factor;
+              std::cout << "Empty overlap" << std::endl;
+              vector_at(fold_factors[output], d) = {fold_factor, expr()};
             } else {
               // The fold factor didn't simplify to something that doesn't depend on the loop variable.
             }
@@ -341,16 +327,9 @@ public:
             if (!did_overlapped_fold) {
               expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
               if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-                // We need an extra fold per worker when parallelizing the loop.
-                // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-                // If we can figure out how to add some synchronization to limit the number of workers that
-                // work on a single stage at a time, we should be able to reduce this extra folding.
-                fold_factor +=
-                    (loop.worker_count - 1) *
-                    simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
-
                 // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-                vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
+                std::cout << "Non-empty overlap -" << simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max) << std::endl;
+                vector_at(fold_factors[output], d) = {simplify(fold_factor), simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max)};
                 did_overlapped_fold = true;
               } else {
                 // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -389,128 +368,168 @@ public:
   void visit_call_or_copy(const T* op, span<const var> outputs) {
     set_result(op);
 
-    // for (var output : outputs) {
-    //   // Start from 1 to skip the 'outermost' loop.
-    //   bool did_overlapped_fold = false;
-    //   // Only consider loops that are inside the allocation of this output for folding.
-    //   // TODO: It seems like there's probably a more elegant way to do this.
-    //   std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
-    //   if (!alloc_loop_level) alloc_loop_level = 1;
+    for (var output : outputs) {
+      // Start from 1 to skip the 'outermost' loop.
+      // bool did_overlapped_fold = false;
+      // Only consider loops that are inside the allocation of this output for folding.
+      // TODO: It seems like there's probably a more elegant way to do this.
+      std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
+      if (!alloc_loop_level) alloc_loop_level = 1;
 
-    //   for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
-    //     loop_info& loop = loops[loop_index];
-    //     loop.add_synchronization();
-    //     std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
-    //     if (!bounds) continue;
+      for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
+        loop_info& loop = loops[loop_index];
+        loop.add_synchronization();
+        std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
+        if (!bounds) continue;
 
-    //     // We don't want to use the bounds of the loop we are sliding over here.
-    //     auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
+        // We don't want to use the bounds of the loop we are sliding over here.
+        auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
 
-    //     expr loop_var = variable::make(loop.sym);
+        expr loop_var = variable::make(loop.sym);
+        auto ff = fold_factors[output];
+        for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+          #ifndef OLD_FOLD
+          if (!ff) continue;
+          expr fold_factor = (*ff)[d].first;
+          expr overlap = (*ff)[d].second;
+          if (!is_finite(fold_factor)) continue;
+          
+          if (!depends_on(fold_factor, loop.sym).any()) {
+            if (overlap.defined()) {
+              // We need an extra fold per worker when parallelizing the loop.
+              // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+              // If we can figure out how to add some synchronization to limit the number of workers that
+              // work on a single stage at a time, we should be able to reduce this extra folding.
+              fold_factor += (loop.worker_count - 1) * overlap;
+              // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+              fold_factor = simplify(align_up(fold_factor, loop.step));
+            } else {
+              if (loop.add_synchronization()) {
+                // We need a fold per worker when parallelizing the loop.
+                // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+                // If we can figure out how to add some synchronization to limit the number of workers that
+                // work on a single stage at a time, we should be able to reduce this extra folding.
+                // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
+                // This synchronization will cause the loop to run only as fast as the slowest stage, which is
+                // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
+                // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
+                // run at once, so the storage folding here works as intended. If we could instead find a way to give
+                // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
+                // doable by making the worker index available to the loop body, and using that to grab a slice of this
+                // buffer, so each worker can get its own fold.
+                fold_factor *= loop.worker_count;
+              }
+            }
+          }
 
-    //     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-    //       std::cout << "Folded 1 - " << output << " " << loop.sym << std::endl;
-    //       interval_expr cur_bounds_d = (*bounds)[d];
-    //       std::cout << "Folded 1.1 - " << d << "\n" << cur_bounds_d << std::endl;
-    //       if (!depends_on(cur_bounds_d, loop.sym).any()) {
-    //         // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
-    //         // just compute it once.
-    //         continue;
-    //       }
+          vector_at(fold_factors[output], d).first = fold_factor;
+          std::cout << "Found fold factor: " << output << " " << loop.sym << " " 
+                      << fold_factor << " " << overlap << std::endl;
+          continue;
+          #endif
+          // interval_expr cur_bounds_d = (*bounds)[d];
+          // std::cout << "Folded 1.1 - " << d << "\n" << cur_bounds_d << std::endl;
+          // if (!depends_on(cur_bounds_d, loop.sym).any()) {
+          //   // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
+          //   // just compute it once.
+          //   continue;
+          // }
 
-    //       interval_expr prev_bounds_d = {
-    //           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
-    //           substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),
-    //       };
+          // interval_expr prev_bounds_d = {
+          //     substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
+          //     substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),
+          // };
 
-    //       // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
-    //       // some expression that is bounded by the loop bounds. This min simplifies away if we know that x <= loop_max,
-    //       // but the simplifier can't figure that out. As a hopefully temporary workaround, we can just substitute
-    //       // infinity for the loop max.
-    //       auto ignore_loop_max = [&](const expr& e) { return substitute(e, loop.bounds.max, positive_infinity()); };
+          // // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
+          // // some expression that is bounded by the loop bounds. This min simplifies away if we know that x <= loop_max,
+          // // but the simplifier can't figure that out. As a hopefully temporary workaround, we can just substitute
+          // // infinity for the loop max.
+          // auto ignore_loop_max = [&](const expr& e) { return substitute(e, loop.bounds.max, positive_infinity()); };
 
-    //       interval_expr overlap = prev_bounds_d & cur_bounds_d;
-    //       if (prove_true(ignore_loop_max(overlap.empty()))) {
-    //         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
-    //         // can fold the storage.
-    //         expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
-    //         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-    //           if (loop.add_synchronization()) {
-    //             // We need a fold per worker when parallelizing the loop.
-    //             // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-    //             // If we can figure out how to add some synchronization to limit the number of workers that
-    //             // work on a single stage at a time, we should be able to reduce this extra folding.
-    //             // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
-    //             // This synchronization will cause the loop to run only as fast as the slowest stage, which is
-    //             // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
-    //             // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
-    //             // run at once, so the storage folding here works as intended. If we could instead find a way to give
-    //             // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
-    //             // doable by making the worker index available to the loop body, and using that to grab a slice of this
-    //             // buffer, so each worker can get its own fold.
-    //             fold_factor *= loop.worker_count;
-    //           }
-    //           vector_at(fold_factors[output], d) = fold_factor;
-    //         } else {
-    //           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
-    //         }
-    //         continue;
-    //       }
+          
+          // interval_expr overlap = prev_bounds_d & cur_bounds_d;
+          // if (prove_true(ignore_loop_max(overlap.empty()))) {
+          //   // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
+          //   // can fold the storage.
+          //   expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
+          //   if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
+          //     if (loop.add_synchronization()) {
+          //       // We need a fold per worker when parallelizing the loop.
+          //       // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+          //       // If we can figure out how to add some synchronization to limit the number of workers that
+          //       // work on a single stage at a time, we should be able to reduce this extra folding.
+          //       // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
+          //       // This synchronization will cause the loop to run only as fast as the slowest stage, which is
+          //       // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
+          //       // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
+          //       // run at once, so the storage folding here works as intended. If we could instead find a way to give
+          //       // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
+          //       // doable by making the worker index available to the loop body, and using that to grab a slice of this
+          //       // buffer, so each worker can get its own fold.
+          //       fold_factor *= loop.worker_count;
+          //       std::cout << "Multiplied fold_factor by " << loop.worker_count << "\n";
+          //     }
+          //     vector_at(fold_factors[output], d) = fold_factor;
+          //   } else {
+          //     // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+          //   }
+          //   continue;
+          // }
 
-    //       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
-    //       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
-    //       expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
-    //       if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
-    //         // The bounds for each loop iteration overlap and are monotonically increasing,
-    //         // so we can incrementally compute only the newly required bounds.
-    //         expr old_min = cur_bounds_d.min;
-    //         expr new_min = simplify(prev_bounds_d.max + 1);
+          // // Allowing the leading edge to not change means that some calls may ask for empty buffers.
+          // expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
+          // expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
+          // if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
+          //   // The bounds for each loop iteration overlap and are monotonically increasing,
+          //   // so we can incrementally compute only the newly required bounds.
+          //   expr old_min = cur_bounds_d.min;
+          //   expr new_min = simplify(prev_bounds_d.max + 1);
 
-    //         if (!did_overlapped_fold) {
-    //           expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
-    //           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-    //             // We need an extra fold per worker when parallelizing the loop.
-    //             // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-    //             // If we can figure out how to add some synchronization to limit the number of workers that
-    //             // work on a single stage at a time, we should be able to reduce this extra folding.
-    //             fold_factor +=
-    //                 (loop.worker_count - 1) *
-    //                 simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
+          //   if (!did_overlapped_fold) {
+          //     expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
+          //     if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
+          //       // We need an extra fold per worker when parallelizing the loop.
+          //       // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+          //       // If we can figure out how to add some synchronization to limit the number of workers that
+          //       // work on a single stage at a time, we should be able to reduce this extra folding.
+          //       fold_factor +=
+          //           (loop.worker_count - 1) *
+          //           simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max);
 
-    //             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-    //             vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
-    //             did_overlapped_fold = true;
-    //           } else {
-    //             // The fold factor didn't simplify to something that doesn't depend on the loop variable.
-    //           }
-    //           std::cout << "Folded 2 - " << fold_factor << std::endl;
-    //         }
+          //       // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+          //       vector_at(fold_factors[output], d) = simplify(align_up(fold_factor, loop.step));
+          //       did_overlapped_fold = true;
+          //     } else {
+          //       // The fold factor didn't simplify to something that doesn't depend on the loop variable.
+          //     }
+          //     std::cout << "Folded 2 - " << fold_factor << std::endl;
+          //   }
 
-    //         // Now that we're only computing the newly required parts of the domain, we need
-    //         // to move the loop min back so we compute the whole required region.
-    //         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
-    //         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-    //         expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
-    //         if (!is_negative_infinity(new_loop_min)) {
-    //           std::cout << "Folded 3.1 - " << std::endl;
-    //           loop.bounds.min = new_loop_min;
+          //   // Now that we're only computing the newly required parts of the domain, we need
+          //   // to move the loop min back so we compute the whole required region.
+          //   expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
+          //   expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
+          //   expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
+          //   if (!is_negative_infinity(new_loop_min)) {
+          //     std::cout << "Folded 3.1 - " << std::endl;
+          //     loop.bounds.min = new_loop_min;
 
-    //           (*bounds)[d].min = new_min;
-    //         } else {
-    //           std::cout << "Folded 3.2 - " << std::endl;
-    //           // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
-    //           // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
-    //           // effectively not slide while running before the original loop min.
-    //           (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
-    //         }
-    //         std::cout << "Folded the end " << output << "\n" << *bounds << std::endl;
-    //       } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
-    //         // TODO: We could also try to slide when the bounds are monotonically
-    //         // decreasing, but this is an unusual case.
-    //       }
-    //     }
-    //   }
-    // }
+          //     (*bounds)[d].min = new_min;
+          //   } else {
+          //     std::cout << "Folded 3.2 - " << std::endl;
+          //     // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
+          //     // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
+          //     // effectively not slide while running before the original loop min.
+          //     (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
+          //   }
+          //   std::cout << "Folded the end " << output << "\n" << *bounds << std::endl;
+          // } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
+          //   // TODO: We could also try to slide when the bounds are monotonically
+          //   // decreasing, but this is an unusual case.
+          // }
+        }
+      }
+    }
   }
 
   void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
@@ -534,11 +553,20 @@ public:
     }
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
 
+    #ifndef OLD_FOLD
+    auto ff = fold_factors[op->sym];
+    bool did_overlapped_fold = false;
+    for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+      if (!ff) continue;
+      expr overlap = (*ff)[d].second;
+      did_overlapped_fold = did_overlapped_fold || overlap.defined();
+    }
+    
     if (loops.size() > 1 && is_produced_by(op->sym, op->body)) {
       std::cout << "trying to fold" << std::endl;
-      try_to_fold({&op->sym, 1});
+      try_to_fold({&op->sym, 1}, did_overlapped_fold);
     }
-
+    #endif
     stmt body = mutate(op->body);
     if (current_buffer_bounds()[op->sym]) {
       // If we folded something, the bounds required may have shrank, update the crop.
@@ -642,10 +670,10 @@ public:
     // Substitute the placeholder worker_count.
     result = substitute(result, l.worker_count, max_workers);
     // We need to do this in the fold factors too.
-    for (std::optional<std::vector<expr>>& i : fold_factors) {
+    for (std::optional<std::vector<std::pair<expr, expr>>>& i : fold_factors) {
       if (!i) continue;
-      for (expr& j : *i) {
-        j = substitute(j, l.worker_count, max_workers);
+      for (std::pair<expr, expr>& j : *i) {
+        j.first = substitute(j.first, l.worker_count, max_workers);
       }
     }
 
