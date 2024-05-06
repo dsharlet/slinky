@@ -30,6 +30,8 @@ var b1(symbols, "b1");
 var b2(symbols, "b2");
 var b3(symbols, "b3");
 
+MATCHER_P(matches, x, "") { return match(arg, x); }
+
 }  // namespace
 
 template <typename T>
@@ -41,8 +43,6 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
     }
   }
 }
-
-MATCHER_P(matches, x, "") { return match(arg, x); }
 
 TEST(simplify, basic) {
   ASSERT_THAT(simplify(expr() == 1), matches(expr() == 1));
