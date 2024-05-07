@@ -512,16 +512,16 @@ stmt substitute_call_inputs(const stmt& s, const symbol_map<var>& subs) {
 class find_buffers : public recursive_node_visitor {
 public:
   symbol_map<bool> found;
-  void visit(const call_stmt* op) override { 
-    for (const auto& i: op->inputs) {
+  void visit(const call_stmt* op) override {
+    for (const auto& i : op->inputs) {
       found[i] = true;
     }
 
-    for (const auto& o: op->outputs) {
+    for (const auto& o : op->outputs) {
       found[o] = true;
     }
   }
-  void visit(const copy_stmt* op) override { 
+  void visit(const copy_stmt* op) override {
     found[op->src] = true;
     found[op->dst] = true;
   }
@@ -646,7 +646,7 @@ class pipeline_builder {
         if (!buffer_used[i]) continue;
         body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
       }
-      
+
       // Followed by intermediate buffers in the reverse topological order
       // (i.e. the outermost buffers are closer to the outputs of the pipeline).
       for (int ix = order_.size() - 1; ix >= 0; ix--) {
