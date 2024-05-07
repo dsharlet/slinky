@@ -3,7 +3,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <iostream>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -14,7 +13,6 @@
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/print.h"
 
 namespace slinky {
 
@@ -300,7 +298,7 @@ public:
         // can fold the storage.
         expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-          vector_at(fold_factors[output], d) = {fold_factor, expr()};
+          vector_at(fold_factors[output], d) = {fold_factor, fold_factor};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
         }
@@ -377,35 +375,23 @@ public:
           if (!is_finite(fold_factor)) continue;
 
           if (!depends_on(fold_factor, loop.sym).any()) {
-            if (overlap.defined()) {
-              // We need an extra fold per worker when parallelizing the loop.
-              // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-              // If we can figure out how to add some synchronization to limit the number of workers that
-              // work on a single stage at a time, we should be able to reduce this extra folding.
-              fold_factor += (loop.worker_count - 1) * overlap;
-              // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-              fold_factor = simplify(align_up(fold_factor, loop.step));
-            } else {
-              if (loop.add_synchronization()) {
-                // We need a fold per worker when parallelizing the loop.
-                // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
-                // If we can figure out how to add some synchronization to limit the number of workers that
-                // work on a single stage at a time, we should be able to reduce this extra folding.
-                // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
-                // This synchronization will cause the loop to run only as fast as the slowest stage, which is
-                // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
-                // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
-                // run at once, so the storage folding here works as intended. If we could instead find a way to give
-                // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
-                // doable by making the worker index available to the loop body, and using that to grab a slice of this
-                // buffer, so each worker can get its own fold.
-                fold_factor *= loop.worker_count;
-              }
-            }
-          }
+            // We need an extra fold per worker when parallelizing the loop.
+            // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+            // If we can figure out how to add some synchronization to limit the number of workers that
+            // work on a single stage at a time, we should be able to reduce this extra folding.
+            // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
+            // This synchronization will cause the loop to run only as fast as the slowest stage, which is
+            // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
+            // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
+            // run at once, so the storage folding here works as intended. If we could instead find a way to give
+            // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
+            // doable by making the worker index available to the loop body, and using that to grab a slice of this
+            // buffer, so each worker can get its own fold.
 
-          vector_at(fold_factors[output], d).first = fold_factor;
-          continue;
+            fold_factor += (loop.worker_count - 1) * overlap;
+            // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
+            vector_at(fold_factors[output], d).first = simplify(align_up(fold_factor, loop.step));
+          }
         }
       }
     }
