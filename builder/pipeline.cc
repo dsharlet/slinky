@@ -660,6 +660,8 @@ class pipeline_builder {
 
   stmt produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
+    // Update the map of used buffers.
+
     if (f->loops().empty()) {
       result = add_input_crops(result, f);
     }
@@ -714,6 +716,8 @@ public:
   //   are func which need to be produced in that new loop.
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     stmt result;
+
+    // TODO: make a list of buffers which will be allocated here.
 
     // Build the functions computed at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
