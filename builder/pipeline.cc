@@ -628,10 +628,10 @@ class pipeline_builder {
     return simplify(bounds);
   }
 
-  stmt make_loop(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
-    loop_id here = {f, loop.var};
+  stmt make_loop(stmt body, const func* base_f, const func::loop_info& loop = func::loop_info()) {
+    loop_id here = {base_f, loop.var};
 
-    body = build(body, f, here);
+    body = build(body, base_f, here);
 
     if (loop.defined()) {
       // Find which buffers are used inside of the body.
@@ -661,9 +661,9 @@ class pipeline_builder {
       }
 
       // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, f, loop);
+      body = crop_for_loop(body, base_f, loop);
       // And make the actual loop.
-      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(f, loop), loop.step, body);
+      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(base_f, loop), loop.step, body);
     }
 
     return body;
@@ -911,6 +911,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  std::cout << std::tie(result, ctx) << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);

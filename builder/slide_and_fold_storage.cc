@@ -258,8 +258,23 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
-  void slide_and_fold_buffer(const var& output, bool did_overlapped_fold) {
-    // Only consider loops that are inside the allocation of this output for folding.
+  void slide_and_fold_buffer(const var& output, const stmt& body) {
+
+    // We only want to fold if we are inside of the loop and the cropped buffer
+    // is produced there.
+    if (loops.size() < 2 || !is_produced_by(output, body)) return;
+
+    auto ff = fold_factors[output];
+    bool did_overlapped_fold = false;
+
+    if (ff) {
+      for (int d = 0; d < static_cast<int>(ff->size()); ++d) {
+        expr overlap = (*ff)[d].second;
+        did_overlapped_fold = did_overlapped_fold || overlap.defined();
+      }
+    }
+
+    // Only consider loops that are there the allocation of this output for folding.
     // TODO: It seems like there's probably a more elegant way to do this.
     std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
     if (!alloc_loop_level) alloc_loop_level = 1;
@@ -420,19 +435,7 @@ public:
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
 
-    // We only want to fold if we are inside of the loop and the cropped buffer
-    // is produced inside.
-    if (loops.size() > 1 && is_produced_by(op->sym, op->body)) {
-      auto ff = fold_factors[op->sym];
-      bool did_overlapped_fold = false;
-      for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-        if (!ff) continue;
-        expr overlap = (*ff)[d].second;
-        did_overlapped_fold = did_overlapped_fold || overlap.defined();
-      }
-
-      slide_and_fold_buffer(op->sym, did_overlapped_fold);
-    }
+    slide_and_fold_buffer(op->sym, op->body);
 
     stmt body = mutate(op->body);
     if (current_buffer_bounds()[op->sym]) {
@@ -460,6 +463,8 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+
+    slide_and_fold_buffer(op->sym, op->body);
 
     stmt body = mutate(op->body);
     interval_expr new_bounds = (*current_buffer_bounds()[op->sym])[op->dim];
