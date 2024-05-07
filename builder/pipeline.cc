@@ -633,15 +633,21 @@ class pipeline_builder {
     body = build(body, f, here);
 
     if (loop.defined()) {
+      // Find which buffers are used inside of the body.
+      // TODO(vksnk): recomputing this seems really wasteful, we can should be
+      // able to maintain the list of buffers as we build the IR.
       symbol_map<bool> buffer_used = buffers_used_inside(body);
 
-      // Wrap loop into crops.
+      // Add crops for the used buffers using previously inferred bounds.
+      // Input syms should be the innermost.
       for (var i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
         if (!buffer_used[i]) continue;
         body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
       }
-
+      
+      // Followed by intermediate buffers in the reverse topological order
+      // (i.e. the outermost buffers are closer to the outputs of the pipeline).
       for (int ix = order_.size() - 1; ix >= 0; ix--) {
         const func* f = order_[ix];
 
@@ -753,13 +759,12 @@ public:
         if (output_syms_.count(b->sym())) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          const box_expr& bounds = *allocation_bounds_[b->sym()];
-
           var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
           uncropped_subs[b->sym()] = uncropped;
           result = clone_buffer::make(uncropped, b->sym(), result);
 
           const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
+          const box_expr& bounds = *allocation_bounds_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
           std::vector<stmt> checks;
@@ -905,13 +910,11 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
-  std::cout << "Initial IR: \n" << std::tie(result, ctx) << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
 
   result = slide_and_fold_storage(result, ctx);
-  std::cout << "Folded IR: \n" << std::tie(result, ctx) << std::endl;
 
   // Add checks that the buffer constraints the user set are satisfied.
   std::vector<stmt> checks;
