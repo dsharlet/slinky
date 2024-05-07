@@ -95,7 +95,7 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
 }
 
 void substitute_bounds(symbol_map<box_expr>& buffers, var buffer_id, const box_expr& bounds) {
-  for (index_t i = 0; i < buffers.size(); ++i) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     slinky::box_expr& b = *buffers[i];
     for (interval_expr& j : b) {
