@@ -126,7 +126,6 @@ bool is_produced_by(var v, const stmt& body) {
   body.accept(&f);
   return f.found;
 }
-// #define OLD_FOLD
 
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
@@ -386,7 +385,6 @@ public:
         auto ff = fold_factors[output];
         if (!ff) continue;
         for (int d = 0; d < static_cast<int>(ff->size()); ++d) {
-          #ifndef OLD_FOLD
           expr fold_factor = (*ff)[d].first;
           expr overlap = (*ff)[d].second;
           if (!is_finite(fold_factor)) continue;
@@ -421,7 +419,6 @@ public:
 
           vector_at(fold_factors[output], d).first = fold_factor;
           continue;
-          #endif
         }
       }
     }
@@ -447,21 +444,19 @@ public:
       std::cout << "bounds crop_buffer: " << op->sym << "\n" << *bounds << std::endl;
     }
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
-
-    #ifndef OLD_FOLD
-    auto ff = fold_factors[op->sym];
-    bool did_overlapped_fold = false;
-    for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-      if (!ff) continue;
-      expr overlap = (*ff)[d].second;
-      did_overlapped_fold = did_overlapped_fold || overlap.defined();
-    }
     
     if (loops.size() > 1 && is_produced_by(op->sym, op->body)) {
-      std::cout << "trying to fold" << std::endl;
+      auto ff = fold_factors[op->sym];
+      bool did_overlapped_fold = false;
+      for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+        if (!ff) continue;
+        expr overlap = (*ff)[d].second;
+        did_overlapped_fold = did_overlapped_fold || overlap.defined();
+      }
+
       try_to_fold({&op->sym, 1}, did_overlapped_fold);
     }
-    #endif
+
     stmt body = mutate(op->body);
     if (current_buffer_bounds()[op->sym]) {
       // If we folded something, the bounds required may have shrank, update the crop.
