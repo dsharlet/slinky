@@ -600,15 +600,6 @@ class pipeline_builder {
     }
   }
 
-  // Add crops to the inputs of f using previously inferred bounds.
-  stmt add_input_crops(stmt result, const func* f) {
-    for (const func::input& i : f->inputs()) {
-      assert(inferred_bounds_[i.sym()]);
-      result = crop_buffer::make(i.sym(), i.sym(), *inferred_bounds_[i.sym()], result);
-    }
-    return result;
-  }
-  // #define OLD_CROPS
   stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
     // Crop all the outputs of this func for this loop.
     for (const func::output& o : f->outputs()) {
@@ -642,8 +633,8 @@ class pipeline_builder {
     body = build(body, f, here);
 
     if (loop.defined()) {
-      #ifndef OLD_CROPS
       symbol_map<bool> buffer_used = buffers_used_inside(body);
+
       // Wrap loop into crops.
       for (var i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
@@ -661,29 +652,13 @@ class pipeline_builder {
           body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }
-      #endif
+
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, f, loop);
       // And make the actual loop.
       body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(f, loop), loop.step, body);
-      #ifdef OLD_CROPS
-      // Wrap loop into crops.
-      for (var i : input_syms_) {
-        if (!allocation_bounds_[i]) continue;
-        body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
-      }
-
-      for (int ix = order_.size() - 1; ix >= 0; ix--) {
-        const func* f = order_[ix];
-
-        for (const func::output& o : f->outputs()) {
-          const buffer_expr_ptr& b = o.buffer;
-          if (!inferred_bounds_[b->sym()]) continue;
-          body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
-        }
-      }
-      #endif
     }
+
     return body;
   }
 
@@ -705,23 +680,11 @@ class pipeline_builder {
 
   stmt produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
-    #ifdef OLD_CROPS
-    if (f->loops().empty()) {
-      result = add_input_crops(result, f);
-    }
-    #endif
+
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       result = make_loop(result, f, loop);
     }
-    // #if 1
-    // for (const func::output& o : f->outputs()) {
-    //   const buffer_expr_ptr& b = o.buffer;
-    //   if (inferred_bounds_[o.sym()]) {
-    //     result = crop_buffer::make(o.sym(), *inferred_bounds_[o.sym()], result);
-    //   }
-    // }
-    // #endif
 
     return result;
   }
@@ -775,21 +738,12 @@ public:
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
-        #ifdef OLD_CROPS
-        if (result.defined()) {
-          result = add_input_crops(result, f);
-        }
-        #endif
         result = block::make({result, produce(f)});
       }
     }
 
     result = block::make({result, body});
-    #ifdef OLD_CROPS
-    if (base_f) {
-      result = add_input_crops(result, base_f);
-    }
-    #endif
+
     symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level.
     for (int ix = order_.size() - 1; ix >= 0; ix--) {
@@ -800,9 +754,7 @@ public:
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
           const box_expr& bounds = *allocation_bounds_[b->sym()];
-          // #ifndef OLD_CROPS
-          // result = crop_buffer::make(b->sym(), bounds, result);
-          // #endif
+
           var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
           uncropped_subs[b->sym()] = uncropped;
           result = clone_buffer::make(uncropped, b->sym(), result);
@@ -810,15 +762,15 @@ public:
           const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
-          // std::vector<stmt> checks;
-          // for (std::size_t d = 0; d < dims.size(); ++d) {
-          //   if (d < bounds.size()) {
-          //     checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-          //     checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          //   }
-          // }
+          std::vector<stmt> checks;
+          for (std::size_t d = 0; d < dims.size(); ++d) {
+            if (d < bounds.size()) {
+              checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+              checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+            }
+          }
 
-          // result = block::make(std::move(checks), result);
+          result = block::make(std::move(checks), result);
         }
       }
     }
