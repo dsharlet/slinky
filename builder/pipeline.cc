@@ -508,6 +508,7 @@ stmt substitute_call_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
+// Find buffers used inside of the statement.
 class find_buffers : public recursive_node_visitor {
 public:
   symbol_map<bool> found;
