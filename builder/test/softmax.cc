@@ -96,13 +96,21 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<std::tuple<int, int>> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 auto split_factors = testing::Values(0, 1, 4);
-INSTANTIATE_TEST_SUITE_P(
-    mode, softmax, testing::Combine(split_factors, split_factors), test_params_to_string<softmax::ParamType>);
 
-void softmax_test_impl(int split_c, int split_b, bool use_compute_at) {
+INSTANTIATE_TEST_SUITE_P(mode, softmax, testing::Combine(split_factors, split_factors, testing::Values(false)),
+    test_params_to_string<softmax::ParamType>);
+
+INSTANTIATE_TEST_SUITE_P(
+    compute_at, softmax, testing::Values(std::make_tuple(1, 1, true)), test_params_to_string<softmax::ParamType>);
+
+TEST_P(softmax, pipeline) {
+  const int split_c = std::get<0>(GetParam());
+  const int split_b = std::get<1>(GetParam());
+  const bool use_compute_at = std::get<2>(GetParam());
+
   // Make the pipeline
   node_context ctx;
 
@@ -123,8 +131,8 @@ void softmax_test_impl(int split_c, int split_b, bool use_compute_at) {
   interval_expr all_c = out->dim(0).bounds;
 
   // Add a trivial producer so we can have an inner loop here.
-  func pass0 =
-      func::make(add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}}, call_stmt::attributes{.name = "producer"});
+  func pass0 = func::make(
+      add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}}, call_stmt::attributes{.name = "producer"});
   func pass1 = func::make(
       max_dim0, {{softmax_in, {all_c, point(b)}}}, {{max_in, {b}}}, call_stmt::attributes{.name = "max_dim0"});
   func pass2 = func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}},
@@ -177,17 +185,6 @@ void softmax_test_impl(int split_c, int split_b, bool use_compute_at) {
     auto ref_b = span<const float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
   }
-}
-
-TEST_P(softmax, pipeline) {
-  const int split_c = std::get<0>(GetParam());
-  const int split_b = std::get<1>(GetParam());
-
-  softmax_test_impl(split_c, split_b, false);
-}
-
-TEST(fused_softmax, pipeline_compute_at) {
-  softmax_test_impl(1, 1, true);
 }
 
 }  // namespace slinky
