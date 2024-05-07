@@ -258,7 +258,7 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
-  void try_to_fold(const var& output, bool did_overlapped_fold) {
+  void slide_and_fold_buffer(const var& output, bool did_overlapped_fold) {
     // Only consider loops that are inside the allocation of this output for folding.
     // TODO: It seems like there's probably a more elegant way to do this.
     std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
@@ -431,7 +431,7 @@ public:
         did_overlapped_fold = did_overlapped_fold || overlap.defined();
       }
 
-      try_to_fold(op->sym, did_overlapped_fold);
+      slide_and_fold_buffer(op->sym, did_overlapped_fold);
     }
 
     stmt body = mutate(op->body);
