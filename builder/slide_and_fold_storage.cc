@@ -261,7 +261,6 @@ public:
   }
 
   void try_to_fold(const var& output, bool did_overlapped_fold) {
-    // Start from 1 to skip the 'outermost' loop.
     // Only consider loops that are inside the allocation of this output for folding.
     // TODO: It seems like there's probably a more elegant way to do this.
     std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
@@ -277,9 +276,7 @@ public:
     expr loop_var = variable::make(loop.sym);
 
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-      std::cout << "Folded 1 - " << output << " " << loop.sym << std::endl;
       interval_expr cur_bounds_d = (*bounds)[d];
-      std::cout << "Folded 1.1 - " << d << "\n" << cur_bounds_d << std::endl;
       if (!depends_on(cur_bounds_d, loop.sym).any()) {
         // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
         // just compute it once.
@@ -303,7 +300,6 @@ public:
         // can fold the storage.
         expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-          std::cout << "Empty overlap" << std::endl;
           vector_at(fold_factors[output], d) = {fold_factor, expr()};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -324,16 +320,12 @@ public:
           expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            std::cout << "Non-empty overlap -"
-                      << simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max)
-                      << std::endl;
             vector_at(fold_factors[output], d) = {simplify(fold_factor),
                 simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max)};
             did_overlapped_fold = true;
           } else {
             // The fold factor didn't simplify to something that doesn't depend on the loop variable.
           }
-          std::cout << "Folded 2 - " << fold_factor << std::endl;
         }
 
         // Now that we're only computing the newly required parts of the domain, we need
@@ -342,18 +334,15 @@ public:
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
         expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
         if (!is_negative_infinity(new_loop_min)) {
-          std::cout << "Folded 3.1 - " << std::endl;
           loop.bounds.min = new_loop_min;
 
           (*bounds)[d].min = new_min;
         } else {
-          std::cout << "Folded 3.2 - " << std::endl;
           // We couldn't find the new loop min. We need to warm up the loop on (or before) the first iteration.
           // TODO(https://github.com/dsharlet/slinky/issues/118): If there is a mix of warmup strategies, this will
           // effectively not slide while running before the original loop min.
           (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
         }
-        std::cout << "Folded the end " << output << "\n" << *bounds << std::endl;
       } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
@@ -367,7 +356,6 @@ public:
 
     for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
-      // bool did_overlapped_fold = false;
       // Only consider loops that are inside the allocation of this output for folding.
       // TODO: It seems like there's probably a more elegant way to do this.
       std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
@@ -446,6 +434,8 @@ public:
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
 
+    // We only want to fold if we are inside of the loop and the cropped buffer
+    // is produced inside.
     if (loops.size() > 1 && is_produced_by(op->sym, op->body)) {
       auto ff = fold_factors[op->sym];
       bool did_overlapped_fold = false;
