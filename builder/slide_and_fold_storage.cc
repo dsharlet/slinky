@@ -611,21 +611,6 @@ public:
     set_result(std::move(result));
     loops.pop_back();
   }
-
-  void visit(const block* op) override {
-    // Visit blocks in reverse order. TODO: Is this really sufficient?
-    std::vector<stmt> stmts(op->stmts.size());
-    bool changed = false;
-    for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
-      stmts[i] = mutate(op->stmts[i]);
-      changed = changed || !stmts[i].same_as(op->stmts[i]);
-    }
-    if (!changed) {
-      set_result(op);
-    } else {
-      set_result(block::make(std::move(stmts)));
-    }
-  }
 };
 
 }  // namespace
