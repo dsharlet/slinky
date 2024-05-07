@@ -2,16 +2,21 @@
 
 #include <cassert>
 
+#include "base/thread_pool.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/thread_pool.h"
 
 namespace slinky {
 
-TEST(evaluate, arithmetic) {
-  node_context ctx;
-  var x(ctx, "x");
+namespace {
 
+node_context ctx;
+var x(ctx, "x");
+var y(ctx, "y");
+
+}  // namespace
+
+TEST(evaluate, arithmetic) {
   eval_context context;
   context[x] = 4;
 
@@ -37,8 +42,6 @@ TEST(evaluate, arithmetic) {
 }
 
 TEST(evaluate, call) {
-  node_context ctx;
-  var x(ctx, "x");
   std::vector<index_t> calls;
   stmt c = call_stmt::make(
       [&](const call_stmt*, eval_context& ctx) -> index_t {
@@ -57,16 +60,13 @@ TEST(evaluate, call) {
 }
 
 TEST(evaluate, loop) {
-  node_context ctx;
-  var x(ctx, "x");
-
   thread_pool t;
 
-  eval_context eval_ctx;
-  eval_ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
-  eval_ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
-  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  eval_context ctx;
+  ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
+  ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
+  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
@@ -79,18 +79,97 @@ TEST(evaluate, loop) {
 
     stmt l = loop::make(x, max_workers, range(2, 12), 3, c);
 
-    int result = evaluate(l, eval_ctx);
+    int result = evaluate(l, ctx);
     ASSERT_EQ(result, 0);
     ASSERT_EQ(sum_x, 2 + 5 + 8 + 11);
   }
 }
 
+void assert_buffer_extents_are(const raw_buffer& buf, const std::vector<int>& extents) {
+  ASSERT_EQ(buf.rank, extents.size());
+  for (std::size_t d = 0; d < extents.size(); ++d) {
+    ASSERT_EQ(extents[d], buf.dim(d).extent());
+  }
+}
+
+stmt make_check(var buffer, std::vector<int> extents) {
+  return call_stmt::make(
+      [=](const call_stmt*, eval_context& ctx) -> index_t {
+        assert_buffer_extents_are(*ctx.lookup_buffer(buffer), extents);
+        return 0;
+      },
+      {}, {buffer}, {});
+}
+
+TEST(evaluate, crop_dim) {
+  eval_context ctx;
+  buffer<void, 2> buf({10, 20});
+  ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  evaluate(crop_dim::make(x, x, 0, {1, 3}, make_check(x, {3, 20})), ctx);
+  evaluate(crop_dim::make(y, x, 0, {1, 3}, block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})), ctx);
+  assert_buffer_extents_are(buf, {10, 20});
+}
+
+TEST(evaluate, crop_buffer) {
+  eval_context ctx;
+  buffer<void, 4> buf({10, 20, 30, 40});
+  ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  evaluate(crop_buffer::make(x, x, {{1, 3}, {}, {2, 5}}, make_check(x, {3, 20, 4, 40})), ctx);
+  evaluate(crop_buffer::make(y, x, {{1, 3}, {}, {2, 5}},
+               block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {3, 20, 4, 40})})),
+      ctx);
+  assert_buffer_extents_are(buf, {10, 20, 30, 40});
+}
+
+TEST(evaluate, slice_dim) {
+  eval_context ctx;
+  buffer<void, 3> buf({10, 20, 30});
+  ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  evaluate(slice_dim::make(x, x, 1, 2, make_check(x, {10, 30})), ctx);
+  evaluate(slice_dim::make(y, x, 1, 2, block::make({make_check(x, {10, 20, 30}), make_check(y, {10, 30})})), ctx);
+  assert_buffer_extents_are(buf, {10, 20, 30});
+}
+
+TEST(evaluate, slice_buffer) {
+  eval_context ctx;
+  buffer<void, 4> buf({10, 20, 30, 40});
+  ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  evaluate(slice_buffer::make(x, x, {{}, 4, {}, 2}, make_check(x, {10, 30})), ctx);
+  evaluate(
+      slice_buffer::make(y, x, {{}, 4, {}, 2}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 30})})),
+      ctx);
+  assert_buffer_extents_are(buf, {10, 20, 30, 40});
+}
+
+TEST(evaluate, truncate_rank) {
+  eval_context ctx;
+  buffer<void, 4> buf({10, 20, 30, 40});
+  ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  evaluate(truncate_rank::make(x, x, 2, make_check(x, {10, 20})), ctx);
+  evaluate(truncate_rank::make(y, x, 2, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
+  assert_buffer_extents_are(buf, {10, 20, 30, 40});
+}
+
+TEST(evaluate, clone_buffer) {
+  eval_context ctx;
+  buffer<void, 2> buf({10, 20});
+  ctx[y] = reinterpret_cast<index_t>(&buf);
+
+  evaluate(clone_buffer::make(x, y, block::make({make_check(x, {10, 20}), make_check(y, {10, 20})})), ctx);
+  assert_buffer_extents_are(buf, {10, 20});
+}
+
 TEST(evaluate, semaphore) {
   thread_pool t;
 
-  eval_context eval_ctx;
-  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  eval_context ctx;
+  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
+  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
 
   index_t sem1 = 0;
   index_t sem2 = 0;
@@ -100,26 +179,23 @@ TEST(evaluate, semaphore) {
 
   std::atomic<int> state = 0;
 
-  std::thread th([&]() { 
-    evaluate(make_wait(sem1), eval_ctx);
+  std::thread th([&]() {
+    evaluate(make_wait(sem1), ctx);
     state++;
-    evaluate(make_signal(sem2), eval_ctx);
-    evaluate(make_wait(sem3), eval_ctx);
+    evaluate(make_signal(sem2), ctx);
+    evaluate(make_wait(sem3), ctx);
     state++;
   });
   ASSERT_EQ(state, 0);
-  evaluate(make_signal(sem1), eval_ctx);
-  evaluate(make_wait(sem2), eval_ctx);
+  evaluate(make_signal(sem1), ctx);
+  evaluate(make_wait(sem2), ctx);
   ASSERT_EQ(state, 1);
-  evaluate(make_signal(sem3), eval_ctx);
+  evaluate(make_signal(sem3), ctx);
   th.join();
   ASSERT_EQ(state, 2);
 }
 
 TEST(evaluate_constant, arithmetic) {
-  node_context ctx;
-  var x(ctx, "x");
-
   ASSERT_EQ(evaluate_constant(x + 5), std::nullopt);
   ASSERT_EQ(evaluate_constant(x - 3), std::nullopt);
   ASSERT_EQ(evaluate_constant(2 * x), std::nullopt);

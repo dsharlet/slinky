@@ -262,6 +262,16 @@ TEST(buffer, slice_non_leading) {
   ASSERT_EQ(sliced.dim(1), buf.dim(2));
 }
 
+TEST(buffer, slice_leading_and_trailing) {
+  buffer<int, 3> buf({1, 2, 3});
+  raw_buffer sliced = buf;
+
+  sliced.slice({0, 2});
+  ASSERT_EQ(sliced.rank, 1);
+  ASSERT_EQ(sliced.dims, buf.dims + 1);
+  ASSERT_EQ(sliced.dim(0), buf.dim(1));
+}
+
 TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
@@ -828,6 +838,18 @@ TEST(fuse_contiguous_dims, fuse3) {
   ASSERT_EQ(b.dim(0).extent(), 6 * 7 * 8);
 }
 
+TEST(fuse_contiguous_dims, fuse_folded) {
+  buffer<int, 3> a({6, 7, 8}), b({6, 7, 8});
+  a.dim(2).set_fold_factor(3);
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 6 * 7 * 8);
+  ASSERT_EQ(a.dim(0).fold_factor(), 6 * 7 * 3);
+  ASSERT_EQ(b.dim(0).extent(), 6 * 7 * 8);
+  ASSERT_EQ(b.dim(0).fold_factor(), dim::unfolded);
+}
+
 TEST(fuse_contiguous_dims, cant_fuse) {
   buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
   ASSERT_NE(a.dim(0).stride(), 0);
@@ -883,7 +905,7 @@ TEST(fuse_contiguous_dims, copy) {
     for (std::size_t d = 0; d < src.rank; ++d) {
       src.dim(d).set_min_extent(0, 5);
     }
-    randomize_strides_and_padding(src, {-1, 1, true, false});
+    randomize_strides_and_padding(src, {-1, 1, true, true});
     init_random(src);
     buffer<void, max_rank> src_opt = src;
 

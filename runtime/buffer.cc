@@ -7,7 +7,7 @@
 #include <cstring>
 #include <functional>
 
-#include "runtime/util.h"
+#include "base/util.h"
 
 namespace slinky {
 

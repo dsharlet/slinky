@@ -1,5 +1,5 @@
-#ifndef SLINKY_RUNTIME_TEST_THREAD_POOL_H
-#define SLINKY_RUNTIME_TEST_THREAD_POOL_H
+#ifndef SLINKY_BASE_THREAD_POOL_H
+#define SLINKY_BASE_THREAD_POOL_H
 
 #include <atomic>
 #include <condition_variable>
@@ -48,4 +48,4 @@ public:
 
 }  // namespace slinky
 
-#endif  // SLINKY_RUNTIME_TEST_THREAD_POOL_H
+#endif  // SLINKY_BASE_THREAD_POOL_H

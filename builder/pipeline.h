@@ -1,10 +1,10 @@
 #ifndef SLINKY_BUILDER_PIPELINE_H
 #define SLINKY_BUILDER_PIPELINE_H
 
+#include "base/ref_count.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
-#include "runtime/util.h"
 
 namespace slinky {
 

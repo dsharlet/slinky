@@ -154,7 +154,7 @@ stmt func::make_call() const {
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
       if (!input.output_slice.empty()) {
-        copy = slice_buffer::make(outputs_[0].sym(), input.output_slice, copy);
+        copy = slice_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_slice, copy);
       }
       copies.push_back(copy);
     }
@@ -604,7 +604,7 @@ class pipeline_builder {
   stmt add_input_crops(stmt result, const func* f) {
     for (const func::input& i : f->inputs()) {
       assert(inferred_bounds_[i.sym()]);
-      result = crop_buffer::make(i.sym(), *inferred_bounds_[i.sym()], result);
+      result = crop_buffer::make(i.sym(), i.sym(), *inferred_bounds_[i.sym()], result);
     }
     return result;
   }
@@ -616,7 +616,7 @@ class pipeline_builder {
         if (o.dims[d] == loop.sym()) {
           expr loop_max = buffer_max(o.sym(), d);
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
-          body = crop_dim::make(o.sym(), d, bounds, body);
+          body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
         }
       }
     }
@@ -629,7 +629,7 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
-          bounds |= o.buffer->dim(d).bounds;
+          bounds |= buffer_bounds(o.sym(), d);
         }
       }
     }
@@ -648,7 +648,7 @@ class pipeline_builder {
       for (var i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
         if (!buffer_used[i]) continue;
-        body = crop_buffer::make(i, *allocation_bounds_[i], body);
+        body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
       }
 
       for (int ix = order_.size() - 1; ix >= 0; ix--) {
@@ -658,7 +658,7 @@ class pipeline_builder {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
           if (!buffer_used[b->sym()]) continue;
-          body = crop_buffer::make(b->sym(), *inferred_bounds_[b->sym()], body);
+          body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }
       #endif
@@ -670,7 +670,7 @@ class pipeline_builder {
       // Wrap loop into crops.
       for (var i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
-        body = crop_buffer::make(i, *allocation_bounds_[i], body);
+        body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
       }
 
       for (int ix = order_.size() - 1; ix >= 0; ix--) {
@@ -679,7 +679,7 @@ class pipeline_builder {
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
-          body = crop_buffer::make(b->sym(), *inferred_bounds_[b->sym()], body);
+          body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }
       #endif

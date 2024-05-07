@@ -11,8 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/util.h"
-
 namespace slinky {
 
 var::var(node_context& ctx, const std::string& name) : var(ctx.insert_unique(name)) {}
@@ -430,43 +428,48 @@ stmt clone_buffer::make(var sym, var src, stmt body) {
   return n;
 }
 
-stmt crop_buffer::make(var sym, std::vector<interval_expr> bounds, stmt body) {
+stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt body) {
   auto n = new crop_buffer();
   n->sym = sym;
+  n->src = src;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
   return n;
 }
 
-stmt crop_dim::make(var sym, int dim, interval_expr bounds, stmt body) {
+stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) {
   auto n = new crop_dim();
   n->sym = sym;
+  n->src = src;
   n->dim = dim;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
   return n;
 }
 
-stmt slice_buffer::make(var sym, std::vector<expr> at, stmt body) {
+stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
   auto n = new slice_buffer();
   n->sym = sym;
+  n->src = src;
   n->at = std::move(at);
   n->body = std::move(body);
   return n;
 }
 
-stmt slice_dim::make(var sym, int dim, expr at, stmt body) {
+stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
   auto n = new slice_dim();
   n->sym = sym;
+  n->src = src;
   n->dim = dim;
   n->at = std::move(at);
   n->body = std::move(body);
   return n;
 }
 
-stmt truncate_rank::make(var sym, int rank, stmt body) {
+stmt truncate_rank::make(var sym, var src, int rank, stmt body) {
   auto n = new truncate_rank();
   n->sym = sym;
+  n->src = src;
   n->rank = rank;
   n->body = std::move(body);
   return n;

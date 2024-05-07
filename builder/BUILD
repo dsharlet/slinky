@@ -26,7 +26,10 @@ cc_library(
         "slide_and_fold_storage.h",
         "substitute.h",
     ],
-    deps = ["//runtime"],
+    deps = [
+        "//base",
+        "//runtime",
+    ],
     visibility = ["//visibility:public"],
 )
 

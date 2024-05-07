@@ -6,12 +6,14 @@
 
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/thread_pool.h"
+#include "base/thread_pool.h"
 
 namespace slinky {
 
 node_context ctx;
 var buf(ctx, "buf");
+var src(ctx, "src");
+var dst(ctx, "dst");
 var buf2(ctx, "buf2");
 var x(ctx, "x");
 var y(ctx, "y");
@@ -33,7 +35,7 @@ stmt make_call_counter(std::atomic<int>& calls) {
 stmt make_loop(stmt body) { return loop::make(x, loop::serial, range(0, iterations), 1, body); }
 
 // For nodes that need a buffer, we can add a buffer outside that loop, the cost of constructing it will be negligible.
-stmt make_buf(int rank, stmt body) {
+stmt make_buf(var buf, int rank, stmt body) {
   std::vector<dim_expr> dims;
   for (int i = 0; i < rank; ++i) {
     dims.push_back({{0, 100}, i, dim::unfolded});
@@ -85,9 +87,9 @@ BENCHMARK(BM_block)->RangeMultiplier(2)->Range(2, 16);
 
 void BM_crop_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = crop_dim::make(buf, 0, {1, 10}, make_call_counter(calls));
+  stmt c = crop_dim::make(dst, state.range(0) ? src : dst, 0, {1, 10}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(3, l);
+  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
 
   for (auto _ : state) {
     evaluate(body);
@@ -96,13 +98,13 @@ void BM_crop_dim(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_crop_dim);
+BENCHMARK(BM_crop_dim)->DenseRange(0, 1);
 
 void BM_crop_buffer(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = crop_buffer::make(buf, {{1, 10}, {}, {2, 20}}, make_call_counter(calls));
+  stmt c = crop_buffer::make(dst, state.range(0) ? src : dst, {{1, 10}, {}, {2, 20}}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(3, l);
+  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
 
   for (auto _ : state) {
     evaluate(body);
@@ -111,13 +113,13 @@ void BM_crop_buffer(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_crop_buffer);
+BENCHMARK(BM_crop_buffer)->DenseRange(0, 1);
 
 void BM_slice_dim(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = slice_dim::make(buf, 1, 10, make_call_counter(calls));
+  stmt c = slice_dim::make(dst, state.range(0) ? src : dst, 1, 10, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(3, l);
+  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
 
   for (auto _ : state) {
     evaluate(body);
@@ -126,13 +128,13 @@ void BM_slice_dim(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_slice_dim);
+BENCHMARK(BM_slice_dim)->DenseRange(0, 1);
 
 void BM_slice_buffer(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt c = slice_buffer::make(buf, {10, {}, 20}, make_call_counter(calls));
+  stmt c = slice_buffer::make(dst, state.range(0) ? src : dst, {10, {}, 20}, make_call_counter(calls));
   stmt l = make_loop(c);
-  stmt body = make_buf(3, l);
+  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
 
   for (auto _ : state) {
     evaluate(body);
@@ -141,7 +143,7 @@ void BM_slice_buffer(benchmark::State& state) {
   state.SetItemsProcessed(calls);
 }
 
-BENCHMARK(BM_slice_buffer);
+BENCHMARK(BM_slice_buffer)->DenseRange(0, 1);
 
 void BM_allocate(benchmark::State& state) {
   std::atomic<int> calls = 0;
@@ -159,7 +161,7 @@ BENCHMARK(BM_allocate);
 
 void BM_make_buffer(benchmark::State& state) {
   std::atomic<int> calls = 0;
-  stmt body = make_loop(make_buf(3, make_call_counter(calls)));
+  stmt body = make_loop(make_buf(buf, 3, make_call_counter(calls)));
 
   for (auto _ : state) {
     evaluate(body);
@@ -174,7 +176,7 @@ void BM_buffer_metadata(benchmark::State& state) {
   std::atomic<int> calls = 0;
   std::vector<dim_expr> dims = {buffer_dim(buf, 0), buffer_dim(buf, 1), buffer_dim(buf, 2)};
   stmt clone = make_buffer::make(buf2, buffer_at(buf), buffer_elem_size(buf), dims, make_call_counter(calls));
-  stmt body = make_buf(3, make_loop(clone));
+  stmt body = make_buf(buf, 3, make_loop(clone));
 
   for (auto _ : state) {
     evaluate(body);

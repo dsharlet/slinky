@@ -7,7 +7,9 @@
 #include <cstring>
 #include <memory>
 
-#include "runtime/util.h"
+#include "base/arithmetic.h"
+#include "base/span.h"
+#include "base/util.h"
 
 namespace slinky {
 
@@ -68,8 +70,9 @@ public:
 
   void translate(index_t offset) { min_ += offset; }
 
-  bool contains(index_t x) const { return stride() == 0 || (min() <= x && x <= max()); }
-  bool contains(const dim& other) const { return stride() == 0 || (min() <= other.min() && other.max() <= max()); }
+  bool contains(index_t a, index_t b) const { return stride() == 0 || (min() <= a && b <= max()); }
+  bool contains(index_t x) const { return contains(x, x); }
+  bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
@@ -201,34 +204,29 @@ public:
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
   raw_buffer& slice(span<const std::size_t> ds) {
-    auto i = ds.begin();
+    // Handle any slices of leading dimensions by just incrementing the dims pointer.
     std::size_t slice_leading = 0;
-    for (std::size_t d = 0; d < rank; ++d) {
-      if (i != ds.end() && *i == d) {
-        // We want to slice this leading dimension. We can do this by just adjusting the dims pointer.
+    for (std::size_t d : ds) {
+      if (d == slice_leading) {
         ++slice_leading;
-        ++i;
       } else {
         break;
       }
     }
+
+    for (std::size_t i = slice_leading; i < ds.size(); ++i) {
+      std::size_t d = ds[i];
+      std::size_t next_d = i + 1 < ds.size() ? ds[i + 1] : rank;
+
+      // Move the dimensions between this slice and the next slice down by the number of slices we've done so far.
+      for (std::size_t j = d; j + 1 < next_d; ++j) {
+        dims[j] = dims[j + i + 1];
+      }
+      --rank;
+    }
+
     dims += slice_leading;
     rank -= slice_leading;
-
-    std::size_t new_rank = 0;
-    for (std::size_t d = 0; d < rank; ++d) {
-      if (i != ds.end() && *i == d + slice_leading) {
-        // We want to slice this dimension, don't copy it and move to the next slice.
-        ++i;
-        // The values in `ds` must be sorted.
-        assert(i == ds.end() || *i > d + slice_leading);
-      } else {
-        // Copy this dimension (if it isn't already in the right place).
-        if (new_rank != d) dims[new_rank] = dims[d];
-        ++new_rank;
-      }
-    }
-    rank = new_rank;
     return *this;
   }
   raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }
@@ -486,11 +484,11 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
-  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
   if (od.extent() != 1 && od.fold_factor() != dim::unfolded) {
     assert(id.fold_factor() == dim::unfolded);
     id.set_fold_factor(od.fold_factor() * id.extent());
   }
+  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
   if (type == fuse_type::keep) {
     od.set_min_extent(0, 1);
   } else if (type == fuse_type::remove) {

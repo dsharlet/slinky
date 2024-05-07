@@ -3,8 +3,8 @@
 #include <fstream>
 #include <sstream>
 
-#include "runtime/chrome_trace.h"
-#include "runtime/thread_pool.h"
+#include "base/chrome_trace.h"
+#include "base/thread_pool.h"
 
 namespace slinky {
 

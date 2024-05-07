@@ -18,7 +18,6 @@
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/util.h"
 
 namespace slinky {
 
@@ -237,6 +236,7 @@ public:
       }
     }
 
+    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
     node_mutator::visit(op);
 
     // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
@@ -266,6 +266,7 @@ public:
       }
     }
 
+    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
     node_mutator::visit(op);
 
     // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
@@ -389,7 +390,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   }
 
   for (const std::pair<var, int>& d : dst_x) {
-    result = slice_dim::make(op->dst, d.second, d.first, result);
+    result = slice_dim::make(op->dst, op->dst, d.second, d.first, result);
     result = loop::make(d.first, loop::serial, buffer_bounds(op->dst, d.second), 1, result);
   }
   return let_stmt::make(std::move(lets), result);

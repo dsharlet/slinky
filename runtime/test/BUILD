@@ -4,23 +4,13 @@ package(
 )
 
 cc_test(
-    name = "arithmetic",
-    srcs = ["arithmetic.cc"],
-    deps = [
-        "//runtime",
-        "@googletest//:gtest_main",
-    ],
-    size="small",
-)
-
-cc_test(
     name = "buffer",
     srcs = ["buffer.cc"],
     deps = [
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -30,7 +20,7 @@ cc_test(
         "//runtime",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -38,10 +28,10 @@ cc_test(
     srcs = ["evaluate.cc"],
     deps = [
         "//runtime",
-        "//runtime:thread_pool",
+        "//base:thread_pool",
         "@googletest//:gtest_main",
     ],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -52,7 +42,7 @@ cc_test(
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=0.1s"],
-    size="small",
+    size = "small",
 )
 
 cc_test(
@@ -60,9 +50,9 @@ cc_test(
     srcs = ["evaluate_benchmark.cc"],
     deps = [
         "//runtime",
-        "//runtime:thread_pool",
+        "//base:thread_pool",
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=0.1s"],
-    size="small",
+    size = "small",
 )

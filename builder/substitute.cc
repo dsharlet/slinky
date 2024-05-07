@@ -10,7 +10,6 @@
 #include "builder/node_mutator.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
-#include "runtime/util.h"
 
 namespace slinky {
 
@@ -251,6 +250,7 @@ public:
     assert(cbs);
 
     if (!try_match(cbs->sym, op->sym)) return;
+    if (!try_match(cbs->src, op->src)) return;
     if (!try_match(cbs->bounds, op->bounds)) return;
     if (!try_match(cbs->body, op->body)) return;
   }
@@ -260,6 +260,7 @@ public:
     assert(cds);
 
     if (!try_match(cds->sym, op->sym)) return;
+    if (!try_match(cds->src, op->src)) return;
     if (!try_match(cds->dim, op->dim)) return;
     if (!try_match(cds->bounds, op->bounds)) return;
     if (!try_match(cds->body, op->body)) return;
@@ -270,6 +271,7 @@ public:
     assert(cbs);
 
     if (!try_match(cbs->sym, op->sym)) return;
+    if (!try_match(cbs->src, op->src)) return;
     if (!try_match(cbs->at, op->at)) return;
     if (!try_match(cbs->body, op->body)) return;
   }
@@ -279,6 +281,7 @@ public:
     assert(cds);
 
     if (!try_match(cds->sym, op->sym)) return;
+    if (!try_match(cds->src, op->src)) return;
     if (!try_match(cds->dim, op->dim)) return;
     if (!try_match(cds->at, op->at)) return;
     if (!try_match(cds->body, op->body)) return;
@@ -289,6 +292,7 @@ public:
     assert(trs);
 
     if (!try_match(trs->sym, op->sym)) return;
+    if (!try_match(trs->src, op->src)) return;
     if (!try_match(trs->rank, op->rank)) return;
     if (!try_match(trs->body, op->body)) return;
   }
@@ -509,6 +513,7 @@ public:
     return body;
   }
   void visit(const slice_buffer* op) override {
+    var src = visit_symbol(op->src);
     std::vector<expr> at(op->at.size());
     at.reserve(op->at.size());
     bool changed = false;
@@ -521,30 +526,33 @@ public:
       }
     }
     stmt body = mutate_slice_body(op->sym, dims, op->body);
-    if (!changed && body.same_as(op->body)) {
+    if (!changed && src == op->src && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(slice_buffer::make(op->sym, std::move(at), std::move(body)));
+      set_result(slice_buffer::make(op->sym, src, std::move(at), std::move(body)));
     }
   }
   void visit(const slice_dim* op) override {
+    var src = visit_symbol(op->src);
     expr at = mutate(op->at);
     int slices[] = {op->dim};
     stmt body = mutate_slice_body(op->sym, slices, op->body);
-    if (at.same_as(op->at) && body.same_as(op->body)) {
+    if (src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(slice_dim::make(op->sym, op->dim, std::move(at), std::move(body)));
+      set_result(slice_dim::make(op->sym, src, op->dim, std::move(at), std::move(body)));
     }
   }
 
-  interval_expr substitute_crop_bounds(var sym, int dim, const interval_expr& bounds) {
+  interval_expr substitute_crop_bounds(var src, int dim, const interval_expr& bounds) {
     // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(sym, dim) and
-    // buffer_max(sym, dim).
-    expr buf_var = variable::make(sym);
-    interval_expr old_bounds = {buffer_min(buf_var, dim), buffer_max(buf_var, dim)};
+    // buffer_max(src, dim).
+    interval_expr old_bounds = buffer_bounds(src, dim);
     interval_expr new_bounds = {mutate(old_bounds.min), mutate(old_bounds.max)};
     interval_expr result = {mutate(bounds.min), mutate(bounds.max)};
+    // TODO: When substituting the crop src, this algorithm results in adding clamps that are unnecessary. The
+    // simplifier should remove them, but we should avoid generating them in the first place if possible.
+    // We could just not do this if src != op->src, but that seems like a hack.
     if (!old_bounds.min.same_as(new_bounds.min)) {
       // The substitution changed the implicit clamp, include it.
       result.min = max(result.min, new_bounds.min);
@@ -557,27 +565,29 @@ public:
   }
 
   void visit(const crop_buffer* op) override {
+    var src = visit_symbol(op->src);
     box_expr bounds(op->bounds.size());
     bool changed = false;
     for (std::size_t i = 0; i < op->bounds.size(); ++i) {
-      bounds[i] = substitute_crop_bounds(op->sym, i, op->bounds[i]);
+      bounds[i] = substitute_crop_bounds(op->src, i, op->bounds[i]);
       changed = changed || !bounds[i].same_as(op->bounds[i]);
     }
     stmt body = mutate_decl_body(op->sym, op->body);
-    if (changed || !body.same_as(op->body)) {
-      set_result(crop_buffer::make(op->sym, std::move(bounds), std::move(body)));
+    if (changed || src != op->src || !body.same_as(op->body)) {
+      set_result(crop_buffer::make(op->sym, src, std::move(bounds), std::move(body)));
     } else {
       set_result(op);
     }
   }
 
   void visit(const crop_dim* op) override {
-    interval_expr bounds = substitute_crop_bounds(op->sym, op->dim, op->bounds);
+    var src = visit_symbol(op->src);
+    interval_expr bounds = substitute_crop_bounds(op->src, op->dim, op->bounds);
     stmt body = mutate_decl_body(op->sym, op->body);
-    if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
+    if (src == op->src && bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(crop_dim::make(op->sym, op->dim, std::move(bounds), std::move(body)));
+      set_result(crop_dim::make(op->sym, src, op->dim, std::move(bounds), std::move(body)));
     }
   }
 
@@ -614,10 +624,18 @@ public:
     }
     node_mutator::visit(op);
   }
-  // truncate_rank, clone_buffer, not treated here because references to dimensions of these
-  // operations are still valid.
-  // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
-  // dims.
+
+  void visit(const truncate_rank* op) override {
+    // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
+    // dims.
+    var src = visit_symbol(op->src);
+    stmt body = mutate_decl_body(op->sym, op->body);
+    if (src != op->src || !body.same_as(op->body)) {
+      set_result(truncate_rank::make(op->sym, src, op->rank, std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
 
   void visit(const call_stmt* op) override {
     call_stmt::symbol_list inputs(op->inputs.size());

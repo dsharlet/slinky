@@ -1,5 +1,5 @@
-#ifndef SLINKY_RUNTIME_CHROME_TRACE_H
-#define SLINKY_RUNTIME_CHROME_TRACE_H
+#ifndef SLINKY_BASE_CHROME_TRACE_H
+#define SLINKY_BASE_CHROME_TRACE_H
 
 #include <iostream>
 #include <chrono>
@@ -31,4 +31,4 @@ public:
 
 }  // namespace slinky
 
-#endif  // SLINKY_RUNTIME_CHROME_TRACE_H
+#endif  // SLINKY_BASE_CHROME_TRACE_H
