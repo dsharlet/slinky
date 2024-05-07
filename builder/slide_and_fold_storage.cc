@@ -259,7 +259,6 @@ public:
   }
 
   void slide_and_fold_buffer(const var& output, const stmt& body) {
-
     // We only want to fold if we are inside of the loop and the cropped buffer
     // is produced there.
     if (loops.size() < 2 || !is_produced_by(output, body)) return;
