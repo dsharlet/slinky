@@ -96,15 +96,20 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<std::tuple<int, int>> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 auto split_factors = testing::Values(0, 1, 4);
+
+INSTANTIATE_TEST_SUITE_P(mode, softmax, testing::Combine(split_factors, split_factors, testing::Values(false)),
+    test_params_to_string<softmax::ParamType>);
+
 INSTANTIATE_TEST_SUITE_P(
-    mode, softmax, testing::Combine(split_factors, split_factors), test_params_to_string<softmax::ParamType>);
+    compute_at, softmax, testing::Values(std::make_tuple(1, 1, true)), test_params_to_string<softmax::ParamType>);
 
 TEST_P(softmax, pipeline) {
   const int split_c = std::get<0>(GetParam());
   const int split_b = std::get<1>(GetParam());
+  const bool use_compute_at = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -126,8 +131,8 @@ TEST_P(softmax, pipeline) {
   interval_expr all_c = out->dim(0).bounds;
 
   // Add a trivial producer so we can have an inner loop here.
-  func pass0 =
-      func::make(add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}}, call_stmt::attributes{.name = "producer"});
+  func pass0 = func::make(
+      add_1<float>, {{in, {point(c), point(b)}}}, {{softmax_in, {c, b}}}, call_stmt::attributes{.name = "producer"});
   func pass1 = func::make(
       max_dim0, {{softmax_in, {all_c, point(b)}}}, {{max_in, {b}}}, call_stmt::attributes{.name = "max_dim0"});
   func pass2 = func::make(sum_exp, {{in, {all_c, point(b)}}, {max_in, {point(b)}}},
@@ -143,6 +148,10 @@ TEST_P(softmax, pipeline) {
   if (split_b > 0) loops.push_back({b, split_b});
   pass0.loops(loops);
   pass4.loops(loops);
+
+  if (use_compute_at) {
+    pass1.compute_at({&pass4, b});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

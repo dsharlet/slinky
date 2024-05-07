@@ -508,6 +508,31 @@ stmt substitute_call_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
+// Find buffers used inside of the statement.
+class find_buffers : public recursive_node_visitor {
+public:
+  symbol_map<bool> found;
+  void visit(const call_stmt* op) override {
+    for (const auto& i : op->inputs) {
+      found[i] = true;
+    }
+
+    for (const auto& o : op->outputs) {
+      found[o] = true;
+    }
+  }
+  void visit(const copy_stmt* op) override {
+    found[op->src] = true;
+    found[op->dst] = true;
+  }
+};
+
+symbol_map<bool> buffers_used_inside(const stmt& body) {
+  find_buffers f;
+  body.accept(&f);
+  return f.found;
+}
+
 class pipeline_builder {
   node_context& ctx;
 
@@ -576,17 +601,8 @@ class pipeline_builder {
     }
   }
 
-  // Add crops to the inputs of f using previously inferred bounds.
-  stmt add_input_crops(stmt result, const func* f) {
-    for (const func::input& i : f->inputs()) {
-      assert(inferred_bounds_[i.sym()]);
-      result = crop_buffer::make(i.sym(), i.sym(), *inferred_bounds_[i.sym()], result);
-    }
-    return result;
-  }
-
   stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
-    // Crop all the outputs of this buffer for this loop.
+    // Crop all the outputs of this func for this loop.
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
@@ -612,33 +628,44 @@ class pipeline_builder {
     return simplify(bounds);
   }
 
-  stmt make_loop(stmt body, const func* f, const func::loop_info& loop = func::loop_info()) {
-    loop_id here = {f, loop.var};
+  stmt make_loop(stmt body, const func* base_f, const func::loop_info& loop = func::loop_info()) {
+    loop_id here = {base_f, loop.var};
 
-    body = build(body, f, here);
+    body = build(body, base_f, here);
 
     if (loop.defined()) {
-      // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, f, loop);
-      // And make the actual loop.
-      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(f, loop), loop.step, body);
+      // Find which buffers are used inside of the body.
+      // TODO(vksnk): recomputing this seems really wasteful, we can should be
+      // able to maintain the list of buffers as we build the IR.
+      symbol_map<bool> buffer_used = buffers_used_inside(body);
 
-      // Wrap loop into crops.
+      // Add crops for the used buffers using previously inferred bounds.
+      // Input syms should be the innermost.
       for (var i : input_syms_) {
         if (!allocation_bounds_[i]) continue;
+        if (!buffer_used[i]) continue;
         body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
       }
 
+      // Followed by intermediate buffers in the reverse topological order
+      // (i.e. the outermost buffers are closer to the outputs of the pipeline).
       for (int ix = order_.size() - 1; ix >= 0; ix--) {
         const func* f = order_[ix];
 
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
+          if (!buffer_used[b->sym()]) continue;
           body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }
+
+      // The loop body is done, and we have an actual loop to make here. Crop the body.
+      body = crop_for_loop(body, base_f, loop);
+      // And make the actual loop.
+      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(base_f, loop), loop.step, body);
     }
+
     return body;
   }
 
@@ -660,12 +687,9 @@ class pipeline_builder {
 
   stmt produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
+
     // Update the map of used buffers.
-
-    if (f->loops().empty()) {
-      result = add_input_crops(result, f);
-    }
-
+    
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       result = make_loop(result, f, loop);
@@ -725,18 +749,11 @@ public:
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
-        if (result.defined()) {
-          result = add_input_crops(result, f);
-        }
         result = block::make({result, produce(f)});
       }
     }
 
     result = block::make({result, body});
-
-    if (base_f) {
-      result = add_input_crops(result, base_f);
-    }
 
     symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level.
@@ -898,6 +915,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  std::cout << std::tie(result, ctx) << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
