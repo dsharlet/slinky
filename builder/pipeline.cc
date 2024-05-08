@@ -454,9 +454,8 @@ void compute_innermost_locations(const std::vector<const func*>& order,
 
     // Add loops for this function to the loop nest. The loops are defined
     // from innermost to outermost, so iterate in reverse order.
-    for (int i = f->loops().size() - 1; i >= 0; i--) {
-      const auto& l = f->loops()[i];
-      loop_tree.push_back({parent_id, {f, l.var}});
+    for (auto l = f->loops().rbegin(); l != f->loops().rend(); ++l) {
+      loop_tree.push_back({parent_id, {f, l->var}});
       parent_id = loop_tree.size() - 1;
     }
     func_to_loop_tree[f] = parent_id;
@@ -552,8 +551,8 @@ class pipeline_builder {
   lift_buffer_metadata sanitizer_;
 
   void substitute_buffer_dims() {
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
@@ -649,9 +648,8 @@ class pipeline_builder {
 
       // Followed by intermediate buffers in the reverse topological order
       // (i.e. the outermost buffers are closer to the outputs of the pipeline).
-      for (int ix = order_.size() - 1; ix >= 0; ix--) {
-        const func* f = order_[ix];
-
+      for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+        const func* f = *i;
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
@@ -740,8 +738,8 @@ public:
     stmt result;
 
     // Build the functions computed at this loop level.
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
@@ -753,8 +751,8 @@ public:
 
     symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level.
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
@@ -810,9 +808,8 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
-
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
