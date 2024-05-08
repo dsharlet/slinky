@@ -280,7 +280,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_4 = func::make(std::move(_replica_fn_5), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}}, {});
   auto _6 = variable::make(out->sym());
-  auto _fn_0 = func::make_copy({{intm1, {point(x), point(((y - 0)))}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {}}, {intm2, {point(x), point(((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))))}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {}}}, {out, {x, y}});
+  auto _fn_0 = func::make_copy({{intm1, {point(x), point(((y - 0)))}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {}}, {intm2, {point(x), point(((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))))}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {.no_alias_buffers = true});
   return p;
 };
@@ -334,7 +334,7 @@ auto p = []() -> ::slinky::pipeline {
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
   auto _fn_3 = func::make(std::move(_replica_fn_4), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}}, {});
-  auto _fn_0 = func::make_copy({{intm1, {point(x), point(y)}, {}, {expr(), expr(), 0}}, {intm2, {point(x), point(y)}, {}, {expr(), expr(), 1}}}, {out, {x, y}});
+  auto _fn_0 = func::make_copy({{intm1, {point(x), point(y)}, {}, {}, {expr(), expr(), 0}}, {intm2, {point(x), point(y)}, {}, {}, {expr(), expr(), 1}}}, {out, {x, y}});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {});
   return p;
 };
@@ -379,7 +379,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, {});
   auto _4 = variable::make(in->sym());
-  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}}}, {padded_intm, {x, y}});
+  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}, {}}}, {padded_intm, {x, y}});
   _fn_1.compute_root();
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};

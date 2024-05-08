@@ -153,6 +153,9 @@ stmt func::make_call() const {
         dst_x.push_back(i);
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+      if (!input.output_crop.empty()) {
+        copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
+      }
       if (!input.output_slice.empty()) {
         copy = slice_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_slice, copy);
       }
@@ -184,6 +187,8 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
     // Translate the bounds into the crop needed by make_copy.
     // We leave the dimensions not concatenated undefined so infer_bounds will require each input to provide the full
     // output in those dimensions.
+    input.input_crop.resize(dim + 1);
+    input.input_crop[dim] = range(bounds[i], bounds[i + 1]);
     input.output_crop.resize(dim + 1);
     input.output_crop[dim] = range(bounds[i], bounds[i + 1]);
 
@@ -279,13 +284,13 @@ bounds_map get_output_bounds(const std::vector<func::output>& outputs) {
 box_expr compute_input_bounds(
     const func* f, const func::input& i, const bounds_map& output_bounds, lift_buffer_metadata& sanitizer) {
   bounds_map output_bounds_i = output_bounds;
-  if (!i.output_crop.empty()) {
-    const box_expr& crop = i.output_crop;
+  if (!i.input_crop.empty()) {
     assert(f->outputs().size() == 1);
     const func::output& o = f->outputs()[0];
     // We have an output crop for this input. Apply it to our bounds.
     // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
     // difficult to do because it could be used in several places, each with a different output crop to apply.
+    const box_expr& crop = i.input_crop;
     for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
       *output_bounds_i[o.dims[d]] &= sanitizer.mutate(crop[d]);
     }
