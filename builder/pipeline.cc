@@ -948,9 +948,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = simplify(result);
 
   result = fix_buffer_races(result);
-  std::cout << result << std::endl;
+
   result = insert_early_free(result);
-  std::cout << result << std::endl;
+
   if (options.trace) {
     result = inject_traces(result, ctx, constants);
   }

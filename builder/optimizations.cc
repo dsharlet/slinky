@@ -489,9 +489,9 @@ public:
 
   void visit_terminal(const stmt& s) {
     stmt result = s;
-    std::cout << "Names size: " << names.size() << std::endl;
+    std::cout << "Names size: " << names.size() << " " << found << std::endl;
     if (!found && depends_on(s, names).any()) {
-      std::cout << "Stmt depends on " << names.front() << std::endl;
+      std::cout << ">>>> Stmt depends on " << names.front() << std::endl;
       found = true;
       if (visited_something) {
         result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}) == 1)});
@@ -514,6 +514,17 @@ public:
   void visit(const copy_stmt* op) override  {
     std::cout << "Copy stmt:" << std::endl;
     visit_terminal(op);
+  }
+
+  void visit(const make_buffer* op) override { 
+    bool base_depends = depends_on(op->base, names).any();
+    if (base_depends) {
+      names.push_back(op->sym);
+    }
+    node_mutator::visit(op);
+    if (base_depends) {
+      names.pop_back();
+    }
   }
 
   template <typename T>
