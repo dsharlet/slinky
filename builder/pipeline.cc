@@ -807,14 +807,14 @@ public:
   }
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
-  stmt make_buffers(const stmt& body) {
+  stmt make_buffers(stmt body) {
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
         if (!maybe_dims) continue;
-        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
+        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, std::move(body));
       }
     }
     return body;
@@ -906,7 +906,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
-  stmt result = builder.build(result, nullptr, loop_id());
+  stmt result;
+  result = builder.build(result, nullptr, loop_id());
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
