@@ -391,9 +391,9 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 
   // Compare paths to the root node until the diverge. The last node before
   // the diversion point is the least common ancestor.
-  int max_match = paths_from_root[0].size() - 1;
-  for (std::size_t ix = 1; ix < paths_from_root.size(); ix++) {
-    max_match = compare_paths_up_to(paths_from_root[0], paths_from_root[ix], max_match);
+  int max_match = static_cast<int>(paths_from_root[0].size()) - 1;
+  for (const std::vector<int>& path : paths_from_root) {
+    max_match = compare_paths_up_to(paths_from_root[0], path, max_match);
   }
 
   return paths_from_root[0][max_match];
@@ -458,7 +458,7 @@ void compute_innermost_locations(const std::vector<const func*>& order,
     // from innermost to outermost, so iterate in reverse order.
     for (auto l = f->loops().rbegin(); l != f->loops().rend(); ++l) {
       loop_tree.push_back({parent_id, {f, l->var}});
-      parent_id = loop_tree.size() - 1;
+      parent_id = static_cast<int>(loop_tree.size()) - 1;
     }
     func_to_loop_tree[f] = parent_id;
   }
@@ -769,11 +769,9 @@ public:
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
           std::vector<stmt> checks;
-          for (std::size_t d = 0; d < dims.size(); ++d) {
-            if (d < bounds.size()) {
-              checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-              checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-            }
+          for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+            checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+            checks.push_back(check::make(dims[d].max() >= bounds[d].max));
           }
 
           result = block::make(std::move(checks), result);
