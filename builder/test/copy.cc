@@ -212,12 +212,7 @@ TEST(padded, copy) {
 
   std::vector<char> padding(sizeof(int), 0);
 
-  // Crop the output to the intersection of the input and output buffer.
-  box_expr in_bounds = in->bounds();
-  in_bounds[0] += padding_x;
-  in_bounds[1] += padding_y;
-  box_expr output_crop = in_bounds;
-  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, output_crop}, {out, {x, y}}, padding);
+  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
