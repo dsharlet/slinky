@@ -287,7 +287,7 @@ box_expr compute_input_bounds(
     // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
     // difficult to do because it could be used in several places, each with a different output crop to apply.
     for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
-      *output_bounds_i[o.dims[d]] &= crop[d];
+      *output_bounds_i[o.dims[d]] &= sanitizer.mutate(crop[d]);
     }
   }
 
