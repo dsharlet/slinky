@@ -689,7 +689,7 @@ class pipeline_builder {
     stmt result = sanitizer_.mutate(f->make_call());
 
     // Update the map of used buffers.
-    
+
     // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       result = make_loop(result, f, loop);

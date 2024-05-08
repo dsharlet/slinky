@@ -462,9 +462,7 @@ class insert_free_into_allocate : public node_mutator {
   bool visited_something = false;
 
 public:
-  insert_free_into_allocate(var name) {
-    names.push_back(name);
-  }
+  insert_free_into_allocate(var name) { names.push_back(name); }
 
   void visit(const block* op) override {
     // Visit blocks in reverse order.
@@ -494,19 +492,13 @@ public:
     set_result(result);
   }
 
-  void visit(const loop* op) override {
-    visit_terminal(op);
-  }
+  void visit(const loop* op) override { visit_terminal(op); }
 
-  void visit(const call_stmt* op)  override  {
-    visit_terminal(op);
-  }
+  void visit(const call_stmt* op) override { visit_terminal(op); }
 
-  void visit(const copy_stmt* op) override  {
-    visit_terminal(op);
-  }
+  void visit(const copy_stmt* op) override { visit_terminal(op); }
 
-  void visit(const make_buffer* op) override { 
+  void visit(const make_buffer* op) override {
     bool base_depends = depends_on(op->base, names).any();
     if (base_depends) {
       names.push_back(op->sym);
@@ -539,17 +531,15 @@ public:
 
 class early_free_inserter : public node_mutator {
 public:
-void visit(const allocate* op) override {
-  stmt body = mutate(op->body);
-  body = insert_free_into_allocate(op->sym).mutate(body);
-  set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, body));
-}
+  void visit(const allocate* op) override {
+    stmt body = mutate(op->body);
+    body = insert_free_into_allocate(op->sym).mutate(body);
+    set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, body));
+  }
 };
 
 }  // namespace
 
-stmt insert_early_free(const stmt& s) { 
-  return early_free_inserter().mutate(s); 
-}
+stmt insert_early_free(const stmt& s) { return early_free_inserter().mutate(s); }
+
 }  // namespace slinky
- 
