@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "builder/pipeline.h"
+#include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
@@ -522,7 +523,12 @@ TEST_P(broadcast, copy_sliced) {
   }
 }
 
-TEST(concatenate, copy) {
+class concatenate : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(sizes, concatenate, testing::Combine(testing::Values(1, 3), testing::Values(1, 4)),
+    test_params_to_string<concatenate::ParamType>);
+
+TEST_P(concatenate, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -539,8 +545,8 @@ TEST(concatenate, copy) {
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   const int W = 8;
-  const int H1 = 5;
-  const int H2 = 4;
+  const int H1 = std::get<0>(GetParam());
+  const int H2 = std::get<1>(GetParam());
   const int D = 3;
 
   // Run the pipeline.
@@ -548,6 +554,8 @@ TEST(concatenate, copy) {
   buffer<int, 3> in2_buf({W, H2, D});
   init_random(in1_buf);
   init_random(in2_buf);
+  if (H1 == 1) in1_buf.dim(2).set_stride(0);
+  if (H2 == 1) in2_buf.dim(2).set_stride(0);
 
   buffer<int, 3> out_buf({W, H1 + H2, D});
   out_buf.allocate();
