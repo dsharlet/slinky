@@ -52,6 +52,10 @@ void dump_context_for_expr(
 
 namespace {
 
+struct allocated_buffer : public raw_buffer {
+  void* allocation;
+};
+
 // TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/T_visitor::visit
 // overhead (two virtual function calls per node) might be significant. This could be implemented
 // as a switch statement instead.
@@ -263,6 +267,15 @@ public:
     return 1;
   }
 
+  index_t eval_free(const call* op) { 
+    assert(op->args.size() == 1);
+    var sym = *as_variable(op->args[0]);
+    allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(*context.lookup(sym));
+    context.free(sym, buf, buf->allocation);
+    buf->allocation = nullptr;
+    return 1;
+  }
+
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
@@ -291,6 +304,8 @@ public:
 
     case intrinsic::trace_begin: result = eval_trace_begin(op); return;
     case intrinsic::trace_end: result = eval_trace_end(op); return;
+
+    case intrinsic::free: result = eval_free(op); return;
 
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
@@ -415,7 +430,7 @@ public:
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
   void visit(const allocate* op) override {
     std::size_t rank = op->dims.size();
-    raw_buffer buffer;
+    allocated_buffer buffer;
     buffer.elem_size = eval_expr(op->elem_size);
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
@@ -427,29 +442,19 @@ public:
       dim.set_fold_factor(eval_expr(op->dims[i].fold_factor, dim::unfolded));
     }
 
-    void* heap_allocation = nullptr;
     if (op->storage == memory_type::stack) {
       buffer.base = alloca(buffer.size_bytes());
+      buffer.allocation = nullptr;
     } else {
       assert(op->storage == memory_type::heap);
-      if (context.allocate) {
-        assert(context.free);
-        heap_allocation = context.allocate(op->sym, &buffer);
-      } else {
-        heap_allocation = buffer.allocate();
-      }
+      buffer.allocation = context.allocate(op->sym, &buffer);
     }
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     visit(op->body);
 
     if (op->storage == memory_type::heap) {
-      if (context.free) {
-        assert(context.allocate);
-        context.free(op->sym, &buffer, heap_allocation);
-      } else {
-        free(heap_allocation);
-      }
+      context.free(op->sym, &buffer, buffer.allocation);
     }
   }
 

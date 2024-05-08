@@ -38,6 +38,7 @@ std::string to_string(intrinsic fn) {
   case intrinsic::semaphore_wait: return "semaphore_wait";
   case intrinsic::trace_begin: return "trace_begin";
   case intrinsic::trace_end: return "trace_end";
+  case intrinsic::free: return "free";
 
   default: return "<invalid intrinsic>";
   }

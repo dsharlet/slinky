@@ -1034,7 +1034,7 @@ TEST_P(parallel_stencils, pipeline) {
 
 class diamond_stencils : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 4));
+INSTANTIATE_TEST_SUITE_P(schedule, diamond_stencils, testing::Range(0, 5));
 
 TEST_P(diamond_stencils, pipeline) {
   int schedule = GetParam();
@@ -1057,18 +1057,18 @@ TEST_P(diamond_stencils, pipeline) {
     func diff =
         func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
 
-    if (schedule == 0) {
-      // diff.loops({{y, 1}});
-    } else if (schedule == 1) {
+    if (schedule == 1) {
       diff.loops({{y, 1}});
-      stencil1.loops({{y, 2}});
-      stencil2.loops({{y, 2}});
     } else if (schedule == 2) {
       diff.loops({{y, 1}});
       stencil1.loops({{y, 2}});
       stencil2.loops({{y, 2}});
-      mul2.compute_root();
     } else if (schedule == 3) {
+      diff.loops({{y, 1}});
+      stencil1.loops({{y, 2}});
+      stencil2.loops({{y, 2}});
+      mul2.compute_root();
+    } else if (schedule == 4) {
       diff.loops({{y, 1, loop::parallel}});
     }
 

@@ -2,7 +2,6 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
-#include <iostream>
 
 #include "builder/substitute.h"
 #include "runtime/expr.h"
