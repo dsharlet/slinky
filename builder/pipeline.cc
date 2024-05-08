@@ -354,13 +354,14 @@ struct loop_tree_node {
 };
 
 // Find a path from the node to the root of the tree.
-void find_path_from_root(const std::vector<loop_tree_node>& loop_tree, int node_id, std::vector<int>& path_from_root) {
-  path_from_root.push_back(node_id);
+std::vector<int> find_path_from_root(const std::vector<loop_tree_node>& loop_tree, int node_id) {
+  std::vector<int> path_from_root = {node_id};
   while (node_id > 0) {
     node_id = loop_tree[node_id].parent_index;
     path_from_root.push_back(node_id);
   }
   std::reverse(path_from_root.begin(), path_from_root.end());
+  return path_from_root;
 }
 
 // Compare two paths and return the last point where they match.
@@ -382,9 +383,10 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
   // if we see it as a bottleneck later.
 
   // For each of the nodes find the path to the root of the tree.
-  std::vector<std::vector<int>> paths_from_root(parent_ids.size());
-  for (std::size_t ix = 0; ix < parent_ids.size(); ix++) {
-    find_path_from_root(loop_tree, parent_ids[ix], paths_from_root[ix]);
+  std::vector<std::vector<int>> paths_from_root;
+  paths_from_root.reserve(parent_ids.size());
+  for (std::size_t parent_id : parent_ids) {
+    paths_from_root.push_back(find_path_from_root(loop_tree, parent_id));
   }
 
   // Compare paths to the root node until the diverge. The last node before
