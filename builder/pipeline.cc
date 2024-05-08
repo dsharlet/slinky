@@ -242,7 +242,7 @@ public:
     for (const auto& i : replacements) {
       lets.push_back({i.second, i.first});
     }
-    return let_stmt::make(std::move(lets), s);
+    return let_stmt::make(std::move(lets), std::move(s));
   }
 
   void visit(const call* op) override {
@@ -807,7 +807,7 @@ public:
   }
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
-  stmt make_buffers(stmt body) {
+  stmt make_buffers(const stmt& body) {
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       for (const func::output& o : f->outputs()) {
