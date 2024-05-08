@@ -3,7 +3,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <iostream>
 #include <map>
 #include <optional>
 #include <set>
@@ -18,7 +17,6 @@
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/print.h"
 
 namespace slinky {
 
@@ -458,24 +456,21 @@ stmt fix_buffer_races(const stmt& s) { return race_condition_fixer().mutate(s); 
 
 namespace {
 
-class early_free_inserter2 : public node_mutator {
+class insert_free_into_allocate : public node_mutator {
   std::vector<var> names;
   bool found = false;
   bool visited_something = false;
 
 public:
-  early_free_inserter2(var name) {
+  insert_free_into_allocate(var name) {
     names.push_back(name);
   }
 
   void visit(const block* op) override {
-    std::cout << "Block size: " << op->stmts.size() << std::endl;
-
     // Visit blocks in reverse order.
     std::vector<stmt> stmts(op->stmts.size());
     bool changed = false;
     for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
-      std::cout << op->stmts[i] << std::endl;
       stmts[i] = mutate(op->stmts[i]);
       visited_something = true;
       changed = changed || !stmts[i].same_as(op->stmts[i]);
@@ -489,9 +484,7 @@ public:
 
   void visit_terminal(const stmt& s) {
     stmt result = s;
-    std::cout << "Names size: " << names.size() << " " << found << std::endl;
     if (!found && depends_on(s, names).any()) {
-      std::cout << ">>>> Stmt depends on " << names.front() << std::endl;
       found = true;
       if (visited_something) {
         result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}) == 1)});
@@ -502,17 +495,14 @@ public:
   }
 
   void visit(const loop* op) override {
-    std::cout << "Loop:" << std::endl;
     visit_terminal(op);
   }
 
   void visit(const call_stmt* op)  override  {
-    std::cout << "Call stmt:" << std::endl;
     visit_terminal(op);
   }
 
   void visit(const copy_stmt* op) override  {
-    std::cout << "Copy stmt:" << std::endl;
     visit_terminal(op);
   }
 
@@ -551,8 +541,7 @@ class early_free_inserter : public node_mutator {
 public:
 void visit(const allocate* op) override {
   stmt body = mutate(op->body);
-  std::cout << "Allocate: " << op->sym << std::endl;
-  body = early_free_inserter2(op->sym).mutate(body);
+  body = insert_free_into_allocate(op->sym).mutate(body);
   set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, body));
 }
 };
