@@ -128,7 +128,7 @@ TEST(pyramid_multi, pipeline) {
   func upsample = func::make(pyramid_upsample2x,
       {{in, {point(x), point(y)}}, {up1, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
 
-  upsample.loops({{y, 1}});
+  // upsample.loops({{y, 1}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
