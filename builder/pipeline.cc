@@ -906,9 +906,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
-  stmt result;
-  result = builder.build(result, nullptr, loop_id());
-  std::cout << std::tie(result, ctx) << std::endl;
+  stmt result = builder.build(result, nullptr, loop_id());
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
