@@ -114,6 +114,9 @@ enum class intrinsic {
   // Calls the tracing callback with the first argument. Returns a token that should be passed to end_trace.
   trace_begin,
   trace_end,
+
+  // Free a buffer.
+  free,
 };
 
 class expr_visitor;
