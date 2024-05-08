@@ -271,10 +271,8 @@ public:
     assert(op->args.size() == 1);
     var sym = *as_variable(op->args[0]);
     allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(*context.lookup(sym));
-    if (context.free) {
-      context.free(sym, buf, buf->allocation);
-      buf->allocation = nullptr;
-    }
+    context.free(sym, buf, buf->allocation);
+    buf->allocation = nullptr;
     return 1;
   }
 
@@ -449,24 +447,14 @@ public:
       buffer.allocation = nullptr;
     } else {
       assert(op->storage == memory_type::heap);
-      if (context.allocate) {
-        assert(context.free);
-        buffer.allocation = context.allocate(op->sym, &buffer);
-      } else {
-        buffer.allocation = buffer.allocate();
-      }
+      buffer.allocation = context.allocate(op->sym, &buffer);
     }
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     visit(op->body);
 
     if (op->storage == memory_type::heap) {
-      if (context.free) {
-        assert(context.allocate);
-        context.free(op->sym, &buffer, buffer.allocation);
-      } else {
-        free(buffer.allocation);
-      }
+      context.free(op->sym, &buffer, buffer.allocation);
     }
   }
 

@@ -15,8 +15,8 @@ public:
   // passing the result of `allocate` in addition to the buffer.
   // If these functions are not defined, the default handler will call
   // `raw_buffer::allocate` and `::free`.
-  std::function<void*(var, raw_buffer*)> allocate;
-  std::function<void(var, raw_buffer*, void*)> free;
+  std::function<void*(var, raw_buffer*)> allocate = [](var, raw_buffer* buf) { return buf->allocate(); };
+  std::function<void(var, raw_buffer*, void*)> free = [](var, raw_buffer*, void* allocation) { ::free(allocation); };
 
   // Functions called when there is a failure in the pipeline.
   // If these functions are not defined, the default handler will write a
@@ -31,7 +31,7 @@ public:
   // - `wait_for` should wait until the given condition becomes true, executing tasks previously enqueued until it does.
   // - `atomic_call` runs a task on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for`
   //    conditions.
-  // 
+  //
   // These functions must be implemented if the statement being evaluated includes asynchronous nodes (parallel loops).
   using task = std::function<void()>;
   std::function<void(const task&)> enqueue_many;
