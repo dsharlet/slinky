@@ -189,11 +189,12 @@ public:
     print(func_input.buffer);
 
     std::string name = ctx_.name(func_input.sym());
-    std::string bounds = print(func_input.bounds, /*inlined*/ true);
-    if (!func_input.output_crop.empty() || !func_input.output_slice.empty()) {
-      std::string output_crop = print(func_input.output_crop, /*inlined*/ true);
+    std::string bounds = print(func_input.bounds, /*inlined=*/true);
+    if (!func_input.input_crop.empty() || !func_input.output_crop.empty() || !func_input.output_slice.empty()) {
+      std::string input_crop = print(func_input.input_crop, /*inlined=*/true);
+      std::string output_crop = print(func_input.output_crop, /*inlined=*/true);
       std::string output_slice = print_vector(func_input.output_slice);
-      return print_string_vector({name, bounds, output_crop, output_slice});
+      return print_string_vector({name, bounds, input_crop, output_crop, output_slice});
     } else {
       return print_string_vector({name, bounds});
     }

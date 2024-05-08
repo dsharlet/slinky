@@ -38,6 +38,7 @@ cc_test(
     name = "copy",
     srcs = ["copy.cc"],
     deps = [
+        ":util",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",
@@ -62,6 +63,7 @@ cc_test(
     data = ["replica_pipeline.cc"] + glob(["visualize/*.html"]),
     deps = [
         ":util",
+        "//base/test:util",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
@@ -78,6 +80,7 @@ cc_test(
     data = ["replica_pipeline.cc"],
     deps = [
         ":util",
+        "//base/test:util",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
@@ -93,6 +96,7 @@ cc_test(
     data = ["replica_pipeline.cc"],
     deps = [
         ":util",
+        "//base/test:util",
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",

@@ -1,6 +1,7 @@
 #ifndef SLINKY_BASE_REF_COUNT_H
 #define SLINKY_BASE_REF_COUNT_H
 
+#include <algorithm>
 #include <atomic>
 
 #include "base/util.h"

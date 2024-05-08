@@ -105,6 +105,9 @@ public:
     // These intervals should be a function of the expressions found in the output dims.
     box_expr bounds;
 
+    // A region to crop the input to while consuming this input. Only used by copies.
+    box_expr input_crop;
+
     // A region to crop the output to while consuming this input. Only used by copies.
     box_expr output_crop;
 

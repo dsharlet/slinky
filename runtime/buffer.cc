@@ -28,6 +28,14 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
 
 std::size_t raw_buffer::size_bytes() const { return alloc_size(rank, elem_size, dims); }
 
+std::size_t raw_buffer::elem_count() const {
+  std::size_t result = 1;
+  for (std::size_t i = 0; i < rank; ++i) {
+    result *= std::max<index_t>(0, dims[i].extent());
+  }
+  return result;
+}
+
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims) {
   std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank;
   if (dims) {
@@ -263,7 +271,7 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
     } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
       // This dimension is not contiguous.
       return false;
-    } 
+    }
   }
   return true;
 }
