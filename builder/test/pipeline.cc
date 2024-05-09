@@ -1075,8 +1075,8 @@ TEST_P(diamond_stencils, pipeline) {
     return build_pipeline(ctx, {in}, {out});
   };
   pipeline p = make_pipeline();
-  // pipeline p2 = make_pipeline();
-  // ASSERT_TRUE(match(p.body, p2.body));
+  pipeline p2 = make_pipeline();
+  ASSERT_TRUE(match(p.body, p2.body));
 
   // Run the pipeline.
   const int W = 20;
