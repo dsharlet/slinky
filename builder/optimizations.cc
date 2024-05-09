@@ -303,6 +303,14 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 };
 
+dim_expr select(const expr& condition, const dim_expr& t, const dim_expr& f) {
+  return {
+      select(condition, t.bounds, f.bounds),
+      select(condition, t.stride, f.stride),
+      select(condition, t.fold_factor, f.fold_factor),
+  };
+}
+
 }  // namespace
 
 stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
@@ -337,19 +345,49 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       }
     }
     bool handled = false;
+    dim_expr broadcast_dim = {buffer_bounds(op->dst, d), 0, dim::unfolded};
     if (dep_count == 0) {
       // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
       // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
       // dimensions than the output) or not.
-      src_dims.push_back({buffer_bounds(op->dst, d), 0, expr()});
+      src_dims.push_back(broadcast_dim);
       handled = true;
     } else if (dep_count == 1) {
-      expr offset;
-      if (is_copy(src_x[src_d], op->dst_x[d], offset)) {
-        interval_expr src_bounds = (buffer_bounds(op->src, src_d) - offset) & buffer_bounds(op->dst, d);
-        src_dims.push_back({src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
-        src_x[src_d] = src_bounds.min + offset;
+      // TODO: I think this whole sequence of logic could be refactored to be more general and less janky.
+      auto handle_copy = [=, &src_dims](expr& src_x_d) {
+        expr offset;
+        if (is_copy(src_x_d, op->dst_x[d], offset)) {
+          interval_expr src_bounds = (buffer_bounds(op->src, src_d) - offset) & buffer_bounds(op->dst, d);
+          src_dims.push_back({src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
+          src_x_d = src_bounds.min + offset;
+          return true;
+        }
+        return false;
+      };
+
+      if (handle_copy(src_x[src_d])) {
         handled = true;
+      } else if (const class select* s = src_x[src_d].as<class select>()) {
+        if (!depends_on(s->condition, op->dst_x[d]).any()) {
+          auto handle_copy_or_broadcast = [&](expr condition, expr copy, const expr& broadcast) {
+            if (depends_on(broadcast, op->dst_x[d]).any()) {
+              // Broadcast isn't a broadcast.
+              return false;
+            } else if (handle_copy(copy)) {
+              src_dims.back() = select(condition, src_dims.back(), broadcast_dim);
+              src_x[src_d] = select(condition, copy, broadcast);
+              return true;
+            } else {
+              return false;
+            }
+          };
+
+          if (handle_copy_or_broadcast(!s->condition, s->false_value, s->true_value)) {
+            handled = true;
+          } else if (handle_copy_or_broadcast(s->condition, s->true_value, s->false_value)) {
+            handled = true;
+          }
+        }
       }
     }
     if (!handled) {
