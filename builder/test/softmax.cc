@@ -96,20 +96,25 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<std::tuple<int, int, bool>> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int, bool, bool>> {};
 
 auto split_factors = testing::Values(0, 1, 4);
 
-INSTANTIATE_TEST_SUITE_P(mode, softmax, testing::Combine(split_factors, split_factors, testing::Values(false)),
+INSTANTIATE_TEST_SUITE_P(mode, softmax,
+    testing::Combine(split_factors, split_factors, testing::Values(false), testing::Values(false)),
+    test_params_to_string<softmax::ParamType>);
+
+INSTANTIATE_TEST_SUITE_P(compute_at, softmax, testing::Values(std::make_tuple(1, 1, true, false)),
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(
-    compute_at, softmax, testing::Values(std::make_tuple(1, 1, true)), test_params_to_string<softmax::ParamType>);
+    with_copy, softmax, testing::Values(std::make_tuple(1, 1, false, true)), test_params_to_string<softmax::ParamType>);
 
 TEST_P(softmax, pipeline) {
   const int split_c = std::get<0>(GetParam());
   const int split_b = std::get<1>(GetParam());
   const bool use_compute_at = std::get<2>(GetParam());
+  const bool copy_in_the_end = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -124,6 +129,7 @@ TEST_P(softmax, pipeline) {
   auto exp_in = buffer_expr::make(ctx, "exp_in", rank, sizeof(float));
   auto sum_exp_in = buffer_expr::make(ctx, "sum_exp_in", rank - 1, sizeof(float));
   auto softmax_out = buffer_expr::make(ctx, "softmax_out", rank, sizeof(float));
+  auto add_out = buffer_expr::make(ctx, "add_out", rank, sizeof(float));
 
   var c(ctx, "c");
   var b(ctx, "b");
@@ -139,9 +145,19 @@ TEST_P(softmax, pipeline) {
       {{exp_in, {c, b}}, {sum_exp_in, {b}}}, call_stmt::attributes{.name = "exp_in"});
   func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}},
       call_stmt::attributes{.name = "normalize"});
-  // Add a trivial consumer so we can have an inner loop here too.
-  func pass4 = func::make(
-      add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
+
+  func pass4, copy;
+
+  if (copy_in_the_end) {
+    // Add a trivial consumer so we can have an inner loop here too.
+    pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{add_out, {c, b}}},
+        call_stmt::attributes{.name = "consumer"});
+    copy = func::make_copy({add_out, {point(c), point(b)}}, {out, {c, b}});
+  } else {
+    // Add a trivial consumer so we can have an inner loop here too.
+    pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}},
+        call_stmt::attributes{.name = "consumer"});
+  }
 
   std::vector<func::loop_info> loops;
   if (split_c > 0) loops.push_back({c, split_c});
