@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "builder/pipeline.h"
+#include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
@@ -12,11 +13,13 @@ namespace slinky {
 class test_context : public eval_context {
 public:
   int copy_calls = 0;
+  int copy_elements = 0;
   int pad_calls = 0;
 
   test_context() {
     copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
       ++copy_calls;
+      copy_elements += dst.elem_count();
       slinky::copy(src, dst, padding);
     };
     pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
@@ -209,12 +212,7 @@ TEST(padded, copy) {
 
   std::vector<char> padding(sizeof(int), 0);
 
-  // Crop the output to the intersection of the input and output buffer.
-  box_expr in_bounds = in->bounds();
-  in_bounds[0] += padding_x;
-  in_bounds[1] += padding_y;
-  box_expr output_crop = in_bounds;
-  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, output_crop}, {out, {x, y}}, padding);
+  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}}, padding);
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -270,6 +268,7 @@ TEST(flip_x, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, W);
+  ASSERT_EQ(eval_ctx.copy_elements, W);
 
   for (int x = 0; x < W; ++x) {
     ASSERT_EQ(out_buf(-x), in_buf(x));
@@ -317,6 +316,7 @@ TEST_P(flip_y, copy) {
   p.evaluate(inputs, outputs, eval_ctx);
   // TODO: This could be expressed with a single copy with a negative stride in y.
   ASSERT_EQ(eval_ctx.copy_calls, H);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -366,6 +366,7 @@ TEST_P(upsample_y, copy) {
   // This copy should be implemented with a loop over y, and a call to copy at each y.
   // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
   ASSERT_EQ(eval_ctx.copy_calls, H);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -517,7 +518,12 @@ TEST_P(broadcast, copy_sliced) {
   }
 }
 
-TEST(concatenate, copy) {
+class concatenate : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(sizes, concatenate, testing::Combine(testing::Values(1, 3), testing::Values(1, 4)),
+    test_params_to_string<concatenate::ParamType>);
+
+TEST_P(concatenate, copy) {
   // Make the pipeline
   node_context ctx;
 
@@ -534,8 +540,8 @@ TEST(concatenate, copy) {
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
 
   const int W = 8;
-  const int H1 = 5;
-  const int H2 = 4;
+  const int H1 = std::get<0>(GetParam());
+  const int H2 = std::get<1>(GetParam());
   const int D = 3;
 
   // Run the pipeline.
@@ -543,6 +549,8 @@ TEST(concatenate, copy) {
   buffer<int, 3> in2_buf({W, H2, D});
   init_random(in1_buf);
   init_random(in2_buf);
+  if (H1 == 1) in1_buf.dim(2).set_stride(0);
+  if (H2 == 1) in2_buf.dim(2).set_stride(0);
 
   buffer<int, 3> out_buf({W, H1 + H2, D});
   out_buf.allocate();
@@ -552,6 +560,7 @@ TEST(concatenate, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2) * D);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H1 + H2; ++y) {
@@ -596,6 +605,7 @@ TEST(split, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2));
 
   for (int y = 0; y < H1; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -642,6 +652,7 @@ TEST(stack, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * 2);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -700,6 +711,7 @@ TEST(reshape, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 
   // This should have been a "flat" copy.
   for (int i = 0; i < W * H * D; ++i) {
@@ -759,6 +771,7 @@ TEST(batch_reshape, copy) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
   ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
 
   // This should have been a "flat" copy.
   for (int n = 0; n < N; ++n) {

@@ -153,6 +153,9 @@ stmt func::make_call() const {
         dst_x.push_back(i);
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+      if (!input.output_crop.empty()) {
+        copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
+      }
       if (!input.output_slice.empty()) {
         copy = slice_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_slice, copy);
       }
@@ -184,6 +187,8 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
     // Translate the bounds into the crop needed by make_copy.
     // We leave the dimensions not concatenated undefined so infer_bounds will require each input to provide the full
     // output in those dimensions.
+    input.input_crop.resize(dim + 1);
+    input.input_crop[dim] = range(0, bounds[i + 1] - bounds[i]);
     input.output_crop.resize(dim + 1);
     input.output_crop[dim] = range(bounds[i], bounds[i + 1]);
 
@@ -242,7 +247,7 @@ public:
     for (const auto& i : replacements) {
       lets.push_back({i.second, i.first});
     }
-    return let_stmt::make(std::move(lets), s);
+    return let_stmt::make(std::move(lets), std::move(s));
   }
 
   void visit(const call* op) override {
@@ -278,23 +283,17 @@ bounds_map get_output_bounds(const std::vector<func::output>& outputs) {
 
 box_expr compute_input_bounds(
     const func* f, const func::input& i, const bounds_map& output_bounds, lift_buffer_metadata& sanitizer) {
-  bounds_map output_bounds_i = output_bounds;
-  if (!i.output_crop.empty()) {
-    const box_expr& crop = i.output_crop;
-    assert(f->outputs().size() == 1);
-    const func::output& o = f->outputs()[0];
-    // We have an output crop for this input. Apply it to our bounds.
-    // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
-    // difficult to do because it could be used in several places, each with a different output crop to apply.
-    for (std::size_t d = 0; d < std::min(crop.size(), o.dims.size()); ++d) {
-      *output_bounds_i[o.dims[d]] &= crop[d];
-    }
-  }
-
   assert(i.bounds.size() == i.buffer->rank());
   box_expr crop(i.buffer->rank());
   for (std::size_t d = 0; d < crop.size(); ++d) {
-    crop[d] = bounds_of(sanitizer.mutate(i.bounds[d]), output_bounds_i);
+    crop[d] = bounds_of(sanitizer.mutate(i.bounds[d]), output_bounds);
+
+    if (d < i.input_crop.size()) {
+      // We have an output crop for this input, intersect with the crop we have.
+      // TODO: It would be nice if this were simply a crop_buffer inserted in the right place. However, that is
+      // difficult to do because it could be used in several places, each with a different output crop to apply.
+      crop[d] &= sanitizer.mutate(i.input_crop[d]);
+    }
   }
 
   return crop;
@@ -354,13 +353,14 @@ struct loop_tree_node {
 };
 
 // Find a path from the node to the root of the tree.
-void find_path_from_root(const std::vector<loop_tree_node>& loop_tree, int node_id, std::vector<int>& path_from_root) {
-  path_from_root.push_back(node_id);
+std::vector<int> find_path_from_root(const std::vector<loop_tree_node>& loop_tree, int node_id) {
+  std::vector<int> path_from_root = {node_id};
   while (node_id > 0) {
     node_id = loop_tree[node_id].parent_index;
     path_from_root.push_back(node_id);
   }
   std::reverse(path_from_root.begin(), path_from_root.end());
+  return path_from_root;
 }
 
 // Compare two paths and return the last point where they match.
@@ -382,16 +382,17 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
   // if we see it as a bottleneck later.
 
   // For each of the nodes find the path to the root of the tree.
-  std::vector<std::vector<int>> paths_from_root(parent_ids.size());
-  for (std::size_t ix = 0; ix < parent_ids.size(); ix++) {
-    find_path_from_root(loop_tree, parent_ids[ix], paths_from_root[ix]);
+  std::vector<std::vector<int>> paths_from_root;
+  paths_from_root.reserve(parent_ids.size());
+  for (std::size_t parent_id : parent_ids) {
+    paths_from_root.push_back(find_path_from_root(loop_tree, parent_id));
   }
 
   // Compare paths to the root node until the diverge. The last node before
   // the diversion point is the least common ancestor.
-  int max_match = paths_from_root[0].size() - 1;
-  for (std::size_t ix = 1; ix < paths_from_root.size(); ix++) {
-    max_match = compare_paths_up_to(paths_from_root[0], paths_from_root[ix], max_match);
+  int max_match = static_cast<int>(paths_from_root[0].size()) - 1;
+  for (const std::vector<int>& path : paths_from_root) {
+    max_match = compare_paths_up_to(paths_from_root[0], path, max_match);
   }
 
   return paths_from_root[0][max_match];
@@ -454,10 +455,9 @@ void compute_innermost_locations(const std::vector<const func*>& order,
 
     // Add loops for this function to the loop nest. The loops are defined
     // from innermost to outermost, so iterate in reverse order.
-    for (int i = f->loops().size() - 1; i >= 0; i--) {
-      const auto& l = f->loops()[i];
-      loop_tree.push_back({parent_id, {f, l.var}});
-      parent_id = loop_tree.size() - 1;
+    for (auto l = f->loops().rbegin(); l != f->loops().rend(); ++l) {
+      loop_tree.push_back({parent_id, {f, l->var}});
+      parent_id = static_cast<int>(loop_tree.size()) - 1;
     }
     func_to_loop_tree[f] = parent_id;
   }
@@ -552,8 +552,8 @@ class pipeline_builder {
   lift_buffer_metadata sanitizer_;
 
   void substitute_buffer_dims() {
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
@@ -649,9 +649,8 @@ class pipeline_builder {
 
       // Followed by intermediate buffers in the reverse topological order
       // (i.e. the outermost buffers are closer to the outputs of the pipeline).
-      for (int ix = order_.size() - 1; ix >= 0; ix--) {
-        const func* f = order_[ix];
-
+      for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+        const func* f = *i;
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
@@ -740,8 +739,8 @@ public:
     stmt result;
 
     // Build the functions computed at this loop level.
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
@@ -753,8 +752,8 @@ public:
 
     symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level.
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
@@ -769,11 +768,9 @@ public:
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
           std::vector<stmt> checks;
-          for (std::size_t d = 0; d < dims.size(); ++d) {
-            if (d < bounds.size()) {
-              checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-              checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-            }
+          for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+            checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+            checks.push_back(check::make(dims[d].max() >= bounds[d].max));
           }
 
           result = block::make(std::move(checks), result);
@@ -810,14 +807,13 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
-    for (int ix = order_.size() - 1; ix >= 0; ix--) {
-      const func* f = order_[ix];
-
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
         if (!maybe_dims) continue;
-        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body);
+        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, std::move(body));
       }
     }
     return body;
