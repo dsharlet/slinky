@@ -368,10 +368,12 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       if (handle_copy(src_x[src_d])) {
         handled = true;
       } else if (const class select* s = src_x[src_d].as<class select>()) {
+        // This might be a conditional where we either broadcast or copy. We can propagate that condition up to the
+        // dimensions we construct in make_buffer, so we get an efficient copy in either case.
         if (!depends_on(s->condition, op->dst_x[d]).any()) {
           auto handle_copy_or_broadcast = [&](expr condition, expr copy, const expr& broadcast) {
             if (depends_on(broadcast, op->dst_x[d]).any()) {
-              // Broadcast isn't a broadcast.
+              // Not a broadcast.
               return false;
             } else if (handle_copy(copy)) {
               src_dims.back() = select(condition, src_dims.back(), broadcast_dim);
