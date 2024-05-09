@@ -469,7 +469,11 @@ public:
     std::vector<stmt> stmts(op->stmts.size());
     bool changed = false;
     for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
-      stmts[i] = mutate(op->stmts[i]);
+      if (changed) {
+        stmts[i] = op->stmts[i];
+      } else {
+        stmts[i] = mutate(op->stmts[i]);
+      }
       visited_something = true;
       changed = changed || !stmts[i].same_as(op->stmts[i]);
     }
