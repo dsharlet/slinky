@@ -31,44 +31,50 @@ const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
 // (except for expr instead of index_t).
 class dim {
   index_t min_;
-  index_t extent_;
+  index_t max_;
   index_t stride_;
   index_t fold_factor_;
 
 public:
   static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
 
-  dim() : min_(0), extent_(0), stride_(0), fold_factor_(unfolded) {}
+  dim() : min_(0), max_(-1), stride_(0), fold_factor_(unfolded) {}
+  dim(index_t min, index_t max, index_t stride, index_t fold_factor = unfolded)
+      : min_(min), max_(max), stride_(stride), fold_factor_(fold_factor) {}
 
   index_t min() const { return min_; }
-  index_t max() const { return min_ + extent_ - 1; }
+  index_t max() const { return max_; }
   index_t begin() const { return min_; }
-  index_t end() const { return min_ + extent_; }
-  index_t extent() const { return extent_; }
+  index_t end() const { return max_ + 1; }
+  index_t extent() const { return max_ - min_ + 1; }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
+  bool empty() const { return max_ < min_; }
 
-  void set_extent(index_t extent) { extent_ = extent; }
+  void set_extent(index_t extent) { max_ = min_ + extent - 1; }
   void set_point(index_t x) {
     min_ = x;
-    extent_ = 1;
+    max_ = x;
   }
   void set_bounds(index_t min, index_t max) {
     min_ = min;
-    extent_ = max - min + 1;
+    max_ = max;
   }
   void set_range(index_t begin, index_t end) {
     min_ = begin;
-    extent_ = end - begin;
+    max_ = end - 1;
   }
   void set_min_extent(index_t min, index_t extent) {
     min_ = min;
-    extent_ = extent;
+    max_ = min + extent - 1;
   }
   void set_stride(index_t stride) { stride_ = stride; }
   void set_fold_factor(index_t fold_factor) { fold_factor_ = fold_factor; }
 
-  void translate(index_t offset) { min_ += offset; }
+  void translate(index_t offset) {
+    min_ += offset;
+    max_ += offset;
+  }
 
   // Returns true if the interval [a, b] is in bounds of this dimension.
   bool contains(index_t a, index_t b) const {
@@ -496,9 +502,9 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
     assert(id.fold_factor() == dim::unfolded);
     id.set_fold_factor(od.fold_factor() * id.extent());
   }
-  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
+  id.set_range(od.begin() * id.extent(), od.end() * id.extent());
   if (type == fuse_type::keep) {
-    od.set_min_extent(0, 1);
+    od.set_point(0);
   } else if (type == fuse_type::remove) {
     buf.slice(outer);
   } else {
@@ -517,7 +523,7 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
 }
 
 inline bool same_bounds(const dim& a, const dim& b) {
-  return a.min() == b.min() && a.extent() == b.extent() && a.fold_factor() == b.fold_factor();
+  return a.min() == b.min() && a.max() == b.max() && a.fold_factor() == b.fold_factor();
 }
 
 // Returns true if all buffers have the same bounds in dimension d.

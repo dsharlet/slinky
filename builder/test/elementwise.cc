@@ -64,7 +64,7 @@ public:
     slinky::dim dims[Rank];
     for (std::size_t d = 0; d < Rank; ++d) {
       // TODO: Find a better way to not care about bounds of broadcasted dimensions.
-      dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
+      dims[d].set_bounds(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
     }
 
     auto value = raw_buffer::make(Rank, sizeof(T), dims);

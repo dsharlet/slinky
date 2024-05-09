@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 
 #include "base/util.h"
 
@@ -137,7 +138,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   dim& dst_dim0 = dst.dim(0);
   dim& src_dim0 = src.dim(0);
 
-  if (dst_dim0.extent() <= 0) {
+  if (dst_dim0.empty()) {
     // Empty destination, nothing to do.
   } else if (dst_dim0.fold_factor() != dim::unfolded || src_dim0.fold_factor() != dim::unfolded ||
              dst_dim0.stride() != elem_size || src_dim0.stride() != elem_size) {
@@ -244,7 +245,7 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   optimize_dims(dst_opt);
   dim& dst_dim0 = dst_opt.dim(0);
 
-  if (dst_dim0.extent() <= 0) {
+  if (dst_dim0.empty()) {
     // Empty destination, nothing to do.
   } else if (dst_dim0.fold_factor() != dim::unfolded || dst_dim0.stride() != elem_size) {
     // The inner dimension is not a linear fill, let for_each_element handle it.
@@ -255,9 +256,7 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
     dst_opt.slice(0);
 
     constant_buffer buffer;
-    if (value) {
-      optimize_fill_value(value, elem_size, buffer);
-    }
+    optimize_fill_value(value, elem_size, buffer);
 
     for_each_element([=](void* dst) { fill(dst, value, elem_size, size); }, dst_opt);
   }
@@ -299,7 +298,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
     }
 
     const dim& inner = bufs[n]->dim(d - 1);
-    if (inner.min() != base_inner.min() || inner.extent() != base_inner.extent()) {
+    if (inner.min() != base_inner.min() || inner.max() != base_inner.max()) {
       // The bounds of the inner dimension are not equal.
       return false;
     } else if (inner.fold_factor() != dim::unfolded) {
@@ -359,7 +358,7 @@ index_t make_for_each_slice_dims_impl(
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.extent() <= 0) {
+    if (buf_dim.empty()) {
       // This dimension (and thus the entire loop nest) contains no elements.
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = 0;
@@ -392,7 +391,7 @@ index_t make_for_each_slice_dims_impl(
         } else {
           // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
           // use_folded_loop should have returned true above.
-          assert(buf_n_dim.extent() <= 0 || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
+          assert(buf_n_dim.empty() || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
           bases[n] = nullptr;
         }
       }
