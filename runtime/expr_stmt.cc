@@ -287,6 +287,18 @@ interval_expr interval_expr::operator&(const interval_expr& r) const {
   return result;
 }
 
+expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
+interval_expr select(const expr& c, interval_expr t, interval_expr f) {
+  if (t.is_point() && f.is_point()) {
+    return point(select(std::move(c), std::move(t.min), std::move(f.min)));
+  } else {
+    return {
+        select(c, std::move(t.min), std::move(f.min)),
+        select(c, std::move(t.max), std::move(f.max)),
+    };
+  }
+}
+
 box_expr operator|(box_expr a, const box_expr& b) {
   assert(a.size() == b.size());
   for (std::size_t i = 0; i < a.size(); ++i) {
@@ -501,9 +513,7 @@ const expr& indeterminate() {
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, expr a) { return (x / a) * a; }
 expr align_up(expr x, expr a) { return ((x + a - 1) / a) * a; }
-interval_expr align(interval_expr x, expr a) {
-  return {align_down(x.min, a), align_up(x.max + 1, a) - 1};
-}
+interval_expr align(interval_expr x, expr a) { return {align_down(x.min, a), align_up(x.max + 1, a) - 1}; }
 
 expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::move(buf)}); }
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }

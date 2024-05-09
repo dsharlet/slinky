@@ -420,7 +420,7 @@ class broadcast : public testing::TestWithParam<int> {};
 INSTANTIATE_TEST_SUITE_P(dim, broadcast, testing::Range(0, 3));
 
 TEST_P(broadcast, copy) {
-  int dim = GetParam();
+  const int dim = GetParam();
 
   // Make the pipeline
   node_context ctx;
@@ -447,7 +447,6 @@ TEST_P(broadcast, copy) {
   in_buf.dim(dim).set_extent(1);
   init_random(in_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 3> out_buf({W, H, D});
   out_buf.allocate();
 
@@ -469,7 +468,7 @@ TEST_P(broadcast, copy) {
 }
 
 TEST_P(broadcast, copy_sliced) {
-  int dim = GetParam();
+  const int dim = GetParam();
 
   // Make the pipeline
   node_context ctx;
@@ -497,7 +496,6 @@ TEST_P(broadcast, copy_sliced) {
   buffer<int, 2> in_buf({in_extents[0], in_extents[1]});
   init_random(in_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 3> out_buf({W, H, D});
   out_buf.allocate();
 
@@ -512,6 +510,56 @@ TEST_P(broadcast, copy_sliced) {
       for (int x = 0; x < W; ++x) {
         std::vector<index_t> i = {x, y, z};
         i.erase(i.begin() + dim);
+        ASSERT_EQ(out_buf(x, y, z), in_buf(i));
+      }
+    }
+  }
+}
+
+TEST_P(broadcast, optional) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  box_expr bounds = {
+      select(in->dim(0).extent() == 1, point(in->dim(0).min()), point(x)),
+      select(in->dim(1).extent() == 1, point(in->dim(1).min()), point(y)),
+      select(in->dim(2).extent() == 1, point(in->dim(2).min()), point(z)),
+  };
+  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+
+  // Run the pipeline.
+  const int dim = GetParam();
+  buffer<int, 3> in_buf({W, H, D});
+  in_buf.dim(dim).set_extent(1);
+  init_random(in_buf);
+
+  buffer<int, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        index_t i[] = {x, y, z};
+        i[dim] = 0;
         ASSERT_EQ(out_buf(x, y, z), in_buf(i));
       }
     }
