@@ -94,7 +94,14 @@ TEST_P(pyramid, pipeline) {
   }
 }
 
-TEST(pyramid_multi, pipeline) {
+const auto schedule_modes = testing::Values(0, 1);
+
+class pyramid_multi : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(mode, pyramid_multi, schedule_modes);
+
+TEST_P(pyramid_multi, pipeline) {
+  int mode = GetParam();
   // Make the pipeline
   node_context ctx;
 
@@ -128,7 +135,9 @@ TEST(pyramid_multi, pipeline) {
   func upsample = func::make(pyramid_upsample2x,
       {{in, {point(x), point(y)}}, {up1, {bounds(x, x + 1) / 2, bounds(y, y + 1) / 2}}}, {{out, {x, y}}});
 
-  // upsample.loops({{y, 1}});
+  if (mode == 1) {
+    upsample.loops({{y, 1}});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
