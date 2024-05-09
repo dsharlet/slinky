@@ -447,7 +447,6 @@ TEST_P(broadcast, copy) {
   in_buf.dim(dim).set_extent(1);
   init_random(in_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 3> out_buf({W, H, D});
   out_buf.allocate();
 
@@ -497,7 +496,6 @@ TEST_P(broadcast, copy_sliced) {
   buffer<int, 2> in_buf({in_extents[0], in_extents[1]});
   init_random(in_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 3> out_buf({W, H, D});
   out_buf.allocate();
 
@@ -548,7 +546,6 @@ TEST_P(broadcast, optional) {
   in_buf.dim(dim).set_extent(1);
   init_random(in_buf);
 
-  // Ask for an output padded in every direction.
   buffer<int, 3> out_buf({W, H, D});
   out_buf.allocate();
 
