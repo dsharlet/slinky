@@ -213,11 +213,6 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   std::copy_n(dst.dims, dst.rank, src.dims);
   for (std::size_t d = 0; d < dst.rank; ++d) {
     src.crop(d, in_bounds[d].min(), in_bounds[d].max());
-    if (in_bounds[d].stride() == 0) {
-      // TODO: This seems like a hack. I'm not sure where the conceptual bug is. It seems weird that we pass strides
-      // in for in_bounds at all.
-      src.dim(d).set_stride(0);
-    }
   }
 
   raw_buffer dst_opt = dst;
@@ -335,7 +330,7 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
   return false;
 }
 
-static dim stride_0_dim;
+static dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline T* get_plan(void*& x, std::size_t n = 1) {
@@ -366,13 +361,17 @@ index_t make_for_each_slice_dims_impl(
       next = get_plan<for_each_slice_dim>(plan);
       next->impl = for_each_slice_dim::call_f;
       return 0;
-    } else if (buf_dim.extent() > 1 && use_folded_loop(bufs, bufs_size, d)) {
+    }
+
+    // If we have one buffer, treat broadcasts as extent 1. Is this a hack?
+    index_t extent_d = (bufs_size == 1 && buf_dim.stride() == 0) ? 1 : buf_dim.extent();
+    if (extent_d > 1 && use_folded_loop(bufs, bufs_size, d)) {
       // There is a folded dimension in one of the buffers, or we need to crop one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;
-      next->extent = buf_dim.extent();
+      next->extent = extent_d;
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &stride_0_dim;
+        next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
       }
       next = get_plan<for_each_slice_dim>(plan);
       next_dims = get_plan<dim_or_stride>(plan, bufs_size);
@@ -380,7 +379,7 @@ index_t make_for_each_slice_dims_impl(
       continue;
     }
 
-    extent *= buf_dim.extent();
+    extent *= extent_d;
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
       if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
@@ -405,7 +404,7 @@ index_t make_for_each_slice_dims_impl(
       extent = 1;
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
-      assert(buf_dim.min() / buf_dim.fold_factor() == buf_dim.max() / buf_dim.fold_factor());
+      assert(!buf_dim.is_folded());
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = extent;
       for (std::size_t n = 0; n < bufs_size; n++) {

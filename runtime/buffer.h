@@ -80,7 +80,7 @@ public:
   bool contains(index_t a, index_t b) const {
     // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
     // invalid memory. It's a bit messy to allow this, but it feels really overzealous to disallow it when attempting to
-    // implement broadcasting in callbacks.
+    // implement broadcasting.
     return stride() == 0 || (min() <= a && b <= max());
   }
   bool contains(index_t x) const { return contains(x, x); }
@@ -93,6 +93,11 @@ public:
     } else {
       return euclidean_mod(i - min(), fold_factor()) * stride();
     }
+  }
+
+  bool is_folded() const {
+    if (fold_factor() == unfolded) return false;
+    return min() / fold_factor() != max() / fold_factor();
   }
 };
 
@@ -268,7 +273,7 @@ public:
 
     dim(d).set_bounds(min, max);
     // Crops can't span a folding boundary if they move the base pointer.
-    assert(offset == 0 || dim(d).min() / dim(d).fold_factor() == dim(d).max() / dim(d).fold_factor());
+    assert(offset == 0 || !dim(d).is_folded());
     return *this;
   }
 

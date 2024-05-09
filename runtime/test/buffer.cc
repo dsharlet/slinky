@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <numeric>
 #include <random>
 
@@ -16,6 +17,21 @@ std::mt19937& rng() {
 namespace slinky {
 
 bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
+
+std::ostream& operator<<(std::ostream& os, const dim& d) {
+  return os << "{min: " << d.min() << ", max: " << d.max() << ", stride: " << d.stride()
+            << ", fold_factor: " << d.fold_factor() << "}";
+}
+
+std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
+  os << "{base: " << buf.base << ", elem_size: " << buf.elem_size << ", dims = {";
+  for (std::size_t i = 0; i < buf.rank; ++i) {
+    if (i > 0) os << ", ";
+    os << buf.dim(i);
+  }
+  os << "}";
+  return os;
+}
 
 int random(int min, int max) { return rng()() % (max - min + 1) + min; }
 
@@ -93,6 +109,7 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
     if (options.allow_broadcast && random(0, 9) == 0) {
       // Make this a broadcast.
       dim.set_stride(0);
+      dim.set_bounds(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
     } else {
       dim.set_stride(stride);
       // Add some extra random padding.
@@ -733,17 +750,14 @@ TEST(buffer, copy) {
     std::fill(padding.begin(), padding.end(), 7);
 
     buffer<void, max_rank> src(rank, elem_size);
-    for (std::size_t d = 0; d < src.rank; ++d) {
-      src.dim(d).set_min_extent(0, 5);
-    }
-    randomize_strides_and_padding(src, {-1, 1, true, false});
-    init_random(src);
-
     buffer<void, max_rank> dst(rank, elem_size);
     for (std::size_t d = 0; d < src.rank; ++d) {
-      dst.dim(d) = src.dim(d);
+      src.dim(d).set_min_extent(0, 5);
+      dst.dim(d).set_min_extent(0, 5);
     }
+    randomize_strides_and_padding(src, {-1, 1, true, false});
     randomize_strides_and_padding(dst, {-1, 1, false, false});
+    init_random(src);
     dst.allocate();
 
     slinky::copy(src, dst, padding.data());
