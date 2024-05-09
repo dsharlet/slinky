@@ -529,12 +529,17 @@ public:
   void visit(const truncate_rank* op) override { visit_buffer_mutator(op); }
 };
 
+// Find allocate nodes and try to insert free into them.
 class early_free_inserter : public node_mutator {
 public:
   void visit(const allocate* op) override {
     stmt body = mutate(op->body);
     body = insert_free_into_allocate(op->sym).mutate(body);
-    set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, body));
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, body));
+    }
   }
 };
 
