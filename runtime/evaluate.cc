@@ -127,6 +127,15 @@ public:
     }
   }
 
+  dim eval(const dim_expr& x) {
+    dim result;
+    interval bounds = eval(x.bounds);
+    result.set_bounds(bounds.min, bounds.max);
+    result.set_stride(eval(x.stride));
+    result.set_fold_factor(eval(x.fold_factor, dim::unfolded));
+    return result;
+  }
+
   void visit(const variable* op) override {
     auto value = context.lookup(op->sym);
     assert(value);
@@ -384,7 +393,8 @@ public:
           working_threads.erase(i);
         }
 
-        shared_state(interval bounds, index_t step) : i(bounds.min), done(bounds.min), bounds(bounds), step(step), result(0) {}
+        shared_state(interval bounds, index_t step)
+            : i(bounds.min), done(bounds.min), bounds(bounds), step(step), result(0) {}
       };
       auto state = std::make_shared<shared_state>(bounds, step);
       // It is safe to capture op even though it's a pointer, because we only access it after we know that we're still
@@ -461,11 +471,7 @@ public:
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t d = 0; d < rank; ++d) {
-      slinky::dim& dim = buffer.dim(d);
-      interval bounds = eval(op->dims[d].bounds);
-      dim.set_bounds(bounds.min, bounds.max);
-      dim.set_stride(eval(op->dims[d].stride));
-      dim.set_fold_factor(eval(op->dims[d].fold_factor, dim::unfolded));
+      buffer.dim(d) = eval(op->dims[d]);
     }
 
     if (op->storage == memory_type::stack) {
@@ -493,11 +499,7 @@ public:
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t d = 0; d < rank; ++d) {
-      slinky::dim& dim = buffer.dim(d);
-      interval bounds = eval(op->dims[d].bounds);
-      dim.set_bounds(bounds.min, bounds.max);
-      dim.set_stride(eval(op->dims[d].stride, 0));
-      dim.set_fold_factor(eval(op->dims[d].fold_factor, dim::unfolded));
+      buffer.dim(d) = eval(op->dims[d]);
     }
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
