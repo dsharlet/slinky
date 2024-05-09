@@ -50,16 +50,19 @@ bool is_copy(const copy_stmt* op, std::vector<std::size_t>& permutation, std::ve
 
 class buffer_aliaser : public node_mutator {
   struct buffer_alias {
-    std::vector<expr> offset;
-    std::vector<std::size_t> permutation;
+    std::vector<dim_expr> dims;
+    std::vector<expr> at;
   };
 
   class buffer_info {
   public:
+    std::vector<dim_expr> dims;
     std::map<var, buffer_alias> can_alias_;
     std::set<var> cannot_alias_;
 
   public:
+    buffer_info(std::vector<dim_expr> dims) : dims(std::move(dims)) {}
+
     std::map<var, buffer_alias>& can_alias() { return can_alias_; }
     const std::map<var, buffer_alias>& can_alias() const { return can_alias_; }
 
@@ -96,7 +99,7 @@ public:
     // then we can alias it to the buffer produced by its consumer.
 
     // Start out by setting it to elementwise.
-    auto s = set_value_in_scope(alias_info, op->sym, buffer_info());
+    auto s = set_value_in_scope(alias_info, op->sym, buffer_info(op->dims));
     stmt body = mutate(op->body);
     const std::map<var, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
 
@@ -108,23 +111,8 @@ public:
       // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
       // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
       // buffer_at call that is out of bounds.
-      std::vector<dim_expr> dims;
-      dims.resize(op->dims.size());
-      for (std::size_t d = 0; d < dims.size(); ++d) {
-        const int permuted_d = d < alias.permutation.size() ? alias.permutation[d] : d;
-        dims[d] = buffer_dim(target_var, permuted_d);
-      }
-      std::vector<expr> at = alias.offset;
-      at.resize(std::max(at.size(), dims.size()));
-      for (int d = 0; d < static_cast<int>(at.size()); ++d) {
-        if (!at[d].defined()) at[d] = 0;
-        if (d < static_cast<int>(op->dims.size())) {
-          at[d] = max(buffer_min(target_var, d) - at[d], op->dims[d].bounds.min);
-          dims[d].bounds &= op->dims[d].bounds;
-        }
-      }
       stmt result =
-          make_buffer::make(op->sym, buffer_at(target_var, at), op->elem_size, std::move(dims), std::move(body));
+          make_buffer::make(op->sym, buffer_at(target_var, alias.at), op->elem_size, alias.dims, std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target_var](const copy_stmt* op) {
         if (op->src != src || op->dst != dst) {
@@ -184,7 +172,13 @@ public:
           return;
         }
         buffer_alias a;
-        a.offset = {};
+        for (index_t d = 0; d < static_cast<index_t>(info->dims.size()); ++d) {
+          dim_expr a_dim = buffer_dim(o, d);
+          a_dim.bounds = a_dim.bounds & info->dims[d].bounds;
+          a.dims.push_back(a_dim);
+          a.at.push_back(a_dim.bounds.min);
+        }
+
         info->maybe_alias(o, std::move(a));
       }
     }
@@ -203,9 +197,25 @@ public:
       return;
     }
 
-    buffer_alias a;
-    if (!is_copy(op, a.permutation, a.offset)) {
+    std::vector<std::size_t> permutation;
+    std::vector<expr> offset;
+    if (!is_copy(op, permutation, offset)) {
       return;
+    }
+    buffer_alias a;
+    a.dims.resize(info->dims.size());
+    for (std::size_t d = 0; d < a.dims.size(); ++d) {
+      const int permuted_d = d < permutation.size() ? permutation[d] : d;
+      a.dims[d] = buffer_dim(op->dst, permuted_d);
+    }
+    a.at = offset;
+    a.at.resize(std::max(a.at.size(), a.dims.size()));
+    for (int d = 0; d < static_cast<int>(a.at.size()); ++d) {
+      if (!a.at[d].defined()) a.at[d] = 0;
+      if (d < static_cast<int>(info->dims.size())) {
+        a.at[d] = max(buffer_min(op->dst, d) - a.at[d], info->dims[d].bounds.min);
+        a.dims[d].bounds &= info->dims[d].bounds;
+      }
     }
     info->maybe_alias(op->dst, std::move(a));
   }
@@ -231,7 +241,7 @@ public:
     std::swap(old_alias_info, alias_info);
     for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
       if (old_alias_info[i]) {
-        alias_info[i] = buffer_info();
+        alias_info[i] = buffer_info(old_alias_info[i]->dims);
       }
     }
 
@@ -243,10 +253,10 @@ public:
       if (!i) continue;
       auto j = i->can_alias().find(op->sym);
       if (j != i->can_alias().end()) {
-        std::vector<expr>& offset = j->second.offset;
+        std::vector<expr>& at = j->second.at;
         for (std::size_t d = 0; d < op->at.size(); ++d) {
           if (!op->at[d].defined()) continue;
-          offset.insert(offset.begin() + d, op->at[d]);
+          at.insert(at.begin() + d, op->at[d]);
         }
       }
     }
@@ -261,7 +271,7 @@ public:
     std::swap(old_alias_info, alias_info);
     for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
       if (old_alias_info[i]) {
-        alias_info[i] = buffer_info();
+        alias_info[i] = buffer_info(old_alias_info[i]->dims);
       }
     }
 
@@ -273,8 +283,8 @@ public:
       if (!i) continue;
       auto j = i->can_alias().find(op->sym);
       if (j != i->can_alias().end()) {
-        std::vector<expr>& offset = j->second.offset;
-        offset.insert(offset.begin() + op->dim, op->at);
+        std::vector<expr>& at = j->second.at;
+        at.insert(at.begin() + op->dim, op->at);
       }
     }
 
