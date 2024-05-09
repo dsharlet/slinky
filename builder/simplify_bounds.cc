@@ -314,8 +314,10 @@ interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t
     return t;
   } else if (is_false(c.max)) {
     return f;
+  } else if (c.is_point()) {
+    return select(c.min, std::move(t), std::move(f));
   } else {
-    return f | t;
+    return t | f;
   }
 }
 

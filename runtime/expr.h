@@ -306,6 +306,9 @@ inline interval_expr point(const expr& x) { return {x, x}; }
 inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
 inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
 
+expr clamp(expr x, interval_expr b);
+interval_expr select(const expr& c, interval_expr t, interval_expr f);
+
 // A box is a multidimensional interval.
 using box_expr = std::vector<interval_expr>;
 box_expr operator|(box_expr a, const box_expr& b);

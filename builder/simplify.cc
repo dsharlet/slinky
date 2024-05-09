@@ -823,7 +823,7 @@ public:
       if (slice->sym == op->sym && slice->dim == op->dim) {
         // This is a slice of the same dimension of the buffer we just cropped.
         // Don't drop the clamp that crop performs.
-        expr at = clamp(slice->at, bounds.min, bounds.max);
+        expr at = clamp(slice->at, bounds);
         set_result(mutate(slice_dim::make(op->sym, op->src, op->dim, at, slice->body)));
         return;
       }
