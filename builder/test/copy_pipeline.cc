@@ -357,11 +357,16 @@ TEST(stacked_result, pipeline) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
-class broadcasted_elementwise : public testing::TestWithParam<int> {};
+class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise, testing::Range(0, 2));
+INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise,
+    testing::Combine(testing::Values(false, true), testing::Range(0, 2)),
+    test_params_to_string<broadcasted_elementwise::ParamType>);
 
 TEST_P(broadcasted_elementwise, pipeline) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  const int broadcast_dim = std::get<1>(GetParam());
+
   // Make the pipeline
   node_context ctx;
 
@@ -381,10 +386,9 @@ TEST_P(broadcasted_elementwise, pipeline) {
   func f = func::make(
       subtract<int>, {{in1, {point(x), point(y)}}, {in2_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
 
-  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
   // Run the pipeline.
-  const int broadcast_dim = GetParam();
   const int W = 20;
   const int H = 4;
   buffer<int, 2> in1_buf({W, H});
@@ -410,7 +414,9 @@ TEST_P(broadcasted_elementwise, pipeline) {
     }
   }
 
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  }
 }
 
 }  // namespace slinky
