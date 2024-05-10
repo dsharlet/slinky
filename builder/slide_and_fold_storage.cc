@@ -120,6 +120,7 @@ public:
 };
 
 bool is_produced_by(var v, const stmt& body) {
+  if (!body.defined()) return false;
   check_if_produced f(v);
   body.accept(&f);
   return f.found;
