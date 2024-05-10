@@ -48,6 +48,23 @@ bool is_copy(expr src_x, var dst_x, expr& offset, expr& stride) {
   }
 }
 
+// `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,
+// where it is a broadcast.
+bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
+  src_d = -1;
+  for (int i = 0; i < static_cast<int>(op->src_x.size()); ++i) {
+    if (depends_on(op->src_x[i], op->dst_x[dst_d]).any()) {
+      if (src_d == -1) {
+        src_d = i;
+      } else {
+        // dst_x[dst_d] is used by more than one src, we can't handle it with a copy.
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // Same as above, applied to each dimension of the copy.
 bool is_copy(
     const copy_stmt* op, std::vector<std::size_t>& permutation, std::vector<expr>& offset, std::vector<expr>& stride) {
@@ -57,16 +74,9 @@ bool is_copy(
   assert(permutation.empty());
   permutation.resize(op->dst_x.size());
   for (std::size_t dst_d = 0; dst_d < op->dst_x.size(); ++dst_d) {
-    int src_d = -1;
-    for (int sd = 0; sd < static_cast<int>(op->src_x.size()); ++sd) {
-      if (depends_on(op->src_x[sd], op->dst_x[dst_d]).any()) {
-        if (src_d == -1) {
-          src_d = sd;
-        } else {
-          // It's not a copy if dst_x[d] is used by more than one src_x.
-          return false;
-        }
-      }
+    int src_d;
+    if (!is_copy_dst_dim(op, dst_d, src_d)) {
+      return false;
     }
 
     if (src_d == -1) {
@@ -397,16 +407,8 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // If we just leave these two arrays alone, the copy will be correct, but slow.
   // We can speed it up by finding dimensions we can let pass through to the copy.
   for (int d = 0; d < static_cast<int>(dst_x.size()); ++d) {
-    int dep_count = 0;
-    int src_d = -1;
-    for (int sd = 0; sd < static_cast<int>(src_x.size()); ++sd) {
-      if (depends_on(op->src_x[sd], op->dst_x[d]).any()) {
-        dep_count++;
-        src_d = sd;
-      }
-    }
-    if (dep_count > 1) {
-      // dst_x[d] is used more than once, we can't handle it.
+    int src_d;
+    if (!is_copy_dst_dim(op, d, src_d)) {
       continue;
     }
 
