@@ -223,10 +223,8 @@ public:
         }
         buffer_alias a;
         for (index_t d = 0; d < static_cast<index_t>(info->dims.size()); ++d) {
-          dim_expr a_dim = buffer_dim(o, d);
-          a_dim.bounds = a_dim.bounds & info->dims[d].bounds;
-          a.dims.push_back(a_dim);
-          a.at.push_back(a_dim.bounds.min);
+          a.dims.push_back(buffer_dim(o, d));
+          a.at.push_back(buffer_min(o, d));
         }
 
         info->maybe_alias(o, std::move(a));
