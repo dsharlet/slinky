@@ -185,7 +185,7 @@ TEST_P(copied_result, pipeline) {
 
 class concatenated_result : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, concatenated_result, testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(schedule, concatenated_result, testing::Values(true, false));
 
 TEST_P(concatenated_result, pipeline) {
   bool no_alias_buffers = GetParam();
@@ -249,7 +249,7 @@ class transposed_result : public testing::TestWithParam<std::tuple<bool, int, in
 auto iota3 = testing::Values(0, 1, 2);
 
 INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
-    testing::Combine(testing::Values(false, true), iota3, iota3, iota3),
+    testing::Combine(testing::Values(true, false), iota3, iota3, iota3),
     test_params_to_string<transposed_result::ParamType>);
 
 TEST_P(transposed_result, pipeline) {
@@ -360,7 +360,7 @@ TEST(stacked_result, pipeline) {
 class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise,
-    testing::Combine(testing::Values(false, true), testing::Range(0, 2)),
+    testing::Combine(testing::Values(true, false), testing::Range(0, 2)),
     test_params_to_string<broadcasted_elementwise::ParamType>);
 
 TEST_P(broadcasted_elementwise, pipeline) {
