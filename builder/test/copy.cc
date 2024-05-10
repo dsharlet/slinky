@@ -272,12 +272,14 @@ TEST(flip_x, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, W);
-  ASSERT_EQ(eval_ctx.copy_elements, W);
 
   for (int x = 0; x < W; ++x) {
     ASSERT_EQ(out_buf(-x), in_buf(x));
   }
+
+  // TODO: This could be expressed with a single copy with a negative stride.
+  ASSERT_EQ(eval_ctx.copy_calls, W);
+  ASSERT_EQ(eval_ctx.copy_elements, W);
 }
 
 class flip_y : public testing::TestWithParam<int> {};
