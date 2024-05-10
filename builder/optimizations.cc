@@ -49,11 +49,6 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     } else {
       return false;
     }
-  } else if (src_d < 0) {
-    // This is a broadcast because the dst dim is unused in any src dim.
-    src_dim.stride = 0;
-    src_dim.fold_factor = dim::unfolded;
-    return true;
   } else if (!depends_on(src_x, dst_x).any()) {
     // This is a broadcast because the src_x is constant w.r.t. dst_x.
     at = src_x;
