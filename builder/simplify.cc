@@ -533,6 +533,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
@@ -580,6 +581,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));

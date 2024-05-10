@@ -239,7 +239,11 @@ public:
   raw_buffer& slice(std::size_t d) { return slice({d}); }
   raw_buffer& slice(std::size_t d, index_t at) {
     if (base != nullptr) {
-      base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+      if (dim(d).contains(at)) {
+        base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+      } else {
+        base = nullptr;
+      }
     }
     return slice({d});
   }
@@ -468,7 +472,7 @@ void fill(const raw_buffer& dst, const void* value);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.extent() == 1) return true;
+  if (outer.extent() == 1 && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
   if (inner.stride() * inner.extent() != outer.stride()) return false;
   return true;

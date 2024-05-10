@@ -5,7 +5,9 @@
 
 namespace slinky {
 
-// Where possible, rewrite copies as buffer metadata rewrites.
+// Where possible, replace `allocate` with `make_buffer` referring to another buffer with appropriate metadata:
+// - `copy_stmt`s that only do simple copies or broadcasts in each dimension.
+// - `call_stmt`s that can be in-place may be able to replace an allocation for the output with an alias of an input.
 stmt alias_buffers(const stmt& s);
 
 // Given a copy_stmt, produce an implementation that calls `slinky::copy`, possibly inside loops that implement copy

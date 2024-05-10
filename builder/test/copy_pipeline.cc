@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <numeric>
-
 #include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
@@ -52,14 +50,15 @@ TEST(flip_y, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, -y), in_buf(x, y));
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
 TEST(padded_copy, pipeline) {
@@ -105,8 +104,6 @@ TEST(padded_copy, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(args, inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = -H; y < 2 * H; ++y) {
     for (int x = -W; x < 2 * W; ++x) {
@@ -117,6 +114,9 @@ TEST(padded_copy, pipeline) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
 class copied_result : public testing::TestWithParam<int> {};
@@ -167,7 +167,6 @@ TEST_P(copied_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -180,6 +179,8 @@ TEST_P(copied_result, pipeline) {
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }
 
 class concatenated_result : public testing::TestWithParam<bool> {};
@@ -226,14 +227,15 @@ TEST_P(concatenated_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (!no_alias_buffers) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);
-  }
 
   for (int y = 0; y < H1 + H2; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
     }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
   }
 
   if (no_alias_buffers == true) {
@@ -242,30 +244,17 @@ TEST_P(concatenated_result, pipeline) {
   }
 }
 
-class transposed_result : public testing::TestWithParam<std::tuple<bool, std::vector<int>>> {};
+class transposed_result : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
+
+auto iota3 = testing::Values(0, 1, 2);
 
 INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
-    testing::Combine(testing::Values(false, true), testing::Values(std::vector<int>{0, 1, 2}, std::vector<int>{0, 2, 1},
-                                                       std::vector<int>{1, 2, 0}, std::vector<int>{0, 0, 0})));
-
-template <typename T>
-std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
-  std::vector<T> result(x.size());
-  for (std::size_t i = 0; i < x.size(); ++i) {
-    result[i] = x[p[i]];
-  }
-  return result;
-}
-
-bool is_permutation(span<const int> p) {
-  std::vector<int> unpermuted(p.size());
-  std::iota(unpermuted.begin(), unpermuted.end(), 0);
-  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
-}
+    testing::Combine(testing::Values(false, true), iota3, iota3, iota3),
+    test_params_to_string<transposed_result::ParamType>);
 
 TEST_P(transposed_result, pipeline) {
   bool no_alias_buffers = std::get<0>(GetParam());
-  const std::vector<int>& permutation = std::get<1>(GetParam());
+  std::vector<int> permutation = {std::get<1>(GetParam()), std::get<2>(GetParam()), std::get<3>(GetParam())};
 
   // Make the pipeline
   node_context ctx;
@@ -301,11 +290,6 @@ TEST_P(transposed_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (is_permutation(permutation) && !no_alias_buffers) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);
-  } else {
-    ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  }
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -313,6 +297,12 @@ TEST_P(transposed_result, pipeline) {
         ASSERT_EQ(out_buf(x, y, z), in_buf(permute<index_t>(permutation, {x, y, z})) + 1);
       }
     }
+  }
+
+  if (is_permutation(permutation) && !no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.total_count, 1);
   }
 }
 
@@ -354,7 +344,6 @@ TEST(stacked_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -363,7 +352,71 @@ TEST(stacked_result, pipeline) {
     }
   }
 
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
+}
+
+class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise,
+    testing::Combine(testing::Values(false, true), testing::Range(0, 2)),
+    test_params_to_string<broadcasted_elementwise::ParamType>);
+
+TEST_P(broadcasted_elementwise, pipeline) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  const int broadcast_dim = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(int));
+  auto in2_broadcasted = buffer_expr::make(ctx, "in2_broadcasted", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  box_expr bounds = {
+      select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
+      select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
+  };
+  func broadcast = func::make_copy({in2, bounds}, {in2_broadcasted, {x, y}});
+  func f = func::make(
+      subtract<int>, {{in1, {point(x), point(y)}}, {in2_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  buffer<int, 2> in1_buf({W, H});
+  buffer<int, 2> in2_buf({W, H});
+  in2_buf.dim(broadcast_dim).set_extent(1);
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      index_t i[] = {x, y};
+      i[broadcast_dim] = 0;
+      ASSERT_EQ(out_buf(x, y), in1_buf(x, y) - in2_buf(i));
+    }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  }
 }
 
 }  // namespace slinky
