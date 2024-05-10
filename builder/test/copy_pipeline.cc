@@ -52,14 +52,15 @@ TEST(flip_y, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, -y), in_buf(x, y));
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
 TEST(padded_copy, pipeline) {
@@ -105,8 +106,6 @@ TEST(padded_copy, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(args, inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = -H; y < 2 * H; ++y) {
     for (int x = -W; x < 2 * W; ++x) {
@@ -117,6 +116,9 @@ TEST(padded_copy, pipeline) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, W * H * sizeof(char));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
 class copied_result : public testing::TestWithParam<int> {};
@@ -167,7 +169,6 @@ TEST_P(copied_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -180,6 +181,8 @@ TEST_P(copied_result, pipeline) {
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }
 
 class concatenated_result : public testing::TestWithParam<bool> {};
@@ -226,14 +229,15 @@ TEST_P(concatenated_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (!no_alias_buffers) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);
-  }
 
   for (int y = 0; y < H1 + H2; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), (y < H1 ? in1_buf(x, y) : in2_buf(x, y - H1)) + 1);
     }
+  }
+
+  if (!no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
   }
 
   if (no_alias_buffers == true) {
@@ -303,11 +307,6 @@ TEST_P(transposed_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (is_permutation(permutation) && !no_alias_buffers) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);
-  } else {
-    ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  }
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -315,6 +314,12 @@ TEST_P(transposed_result, pipeline) {
         ASSERT_EQ(out_buf(x, y, z), in_buf(permute<index_t>(permutation, {x, y, z})) + 1);
       }
     }
+  }
+
+  if (is_permutation(permutation) && !no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.total_count, 1);
   }
 }
 
@@ -356,7 +361,6 @@ TEST(stacked_result, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -364,6 +368,8 @@ TEST(stacked_result, pipeline) {
       ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y) + 1);
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
