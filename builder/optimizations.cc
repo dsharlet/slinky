@@ -66,9 +66,10 @@ bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
   return true;
 }
 
-// Same as above, applied to each dimension of the copy.
-bool is_copy(
-    const copy_stmt* op, std::vector<std::size_t>& permutation, std::vector<expr>& offset, std::vector<expr>& stride) {
+// Same as above, applied to each dimension of the copy. `permutation[d]` indicates which dst dimension `d` is a copy of
+// in the `src`, or `std::nullopt` if it is a broadcast.
+bool is_copy(const copy_stmt* op, std::vector<std::optional<std::size_t>>& permutation, std::vector<expr>& offset,
+    std::vector<expr>& stride) {
   if (op->src_x.size() != op->dst_x.size()) return false;
   offset.resize(op->dst_x.size());
   stride.resize(op->dst_x.size());
@@ -255,7 +256,7 @@ public:
 
     std::optional<buffer_info>& info = alias_info[source];
 
-    std::vector<std::size_t> permutation;
+    std::vector<std::optional<std::size_t>> permutation;
     std::vector<expr> offset;
     std::vector<expr> stride = buffer_strides(target, info->dims.size());
     if (!is_copy(op, permutation, offset, stride)) {
@@ -265,17 +266,26 @@ public:
     buffer_alias a;
     a.dims.resize(info->dims.size());
     for (std::size_t d = 0; d < a.dims.size(); ++d) {
-      const int permuted_d = d < permutation.size() ? permutation[d] : d;
-      a.dims[d] = buffer_dim(target, permuted_d);
-      a.dims[d].stride = stride[permuted_d];
+      if (d < permutation.size() && permutation[d]) {
+        // This dimension is a copy of the input dimension.
+        a.dims[d] = buffer_dim(target, static_cast<int>(*permutation[d]));
+        a.dims[d].bounds &= info->dims[d].bounds;
+        a.dims[d].stride = stride[*permutation[d]];
+      } else {
+        // This dimension is a broadcast.
+        a.dims[d].bounds = info->dims[d].bounds;
+        a.dims[d].stride = 0;
+      }
     }
     a.at = std::move(offset);
     a.at.resize(std::max(a.at.size(), a.dims.size()));
     for (int d = 0; d < static_cast<int>(a.at.size()); ++d) {
-      if (!a.at[d].defined()) a.at[d] = 0;
       if (d < static_cast<int>(info->dims.size())) {
-        a.at[d] = max(buffer_min(target, d) - a.at[d], info->dims[d].bounds.min);
-        a.dims[d].bounds &= info->dims[d].bounds;
+        if (!a.at[d].defined()) {
+          a.at[d] = max(buffer_min(target, d), info->dims[d].bounds.min);
+        } else {
+          a.at[d] = max(buffer_min(target, d) - a.at[d], info->dims[d].bounds.min);
+        }
       }
     }
     info->maybe_alias(target, std::move(a));
