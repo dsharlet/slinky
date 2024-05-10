@@ -160,38 +160,31 @@ public:
       var target_var = target.first;
       const buffer_alias& alias = target.second;
 
-      // Here, we're essentially constructing make_buffer(op->sym, ...) { crop_buffer(op->sym, dims_bounds(op->dims) {
-      // ... } }, but we can't do that (and just rely on the simplifier) because translated crops might require a
-      // buffer_at call that is out of bounds.
+      // Replace the allocation with a buffer using the dims the alias wants.
       stmt result =
           make_buffer::make(op->sym, buffer_at(target_var, alias.at), op->elem_size, alias.dims, std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = result;
-      for (const auto& i : {std::make_tuple(op->sym, target_var), std::make_tuple(target_var, op->sym)}) {
-        var src = std::get<0>(i);
-        var dst = std::get<1>(i);
-        pad_result = recursive_mutate<copy_stmt>(pad_result, [src, dst](const copy_stmt* op) {
-          if (op->src != src || op->dst != dst) {
-            // Not this copy.
-            return stmt(op);
-          }
-          if (!op->padding || op->padding->empty()) {
-            // No padding, this copy is now a no-op.
-            return stmt();
-          }
-          // Make a call to `pad`.
-          call_stmt::attributes pad_attrs;
-          pad_attrs.name = "pad";
-          return call_stmt::make(
-              [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
-                const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
-                const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
-                ctx.pad(src_buf->dims, *dst_buf, padding.data());
-                return 0;
-              },
-              {src}, {dst}, std::move(pad_attrs));
-        });
-      }
+      stmt pad_result = recursive_mutate<copy_stmt>(result, [a = op->sym, b = target_var](const copy_stmt* op) {
+        if (!((op->src == a && op->dst == b) || (op->src == b && op->dst == a))) {
+          // Not this copy.
+          return stmt(op);
+        }
+        if (!op->padding || op->padding->empty()) {
+          // No padding, this copy is now a no-op.
+          return stmt();
+        }
+        // Make a call to `pad`.
+        call_stmt::attributes pad_attrs;
+        pad_attrs.name = "pad";
+        return call_stmt::make(
+            [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+              const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
+              const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
+              ctx.pad(src_buf->dims, *dst_buf, padding.data());
+              return 0;
+            },
+            {op->src}, {op->dst}, std::move(pad_attrs));
+      });
       if (pad_result.same_as(result)) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
