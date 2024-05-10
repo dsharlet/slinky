@@ -77,12 +77,7 @@ public:
   }
 
   // Returns true if the interval [a, b] is in bounds of this dimension.
-  bool contains(index_t a, index_t b) const {
-    // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
-    // invalid memory. It's a bit messy to allow this, but it feels really overzealous to disallow it when attempting to
-    // implement broadcasting.
-    return stride() == 0 || (min() <= a && b <= max());
-  }
+  bool contains(index_t a, index_t b) const { return min() <= a && b <= max(); }
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
