@@ -383,17 +383,19 @@ TEST_P(upsample_y, copy) {
   ASSERT_EQ(eval_ctx.copy_elements, W * H);
 }
 
-class transpose : public testing::TestWithParam<std::tuple<int, int, int>> {};
+class transpose : public testing::TestWithParam<std::vector<int>> {};
 
-auto iota3 = testing::Values(0, 1, 2);
-
-INSTANTIATE_TEST_SUITE_P(
-    schedule, transpose, testing::Combine(iota3, iota3, iota3), test_params_to_string<transpose::ParamType>);
+INSTANTIATE_TEST_SUITE_P(schedule, transpose,
+    testing::Values(std::vector<int>{}, std::vector<int>{0}, std::vector<int>{1}, std::vector<int>{2},
+        std::vector<int>{0, 1}, std::vector<int>{1, 0}, std::vector<int>{0, 2}, std::vector<int>{2, 0},
+        std::vector<int>{1, 2}, std::vector<int>{2, 1}, std::vector<int>{0, 1, 2}, std::vector<int>{2, 1, 0},
+        std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{1, 1, 1}, std::vector<int>{2, 2, 2},
+        std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{0, 0, 1}));
 
 template <typename T>
 std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
-  std::vector<T> result(x.size());
-  for (std::size_t i = 0; i < x.size(); ++i) {
+  std::vector<T> result(p.size());
+  for (std::size_t i = 0; i < p.size(); ++i) {
     result[i] = x[p[i]];
   }
   return result;
@@ -406,12 +408,12 @@ bool is_permutation(span<const int> p) {
 }
 
 TEST_P(transpose, copy) {
-  std::vector<int> permutation = {std::get<0>(GetParam()), std::get<1>(GetParam()), std::get<2>(GetParam())};
+  std::vector<int> permutation = GetParam();
 
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto in = buffer_expr::make(ctx, "in", permutation.size(), sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   var x(ctx, "x");
