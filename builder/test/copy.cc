@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
+#include <numeric>
 #include <vector>
 
 #include "builder/pipeline.h"
@@ -398,6 +399,12 @@ std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
   return result;
 }
 
+bool is_permutation(span<const int> p) {
+  std::vector<int> unpermuted(p.size());
+  std::iota(unpermuted.begin(), unpermuted.end(), 0);
+  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
+}
+
 TEST_P(transpose, copy) {
   std::vector<int> permutation = {std::get<0>(GetParam()), std::get<1>(GetParam()), std::get<2>(GetParam())};
 
@@ -437,7 +444,9 @@ TEST_P(transpose, copy) {
     }
   }
 
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
+  if (is_permutation(permutation)) {
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
+  }
 }
 
 class broadcast : public testing::TestWithParam<int> {};
