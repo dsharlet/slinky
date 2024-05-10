@@ -916,18 +916,15 @@ TEST(fuse_contiguous_dims, copy) {
     std::fill(padding.begin(), padding.end(), 7);
 
     buffer<void, max_rank> src(rank, elem_size);
-    for (std::size_t d = 0; d < src.rank; ++d) {
-      src.dim(d).set_min_extent(0, 5);
-    }
-    randomize_strides_and_padding(src, {-1, 1, true, true});
-    init_random(src);
-    buffer<void, max_rank> src_opt = src;
-
     buffer<void, max_rank> dst(rank, elem_size);
     for (std::size_t d = 0; d < src.rank; ++d) {
-      dst.dim(d) = src.dim(d);
+      src.dim(d).set_min_extent(0, 5);
+      dst.dim(d).set_min_extent(0, 5);
     }
+    randomize_strides_and_padding(src, {-1, 1, true, true});
     randomize_strides_and_padding(dst, {-1, 1, false, false});
+    init_random(src);
+    buffer<void, max_rank> src_opt = src;
     buffer<void, max_rank> dst_opt = dst;
     dst.allocate();
     dst_opt.allocate();
