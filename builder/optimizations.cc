@@ -43,6 +43,7 @@ bool is_copy(expr src_x, var dst_x, expr& offset, expr& stride) {
     offset = 0;
     return true;
   } else {
+    // If the difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
     offset = simplify(src_x - dst_x);
     return !depends_on(offset, dst_x).any();
   }
@@ -79,7 +80,7 @@ bool is_copy(
       return false;
     }
 
-    if (src_d == -1) {
+    if (src_d < 0) {
       // This is a broadcast.
       offset[dst_d] = 0;
       stride[dst_d] = 0;
