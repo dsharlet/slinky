@@ -374,4 +374,60 @@ TEST(stacked_result, pipeline) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
+class broadcasted_elementwise : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise, testing::Range(0, 2));
+
+TEST_P(broadcasted_elementwise, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(int));
+  auto in2_broadcasted = buffer_expr::make(ctx, "in2_broadcasted", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  box_expr bounds = {
+      select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
+      select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
+  };
+  func broadcast = func::make_copy({in2, bounds}, {in2_broadcasted, {x, y}});
+  func f = func::make(
+      subtract<int>, {{in1, {point(x), point(y)}}, {in2_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out});
+
+  // Run the pipeline.
+  const int broadcast_dim = GetParam();
+  const int W = 20;
+  const int H = 4;
+  buffer<int, 2> in1_buf({W, H});
+  buffer<int, 2> in2_buf({W, H});
+  in2_buf.dim(broadcast_dim).set_extent(1);
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      index_t i[] = {x, y};
+      i[broadcast_dim] = 0;
+      ASSERT_EQ(out_buf(x, y), in1_buf(x, y) - in2_buf(i));
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+}
+
 }  // namespace slinky

@@ -23,29 +23,71 @@ namespace slinky {
 namespace {
 
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(expr src_x, var dst_x, expr& offset) {
-  offset = simplify(src_x - dst_x);
-  return !depends_on(offset, dst_x).any();
+bool is_copy(expr src_x, var dst_x, expr& offset, expr& stride) {
+  if (const class select* s = src_x.as<class select>()) {
+    // The src is a select of two things that might both be copies.
+    expr offset_t = offset;
+    expr offset_f = offset;
+    expr stride_t = stride;
+    expr stride_f = stride;
+    if (is_copy(s->true_value, dst_x, offset_t, stride_t) && is_copy(s->false_value, dst_x, offset_f, stride_f)) {
+      offset = select(s->condition, offset_t, offset_f);
+      stride = select(s->condition, stride_t, stride_f);
+      return true;
+    } else {
+      return false;
+    }
+  } else if (!depends_on(src_x, dst_x).any()) {
+    // This is a broadcast.
+    stride = 0;
+    offset = 0;
+    return true;
+  } else {
+    offset = simplify(src_x - dst_x);
+    return !depends_on(offset, dst_x).any();
+  }
 }
 
 // Same as above, applied to each dimension of the copy.
-bool is_copy(const copy_stmt* op, std::vector<std::size_t>& permutation, std::vector<expr>& offset) {
+bool is_copy(
+    const copy_stmt* op, std::vector<std::size_t>& permutation, std::vector<expr>& offset, std::vector<expr>& stride) {
   if (op->src_x.size() != op->dst_x.size()) return false;
   offset.resize(op->dst_x.size());
+  stride.resize(op->dst_x.size());
   assert(permutation.empty());
   permutation.resize(op->dst_x.size());
   for (std::size_t dst_d = 0; dst_d < op->dst_x.size(); ++dst_d) {
-    bool found = false;
-    for (std::size_t src_d = 0; src_d < op->src_x.size(); ++src_d) {
-      if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d])) {
-        permutation[src_d] = dst_d;
-        found = true;
-        break;
+    int src_d = -1;
+    for (int sd = 0; sd < static_cast<int>(op->src_x.size()); ++sd) {
+      if (depends_on(op->src_x[sd], op->dst_x[dst_d]).any()) {
+        if (src_d == -1) {
+          src_d = sd;
+        } else {
+          // It's not a copy if dst_x[d] is used by more than one src_x.
+          return false;
+        }
       }
     }
-    if (!found) return false;
+
+    if (src_d == -1) {
+      // This is a broadcast.
+      offset[dst_d] = 0;
+      stride[dst_d] = 0;
+    } else if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d], stride[dst_d])) {
+      permutation[src_d] = dst_d;
+    } else {
+      return false;
+    }
   }
   return true;
+}
+
+std::vector<expr> buffer_strides(var buf, int rank) {
+  std::vector<expr> result(rank);
+  for (int d = 0; d < rank; ++d) {
+    result[d] = buffer_stride(buf, d);
+  }
+  return result;
 }
 
 class buffer_aliaser : public node_mutator {
@@ -114,28 +156,32 @@ public:
       stmt result =
           make_buffer::make(op->sym, buffer_at(target_var, alias.at), op->elem_size, alias.dims, std::move(body));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = recursive_mutate<copy_stmt>(result, [src = op->sym, dst = target_var](const copy_stmt* op) {
-        if (op->src != src || op->dst != dst) {
-          // Not this copy.
-          return stmt(op);
-        }
-        if (!op->padding || op->padding->empty()) {
-          // No padding, this copy is now a no-op.
-          return stmt();
-        }
-        // Make a call to `pad`.
-        call_stmt::attributes pad_attrs;
-        pad_attrs.name = "pad";
-        return call_stmt::make(
-            [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
-              const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
-              const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
-              ctx.pad(src_buf->dims, *dst_buf, padding.data());
-              return 0;
-            },
-            {src}, {dst}, std::move(pad_attrs));
-      });
-
+      stmt pad_result = result;
+      for (const auto& i : {std::make_tuple(op->sym, target_var), std::make_tuple(target_var, op->sym)}) {
+        var src = std::get<0>(i);
+        var dst = std::get<1>(i);
+        pad_result = recursive_mutate<copy_stmt>(pad_result, [src, dst](const copy_stmt* op) {
+          if (op->src != src || op->dst != dst) {
+            // Not this copy.
+            return stmt(op);
+          }
+          if (!op->padding || op->padding->empty()) {
+            // No padding, this copy is now a no-op.
+            return stmt();
+          }
+          // Make a call to `pad`.
+          call_stmt::attributes pad_attrs;
+          pad_attrs.name = "pad";
+          return call_stmt::make(
+              [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+                const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
+                const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
+                ctx.pad(src_buf->dims, *dst_buf, padding.data());
+                return 0;
+              },
+              {src}, {dst}, std::move(pad_attrs));
+        });
+      }
       if (pad_result.same_as(result)) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
@@ -192,32 +238,45 @@ public:
       return;
     }
 
-    std::optional<buffer_info>& info = alias_info[op->src];
-    if (!info) {
+    var source, target;
+    if (alias_info[op->src]) {
+      // We allocated the src. We might be able to replace the allocation with an alias of the dst.
+      source = op->src;
+      target = op->dst;
+    } else if (alias_info[op->dst]) {
+      // We allocated the dst. We might be able to replace the allocation with an alias of the src.
+      source = op->dst;
+      target = op->src;
+    } else {
       return;
     }
 
+    std::optional<buffer_info>& info = alias_info[source];
+
     std::vector<std::size_t> permutation;
     std::vector<expr> offset;
-    if (!is_copy(op, permutation, offset)) {
+    std::vector<expr> stride = buffer_strides(target, info->dims.size());
+    if (!is_copy(op, permutation, offset, stride)) {
       return;
     }
+
     buffer_alias a;
     a.dims.resize(info->dims.size());
     for (std::size_t d = 0; d < a.dims.size(); ++d) {
       const int permuted_d = d < permutation.size() ? permutation[d] : d;
-      a.dims[d] = buffer_dim(op->dst, permuted_d);
+      a.dims[d] = buffer_dim(target, permuted_d);
+      a.dims[d].stride = stride[permuted_d];
     }
-    a.at = offset;
+    a.at = std::move(offset);
     a.at.resize(std::max(a.at.size(), a.dims.size()));
     for (int d = 0; d < static_cast<int>(a.at.size()); ++d) {
       if (!a.at[d].defined()) a.at[d] = 0;
       if (d < static_cast<int>(info->dims.size())) {
-        a.at[d] = max(buffer_min(op->dst, d) - a.at[d], info->dims[d].bounds.min);
+        a.at[d] = max(buffer_min(target, d) - a.at[d], info->dims[d].bounds.min);
         a.dims[d].bounds &= info->dims[d].bounds;
       }
     }
-    info->maybe_alias(op->dst, std::move(a));
+    info->maybe_alias(target, std::move(a));
   }
 
   void merge_alias_info(symbol_map<buffer_info> add) {
@@ -313,14 +372,6 @@ public:
   void visit(const truncate_rank*) override { std::abort(); }
 };
 
-dim_expr select(const expr& condition, const dim_expr& t, const dim_expr& f) {
-  return {
-      select(condition, t.bounds, f.bounds),
-      select(condition, t.stride, f.stride),
-      select(condition, t.fold_factor, f.fold_factor),
-  };
-}
-
 }  // namespace
 
 stmt alias_buffers(const stmt& s) { return buffer_aliaser().mutate(s); }
@@ -340,70 +391,36 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       {op->src}, {op->dst}, std::move(copy_attrs));
 
   std::vector<expr> src_x = op->src_x;
+  std::vector<var> dst_x = op->dst_x;
   std::vector<dim_expr> src_dims;
-  std::vector<std::pair<var, int>> dst_x;
 
   // If we just leave these two arrays alone, the copy will be correct, but slow.
   // We can speed it up by finding dimensions we can let pass through to the copy.
-  for (int d = 0; d < static_cast<int>(op->dst_x.size()); ++d) {
+  for (int d = 0; d < static_cast<int>(dst_x.size()); ++d) {
     int dep_count = 0;
     int src_d = -1;
     for (int sd = 0; sd < static_cast<int>(src_x.size()); ++sd) {
-      if (depends_on(src_x[sd], op->dst_x[d]).any()) {
-        ++dep_count;
+      if (depends_on(op->src_x[sd], op->dst_x[d]).any()) {
+        dep_count++;
         src_d = sd;
       }
     }
-    bool handled = false;
-    dim_expr broadcast_dim = {buffer_bounds(op->dst, d), 0, dim::unfolded};
-    if (dep_count == 0) {
-      // This dimension is a broadcast. To handle this, we're going to add a dummy dimension to the input.
-      // We can just always do this, regardless of whether this broadcast is implicit (the input has fewer
-      // dimensions than the output) or not.
-      src_dims.push_back(broadcast_dim);
-      handled = true;
-    } else if (dep_count == 1) {
-      // TODO: I think this whole sequence of logic could be refactored to be more general and less janky.
-      auto handle_copy = [=, &src_dims](expr& src_x_d) {
-        expr offset;
-        if (is_copy(src_x_d, op->dst_x[d], offset)) {
-          interval_expr src_bounds = (buffer_bounds(op->src, src_d) - offset) & buffer_bounds(op->dst, d);
-          src_dims.push_back({src_bounds, buffer_stride(op->src, src_d), buffer_fold_factor(op->src, src_d)});
-          src_x_d = src_bounds.min + offset;
-          return true;
-        }
-        return false;
-      };
-
-      if (handle_copy(src_x[src_d])) {
-        handled = true;
-      } else if (const class select* s = src_x[src_d].as<class select>()) {
-        // This might be a conditional where we either broadcast or copy. We can propagate that condition up to the
-        // dimensions we construct in make_buffer, so we get an efficient copy in either case.
-        if (!depends_on(s->condition, op->dst_x[d]).any()) {
-          auto handle_copy_or_broadcast = [&](expr condition, expr copy, const expr& broadcast) {
-            if (depends_on(broadcast, op->dst_x[d]).any()) {
-              // Not a broadcast.
-              return false;
-            } else if (handle_copy(copy)) {
-              src_dims.back() = select(condition, src_dims.back(), broadcast_dim);
-              src_x[src_d] = select(condition, copy, broadcast);
-              return true;
-            } else {
-              return false;
-            }
-          };
-
-          if (handle_copy_or_broadcast(!s->condition, s->false_value, s->true_value)) {
-            handled = true;
-          } else if (handle_copy_or_broadcast(s->condition, s->true_value, s->false_value)) {
-            handled = true;
-          }
-        }
-      }
+    if (dep_count > 1) {
+      // dst_x[d] is used more than once, we can't handle it.
+      continue;
     }
-    if (!handled) {
-      dst_x.emplace_back(op->dst_x[d], d);
+
+    expr offset = 0;
+    expr stride = buffer_stride(op->src, src_d);
+    if (src_d < 0) {
+      // This is a broadcast.
+      src_dims.push_back({buffer_bounds(op->dst, d), 0});
+      dst_x[d] = var();
+    } else if (is_copy(op->src_x[src_d], op->dst_x[d], offset, stride)) {
+      interval_expr src_bounds = buffer_bounds(op->dst, d) & (buffer_bounds(op->src, src_d) - offset);
+      src_dims.push_back({src_bounds, stride, buffer_fold_factor(op->src, src_d)});
+      src_x[src_d] = src_bounds.min + offset;
+      dst_x[d] = var();
     }
   }
 
@@ -436,9 +453,10 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
     do_substitute(buffer_fold_factor(op->dst, d));
   }
 
-  for (const std::pair<var, int>& d : dst_x) {
-    result = slice_dim::make(op->dst, op->dst, d.second, d.first, result);
-    result = loop::make(d.first, loop::serial, buffer_bounds(op->dst, d.second), 1, result);
+  for (int d = 0; d < static_cast<index_t>(dst_x.size()); ++d) {
+    if (!dst_x[d].defined()) continue;
+    result = slice_dim::make(op->dst, op->dst, d, dst_x[d], result);
+    result = loop::make(dst_x[d], loop::serial, buffer_bounds(op->dst, d), 1, result);
   }
   return let_stmt::make(std::move(lets), result);
 }
