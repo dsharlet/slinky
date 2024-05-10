@@ -375,7 +375,25 @@ TEST_P(upsample_y, copy) {
   }
 }
 
-TEST(transpose, copy) {
+class transpose : public testing::TestWithParam<std::tuple<int, int, int>> {};
+
+auto iota3 = testing::Values(0, 1, 2);
+
+INSTANTIATE_TEST_SUITE_P(
+    schedule, transpose, testing::Combine(iota3, iota3, iota3), test_params_to_string<transpose::ParamType>);
+
+template <typename T>
+std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
+  std::vector<T> result(x.size());
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    result[i] = x[p[i]];
+  }
+  return result;
+}
+
+TEST_P(transpose, copy) {
+  std::vector<int> permutation = {std::get<0>(GetParam()), std::get<1>(GetParam()), std::get<2>(GetParam())};
+
   // Make the pipeline
   node_context ctx;
 
@@ -386,8 +404,7 @@ TEST(transpose, copy) {
   var y(ctx, "y");
   var z(ctx, "z");
 
-  // Transpose the first two dimensions.
-  func flip = func::make_copy({in, {point(y), point(x), point(z)}}, {out, {x, y, z}});
+  func t = func::make_copy({in, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -395,7 +412,7 @@ TEST(transpose, copy) {
   const int H = 20;
   const int W = 10;
   const int D = 10;
-  buffer<int, 3> in_buf({H, W, D});
+  buffer<int, 3> in_buf(permute<index_t>(permutation, {W, H, D}));
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
@@ -409,7 +426,7 @@ TEST(transpose, copy) {
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y, z), in_buf(y, x, z));
+        ASSERT_EQ(out_buf(x, y, z), in_buf(permute<index_t>(permutation, {x, y, z})));
       }
     }
   }

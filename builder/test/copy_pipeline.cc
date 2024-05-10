@@ -242,11 +242,13 @@ TEST_P(concatenated_result, pipeline) {
   }
 }
 
-class transposed_result : public testing::TestWithParam<std::tuple<bool, std::vector<int>>> {};
+class transposed_result : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
+
+auto iota3 = testing::Values(0, 1, 2);
 
 INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
-    testing::Combine(testing::Values(false, true), testing::Values(std::vector<int>{0, 1, 2}, std::vector<int>{0, 2, 1},
-                                                       std::vector<int>{1, 2, 0}, std::vector<int>{0, 0, 0})));
+    testing::Combine(testing::Values(false, true), iota3, iota3, iota3),
+    test_params_to_string<transposed_result::ParamType>);
 
 template <typename T>
 std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
@@ -265,7 +267,7 @@ bool is_permutation(span<const int> p) {
 
 TEST_P(transposed_result, pipeline) {
   bool no_alias_buffers = std::get<0>(GetParam());
-  const std::vector<int>& permutation = std::get<1>(GetParam());
+  std::vector<int> permutation = {std::get<1>(GetParam()), std::get<2>(GetParam()), std::get<3>(GetParam())};
 
   // Make the pipeline
   node_context ctx;
