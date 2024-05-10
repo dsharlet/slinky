@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
-#include <numeric>
 #include <vector>
 
 #include "builder/pipeline.h"
@@ -391,21 +390,6 @@ INSTANTIATE_TEST_SUITE_P(schedule, transpose,
         std::vector<int>{1, 2}, std::vector<int>{2, 1}, std::vector<int>{0, 1, 2}, std::vector<int>{2, 1, 0},
         std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{1, 1, 1}, std::vector<int>{2, 2, 2},
         std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{0, 0, 1}));
-
-template <typename T>
-std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
-  std::vector<T> result(p.size());
-  for (std::size_t i = 0; i < p.size(); ++i) {
-    result[i] = x[p[i]];
-  }
-  return result;
-}
-
-bool is_permutation(span<const int> p) {
-  std::vector<int> unpermuted(p.size());
-  std::iota(unpermuted.begin(), unpermuted.end(), 0);
-  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
-}
 
 TEST_P(transpose, copy) {
   std::vector<int> permutation = GetParam();

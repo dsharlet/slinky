@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <numeric>
-
 #include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
@@ -253,21 +251,6 @@ auto iota3 = testing::Values(0, 1, 2);
 INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
     testing::Combine(testing::Values(false, true), iota3, iota3, iota3),
     test_params_to_string<transposed_result::ParamType>);
-
-template <typename T>
-std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
-  std::vector<T> result(x.size());
-  for (std::size_t i = 0; i < x.size(); ++i) {
-    result[i] = x[p[i]];
-  }
-  return result;
-}
-
-bool is_permutation(span<const int> p) {
-  std::vector<int> unpermuted(p.size());
-  std::iota(unpermuted.begin(), unpermuted.end(), 0);
-  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
-}
 
 TEST_P(transposed_result, pipeline) {
   bool no_alias_buffers = std::get<0>(GetParam());

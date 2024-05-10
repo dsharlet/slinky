@@ -2,6 +2,7 @@
 #define SLINKY_BUILDER_TEST_UTIL_H
 
 #include <fstream>
+#include <numeric>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -41,6 +42,21 @@ inline std::string read_entire_file(const std::string& pathname) {
   std::stringstream buffer;
   buffer << f.rdbuf();
   return remove_windows_newlines(buffer.str());
+}
+
+template <typename T>
+std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
+  std::vector<T> result(p.size());
+  for (std::size_t i = 0; i < p.size(); ++i) {
+    result[i] = x[p[i]];
+  }
+  return result;
+}
+
+inline bool is_permutation(span<const int> p) {
+  std::vector<int> unpermuted(p.size());
+  std::iota(unpermuted.begin(), unpermuted.end(), 0);
+  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
 }
 
 }  // namespace slinky
