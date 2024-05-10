@@ -66,34 +66,6 @@ bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
   return true;
 }
 
-// Same as above, applied to each dimension of the copy. `permutation[d]` indicates which dst dimension `d` is a copy of
-// in the `src`, or `std::nullopt` if it is a broadcast.
-bool is_copy(const copy_stmt* op, std::vector<std::optional<std::size_t>>& permutation, std::vector<expr>& offset,
-    std::vector<expr>& stride) {
-  if (op->src_x.size() != op->dst_x.size()) return false;
-  offset.resize(op->dst_x.size());
-  stride.resize(op->dst_x.size());
-  assert(permutation.empty());
-  permutation.resize(op->dst_x.size());
-  for (std::size_t dst_d = 0; dst_d < op->dst_x.size(); ++dst_d) {
-    int src_d;
-    if (!is_copy_dst_dim(op, dst_d, src_d)) {
-      return false;
-    }
-
-    if (src_d < 0) {
-      // This is a broadcast.
-      offset[dst_d] = 0;
-      stride[dst_d] = 0;
-    } else if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d], stride[dst_d])) {
-      permutation[src_d] = dst_d;
-    } else {
-      return false;
-    }
-  }
-  return true;
-}
-
 std::vector<expr> buffer_strides(var buf, int rank) {
   std::vector<expr> result(rank);
   for (int d = 0; d < rank; ++d) {
@@ -254,13 +226,34 @@ public:
       return;
     }
 
+    // TODO: This visitor is a nightmare and I'm pretty sure it has many bugs. It needs a rewrite.
+    // It does work for many tests though.
+
     std::optional<buffer_info>& info = alias_info[source];
 
     std::vector<std::optional<std::size_t>> permutation;
     std::vector<expr> offset;
     std::vector<expr> stride = buffer_strides(target, info->dims.size());
-    if (!is_copy(op, permutation, offset, stride)) {
-      return;
+
+    offset.resize(op->dst_x.size());
+    stride.resize(op->dst_x.size());
+    assert(permutation.empty());
+    permutation.resize(op->dst_x.size());
+    for (std::size_t dst_d = 0; dst_d < op->dst_x.size(); ++dst_d) {
+      int src_d;
+      if (!is_copy_dst_dim(op, dst_d, src_d)) {
+        return;
+      }
+
+      if (src_d < 0) {
+        // This is a broadcast.
+        offset[dst_d] = 0;
+        stride[dst_d] = 0;
+      } else if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d], stride[dst_d])) {
+        permutation[src_d] = dst_d;
+      } else {
+        return;
+      }
     }
 
     buffer_alias a;
