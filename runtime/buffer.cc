@@ -363,13 +363,13 @@ index_t make_for_each_slice_dims_impl(
       return 0;
     }
 
-    // If we have one buffer, treat broadcasts as extent 1. Is this a hack?
-    index_t extent_d = (bufs_size == 1 && buf_dim.stride() == 0) ? 1 : buf_dim.extent();
-    if (extent_d > 1 && use_folded_loop(bufs, bufs_size, d)) {
-      // There is a folded dimension in one of the buffers, or we need to crop one of the buffers.
+    if (buf_dim.stride() == 0) {
+      // This dimension is a broadcast, treat it as extent 1.
+    } else if (buf_dim.max() > buf_dim.min() && use_folded_loop(bufs, bufs_size, d)) {
+      // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;
-      next->extent = extent_d;
+      next->extent = buf_dim.extent();
       for (std::size_t n = 0; n < bufs_size; n++) {
         next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
       }
@@ -377,9 +377,11 @@ index_t make_for_each_slice_dims_impl(
       next_dims = get_plan<dim_or_stride>(plan, bufs_size);
       extent = 1;
       continue;
+    } else {
+      // Not a broadcast, traverse this dimension.
+      extent *= buf_dim.extent();
     }
 
-    extent *= extent_d;
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
       if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
