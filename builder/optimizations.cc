@@ -162,8 +162,6 @@ public:
       // Replace the allocation with a buffer using the dims the alias wants.
       stmt result =
           make_buffer::make(op->sym, buffer_at(target_var, alias.at), op->elem_size, alias.dims, std::move(body));
-      // The alias might have used buffer metadata from the original, add a buffer for it.
-      result = make_buffer::make(op->sym, {}, op->elem_size, op->dims, std::move(result));
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       stmt pad_result = recursive_mutate<copy_stmt>(result, [a = op->sym, b = target_var](const copy_stmt* op) {
         if (!((op->src == a && op->dst == b) || (op->src == b && op->dst == a))) {
