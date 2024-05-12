@@ -252,6 +252,30 @@ TEST(simplify, make_buffer) {
       matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 1, y, body))));
   ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, 3)),
       matches(truncate_rank::make(b0, b0, 3, slice_dim::make(b0, b0, 1, y, body))));
+
+  auto make_crop = [body](var buf, std::vector<std::pair<expr, expr>> bounds, int rank) {
+    std::vector<dim_expr> dims = buffer_dims(buf, rank);
+    std::vector<expr> at(rank);
+    for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
+      if (bounds[d].first.defined()) dims[d].bounds.min = bounds[d].first;
+      if (bounds[d].second.defined()) dims[d].bounds.max = bounds[d].second;
+      at[d] = dims[d].bounds.min;
+    }
+    return make_buffer::make(buf, buffer_at(buf, at), buffer_elem_size(buf), dims, body);
+  };
+
+  ASSERT_THAT(simplify(make_crop(b0, {}, 0)), matches(truncate_rank::make(b0, b0, 0, body)));
+  ASSERT_THAT(simplify(make_crop(b0, {}, 1)), matches(truncate_rank::make(b0, b0, 1, body)));
+  ASSERT_THAT(simplify(make_crop(b0, {{x, y}}, 1)),
+      matches(truncate_rank::make(b0, b0, 1, crop_dim::make(b0, b0, 0, {x, y}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {{x, y}}, 2)),
+      matches(truncate_rank::make(b0, b0, 2, crop_dim::make(b0, b0, 0, {x, y}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {{x, y}, {z, w}}, 2)),
+      matches(truncate_rank::make(b0, b0, 2, crop_buffer::make(b0, b0, {{x, y}, {z, w}}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {{expr(), expr()}, {z, w}}, 2)),
+      matches(truncate_rank::make(b0, b0, 2, crop_dim::make(b0, b0, 1, {z, w}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {{expr(), expr()}, {z, w}}, 3)),
+      matches(truncate_rank::make(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
 }
 
 TEST(simplify, bounds_of) {
