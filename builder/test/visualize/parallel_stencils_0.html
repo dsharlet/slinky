@@ -304,7 +304,10 @@ function pipeline(in1, in2, out) {
                 { let intm1_uncropped = clone_buffer(intm1);
                   {
                     let y_min_orig = buffer_min(out, 1);
-                    for(let y = (y_min_orig + -6); y <= buffer_max(out, 1); y += 1) {
+                    let __loop_min = (y_min_orig + -6);
+                    let __loop_max = buffer_max(out, 1);
+                    let __loop_step = 1;
+                    for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
                       { let __intm1 = crop_dim(intm1, 1, {min:(y + 1), max:(y + 1)});
                         consume(in1);
                         produce(intm1);

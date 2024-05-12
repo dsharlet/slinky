@@ -185,14 +185,16 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "for(let " << l->sym << " = " << l->bounds.min << "; " << l->sym << " <= " << l->bounds.max
-          << "; ";
+    *this << indent() << "let __loop_min = " << l->bounds.min << ";\n";
+    *this << indent() << "let __loop_max = " << l->bounds.max << ";\n";
+    *this << indent() << "let __loop_step = ";
     if (l->step.defined()) {
-      *this << l->sym << " += " << l->step;
+      *this << l->step << ";\n";
     } else {
-      *this << l->sym << "++";
+      *this << "1;\n";
     }
-    *this << ") {\n";
+    *this << indent() << "for(let " << l->sym << " = __loop_min; " << l->sym << " <= __loop_max; " << l->sym
+          << " += __loop_step) {\n";
     *this << l->body;
     *this << indent() << "}\n";
   }

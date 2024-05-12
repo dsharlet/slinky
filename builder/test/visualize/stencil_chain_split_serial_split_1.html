@@ -288,7 +288,10 @@ function pipeline(__in, out) {
             {
               let y_min_orig = buffer_min(out, 1);
               let __trace_token = trace_begin(buffer_at(__trace_names, 17));
-              for(let y = (y_min_orig + -4); y <= buffer_max(out, 1); y += 1) {
+              let __loop_min = (y_min_orig + -4);
+              let __loop_max = buffer_max(out, 1);
+              let __loop_step = 1;
+              for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
                 {
                   let __trace_token = trace_begin(buffer_at(__trace_names, 0));
                   { let __add_result = crop_dim(add_result, 1, {min:(y + 2), max:(y + 2)});
