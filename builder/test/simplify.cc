@@ -227,6 +227,33 @@ TEST(simplify, allocate) {
           allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)})));
 }
 
+TEST(simplify, make_buffer) {
+  stmt body = call_stmt::make(nullptr, {}, {b0}, {});
+  auto make_slice = [body](var buf, std::vector<expr> at, int rank) {
+    std::vector<dim_expr> dims = buffer_dims(buf, rank);
+    for (int i = static_cast<int>(at.size()) - 1; i >= 0; --i) {
+      if (at[i].defined()) {
+        dims.erase(dims.begin() + i);
+      }
+    }
+    return make_buffer::make(buf, buffer_at(buf, at), buffer_elem_size(buf), dims, body);
+  };
+
+  ASSERT_THAT(simplify(make_slice(b0, {}, 0)), matches(truncate_rank::make(b0, b0, 0, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, 1)), matches(truncate_rank::make(b0, b0, 1, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, 3)), matches(truncate_rank::make(b0, b0, 3, body)));
+  ASSERT_THAT(
+      simplify(make_slice(b0, {x}, 1)), matches(truncate_rank::make(b0, b0, 1, slice_dim::make(b0, b0, 0, x, body))));
+  ASSERT_THAT(
+      simplify(make_slice(b0, {x}, 2)), matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 0, x, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {x, y}, 2)),
+      matches(truncate_rank::make(b0, b0, 2, slice_buffer::make(b0, b0, {x, y}, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, 2)),
+      matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 1, y, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, 3)),
+      matches(truncate_rank::make(b0, b0, 3, slice_dim::make(b0, b0, 1, y, body))));
+}
+
 TEST(simplify, bounds_of) {
   // Test bounds_of by testing expressions of up to two operands, and setting the
   // bounds of the two operands to all possible cases of overlap. This approach

@@ -572,6 +572,7 @@ public:
   SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
+    assert(op->at.size() <= buffer->rank);
 
     // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
     dim* dims = SLINKY_ALLOCA(dim, buffer->rank);
@@ -607,6 +608,7 @@ public:
   SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
+    assert(op->dim < static_cast<int>(buffer->rank));
 
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     dim* old_dims = buffer->dims;
