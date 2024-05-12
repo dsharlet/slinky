@@ -1,13 +1,34 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
+#include "runtime/visualize.h"
 
 namespace slinky {
+
+void check_visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs,
+    pipeline::buffers outputs, const node_context* ctx) {
+  std::stringstream viz_stream;
+  visualize(viz_stream, p, inputs, outputs, ctx);
+  std::string viz = viz_stream.str();
+
+  std::string golden_path = get_bazel_file_path("builder/test/visualize/" + filename);
+  if (is_bazel_test()) {
+    std::string golden = read_entire_file(golden_path);
+    ASSERT_FALSE(golden.empty());
+    // If this check fails, and you believe the changes to the visualization is correct, run this
+    // test outside of bazel from the root of the repo to update the golden files.
+    ASSERT_TRUE(golden == viz);
+  } else {
+    std::ofstream file(golden_path);
+    file << viz;
+  }
+}
 
 // This implementation of softmax is not intended to be fast, it is only intended to model the data dependencies.
 index_t max_dim0(const buffer<const float>& in, const buffer<float>& max_in) {
@@ -156,8 +177,8 @@ TEST_P(softmax, pipeline) {
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
-  const int D = 10;
-  const int B = 10;
+  const int D = 30;
+  const int B = 20;
   buffer<float, rank> in_buf({D, B});
   buffer<float, rank> out_buf({D, B});
 
@@ -184,6 +205,10 @@ TEST_P(softmax, pipeline) {
     auto out_b = span<const float>(&out_buf(0, b), D);
     auto ref_b = span<const float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
+  }
+
+  if (split_c == 0 && !use_compute_at) {
+    check_visualize("softmax_split_" + std::to_string(split_b) + ".html", p, inputs, outputs, &ctx);
   }
 }
 

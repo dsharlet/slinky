@@ -111,8 +111,10 @@ cc_test(
     srcs = ["softmax.cc"],
     deps = [
         ":util",
+        "//base/test:util",
         "//builder",
         "//runtime",
+        "//runtime:visualize",
         "@googletest//:gtest_main",
     ],
     size = "small",
