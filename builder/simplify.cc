@@ -605,16 +605,14 @@ public:
             is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
           }
           if (is_clone) {
-            if (*src_buf == op->sym) {
-              set_result(mutate(truncate_rank::make(op->sym, *src_buf, dims.size(), std::move(body))));
-              return;
-            }
             const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
             if (src_bounds && src_bounds->size() == dims.size()) {
               // This is a clone of src_buf.
               set_result(mutate(clone_buffer::make(op->sym, *src_buf, std::move(body))));
-              return;
+            } else {
+              set_result(mutate(truncate_rank::make(op->sym, *src_buf, dims.size(), std::move(body))));
             }
+            return;
           }
         }
       }
