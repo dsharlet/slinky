@@ -108,9 +108,18 @@ function define_mapping(buffer) {
   buf.mem.base = buffer.base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
-    return function(at) {
-      at -= base;
-      return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+    if (sorted_dims.length > 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+      }
+    } else if (sorted_dims.length == 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), 0];
+      }
+    } else {
+      return function(at) { return [0, 0]; }
     }
   }
   buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
@@ -251,7 +260,7 @@ function truncate_rank(b, rank) {
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
-    m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
+    m.element.mem.productions.push({t: __event_t, buf: clone_buffer(b)});
   }
 }
 function consume(b) {}
@@ -311,27 +320,32 @@ function pipeline(in1, in2, out) {
                       { let __intm1 = crop_dim(intm1, 1, {min:(y + 1), max:(y + 1)});
                         consume(in1);
                         produce(intm1);
+                        __event_t++;
                         intm1 = __intm1;
                       }
                       { let __intm3 = crop_dim(intm3, 1, {min:y, max:y});
                         consume(intm1_uncropped);
                         produce(intm3);
+                        __event_t++;
                         intm3 = __intm3;
                       }
                       { let __intm2 = crop_dim(intm2, 1, {min:(y + 2), max:(y + 2)});
                         consume(in2);
                         produce(intm2);
+                        __event_t++;
                         intm2 = __intm2;
                       }
                       { let __intm4 = crop_dim(intm4, 1, {min:y, max:y});
                         consume(intm2_uncropped);
                         produce(intm4);
+                        __event_t++;
                         intm4 = __intm4;
                       }
                       { let __out = crop_dim(out, 1, {min:y, max:y});
                         consume(intm3_uncropped);
                         consume(intm4_uncropped);
                         produce(out);
+                        __event_t++;
                         out = __out;
                       }
                     }
