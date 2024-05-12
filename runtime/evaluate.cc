@@ -230,9 +230,11 @@ public:
     assert(op->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
       if (op->args[d + 1].defined()) {
-        index_t offset = eval(op->args[d + 1]);
-        if (result) {
-          result = offset_bytes(result, buf->dims[d].flat_offset_bytes(offset));
+        index_t at = eval(op->args[d + 1]);
+        if (result && buf->dims[d].contains(at)) {
+          result = offset_bytes(result, buf->dims[d].flat_offset_bytes(at));
+        } else {
+          result = nullptr;
         }
       }
     }
