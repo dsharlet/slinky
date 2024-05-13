@@ -305,8 +305,10 @@ public:
 
       bounds_map loop_bounds_map;
       loop_bounds_map[loop.sym] = loop.bounds;
+      // Similarly to the reasoning for ignore_loop_max below, some expressions which involve loop bounds are
+      // difficult to simplify, so let's try to do that using the latest loop bounds.
       cur_bounds_d = simplify(cur_bounds_d, loop_bounds_map);
-  
+
       interval_expr prev_bounds_d = {
           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
           substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),

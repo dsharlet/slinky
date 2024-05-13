@@ -642,6 +642,8 @@ class pipeline_builder {
       // TODO(vksnk): recomputing this seems really wasteful, we can should be
       // able to maintain the list of buffers as we build the IR.
       symbol_map<bool> buffer_used = buffers_used_inside(body);
+      // Don't really need to emit buffer_crop for base_f, because they will
+      // have crop_dim's anyway.
       for (const func::output& o : base_f->outputs()) {
         buffer_used[o.buffer->sym()] = false;
       }
