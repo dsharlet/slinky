@@ -188,7 +188,61 @@ function next_color() {
   }
   return colors[(next_color.next++) % colors.length];
 }
+function alloc_extent(dim) {
+  let extent = dim.bounds.max - dim.bounds.min + 1;
+  return isNaN(dim.fold_factor) ? extent : Math.min(extent, dim.fold_factor);
+}
+function is_stride_ok_dim(stride, extent, dim) {
+  if (isNaN(dim.stride)) {
+    return true;
+  } else if (extent == 1 && Math.abs(stride) == Math.abs(dim.stride) && alloc_extent(dim) > 1) {
+    return false;
+  } else if (alloc_extent(dim) * Math.abs(dim.stride) <= stride) {
+    return true;
+  }
+  return Math.abs(dim.stride) >= extent * stride;
+}
+function is_stride_ok(stride, extent, dims) {
+  for (let i of dims) {
+    if (!is_stride_ok_dim(stride, extent, i)) {
+      return false;
+    }
+  }
+  return true;
+}
+function init_strides(elem_size, dims) {
+  for (let i of dims) {
+    if (!isNaN(i.stride)) continue;
+
+    let alloc_extent_i = alloc_extent(i);
+
+    if (is_stride_ok(elem_size, alloc_extent_i, dims)) {
+      i.stride = elem_size;
+      continue;
+    }
+
+    let min = Infinity;
+    for (let j of dims) {
+      if (isNaN(j.stride)) {
+        continue;
+      } else if (j.bounds.max < j.bounds.min) {
+        min = 0;
+        break;
+      }
+
+      let candidate = Math.abs(j.stride) * alloc_extent(j);
+      if (candidate >= min) {
+        continue;
+      } else if (!is_stride_ok(candidate, alloc_extent_i, dims)) {
+        continue;
+      }
+      min = candidate;
+    }
+    i.stride = min;
+  }
+}
 function allocate(name, elem_size, dims, hidden = false) {
+  init_strides(elem_size, dims);
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
@@ -282,23 +336,23 @@ function pipeline(in1, in2, out) {
   check(((buffer_max(out, 1) + 2) <= buffer_max(in2, 1)));
   check((((buffer_max(out, 1) - buffer_min(out, 1)) + 5) <= buffer_fold_factor(in2, 1)));
   { let intm4 = allocate('intm4', 2, [
-      {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:2, fold_factor:9223372036854775807},
-      {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 2), fold_factor:1}
+      {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
+      {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
     ]);
     { let intm4_uncropped = clone_buffer(intm4);
       { let intm2 = allocate('intm2', 2, [
-          {bounds:{min:(buffer_min(out, 0) + -2), max:(buffer_max(out, 0) + 2)}, stride:2, fold_factor:9223372036854775807},
-          {bounds:{min:(buffer_min(out, 1) + -2), max:(buffer_max(out, 1) + 2)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 10), fold_factor:5}
+          {bounds:{min:(buffer_min(out, 0) + -2), max:(buffer_max(out, 0) + 2)}, stride:NaN, fold_factor:9223372036854775807},
+          {bounds:{min:(buffer_min(out, 1) + -2), max:(buffer_max(out, 1) + 2)}, stride:NaN, fold_factor:5}
         ]);
         { let intm2_uncropped = clone_buffer(intm2);
           { let intm3 = allocate('intm3', 2, [
-              {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:2, fold_factor:9223372036854775807},
-              {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 2), fold_factor:1}
+              {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
+              {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
             ]);
             { let intm3_uncropped = clone_buffer(intm3);
               { let intm1 = allocate('intm1', 2, [
-                  {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:2, fold_factor:9223372036854775807},
-                  {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 2) + 6), fold_factor:3}
+                  {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:NaN, fold_factor:9223372036854775807},
+                  {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:3}
                 ]);
                 { let intm1_uncropped = clone_buffer(intm1);
                   {
