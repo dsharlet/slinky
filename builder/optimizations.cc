@@ -22,31 +22,62 @@ namespace slinky {
 
 namespace {
 
+dim_expr select(const expr& c, dim_expr t, dim_expr f) {
+  return {
+      select(c, std::move(t.bounds), std::move(f.bounds)),
+      select(c, std::move(t.stride), std::move(f.stride)),
+      select(c, std::move(t.fold_factor), std::move(f.fold_factor)),
+  };
+}
+
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(expr src_x, var dst_x, expr& offset, expr& stride) {
+bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
-    expr offset_t = offset;
-    expr offset_f = offset;
-    expr stride_t = stride;
-    expr stride_f = stride;
-    if (is_copy(s->true_value, dst_x, offset_t, stride_t) && is_copy(s->false_value, dst_x, offset_f, stride_f)) {
-      offset = select(s->condition, offset_t, offset_f);
-      stride = select(s->condition, stride_t, stride_f);
+    expr at_t = at;
+    expr at_f = at;
+    dim_expr src_dim_t = src_dim;
+    dim_expr src_dim_f = src_dim;
+    if (is_copy(src, s->true_value, src_d, dst, dst_x, dst_d, at_t, src_dim_t) &&
+        is_copy(src, s->false_value, src_d, dst, dst_x, dst_d, at_f, src_dim_f)) {
+      at = select(s->condition, at_t, at_f);
+      src_dim = select(s->condition, src_dim_t, src_dim_f);
       return true;
     } else {
       return false;
     }
   } else if (!depends_on(src_x, dst_x).any()) {
-    // This is a broadcast.
-    stride = 0;
-    offset = 0;
+    // This is a broadcast because the src_x is constant w.r.t. dst_x.
+    at = src_x;
+    src_dim.stride = 0;
+    src_dim.fold_factor = dim::unfolded;
     return true;
   } else {
-    // If the difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
-    offset = simplify(src_x - dst_x);
-    return !depends_on(offset, dst_x).any();
+    expr offset = simplify(src_x - dst_x);
+    if (!depends_on(offset, dst_x).any()) {
+      // The difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
+      if (is_zero(offset)) {
+        // If the offset is zero, the index we want for the buffer_at call is buffer_min(src, src_d), which is
+        // definitely in bounds, so we don't need to clamp it.
+        src_dim.bounds = buffer_bounds(src, src_d);
+        at = src_dim.bounds.min;
+      } else {
+        // The offset is non-zero, we might go out of bounds with our buffer_at call. To avoid this, we need to
+        // clamp to the intersection of the src and dst buffers, like copy would have done.
+        src_dim.bounds &= (buffer_bounds(src, src_d) - offset);
+        at = src_dim.bounds.min + offset;
+      }
+      return true;
+    } else {
+      return false;
+    }
   }
+}
+
+bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_dim) {
+  // We might not have an src dim if we're trying to broadcast.
+  expr src_x = src_d >= 0 ? op->src_x[src_d] : expr();
+  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x[dst_d], dst_d, at, src_dim);
 }
 
 // `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,
@@ -66,10 +97,10 @@ bool is_copy_dst_dim(const copy_stmt* op, int dst_d, int& src_d) {
   return true;
 }
 
-std::vector<expr> buffer_strides(var buf, int rank) {
+std::vector<expr> buffer_mins(var buf, std::size_t rank) {
   std::vector<expr> result(rank);
-  for (int d = 0; d < rank; ++d) {
-    result[d] = buffer_stride(buf, d);
+  for (int i = 0; i < static_cast<int>(rank); ++i) {
+    result[i] = buffer_min(buf, i);
   }
   return result;
 }
@@ -167,8 +198,12 @@ public:
         // region. That will likely be very difficult to do symbolically.
         for (std::optional<buffer_info>& i : alias_info) {
           if (!i) continue;
-          i->do_not_alias(target.first);
+          i->do_not_alias(target_var);
         }
+      }
+      // We may attempt to alias this both ways (src -> dst and dst -> src), we only want to do one of them.
+      if (alias_info[target_var]) {
+        alias_info[target_var]->do_not_alias(op->sym);
       }
       set_result(pad_result);
     } else if (!body.same_as(op->body)) {
@@ -176,31 +211,34 @@ public:
     } else {
       set_result(op);
     }
+
+    // When an allocation goes out of scope, we should remove it as an aliasing candidate.
+    for (std::optional<buffer_info>& i : alias_info) {
+      if (i) i->do_not_alias(op->sym);
+    }
+  }
+
+  bool can_alias(var x) {
+    std::optional<bool> no_alias = do_not_alias[x];
+    return !no_alias || !*no_alias;
   }
 
   void visit(const call_stmt* op) override {
     set_result(op);
+    if (!op->attrs.allow_in_place) {
+      // This call does not allow aliasing an input to an output.
+      return;
+    }
     for (var o : op->outputs) {
-      std::optional<bool> no_alias = do_not_alias[o];
-      if (no_alias && *no_alias) {
-        continue;
-      }
-
+      if (!can_alias(o)) continue;
       for (var i : op->inputs) {
-        std::optional<buffer_info>& info = alias_info[i];
-        if (!info) continue;
-
-        if (!op->attrs.allow_in_place) {
-          info->do_not_alias(o);
-          return;
+        std::optional<buffer_info>& input_info = alias_info[i];
+        if (input_info) {
+          buffer_alias a;
+          a.dims = buffer_dims(o, input_info->dims.size());
+          a.at = buffer_mins(o, input_info->dims.size());
+          input_info->maybe_alias(o, std::move(a));
         }
-        buffer_alias a;
-        for (index_t d = 0; d < static_cast<index_t>(info->dims.size()); ++d) {
-          a.dims.push_back(buffer_dim(o, d));
-          a.at.push_back(buffer_min(o, d));
-        }
-
-        info->maybe_alias(o, std::move(a));
       }
     }
   }
@@ -208,80 +246,81 @@ public:
   void visit(const copy_stmt* op) override {
     set_result(op);
 
-    std::optional<bool> no_alias = do_not_alias[op->dst];
-    if (no_alias && *no_alias) {
-      return;
-    }
-
-    var source, target;
-    if (alias_info[op->src]) {
-      // We allocated the src. We might be able to replace the allocation with an alias of the dst.
-      source = op->src;
-      target = op->dst;
-    } else if (alias_info[op->dst]) {
+    if (alias_info[op->dst] && can_alias(op->src)) {
       // We allocated the dst. We might be able to replace the allocation with an alias of the src.
-      source = op->dst;
-      target = op->src;
-    } else {
-      return;
-    }
+      // This case is a straightforward use of is_copy, which produces the dims that should be the src of a copy, which
+      // are the same dimensions we want the dst to be.
+      std::optional<buffer_info>& info = alias_info[op->dst];
 
-    // TODO: This visitor is a nightmare and I'm pretty sure it has many bugs. It needs a rewrite.
-    // It does work for many tests though.
+      buffer_alias a;
+      a.at.resize(op->src_x.size());
+      a.dims = info->dims;
+      bool alias_valid = true;
+      for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
+        int src_d;
+        if (!is_copy_dst_dim(op, dst_d, src_d)) {
+          alias_valid = false;
+          break;
+        }
 
-    std::optional<buffer_info>& info = alias_info[source];
-
-    std::vector<std::optional<std::size_t>> permutation;
-    std::vector<expr> offset;
-    std::vector<expr> stride = buffer_strides(target, info->dims.size());
-
-    offset.resize(op->dst_x.size());
-    stride.resize(op->dst_x.size());
-    assert(permutation.empty());
-    permutation.resize(op->dst_x.size());
-    for (std::size_t dst_d = 0; dst_d < op->dst_x.size(); ++dst_d) {
-      int src_d;
-      if (!is_copy_dst_dim(op, dst_d, src_d)) {
-        return;
-      }
-
-      if (src_d < 0) {
-        // This is a broadcast.
-        offset[dst_d] = 0;
-        stride[dst_d] = 0;
-      } else if (is_copy(op->src_x[src_d], op->dst_x[dst_d], offset[dst_d], stride[dst_d])) {
-        permutation[src_d] = dst_d;
-      } else {
-        return;
-      }
-    }
-
-    buffer_alias a;
-    a.dims.resize(info->dims.size());
-    for (std::size_t d = 0; d < a.dims.size(); ++d) {
-      if (d < permutation.size() && permutation[d]) {
-        // This dimension is a copy of the input dimension.
-        a.dims[d] = buffer_dim(target, static_cast<int>(*permutation[d]));
-        a.dims[d].bounds &= info->dims[d].bounds;
-        a.dims[d].stride = stride[*permutation[d]];
-      } else {
-        // This dimension is a broadcast.
-        a.dims[d].bounds = info->dims[d].bounds;
-        a.dims[d].stride = 0;
-      }
-    }
-    a.at = std::move(offset);
-    a.at.resize(std::max(a.at.size(), a.dims.size()));
-    for (int d = 0; d < static_cast<int>(a.at.size()); ++d) {
-      if (d < static_cast<int>(info->dims.size())) {
-        if (!a.at[d].defined()) {
-          a.at[d] = max(buffer_min(target, d), info->dims[d].bounds.min);
-        } else {
-          a.at[d] = max(buffer_min(target, d) - a.at[d], info->dims[d].bounds.min);
+        expr at_unused;
+        expr& at = src_d >= 0 ? a.at[src_d] : at_unused;
+        a.dims[dst_d].stride = buffer_stride(op->src, src_d);
+        a.dims[dst_d].fold_factor = buffer_fold_factor(op->src, src_d);
+        if (!is_copy(op, src_d, dst_d, at, a.dims[dst_d])) {
+          alias_valid = false;
+          break;
         }
       }
+      if (alias_valid) {
+        info->maybe_alias(op->src, std::move(a));
+      }
     }
-    info->maybe_alias(target, std::move(a));
+    if (alias_info[op->src] && can_alias(op->dst)) {
+      // We allocated the src. We might be able to replace the allocation with an alias of the dst.
+      // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
+      // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
+      // broadcasting).
+      std::optional<buffer_info>& info = alias_info[op->src];
+
+      buffer_alias a;
+      a.at.resize(op->dst_x.size());
+      a.dims.resize(op->src_x.size());
+      assert(op->src_x.size() == info->dims.size());
+      for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
+        int src_d;
+        if (!is_copy_dst_dim(op, dst_d, src_d)) {
+          return;
+        }
+
+        if (src_d < 0) {
+          // We can't handle a broadcast here, because we can't ask the producer of our src to produce more dimensions.
+          return;
+        }
+
+        expr offset = simplify(op->src_x[src_d] - op->dst_x[dst_d]);
+        if (depends_on(offset, op->dst_x[dst_d]).any()) {
+          // This is not a simple copy, we can't handle it here.
+          return;
+        }
+
+        a.dims[src_d] = {
+            buffer_bounds(op->dst, dst_d) & info->dims[src_d].bounds,
+            buffer_stride(op->dst, dst_d),
+            buffer_fold_factor(op->dst, dst_d),
+        };
+        a.at[dst_d] = max(buffer_min(op->dst, dst_d) - offset, info->dims[dst_d].bounds.min);
+      }
+
+      for (const dim_expr& d : a.dims) {
+        if (!d.stride.defined()) {
+          // We didn't define all the dimensions of the buffer we want to replace.
+          return;
+        }
+      }
+
+      info->maybe_alias(op->dst, std::move(a));
+    }
   }
 
   void merge_alias_info(symbol_map<buffer_info> add) {
@@ -401,23 +440,24 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 
   // If we just leave these two arrays alone, the copy will be correct, but slow.
   // We can speed it up by finding dimensions we can let pass through to the copy.
-  for (int d = 0; d < static_cast<int>(dst_x.size()); ++d) {
+  for (int dst_d = 0; dst_d < static_cast<int>(dst_x.size()); ++dst_d) {
     int src_d;
-    if (!is_copy_dst_dim(op, d, src_d)) {
+    if (!is_copy_dst_dim(op, dst_d, src_d)) {
       continue;
     }
 
-    expr offset = 0;
-    expr stride = buffer_stride(op->src, src_d);
-    if (src_d < 0) {
-      // This is a broadcast.
-      src_dims.push_back({buffer_bounds(op->dst, d), 0});
-      dst_x[d] = var();
-    } else if (is_copy(op->src_x[src_d], op->dst_x[d], offset, stride)) {
-      interval_expr src_bounds = buffer_bounds(op->dst, d) & (buffer_bounds(op->src, src_d) - offset);
-      src_dims.push_back({src_bounds, stride, buffer_fold_factor(op->src, src_d)});
-      src_x[src_d] = src_bounds.min + offset;
-      dst_x[d] = var();
+    dim_expr src_dim = {buffer_bounds(op->dst, dst_d), 0, dim::unfolded};
+    if (src_d >= 0) {
+      src_dim.stride = buffer_stride(op->src, src_d);
+      src_dim.fold_factor = buffer_fold_factor(op->src, src_d);
+    }
+    expr at;
+    if (is_copy(op, src_d, dst_d, at, src_dim)) {
+      src_dims.push_back(src_dim);
+      if (at.defined()) {
+        src_x[src_d] = at;
+      }
+      dst_x[dst_d] = var();
     }
   }
 

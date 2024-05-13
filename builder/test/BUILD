@@ -69,6 +69,7 @@ cc_test(
         ":util",
         "//base/test:util",
         "//builder",
+        "//builder:replica_pipeline",
         "//runtime",
         "@googletest//:gtest_main",
     ],

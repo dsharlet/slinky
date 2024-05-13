@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 
 #include "base/util.h"
 
@@ -13,11 +14,13 @@ namespace slinky {
 
 namespace {
 
+index_t alloc_extent(const dim& dim) { return std::min(dim.extent(), dim.fold_factor()); }
+
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
-    index_t extent = std::min(dims[i].extent(), dims[i].fold_factor());
+    index_t extent = alloc_extent(dims[i]);
     flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
     flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
   }
@@ -63,7 +66,90 @@ raw_buffer_ptr raw_buffer::make_copy(const raw_buffer& src) {
   return buf;
 }
 
+namespace {
+
+// This algorithm is the same idea as [1], but here it does not need to attempt to support compile-time constant
+// strides, which makes it a lot easier to implement.
+//
+// 1. https://github.com/dsharlet/array/blob/38f8ce332fc4e26af08325ad0654c8516a445e8c/include/array/array.h#L835-L907
+
+// A proposed stride is "OK" w.r.t. `dim` if the proposed stride does not cause this dimension's memory to overlap with
+// any other dimension's memory.
+bool is_stride_ok(index_t stride, index_t extent, const dim& dim) {
+  if (dim.stride() == dim::auto_stride) {
+    // If the dimension has an unknown stride, it's OK, we're
+    // resolving the current dim first.
+    return true;
+  } else if (extent == 1 && std::abs(stride) == std::abs(dim.stride()) && alloc_extent(dim) > 1) {
+    // If a dimension is extent 1, avoid giving this dimension the same stride
+    // as another dimension with extent greater than 1. This doesn't affect the
+    // results of most programs (because the stride only ever multiplied with
+    // zero), but it makes the strides less objectionable to asserts in some
+    // other libraries that make extra assumptions about images, and may be
+    // easier to understand.
+    return false;
+  } else if (alloc_extent(dim) * std::abs(dim.stride()) <= stride) {
+    // The dim is completely inside the proposed stride.
+    return true;
+  } else if (std::abs(dim.stride()) >= extent * stride) {
+    // The dim is completely outside the proposed stride.
+    return true;
+  } else {
+    return false;
+  }
+}
+
+bool is_stride_ok(index_t stride, index_t extent, span<const dim> dims) {
+  for (const dim& i : dims) {
+    if (!is_stride_ok(stride, extent, i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+void raw_buffer::init_strides(index_t alignment) {
+  for (std::size_t i = 0; i < rank; ++i) {
+    if (dim(i).stride() != dim::auto_stride) continue;
+
+    index_t alloc_extent_i = alloc_extent(dim(i));
+
+    if (is_stride_ok(elem_size, alloc_extent_i, {dims, rank})) {
+      // This dimension can have stride elem_size, no other stride could be better.
+      dim(i).set_stride(elem_size);
+      continue;
+    }
+
+    // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
+    index_t min = std::numeric_limits<index_t>::max();
+    for (std::size_t j = 0; j < rank; ++j) {
+      if (dim(j).stride() == dim::auto_stride) {
+        // We don't know the stride of this dimension, it can't help us decide a stride for this dimension.
+        continue;
+      } else if (dim(j).extent() <= 0) {
+        // This dimension (and this buffer) is empty.
+        min = 0;
+        break;
+      }
+
+      index_t candidate = align_up(std::abs(dim(j).stride()) * alloc_extent(dim(j)), alignment);
+      if (candidate >= min) {
+        // This candidate stride is not better than the current stride.
+        continue;
+      } else if (!is_stride_ok(candidate, alloc_extent_i, {dims, rank})) {
+        continue;
+      }
+      min = candidate;
+    }
+    assert(min < std::numeric_limits<index_t>::max());
+    dim(i).set_stride(min);
+  }
+}
+
 void* raw_buffer::allocate() {
+  init_strides();
   void* allocation = malloc(size_bytes());
   base = allocation;
   return allocation;
@@ -137,7 +223,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   dim& dst_dim0 = dst.dim(0);
   dim& src_dim0 = src.dim(0);
 
-  if (dst_dim0.extent() <= 0) {
+  if (dst_dim0.empty()) {
     // Empty destination, nothing to do.
   } else if (dst_dim0.fold_factor() != dim::unfolded || src_dim0.fold_factor() != dim::unfolded ||
              dst_dim0.stride() != elem_size || src_dim0.stride() != elem_size) {
@@ -212,11 +298,6 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   std::copy_n(dst.dims, dst.rank, src.dims);
   for (std::size_t d = 0; d < dst.rank; ++d) {
     src.crop(d, in_bounds[d].min(), in_bounds[d].max());
-    if (in_bounds[d].stride() == 0) {
-      // TODO: This seems like a hack. I'm not sure where the conceptual bug is. It seems weird that we pass strides
-      // in for in_bounds at all.
-      src.dim(d).set_stride(0);
-    }
   }
 
   raw_buffer dst_opt = dst;
@@ -244,7 +325,7 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   optimize_dims(dst_opt);
   dim& dst_dim0 = dst_opt.dim(0);
 
-  if (dst_dim0.extent() <= 0) {
+  if (dst_dim0.empty()) {
     // Empty destination, nothing to do.
   } else if (dst_dim0.fold_factor() != dim::unfolded || dst_dim0.stride() != elem_size) {
     // The inner dimension is not a linear fill, let for_each_element handle it.
@@ -255,9 +336,7 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
     dst_opt.slice(0);
 
     constant_buffer buffer;
-    if (value) {
-      optimize_fill_value(value, elem_size, buffer);
-    }
+    optimize_fill_value(value, elem_size, buffer);
 
     for_each_element([=](void* dst) { fill(dst, value, elem_size, size); }, dst_opt);
   }
@@ -299,7 +378,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
     }
 
     const dim& inner = bufs[n]->dim(d - 1);
-    if (inner.min() != base_inner.min() || inner.extent() != base_inner.extent()) {
+    if (inner.min() != base_inner.min() || inner.max() != base_inner.max()) {
       // The bounds of the inner dimension are not equal.
       return false;
     } else if (inner.fold_factor() != dim::unfolded) {
@@ -336,7 +415,7 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
   return false;
 }
 
-static dim stride_0_dim;
+static dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline T* get_plan(void*& x, std::size_t n = 1) {
@@ -359,7 +438,7 @@ index_t make_for_each_slice_dims_impl(
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.extent() <= 0) {
+    if (buf_dim.empty()) {
       // This dimension (and thus the entire loop nest) contains no elements.
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = 0;
@@ -367,21 +446,27 @@ index_t make_for_each_slice_dims_impl(
       next = get_plan<for_each_slice_dim>(plan);
       next->impl = for_each_slice_dim::call_f;
       return 0;
-    } else if (buf_dim.extent() > 1 && use_folded_loop(bufs, bufs_size, d)) {
-      // There is a folded dimension in one of the buffers, or we need to crop one of the buffers.
+    }
+
+    if (buf_dim.stride() == 0) {
+      // This dimension is a broadcast, treat it as extent 1.
+    } else if (buf_dim.max() > buf_dim.min() && use_folded_loop(bufs, bufs_size, d)) {
+      // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
       assert(extent == 1);
       next->impl = for_each_slice_dim::loop_folded;
       next->extent = buf_dim.extent();
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &stride_0_dim;
+        next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
       }
       next = get_plan<for_each_slice_dim>(plan);
       next_dims = get_plan<dim_or_stride>(plan, bufs_size);
       extent = 1;
       continue;
+    } else {
+      // Not a broadcast, traverse this dimension.
+      extent *= buf_dim.extent();
     }
 
-    extent *= buf_dim.extent();
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     for (std::size_t n = 1; n < bufs_size; n++) {
       if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
@@ -392,7 +477,7 @@ index_t make_for_each_slice_dims_impl(
         } else {
           // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
           // use_folded_loop should have returned true above.
-          assert(buf_n_dim.extent() <= 0 || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
+          assert(buf_n_dim.empty() || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
           bases[n] = nullptr;
         }
       }
@@ -406,7 +491,7 @@ index_t make_for_each_slice_dims_impl(
       extent = 1;
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
-      assert(buf_dim.min() / buf_dim.fold_factor() == buf_dim.max() / buf_dim.fold_factor());
+      assert(!buf_dim.is_folded());
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = extent;
       for (std::size_t n = 0; n < bufs_size; n++) {

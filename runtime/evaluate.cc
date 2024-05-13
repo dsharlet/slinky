@@ -131,7 +131,7 @@ public:
     dim result;
     interval bounds = eval(x.bounds);
     result.set_bounds(bounds.min, bounds.max);
-    result.set_stride(eval(x.stride));
+    result.set_stride(eval(x.stride, dim::auto_stride));
     result.set_fold_factor(eval(x.fold_factor, dim::unfolded));
     return result;
   }
@@ -477,6 +477,7 @@ public:
     }
 
     if (op->storage == memory_type::stack) {
+      buffer.init_strides();
       buffer.base = alloca(buffer.size_bytes());
       buffer.allocation = nullptr;
     } else {
