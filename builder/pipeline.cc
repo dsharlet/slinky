@@ -911,7 +911,6 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
-  set_default_printer_context(&ctx);
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
