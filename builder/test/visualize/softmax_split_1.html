@@ -77,6 +77,7 @@ function make_color(a) {
 }
 function buffer_min(b, d) { return b.dims[d].bounds.min; }
 function buffer_max(b, d) { return b.dims[d].bounds.max; }
+function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
 function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
@@ -197,61 +198,7 @@ function next_color() {
   }
   return colors[(next_color.next++) % colors.length];
 }
-function alloc_extent(dim) {
-  let extent = dim.bounds.max - dim.bounds.min + 1;
-  return isNaN(dim.fold_factor) ? extent : Math.min(extent, dim.fold_factor);
-}
-function is_stride_ok_dim(stride, extent, dim) {
-  if (isNaN(dim.stride)) {
-    return true;
-  } else if (extent == 1 && Math.abs(stride) == Math.abs(dim.stride) && alloc_extent(dim) > 1) {
-    return false;
-  } else if (alloc_extent(dim) * Math.abs(dim.stride) <= stride) {
-    return true;
-  }
-  return Math.abs(dim.stride) >= extent * stride;
-}
-function is_stride_ok(stride, extent, dims) {
-  for (let i of dims) {
-    if (!is_stride_ok_dim(stride, extent, i)) {
-      return false;
-    }
-  }
-  return true;
-}
-function init_strides(elem_size, dims) {
-  for (let i of dims) {
-    if (!isNaN(i.stride)) continue;
-
-    let alloc_extent_i = alloc_extent(i);
-
-    if (is_stride_ok(elem_size, alloc_extent_i, dims)) {
-      i.stride = elem_size;
-      continue;
-    }
-
-    let min = Infinity;
-    for (let j of dims) {
-      if (isNaN(j.stride)) {
-        continue;
-      } else if (j.bounds.max < j.bounds.min) {
-        min = 0;
-        break;
-      }
-
-      let candidate = Math.abs(j.stride) * alloc_extent(j);
-      if (candidate >= min) {
-        continue;
-      } else if (!is_stride_ok(candidate, alloc_extent_i, dims)) {
-        continue;
-      }
-      min = candidate;
-    }
-    i.stride = min;
-  }
-}
 function allocate(name, elem_size, dims, hidden = false) {
-  init_strides(elem_size, dims);
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
@@ -323,49 +270,107 @@ let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride
 function pipeline(__in, out) {
   check((__in != 0));
   check((buffer_rank(__in) == 2));
-  check((buffer_elem_size(__in) == 2));
+  check((buffer_elem_size(__in) == 4));
   check((out != 0));
   check((buffer_rank(out) == 2));
-  check((buffer_elem_size(out) == 2));
+  check((buffer_elem_size(out) == 4));
   check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(out, 0)));
   check((((buffer_max(out, 1) - buffer_min(out, 1)) + 1) <= buffer_fold_factor(out, 1)));
-  check((buffer_min(__in, 0) <= (buffer_min(out, 0) + -1)));
-  check(((buffer_max(out, 0) + 1) <= buffer_max(__in, 0)));
-  check((((buffer_max(out, 0) - buffer_min(out, 0)) + 3) <= buffer_fold_factor(__in, 0)));
-  check((buffer_min(__in, 1) <= (buffer_min(out, 1) + -1)));
-  check(((buffer_max(out, 1) + 1) <= buffer_max(__in, 1)));
-  check((((buffer_max(out, 1) - buffer_min(out, 1)) + 3) <= buffer_fold_factor(__in, 1)));
-  { let intm = allocate('intm', 2, [
-      {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:NaN, fold_factor:9223372036854775807},
-      {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:4}
-    ]);
-    { let intm_uncropped = clone_buffer(intm);
-      {
-        let y_min_orig = buffer_min(out, 1);
-        let __loop_min = (y_min_orig + -2);
-        let __loop_max = buffer_max(out, 1);
-        let __loop_step = 2;
-        for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-          { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)});
-            consume(__in);
-            produce(intm);
-            __event_t++;
-            intm = __intm;
+  {
+    let g = buffer_min(out, 0);
+    let g0 = buffer_max(out, 0);
+    check((buffer_min(__in, 0) <= min(g, g0)));
+    check((max(g, g0) <= buffer_max(__in, 0)));
+    check(((abs((g - g0)) + 1) <= buffer_fold_factor(__in, 0)));
+    check((buffer_min(__in, 1) <= buffer_min(out, 1)));
+    check((buffer_max(out, 1) <= buffer_max(__in, 1)));
+    check((((buffer_max(out, 1) - buffer_min(out, 1)) + 1) <= buffer_fold_factor(__in, 1)));
+    { let softmax_out = allocate('softmax_out', 4, [
+        {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:4, fold_factor:9223372036854775807},
+        {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:(((buffer_max(out, 0) - buffer_min(out, 0)) * 4) + 4), fold_factor:1}
+      ]);
+      { let softmax_out_uncropped = clone_buffer(softmax_out);
+        { let sum_exp_in = allocate('sum_exp_in', 4, [
+            {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:4, fold_factor:1}
+          ]);
+          { let sum_exp_in_uncropped = clone_buffer(sum_exp_in);
+            { let exp_in = allocate('exp_in', 4, [
+                {bounds:{min:min(g, g0), max:max(g, g0)}, stride:4, fold_factor:9223372036854775807},
+                {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:((abs((g - g0)) * 4) + 4), fold_factor:1}
+              ]);
+              { let exp_in_uncropped = clone_buffer(exp_in);
+                { let max_in = allocate('max_in', 4, [
+                    {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:4, fold_factor:1}
+                  ]);
+                  { let max_in_uncropped = clone_buffer(max_in);
+                    { let softmax_in = allocate('softmax_in', 4, [
+                        {bounds:{min:min(g, g0), max:max(g, g0)}, stride:4, fold_factor:9223372036854775807},
+                        {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:((abs((g - g0)) * 4) + 4), fold_factor:1}
+                      ]);
+                      { let softmax_in_uncropped = clone_buffer(softmax_in);
+                        {
+                          let b_min_orig = buffer_min(out, 1);
+                          let __loop_min = b_min_orig;
+                          let __loop_max = buffer_max(out, 1);
+                          let __loop_step = 1;
+                          for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
+                            { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:b});
+                              consume(__in);
+                              produce(softmax_in);
+                              __event_t++;
+                              softmax_in = __softmax_in;
+                            }
+                            { let __max_in = crop_dim(max_in, 0, {min:b, max:b});
+                              consume(softmax_in_uncropped);
+                              produce(max_in);
+                              __event_t++;
+                              max_in = __max_in;
+                            }
+                            { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:b});
+                              { let __exp_in = crop_dim(exp_in, 1, {min:b, max:b});
+                                consume(__in);
+                                consume(max_in_uncropped);
+                                produce(exp_in);
+                                produce(sum_exp_in);
+                                __event_t++;
+                                exp_in = __exp_in;
+                              }
+                              sum_exp_in = __sum_exp_in;
+                            }
+                            { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:b});
+                              consume(exp_in_uncropped);
+                              consume(sum_exp_in_uncropped);
+                              produce(softmax_out);
+                              __event_t++;
+                              softmax_out = __softmax_out;
+                            }
+                            { let __out = crop_dim(out, 1, {min:b, max:b});
+                              consume(softmax_out_uncropped);
+                              produce(out);
+                              __event_t++;
+                              out = __out;
+                            }
+                          }
+                        }
+                      }
+                      free(softmax_in);
+                    }
+                  }
+                  free(max_in);
+                }
+              }
+              free(exp_in);
+            }
           }
-          { let __out = crop_dim(out, 1, {min:y, max:(y + 1)});
-            consume(intm_uncropped);
-            produce(out);
-            __event_t++;
-            out = __out;
-          }
+          free(sum_exp_in);
         }
       }
+      free(softmax_out);
     }
-    free(intm);
   }
 }
-let __in = allocate('in', 2, [{bounds: {min:-1, max:20}, stride:2, fold_factor:9223372036854775807}, {bounds: {min:-1, max:30}, stride:44, fold_factor:9223372036854775807}], true);
-let out = allocate('out', 2, [{bounds: {min:0, max:19}, stride:2, fold_factor:9223372036854775807}, {bounds: {min:0, max:29}, stride:40, fold_factor:9223372036854775807}]);
+let __in = allocate('in', 4, [{bounds: {min:0, max:29}, stride:4, fold_factor:9223372036854775807}, {bounds: {min:0, max:19}, stride:120, fold_factor:9223372036854775807}], true);
+let out = allocate('out', 4, [{bounds: {min:0, max:29}, stride:4, fold_factor:9223372036854775807}, {bounds: {min:0, max:19}, stride:120, fold_factor:9223372036854775807}]);
 pipeline(__in, out);
 
 let __end_t = __event_t;

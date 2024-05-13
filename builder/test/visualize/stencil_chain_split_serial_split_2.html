@@ -107,9 +107,18 @@ function define_mapping(buffer) {
   buf.mem.base = buffer.base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
-    return function(at) {
-      at -= base;
-      return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+    if (sorted_dims.length > 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+      }
+    } else if (sorted_dims.length == 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), 0];
+      }
+    } else {
+      return function(at) { return [0, 0]; }
     }
   }
   buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
@@ -304,7 +313,7 @@ function truncate_rank(b, rank) {
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
-    m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
+    m.element.mem.productions.push({t: __event_t, buf: clone_buffer(b)});
   }
 }
 function consume(b) {}
@@ -341,7 +350,10 @@ function pipeline(__in, out) {
             {
               let y_min_orig = buffer_min(out, 1);
               let __trace_token = trace_begin(buffer_at(__trace_names, 17));
-              for(let y = (y_min_orig + -4); y <= buffer_max(out, 1); y += 2) {
+              let __loop_min = (y_min_orig + -4);
+              let __loop_max = buffer_max(out, 1);
+              let __loop_step = 2;
+              for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
                 {
                   let __trace_token = trace_begin(buffer_at(__trace_names, 0));
                   { let __add_result = crop_dim(add_result, 1, {min:(y + 2), max:(min((y + 1), buffer_max(out, 1)) + 2)});
@@ -349,6 +361,7 @@ function pipeline(__in, out) {
                       let __trace_token = trace_begin(buffer_at(__trace_names, 24));
                       consume(__in);
                       produce(add_result);
+                      __event_t++;
                       check(trace_end(__trace_token));
                     }
                     add_result = __add_result;
@@ -358,6 +371,7 @@ function pipeline(__in, out) {
                       let __trace_token = trace_begin(buffer_at(__trace_names, 30));
                       consume(add_result_uncropped);
                       produce(stencil1_result);
+                      __event_t++;
                       check(trace_end(__trace_token));
                     }
                     stencil1_result = __stencil1_result;
@@ -367,6 +381,7 @@ function pipeline(__in, out) {
                       let __trace_token = trace_begin(buffer_at(__trace_names, 30));
                       consume(stencil1_result_uncropped);
                       produce(out);
+                      __event_t++;
                       check(trace_end(__trace_token));
                     }
                     out = __out;
