@@ -73,7 +73,8 @@ namespace {
 //
 // 1. https://github.com/dsharlet/array/blob/38f8ce332fc4e26af08325ad0654c8516a445e8c/include/array/array.h#L835-L907
 
-// A proposed stride is "OK" w.r.t. `dim` if the proposed stride does not intersect the dim.
+// A proposed stride is "OK" w.r.t. `dim` if the proposed stride does not cause this dimension's memory to overlap with
+// any other dimension's memory.
 bool is_stride_ok(index_t stride, index_t extent, const dim& dim) {
   if (dim.stride() == dim::auto_stride) {
     // If the dimension has an unknown stride, it's OK, we're
@@ -90,9 +91,7 @@ bool is_stride_ok(index_t stride, index_t extent, const dim& dim) {
   } else if (alloc_extent(dim) * abs(dim.stride()) <= stride) {
     // The dim is completely inside the proposed stride.
     return true;
-  }
-  index_t flat_extent = extent * stride;
-  if (abs(dim.stride()) >= flat_extent) {
+  } else if (abs(dim.stride()) >= extent * stride) {
     // The dim is completely outside the proposed stride.
     return true;
   } else {
