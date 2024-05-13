@@ -366,8 +366,6 @@ std::ostream& operator<<(std::ostream& os, const dim& d) {
   return os;
 }
 
-void set_default_printer_context(const node_context* ctx) {
-  default_context = ctx;
-}
+void set_default_printer_context(const node_context* ctx) { default_context = ctx; }
 
 }  // namespace slinky
