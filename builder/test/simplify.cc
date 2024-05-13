@@ -227,6 +227,69 @@ TEST(simplify, allocate) {
           allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)})));
 }
 
+TEST(simplify, make_buffer) {
+  stmt body = call_stmt::make(nullptr, {}, {b0}, {});
+  auto make_slice = [body](var buf, std::vector<expr> at, std::vector<dim_expr> dims) {
+    for (int i = static_cast<int>(at.size()) - 1; i >= 0; --i) {
+      if (at[i].defined()) {
+        dims.erase(dims.begin() + i);
+      }
+    }
+    return make_buffer::make(buf, buffer_at(buf, at), buffer_elem_size(buf), dims, body);
+  };
+
+  auto make_crop = [body](var buf, std::vector<expr> at, std::vector<interval_expr> bounds,
+                       std::vector<dim_expr> dims) {
+    for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
+      if (bounds[d].min.defined()) dims[d].bounds.min = bounds[d].min;
+      if (bounds[d].max.defined()) dims[d].bounds.max = bounds[d].max;
+    }
+    return make_buffer::make(buf, buffer_at(buf, at), buffer_elem_size(buf), dims, body);
+  };
+
+  // Slices
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 0))), matches(truncate_rank::make(b0, b0, 0, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 1))), matches(truncate_rank::make(b0, b0, 1, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 3))), matches(truncate_rank::make(b0, b0, 3, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {x}, buffer_dims(b0, 1))),
+      matches(truncate_rank::make(b0, b0, 1, slice_dim::make(b0, b0, 0, x, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {x}, buffer_dims(b0, 2))),
+      matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 0, x, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {x, y}, buffer_dims(b0, 2))),
+      matches(truncate_rank::make(b0, b0, 2, slice_buffer::make(b0, b0, {x, y}, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, buffer_dims(b0, 2))),
+      matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 1, y, body))));
+  ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, buffer_dims(b0, 3))),
+      matches(truncate_rank::make(b0, b0, 3, slice_dim::make(b0, b0, 1, y, body))));
+
+  // Not slices
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b1, 1))), matches(make_slice(b0, {}, buffer_dims(b1, 1))));
+  ASSERT_THAT(simplify(make_crop(b0, {}, {buffer_bounds(b0, 0)}, buffer_dims(b1, 1))),
+      matches(make_crop(b0, {}, {buffer_bounds(b0, 0)}, buffer_dims(b1, 1))));
+
+  // Crops
+  ASSERT_THAT(simplify(make_crop(b0, {}, {}, buffer_dims(b0, 0))), matches(truncate_rank::make(b0, b0, 0, body)));
+  ASSERT_THAT(simplify(make_crop(b0, {}, {}, buffer_dims(b0, 1))), matches(truncate_rank::make(b0, b0, 1, body)));
+  ASSERT_THAT(simplify(make_crop(b0, {x}, {{x, y}}, buffer_dims(b0, 1))),
+      matches(truncate_rank::make(b0, b0, 1, crop_dim::make(b0, b0, 0, {x, y}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {x}, {{x, y}}, buffer_dims(b0, 2))),
+      matches(truncate_rank::make(b0, b0, 2, crop_dim::make(b0, b0, 0, {x, y}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {x, z}, {{x, y}, {z, w}}, buffer_dims(b0, 2))),
+      matches(truncate_rank::make(b0, b0, 2, crop_buffer::make(b0, b0, {{x, y}, {z, w}}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {expr(), z}, {{expr(), expr()}, {z, w}}, buffer_dims(b0, 2))),
+      matches(truncate_rank::make(b0, b0, 2, crop_dim::make(b0, b0, 1, {z, w}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {expr(), z}, {{expr(), expr()}, {z, w}}, buffer_dims(b0, 3))),
+      matches(truncate_rank::make(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
+  ASSERT_THAT(simplify(make_crop(b0, {expr(), z}, {{expr(), expr()}, {z, w}}, buffer_dims(b0, 3))),
+      matches(truncate_rank::make(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
+
+  // Not crops
+  ASSERT_THAT(simplify(make_crop(b0, {}, {{x, y}}, buffer_dims(b0, 1))),
+      matches(make_crop(b0, {}, {{x, y}}, buffer_dims(b0, 1))));
+  ASSERT_THAT(simplify(make_crop(b0, {y}, {{x, y}}, buffer_dims(b0, 1))),
+      matches(make_crop(b0, {y}, {{x, y}}, buffer_dims(b0, 1))));
+}
+
 TEST(simplify, bounds_of) {
   // Test bounds_of by testing expressions of up to two operands, and setting the
   // bounds of the two operands to all possible cases of overlap. This approach
