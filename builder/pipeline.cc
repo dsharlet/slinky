@@ -570,14 +570,9 @@ class pipeline_builder {
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
 
-        // After substituting the bounds, compute the default strides, and substitute those.
-        // TODO: I think this is bad, if the user sets a stride, we won't see it. I think
-        // maybe allowing users to set strides is just a bad idea.
         substitutions.clear();
-        expr stride = b->elem_size();
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-          substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
-          stride *= min(dims[d].bounds.extent(), buffer_fold_factor(alloc_var, d));
+          substitutions.emplace_back(buffer_stride(alloc_var, d), expr());
         }
         dims = substitute_from_map(dims, substitutions);
 
@@ -607,7 +602,8 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           expr loop_max = buffer_max(o.sym(), d);
-          interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
+          expr loop_step = sanitizer_.mutate(loop.step);
+          interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop_step - 1), loop_max));
           body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
         }
       }
@@ -662,7 +658,8 @@ class pipeline_builder {
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, base_f, loop);
       // And make the actual loop.
-      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(base_f, loop), loop.step, body);
+      expr loop_step = sanitizer_.mutate(loop.step);
+      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(base_f, loop), loop_step, body);
     }
 
     return body;

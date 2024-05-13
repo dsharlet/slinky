@@ -131,7 +131,7 @@ public:
     for (const dim_expr& i : op->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
-      i.stride.accept(this);
+      if (i.stride.defined()) i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
     visit_sym_body(op);

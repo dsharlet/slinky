@@ -185,14 +185,16 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "for(let " << l->sym << " = " << l->bounds.min << "; " << l->sym << " <= " << l->bounds.max
-          << "; ";
+    *this << indent() << "let __loop_min = " << l->bounds.min << ";\n";
+    *this << indent() << "let __loop_max = " << l->bounds.max << ";\n";
+    *this << indent() << "let __loop_step = ";
     if (l->step.defined()) {
-      *this << l->sym << " += " << l->step;
+      *this << l->step << ";\n";
     } else {
-      *this << l->sym << "++";
+      *this << "1;\n";
     }
-    *this << ") {\n";
+    *this << indent() << "for(let " << l->sym << " = __loop_min; " << l->sym << " <= __loop_max; " << l->sym
+          << " += __loop_step) {\n";
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -204,11 +206,13 @@ public:
     for (var i : n->outputs) {
       *this << indent() << "produce(" << i << ");\n";
     }
+    *this << indent() << "__event_t++;\n";
   }
 
   void visit(const copy_stmt* n) override {
     *this << indent() << "consume(" << n->src << ");\n";
     *this << indent() << "produce(" << n->dst << ");\n";
+    *this << indent() << "__event_t++;\n";
   }
 
   void visit(const allocate* n) override {
@@ -374,7 +378,6 @@ function make_color(a) {
 }
 function buffer_min(b, d) { return b.dims[d].bounds.min; }
 function buffer_max(b, d) { return b.dims[d].bounds.max; }
-function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
 function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
@@ -405,9 +408,18 @@ function define_mapping(buffer) {
   buf.mem.base = buffer.base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
-    return function(at) {
-      at -= base;
-      return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+    if (sorted_dims.length > 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+      }
+    } else if (sorted_dims.length == 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), 0];
+      }
+    } else {
+      return function(at) { return [0, 0]; }
     }
   }
   buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
@@ -486,7 +498,61 @@ function next_color() {
   }
   return colors[(next_color.next++) % colors.length];
 }
+function alloc_extent(dim) {
+  let extent = dim.bounds.max - dim.bounds.min + 1;
+  return isNaN(dim.fold_factor) ? extent : Math.min(extent, dim.fold_factor);
+}
+function is_stride_ok_dim(stride, extent, dim) {
+  if (isNaN(dim.stride)) {
+    return true;
+  } else if (extent == 1 && Math.abs(stride) == Math.abs(dim.stride) && alloc_extent(dim) > 1) {
+    return false;
+  } else if (alloc_extent(dim) * Math.abs(dim.stride) <= stride) {
+    return true;
+  }
+  return Math.abs(dim.stride) >= extent * stride;
+}
+function is_stride_ok(stride, extent, dims) {
+  for (let i of dims) {
+    if (!is_stride_ok_dim(stride, extent, i)) {
+      return false;
+    }
+  }
+  return true;
+}
+function init_strides(elem_size, dims) {
+  for (let i of dims) {
+    if (!isNaN(i.stride)) continue;
+
+    let alloc_extent_i = alloc_extent(i);
+
+    if (is_stride_ok(elem_size, alloc_extent_i, dims)) {
+      i.stride = elem_size;
+      continue;
+    }
+
+    let min = Infinity;
+    for (let j of dims) {
+      if (isNaN(j.stride)) {
+        continue;
+      } else if (j.bounds.max < j.bounds.min) {
+        min = 0;
+        break;
+      }
+
+      let candidate = Math.abs(j.stride) * alloc_extent(j);
+      if (candidate >= min) {
+        continue;
+      } else if (!is_stride_ok(candidate, alloc_extent_i, dims)) {
+        continue;
+      }
+      min = candidate;
+    }
+    i.stride = min;
+  }
+}
 function allocate(name, elem_size, dims, hidden = false) {
+  init_strides(elem_size, dims);
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
@@ -548,7 +614,7 @@ function truncate_rank(b, rank) {
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
-    m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
+    m.element.mem.productions.push({t: __event_t, buf: clone_buffer(b)});
   }
 }
 function consume(b) {}

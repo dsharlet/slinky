@@ -1,10 +1,12 @@
 #ifndef SLINKY_BUILDER_TEST_UTIL_H
 #define SLINKY_BUILDER_TEST_UTIL_H
 
-#include <fstream>
+#include <numeric>
 #include <string>
 
 #include <gtest/gtest.h>
+
+#include "runtime/pipeline.h"
 
 namespace slinky {
 
@@ -31,17 +33,31 @@ std::string test_params_to_string(const testing::TestParamInfo<T>& info) {
   return test_params_to_string_impl(info.param, std::make_index_sequence<n>());
 }
 
-inline std::string remove_windows_newlines(std::string s) {
-  s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
-  return s;
+std::string remove_windows_newlines(std::string s);
+
+std::string read_entire_file(const std::string& pathname);
+
+template <typename T>
+std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
+  std::vector<T> result(p.size());
+  for (std::size_t i = 0; i < p.size(); ++i) {
+    result[i] = x[p[i]];
+  }
+  return result;
 }
 
-inline std::string read_entire_file(const std::string& pathname) {
-  std::ifstream f(pathname);
-  std::stringstream buffer;
-  buffer << f.rdbuf();
-  return remove_windows_newlines(buffer.str());
+inline bool is_permutation(span<const int> p) {
+  std::vector<int> unpermuted(p.size());
+  std::iota(unpermuted.begin(), unpermuted.end(), 0);
+  return std::is_permutation(p.begin(), p.end(), unpermuted.begin());
 }
+
+void check_visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs,
+    pipeline::buffers outputs, const node_context* ctx);
+
+std::string get_replica_golden();
+
+void check_replica_pipeline(const std::string& replica_text);
 
 }  // namespace slinky
 

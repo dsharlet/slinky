@@ -5,6 +5,7 @@ package(
 
 cc_library(
     name = "util",
+    srcs = ["bazel_util.cc"],
     hdrs = ["bazel_util.h"],
     deps = [
         "@bazel_tools//tools/cpp/runfiles",

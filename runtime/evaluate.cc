@@ -131,7 +131,7 @@ public:
     dim result;
     interval bounds = eval(x.bounds);
     result.set_bounds(bounds.min, bounds.max);
-    result.set_stride(eval(x.stride));
+    result.set_stride(eval(x.stride, dim::auto_stride));
     result.set_fold_factor(eval(x.fold_factor, dim::unfolded));
     return result;
   }
@@ -230,9 +230,11 @@ public:
     assert(op->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
       if (op->args[d + 1].defined()) {
-        index_t offset = eval(op->args[d + 1]);
-        if (result) {
-          result = offset_bytes(result, buf->dims[d].flat_offset_bytes(offset));
+        index_t at = eval(op->args[d + 1]);
+        if (result && buf->dims[d].contains(at)) {
+          result = offset_bytes(result, buf->dims[d].flat_offset_bytes(at));
+        } else {
+          result = nullptr;
         }
       }
     }
@@ -475,6 +477,7 @@ public:
     }
 
     if (op->storage == memory_type::stack) {
+      buffer.init_strides();
       buffer.base = alloca(buffer.size_bytes());
       buffer.allocation = nullptr;
     } else {
@@ -572,24 +575,29 @@ public:
   SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
+    assert(op->at.size() <= buffer->rank);
 
     // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
     dim* dims = SLINKY_ALLOCA(dim, buffer->rank);
 
     std::size_t rank = 0;
-    index_t offset = 0;
+    void* old_base = buffer->base;
+
     for (std::size_t d = 0; d < buffer->rank; ++d) {
       if (d < op->at.size() && op->at[d].defined()) {
-        offset += buffer->dims[d].flat_offset_bytes(eval(op->at[d]));
+        if (buffer->base) {
+          index_t at_d = eval(op->at[d]);
+          if (buffer->dims[d].contains(at_d)) {
+            buffer->base = offset_bytes(buffer->base, buffer->dims[d].flat_offset_bytes(at_d));
+          } else {
+            buffer->base = nullptr;
+          }
+        }
       } else {
         dims[rank++] = buffer->dims[d];
       }
     }
 
-    void* old_base = buffer->base;
-    if (buffer->base) {
-      buffer->base = offset_bytes(buffer->base, offset);
-    }
     std::swap(buffer->rank, rank);
     std::swap(buffer->dims, dims);
 
@@ -603,17 +611,21 @@ public:
   SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
+    assert(op->dim < static_cast<int>(buffer->rank));
 
     // The rank of the result is equal to the current rank, less any sliced dimensions.
     dim* old_dims = buffer->dims;
 
     buffer->dims = SLINKY_ALLOCA(dim, buffer->rank - 1);
 
-    index_t at = eval(op->at);
-    index_t offset = old_dims[op->dim].flat_offset_bytes(at);
     void* old_base = buffer->base;
     if (buffer->base) {
-      buffer->base = offset_bytes(buffer->base, offset);
+      index_t at = eval(op->at);
+      if (old_dims[op->dim].contains(at)) {
+        buffer->base = offset_bytes(buffer->base, old_dims[op->dim].flat_offset_bytes(at));
+      } else {
+        buffer->base = nullptr;
+      }
     }
 
     for (int d = 0; d < op->dim; ++d) {
