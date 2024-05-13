@@ -114,7 +114,7 @@ TEST_P(softmax, pipeline) {
   const int split_c = std::get<0>(GetParam());
   const int split_b = std::get<1>(GetParam());
   const bool use_compute_at = std::get<2>(GetParam());
-  const bool copy_in_the_end = std::get<3>(GetParam());
+  const bool copy_at_the_end = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -146,17 +146,15 @@ TEST_P(softmax, pipeline) {
   func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}},
       call_stmt::attributes{.name = "normalize"});
 
-  func pass4, copy;
+  // Add a trivial consumer so we can have an inner loop here too.
+  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{add_out, {c, b}}},
+      call_stmt::attributes{.name = "consumer"});
 
-  if (copy_in_the_end) {
-    // Add a trivial consumer so we can have an inner loop here too.
-    pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{add_out, {c, b}}},
-        call_stmt::attributes{.name = "consumer"});
+  func copy;
+  if (copy_at_the_end) {
     copy = func::make_copy({add_out, {point(c), point(b)}}, {out, {c, b}});
   } else {
-    // Add a trivial consumer so we can have an inner loop here too.
-    pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}},
-        call_stmt::attributes{.name = "consumer"});
+    out = add_out;
   }
 
   std::vector<func::loop_info> loops;
