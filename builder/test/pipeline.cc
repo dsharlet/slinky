@@ -298,7 +298,6 @@ TEST_P(matmuls, pipeline) {
 
   // TODO: There should be a more user friendly way to control the strides.
   ab->dim(1).stride = static_cast<index_t>(sizeof(int));
-  ab->dim(0).stride = ab->dim(1).extent() * ab->dim(1).stride;
 
   if (split > 0) {
     matmul_abc.loops({{i, split, max_workers}});
