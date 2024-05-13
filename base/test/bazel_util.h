@@ -3,8 +3,6 @@
 
 #include <string>
 
-#include "tools/cpp/runfiles/runfiles.h"
-
 namespace slinky {
 
 bool is_bazel_test();
