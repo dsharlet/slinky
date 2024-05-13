@@ -134,6 +134,18 @@ cc_test(
 )
 
 cc_test(
+    name = "tile_area",
+    srcs = ["tile_area.cc"],
+    deps = [
+        ":util",
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "replica_pipeline",
     srcs = ["replica_pipeline.cc"],
     deps = [
