@@ -2,7 +2,6 @@
 
 #include <numeric>
 
-#include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
 #include "builder/replica_pipeline.h"
 #include "builder/substitute.h"
@@ -12,38 +11,8 @@
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
-#include "runtime/visualize.h"
 
 namespace slinky {
-
-std::string get_replica_golden() {
-  static std::string golden = read_entire_file(get_bazel_file_path("builder/test/replica_pipeline.cc"));
-  return golden;
-}
-
-void check_replica_pipeline(const std::string& replica_text) {
-  size_t pos = get_replica_golden().find(replica_text);
-  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-}
-
-void check_visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs,
-    pipeline::buffers outputs, const node_context* ctx) {
-  std::stringstream viz_stream;
-  visualize(viz_stream, p, inputs, outputs, ctx);
-  std::string viz = viz_stream.str();
-
-  std::string golden_path = get_bazel_file_path("builder/test/visualize/" + filename);
-  if (is_bazel_test()) {
-    std::string golden = read_entire_file(golden_path);
-    ASSERT_FALSE(golden.empty());
-    // If this check fails, and you believe the changes to the visualization is correct, run this
-    // test outside of bazel from the root of the repo to update the golden files.
-    ASSERT_TRUE(golden == viz);
-  } else {
-    std::ofstream file(golden_path);
-    file << viz;
-  }
-}
 
 // Matrix multiplication (not fast!)
 template <typename T>
@@ -112,11 +81,12 @@ TEST_P(trivial, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, 0);
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i);
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, 0);
 }
 
 class elementwise : public testing::TestWithParam<std::tuple<int, int, bool>> {};
@@ -178,12 +148,13 @@ TEST_P(elementwise, pipeline_1d) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (schedule_storage) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-  }
 
   for (int i = 0; i < N; ++i) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
+  }
+
+  if (schedule_storage) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
   }
 }
 
@@ -243,16 +214,17 @@ TEST_P(elementwise, pipeline_2d) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (schedule_storage) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-  } else {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
-  }
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
     }
+  }
+
+  if (schedule_storage) {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
+  } else {
+    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
   }
 }
 
@@ -331,9 +303,6 @@ TEST_P(matmuls, pipeline) {
   const raw_buffer* outputs[] = {&abc_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (split > 0 && max_workers == loop::serial) {
-    ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int) * split);
-  }
 
   buffer<int, 2> ref_ab({N, M});
   buffer<int, 2> ref_abc({N, M});
@@ -347,6 +316,10 @@ TEST_P(matmuls, pipeline) {
     for (int j = 0; j < N; ++j) {
       ASSERT_EQ(ref_abc(j, i), abc_buf(j, i));
     }
+  }
+
+  if (split > 0 && max_workers == loop::serial) {
+    ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int) * split);
   }
 
   if (split == 1 && max_workers == loop::serial) {
@@ -407,11 +380,6 @@ TEST_P(stencil, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (split > 0) {
-    const int parallel_extra = max_workers != loop::serial ? split : 0;
-    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short));
-  }
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -425,6 +393,12 @@ TEST_P(stencil, pipeline) {
     }
   }
 
+  if (split > 0) {
+    const int parallel_extra = max_workers != loop::serial ? split : 0;
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short));
+  }
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+
   // Also visualize this pipeline.
   if (max_workers == loop::serial && split_intermediate == 0) {
     check_visualize("stencil_split_" + std::to_string(split) + ".html", p, inputs, outputs, &ctx);
@@ -433,8 +407,8 @@ TEST_P(stencil, pipeline) {
 
 class slide_2d : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(
-    split_split_mode, slide_2d, testing::Combine(loop_modes, loop_modes, testing::Values(false, true)), test_params_to_string<slide_2d::ParamType>);
+INSTANTIATE_TEST_SUITE_P(split_split_mode, slide_2d,
+    testing::Combine(loop_modes, loop_modes, testing::Values(false, true)), test_params_to_string<slide_2d::ParamType>);
 
 TEST_P(slide_2d, pipeline) {
   int max_workers_x = std::get<0>(GetParam());
@@ -485,9 +459,6 @@ TEST_P(slide_2d, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
-  ASSERT_EQ(add_count, (W + 2) * (H + 2));
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -500,6 +471,10 @@ TEST_P(slide_2d, pipeline) {
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_EQ(add_count, (W + 2) * (H + 2));
 }
 
 class stencil_chain : public testing::TestWithParam<std::tuple<int, int>> {};
@@ -557,13 +532,6 @@ TEST_P(stencil_chain, pipeline) {
 
   p.evaluate(inputs, outputs, eval_ctx);
 
-  if (split > 0) {
-    const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
-    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short) +
-                                            (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short));
-  }
-  ASSERT_EQ(eval_ctx.heap.total_count, 2);
-
   // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});
   buffer<short, 2> ref_intm2({W + 2, H + 2});
@@ -583,6 +551,13 @@ TEST_P(stencil_chain, pipeline) {
       ASSERT_EQ(ref_out(x, y), out_buf(x, y));
     }
   }
+
+  if (split > 0) {
+    const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
+    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short) +
+                                            (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short));
+  }
+  ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
   // Also visualize this pipeline.
   if (max_workers == loop::serial) {
@@ -793,9 +768,6 @@ TEST(unrelated, pipeline) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
-  ASSERT_EQ(eval_ctx.heap.total_size, (W1 + 2) * 4 * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);  // intm2 aliased to out2.
-
   for (int y = 0; y < H1; ++y) {
     for (int x = 0; x < W1; ++x) {
       int correct = 0;
@@ -811,6 +783,9 @@ TEST(unrelated, pipeline) {
   for (int i = 0; i < N2; ++i) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
+
+  ASSERT_EQ(eval_ctx.heap.total_size, (W1 + 2) * 4 * sizeof(short));
+  ASSERT_EQ(eval_ctx.heap.total_count, 1);  // intm2 aliased to out2.
 }
 
 class padded_stencil : public testing::TestWithParam<int> {};
@@ -861,12 +836,6 @@ TEST_P(padded_stencil, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  if (schedule == 2) {
-    // TODO: We need to be able to find the upper bound of
-    // max((x + 1), buffer_min(a, b)) - min((x + 1), buffer_max(a, b)) to fold this.
-    // ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
-    ASSERT_EQ(eval_ctx.heap.total_count, 2);
-  }
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -882,6 +851,13 @@ TEST_P(padded_stencil, pipeline) {
       }
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
     }
+  }
+
+  if (schedule == 2) {
+    // TODO: We need to be able to find the upper bound of
+    // max((x + 1), buffer_min(a, b)) - min((x + 1), buffer_max(a, b)) to fold this.
+    // ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
+    ASSERT_EQ(eval_ctx.heap.total_count, 2);
   }
 
   // Also visualize this pipeline.

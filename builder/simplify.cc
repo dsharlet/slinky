@@ -533,6 +533,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
@@ -580,6 +581,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
@@ -593,52 +595,35 @@ public:
     }
 
     if (const call* bc = base.as<call>()) {
-      if (bc->intrinsic == intrinsic::buffer_at && bc->args.size() == 1) {
-        // Check if this make_buffer is truncate_rank, or a clone.
-        const var* src_buf = as_variable(bc->args[0]);
-        assert(src_buf);
-        if (match(elem_size, buffer_elem_size(*src_buf))) {
-          bool is_clone = true;
-          for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-            is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
-          }
-          if (is_clone) {
-            if (*src_buf == op->sym) {
-              set_result(mutate(truncate_rank::make(op->sym, *src_buf, dims.size(), std::move(body))));
-              return;
-            }
-            const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
-            if (src_bounds && src_bounds->size() == dims.size()) {
-              // This is a clone of src_buf.
-              set_result(mutate(clone_buffer::make(op->sym, *src_buf, std::move(body))));
-              return;
-            }
-          }
-        }
-      }
-
       // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
       if (bc->intrinsic == intrinsic::buffer_at && match(elem_size, buffer_elem_size(op->sym))) {
         const var* src_buf = as_variable(bc->args[0]);
         assert(src_buf);
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
-        std::size_t dim = 0;
+        int dim = 0;
         std::size_t slice_rank = 0;
+        std::size_t at_rank =
+            std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
         bool is_slice = true;
-        for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+        for (int d = 0; d < static_cast<int>(dims.size() + at_rank); ++d) {
           if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
             // Skip this dimension.
             ++dim;
-          } else {
+          } else if (slice_rank < dims.size()) {
             // This arg is undefined. We need to find the next dimension here to be a slice.
-            ++slice_rank;
-            is_slice = is_slice && match(dims[dim], buffer_dim(*src_buf, d));
+            is_slice = is_slice && match(dims[slice_rank++], buffer_dim(*src_buf, dim++));
+          } else {
+            is_slice = false;
+            break;
           }
         }
         if (is_slice && slice_rank == dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          set_result(mutate(slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body))));
+          // make_buffer drops trailing dims, do the same here.
+          stmt result = slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body));
+          result = truncate_rank::make(op->sym, op->sym, dims.size() + at_rank, std::move(result));
+          set_result(mutate(result));
           return;
         }
 
@@ -664,7 +649,9 @@ public:
           }
         }
         if (is_crop) {
-          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
+          stmt result = crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body));
+          result = truncate_rank::make(op->sym, op->sym, dims.size(), std::move(result));
+          set_result(mutate(result));
           return;
         }
       }

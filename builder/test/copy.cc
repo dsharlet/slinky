@@ -63,9 +63,10 @@ TEST(trivial_scalar, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   ASSERT_EQ(out_buf(), in_buf());
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST(trivial_1d, copy) {
@@ -99,7 +100,6 @@ TEST(trivial_1d, copy) {
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
-    ASSERT_EQ(eval_ctx.copy_calls, 1);
 
     for (int x = 0; x < W; ++x) {
       if (in_buf.contains(x)) {
@@ -108,6 +108,8 @@ TEST(trivial_1d, copy) {
         ASSERT_EQ(out_buf(x), 0);
       }
     }
+
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
   }
 }
 
@@ -144,7 +146,6 @@ TEST(trivial_2d, copy) {
     const raw_buffer* outputs[] = {&out_buf};
     test_context eval_ctx;
     p.evaluate(inputs, outputs, eval_ctx);
-    ASSERT_EQ(eval_ctx.copy_calls, 1);
 
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
@@ -155,6 +156,8 @@ TEST(trivial_2d, copy) {
         }
       }
     }
+
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
   }
 }
 
@@ -186,7 +189,6 @@ TEST(trivial_3d, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -195,6 +197,8 @@ TEST(trivial_3d, copy) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST(padded, copy) {
@@ -229,7 +233,6 @@ TEST(padded, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int y = 0; y < H + padding_y * 2; ++y) {
     for (int x = 0; x < W + padding_x * 2; ++x) {
@@ -240,6 +243,8 @@ TEST(padded, copy) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST(flip_x, copy) {
@@ -267,12 +272,14 @@ TEST(flip_x, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, W);
-  ASSERT_EQ(eval_ctx.copy_elements, W);
 
   for (int x = 0; x < W; ++x) {
     ASSERT_EQ(out_buf(-x), in_buf(x));
   }
+
+  // TODO: This could be expressed with a single copy with a negative stride.
+  ASSERT_EQ(eval_ctx.copy_calls, W);
+  ASSERT_EQ(eval_ctx.copy_elements, W);
 }
 
 class flip_y : public testing::TestWithParam<int> {};
@@ -314,9 +321,6 @@ TEST_P(flip_y, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  // TODO: This could be expressed with a single copy with a negative stride in y.
-  ASSERT_EQ(eval_ctx.copy_calls, H);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
@@ -325,6 +329,10 @@ TEST_P(flip_y, copy) {
       }
     }
   }
+
+  // TODO: This could be expressed with a single copy with a negative stride in y.
+  ASSERT_EQ(eval_ctx.copy_calls, H);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 }
 
 class upsample_y : public testing::TestWithParam<int> {};
@@ -363,31 +371,42 @@ TEST_P(upsample_y, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  // This copy should be implemented with a loop over y, and a call to copy at each y.
-  // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
-  ASSERT_EQ(eval_ctx.copy_calls, H);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(out_buf(x, y), in_buf(x, y / 2));
     }
   }
+
+  // This copy should be implemented with a loop over y, and a call to copy at each y.
+  // TODO: It could be implemented as a copy for each two lines, with a broadcast in y!
+  ASSERT_EQ(eval_ctx.copy_calls, H);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H);
 }
 
-TEST(transpose, copy) {
+class transpose : public testing::TestWithParam<std::vector<int>> {};
+
+INSTANTIATE_TEST_SUITE_P(schedule, transpose,
+    testing::Values(std::vector<int>{}, std::vector<int>{0}, std::vector<int>{1}, std::vector<int>{2},
+        std::vector<int>{0, 1}, std::vector<int>{1, 0}, std::vector<int>{0, 2}, std::vector<int>{2, 0},
+        std::vector<int>{1, 2}, std::vector<int>{2, 1}, std::vector<int>{0, 1, 2}, std::vector<int>{2, 1, 0},
+        std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{1, 1, 1}, std::vector<int>{2, 2, 2},
+        std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{0, 0, 1}));
+
+TEST_P(transpose, copy) {
+  std::vector<int> permutation = GetParam();
+
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto in = buffer_expr::make(ctx, "in", permutation.size(), sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
 
-  // Transpose the first two dimensions.
-  func flip = func::make_copy({in, {point(y), point(x), point(z)}}, {out, {x, y, z}});
+  func t = func::make_copy({in, permute<interval_expr>(permutation, {point(x), point(y), point(z)})}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -395,7 +414,7 @@ TEST(transpose, copy) {
   const int H = 20;
   const int W = 10;
   const int D = 10;
-  buffer<int, 3> in_buf({H, W, D});
+  buffer<int, 3> in_buf(permute<index_t>(permutation, {W, H, D}));
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
@@ -404,14 +423,17 @@ TEST(transpose, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
-        ASSERT_EQ(out_buf(x, y, z), in_buf(y, x, z));
+        ASSERT_EQ(out_buf(x, y, z), in_buf(permute<index_t>(permutation, {x, y, z})));
       }
     }
+  }
+
+  if (is_permutation(permutation)) {
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
   }
 }
 
@@ -420,7 +442,7 @@ class broadcast : public testing::TestWithParam<int> {};
 INSTANTIATE_TEST_SUITE_P(dim, broadcast, testing::Range(0, 3));
 
 TEST_P(broadcast, copy) {
-  const int dim = GetParam();
+  const int broadcast_dim = GetParam();
 
   // Make the pipeline
   node_context ctx;
@@ -433,7 +455,7 @@ TEST_P(broadcast, copy) {
   var z(ctx, "z");
 
   box_expr bounds = {point(x), point(y), point(z)};
-  bounds[dim] = point(0);
+  bounds[broadcast_dim] = point(0);
   func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -444,7 +466,7 @@ TEST_P(broadcast, copy) {
 
   // Run the pipeline.
   buffer<int, 3> in_buf({W, H, D});
-  in_buf.dim(dim).set_extent(1);
+  in_buf.dim(broadcast_dim).set_extent(1);
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
@@ -454,21 +476,22 @@ TEST_P(broadcast, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
         index_t i[] = {x, y, z};
-        i[dim] = 0;
+        i[broadcast_dim] = 0;
         ASSERT_EQ(out_buf(x, y, z), in_buf(i));
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(broadcast, copy_sliced) {
-  const int dim = GetParam();
+  const int broadcast_dim = GetParam();
 
   // Make the pipeline
   node_context ctx;
@@ -481,7 +504,7 @@ TEST_P(broadcast, copy_sliced) {
   var z(ctx, "z");
 
   box_expr bounds = {point(x), point(y), point(z)};
-  bounds.erase(bounds.begin() + dim);
+  bounds.erase(bounds.begin() + broadcast_dim);
   func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -492,7 +515,7 @@ TEST_P(broadcast, copy_sliced) {
 
   // Run the pipeline.
   std::vector<index_t> in_extents = {W, H, D};
-  in_extents.erase(in_extents.begin() + dim);
+  in_extents.erase(in_extents.begin() + broadcast_dim);
   buffer<int, 2> in_buf({in_extents[0], in_extents[1]});
   init_random(in_buf);
 
@@ -503,17 +526,18 @@ TEST_P(broadcast, copy_sliced) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
         std::vector<index_t> i = {x, y, z};
-        i.erase(i.begin() + dim);
+        i.erase(i.begin() + broadcast_dim);
         ASSERT_EQ(out_buf(x, y, z), in_buf(i));
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(broadcast, optional) {
@@ -541,9 +565,9 @@ TEST_P(broadcast, optional) {
   const int D = 3;
 
   // Run the pipeline.
-  const int dim = GetParam();
+  const int broadcast_dim = GetParam();
   buffer<int, 3> in_buf({W, H, D});
-  in_buf.dim(dim).set_extent(1);
+  in_buf.dim(broadcast_dim).set_extent(1);
   init_random(in_buf);
 
   buffer<int, 3> out_buf({W, H, D});
@@ -553,17 +577,18 @@ TEST_P(broadcast, optional) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H; ++y) {
       for (int x = 0; x < W; ++x) {
         index_t i[] = {x, y, z};
-        i[dim] = 0;
+        i[broadcast_dim] = 0;
         ASSERT_EQ(out_buf(x, y, z), in_buf(i));
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 class concatenate : public testing::TestWithParam<std::tuple<int, int>> {};
@@ -607,8 +632,6 @@ TEST_P(concatenate, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 2);
-  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2) * D);
 
   for (int z = 0; z < D; ++z) {
     for (int y = 0; y < H1 + H2; ++y) {
@@ -617,6 +640,9 @@ TEST_P(concatenate, copy) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2) * D);
 }
 
 TEST(split, copy) {
@@ -652,8 +678,6 @@ TEST(split, copy) {
   const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 2);
-  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2));
 
   for (int y = 0; y < H1; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -665,6 +689,9 @@ TEST(split, copy) {
       ASSERT_EQ(out2_buf(x, y), in_buf(x, y + H1));
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * (H1 + H2));
 }
 
 TEST(stack, copy) {
@@ -699,8 +726,6 @@ TEST(stack, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, 2);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H * 2);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -708,6 +733,9 @@ TEST(stack, copy) {
       ASSERT_EQ(out_buf(x, y, 1), in2_buf(x, y));
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * 2);
 }
 
 TEST(reshape, copy) {
@@ -758,13 +786,14 @@ TEST(reshape, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 
   // This should have been a "flat" copy.
   for (int i = 0; i < W * H * D; ++i) {
     ASSERT_EQ(in_buf.base()[i], out_buf.base()[i]);
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
 }
 
 TEST(batch_reshape, copy) {
@@ -818,8 +847,6 @@ TEST(batch_reshape, copy) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
-  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
 
   // This should have been a "flat" copy.
   for (int n = 0; n < N; ++n) {
@@ -829,6 +856,9 @@ TEST(batch_reshape, copy) {
       ASSERT_EQ(in_base[i], out_base[i]);
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+  ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
 }
 
 }  // namespace slinky

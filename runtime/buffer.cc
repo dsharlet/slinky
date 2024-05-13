@@ -124,7 +124,11 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   index_t elem_size = dst.elem_size;
 
   if (rank == 0) {
-    memcpy(dst.base, src.base, elem_size);
+    if (src.base) {
+      memcpy(dst.base, src.base, elem_size);
+    } else if (padding) {
+      memcpy(dst.base, padding, elem_size);
+    }
     return;
   }
 
