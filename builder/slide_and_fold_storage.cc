@@ -3,7 +3,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
-#include <iostream>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -14,7 +13,6 @@
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "runtime/print.h"
 
 namespace slinky {
 
