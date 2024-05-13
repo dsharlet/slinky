@@ -305,33 +305,35 @@ public:
   void visit(const check* n) override { *this << indent() << "check(" << n->condition << ")\n"; }
 };
 
+namespace {
+
+thread_local const node_context* default_context = nullptr;
+
+}  // namespace
+
+const node_context* set_default_print_context(const node_context* ctx) {
+  const node_context* old = default_context;
+  default_context = ctx;
+  return old;
+}
+
 void print(std::ostream& os, const expr& e, const node_context* ctx) {
-  printer p(os, ctx);
+  printer p(os, ctx ? ctx : default_context);
   p << e;
 }
 
 void print(std::ostream& os, const stmt& s, const node_context* ctx) {
-  printer p(os, ctx);
+  printer p(os, ctx ? ctx : default_context);
   p << s;
 }
 
-static const node_context* default_context = nullptr;
-
 std::ostream& operator<<(std::ostream& os, const expr& e) {
-  if (default_context) {
-    print(os, e, default_context);
-  } else {
-    print(os, e);
-  }
+  print(os, e);
   return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const stmt& s) {
-  if (default_context) {
-    print(os, s, default_context);
-  } else {
-    print(os, s);
-  }
+  print(os, s);
   return os;
 }
 
@@ -365,7 +367,5 @@ std::ostream& operator<<(std::ostream& os, const dim& d) {
   os << "}";
   return os;
 }
-
-void set_default_printer_context(const node_context* ctx) { default_context = ctx; }
 
 }  // namespace slinky
