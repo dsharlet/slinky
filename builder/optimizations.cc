@@ -60,9 +60,13 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     if (!depends_on(offset, dst_x).any()) {
       // The difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
       if (is_zero(offset)) {
+        // If the offset is zero, the index we want for the buffer_at call is buffer_min(src, src_d), which is
+        // definitely in bounds, so we don't need to clamp it.
         src_dim.bounds = buffer_bounds(src, src_d);
         at = src_dim.bounds.min;
       } else {
+        // The offset is non-zero, we might go out of bounds with our buffer_at call. To avoid this, we need to
+        // clamp to the intersection of the src and dst buffers, like copy would have done.
         src_dim.bounds &= (buffer_bounds(src, src_d) - offset);
         at = src_dim.bounds.min + offset;
       }
