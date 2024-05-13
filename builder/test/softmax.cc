@@ -6,6 +6,7 @@
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
+#include "runtime/visualize.h"
 
 namespace slinky {
 
@@ -156,8 +157,8 @@ TEST_P(softmax, pipeline) {
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
-  const int D = 10;
-  const int B = 10;
+  const int D = 30;
+  const int B = 20;
   buffer<float, rank> in_buf({D, B});
   buffer<float, rank> out_buf({D, B});
 
@@ -184,6 +185,10 @@ TEST_P(softmax, pipeline) {
     auto out_b = span<const float>(&out_buf(0, b), D);
     auto ref_b = span<const float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
+  }
+
+  if (split_c == 0 && !use_compute_at) {
+    check_visualize("softmax_split_" + std::to_string(split_b) + ".html", p, inputs, outputs, &ctx);
   }
 }
 

@@ -185,14 +185,16 @@ public:
   }
 
   void visit(const loop* l) override {
-    *this << indent() << "for(let " << l->sym << " = " << l->bounds.min << "; " << l->sym << " <= " << l->bounds.max
-          << "; ";
+    *this << indent() << "let __loop_min = " << l->bounds.min << ";\n";
+    *this << indent() << "let __loop_max = " << l->bounds.max << ";\n";
+    *this << indent() << "let __loop_step = ";
     if (l->step.defined()) {
-      *this << l->sym << " += " << l->step;
+      *this << l->step << ";\n";
     } else {
-      *this << l->sym << "++";
+      *this << "1;\n";
     }
-    *this << ") {\n";
+    *this << indent() << "for(let " << l->sym << " = __loop_min; " << l->sym << " <= __loop_max; " << l->sym
+          << " += __loop_step) {\n";
     *this << l->body;
     *this << indent() << "}\n";
   }
@@ -204,11 +206,13 @@ public:
     for (var i : n->outputs) {
       *this << indent() << "produce(" << i << ");\n";
     }
+    *this << indent() << "__event_t++;\n";
   }
 
   void visit(const copy_stmt* n) override {
     *this << indent() << "consume(" << n->src << ");\n";
     *this << indent() << "produce(" << n->dst << ");\n";
+    *this << indent() << "__event_t++;\n";
   }
 
   void visit(const allocate* n) override {
@@ -404,9 +408,18 @@ function define_mapping(buffer) {
   buf.mem.base = buffer.base;
   closure = function(base, elem_size, dims) {
     let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
-    return function(at) {
-      at -= base;
-      return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+    if (sorted_dims.length > 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+      }
+    } else if (sorted_dims.length == 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), 0];
+      }
+    } else {
+      return function(at) { return [0, 0]; }
     }
   }
   buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
@@ -547,7 +560,7 @@ function truncate_rank(b, rank) {
 function produce(b) {
   m = find_mapping(b.base);
   if (m) {
-    m.element.mem.productions.push({t: __event_t++, buf: clone_buffer(b)});
+    m.element.mem.productions.push({t: __event_t, buf: clone_buffer(b)});
   }
 }
 function consume(b) {}
