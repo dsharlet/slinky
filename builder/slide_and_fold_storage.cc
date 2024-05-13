@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
+#include <iostream>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -269,6 +271,7 @@ public:
     if (ff) {
       for (int d = 0; d < static_cast<int>(ff->size()); ++d) {
         expr overlap = (*ff)[d].second;
+        // TODO(vksnk): this is a bug, overlap is now always defined.
         did_overlapped_fold = did_overlapped_fold || overlap.defined();
       }
     }
@@ -288,6 +291,11 @@ public:
     expr loop_var = variable::make(loop.sym);
 
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+      if (ff) {
+        expr fold_factor = (*ff)[d].first;
+        if (is_finite(fold_factor)) continue;
+      }
+
       interval_expr cur_bounds_d = (*bounds)[d];
       if (!depends_on(cur_bounds_d, loop.sym).any()) {
         // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
@@ -295,6 +303,10 @@ public:
         continue;
       }
 
+      bounds_map loop_bounds_map;
+      loop_bounds_map[loop.sym] = loop.bounds;
+      cur_bounds_d = simplify(cur_bounds_d, loop_bounds_map);
+  
       interval_expr prev_bounds_d = {
           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
           substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),

@@ -601,12 +601,12 @@ class pipeline_builder {
     }
   }
 
-  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
+  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop, const interval_expr& loop_bounds) {
     // Crop all the outputs of this func for this loop.
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
-          expr loop_max = buffer_max(o.sym(), d);
+          expr loop_max = loop_bounds.max;
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
           body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
         }
@@ -621,7 +621,11 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
-          bounds |= buffer_bounds(o.sym(), d);
+          if (allocation_bounds_[o.sym()]) {
+            bounds |= (*allocation_bounds_[o.sym()])[d];
+          } else {
+            bounds |= buffer_bounds(o.sym(), d);
+          }
         }
       }
     }
@@ -638,6 +642,9 @@ class pipeline_builder {
       // TODO(vksnk): recomputing this seems really wasteful, we can should be
       // able to maintain the list of buffers as we build the IR.
       symbol_map<bool> buffer_used = buffers_used_inside(body);
+      for (const func::output& o : base_f->outputs()) {
+        buffer_used[o.buffer->sym()] = false;
+      }
 
       // Add crops for the used buffers using previously inferred bounds.
       // Input syms should be the innermost.
@@ -654,15 +661,16 @@ class pipeline_builder {
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
-          if (!buffer_used[b->sym()]) continue;
+          if (!buffer_used[b->sym()] || !*buffer_used[b->sym()]) continue;
           body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }
 
+      interval_expr loop_bounds = get_loop_bounds(base_f, loop);
       // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, base_f, loop);
+      body = crop_for_loop(body, base_f, loop, loop_bounds);
       // And make the actual loop.
-      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(base_f, loop), loop.step, body);
+      body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop.step, body);
     }
 
     return body;
@@ -903,10 +911,12 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
+  set_default_printer_context(&ctx);
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  std::cout << "Initial IR:\n"  << std::tie(result, ctx) << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
