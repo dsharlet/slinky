@@ -603,7 +603,7 @@ class pipeline_builder {
         if (o.dims[d] == loop.sym()) {
           expr loop_max = loop_bounds.max;
           expr loop_step = sanitizer_.mutate(loop.step);
-          interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
+          interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop_step - 1), loop_max));
           body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
         }
       }
