@@ -602,6 +602,7 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           expr loop_max = loop_bounds.max;
+          expr loop_step = sanitizer_.mutate(loop.step);
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop.step - 1), loop_max));
           body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
         }
@@ -667,7 +668,8 @@ class pipeline_builder {
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, base_f, loop, loop_bounds);
       // And make the actual loop.
-      body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop.step, body);
+      expr loop_step = sanitizer_.mutate(loop.step);
+      body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop_step, body);
     }
 
     return body;
