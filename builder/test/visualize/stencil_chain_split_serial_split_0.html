@@ -77,7 +77,6 @@ function make_color(a) {
 }
 function buffer_min(b, d) { return b.dims[d].bounds.min; }
 function buffer_max(b, d) { return b.dims[d].bounds.max; }
-function buffer_extent(b, d) { return b.dims[d].bounds.max - b.dims[d].bounds.min + 1; }
 function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
