@@ -147,14 +147,12 @@ TEST_P(softmax, pipeline) {
       call_stmt::attributes{.name = "normalize"});
 
   // Add a trivial consumer so we can have an inner loop here too.
-  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{add_out, {c, b}}},
-      call_stmt::attributes{.name = "consumer"});
+  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}},
+      {{copy_at_the_end ? add_out : out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
 
   func copy;
   if (copy_at_the_end) {
     copy = func::make_copy({add_out, {point(c), point(b)}}, {out, {c, b}});
-  } else {
-    out = add_out;
   }
 
   std::vector<func::loop_info> loops;
