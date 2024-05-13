@@ -915,7 +915,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
-  std::cout << "Initial IR:\n"  << std::tie(result, ctx) << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);

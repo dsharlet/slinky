@@ -294,6 +294,7 @@ public:
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
       if (ff) {
         expr fold_factor = (*ff)[d].first;
+        // Skip if we already folded this dimension.
         if (is_finite(fold_factor)) continue;
       }
 
