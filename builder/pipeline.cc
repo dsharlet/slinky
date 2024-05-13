@@ -570,14 +570,9 @@ class pipeline_builder {
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
 
-        // After substituting the bounds, compute the default strides, and substitute those.
-        // TODO: I think this is bad, if the user sets a stride, we won't see it. I think
-        // maybe allowing users to set strides is just a bad idea.
         substitutions.clear();
-        expr stride = b->elem_size();
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-          substitutions.emplace_back(buffer_stride(alloc_var, d), stride);
-          stride *= min(dims[d].bounds.extent(), buffer_fold_factor(alloc_var, d));
+          substitutions.emplace_back(buffer_stride(alloc_var, d), expr());
         }
         dims = substitute_from_map(dims, substitutions);
 

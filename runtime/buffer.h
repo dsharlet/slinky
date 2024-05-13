@@ -36,10 +36,11 @@ class dim {
   index_t fold_factor_;
 
 public:
+  static constexpr index_t auto_stride = std::numeric_limits<index_t>::min();
   static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
 
-  dim() : min_(0), max_(-1), stride_(0), fold_factor_(unfolded) {}
-  dim(index_t min, index_t max, index_t stride, index_t fold_factor = unfolded)
+  dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
+  dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
       : min_(min), max_(max), stride_(stride), fold_factor_(fold_factor) {}
 
   index_t min() const { return min_; }
@@ -276,6 +277,9 @@ public:
 
   std::size_t elem_count() const;
 
+  // If any strides are `auto_stride`, replace them with automatically determined strides.
+  void init_strides(index_t alignment = 1);
+
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `free`.
   void* allocate();
@@ -373,14 +377,12 @@ public:
   // dimension is "innermost".
   buffer(span<const index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
       : buffer(extents.size(), elem_size) {
-    index_t stride = elem_size;
     slinky::dim* d = dims;
     for (index_t extent : extents) {
       d->set_min_extent(0, extent);
-      d->set_stride(stride);
-      stride *= extent;
       ++d;
     }
+    init_strides();
   }
   buffer(std::initializer_list<index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
       : buffer({extents.begin(), extents.end()}, elem_size) {}

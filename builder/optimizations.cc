@@ -23,9 +23,6 @@ namespace slinky {
 namespace {
 
 dim_expr select(const expr& c, dim_expr t, dim_expr f) {
-  // dim_expr allows fold_factor to be undefined to indicate `unfolded`, but we can't rely on that here.
-  if (!t.fold_factor.defined()) t.fold_factor = dim::unfolded;
-  if (!f.fold_factor.defined()) f.fold_factor = dim::unfolded;
   return {
       select(c, std::move(t.bounds), std::move(f.bounds)),
       select(c, std::move(t.stride), std::move(f.stride)),
@@ -268,6 +265,8 @@ public:
 
         expr at_unused;
         expr& at = src_d >= 0 ? a.at[src_d] : at_unused;
+        a.dims[dst_d].stride = buffer_stride(op->src, src_d);
+        a.dims[dst_d].fold_factor = buffer_fold_factor(op->src, src_d);
         if (!is_copy(op, src_d, dst_d, at, a.dims[dst_d])) {
           alias_valid = false;
           break;
