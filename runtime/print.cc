@@ -315,13 +315,23 @@ void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   p << s;
 }
 
+static const node_context* default_context = nullptr;
+
 std::ostream& operator<<(std::ostream& os, const expr& e) {
-  print(os, e);
+  if (default_context) {
+    print(os, e, default_context);
+  } else {
+    print(os, e);
+  }
   return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const stmt& s) {
-  print(os, s);
+  if (default_context) {
+    print(os, s, default_context);
+  } else {
+    print(os, s);
+  }
   return os;
 }
 
@@ -354,6 +364,10 @@ std::ostream& operator<<(std::ostream& os, const dim& d) {
   }
   os << "}";
   return os;
+}
+
+void set_default_printer_context(const node_context* ctx) {
+  default_context = ctx;
 }
 
 }  // namespace slinky

@@ -34,6 +34,7 @@ std::string to_string(var sym);
 std::string to_string(intrinsic fn);
 std::string to_string(memory_type type);
 
+void set_default_printer_context(const node_context* ctx);
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_PRINT_H
