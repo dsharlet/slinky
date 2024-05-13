@@ -59,8 +59,13 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     expr offset = simplify(src_x - dst_x);
     if (!depends_on(offset, dst_x).any()) {
       // The difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
-      src_dim.bounds &= (buffer_bounds(src, src_d) - offset);
-      at = src_dim.bounds.min + offset;
+      if (is_zero(offset)) {
+        src_dim.bounds = buffer_bounds(src, src_d);
+        at = src_dim.bounds.min;
+      } else {
+        src_dim.bounds &= (buffer_bounds(src, src_d) - offset);
+        at = src_dim.bounds.min + offset;
+      }
       return true;
     } else {
       return false;
@@ -195,7 +200,7 @@ public:
           i->do_not_alias(target_var);
         }
       }
-      // We might have thought we could alias this both ways (src -> dst and dst -> src), we only want to do one of them.
+      // We may attempt to alias this both ways (src -> dst and dst -> src), we only want to do one of them.
       if (alias_info[target_var]) {
         alias_info[target_var]->do_not_alias(op->sym);
       }
