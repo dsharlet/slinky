@@ -80,7 +80,7 @@ bool is_stride_ok(index_t stride, index_t extent, const dim& dim) {
     // If the dimension has an unknown stride, it's OK, we're
     // resolving the current dim first.
     return true;
-  } else if (extent == 1 && abs(stride) == abs(dim.stride()) && alloc_extent(dim) > 1) {
+  } else if (extent == 1 && std::abs(stride) == std::abs(dim.stride()) && alloc_extent(dim) > 1) {
     // If a dimension is extent 1, avoid giving this dimension the same stride
     // as another dimension with extent greater than 1. This doesn't affect the
     // results of most programs (because the stride only ever multiplied with
@@ -88,10 +88,10 @@ bool is_stride_ok(index_t stride, index_t extent, const dim& dim) {
     // other libraries that make extra assumptions about images, and may be
     // easier to understand.
     return false;
-  } else if (alloc_extent(dim) * abs(dim.stride()) <= stride) {
+  } else if (alloc_extent(dim) * std::abs(dim.stride()) <= stride) {
     // The dim is completely inside the proposed stride.
     return true;
-  } else if (abs(dim.stride()) >= extent * stride) {
+  } else if (std::abs(dim.stride()) >= extent * stride) {
     // The dim is completely outside the proposed stride.
     return true;
   } else {
