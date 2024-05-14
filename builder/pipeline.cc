@@ -25,6 +25,9 @@
 
 namespace slinky {
 
+// in print.cc, don't want to expose this.
+const node_context* set_default_print_context(const node_context* ctx);
+
 buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
     : sym_(sym), elem_size_(std::move(elem_size)), producer_(nullptr), constant_(nullptr) {
   dims_.reserve(rank);
@@ -910,6 +913,8 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
+  const node_context* old_context = set_default_print_context(&ctx);
+
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
@@ -953,8 +958,10 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
 
   if (is_verbose()) {
-    std::cout << std::tie(result, ctx) << std::endl;
+    std::cout << result << std::endl;
   }
+
+  set_default_print_context(old_context);
 
   return result;
 }

@@ -146,6 +146,18 @@ cc_test(
 )
 
 cc_test(
+    name = "cannot_alias",
+    srcs = ["cannot_alias.cc"],
+    deps = [
+        ":util",
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "replica_pipeline",
     srcs = ["replica_pipeline.cc"],
     deps = [

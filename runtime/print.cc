@@ -305,13 +305,25 @@ public:
   void visit(const check* n) override { *this << indent() << "check(" << n->condition << ")\n"; }
 };
 
+namespace {
+
+thread_local const node_context* default_context = nullptr;
+
+}  // namespace
+
+const node_context* set_default_print_context(const node_context* ctx) {
+  const node_context* old = default_context;
+  default_context = ctx;
+  return old;
+}
+
 void print(std::ostream& os, const expr& e, const node_context* ctx) {
-  printer p(os, ctx);
+  printer p(os, ctx ? ctx : default_context);
   p << e;
 }
 
 void print(std::ostream& os, const stmt& s, const node_context* ctx) {
-  printer p(os, ctx);
+  printer p(os, ctx ? ctx : default_context);
   p << s;
 }
 
