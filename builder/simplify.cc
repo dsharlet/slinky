@@ -739,9 +739,10 @@ public:
     } else if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        new_bounds[d] &= slinky::buffer_bounds(sym_var, d);
+        new_bounds[d] &= slinky::buffer_bounds(op->src, d);
       }
       body = substitute_bounds(body, op->sym, new_bounds);
+      body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
     }
@@ -801,7 +802,8 @@ public:
       set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
+      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(op->src, op->dim));
+      body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
     }
