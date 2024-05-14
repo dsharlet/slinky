@@ -92,9 +92,7 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
       dim.set_extent(1);
     }
     if (options.allow_broadcast && random(0, 9) == 0) {
-      // Make this a broadcast.
-      dim.set_stride(0);
-      dim.set_bounds(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
+      dim = slinky::dim::broadcast();
     } else {
       dim.set_stride(stride);
       // Add some extra random padding.

@@ -43,6 +43,8 @@ public:
   dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
       : min_(min), max_(max), stride_(stride), fold_factor_(fold_factor) {}
 
+  static const dim& broadcast();
+
   index_t min() const { return min_; }
   index_t max() const { return max_; }
   index_t begin() const { return min_; }

@@ -14,6 +14,14 @@ namespace slinky {
 
 namespace {
 
+dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
+
+}  // namespace
+
+const dim& dim::broadcast() { return broadcast_dim; }
+
+namespace {
+
 index_t alloc_extent(const dim& dim) { return std::min(dim.extent(), dim.fold_factor()); }
 
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
@@ -414,8 +422,6 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
   }
   return false;
 }
-
-static dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline T* get_plan(void*& x, std::size_t n = 1) {
