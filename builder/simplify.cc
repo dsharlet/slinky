@@ -711,7 +711,6 @@ public:
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    expr sym_var = variable::make(op->sym);
     const std::optional<box_expr>& prev_bounds = buffer_bounds[op->sym];
     index_t dims_count = 0;
     bool changed = false;
@@ -739,9 +738,10 @@ public:
     } else if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        new_bounds[d] &= slinky::buffer_bounds(sym_var, d);
+        new_bounds[d] &= slinky::buffer_bounds(op->src, d);
       }
       body = substitute_bounds(body, op->sym, new_bounds);
+      body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
     }
@@ -773,7 +773,6 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    expr sym_var = variable::make(op->sym);
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
     bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
@@ -801,7 +800,8 @@ public:
       set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
+      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(op->src, op->dim));
+      body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
     }

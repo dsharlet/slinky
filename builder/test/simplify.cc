@@ -201,6 +201,12 @@ TEST(simplify, bounds) {
       matches(check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1)))));
 }
 
+TEST(simplify, crop_not_needed) {
+  ASSERT_THAT(simplify(crop_dim::make(b0, b0, 1, {x, y}, check::make(b0))), matches(check::make(b0)));
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {y, z}, check::make(b1))), matches(check::make(b0)));
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {y, z}, check::make(b0))), matches(check::make(b0)));
+}
+
 TEST(simplify, clone) {
   // Clone is shadowed
   ASSERT_THAT(
@@ -238,8 +244,8 @@ TEST(simplify, make_buffer) {
     return make_buffer::make(buf, buffer_at(buf, at), buffer_elem_size(buf), dims, body);
   };
 
-  auto make_crop = [body](var buf, std::vector<expr> at, std::vector<interval_expr> bounds,
-                       std::vector<dim_expr> dims) {
+  auto make_crop = [body](
+                       var buf, std::vector<expr> at, std::vector<interval_expr> bounds, std::vector<dim_expr> dims) {
     for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
       if (bounds[d].min.defined()) dims[d].bounds.min = bounds[d].min;
       if (bounds[d].max.defined()) dims[d].bounds.max = bounds[d].max;
