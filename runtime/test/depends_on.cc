@@ -68,11 +68,12 @@ TEST(depends_on, basic) {
 }
 
 TEST(depends_on, copy) {
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x),
-      (depends_on_result{.buffer_src = true, .buffer_meta = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y),
-      (depends_on_result{.buffer_dst = true, .buffer_meta = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), z), (depends_on_result{}));
+  ASSERT_EQ(
+      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x), (depends_on_result{.buffer_src = true, .buffer_meta = true}));
+  ASSERT_EQ(
+      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y), (depends_on_result{.buffer_dst = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
 
 }  // namespace slinky
