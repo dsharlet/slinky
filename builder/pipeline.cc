@@ -655,10 +655,11 @@ class pipeline_builder {
       for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
         const func* f = *i;
 
-        // Don't really need to emit buffer_crop for base_f, because they will
-        // have crop_dim anyway.
-        if (f == base_f) continue;
-
+        if (f == base_f) {
+          // Don't really need to emit buffer_crop for base_f, because they will
+          // have crop_dim anyway.
+          continue;
+        }
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
