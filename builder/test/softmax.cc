@@ -201,11 +201,14 @@ TEST_P(softmax, pipeline) {
   }
 
   if (split_b > 0) {
-    ASSERT_EQ(eval_ctx.heap.total_size, (split_b * D * 2 +
-                                            2 * split_b
-                                            // This one is a bit odd, not sure why max is needed.
-                                            // The buffer in question is softmax_out.
-                                            + split_b * (split_c == 0 ? D : std::max(split_b, split_c))) *
+    const int sum_exp_in_allocation = split_b;
+    const int exp_in_allocation = split_b * D;
+    const int max_in_allocation = split_b;
+    const int softmax_in_allocation = split_b * D;
+    // This one is a bit odd, not sure why max is needed.
+    const int softmax_out_allocation = split_b * (split_c == 0 ? D : std::max(split_b, split_c));
+    ASSERT_EQ(eval_ctx.heap.total_size, (sum_exp_in_allocation + exp_in_allocation + max_in_allocation +
+                                            softmax_in_allocation + softmax_out_allocation) *
                                             sizeof(float));
   }
 
