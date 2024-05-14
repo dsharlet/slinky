@@ -124,9 +124,21 @@ class buffer_aliaser : public node_mutator {
     const std::map<var, buffer_alias>& can_alias() const { return can_alias_; }
 
     void maybe_alias(var s, buffer_alias a) {
-      if (!cannot_alias_.count(s)) {
-        can_alias_[s] = std::move(a);
+      if (cannot_alias_.count(s)) {
+        return;
       }
+
+      assert(dims.size() == a.dims.size());
+      for (std::size_t d = 0; d < dims.size(); ++d) {
+        if (dims[d].stride.defined()) {
+          if (!prove_true(dims[d].stride == a.dims[d].stride)) {
+            // This alias is not compatible because it would violate a constraint on the stride of the buffer.
+            return;
+          }
+        }
+      }
+
+      can_alias_[s] = std::move(a);
     }
 
     void do_not_alias(var s) {
