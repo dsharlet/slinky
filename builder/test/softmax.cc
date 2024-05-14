@@ -154,7 +154,11 @@ TEST_P(softmax, pipeline) {
 
   func copy;
   if (copy_at_the_end) {
-    copy = func::make_copy({add_out, {point(c), point(b)}}, {out, {c, b}});
+    box_expr bounds = {
+        select(add_out->dim(0).extent() == 1, point(add_out->dim(0).min()), point(c)),
+        select(add_out->dim(1).extent() == 1, point(add_out->dim(1).min()), point(b)),
+    };
+    copy = func::make_copy({add_out, bounds}, {out, {c, b}});
   }
 
   std::vector<func::loop_info> loops;
