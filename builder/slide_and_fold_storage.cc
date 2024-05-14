@@ -268,9 +268,12 @@ public:
 
     if (fold_factors[output]) {
       for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
+        expr fold = (*fold_factors[output])[d].first;
         expr overlap = (*fold_factors[output])[d].second;
-        // TODO(vksnk): this is a bug, overlap is now always defined.
-        did_overlapped_fold = did_overlapped_fold || overlap.defined();
+        if (!is_finite(fold)) continue;
+        // If fold is finite and bounds don't overlap the fold and overlap
+        // will be set to the same expr.
+        did_overlapped_fold = did_overlapped_fold || !fold.same_as(overlap);
       }
     }
 
