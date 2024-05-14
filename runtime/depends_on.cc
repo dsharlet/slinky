@@ -115,8 +115,17 @@ public:
       deps.buffer_dst = true;
       deps.buffer_meta = true;
     });
+
+    // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
+    depends_on_result* sym_deps = SLINKY_ALLOCA(depends_on_result, op->dst_x.size());
+    for (std::size_t i = 0; i < op->dst_x.size(); ++i) {
+      var_deps.push_back({op->dst_x[i], &sym_deps[i]});
+    }
     for (const expr& i : op->src_x) {
       i.accept(this);
+    }
+    for (std::size_t i = 0; i < op->dst_x.size(); ++i) {
+      var_deps.pop_back();
     }
   }
 
