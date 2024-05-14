@@ -28,20 +28,21 @@ TEST(substitute, basic) {
   ASSERT_THAT(
       substitute(check::make(y == buffer_min(x, 3)), buffer_min(x, 3), z), matches(check::make(expr(y) == expr(z))));
   ASSERT_THAT(substitute(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {}, {x}, {})), y, z),
-      matches(
-          crop_dim::make(x, z, 0, buffer_bounds(z, 0) & interval_expr{0, 0}, call_stmt::make(nullptr, {}, {x}, {}))));
+      matches(crop_dim::make(x, z, 0, interval_expr{0, 0}, call_stmt::make(nullptr, {}, {x}, {}))));
   ASSERT_THAT(substitute(crop_dim::make(y, z, 0, {0, 0}, call_stmt::make(nullptr, {x}, {y}, {})), x, w),
       matches(crop_dim::make(y, z, 0, {0, 0}, call_stmt::make(nullptr, {w}, {y}, {}))));
   ASSERT_THAT(substitute(crop_dim::make(
                              y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, call_stmt::make(nullptr, {x}, {y}, {}))),
                   x, w),
-      matches(crop_dim::make(y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, call_stmt::make(nullptr, {w}, {y}, {})))));
+      matches(
+          crop_dim::make(y, y, 0, {0, 0}, crop_dim::make(y, y, 0, {0, 0}, call_stmt::make(nullptr, {w}, {y}, {})))));
 }
 
 TEST(substitute, shadowed) {
   ASSERT_THAT(substitute(let::make(x, y, x + z), x, w), matches(let::make(x, y, x + z)));
 
-  ASSERT_THAT(substitute(let::make({{x, 1}, {y, 2}}, z + 1), z, z + w), matches(let::make({{x, 1}, {y, 2}}, z + w + 1)));
+  ASSERT_THAT(
+      substitute(let::make({{x, 1}, {y, 2}}, z + 1), z, z + w), matches(let::make({{x, 1}, {y, 2}}, z + w + 1)));
 
   ASSERT_THAT(substitute(crop_dim::make(x, x, 1, {y, z}, check::make(0 < buffer_min(x, 1))), buffer_min(x, 1), w),
       matches(crop_dim::make(x, x, 1, {max(y, w), z}, check::make(0 < buffer_min(x, 1)))));
