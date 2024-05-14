@@ -264,12 +264,11 @@ public:
     // is produced there.
     if (loops.size() < 2 || !is_produced_by(output, body)) return;
 
-    auto ff = fold_factors[output];
     bool did_overlapped_fold = false;
 
-    if (ff) {
-      for (int d = 0; d < static_cast<int>(ff->size()); ++d) {
-        expr overlap = (*ff)[d].second;
+    if (fold_factors[output]) {
+      for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
+        expr overlap = (*fold_factors[output])[d].second;
         // TODO(vksnk): this is a bug, overlap is now always defined.
         did_overlapped_fold = did_overlapped_fold || overlap.defined();
       }
@@ -290,8 +289,8 @@ public:
     expr loop_var = variable::make(loop.sym);
 
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-      if (ff) {
-        expr fold_factor = (*ff)[d].first;
+      if (fold_factors[output] && (d < static_cast<int>(fold_factors[output]->size()))) {
+        expr fold_factor = (*fold_factors[output])[d].first;
         // Skip if we already folded this dimension.
         if (is_finite(fold_factor)) continue;
       }
