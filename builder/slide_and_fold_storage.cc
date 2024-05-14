@@ -264,13 +264,16 @@ public:
     // is produced there.
     if (loops.size() < 2 || !is_produced_by(output, body)) return;
 
-    auto ff = fold_factors[output];
     bool did_overlapped_fold = false;
 
-    if (ff) {
-      for (int d = 0; d < static_cast<int>(ff->size()); ++d) {
-        expr overlap = (*ff)[d].second;
-        did_overlapped_fold = did_overlapped_fold || overlap.defined();
+    if (fold_factors[output]) {
+      for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
+        expr fold = (*fold_factors[output])[d].first;
+        expr overlap = (*fold_factors[output])[d].second;
+        if (!is_finite(fold)) continue;
+        // If fold is finite and bounds don't overlap the fold and overlap
+        // will be set to the same expr.
+        did_overlapped_fold = did_overlapped_fold || !match(fold, overlap);
       }
     }
 
@@ -289,12 +292,22 @@ public:
     expr loop_var = variable::make(loop.sym);
 
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
+      if (fold_factors[output] && (d < static_cast<int>(fold_factors[output]->size()))) {
+        expr fold_factor = (*fold_factors[output])[d].first;
+        // Skip if we already folded this dimension.
+        if (is_finite(fold_factor)) continue;
+      }
+
       interval_expr cur_bounds_d = (*bounds)[d];
       if (!depends_on(cur_bounds_d, loop.sym).any()) {
         // TODO: In this case, the func is entirely computed redundantly on every iteration. We should be able to
         // just compute it once.
         continue;
       }
+
+      // Similarly to the reasoning for ignore_loop_max below, some expressions which involve loop bounds are
+      // difficult to simplify, so let's try to do that using the latest loop bounds.
+      cur_bounds_d = simplify(cur_bounds_d, {{loop.sym, loop.bounds}});
 
       interval_expr prev_bounds_d = {
           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),

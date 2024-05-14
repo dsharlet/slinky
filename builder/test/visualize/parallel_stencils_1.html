@@ -373,15 +373,18 @@ function pipeline(in1, in2, out) {
                   let __loop_step = 2;
                   for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
                     { let __intm3 = crop_dim(intm3, 1, {min:y, max:min((y + 1), buffer_max(out, 1))});
-                      let __loop_min = y;
-                      let __loop_max = min((y + 1), buffer_max(out, 1));
-                      let __loop_step = 1;
-                      for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                        { let __intm3 = crop_dim(intm3, 1, {min:NaN, max:y});
-                          consume(intm1);
-                          produce(intm3);
-                          __event_t++;
-                          intm3 = __intm3;
+                      {
+                        let y_min_orig0 = max(y, buffer_min(out, 1));
+                        let __loop_min = y_min_orig0;
+                        let __loop_max = min((y + 1), buffer_max(out, 1));
+                        let __loop_step = 1;
+                        for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
+                          { let __intm3 = crop_dim(intm3, 1, {min:NaN, max:y});
+                            consume(intm1);
+                            produce(intm3);
+                            __event_t++;
+                            intm3 = __intm3;
+                          }
                         }
                       }
                       intm3 = __intm3;

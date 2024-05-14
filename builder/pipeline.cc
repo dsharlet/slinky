@@ -565,7 +565,7 @@ class pipeline_builder {
 
         // First substitute the bounds.
         std::vector<std::pair<expr, expr>> substitutions;
-        box_expr& bounds = *allocation_bounds_[b->sym()];
+        const box_expr& bounds = *allocation_bounds_[b->sym()];
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           const interval_expr& bounds_d = bounds[d];
           substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
@@ -599,12 +599,12 @@ class pipeline_builder {
     }
   }
 
-  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
+  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop, const interval_expr& loop_bounds) {
     // Crop all the outputs of this func for this loop.
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
-          expr loop_max = buffer_max(o.sym(), d);
+          expr loop_max = loop_bounds.max;
           expr loop_step = sanitizer_.mutate(loop.step);
           interval_expr bounds = slinky::bounds(loop.var, min(simplify(loop.var + loop_step - 1), loop_max));
           body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
@@ -620,7 +620,11 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
-          bounds |= buffer_bounds(o.sym(), d);
+          if (allocation_bounds_[o.sym()]) {
+            bounds |= (*allocation_bounds_[o.sym()])[d];
+          } else {
+            bounds |= buffer_bounds(o.sym(), d);
+          }
         }
       }
     }
@@ -650,19 +654,26 @@ class pipeline_builder {
       // (i.e. the outermost buffers are closer to the outputs of the pipeline).
       for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
         const func* f = *i;
+
+        if (f == base_f) {
+          // Don't really need to emit buffer_crop for base_f, because they will
+          // have crop_dim anyway.
+          continue;
+        }
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
-          if (!buffer_used[b->sym()]) continue;
+          if (!buffer_used[b->sym()] || !*buffer_used[b->sym()]) continue;
           body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }
 
+      interval_expr loop_bounds = get_loop_bounds(base_f, loop);
       // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, base_f, loop);
+      body = crop_for_loop(body, base_f, loop, loop_bounds);
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
-      body = loop::make(loop.sym(), loop.max_workers, get_loop_bounds(base_f, loop), loop_step, body);
+      body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop_step, body);
     }
 
     return body;

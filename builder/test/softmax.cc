@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "builder/pipeline.h"
+#include "builder/test/context.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
@@ -181,7 +182,7 @@ TEST_P(softmax, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   // Compare against the fused pipeline.
@@ -198,6 +199,20 @@ TEST_P(softmax, pipeline) {
     auto ref_b = span<const float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
   }
+
+  if (split_b > 0) {
+    const int sum_exp_in_allocation = split_b;
+    const int exp_in_allocation = split_b * D;
+    const int max_in_allocation = split_b;
+    const int softmax_in_allocation = split_b * D;
+    // This one is a bit odd, not sure why max is needed.
+    const int softmax_out_allocation = split_b * (split_c == 0 ? D : std::max(split_b, split_c));
+    ASSERT_EQ(eval_ctx.heap.total_size, (sum_exp_in_allocation + exp_in_allocation + max_in_allocation +
+                                            softmax_in_allocation + softmax_out_allocation) *
+                                            sizeof(float));
+  }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 5);
 
   if (split_c == 0 && !use_compute_at) {
     check_visualize("softmax_split_" + std::to_string(split_b) + ".html", p, inputs, outputs, &ctx);
