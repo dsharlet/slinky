@@ -562,7 +562,7 @@ class pipeline_builder {
 
         // First substitute the bounds.
         std::vector<std::pair<expr, expr>> substitutions;
-        box_expr& bounds = *allocation_bounds_[b->sym()];
+        const box_expr& bounds = *allocation_bounds_[b->sym()];
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           const interval_expr& bounds_d = bounds[d];
           substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
