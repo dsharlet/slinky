@@ -19,6 +19,9 @@
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 
+#include <iostream>
+#include "runtime/print.h"
+
 namespace slinky {
 
 namespace {
@@ -340,7 +343,7 @@ public:
             allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
         set_result(result);
       } else {
-        set_result(clone_with_new_body(op, std::move(body)));
+        set_result(clone_with(op, std::move(body)));
       }
     } else {
       set_result(op);
@@ -800,5 +803,41 @@ public:
 }  // namespace
 
 stmt insert_early_free(const stmt& s) { return early_free_inserter().mutate(s); }
+
+namespace {
+
+// This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
+// efficient when performed in place.
+class reuse_shadows : public node_mutator {
+public:
+  template <typename T>
+  void visit_buffer_mutator(const T* op) {
+    stmt body = op->body;
+    var sym = op->sym;
+    // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
+    if (!depends_on(body, op->src).any()) {
+      // We can re-use the src because the body doesn't use it.
+      sym = op->src;
+      body = substitute(body, op->sym, sym);
+    }
+    body = mutate(body);
+
+    if (sym == op->sym && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_with(op, sym, std::move(body)));
+    }
+  }
+
+  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const transpose* op) override { visit_buffer_mutator(op); }
+};
+
+}  // namespace
+
+stmt optimize_symbols(const stmt& s, node_context& ctx) { return reuse_shadows().mutate(s); }
 
 }  // namespace slinky

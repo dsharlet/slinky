@@ -915,7 +915,7 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
       expr iter_name = get_trace_arg("loop " + ctx.name(op->sym) + " iteration");
       expr loop_name = get_trace_arg("loop " + ctx.name(op->sym));
       stmt body = add_trace(mutate(op->body), iter_name);
-      stmt result = clone_with_new_body(op, std::move(body));
+      stmt result = clone_with(op, std::move(body));
       set_result(add_trace(std::move(result), loop_name));
     }
   };
@@ -972,6 +972,11 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
 
   result = simplify(result);
+
+  if (is_verbose()) {
+    std::cout << result << std::endl;
+  }
+  result = optimize_symbols(result, ctx);
 
   result = fix_buffer_races(result);
 

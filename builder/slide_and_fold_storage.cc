@@ -539,7 +539,7 @@ public:
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(clone_with_new_body(op, std::move(body)));
+      set_result(clone_with(op, std::move(body)));
     }
   }
   void visit(const slice_dim* op) override {
@@ -555,7 +555,7 @@ public:
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(clone_with_new_body(op, std::move(body)));
+      set_result(clone_with(op, std::move(body)));
     }
   }
   void visit(const transpose*) override { std::abort(); }

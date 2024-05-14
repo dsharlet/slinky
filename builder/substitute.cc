@@ -513,6 +513,9 @@ public:
     return body;
   }
   void visit(const slice_buffer* op) override {
+    // Slices do not shadow, so we should substitute sym as well.
+    // TODO: This seems sketchy.
+    var sym = visit_symbol(op->sym);
     var src = visit_symbol(op->src);
     std::vector<expr> at(op->at.size());
     at.reserve(op->at.size());
@@ -526,21 +529,24 @@ public:
       }
     }
     stmt body = mutate_slice_body(op->sym, dims, op->body);
-    if (!changed && src == op->src && body.same_as(op->body)) {
+    if (!changed && sym == op->sym && src == op->src && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(slice_buffer::make(op->sym, src, std::move(at), std::move(body)));
+      set_result(slice_buffer::make(sym, src, std::move(at), std::move(body)));
     }
   }
   void visit(const slice_dim* op) override {
+    // Slices do not shadow, so we should substitute sym as well.
+    // TODO: This seems sketchy.
+    var sym = visit_symbol(op->sym);
     var src = visit_symbol(op->src);
     expr at = mutate(op->at);
     int slices[] = {op->dim};
     stmt body = mutate_slice_body(op->sym, slices, op->body);
-    if (src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
+    if (sym == op->sym && src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(slice_dim::make(op->sym, src, op->dim, std::move(at), std::move(body)));
+      set_result(slice_dim::make(sym, src, op->dim, std::move(at), std::move(body)));
     }
   }
 

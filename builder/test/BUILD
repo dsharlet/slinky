@@ -180,3 +180,14 @@ cc_test(
     ],
     size = "small",
 )
+
+cc_test(
+    name = "optimizations",
+    srcs = ["optimizations.cc"],
+    deps = [
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)

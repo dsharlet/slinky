@@ -40,34 +40,45 @@ expr mutate_binary(node_mutator* this_, const T* op) {
 
 }  // namespace
 
-stmt clone_with_new_body(const loop* op, stmt new_body) {
-  return loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(new_body));
+stmt clone_with(const loop* op, var sym, stmt new_body) {
+  return loop::make(sym, op->max_workers, op->bounds, op->step, std::move(new_body));
 }
-stmt clone_with_new_body(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body)); }
-stmt clone_with_new_body(const allocate* op, stmt new_body) {
-  return allocate::make(op->sym, op->storage, op->elem_size, op->dims, std::move(new_body));
+stmt clone_with(const allocate* op, var sym, stmt new_body) {
+  return allocate::make(sym, op->storage, op->elem_size, op->dims, std::move(new_body));
 }
-stmt clone_with_new_body(const make_buffer* op, stmt new_body) {
-  return make_buffer::make(op->sym, op->base, op->elem_size, op->dims, std::move(new_body));
+stmt clone_with(const make_buffer* op, var sym, stmt new_body) {
+  return make_buffer::make(sym, op->base, op->elem_size, op->dims, std::move(new_body));
 }
-stmt clone_with_new_body(const clone_buffer* op, stmt new_body) {
-  return clone_buffer::make(op->sym, op->src, std::move(new_body));
+stmt clone_with(const clone_buffer* op, var sym, stmt new_body) {
+  return clone_buffer::make(sym, op->src, std::move(new_body));
 }
-stmt clone_with_new_body(const crop_buffer* op, stmt new_body) {
-  return crop_buffer::make(op->sym, op->src, op->bounds, std::move(new_body));
+stmt clone_with(const crop_buffer* op, var sym, stmt new_body) {
+  return crop_buffer::make(sym, op->src, op->bounds, std::move(new_body));
 }
-stmt clone_with_new_body(const crop_dim* op, stmt new_body) {
-  return crop_dim::make(op->sym, op->src, op->dim, op->bounds, std::move(new_body));
+stmt clone_with(const crop_dim* op, var sym, stmt new_body) {
+  return crop_dim::make(sym, op->src, op->dim, op->bounds, std::move(new_body));
 }
-stmt clone_with_new_body(const slice_buffer* op, stmt new_body) {
-  return slice_buffer::make(op->sym, op->src, op->at, std::move(new_body));
+stmt clone_with(const slice_buffer* op, var sym, stmt new_body) {
+  return slice_buffer::make(sym, op->src, op->at, std::move(new_body));
 }
-stmt clone_with_new_body(const slice_dim* op, stmt new_body) {
-  return slice_dim::make(op->sym, op->src, op->dim, op->at, std::move(new_body));
+stmt clone_with(const slice_dim* op, var sym, stmt new_body) {
+  return slice_dim::make(sym, op->src, op->dim, op->at, std::move(new_body));
 }
-stmt clone_with_new_body(const transpose* op, stmt new_body) {
-  return transpose::make(op->sym, op->src, op->dims, std::move(new_body));
+stmt clone_with(const transpose* op, var sym, stmt new_body) {
+  return transpose::make(sym, op->src, op->dims, std::move(new_body));
 }
+
+stmt clone_with(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body)); }
+
+stmt clone_with(const loop* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const allocate* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const make_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const clone_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const crop_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const crop_dim* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const slice_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const slice_dim* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const transpose* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
 void node_mutator::visit(const let_stmt* op) { set_result(mutate_let(this, op)); }

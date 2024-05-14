@@ -79,16 +79,26 @@ public:
 };
 
 // This is helpful for writing templated mutators.
-stmt clone_with_new_body(const loop* op, stmt new_body);
-stmt clone_with_new_body(const let_stmt* op, stmt new_body);
-stmt clone_with_new_body(const allocate* op, stmt new_body);
-stmt clone_with_new_body(const make_buffer* op, stmt new_body);
-stmt clone_with_new_body(const clone_buffer* op, stmt new_body);
-stmt clone_with_new_body(const crop_buffer* op, stmt new_body);
-stmt clone_with_new_body(const crop_dim* op, stmt new_body);
-stmt clone_with_new_body(const slice_buffer* op, stmt new_body);
-stmt clone_with_new_body(const slice_dim* op, stmt new_body);
-stmt clone_with_new_body(const transpose* op, stmt new_body);
+stmt clone_with(const loop* op, stmt new_body);
+stmt clone_with(const let_stmt* op, stmt new_body);
+stmt clone_with(const allocate* op, stmt new_body);
+stmt clone_with(const make_buffer* op, stmt new_body);
+stmt clone_with(const clone_buffer* op, stmt new_body);
+stmt clone_with(const crop_buffer* op, stmt new_body);
+stmt clone_with(const crop_dim* op, stmt new_body);
+stmt clone_with(const slice_buffer* op, stmt new_body);
+stmt clone_with(const slice_dim* op, stmt new_body);
+stmt clone_with(const transpose* op, stmt new_body);
+
+stmt clone_with(const loop* op, var sym, stmt new_body);
+stmt clone_with(const allocate* op, var sym, stmt new_body);
+stmt clone_with(const make_buffer* op, var sym, stmt new_body);
+stmt clone_with(const clone_buffer* op, var sym, stmt new_body);
+stmt clone_with(const crop_buffer* op, var sym, stmt new_body);
+stmt clone_with(const crop_dim* op, var sym, stmt new_body);
+stmt clone_with(const slice_buffer* op, var sym, stmt new_body);
+stmt clone_with(const slice_dim* op, var sym, stmt new_body);
+stmt clone_with(const transpose* op, var sym, stmt new_body);
 
 // Helper for single statement mutators.
 template <typename T>
