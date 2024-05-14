@@ -638,11 +638,6 @@ class pipeline_builder {
       // TODO(vksnk): recomputing this seems really wasteful, we can should be
       // able to maintain the list of buffers as we build the IR.
       symbol_map<bool> buffer_used = buffers_used_inside(body);
-      // Don't really need to emit buffer_crop for base_f, because they will
-      // have crop_dim's anyway.
-      for (const func::output& o : base_f->outputs()) {
-        buffer_used[o.buffer->sym()] = false;
-      }
 
       // Add crops for the used buffers using previously inferred bounds.
       // Input syms should be the innermost.
@@ -656,6 +651,11 @@ class pipeline_builder {
       // (i.e. the outermost buffers are closer to the outputs of the pipeline).
       for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
         const func* f = *i;
+
+        // Don't really need to emit buffer_crop for base_f, because they will
+        // have crop_dim anyway.
+        if (f == base_f) continue;
+
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
