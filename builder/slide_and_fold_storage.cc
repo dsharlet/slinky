@@ -273,7 +273,7 @@ public:
         if (!is_finite(fold)) continue;
         // If fold is finite and bounds don't overlap the fold and overlap
         // will be set to the same expr.
-        did_overlapped_fold = did_overlapped_fold || !fold.same_as(overlap);
+        did_overlapped_fold = did_overlapped_fold || !match(fold, overlap);
       }
     }
 
