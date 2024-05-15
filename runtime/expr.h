@@ -6,6 +6,7 @@
 #include "base/span.h"
 #include "runtime/buffer.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
 #include <memory>
