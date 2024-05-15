@@ -259,84 +259,94 @@ public:
     }
   }
 
+  void alias_copy_src_to_dst(const copy_stmt* op) {
+    if (!alloc_info[op->dst] || !can_alias(op->src)) {
+      // We didn't allocate the dst, don't alias to it.
+      return;
+    }
+
+    // We allocated the dst. We might be able to replace the allocation with an alias of the src.
+    // This case is a straightforward use of is_copy, which produces the dims that should be the src of a copy, which
+    // are the same dimensions we want the dst to be.
+    std::optional<buffer_info>& info = alloc_info[op->dst];
+
+    buffer_alias a;
+    a.at.resize(op->src_x.size());
+    a.dims = info->dims;
+    for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
+      int src_d;
+      if (!is_copy_dst_dim(op, dst_d, src_d)) {
+        return;
+      }
+
+      expr at_unused;
+      expr& at = src_d >= 0 ? a.at[src_d] : at_unused;
+      a.dims[dst_d].stride = buffer_stride(op->src, src_d);
+      a.dims[dst_d].fold_factor = buffer_fold_factor(op->src, src_d);
+      if (!is_copy(op, src_d, dst_d, at, a.dims[dst_d])) {
+        return;
+      }
+    }
+
+    info->maybe_alias(op->src, std::move(a));
+  }
+
+  void alias_copy_dst_to_src(const copy_stmt* op) {
+    if (!alloc_info[op->src] || !can_alias(op->dst)) {
+      // We didn't allocate the src, don't alias to it.
+      return;
+    }
+
+    // We allocated the src. We might be able to replace the allocation with an alias of the dst.
+    // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
+    // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
+    // broadcasting).
+    std::optional<buffer_info>& info = alloc_info[op->src];
+
+    buffer_alias a;
+    a.at.resize(op->dst_x.size());
+    a.dims.resize(op->src_x.size());
+    assert(op->src_x.size() == info->dims.size());
+    for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
+      int src_d;
+      if (!is_copy_dst_dim(op, dst_d, src_d)) {
+        return;
+      }
+
+      if (src_d < 0) {
+        // We can't handle a broadcast here, because we can't ask the producer of our src to produce more dimensions.
+        return;
+      }
+
+      expr offset = simplify(op->src_x[src_d] - op->dst_x[dst_d]);
+      if (depends_on(offset, op->dst_x[dst_d]).any()) {
+        // This is not a simple copy, we can't handle it here.
+        return;
+      }
+
+      a.dims[src_d] = {
+          buffer_bounds(op->dst, dst_d) & info->dims[src_d].bounds,
+          buffer_stride(op->dst, dst_d),
+          buffer_fold_factor(op->dst, dst_d),
+      };
+      a.at[dst_d] = max(buffer_min(op->dst, dst_d) - offset, info->dims[dst_d].bounds.min);
+    }
+
+    for (const dim_expr& d : a.dims) {
+      if (!d.stride.defined()) {
+        // We didn't define all the dimensions of the buffer we want to replace.
+        return;
+      }
+    }
+
+    info->maybe_alias(op->dst, std::move(a));
+  }
+
   void visit(const copy_stmt* op) override {
     set_result(op);
 
-    if (alloc_info[op->dst] && can_alias(op->src)) {
-      // We allocated the dst. We might be able to replace the allocation with an alias of the src.
-      // This case is a straightforward use of is_copy, which produces the dims that should be the src of a copy, which
-      // are the same dimensions we want the dst to be.
-      std::optional<buffer_info>& info = alloc_info[op->dst];
-
-      buffer_alias a;
-      a.at.resize(op->src_x.size());
-      a.dims = info->dims;
-      bool alias_valid = true;
-      for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
-        int src_d;
-        if (!is_copy_dst_dim(op, dst_d, src_d)) {
-          alias_valid = false;
-          break;
-        }
-
-        expr at_unused;
-        expr& at = src_d >= 0 ? a.at[src_d] : at_unused;
-        a.dims[dst_d].stride = buffer_stride(op->src, src_d);
-        a.dims[dst_d].fold_factor = buffer_fold_factor(op->src, src_d);
-        if (!is_copy(op, src_d, dst_d, at, a.dims[dst_d])) {
-          alias_valid = false;
-          break;
-        }
-      }
-      if (alias_valid) {
-        info->maybe_alias(op->src, std::move(a));
-      }
-    }
-    if (alloc_info[op->src] && can_alias(op->dst)) {
-      // We allocated the src. We might be able to replace the allocation with an alias of the dst.
-      // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
-      // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
-      // broadcasting).
-      std::optional<buffer_info>& info = alloc_info[op->src];
-
-      buffer_alias a;
-      a.at.resize(op->dst_x.size());
-      a.dims.resize(op->src_x.size());
-      assert(op->src_x.size() == info->dims.size());
-      for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
-        int src_d;
-        if (!is_copy_dst_dim(op, dst_d, src_d)) {
-          return;
-        }
-
-        if (src_d < 0) {
-          // We can't handle a broadcast here, because we can't ask the producer of our src to produce more dimensions.
-          return;
-        }
-
-        expr offset = simplify(op->src_x[src_d] - op->dst_x[dst_d]);
-        if (depends_on(offset, op->dst_x[dst_d]).any()) {
-          // This is not a simple copy, we can't handle it here.
-          return;
-        }
-
-        a.dims[src_d] = {
-            buffer_bounds(op->dst, dst_d) & info->dims[src_d].bounds,
-            buffer_stride(op->dst, dst_d),
-            buffer_fold_factor(op->dst, dst_d),
-        };
-        a.at[dst_d] = max(buffer_min(op->dst, dst_d) - offset, info->dims[dst_d].bounds.min);
-      }
-
-      for (const dim_expr& d : a.dims) {
-        if (!d.stride.defined()) {
-          // We didn't define all the dimensions of the buffer we want to replace.
-          return;
-        }
-      }
-
-      info->maybe_alias(op->dst, std::move(a));
-    }
+    alias_copy_src_to_dst(op);
+    alias_copy_dst_to_src(op);
   }
 
   void merge_alloc_info(symbol_map<buffer_info> add) {
