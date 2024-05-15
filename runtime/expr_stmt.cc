@@ -84,19 +84,25 @@ stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
+namespace {
+
 const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
   return n;
 }
 
-const constant* make_constant(index_t value) {
+const constant* make_constant(std::int64_t value) {
+  assert(value <= std::numeric_limits<index_t>::max());
+  assert(value >= std::numeric_limits<index_t>::min());
   auto n = new constant();
   n->value = value;
   return n;
 }
 
-expr::expr(index_t x) : expr(make_constant(x)) {}
+}  // namespace
+
+expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return make_variable(sym); }
