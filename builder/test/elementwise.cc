@@ -63,9 +63,7 @@ public:
   void visit(const constant* c) override {
     slinky::dim dims[Rank];
     for (std::size_t d = 0; d < Rank; ++d) {
-      // TODO: Find a better way to not care about bounds of broadcasted dimensions.
-      dims[d].set_bounds(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max());
-      dims[d].set_stride(0);
+      dims[d] = dim::broadcast();
     }
 
     auto value = raw_buffer::make(Rank, sizeof(T), dims);
