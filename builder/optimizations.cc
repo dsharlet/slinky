@@ -170,7 +170,7 @@ class buffer_aliaser : public node_mutator {
       cannot_alias_.insert(s);
     }
   };
-  symbol_map<buffer_info> alias_info;
+  symbol_map<buffer_info> alloc_info;
   symbol_map<bool> do_not_alias;
 
 public:
@@ -192,9 +192,9 @@ public:
     // then we can alias it to the buffer produced by its consumer.
 
     // Start out by setting it to elementwise.
-    auto s = set_value_in_scope(alias_info, op->sym, buffer_info(op->dims));
+    auto s = set_value_in_scope(alloc_info, op->sym, buffer_info(op->dims));
     stmt body = mutate(op->body);
-    const std::map<var, buffer_alias>& can_alias = alias_info[op->sym]->can_alias();
+    const std::map<var, buffer_alias>& can_alias = alloc_info[op->sym]->can_alias();
 
     if (!can_alias.empty()) {
       const std::pair<var, buffer_alias>& target = *can_alias.begin();
@@ -212,14 +212,14 @@ public:
         // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
         // of the region that has been aliased so far, and allow another alias as long as it does not intersect that
         // region. That will likely be very difficult to do symbolically.
-        for (std::optional<buffer_info>& i : alias_info) {
+        for (std::optional<buffer_info>& i : alloc_info) {
           if (!i) continue;
           i->do_not_alias(target_var);
         }
       }
       // We may attempt to alias this both ways (src -> dst and dst -> src), we only want to do one of them.
-      if (alias_info[target_var]) {
-        alias_info[target_var]->do_not_alias(op->sym);
+      if (alloc_info[target_var]) {
+        alloc_info[target_var]->do_not_alias(op->sym);
       }
       set_result(pad_result);
     } else if (!body.same_as(op->body)) {
@@ -229,7 +229,7 @@ public:
     }
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
-    for (std::optional<buffer_info>& i : alias_info) {
+    for (std::optional<buffer_info>& i : alloc_info) {
       if (i) i->do_not_alias(op->sym);
     }
   }
@@ -248,7 +248,7 @@ public:
     for (var o : op->outputs) {
       if (!can_alias(o)) continue;
       for (var i : op->inputs) {
-        std::optional<buffer_info>& input_info = alias_info[i];
+        std::optional<buffer_info>& input_info = alloc_info[i];
         if (input_info) {
           buffer_alias a;
           a.dims = buffer_dims(o, input_info->dims.size());
@@ -262,11 +262,11 @@ public:
   void visit(const copy_stmt* op) override {
     set_result(op);
 
-    if (alias_info[op->dst] && can_alias(op->src)) {
+    if (alloc_info[op->dst] && can_alias(op->src)) {
       // We allocated the dst. We might be able to replace the allocation with an alias of the src.
       // This case is a straightforward use of is_copy, which produces the dims that should be the src of a copy, which
       // are the same dimensions we want the dst to be.
-      std::optional<buffer_info>& info = alias_info[op->dst];
+      std::optional<buffer_info>& info = alloc_info[op->dst];
 
       buffer_alias a;
       a.at.resize(op->src_x.size());
@@ -292,12 +292,12 @@ public:
         info->maybe_alias(op->src, std::move(a));
       }
     }
-    if (alias_info[op->src] && can_alias(op->dst)) {
+    if (alloc_info[op->src] && can_alias(op->dst)) {
       // We allocated the src. We might be able to replace the allocation with an alias of the dst.
       // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
       // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
       // broadcasting).
-      std::optional<buffer_info>& info = alias_info[op->src];
+      std::optional<buffer_info>& info = alloc_info[op->src];
 
       buffer_alias a;
       a.at.resize(op->dst_x.size());
@@ -339,11 +339,11 @@ public:
     }
   }
 
-  void merge_alias_info(symbol_map<buffer_info> add) {
-    alias_info.reserve(std::max(alias_info.size(), add.size()));
+  void merge_alloc_info(symbol_map<buffer_info> add) {
+    alloc_info.reserve(std::max(alloc_info.size(), add.size()));
     for (std::size_t i = 0; i < add.size(); ++i) {
       if (!add[i]) continue;
-      std::optional<buffer_info>& info = alias_info[i];
+      std::optional<buffer_info>& info = alloc_info[i];
       if (!info) {
         info = std::move(add[i]);
       } else {
@@ -356,19 +356,19 @@ public:
 
   void visit(const slice_buffer* op) override {
     // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alias_info(alias_info.size());
-    std::swap(old_alias_info, alias_info);
-    for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
-      if (old_alias_info[i]) {
-        alias_info[i] = buffer_info(old_alias_info[i]->dims);
+    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
+    std::swap(old_alloc_info, alloc_info);
+    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
+      if (old_alloc_info[i]) {
+        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
       }
     }
 
-    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
+    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
     node_mutator::visit(op);
 
     // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
-    for (std::optional<buffer_info>& i : alias_info) {
+    for (std::optional<buffer_info>& i : alloc_info) {
       if (!i) continue;
       auto j = i->can_alias().find(op->sym);
       if (j != i->can_alias().end()) {
@@ -381,24 +381,24 @@ public:
     }
 
     // Add the old alias candidates back to the alias info.
-    merge_alias_info(std::move(old_alias_info));
+    merge_alloc_info(std::move(old_alloc_info));
   }
 
   void visit(const slice_dim* op) override {
     // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alias_info(alias_info.size());
-    std::swap(old_alias_info, alias_info);
-    for (std::size_t i = 0; i < old_alias_info.size(); ++i) {
-      if (old_alias_info[i]) {
-        alias_info[i] = buffer_info(old_alias_info[i]->dims);
+    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
+    std::swap(old_alloc_info, alloc_info);
+    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
+      if (old_alloc_info[i]) {
+        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
       }
     }
 
-    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
+    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
     node_mutator::visit(op);
 
     // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
-    for (std::optional<buffer_info>& i : alias_info) {
+    for (std::optional<buffer_info>& i : alloc_info) {
       if (!i) continue;
       auto j = i->can_alias().find(op->sym);
       if (j != i->can_alias().end()) {
@@ -408,17 +408,17 @@ public:
     }
 
     // Add the old alias candidates back to the alias info.
-    merge_alias_info(std::move(old_alias_info));
+    merge_alloc_info(std::move(old_alloc_info));
   }
 
   void visit(const clone_buffer* op) override {
-    auto set_info_sym = set_value_in_scope(alias_info, op->sym, alias_info[op->src]);
+    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
     node_mutator::visit(op);
 
     // Alias candidates for op->sym are also alias candidates for op->src.
-    std::optional<buffer_info> sym_info = std::move(alias_info[op->sym]);
+    std::optional<buffer_info> sym_info = std::move(alloc_info[op->sym]);
     if (sym_info) {
-      std::optional<buffer_info>& src_info = alias_info[op->src];
+      std::optional<buffer_info>& src_info = alloc_info[op->src];
       if (!src_info) {
         src_info = std::move(sym_info);
       } else {
