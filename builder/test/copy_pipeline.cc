@@ -363,7 +363,7 @@ INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise,
     testing::Combine(testing::Values(true, false), testing::Range(0, 2)),
     test_params_to_string<broadcasted_elementwise::ParamType>);
 
-TEST_P(broadcasted_elementwise, pipeline) {
+TEST_P(broadcasted_elementwise, input) {
   bool no_alias_buffers = std::get<0>(GetParam());
   const int broadcast_dim = std::get<1>(GetParam());
 
@@ -416,6 +416,68 @@ TEST_P(broadcasted_elementwise, pipeline) {
 
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.total_count, 0);
+  }
+}
+
+TEST_P(broadcasted_elementwise, internal) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  const int broadcast_dim = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
+  auto in2 = buffer_expr::make(ctx, "in2", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+  auto intm_broadcasted = buffer_expr::make(ctx, "intm_broadcasted", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func f = func::make(add_1<int>, {{in2, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.name = "f"});
+
+  // Use the bounds of in2 to decide how to broadcast. We can't use the bounds of an internally allocated buffer.
+  box_expr bounds = {
+      select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
+      select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
+  };
+  func broadcast = func::make_copy({intm, bounds}, {intm_broadcasted, {x, y}});
+  func g = func::make(
+      subtract<int>, {{in1, {point(x), point(y)}}, {intm_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  buffer<int, 2> in1_buf({W, H});
+  buffer<int, 2> in2_buf({W, H});
+  in2_buf.dim(broadcast_dim).set_extent(1);
+  init_random(in1_buf);
+  init_random(in2_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf, &in2_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      index_t i[] = {x, y};
+      i[broadcast_dim] = 0;
+      ASSERT_EQ(out_buf(x, y), in1_buf(x, y) - (in2_buf(i) + 1));
+    }
+  }
+
+  if (!no_alias_buffers) {
+    // TODO: This should alias, but can't due to https://github.com/dsharlet/slinky/issues/313
+    ASSERT_EQ(eval_ctx.heap.total_count, 2);
   }
 }
 
