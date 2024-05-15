@@ -425,6 +425,11 @@ public:
     auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
     node_mutator::visit(op);
 
+    // When a buffer goes out of scope, we should remove it as an aliasing candidate.
+    for (std::optional<buffer_info>& i : alloc_info) {
+      if (i) i->do_not_alias(op->sym);
+    }
+
     // Alias candidates for op->sym are also alias candidates for op->src.
     std::optional<buffer_info> sym_info = std::move(alloc_info[op->sym]);
     if (sym_info) {

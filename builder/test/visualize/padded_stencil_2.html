@@ -345,29 +345,31 @@ function pipeline(__in, out) {
             {bounds:{min:max(g, (buffer_min(out, 0) + -1)), max:min(g0, (buffer_max(out, 0) + 1))}, stride:NaN, fold_factor:9223372036854775807},
             {bounds:{min:max(g1, (buffer_min(out, 1) + -1)), max:min(g2, (buffer_max(out, 1) + 1))}, stride:NaN, fold_factor:9223372036854775807}
           ]);
-          {
-            let y_min_orig = buffer_min(out, 1);
-            let __loop_min = (y_min_orig + -2);
-            let __loop_max = buffer_max(out, 1);
-            let __loop_step = 1;
-            for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-              { let __intm = crop_dim(intm, 1, {min:max(g1, (y + 1)), max:min(g2, (y + 1))});
-                consume(__in);
-                produce(intm);
-                __event_t++;
-                intm = __intm;
-              }
-              { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)});
-                consume(intm);
-                produce(padded_intm);
-                __event_t++;
-                padded_intm = __padded_intm;
-              }
-              { let __out = crop_dim(out, 1, {min:y, max:y});
-                consume(padded_intm_uncropped);
-                produce(out);
-                __event_t++;
-                out = __out;
+          { let intm_uncropped = clone_buffer(intm);
+            {
+              let y_min_orig = buffer_min(out, 1);
+              let __loop_min = (y_min_orig + -2);
+              let __loop_max = buffer_max(out, 1);
+              let __loop_step = 1;
+              for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
+                { let __intm = crop_dim(intm, 1, {min:max(g1, (y + 1)), max:min(g2, (y + 1))});
+                  consume(__in);
+                  produce(intm);
+                  __event_t++;
+                  intm = __intm;
+                }
+                { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)});
+                  consume(intm_uncropped);
+                  produce(padded_intm);
+                  __event_t++;
+                  padded_intm = __padded_intm;
+                }
+                { let __out = crop_dim(out, 1, {min:y, max:y});
+                  consume(padded_intm_uncropped);
+                  produce(out);
+                  __event_t++;
+                  out = __out;
+                }
               }
             }
           }
