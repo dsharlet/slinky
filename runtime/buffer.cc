@@ -28,6 +28,7 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
   index_t flat_min = 0;
   index_t flat_max = 0;
   for (std::size_t i = 0; i < rank; ++i) {
+    if (dims[i].stride() == 0) continue;
     index_t extent = alloc_extent(dims[i]);
     flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
     flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
