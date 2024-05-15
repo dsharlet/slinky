@@ -110,6 +110,12 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(select(x, y + 1, y + 2)), matches(y + select(x, 1, 2)));
   ASSERT_THAT(simplify(select(x, 1, 2) + 1), matches(select(x, 2, 3)));
+
+  ASSERT_THAT(simplify(max(select(x, y, z), select(x, y, w))), matches(select(x, y, max(z, w))));
+  ASSERT_THAT(simplify(max(select(x, y, z), select(x, w, z))), matches(select(x, max(y, w), z)));
+  ASSERT_THAT(simplify(min(select(x, y, z), select(x, y, w))), matches(select(x, y, min(z, w))));
+  ASSERT_THAT(simplify(min(select(x, y, z), select(x, w, z))), matches(select(x, min(y, w), z)));
+  ASSERT_THAT(simplify((select(x, y, z) < select(x, y, w))), matches(select(x, 0, expr(z) < expr(w))));
 }
 
 TEST(simplify, let) {
