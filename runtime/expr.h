@@ -6,6 +6,7 @@
 #include "base/span.h"
 #include "runtime/buffer.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
 #include <memory>
@@ -180,8 +181,8 @@ public:
   expr& operator=(expr&&) = default;
 
   // Make a new constant expression.
-  expr(index_t x);
-  expr(int x) : expr(static_cast<index_t>(x)) {}
+  expr(std::int64_t x);
+  expr(std::int32_t x) : expr(static_cast<std::int64_t>(x)) {}
   expr(var sym);
 
   // Make an `expr` referencing an existing node.

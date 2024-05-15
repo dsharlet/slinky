@@ -262,9 +262,8 @@ public:
 
     // Don't lift internally allocated buffer metadata expressions.
     assert(op->args.size() >= 1 && as_variable(op->args[0]));
-    var buf = *as_variable(op->args[0]);
     // TODO: This should be a proper API error.
-    assert(external.count(buf));
+    assert(external.count(*as_variable(op->args[0])));
 
     auto i = replacements.insert(std::pair<const expr, var>(op, 0));
     if (i.second) {

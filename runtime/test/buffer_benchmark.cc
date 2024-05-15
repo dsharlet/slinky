@@ -215,11 +215,12 @@ void BM_for_each_element_hardcoded_1x(benchmark::State& state, Fn fn) {
   allocate_buffer(buf, extents, padding_size);
 
   for (auto _ : state) {
+    index_t dim0_size = buf.dim(0).extent() * buf.elem_size;
     char* base_i = buf.base();
     for (index_t i = 0; i < buf.dim(2).extent(); ++i, base_i += buf.dim(2).stride()) {
       char* base_j = base_i;
       for (index_t j = 0; j < buf.dim(1).extent(); ++j, base_j += buf.dim(1).stride()) {
-        fn(buf.dim(0).extent() * buf.elem_size, base_j);
+        fn(dim0_size, base_j);
       }
     }
   }
@@ -333,13 +334,14 @@ void BM_for_each_element_hardcoded_2x(benchmark::State& state, Fn fn) {
   fill(src, &x);
 
   for (auto _ : state) {
+    index_t dim0_size = dst.dim(0).extent() * dst.elem_size;
     char* dst_i = dst.base();
     const char* src_i = src.base();
     for (index_t i = 0; i < dst.dim(2).extent(); ++i, dst_i += dst.dim(2).stride(), src_i += src.dim(2).stride()) {
       char* dst_j = dst_i;
       const char* src_j = src_i;
       for (index_t j = 0; j < dst.dim(1).extent(); ++j, dst_j += dst.dim(1).stride(), src_j += src.dim(1).stride()) {
-        fn(dst.dim(0).extent() * dst.elem_size, dst_j, src_j);
+        fn(dim0_size, dst_j, src_j);
       }
     }
   }
