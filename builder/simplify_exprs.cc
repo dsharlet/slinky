@@ -129,6 +129,10 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), eval(c0 > 0)) ||
       r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, eval(c0 < 0)) ||
       r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || 
+
+      // Selects
+      r.rewrite(min(select(x, y, z), select(x, y, w)), select(x, y, min(z, w))) ||
+      r.rewrite(min(select(x, y, z), select(x, w, z)), select(x, min(y, w), z)) ||
       false) {
     return r.result;
   }
@@ -240,6 +244,10 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, eval(c0 > 0)) ||
       r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), eval(c0 < 0)) ||
       r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || 
+
+      // Selects
+      r.rewrite(max(select(x, y, z), select(x, y, w)), select(x, y, max(z, w))) ||
+      r.rewrite(max(select(x, y, z), select(x, w, z)), select(x, max(y, w), z)) ||
       false) {
     return r.result;
   }
@@ -617,6 +625,10 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(min(x, y) < max(x, y), x != y) ||
       r.rewrite(max(x, y) < min(x, y), false) ||
       r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
+
+      // Selects
+      r.rewrite(select(x, y, z) < select(x, y, w), select(x, 0, z < w)) ||
+
       false) {
     return r.result;
   }
