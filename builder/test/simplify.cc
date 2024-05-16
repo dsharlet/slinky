@@ -118,6 +118,7 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify((select(x, y, z) < select(x, y, w))), matches(select(x, 0, expr(z) < expr(w))));
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
+  ASSERT_THAT(simplify(min(x, y) - 1 <= min(x, y - 1)), matches(true));
 }
 
 TEST(simplify, let) {
