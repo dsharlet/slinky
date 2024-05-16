@@ -397,6 +397,7 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(max(x, 4) / 2), matches(max(x, 4) / 2));
   ASSERT_THAT(constant_upper_bound(min(x, 4) / -2), matches(min(x, 4) / -2));
   ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(-2));
+  ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
 }
 
 TEST(simplify, where_true) {

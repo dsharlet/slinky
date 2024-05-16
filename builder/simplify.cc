@@ -1168,7 +1168,13 @@ public:
   void visit(const class select* op) override {
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
-    if (t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    const index_t* ct = as_constant(t);
+    const index_t* cf = as_constant(f);
+    if (sign < 0 && ct && cf) {
+      set_result(expr(std::min(*ct, *cf)));
+    } else if (sign > 0 && ct && cf) {
+      set_result(expr(std::max(*ct, *cf)));
+    } else if (t.same_as(op->true_value) && f.same_as(op->false_value)) {
       set_result(op);
     } else {
       set_result(select::make(op->condition, std::move(t), std::move(f)));
@@ -1189,7 +1195,7 @@ public:
 
 }  // namespace
 
-expr constant_upper_bound(const expr& x) { return simplify(constant_bound(1).mutate(x)); }
+expr constant_upper_bound(const expr& x) { return simplify(constant_bound(/*sign=*/1).mutate(x)); }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
