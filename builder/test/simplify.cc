@@ -119,6 +119,9 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(select(x == 1, y, select(x == 1, z, w))), matches(select(x == 1, y, w)));
   ASSERT_THAT(simplify(select(x == 1, select(x == 1, y, z), w)), matches(select(x == 1, y, w)));
+
+  ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
+  ASSERT_THAT(simplify(min(x, y) - 1 <= min(x, y - 1)), matches(true));
 }
 
 TEST(simplify, let) {
@@ -388,6 +391,22 @@ TEST(simplify, bounds_of) {
   }
 }
 
+TEST(simplify, constant_upper_bound) {
+  ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
+  ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
+  ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
+  ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x + -4));
+  ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) * 2), matches(8));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) * -2), matches(min(x, 4) * -2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) * -2), matches(-8));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) / 2), matches(2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) / 2), matches(max(x, 4) / 2));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) / -2), matches(min(x, 4) / -2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(-2));
+  ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
+}
+
 TEST(simplify, where_true) {
   ASSERT_THAT(where_true(x < 5, x), matches(bounds(negative_infinity(), 4)));
   ASSERT_THAT(where_true(x < buffer_min(y, 0), x), matches(bounds(negative_infinity(), buffer_min(y, 0) + -1)));
@@ -483,8 +502,9 @@ TEST(simplify, fuzz) {
     expr test = make_random_expr(3);
     expr simplified = simplify(test);
 
-    // Also test bounds_of.
+    // Also test bounds_of and constant_upper_bound.
     interval_expr bounds = bounds_of(test, var_bounds);
+    expr upper_bound = constant_upper_bound(test);
 
     for (int j = 0; j < checks; ++j) {
       for (const var& v : vars) {
@@ -512,6 +532,8 @@ TEST(simplify, fuzz) {
       } else {
         index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
         index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
+        index_t constant_max =
+            !is_infinity(upper_bound) ? evaluate(upper_bound, ctx) : std::numeric_limits<index_t>::max();
         if (eval_test < min) {
           std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
           print(std::cerr, test, &symbols);
@@ -531,6 +553,16 @@ TEST(simplify, fuzz) {
           dump_context_for_expr(std::cerr, ctx, test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(eval_test, max);
+        }
+        if (eval_test > constant_max) {
+          std::cerr << "constant_upper_bound failure (seed = " << seed << "): " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << " -> " << eval_test << std::endl;
+          print(std::cerr, upper_bound, &symbols);
+          std::cerr << " -> " << constant_max << std::endl;
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          std::cerr << std::endl;
+          ASSERT_LE(eval_test, constant_max);
         }
       }
     }

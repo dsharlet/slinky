@@ -13,9 +13,12 @@ expr simplify(const expr& e, const bounds_map& bounds = bounds_map());
 stmt simplify(const stmt& s, const bounds_map& bounds = bounds_map());
 interval_expr simplify(const interval_expr& e, const bounds_map& bounds = bounds_map());
 
-// Determine an interval such that e is always inside the interval.
+// Determine an interval such that x is always inside the interval.
 interval_expr bounds_of(const expr& x, const bounds_map& bounds = bounds_map());
 interval_expr bounds_of(const interval_expr& x, const bounds_map& bounds = bounds_map());
+
+// Determine an upper bound of x that is conservative if the bound can be made constant.
+expr constant_upper_bound(const expr& x);
 
 // Attempts to determine if e can be proven to be always true or false.
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& bounds = bounds_map());

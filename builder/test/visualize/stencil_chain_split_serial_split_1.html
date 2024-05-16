@@ -331,10 +331,10 @@ function pipeline(__in, out) {
     check((buffer_elem_size(out) == 2));
     check((((buffer_max(out, 0) - buffer_min(out, 0)) + 1) <= buffer_fold_factor(out, 0)));
     check((((buffer_max(out, 1) - buffer_min(out, 1)) + 1) <= buffer_fold_factor(out, 1)));
-    check((buffer_min(__in, 0) <= (buffer_min(out, 0) + -2)));
+    check(((buffer_min(__in, 0) + 2) <= buffer_min(out, 0)));
     check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
     check((((buffer_max(out, 0) - buffer_min(out, 0)) + 5) <= buffer_fold_factor(__in, 0)));
-    check((buffer_min(__in, 1) <= (buffer_min(out, 1) + -2)));
+    check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
     check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
     check((((buffer_max(out, 1) - buffer_min(out, 1)) + 5) <= buffer_fold_factor(__in, 1)));
     { let stencil1_result = allocate('stencil1_result', 2, [
