@@ -553,8 +553,9 @@ TEST_P(stencil_chain, pipeline) {
 
   if (split > 0) {
     const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
-    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short) +
-                                            (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short));
+    const int intm_size = (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short);
+    const int intm2_size = (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short);
+    ASSERT_EQ(eval_ctx.heap.total_size, intm_size + intm2_size);
   }
   ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
@@ -853,9 +854,9 @@ TEST_P(padded_stencil, pipeline) {
   }
 
   if (schedule == 2) {
-    // TODO: We need to be able to find the upper bound of
-    // max((x + 1), buffer_min(a, b)) - min((x + 1), buffer_max(a, b)) to fold this.
-    // ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
+    const index_t intm_size = W * sizeof(short);
+    const index_t padded_intm_size = (W + 2) * 3 * sizeof(short);
+    ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_size);
     ASSERT_EQ(eval_ctx.heap.total_count, 2);
   } else {
     ASSERT_EQ(eval_ctx.heap.total_count, 1);

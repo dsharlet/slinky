@@ -132,8 +132,19 @@ bool is_produced_by(var v, const stmt& body) {
 class slide_and_fold : public node_mutator {
 public:
   node_context& ctx;
-  // Stores a pair of fold factor and the expression for overlap between iteration i and i+1.
-  symbol_map<std::vector<std::pair<expr, expr>>> fold_factors;
+
+  struct dim_fold_info {
+    // The fold factor
+    expr factor = positive_infinity();
+
+    // Overlap between iteration i and i + 1.
+    expr overlap;
+
+    // Which loop this fold is for.
+    std::size_t loop;
+  };
+  symbol_map<std::vector<dim_fold_info>> fold_factors;
+
   struct loop_info {
     var sym;
     expr orig_min;
@@ -178,6 +189,8 @@ public:
   };
   std::vector<loop_info> loops;
   symbol_map<std::size_t> allocation_loop_levels;
+
+  symbol_map<var> aliases;
 
   // We need an unknown to make equations of.
   var x;
@@ -233,8 +246,8 @@ public:
     }
     auto set_buffer_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     // Initialize the fold factors to infinity.
-    auto set_fold_factors = set_value_in_scope(
-        fold_factors, op->sym, std::vector<std::pair<expr, expr>>(op->dims.size(), {positive_infinity(), expr()}));
+    auto set_fold_factors =
+        set_value_in_scope(fold_factors, op->sym, std::vector<dim_fold_info>(op->dims.size(), dim_fold_info()));
     auto set_loop_level = set_value_in_scope(allocation_loop_levels, op->sym, loops.size());
     stmt body = mutate(op->body);
 
@@ -244,11 +257,11 @@ public:
     // like buf->dim(0).extent = buf->dim(0).extent + 10 (i.e. pad the extent by 10), we'll add 10 to our
     // inferred value.
     // TODO: Is this actually a good design...?
-    const std::vector<std::pair<expr, expr>>& fold_info = *fold_factors[op->sym];
+    const std::vector<dim_fold_info>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
     expr alloc_var = variable::make(op->sym);
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
-      replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d].first);
+      replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d].factor);
     }
     std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
     // Replace infinite fold factors with undefined.
@@ -268,8 +281,8 @@ public:
 
     if (fold_factors[output]) {
       for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
-        expr fold = (*fold_factors[output])[d].first;
-        expr overlap = (*fold_factors[output])[d].second;
+        expr fold = (*fold_factors[output])[d].factor;
+        expr overlap = (*fold_factors[output])[d].overlap;
         if (!is_finite(fold)) continue;
         // If fold is finite and bounds don't overlap the fold and overlap
         // will be set to the same expr.
@@ -286,14 +299,11 @@ public:
     std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
     if (!bounds) return;
 
-    // We don't want to use the bounds of the loop we are sliding over here.
-    auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
-
     expr loop_var = variable::make(loop.sym);
 
     for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
       if (fold_factors[output] && (d < static_cast<int>(fold_factors[output]->size()))) {
-        expr fold_factor = (*fold_factors[output])[d].first;
+        expr fold_factor = (*fold_factors[output])[d].factor;
         // Skip if we already folded this dimension.
         if (is_finite(fold_factor)) continue;
       }
@@ -305,8 +315,8 @@ public:
         continue;
       }
 
-      // Similarly to the reasoning for ignore_loop_max below, some expressions which involve loop bounds are
-      // difficult to simplify, so let's try to do that using the latest loop bounds.
+      // Some expressions which involve loop bounds are difficult to simplify, so let's try to do that using the latest
+      // loop bounds.
       cur_bounds_d = simplify(cur_bounds_d, {{loop.sym, loop.bounds}});
 
       interval_expr prev_bounds_d = {
@@ -314,17 +324,12 @@ public:
           substitute(cur_bounds_d.max, loop.sym, loop_var - loop.step),
       };
 
-      // A few things here struggle to simplify when there is a min(loop_max, x) expression involved, where x is
-      // some expression that is bounded by the loop bounds. This min simplifies away if we know that x <= loop_max,
-      // but the simplifier can't figure that out. As a hopefully temporary workaround, we can just substitute
-      // infinity for the loop max.
-      auto ignore_loop_max = [&](const expr& e) { return substitute(e, loop.bounds.max, positive_infinity()); };
-
       interval_expr overlap = prev_bounds_d & cur_bounds_d;
-      if (prove_true(ignore_loop_max(overlap.empty()))) {
+      if (prove_true(overlap.empty())) {
         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
         // can fold the storage.
-        expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
+        expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
+        fold_factor = constant_upper_bound(fold_factor);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
           vector_at(fold_factors[output], d) = {fold_factor, fold_factor};
         } else {
@@ -336,18 +341,22 @@ public:
       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
       expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
-      if (prove_true(ignore_loop_max(is_monotonic_increasing))) {
+      if (prove_true(is_monotonic_increasing)) {
         // The bounds for each loop iteration overlap and are monotonically increasing,
         // so we can incrementally compute only the newly required bounds.
         expr old_min = cur_bounds_d.min;
         expr new_min = simplify(prev_bounds_d.max + 1);
 
         if (!did_overlapped_fold) {
-          expr fold_factor = simplify(bounds_of(ignore_loop_max(cur_bounds_d.extent()), *loop.expr_bounds).max);
+          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
+          fold_factor = constant_upper_bound(fold_factor);
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d) = {simplify(fold_factor),
-                simplify(bounds_of(ignore_loop_max(cur_bounds_d.max - new_min + 1), *loop.expr_bounds).max)};
+            vector_at(fold_factors[output], d) = {
+                simplify(fold_factor),
+                simplify(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max),
+                loops.size() - 1,
+            };
             did_overlapped_fold = true;
           } else {
             // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -358,7 +367,7 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min = where_true(ignore_loop_max(new_min_at_new_loop_min <= old_min_at_loop_min), x).max;
+        expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, x).max;
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
 
@@ -369,7 +378,7 @@ public:
           // effectively not slide while running before the original loop min.
           (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
         }
-      } else if (prove_true(ignore_loop_max(is_monotonic_decreasing))) {
+      } else if (prove_true(is_monotonic_decreasing)) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
       }
@@ -377,8 +386,27 @@ public:
   }
 
   template <typename T>
-  void visit_call_or_copy(const T* op, span<const var> outputs) {
+  void visit_call_or_copy(const T* op, span<const var> inputs, span<const var> outputs) {
     set_result(op);
+
+    for (var input : inputs) {
+      // Remove folding for an input that was folded in a more deeply nested loop than the current loop.
+      // We need to do this for any aliased symbols of the input as well.
+      var a = input;
+      while(true) {
+        if (fold_factors[a]) {
+          for (dim_fold_info& i : *fold_factors[a]) {
+            if (i.loop >= loops.size()) {
+              // We found a consumer of a buffer outside the loop it was folded in, remove the folding.
+              i = dim_fold_info();
+            }
+          }
+        }
+        std::optional<var> next_a = aliases[a];
+        if (!next_a || *next_a == a) break;
+        a = *next_a;
+      }
+    }
 
     for (var output : outputs) {
       // Start from 1 to skip the 'outermost' loop.
@@ -395,12 +423,13 @@ public:
         auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
 
         expr loop_var = variable::make(loop.sym);
-        auto ff = fold_factors[output];
-        if (!ff) continue;
-        for (int d = 0; d < static_cast<int>(ff->size()); ++d) {
-          expr fold_factor = (*ff)[d].first;
-          expr overlap = (*ff)[d].second;
-          if (!is_finite(fold_factor)) continue;
+        if (!fold_factors[output]) continue;
+        for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
+          expr fold_factor = (*fold_factors[output])[d].factor;
+          expr overlap = (*fold_factors[output])[d].overlap;
+          if (!is_finite(fold_factor)) {
+            continue;
+          }
 
           if (!depends_on(fold_factor, loop.sym).any()) {
             // We need an extra fold per worker when parallelizing the loop.
@@ -418,15 +447,15 @@ public:
 
             fold_factor += (loop.worker_count - 1) * overlap;
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d).first = simplify(align_up(fold_factor, loop.step));
+            vector_at(fold_factors[output], d).factor = simplify(align_up(fold_factor, loop.step));
           }
         }
       }
     }
   }
 
-  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->outputs); }
-  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->dst, 1}); }
+  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->inputs, op->outputs); }
+  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->src, 1}, {&op->dst, 1}); }
 
   void visit(const crop_buffer* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
@@ -447,6 +476,7 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+    auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
 
     slide_and_fold_buffer(op->sym, op->body);
 
@@ -476,6 +506,7 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+    auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
 
     slide_and_fold_buffer(op->sym, op->body);
 
@@ -499,6 +530,7 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+    auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     stmt body = mutate(op->body);
     // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
     if (body.same_as(op->body)) {
@@ -514,6 +546,7 @@ public:
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
+    auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     stmt body = mutate(op->body);
     // TODO: If the bounds of the sliced dimensions are modified, do we need to insert an "if" here?
     if (body.same_as(op->body)) {
@@ -523,6 +556,10 @@ public:
     }
   }
   void visit(const truncate_rank*) override { std::abort(); }
+  void visit(const clone_buffer* op) override { 
+    auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
+    node_mutator::visit(op);
+  }
 
   void visit(const loop* op) override {
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
@@ -557,10 +594,10 @@ public:
     // Substitute the placeholder worker_count.
     result = substitute(result, l.worker_count, max_workers);
     // We need to do this in the fold factors too.
-    for (std::optional<std::vector<std::pair<expr, expr>>>& i : fold_factors) {
+    for (std::optional<std::vector<dim_fold_info>>& i : fold_factors) {
       if (!i) continue;
-      for (std::pair<expr, expr>& j : *i) {
-        j.first = substitute(j.first, l.worker_count, max_workers);
+      for (dim_fold_info& j : *i) {
+        j.factor = substitute(j.factor, l.worker_count, max_workers);
       }
     }
 

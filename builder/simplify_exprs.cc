@@ -133,6 +133,8 @@ expr simplify(const class min* op, expr a, expr b) {
       // Selects
       r.rewrite(min(select(x, y, z), select(x, y, w)), select(x, y, min(z, w))) ||
       r.rewrite(min(select(x, y, z), select(x, w, z)), select(x, min(y, w), z)) ||
+      r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
+      r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
       false) {
     return r.result;
   }
@@ -248,6 +250,8 @@ expr simplify(const class max* op, expr a, expr b) {
       // Selects
       r.rewrite(max(select(x, y, z), select(x, y, w)), select(x, y, max(z, w))) ||
       r.rewrite(max(select(x, y, z), select(x, w, z)), select(x, max(y, w), z)) ||
+      r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
+      r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
       false) {
     return r.result;
   }
@@ -534,6 +538,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
       r.rewrite(x + c0 < c1 - y, x + y < eval(c1 - c0)) ||
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
+      r.rewrite(x + c0 < y, x < y + eval(-c0)) ||
       r.rewrite(c0 - x < y + c1, eval(c0 - c1) < x + y) ||
       r.rewrite(c0 - x < c1 - y, y < x + eval(c1 - c0)) ||
       r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
@@ -610,24 +615,33 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(max(y, c0) < c1, y < c1 && eval(c0 < c1)) ||
       r.rewrite(c1 < min(y, c0), c1 < y && eval(c1 < c0)) ||
       r.rewrite(c1 < max(y, c0), c1 < y || eval(c1 < c0)) ||
+    
+      // TODO: This rule seems a bit specialized, but it's hard to find a more general rule.
+      r.rewrite(min(x, y + c0) < min(x, y) + c1, eval(0 < c1 || c0 < c1)) ||
 
       // Cases where we can remove a min on one side because
       // one term dominates another. These rules were
       // synthesized then extended by hand.
       r.rewrite(min(z, y) < min(x, y), z < min(x, y)) ||
-      r.rewrite(min(z, y) < min(x, y + c0), min(z, y) < x, c0 > 0) ||
+      r.rewrite(min(z, y) < min(x, y + c0), min(z, y) < x, eval(c0 > 0)) ||
+      r.rewrite(min(z, y + c0) < min(x, y), min(z, y + c0) < x, eval(c0 < 0)) ||
 
       // Equivalents with max
       r.rewrite(max(z, y) < max(x, y), max(z, y) < x) ||
+      r.rewrite(max(z, y) < max(x, y + c0), max(z, y) < x, eval(c0 < 0)) ||
+      r.rewrite(max(z, y + c0) < max(x, y), max(z, y + c0) < x, eval(c0 > 0)) ||
 
-    
       r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
       r.rewrite(min(x, y) < max(x, y), x != y) ||
       r.rewrite(max(x, y) < min(x, y), false) ||
-      r.rewrite(min(x, y) < min(x, z), y < min(x, z)) ||
 
       // Selects
-      r.rewrite(select(x, y, z) < select(x, y, w), select(x, 0, z < w)) ||
+      r.rewrite(select(x, y, z) < select(x, y, w), select(x, false, z < w)) ||
+      r.rewrite(select(x, y, z) < select(x, w, z), select(x, y < w, false)) ||
+      r.rewrite(select(x, y, z) < y, select(x, false, z < y)) ||
+      r.rewrite(select(x, y, z) < z, select(x, y < z, false)) ||
+      r.rewrite(y < select(x, y, w), select(x, false, y < w)) ||
+      r.rewrite(w < select(x, y, w), select(x, w < y, false)) ||
 
       false) {
     return r.result;
