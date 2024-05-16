@@ -259,9 +259,9 @@ public:
     }
   }
 
-  void alias_copy_src_to_dst(const copy_stmt* op) {
+  void alias_copy_dst(const copy_stmt* op) {
     if (!alloc_info[op->dst] || !can_alias(op->src)) {
-      // We didn't allocate the dst, don't alias to it.
+      // We didn't allocate the dst.
       return;
     }
 
@@ -291,9 +291,9 @@ public:
     info->maybe_alias(op->src, std::move(a));
   }
 
-  void alias_copy_dst_to_src(const copy_stmt* op) {
+  void alias_copy_src(const copy_stmt* op) {
     if (!alloc_info[op->src] || !can_alias(op->dst)) {
-      // We didn't allocate the src, don't alias to it.
+      // We didn't allocate the src.
       return;
     }
 
@@ -345,8 +345,8 @@ public:
   void visit(const copy_stmt* op) override {
     set_result(op);
 
-    alias_copy_src_to_dst(op);
-    alias_copy_dst_to_src(op);
+    alias_copy_dst(op);
+    alias_copy_src(op);
   }
 
   void merge_alloc_info(symbol_map<buffer_info> add) {
