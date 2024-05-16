@@ -1043,8 +1043,8 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
 namespace {
 
 class constant_bound : public node_mutator {
-  // 1 -> we are looking for an upper bound
-  // 0 -> we are looking for a lower bound
+  // > 0 -> we are looking for an upper bound
+  // < 0 -> we are looking for a lower bound
   int sign;
 
 public:
