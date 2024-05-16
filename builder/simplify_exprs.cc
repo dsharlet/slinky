@@ -820,6 +820,9 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
     }
   }
 
+  t = substitute(t, c, true);
+  f = substitute(f, c, false);
+
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
   // clang-format off
   if (r.rewrite(select(x, y, y), y) ||
