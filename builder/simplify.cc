@@ -595,7 +595,7 @@ public:
     }
 
     if (const call* bc = base.as<call>()) {
-      // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
+      // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
       if (bc->intrinsic == intrinsic::buffer_at && match(elem_size, buffer_elem_size(op->sym))) {
         const var* src_buf = as_variable(bc->args[0]);
         assert(src_buf);
@@ -652,6 +652,39 @@ public:
           stmt result = crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body));
           result = transpose::make_truncate(op->sym, op->sym, dims.size(), std::move(result));
           set_result(mutate(result));
+          return;
+        }
+
+        // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the original buffer.
+        // TODO: This could probably be built into the slice check above.
+        bool is_transpose = true;
+        std::vector<int> permutation;
+        permutation.reserve(dims.size());
+        // Returns the dimension of a buffer intrinsic, or -1 if not the expected intrinsic.
+        auto buffer_intrinsic_dim = [=](intrinsic fn, const expr& x) -> int {
+          if (const call* c = x.as<call>()) {
+            if (c->intrinsic != fn) return -1;
+            assert(c->args.size() == 2);
+
+            if (*as_variable(c->args[0]) != *src_buf) return -1;
+            return *as_constant(c->args[1]);
+          }
+          return -1;
+        };
+        for (std::size_t d = 0; d < dims.size(); ++d) {
+          int min_dim = buffer_intrinsic_dim(intrinsic::buffer_min, dims[d].bounds.min);
+          int max_dim = buffer_intrinsic_dim(intrinsic::buffer_max, dims[d].bounds.max);
+          int stride_dim = buffer_intrinsic_dim(intrinsic::buffer_stride, dims[d].stride);
+          int fold_factor_dim = buffer_intrinsic_dim(intrinsic::buffer_fold_factor, dims[d].fold_factor);
+          if (min_dim >= 0 && min_dim == max_dim && min_dim == stride_dim && fold_factor_dim == min_dim) {
+            permutation.push_back(min_dim);
+          } else {
+            is_transpose = false;
+            break;
+          }
+        }
+        if (is_transpose) {
+          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), std::move(body))));
           return;
         }
       }

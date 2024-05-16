@@ -303,6 +303,13 @@ TEST(simplify, make_buffer) {
       matches(make_crop(b0, {}, {{x, y}}, buffer_dims(b0, 1))));
   ASSERT_THAT(simplify(make_crop(b0, {y}, {{x, y}}, buffer_dims(b0, 1))),
       matches(make_crop(b0, {y}, {{x, y}}, buffer_dims(b0, 1))));
+
+  // Transpose
+  ASSERT_THAT(simplify(make_buffer::make(b0, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 2)}, body)),
+      matches(transpose::make(b0, b0, {2}, body)));
+  ASSERT_THAT(simplify(make_buffer::make(
+                  b0, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 2)}, body)),
+      matches(transpose::make(b0, b0, {0, 2}, body)));
 }
 
 TEST(simplify, bounds_of) {
