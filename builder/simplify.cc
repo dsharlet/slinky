@@ -1040,6 +1040,157 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
   }
 }
 
+namespace {
+
+class constant_bound : public node_mutator {
+  // 1 -> we are looking for an upper bound
+  // 0 -> we are looking for a lower bound
+  int sign;
+
+public:
+  constant_bound(int sign) : sign(sign) {}
+
+  void visit(const class min* op) override {
+    if (sign < 0) {
+      // We can only learn about upper bounds from min.
+      set_result(op);
+      return;
+    }
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(expr(std::min(*ca, *cb)));
+    } else if (ca) {
+      set_result(std::move(a));
+    } else if (cb) {
+      set_result(std::move(b));
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(min(std::move(a), std::move(b)));
+    }
+  }
+
+  void visit(const class max* op) override {
+    if (sign > 0) {
+      // We can only learn about lower bounds from max.
+      set_result(op);
+      return;
+    }
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(expr(std::max(*ca, *cb)));
+    } else if (ca) {
+      set_result(std::move(a));
+    } else if (cb) {
+      set_result(std::move(b));
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(min::make(std::move(a), std::move(b)));
+    }
+  }
+
+  // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
+  void visit(const sub* op) override {
+    expr a = mutate(op->a);
+    sign = -sign;
+    expr b = mutate(op->b);
+    sign = -sign;
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(sub::make(a, b));
+    }
+  }
+
+  static int sign_of(const expr& x) {
+    if (is_positive(x)) return 1;
+    if (is_negative(x)) return -1;
+    return 0;
+  }
+
+  template <typename T>
+  void visit_mul_div(const T* op, bool is_mul) {
+    int sign_a = sign_of(op->a);
+    int sign_b = sign_of(op->b);
+    // TODO: We should be able to handle the numerator of div too, it's just tricky.
+    if (is_mul && sign_a != 0) {
+      int old_sign = sign;
+      sign *= sign_a;
+      expr b = mutate(op->b);
+      sign = old_sign;
+      if (b.same_as(op->b)) {
+        set_result(op);
+      } else {
+        set_result(T::make(op->a, std::move(b)));
+      }
+    } else if (sign_b != 0) {
+      int old_sign = sign;
+      sign *= sign_b;
+      expr a = mutate(op->a);
+      sign = old_sign;
+      if (a.same_as(op->a)) {
+        set_result(op);
+      } else {
+        set_result(T::make(std::move(a), op->b));
+      }
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const mul* op) override { visit_mul_div(op, /*is_mul=*/true); }
+  void visit(const div* op) override { visit_mul_div(op, /*is_mul=*/false); }
+
+  void visit(const mod* op) override { set_result(op); }
+
+  template <typename T>
+  void visit_logical(const T* op) {
+    if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
+  void visit(const equal* op) override { visit_logical(op); }
+  void visit(const not_equal* op) override { visit_logical(op); }
+  void visit(const less* op) override { visit_logical(op); }
+  void visit(const less_equal* op) override { visit_logical(op); }
+  void visit(const logical_and* op) override { visit_logical(op); }
+  void visit(const logical_or* op) override { visit_logical(op); }
+  void visit(const logical_not* op) override { visit_logical(op); }
+  void visit(const class select* op) override {
+    expr t = mutate(op->true_value);
+    expr f = mutate(op->false_value);
+    if (t.same_as(op->true_value) && f.same_as(op->false_value)) {
+      set_result(op);
+    } else {
+      set_result(select::make(op->condition, std::move(t), std::move(f)));
+    }
+  }
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
+    case intrinsic::abs:
+      if (sign < 0) {
+        set_result(expr(0));
+        return;
+      }
+    default: break;
+    }
+    set_result(op);
+  }
+};
+
+}  // namespace
+
+expr constant_upper_bound(const expr& x) { return simplify(constant_bound(1).mutate(x)); }
+
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
   return s.attempt_to_prove(condition);

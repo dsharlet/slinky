@@ -116,6 +116,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(select(x, y, z), select(x, y, w))), matches(select(x, y, min(z, w))));
   ASSERT_THAT(simplify(min(select(x, y, z), select(x, w, z))), matches(select(x, min(y, w), z)));
   ASSERT_THAT(simplify((select(x, y, z) < select(x, y, w))), matches(select(x, 0, expr(z) < expr(w))));
+
+  ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
 }
 
 TEST(simplify, let) {
@@ -473,8 +475,9 @@ TEST(simplify, fuzz) {
     expr test = make_random_expr(3);
     expr simplified = simplify(test);
 
-    // Also test bounds_of.
+    // Also test bounds_of and constant_upper_bound.
     interval_expr bounds = bounds_of(test, var_bounds);
+    expr upper_bound = constant_upper_bound(test);
 
     for (int j = 0; j < checks; ++j) {
       for (const var& v : vars) {
@@ -502,6 +505,8 @@ TEST(simplify, fuzz) {
       } else {
         index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
         index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
+        index_t constant_max =
+            !is_infinity(upper_bound) ? evaluate(upper_bound, ctx) : std::numeric_limits<index_t>::max();
         if (eval_test < min) {
           std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
           print(std::cerr, test, &symbols);
@@ -521,6 +526,16 @@ TEST(simplify, fuzz) {
           dump_context_for_expr(std::cerr, ctx, test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(eval_test, max);
+        }
+        if (eval_test > constant_max) {
+          std::cerr << "constant_upper_bound failure (seed = " << seed << "): " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << " -> " << eval_test << std::endl;
+          print(std::cerr, upper_bound, &symbols);
+          std::cerr << " -> " << constant_max << std::endl;
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          std::cerr << std::endl;
+          ASSERT_LE(eval_test, constant_max);
         }
       }
     }
