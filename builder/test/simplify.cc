@@ -380,6 +380,21 @@ TEST(simplify, bounds_of) {
   }
 }
 
+TEST(simplify, constant_upper_bound) {
+  ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
+  ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
+  ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
+  ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x + -4));
+  ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) * 2), matches(8));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) * -2), matches(min(x, 4) * -2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) * -2), matches(-8));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) / 2), matches(2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) / 2), matches(max(x, 4) / 2));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) / -2), matches(min(x, 4) / -2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(-2));
+}
+
 TEST(simplify, where_true) {
   ASSERT_THAT(where_true(x < 5, x), matches(bounds(negative_infinity(), 4)));
   ASSERT_THAT(where_true(x < buffer_min(y, 0), x), matches(bounds(negative_infinity(), buffer_min(y, 0) + -1)));
