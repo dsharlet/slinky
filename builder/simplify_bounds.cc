@@ -37,7 +37,8 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
   }
 }
 
-// Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
+// Attempts to tighten the bounds for correlated expressions a +/- b, where the expressions are "stair step" functions
+// like ((x + c0) / c1) * c2.
 void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
   // Match the LHS and RHS both to the form ((x + a) / b) * c
@@ -91,6 +92,9 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, max);
 }
 
+// We can tighten the upper bounds of expressions like min(x, y) - max(z, w) when x or y is correlated to z or w in a
+// way we can understand the bounds of.
+// TODO: We could also do a better lower bound for max - min.
 void tighten_correlated_bounds_min_max(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   if (sign_b != -1) return;
 
@@ -104,13 +108,14 @@ void tighten_correlated_bounds_min_max(interval_expr& bounds, const expr& a, con
   expr ab_ba = simplify(min_a->b - max_b->a);
   expr ab_bb = simplify(min_a->b - max_b->b);
 
-  // TODO: We could also do a better lower bound for max - min.
   // TODO: This might be blowing expressions up ridiculously... we might only want to do this in `constant_upper_bound`.
   for (const expr& i : {aa_ba, aa_bb, ab_ba, ab_bb}) {
     bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, i);
   }
 }
 
+// Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
+// These functions take existing bounds from interval arithmetic, and tighten them (via clamps) when we can do so.
 void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   tighten_correlated_bounds_stairs(bounds, a, b, sign_b);
   tighten_correlated_bounds_min_max(bounds, a, b, sign_b);
