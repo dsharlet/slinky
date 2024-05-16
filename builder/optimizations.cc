@@ -194,10 +194,14 @@ public:
     // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alloc_info, op->sym, buffer_info(op->dims));
     stmt body = mutate(op->body);
-    const std::map<var, buffer_alias>& can_alias = alloc_info[op->sym]->can_alias();
+    buffer_info info = std::move(*alloc_info[op->sym]);
 
-    if (!can_alias.empty()) {
-      const std::pair<var, buffer_alias>& target = *can_alias.begin();
+    // When an allocation goes out of scope, we should remove it as an aliasing candidate.
+    for (std::optional<buffer_info>& i : alloc_info) {
+      if (i) i->do_not_alias(op->sym);
+    }
+
+    for (const auto& target : info.can_alias()) {
       var target_var = target.first;
       const buffer_alias& alias = target.second;
 
@@ -222,15 +226,12 @@ public:
         alloc_info[target_var]->do_not_alias(op->sym);
       }
       set_result(pad_result);
-    } else if (!body.same_as(op->body)) {
+      return;
+    }
+    if (!body.same_as(op->body)) {
       set_result(clone_with_new_body(op, std::move(body)));
     } else {
       set_result(op);
-    }
-
-    // When an allocation goes out of scope, we should remove it as an aliasing candidate.
-    for (std::optional<buffer_info>& i : alloc_info) {
-      if (i) i->do_not_alias(op->sym);
     }
   }
 
