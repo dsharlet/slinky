@@ -857,6 +857,8 @@ TEST_P(padded_stencil, pipeline) {
     // max((x + 1), buffer_min(a, b)) - min((x + 1), buffer_max(a, b)) to fold this.
     // ASSERT_EQ(eval_ctx.heap.total_size, W * 2 * sizeof(short) + (W + 2) * 3 * sizeof(short));
     ASSERT_EQ(eval_ctx.heap.total_count, 2);
+  } else {
+    ASSERT_EQ(eval_ctx.heap.total_count, 1);
   }
 
   // Also visualize this pipeline.

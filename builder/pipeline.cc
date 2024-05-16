@@ -488,8 +488,8 @@ std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const
   return dims;
 }
 
-// Perform a substitute limited to call inputs only.
-stmt substitute_call_inputs(const stmt& s, const symbol_map<var>& subs) {
+// Perform a substitute limited to call or copy inputs only.
+stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
   class m : public node_mutator {
     const symbol_map<var>& subs;
 
@@ -510,6 +510,14 @@ stmt substitute_call_inputs(const stmt& s, const symbol_map<var>& subs) {
 
       if (changed) {
         set_result(call_stmt::make(op->target, std::move(inputs), op->outputs, op->attrs));
+      } else {
+        set_result(op);
+      }
+    }
+
+    void visit(const copy_stmt* op) override {
+      if (subs[op->src]) {
+        set_result(copy_stmt::make(*subs[op->src], op->src_x, op->dst, op->dst_x, op->padding));
       } else {
         set_result(op);
       }
@@ -802,7 +810,7 @@ public:
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
     // by two different funcs.
-    result = substitute_call_inputs(result, uncropped_subs);
+    result = substitute_inputs(result, uncropped_subs);
 
     return result;
   }
