@@ -263,19 +263,19 @@ TEST(simplify, make_buffer) {
   };
 
   // Slices
-  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 0))), matches(truncate_rank::make(b0, b0, 0, body)));
-  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 1))), matches(truncate_rank::make(b0, b0, 1, body)));
-  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 3))), matches(truncate_rank::make(b0, b0, 3, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 0))), matches(transpose::make_truncate(b0, b0, 0, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 1))), matches(transpose::make_truncate(b0, b0, 1, body)));
+  ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b0, 3))), matches(transpose::make_truncate(b0, b0, 3, body)));
   ASSERT_THAT(simplify(make_slice(b0, {x}, buffer_dims(b0, 1))),
-      matches(truncate_rank::make(b0, b0, 1, slice_dim::make(b0, b0, 0, x, body))));
+      matches(transpose::make_truncate(b0, b0, 1, slice_dim::make(b0, b0, 0, x, body))));
   ASSERT_THAT(simplify(make_slice(b0, {x}, buffer_dims(b0, 2))),
-      matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 0, x, body))));
+      matches(transpose::make_truncate(b0, b0, 2, slice_dim::make(b0, b0, 0, x, body))));
   ASSERT_THAT(simplify(make_slice(b0, {x, y}, buffer_dims(b0, 2))),
-      matches(truncate_rank::make(b0, b0, 2, slice_buffer::make(b0, b0, {x, y}, body))));
+      matches(transpose::make_truncate(b0, b0, 2, slice_buffer::make(b0, b0, {x, y}, body))));
   ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, buffer_dims(b0, 2))),
-      matches(truncate_rank::make(b0, b0, 2, slice_dim::make(b0, b0, 1, y, body))));
+      matches(transpose::make_truncate(b0, b0, 2, slice_dim::make(b0, b0, 1, y, body))));
   ASSERT_THAT(simplify(make_slice(b0, {expr(), y}, buffer_dims(b0, 3))),
-      matches(truncate_rank::make(b0, b0, 3, slice_dim::make(b0, b0, 1, y, body))));
+      matches(transpose::make_truncate(b0, b0, 3, slice_dim::make(b0, b0, 1, y, body))));
 
   // Not slices
   ASSERT_THAT(simplify(make_slice(b0, {}, buffer_dims(b1, 1))), matches(make_slice(b0, {}, buffer_dims(b1, 1))));
@@ -283,20 +283,20 @@ TEST(simplify, make_buffer) {
       matches(make_crop(b0, {}, {buffer_bounds(b0, 0)}, buffer_dims(b1, 1))));
 
   // Crops
-  ASSERT_THAT(simplify(make_crop(b0, {}, {}, buffer_dims(b0, 0))), matches(truncate_rank::make(b0, b0, 0, body)));
-  ASSERT_THAT(simplify(make_crop(b0, {}, {}, buffer_dims(b0, 1))), matches(truncate_rank::make(b0, b0, 1, body)));
+  ASSERT_THAT(simplify(make_crop(b0, {}, {}, buffer_dims(b0, 0))), matches(transpose::make_truncate(b0, b0, 0, body)));
+  ASSERT_THAT(simplify(make_crop(b0, {}, {}, buffer_dims(b0, 1))), matches(transpose::make_truncate(b0, b0, 1, body)));
   ASSERT_THAT(simplify(make_crop(b0, {x}, {{x, y}}, buffer_dims(b0, 1))),
-      matches(truncate_rank::make(b0, b0, 1, crop_dim::make(b0, b0, 0, {x, y}, body))));
+      matches(transpose::make_truncate(b0, b0, 1, crop_dim::make(b0, b0, 0, {x, y}, body))));
   ASSERT_THAT(simplify(make_crop(b0, {x}, {{x, y}}, buffer_dims(b0, 2))),
-      matches(truncate_rank::make(b0, b0, 2, crop_dim::make(b0, b0, 0, {x, y}, body))));
+      matches(transpose::make_truncate(b0, b0, 2, crop_dim::make(b0, b0, 0, {x, y}, body))));
   ASSERT_THAT(simplify(make_crop(b0, {x, z}, {{x, y}, {z, w}}, buffer_dims(b0, 2))),
-      matches(truncate_rank::make(b0, b0, 2, crop_buffer::make(b0, b0, {{x, y}, {z, w}}, body))));
+      matches(transpose::make_truncate(b0, b0, 2, crop_buffer::make(b0, b0, {{x, y}, {z, w}}, body))));
   ASSERT_THAT(simplify(make_crop(b0, {expr(), z}, {{expr(), expr()}, {z, w}}, buffer_dims(b0, 2))),
-      matches(truncate_rank::make(b0, b0, 2, crop_dim::make(b0, b0, 1, {z, w}, body))));
+      matches(transpose::make_truncate(b0, b0, 2, crop_dim::make(b0, b0, 1, {z, w}, body))));
   ASSERT_THAT(simplify(make_crop(b0, {expr(), z}, {{expr(), expr()}, {z, w}}, buffer_dims(b0, 3))),
-      matches(truncate_rank::make(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
+      matches(transpose::make_truncate(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
   ASSERT_THAT(simplify(make_crop(b0, {expr(), z}, {{expr(), expr()}, {z, w}}, buffer_dims(b0, 3))),
-      matches(truncate_rank::make(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
+      matches(transpose::make_truncate(b0, b0, 3, crop_dim::make(b0, b0, 1, {z, w}, body))));
 
   // Not crops
   ASSERT_THAT(simplify(make_crop(b0, {}, {{x, y}}, buffer_dims(b0, 1))),

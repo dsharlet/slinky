@@ -26,7 +26,7 @@ enum class stmt_node_type {
   crop_dim,
   slice_buffer,
   slice_dim,
-  truncate_rank,
+  transpose,
   check,
 };
 
@@ -305,19 +305,29 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::slice_dim;
 };
 
-// Make a new buffer `sym` that is a copy of the first `rank` dimensions of `src`.
-class truncate_rank : public stmt_node<truncate_rank> {
+// Make a new buffer `sym` that is a copy of the `dims` dimensions of `src`.
+class transpose : public stmt_node<transpose> {
 public:
+  // TODO: We might want a placeholder dim index that indicates any un-selected dims appear there.
+
   var sym;
   var src;
-  int rank;
+  std::vector<int> dims;
   stmt body;
+
+  bool is_truncate() const {
+    for (std::size_t i = 0; i < dims.size(); ++i) {
+      if (dims[i] != static_cast<int>(i)) return false;
+    }
+    return true;
+  }
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, var src, int rank, stmt body);
+  static stmt make(var sym, var src, std::vector<int> dims, stmt body);
+  static stmt make_truncate(var sym, var src, int rank, stmt body);
 
-  static constexpr stmt_node_type static_type = stmt_node_type::truncate_rank;
+  static constexpr stmt_node_type static_type = stmt_node_type::transpose;
 };
 
 // Basically an assert.
@@ -348,7 +358,7 @@ public:
   virtual void visit(const crop_dim*) = 0;
   virtual void visit(const slice_buffer*) = 0;
   virtual void visit(const slice_dim*) = 0;
-  virtual void visit(const truncate_rank*) = 0;
+  virtual void visit(const transpose*) = 0;
   virtual void visit(const check*) = 0;
 };
 
@@ -387,7 +397,7 @@ public:
   void visit(const crop_dim* op) override;
   void visit(const slice_buffer* op) override;
   void visit(const slice_dim* op) override;
-  void visit(const truncate_rank* op) override;
+  void visit(const transpose* op) override;
   void visit(const check* op) override;
 };
 
@@ -403,7 +413,7 @@ inline void crop_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void crop_dim::accept(stmt_visitor* v) const { v->visit(this); }
 inline void slice_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void slice_dim::accept(stmt_visitor* v) const { v->visit(this); }
-inline void truncate_rank::accept(stmt_visitor* v) const { v->visit(this); }
+inline void transpose::accept(stmt_visitor* v) const { v->visit(this); }
 inline void check::accept(stmt_visitor* v) const { v->visit(this); }
 
 }  // namespace slinky

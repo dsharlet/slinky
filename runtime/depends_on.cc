@@ -186,7 +186,7 @@ public:
     depends_on_result sym_deps = visit_sym_body(op);
     propagate_deps(sym_deps, op->src);
   }
-  void visit(const truncate_rank* op) override {
+  void visit(const transpose* op) override {
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
     depends_on_result sym_deps = visit_sym_body(op);
     propagate_deps(sym_deps, op->src);

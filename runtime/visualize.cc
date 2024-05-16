@@ -289,8 +289,8 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit(const truncate_rank* n) override {
-    *this << indent() << "{ let __" << n->sym << " = truncate_rank(" << n->src << ", " << n->rank << ");\n";
+  void visit(const transpose* n) override {
+    *this << indent() << "{ let __" << n->sym << " = transpose(" << n->src << ", [" << n->dims << "]);\n";
     *this << n->body;
     *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
     *this << indent() << "}\n";
@@ -606,9 +606,9 @@ function slice_buffer(b, at) {
   }
   return result;
 }
-function truncate_rank(b, rank) {
+function transpose(b, dims) {
   let result = clone_buffer(b);
-  b.dims.length = rank;
+  b.dims = dims.map(i => b.dims[i]);
   return result;
 }
 function produce(b) {

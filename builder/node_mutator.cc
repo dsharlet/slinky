@@ -65,8 +65,8 @@ stmt clone_with_new_body(const slice_buffer* op, stmt new_body) {
 stmt clone_with_new_body(const slice_dim* op, stmt new_body) {
   return slice_dim::make(op->sym, op->src, op->dim, op->at, std::move(new_body));
 }
-stmt clone_with_new_body(const truncate_rank* op, stmt new_body) {
-  return truncate_rank::make(op->sym, op->src, op->rank, std::move(new_body));
+stmt clone_with_new_body(const transpose* op, stmt new_body) {
+  return transpose::make(op->sym, op->src, op->dims, std::move(new_body));
 }
 
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
@@ -249,12 +249,12 @@ void node_mutator::visit(const slice_dim* op) {
     set_result(slice_dim::make(op->sym, op->src, op->dim, std::move(at), std::move(body)));
   }
 }
-void node_mutator::visit(const truncate_rank* op) {
+void node_mutator::visit(const transpose* op) {
   stmt body = mutate(op->body);
   if (body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(truncate_rank::make(op->sym, op->src, op->rank, std::move(body)));
+    set_result(transpose::make(op->sym, op->src, op->dims, std::move(body)));
   }
 }
 

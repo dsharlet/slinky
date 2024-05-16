@@ -444,7 +444,7 @@ public:
     }
   }
 
-  void visit(const truncate_rank*) override { std::abort(); }
+  void visit(const transpose*) override { std::abort(); }
 };
 
 }  // namespace
@@ -583,7 +583,7 @@ public:
   void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
   void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const truncate_rank* op) override { visit_buffer_mutator(op); }
+  void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
 }  // namespace

@@ -305,9 +305,9 @@ function slice_buffer(b, at) {
   }
   return result;
 }
-function truncate_rank(b, rank) {
+function transpose(b, dims) {
   let result = clone_buffer(b);
-  b.dims.length = rank;
+  b.dims = dims.map(i => b.dims[i]);
   return result;
 }
 function produce(b) {

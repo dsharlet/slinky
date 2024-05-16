@@ -522,7 +522,7 @@ public:
       set_result(clone_with_new_body(op, std::move(body)));
     }
   }
-  void visit(const truncate_rank*) override { std::abort(); }
+  void visit(const transpose*) override { std::abort(); }
 
   void visit(const loop* op) override {
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");

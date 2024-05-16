@@ -622,7 +622,7 @@ public:
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
           // make_buffer drops trailing dims, do the same here.
           stmt result = slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body));
-          result = truncate_rank::make(op->sym, op->sym, dims.size() + at_rank, std::move(result));
+          result = transpose::make_truncate(op->sym, op->sym, dims.size() + at_rank, std::move(result));
           set_result(mutate(result));
           return;
         }
@@ -650,7 +650,7 @@ public:
         }
         if (is_crop) {
           stmt result = crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body));
-          result = truncate_rank::make(op->sym, op->sym, dims.size(), std::move(result));
+          result = transpose::make_truncate(op->sym, op->sym, dims.size(), std::move(result));
           set_result(mutate(result));
           return;
         }
@@ -937,17 +937,21 @@ public:
     }
   }
 
-  void visit(const truncate_rank* op) override {
+  void visit(const transpose* op) override {
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
-      if (static_cast<int>(bounds->size()) <= op->rank) {
-        // truncate_rank can't add dimensions.
-        assert(static_cast<int>(bounds->size()) == op->rank);
+      if (op->is_truncate() && bounds->size() <= op->dims.size()) {
+        // transpose can't add dimensions.
+        assert(bounds->size() == op->dims.size());
         // This truncate is a no-op.
         set_result(mutate(op->body));
         return;
       }
-      bounds->resize(op->rank);
+      box_expr new_bounds(op->dims.size());
+      for (std::size_t i = 0; i < op->dims.size(); ++i) {
+        new_bounds[i] = (*bounds)[op->dims[i]];
+      }
+      bounds = std::move(new_bounds);
     }
 
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
@@ -959,13 +963,13 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(truncate_rank::make(op->sym, op->src, op->rank, s)));
+        stmts.push_back(mutate(transpose::make(op->sym, op->src, op->dims, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(truncate_rank::make(op->sym, op->src, op->rank, std::move(body)));
+      set_result(transpose::make(op->sym, op->src, op->dims, std::move(body)));
     }
   }
 

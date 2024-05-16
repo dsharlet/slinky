@@ -145,13 +145,15 @@ TEST(evaluate, slice_buffer) {
   assert_buffer_extents_are(buf, {10, 20, 30, 40});
 }
 
-TEST(evaluate, truncate_rank) {
+TEST(evaluate, transpose) {
   eval_context ctx;
   buffer<void, 4> buf({10, 20, 30, 40});
   ctx[x] = reinterpret_cast<index_t>(&buf);
 
-  evaluate(truncate_rank::make(x, x, 2, make_check(x, {10, 20})), ctx);
-  evaluate(truncate_rank::make(y, x, 2, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
+  evaluate(transpose::make(x, x, {0, 1}, make_check(x, {10, 20})), ctx);
+  evaluate(transpose::make(x, x, {3, 1}, make_check(x, {40, 20})), ctx);
+  evaluate(transpose::make(y, x, {0, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
+  evaluate(transpose::make(y, x, {2, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {30, 20})})), ctx);
   assert_buffer_extents_are(buf, {10, 20, 30, 40});
 }
 

@@ -384,16 +384,16 @@ TEST_P(upsample_y, copy) {
   ASSERT_EQ(eval_ctx.copy_elements, W * H);
 }
 
-class transpose : public testing::TestWithParam<std::vector<int>> {};
+class transpose_test : public testing::TestWithParam<std::vector<int>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, transpose,
+INSTANTIATE_TEST_SUITE_P(schedule, transpose_test,
     testing::Values(std::vector<int>{}, std::vector<int>{0}, std::vector<int>{1}, std::vector<int>{2},
         std::vector<int>{0, 1}, std::vector<int>{1, 0}, std::vector<int>{0, 2}, std::vector<int>{2, 0},
         std::vector<int>{1, 2}, std::vector<int>{2, 1}, std::vector<int>{0, 1, 2}, std::vector<int>{2, 1, 0},
         std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{1, 1, 1}, std::vector<int>{2, 2, 2},
         std::vector<int>{1, 0, 2}, std::vector<int>{0, 0, 0}, std::vector<int>{0, 0, 1}));
 
-TEST_P(transpose, copy) {
+TEST_P(transpose_test, copy) {
   std::vector<int> permutation = GetParam();
 
   // Make the pipeline
