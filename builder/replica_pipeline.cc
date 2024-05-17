@@ -305,9 +305,15 @@ public:
     funcs_emitted_[&f] = fn_name;
 
     if (!f.defined() && f.outputs().size() == 1) {
-      std::string func_inputs = print(f.inputs());
       std::string func_outputs = print(f.outputs()[0]);
-      (void)print_assignment_explicit(fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ")");
+      if (f.padding()) {
+        std::string func_inputs = print(f.inputs()[0]);
+        std::string padding = print_vector(*f.padding());
+        (void)print_assignment_explicit(fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ", ", padding, ")");
+      } else {
+        std::string func_inputs = print(f.inputs());
+        (void)print_assignment_explicit(fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ")");
+      }
     } else {
       std::string callback = print_callback(f.inputs(), f.outputs());
       std::string func_inputs = print(f.inputs());
@@ -443,6 +449,8 @@ private:
         } else {
           os << "expr()";
         }
+      } else if constexpr (std::is_same_v<T, char>) {
+        os << (int)vi;
       } else {
         os << vi;
       }

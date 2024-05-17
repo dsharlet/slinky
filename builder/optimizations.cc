@@ -149,6 +149,7 @@ class buffer_aliaser : public node_mutator {
   struct buffer_alias {
     std::vector<dim_expr> dims;
     std::vector<expr> at;
+    bool assume_in_bounds = false;
   };
 
   class buffer_info {
@@ -170,6 +171,14 @@ class buffer_aliaser : public node_mutator {
 
       assert(dims.size() == a.dims.size());
       for (std::size_t d = 0; d < dims.size(); ++d) {
+        if (!a.assume_in_bounds) {
+          if (!prove_true(dims[d].bounds.min >= a.dims[d].bounds.min) ||
+              !prove_true(dims[d].bounds.max <= a.dims[d].bounds.max)) {
+            // This alias is not compatible because it isn't big enough for the original allocation.
+            // TODO: We could maybe grow the original allocation instead of giving up here.
+            return;
+          }
+        }
         if (dims[d].stride.defined()) {
           if (!prove_true(dims[d].stride == a.dims[d].stride)) {
             // This alias is not compatible because it would violate a constraint on the stride of the buffer.
@@ -270,6 +279,8 @@ public:
           buffer_alias a;
           a.dims = buffer_dims(o, input_info->dims.size());
           a.at = buffer_mins(o, input_info->dims.size());
+          // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output.
+          a.assume_in_bounds = true;
           input_info->maybe_alias(o, std::move(a));
         }
       }
@@ -305,6 +316,8 @@ public:
       }
     }
 
+    // If there is no padding, we can assume that the src is always in bounds of dst.
+    a.assume_in_bounds = !op->padding || op->padding->empty();
     info->maybe_alias(op->src, std::move(a));
   }
 
@@ -366,15 +379,37 @@ public:
     alias_copy_src(op);
   }
 
-  void merge_alloc_info(symbol_map<buffer_info> add) {
-    alloc_info.reserve(std::max(alloc_info.size(), add.size()));
-    for (std::size_t i = 0; i < add.size(); ++i) {
-      if (!add[i]) continue;
+  template <typename T, typename Fn>
+  void visit_buffer_mutator(const T* op, Fn&& handler) {
+    // We need to know which alias candidates are added inside this mutator.
+    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
+    std::swap(old_alloc_info, alloc_info);
+    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
+      if (old_alloc_info[i]) {
+        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
+      }
+    }
+
+    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
+    node_mutator::visit(op);
+
+    for (std::optional<buffer_info>& i : alloc_info) {
+      if (!i) continue;
+      auto j = i->can_alias().find(op->sym);
+      if (j != i->can_alias().end()) {
+        handler(j->second);
+      }
+    }
+
+    // Add the old alias candidates back to the alias info.
+    alloc_info.reserve(std::max(alloc_info.size(), old_alloc_info.size()));
+    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
+      if (!old_alloc_info[i]) continue;
       std::optional<buffer_info>& info = alloc_info[i];
       if (!info) {
-        info = std::move(add[i]);
+        info = std::move(old_alloc_info[i]);
       } else {
-        for (auto& j : add[i]->can_alias()) {
+        for (auto& j : old_alloc_info[i]->can_alias()) {
           info->maybe_alias(j.first, std::move(j.second));
         }
       }
@@ -382,60 +417,18 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
-    std::swap(old_alloc_info, alloc_info);
-    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
-      if (old_alloc_info[i]) {
-        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
+    visit_buffer_mutator(op, [=](buffer_alias& alias) {
+      for (std::size_t d = 0; d < op->at.size(); ++d) {
+        if (!op->at[d].defined()) continue;
+        alias.at.insert(alias.at.begin() + d, op->at[d]);
       }
-    }
-
-    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
-    node_mutator::visit(op);
-
-    // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
-    for (std::optional<buffer_info>& i : alloc_info) {
-      if (!i) continue;
-      auto j = i->can_alias().find(op->sym);
-      if (j != i->can_alias().end()) {
-        std::vector<expr>& at = j->second.at;
-        for (std::size_t d = 0; d < op->at.size(); ++d) {
-          if (!op->at[d].defined()) continue;
-          at.insert(at.begin() + d, op->at[d]);
-        }
-      }
-    }
-
-    // Add the old alias candidates back to the alias info.
-    merge_alloc_info(std::move(old_alloc_info));
+    });
   }
 
   void visit(const slice_dim* op) override {
-    // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
-    std::swap(old_alloc_info, alloc_info);
-    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
-      if (old_alloc_info[i]) {
-        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
-      }
-    }
-
-    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
-    node_mutator::visit(op);
-
-    // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
-    for (std::optional<buffer_info>& i : alloc_info) {
-      if (!i) continue;
-      auto j = i->can_alias().find(op->sym);
-      if (j != i->can_alias().end()) {
-        std::vector<expr>& at = j->second.at;
-        at.insert(at.begin() + op->dim, op->at);
-      }
-    }
-
-    // Add the old alias candidates back to the alias info.
-    merge_alloc_info(std::move(old_alloc_info));
+    visit_buffer_mutator(op, [=](buffer_alias& alias) {
+      alias.at.insert(alias.at.begin() + op->dim, op->at);
+    });
   }
 
   void visit(const clone_buffer* op) override {
