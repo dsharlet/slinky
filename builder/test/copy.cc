@@ -428,7 +428,7 @@ TEST_P(downsample_y, copy) {
     }
   }
 
-  ASSERT_EQ(eval_ctx.copy_calls, split == 0 ? 1 : (H + split / 2) / split);
+  ASSERT_EQ(eval_ctx.copy_calls, split == 0 ? 1 : ceil_div(H, split));
   ASSERT_EQ(eval_ctx.copy_elements, W * H);
 }
 
