@@ -655,7 +655,8 @@ public:
           return;
         }
 
-        // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the original buffer.
+        // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
+        // original buffer.
         // TODO: This could probably be built into the slice check above.
         bool is_transpose = true;
         std::vector<int> permutation;
@@ -1224,6 +1225,7 @@ public:
         set_result(expr(0));
         return;
       }
+      break;
     default: break;
     }
     set_result(op);
