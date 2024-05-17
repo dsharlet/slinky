@@ -11,7 +11,7 @@ namespace slinky {
 namespace rewrite {
 
 // The maximum number of values pattern_wildcard::idx and pattern_constant::idx can have, starting from 0.
-constexpr int symbol_count = 4;
+constexpr int symbol_count = 5;
 constexpr int constant_count = 5;
 
 template <int N>
@@ -372,6 +372,8 @@ template <typename T>
 auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
 template <typename T>
 auto is_constant(const T& x) { return make_predicate(x, slinky::as_constant); }
+template <typename T>
+auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
 // clang-format on
 
 template <int N1, int N2>
