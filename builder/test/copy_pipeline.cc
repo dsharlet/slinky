@@ -119,12 +119,17 @@ TEST(padded_copy, pipeline) {
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
-class copied_result : public testing::TestWithParam<int> {};
+class copied_result : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, copied_result, testing::Range(0, 3));
+auto offsets = testing::Values(0, 1, 3);
+
+INSTANTIATE_TEST_SUITE_P(schedule, copied_result, testing::Combine(testing::Range(0, 3), offsets, offsets),
+    test_params_to_string<copied_result::ParamType>);
 
 TEST_P(copied_result, pipeline) {
-  int schedule = GetParam();
+  int schedule = std::get<0>(GetParam());
+  int offset_x = std::get<1>(GetParam());
+  int offset_y = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -139,7 +144,7 @@ TEST_P(copied_result, pipeline) {
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func stencil = func::make(sum3x3<short>, {{in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm, {x, y}}});
-  func padded = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
+  func padded = func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}}, {out, {x, y}});
 
   switch (schedule) {
   case 0: break;
@@ -156,7 +161,7 @@ TEST_P(copied_result, pipeline) {
   const int W = 20;
   const int H = 10;
   buffer<short, 2> in_buf({W + 2, H + 2});
-  in_buf.translate(-1, -1);
+  in_buf.translate(-1 + offset_x, -1 + offset_y);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -173,7 +178,7 @@ TEST_P(copied_result, pipeline) {
       int correct = 0;
       for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-          correct += in_buf(x + dx, y + dy);
+          correct += in_buf(x + dx + offset_x, y + dy + offset_y);
         }
       }
       ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;

@@ -326,11 +326,11 @@ public:
       }
 
       a.dims[src_d] = {
-          buffer_bounds(op->dst, dst_d) & info->dims[src_d].bounds,
+          (buffer_bounds(op->dst, dst_d) + offset) & info->dims[src_d].bounds,
           buffer_stride(op->dst, dst_d),
           buffer_fold_factor(op->dst, dst_d),
       };
-      a.at[dst_d] = max(buffer_min(op->dst, dst_d) - offset, info->dims[dst_d].bounds.min);
+      a.at[dst_d] = max(buffer_min(op->dst, dst_d), info->dims[src_d].bounds.min - offset);
     }
 
     for (const dim_expr& d : a.dims) {
