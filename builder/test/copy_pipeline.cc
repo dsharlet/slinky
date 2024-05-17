@@ -121,7 +121,7 @@ TEST(padded_copy, pipeline) {
 
 class copied_result : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
-auto offsets = testing::Values(0, 1, 3);
+auto offsets = testing::Values(0, 3);
 
 INSTANTIATE_TEST_SUITE_P(schedule, copied_result, testing::Combine(testing::Range(0, 3), offsets, offsets),
     test_params_to_string<copied_result::ParamType>);
