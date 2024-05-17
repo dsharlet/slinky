@@ -21,6 +21,8 @@ stmt implement_copies(const stmt& s, node_context& ctx);
 // insert `clone_buffer` operations that clone buffers inside parallel loops.
 stmt fix_buffer_races(const stmt& s);
 
+// Find allocate nodes and try to insert free into them.
+stmt insert_early_free(const stmt& s);
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

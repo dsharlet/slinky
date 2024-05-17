@@ -591,4 +591,108 @@ public:
 
 stmt fix_buffer_races(const stmt& s) { return race_condition_fixer().mutate(s); }
 
+namespace {
+
+class insert_free_into_allocate : public node_mutator {
+  // Contains the sym of the allocate node + all other buffer nodes which reference it.
+  std::vector<var> names;
+  // If we found some statement which references anything from `names`.
+  bool found = false;
+  // We don't want to insert into the very last statement of the block,
+  // so use this flag to mark that we visited at least one.
+  bool visited_something = false;
+
+public:
+  insert_free_into_allocate(var name) { names.push_back(name); }
+
+  void visit(const block* op) override {
+    // Visit blocks in reverse order.
+    std::vector<stmt> stmts(op->stmts.size());
+    bool changed = false;
+    for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
+      // Don't mutate the rest if we changed one of the block's statements.
+      if (changed || found) {
+        stmts[i] = op->stmts[i];
+      } else {
+        stmts[i] = mutate(op->stmts[i]);
+      }
+      // We don't want to insert into the very last statement of the block,
+      // so use this flag to mark that we visited at least one.
+      visited_something = true;
+      changed = changed || !stmts[i].same_as(op->stmts[i]);
+    }
+    if (!changed) {
+      set_result(op);
+    } else {
+      set_result(block::make(std::move(stmts)));
+    }
+  }
+
+  // Handler for the `terminal` nodes.
+  void visit_terminal(const stmt& s) {
+    stmt result = s;
+    if (!found && depends_on(s, names).any()) {
+      found = true;
+      if (visited_something) {
+        result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}))});
+      }
+    }
+
+    set_result(result);
+  }
+
+  void visit(const loop* op) override { visit_terminal(op); }
+  void visit(const call_stmt* op) override { visit_terminal(op); }
+  void visit(const copy_stmt* op) override { visit_terminal(op); }
+
+  // Remaining functions collect all the buffer symbols which refer the original allocate
+  // symbol or its dependencies.
+  void visit(const make_buffer* op) override {
+    bool base_depends = depends_on(op->base, names).any();
+    if (base_depends) {
+      names.push_back(op->sym);
+    }
+    node_mutator::visit(op);
+    if (base_depends) {
+      names.pop_back();
+    }
+  }
+
+  template <typename T>
+  void visit_buffer_mutator(const T* op) {
+    auto n = std::find(names.begin(), names.end(), op->src);
+    if (n != names.end()) {
+      names.push_back(op->sym);
+    }
+    node_mutator::visit(op);
+    if (n != names.end()) {
+      names.pop_back();
+    }
+  }
+
+  void visit(const clone_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const transpose* op) override { visit_buffer_mutator(op); }
+};
+
+class early_free_inserter : public node_mutator {
+public:
+  void visit(const allocate* op) override {
+    stmt body = mutate(op->body);
+    body = insert_free_into_allocate(op->sym).mutate(body);
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(allocate::make(op->sym, op->storage, op->elem_size, op->dims, body));
+    }
+  }
+};
+
+}  // namespace
+
+stmt insert_early_free(const stmt& s) { return early_free_inserter().mutate(s); }
+
 }  // namespace slinky
