@@ -119,14 +119,14 @@ TEST(padded_copy, pipeline) {
   ASSERT_EQ(eval_ctx.heap.total_count, 1);
 }
 
-class copied_result : public testing::TestWithParam<std::tuple<int, int, int>> {};
+class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 auto offsets = testing::Values(0, 3);
 
-INSTANTIATE_TEST_SUITE_P(schedule, copied_result, testing::Combine(testing::Range(0, 3), offsets, offsets),
-    test_params_to_string<copied_result::ParamType>);
+INSTANTIATE_TEST_SUITE_P(schedule, copied_output, testing::Combine(testing::Range(0, 3), offsets, offsets),
+    test_params_to_string<copied_output::ParamType>);
 
-TEST_P(copied_result, pipeline) {
+TEST_P(copied_output, pipeline) {
   int schedule = std::get<0>(GetParam());
   int offset_x = std::get<1>(GetParam());
   int offset_y = std::get<2>(GetParam());
@@ -144,15 +144,82 @@ TEST_P(copied_result, pipeline) {
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func stencil = func::make(sum3x3<short>, {{in, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm, {x, y}}});
-  func padded = func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}}, {out, {x, y}});
+  func copied = func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}}, {out, {x, y}});
 
   switch (schedule) {
   case 0: break;
   case 1:
-    padded.loops({y});
+    copied.loops({y});
     stencil.compute_root();
     break;
-  case 2: padded.loops({y}); break;
+  case 2: copied.loops({y}); break;
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W + 2, H + 2});
+  in_buf.translate(-1 + offset_x, -1 + offset_y);
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          correct += in_buf(x + dx + offset_x, y + dy + offset_y);
+        }
+      }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
+}
+
+class copied_input : public testing::TestWithParam<std::tuple<int, int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(schedule, copied_input, testing::Combine(testing::Range(0, 3), offsets, offsets),
+    test_params_to_string<copied_input::ParamType>);
+
+TEST_P(copied_input, pipeline) {
+  int schedule = std::get<0>(GetParam());
+  int offset_x = std::get<1>(GetParam());
+  int offset_y = std::get<2>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func copied = func::make_copy({in, {point(x + offset_x), point(y + offset_y)}}, {intm, {x, y}});
+  func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+
+  switch (schedule) {
+  case 0: break;
+  case 1:
+    copied.loops({y});
+    stencil.compute_root();
+    break;
+  case 2: copied.loops({y}); break;
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
