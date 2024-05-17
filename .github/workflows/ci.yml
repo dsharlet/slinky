@@ -32,7 +32,7 @@ jobs:
           
       - name: Setup Cpp
         run: |
-          docker build -f ./.github/ubuntu.dockerfile -t setup-cpp .
+          docker build -f .github/setup-cpp-ubuntu-llvm.dockerfile -t setup-cpp .
 
       - name: Build and test
         run: bazel test --test_output=errors ...
