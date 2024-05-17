@@ -22,18 +22,17 @@ jobs:
   #         clangFormatVersion: 17
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: true
-
+          
       - name: Setup Cpp
-        uses: aminya/setup-cpp@v1
-        with:
-          compiler: llvm
+        run: |
+          docker build -f ./.github/ubuntu.dockerfile -t setup-cpp .
 
       - name: Build and test
         run: bazel test --test_output=errors ...
