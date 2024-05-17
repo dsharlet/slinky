@@ -256,9 +256,9 @@ auto p = []() -> ::slinky::pipeline {
   auto in1 = buffer_expr::make(ctx, "in1", /*rank=*/2, /*elem_size=*/2);
   auto in2 = buffer_expr::make(ctx, "in2", /*rank=*/2, /*elem_size=*/2);
   auto out = buffer_expr::make(ctx, "out", /*rank=*/2, /*elem_size=*/2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", /*rank=*/2, /*elem_size=*/2);
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
+  auto intm1 = buffer_expr::make(ctx, "intm1", /*rank=*/2, /*elem_size=*/2);
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -312,9 +312,9 @@ auto p = []() -> ::slinky::pipeline {
   auto in1 = buffer_expr::make(ctx, "in1", /*rank=*/2, /*elem_size=*/2);
   auto in2 = buffer_expr::make(ctx, "in2", /*rank=*/2, /*elem_size=*/2);
   auto out = buffer_expr::make(ctx, "out", /*rank=*/3, /*elem_size=*/2);
-  auto intm1 = buffer_expr::make(ctx, "intm1", /*rank=*/2, /*elem_size=*/2);
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
+  auto intm1 = buffer_expr::make(ctx, "intm1", /*rank=*/2, /*elem_size=*/2);
   auto _replica_fn_2 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -377,7 +377,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, {});
   auto _4 = variable::make(in->sym());
-  auto _fn_1 = func::make_copy({{intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}, {}}}, {padded_intm, {x, y}});
+  auto _fn_1 = func::make_copy({intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}, {}}, {padded_intm, {x, y}}, {6, 0});
   _fn_1.compute_root();
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
