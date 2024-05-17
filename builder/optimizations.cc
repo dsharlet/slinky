@@ -169,24 +169,6 @@ class buffer_aliaser : public node_mutator {
         return;
       }
 
-      assert(dims.size() == a.dims.size());
-      for (std::size_t d = 0; d < dims.size(); ++d) {
-        if (!a.assume_in_bounds) {
-          if (!prove_true(dims[d].bounds.min >= a.dims[d].bounds.min) ||
-              !prove_true(dims[d].bounds.max <= a.dims[d].bounds.max)) {
-            // This alias is not compatible because it isn't big enough for the original allocation.
-            // TODO: We could maybe grow the original allocation instead of giving up here.
-            return;
-          }
-        }
-        if (dims[d].stride.defined()) {
-          if (!prove_true(dims[d].stride == a.dims[d].stride)) {
-            // This alias is not compatible because it would violate a constraint on the stride of the buffer.
-            return;
-          }
-        }
-      }
-
       can_alias_[s] = std::move(a);
     }
 
@@ -229,6 +211,31 @@ public:
     for (const auto& target : info.can_alias()) {
       var target_var = target.first;
       const buffer_alias& alias = target.second;
+
+      bool use_alias = true;
+
+      assert(op->dims.size() == alias.dims.size());
+      for (std::size_t d = 0; d < op->dims.size(); ++d) {
+        if (!alias.assume_in_bounds) {
+          if (!prove_true(op->dims[d].bounds.min >= alias.dims[d].bounds.min) ||
+              !prove_true(op->dims[d].bounds.max <= alias.dims[d].bounds.max)) {
+            // This alias is not compatible because it isn't big enough for the original allocation.
+            // TODO: We could maybe grow the original allocation instead of giving up here.
+            use_alias = false;
+            break;
+          }
+        }
+        if (op->dims[d].stride.defined()) {
+          if (!prove_true(op->dims[d].stride == alias.dims[d].stride)) {
+            // This alias is not compatible because it would violate a constraint on the stride of the buffer.
+            use_alias = false;
+            break;
+          }
+        }
+      }
+      if (!use_alias) {
+        continue;
+      }
 
       // Replace the allocation with a buffer using the dims the alias wants.
       stmt result =
