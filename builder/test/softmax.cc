@@ -2,10 +2,12 @@
 #include <gtest/gtest.h>
 
 #include "builder/pipeline.h"
+#include "builder/test/context.h"
 #include "builder/test/funcs.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
+#include "runtime/visualize.h"
 
 namespace slinky {
 
@@ -96,20 +98,25 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<std::tuple<int, int, bool>> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int, bool, bool>> {};
 
 auto split_factors = testing::Values(0, 1, 4);
 
-INSTANTIATE_TEST_SUITE_P(mode, softmax, testing::Combine(split_factors, split_factors, testing::Values(false)),
+INSTANTIATE_TEST_SUITE_P(mode, softmax,
+    testing::Combine(split_factors, split_factors, testing::Values(false), testing::Values(false)),
+    test_params_to_string<softmax::ParamType>);
+
+INSTANTIATE_TEST_SUITE_P(compute_at, softmax, testing::Values(std::make_tuple(1, 1, true, false)),
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(
-    compute_at, softmax, testing::Values(std::make_tuple(1, 1, true)), test_params_to_string<softmax::ParamType>);
+    with_copy, softmax, testing::Values(std::make_tuple(1, 1, false, true)), test_params_to_string<softmax::ParamType>);
 
 TEST_P(softmax, pipeline) {
   const int split_c = std::get<0>(GetParam());
   const int split_b = std::get<1>(GetParam());
   const bool use_compute_at = std::get<2>(GetParam());
+  const bool copy_at_the_end = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -124,6 +131,7 @@ TEST_P(softmax, pipeline) {
   auto exp_in = buffer_expr::make(ctx, "exp_in", rank, sizeof(float));
   auto sum_exp_in = buffer_expr::make(ctx, "sum_exp_in", rank - 1, sizeof(float));
   auto softmax_out = buffer_expr::make(ctx, "softmax_out", rank, sizeof(float));
+  auto add_out = buffer_expr::make(ctx, "add_out", rank, sizeof(float));
 
   var c(ctx, "c");
   var b(ctx, "b");
@@ -139,9 +147,15 @@ TEST_P(softmax, pipeline) {
       {{exp_in, {c, b}}, {sum_exp_in, {b}}}, call_stmt::attributes{.name = "exp_in"});
   func pass3 = func::make(normalize, {{exp_in, {all_c, point(b)}}, {sum_exp_in, {point(b)}}}, {{softmax_out, {c, b}}},
       call_stmt::attributes{.name = "normalize"});
+
   // Add a trivial consumer so we can have an inner loop here too.
-  func pass4 = func::make(
-      add_1<float>, {{softmax_out, {point(c), point(b)}}}, {{out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
+  func pass4 = func::make(add_1<float>, {{softmax_out, {point(c), point(b)}}},
+      {{copy_at_the_end ? add_out : out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
+
+  func copy;
+  if (copy_at_the_end) {
+    copy = func::make_copy({add_out, {point(c), point(b)}}, {out, {c, b}});
+  }
 
   std::vector<func::loop_info> loops;
   if (split_c > 0) loops.push_back({c, split_c});
@@ -156,8 +170,8 @@ TEST_P(softmax, pipeline) {
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
-  const int D = 10;
-  const int B = 10;
+  const int D = 30;
+  const int B = 20;
   buffer<float, rank> in_buf({D, B});
   buffer<float, rank> out_buf({D, B});
 
@@ -168,7 +182,7 @@ TEST_P(softmax, pipeline) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  eval_context eval_ctx;
+  test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   // Compare against the fused pipeline.
@@ -184,6 +198,24 @@ TEST_P(softmax, pipeline) {
     auto out_b = span<const float>(&out_buf(0, b), D);
     auto ref_b = span<const float>(&ref_buf(0, b), D);
     ASSERT_THAT(out_b, testing::Pointwise(testing::FloatNear(1e-6f), ref_b));
+  }
+
+  if (split_b > 0) {
+    const int sum_exp_in_allocation = split_b;
+    const int exp_in_allocation = split_b * D;
+    const int max_in_allocation = split_b;
+    const int softmax_in_allocation = split_b * D;
+    // This one is a bit odd, not sure why max is needed.
+    const int softmax_out_allocation = split_b * (split_c == 0 ? D : std::max(split_b, split_c));
+    ASSERT_EQ(eval_ctx.heap.total_size, (sum_exp_in_allocation + exp_in_allocation + max_in_allocation +
+                                            softmax_in_allocation + softmax_out_allocation) *
+                                            sizeof(float));
+  }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 5);
+
+  if (split_c == 0 && !use_compute_at) {
+    check_visualize("softmax_split_" + std::to_string(split_b) + ".html", p, inputs, outputs, &ctx);
   }
 }
 

@@ -6,7 +6,10 @@ package(
 cc_library(
     name = "util",
     testonly = True,
-    srcs = ["context.cc"],
+    srcs = [
+        "context.cc", 
+        "util.cc",
+    ],
     hdrs = [
         "context.h",
         "funcs.h",
@@ -14,10 +17,11 @@ cc_library(
     ],
     deps = [
         "//runtime",
+        "//runtime:visualize",
         "//base:chrome_trace",
         "//base:thread_pool",
         "//base/test:util",
-        "@bazel_tools//tools/cpp/runfiles",
+        "//builder:replica_pipeline",
         "@googletest//:gtest",
     ],
 )
@@ -67,8 +71,6 @@ cc_test(
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "//runtime:visualize",
-        "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
     size = "small",
@@ -84,7 +86,6 @@ cc_test(
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
     size = "small",
@@ -100,7 +101,6 @@ cc_test(
         "//builder",
         "//builder:replica_pipeline",
         "//runtime",
-        "@bazel_tools//tools/cpp/runfiles",  # Needed for -DBAZEL_CURRENT_REPOSITORY even though it's used transitively via util
         "@googletest//:gtest_main",
     ],
     size = "small",
@@ -109,6 +109,21 @@ cc_test(
 cc_test(
     name = "softmax",
     srcs = ["softmax.cc"],
+    data = glob(["visualize/*.html"]),
+    deps = [
+        ":util",
+        "//base/test:util",
+        "//builder",
+        "//runtime",
+        "//runtime:visualize",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
+    name = "aligned_producer",
+    srcs = ["aligned_producer.cc"],
     deps = [
         ":util",
         "//builder",
@@ -119,8 +134,20 @@ cc_test(
 )
 
 cc_test(
-    name = "aligned_producer",
-    srcs = ["aligned_producer.cc"],
+    name = "tile_area",
+    srcs = ["tile_area.cc"],
+    deps = [
+        ":util",
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
+    name = "cannot_alias",
+    srcs = ["cannot_alias.cc"],
     deps = [
         ":util",
         "//builder",

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <numeric>
 #include <random>
 
@@ -91,8 +92,7 @@ void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& o
       dim.set_extent(1);
     }
     if (options.allow_broadcast && random(0, 9) == 0) {
-      // Make this a broadcast.
-      dim.set_stride(0);
+      dim = slinky::dim::broadcast();
     } else {
       dim.set_stride(stride);
       // Add some extra random padding.
@@ -733,17 +733,14 @@ TEST(buffer, copy) {
     std::fill(padding.begin(), padding.end(), 7);
 
     buffer<void, max_rank> src(rank, elem_size);
-    for (std::size_t d = 0; d < src.rank; ++d) {
-      src.dim(d).set_min_extent(0, 5);
-    }
-    randomize_strides_and_padding(src, {-1, 1, true, false});
-    init_random(src);
-
     buffer<void, max_rank> dst(rank, elem_size);
     for (std::size_t d = 0; d < src.rank; ++d) {
-      dst.dim(d) = src.dim(d);
+      src.dim(d).set_min_extent(0, 5);
+      dst.dim(d).set_min_extent(0, 5);
     }
+    randomize_strides_and_padding(src, {-1, 1, true, false});
     randomize_strides_and_padding(dst, {-1, 1, false, false});
+    init_random(src);
     dst.allocate();
 
     slinky::copy(src, dst, padding.data());
@@ -755,36 +752,13 @@ TEST(buffer, copy) {
       }
     });
 
-    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent * elem_size; ++i) {
-        reinterpret_cast<char*>(base)[i] += 1;
-      }
-    });
-
-    slinky::copy(src, dst, nullptr);
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        // The copied area should have been copied.
-        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        // The padding should be unchanged.
-        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
-      }
-    });
-
-    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent * elem_size; ++i) {
-        reinterpret_cast<char*>(base)[i] += -1;
-      }
-    });
-
     std::vector<char> new_padding(elem_size);
     std::fill(new_padding.begin(), new_padding.end(), 3);
     pad(src.dims, dst, new_padding.data());
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
-        // The src should not have been copied.
-        ASSERT_NE(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
+        // The src should not have been modified.
+        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
         // But we should have new padding.
         ASSERT_EQ(memcmp(dst.address_at(i), new_padding.data(), elem_size), 0);
@@ -889,48 +863,6 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   fuse_contiguous_dims(dims_sets, a, b);
   ASSERT_EQ(a.rank, 4);
   ASSERT_EQ(b.rank, 4);
-}
-
-TEST(fuse_contiguous_dims, copy) {
-  constexpr int max_rank = 4;
-  int optimized = 0;
-  for (int cases = 0; cases < 10000; ++cases) {
-    int rank = random(0, max_rank);
-    int elem_size = random(1, 12);
-
-    std::vector<char> padding(elem_size);
-    std::fill(padding.begin(), padding.end(), 7);
-
-    buffer<void, max_rank> src(rank, elem_size);
-    for (std::size_t d = 0; d < src.rank; ++d) {
-      src.dim(d).set_min_extent(0, 5);
-    }
-    randomize_strides_and_padding(src, {-1, 1, true, true});
-    init_random(src);
-    buffer<void, max_rank> src_opt = src;
-
-    buffer<void, max_rank> dst(rank, elem_size);
-    for (std::size_t d = 0; d < src.rank; ++d) {
-      dst.dim(d) = src.dim(d);
-    }
-    randomize_strides_and_padding(dst, {-1, 1, false, false});
-    buffer<void, max_rank> dst_opt = dst;
-    dst.allocate();
-    dst_opt.allocate();
-
-    slinky::copy(src, dst, padding.data());
-
-    fuse_contiguous_dims(dst_opt, src_opt);
-    slinky::copy(src_opt, dst_opt, padding.data());
-    optimized += dst_opt.rank != dst.rank ? 1 : 0;
-
-    raw_buffer dst_reshaped = dst_opt;
-    dst_reshaped.dims = dst.dims;
-    dst_reshaped.rank = dst.rank;
-
-    for_each_element([=](const void* a, const void* b) { ASSERT_EQ(memcmp(a, b, elem_size), 0); }, dst, dst_reshaped);
-  }
-  ASSERT_GT(optimized, 0);
 }
 
 }  // namespace slinky

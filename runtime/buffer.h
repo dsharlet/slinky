@@ -31,52 +31,56 @@ const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
 // (except for expr instead of index_t).
 class dim {
   index_t min_;
-  index_t extent_;
+  index_t max_;
   index_t stride_;
   index_t fold_factor_;
 
 public:
+  static constexpr index_t auto_stride = std::numeric_limits<index_t>::min();
   static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
 
-  dim() : min_(0), extent_(0), stride_(0), fold_factor_(unfolded) {}
+  dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
+  dim(index_t min, index_t max, index_t stride = auto_stride, index_t fold_factor = unfolded)
+      : min_(min), max_(max), stride_(stride), fold_factor_(fold_factor) {}
+
+  static const dim& broadcast();
 
   index_t min() const { return min_; }
-  index_t max() const { return min_ + extent_ - 1; }
+  index_t max() const { return max_; }
   index_t begin() const { return min_; }
-  index_t end() const { return min_ + extent_; }
-  index_t extent() const { return extent_; }
+  index_t end() const { return max_ + 1; }
+  index_t extent() const { return max_ - min_ + 1; }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
+  bool empty() const { return max_ < min_; }
 
-  void set_extent(index_t extent) { extent_ = extent; }
+  void set_extent(index_t extent) { max_ = min_ + extent - 1; }
   void set_point(index_t x) {
     min_ = x;
-    extent_ = 1;
+    max_ = x;
   }
   void set_bounds(index_t min, index_t max) {
     min_ = min;
-    extent_ = max - min + 1;
+    max_ = max;
   }
   void set_range(index_t begin, index_t end) {
     min_ = begin;
-    extent_ = end - begin;
+    max_ = end - 1;
   }
   void set_min_extent(index_t min, index_t extent) {
     min_ = min;
-    extent_ = extent;
+    max_ = min + extent - 1;
   }
   void set_stride(index_t stride) { stride_ = stride; }
   void set_fold_factor(index_t fold_factor) { fold_factor_ = fold_factor; }
 
-  void translate(index_t offset) { min_ += offset; }
+  void translate(index_t offset) {
+    min_ += offset;
+    max_ += offset;
+  }
 
   // Returns true if the interval [a, b] is in bounds of this dimension.
-  bool contains(index_t a, index_t b) const {
-    // Conceptually, accesses may be out of bounds, but in practice, if the stride is 0, the accesses will not read
-    // invalid memory. It's a bit messy to allow this, but it feels really overzealous to disallow it when attempting to
-    // implement broadcasting in callbacks.
-    return stride() == 0 || (min() <= a && b <= max());
-  }
+  bool contains(index_t a, index_t b) const { return min() <= a && b <= max(); }
   bool contains(index_t x) const { return contains(x, x); }
   bool contains(const dim& other) const { return contains(other.min(), other.max()); }
 
@@ -87,6 +91,11 @@ public:
     } else {
       return euclidean_mod(i - min(), fold_factor()) * stride();
     }
+  }
+
+  bool is_folded() const {
+    if (fold_factor() == unfolded) return false;
+    return min() / fold_factor() != max() / fold_factor();
   }
 };
 
@@ -239,7 +248,11 @@ public:
   raw_buffer& slice(std::size_t d) { return slice({d}); }
   raw_buffer& slice(std::size_t d, index_t at) {
     if (base != nullptr) {
-      base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+      if (dim(d).contains(at)) {
+        base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+      } else {
+        base = nullptr;
+      }
     }
     return slice({d});
   }
@@ -258,13 +271,16 @@ public:
 
     dim(d).set_bounds(min, max);
     // Crops can't span a folding boundary if they move the base pointer.
-    assert(offset == 0 || dim(d).min() / dim(d).fold_factor() == dim(d).max() / dim(d).fold_factor());
+    assert(offset == 0 || !dim(d).is_folded());
     return *this;
   }
 
   std::size_t size_bytes() const;
 
   std::size_t elem_count() const;
+
+  // If any strides are `auto_stride`, replace them with automatically determined strides.
+  void init_strides(index_t alignment = 1);
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `free`.
@@ -363,14 +379,12 @@ public:
   // dimension is "innermost".
   buffer(span<const index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
       : buffer(extents.size(), elem_size) {
-    index_t stride = elem_size;
     slinky::dim* d = dims;
     for (index_t extent : extents) {
       d->set_min_extent(0, extent);
-      d->set_stride(stride);
-      stride *= extent;
       ++d;
     }
+    init_strides();
   }
   buffer(std::initializer_list<index_t> extents, std::size_t elem_size = internal::default_elem_size<T>::value)
       : buffer({extents.begin(), extents.end()}, elem_size) {}
@@ -455,9 +469,9 @@ const buffer<NewT>& raw_buffer::cast() const {
   return *reinterpret_cast<const buffer<NewT>*>(this);
 }
 
-// Copy the contents of `src` to `dst`. When the `src` is out of bounds of `dst`, fill with `padding`.
-// `padding` should point to `dst.elem_size` bytes, or if `padding` is null, out of bounds regions
-// are unmodified.
+// Copy the contents of `src` to `dst`.
+// If `padding` is null, `src` must contain every index that `dst` contains.
+// If `padding` is non-null, `dst` is filled with the padding when it is out of bounds of `src`.
 void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding = nullptr);
 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
@@ -468,7 +482,7 @@ void fill(const raw_buffer& dst, const void* value);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.extent() == 1) return true;
+  if (outer.extent() == 1 && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
   if (inner.stride() * inner.extent() != outer.stride()) return false;
   return true;
@@ -492,9 +506,9 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
     assert(id.fold_factor() == dim::unfolded);
     id.set_fold_factor(od.fold_factor() * id.extent());
   }
-  id.set_min_extent(od.min() * id.extent(), od.extent() * id.extent());
+  id.set_range(od.begin() * id.extent(), od.end() * id.extent());
   if (type == fuse_type::keep) {
-    od.set_min_extent(0, 1);
+    od.set_point(0);
   } else if (type == fuse_type::remove) {
     buf.slice(outer);
   } else {
@@ -513,7 +527,7 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
 }
 
 inline bool same_bounds(const dim& a, const dim& b) {
-  return a.min() == b.min() && a.extent() == b.extent() && a.fold_factor() == b.fold_factor();
+  return a.min() == b.min() && a.max() == b.max() && a.fold_factor() == b.fold_factor();
 }
 
 // Returns true if all buffers have the same bounds in dimension d.

@@ -533,6 +533,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr bounds_d = mutate(op->dims[d].bounds);
       dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
@@ -580,6 +581,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       interval_expr new_bounds = mutate(op->dims[d].bounds);
       dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
+      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
@@ -593,52 +595,35 @@ public:
     }
 
     if (const call* bc = base.as<call>()) {
-      if (bc->intrinsic == intrinsic::buffer_at && bc->args.size() == 1) {
-        // Check if this make_buffer is truncate_rank, or a clone.
-        const var* src_buf = as_variable(bc->args[0]);
-        assert(src_buf);
-        if (match(elem_size, buffer_elem_size(*src_buf))) {
-          bool is_clone = true;
-          for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
-            is_clone = is_clone && match(dims[d], buffer_dim(*src_buf, d));
-          }
-          if (is_clone) {
-            if (*src_buf == op->sym) {
-              set_result(mutate(truncate_rank::make(op->sym, *src_buf, dims.size(), std::move(body))));
-              return;
-            }
-            const std::optional<box_expr>& src_bounds = buffer_bounds[*src_buf];
-            if (src_bounds && src_bounds->size() == dims.size()) {
-              // This is a clone of src_buf.
-              set_result(mutate(clone_buffer::make(op->sym, *src_buf, std::move(body))));
-              return;
-            }
-          }
-        }
-      }
-
-      // Check if this make_buffer is equivalent to slice_buffer or crop_buffer
+      // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
       if (bc->intrinsic == intrinsic::buffer_at && match(elem_size, buffer_elem_size(op->sym))) {
         const var* src_buf = as_variable(bc->args[0]);
         assert(src_buf);
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
-        std::size_t dim = 0;
+        int dim = 0;
         std::size_t slice_rank = 0;
+        std::size_t at_rank =
+            std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
         bool is_slice = true;
-        for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+        for (int d = 0; d < static_cast<int>(dims.size() + at_rank); ++d) {
           if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
             // Skip this dimension.
             ++dim;
-          } else {
+          } else if (slice_rank < dims.size()) {
             // This arg is undefined. We need to find the next dimension here to be a slice.
-            ++slice_rank;
-            is_slice = is_slice && match(dims[dim], buffer_dim(*src_buf, d));
+            is_slice = is_slice && match(dims[slice_rank++], buffer_dim(*src_buf, dim++));
+          } else {
+            is_slice = false;
+            break;
           }
         }
         if (is_slice && slice_rank == dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          set_result(mutate(slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body))));
+          // make_buffer drops trailing dims, do the same here.
+          stmt result = slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body));
+          result = transpose::make_truncate(op->sym, op->sym, dims.size() + at_rank, std::move(result));
+          set_result(mutate(result));
           return;
         }
 
@@ -664,7 +649,43 @@ public:
           }
         }
         if (is_crop) {
-          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
+          stmt result = crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body));
+          result = transpose::make_truncate(op->sym, op->sym, dims.size(), std::move(result));
+          set_result(mutate(result));
+          return;
+        }
+
+        // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
+        // original buffer.
+        // TODO: This could probably be built into the slice check above.
+        bool is_transpose = true;
+        std::vector<int> permutation;
+        permutation.reserve(dims.size());
+        // Returns the dimension of a buffer intrinsic, or -1 if not the expected intrinsic.
+        auto buffer_intrinsic_dim = [=](intrinsic fn, const expr& x) -> int {
+          if (const call* c = x.as<call>()) {
+            if (c->intrinsic != fn) return -1;
+            assert(c->args.size() == 2);
+
+            if (*as_variable(c->args[0]) != *src_buf) return -1;
+            return *as_constant(c->args[1]);
+          }
+          return -1;
+        };
+        for (std::size_t d = 0; d < dims.size(); ++d) {
+          int min_dim = buffer_intrinsic_dim(intrinsic::buffer_min, dims[d].bounds.min);
+          int max_dim = buffer_intrinsic_dim(intrinsic::buffer_max, dims[d].bounds.max);
+          int stride_dim = buffer_intrinsic_dim(intrinsic::buffer_stride, dims[d].stride);
+          int fold_factor_dim = buffer_intrinsic_dim(intrinsic::buffer_fold_factor, dims[d].fold_factor);
+          if (min_dim >= 0 && min_dim == max_dim && min_dim == stride_dim && fold_factor_dim == min_dim) {
+            permutation.push_back(min_dim);
+          } else {
+            is_transpose = false;
+            break;
+          }
+        }
+        if (is_transpose) {
+          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), std::move(body))));
           return;
         }
       }
@@ -724,7 +745,6 @@ public:
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    expr sym_var = variable::make(op->sym);
     const std::optional<box_expr>& prev_bounds = buffer_bounds[op->sym];
     index_t dims_count = 0;
     bool changed = false;
@@ -752,9 +772,10 @@ public:
     } else if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(new_bounds.size()); ++d) {
-        new_bounds[d] &= slinky::buffer_bounds(sym_var, d);
+        new_bounds[d] &= slinky::buffer_bounds(op->src, d);
       }
       body = substitute_bounds(body, op->sym, new_bounds);
+      body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
     }
@@ -786,7 +807,6 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    expr sym_var = variable::make(op->sym);
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
     bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
@@ -814,7 +834,8 @@ public:
       set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(sym_var, op->dim));
+      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(op->src, op->dim));
+      body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
     }
@@ -823,7 +844,7 @@ public:
       if (slice->sym == op->sym && slice->dim == op->dim) {
         // This is a slice of the same dimension of the buffer we just cropped.
         // Don't drop the clamp that crop performs.
-        expr at = clamp(slice->at, bounds.min, bounds.max);
+        expr at = clamp(slice->at, bounds);
         set_result(mutate(slice_dim::make(op->sym, op->src, op->dim, at, slice->body)));
         return;
       }
@@ -950,17 +971,21 @@ public:
     }
   }
 
-  void visit(const truncate_rank* op) override {
+  void visit(const transpose* op) override {
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
-      if (static_cast<int>(bounds->size()) <= op->rank) {
-        // truncate_rank can't add dimensions.
-        assert(static_cast<int>(bounds->size()) == op->rank);
+      if (op->is_truncate() && bounds->size() <= op->dims.size()) {
+        // transpose can't add dimensions.
+        assert(bounds->size() == op->dims.size());
         // This truncate is a no-op.
         set_result(mutate(op->body));
         return;
       }
-      bounds->resize(op->rank);
+      box_expr new_bounds(op->dims.size());
+      for (std::size_t i = 0; i < op->dims.size(); ++i) {
+        new_bounds[i] = (*bounds)[op->dims[i]];
+      }
+      bounds = std::move(new_bounds);
     }
 
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
@@ -972,13 +997,13 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(truncate_rank::make(op->sym, op->src, op->rank, s)));
+        stmts.push_back(mutate(transpose::make(op->sym, op->src, op->dims, s)));
       }
       set_result(block::make(std::move(stmts)));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(truncate_rank::make(op->sym, op->src, op->rank, std::move(body)));
+      set_result(transpose::make(op->sym, op->src, op->dims, std::move(body)));
     }
   }
 
@@ -1052,6 +1077,164 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
     };
   }
 }
+
+namespace {
+
+class constant_bound : public node_mutator {
+  // > 0 -> we are looking for an upper bound
+  // < 0 -> we are looking for a lower bound
+  int sign;
+
+public:
+  constant_bound(int sign) : sign(sign) {}
+
+  void visit(const class min* op) override {
+    if (sign < 0) {
+      // We can only learn about upper bounds from min.
+      set_result(op);
+      return;
+    }
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(expr(std::min(*ca, *cb)));
+    } else if (ca) {
+      set_result(std::move(a));
+    } else if (cb) {
+      set_result(std::move(b));
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(min(std::move(a), std::move(b)));
+    }
+  }
+
+  void visit(const class max* op) override {
+    if (sign > 0) {
+      // We can only learn about lower bounds from max.
+      set_result(op);
+      return;
+    }
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(expr(std::max(*ca, *cb)));
+    } else if (ca) {
+      set_result(std::move(a));
+    } else if (cb) {
+      set_result(std::move(b));
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(min::make(std::move(a), std::move(b)));
+    }
+  }
+
+  // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
+  void visit(const sub* op) override {
+    expr a = mutate(op->a);
+    sign = -sign;
+    expr b = mutate(op->b);
+    sign = -sign;
+    if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(op);
+    } else {
+      set_result(sub::make(a, b));
+    }
+  }
+
+  static int sign_of(const expr& x) {
+    if (is_positive(x)) return 1;
+    if (is_negative(x)) return -1;
+    return 0;
+  }
+
+  template <typename T>
+  void visit_mul_div(const T* op, bool is_mul) {
+    int sign_a = sign_of(op->a);
+    int sign_b = sign_of(op->b);
+    // TODO: We should be able to handle the numerator of div too, it's just tricky.
+    if (is_mul && sign_a != 0) {
+      int old_sign = sign;
+      sign *= sign_a;
+      expr b = mutate(op->b);
+      sign = old_sign;
+      if (b.same_as(op->b)) {
+        set_result(op);
+      } else {
+        set_result(T::make(op->a, std::move(b)));
+      }
+    } else if (sign_b != 0) {
+      int old_sign = sign;
+      sign *= sign_b;
+      expr a = mutate(op->a);
+      sign = old_sign;
+      if (a.same_as(op->a)) {
+        set_result(op);
+      } else {
+        set_result(T::make(std::move(a), op->b));
+      }
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const mul* op) override { visit_mul_div(op, /*is_mul=*/true); }
+  void visit(const div* op) override { visit_mul_div(op, /*is_mul=*/false); }
+
+  void visit(const mod* op) override { set_result(op); }
+
+  template <typename T>
+  void visit_logical(const T* op) {
+    if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
+  void visit(const equal* op) override { visit_logical(op); }
+  void visit(const not_equal* op) override { visit_logical(op); }
+  void visit(const less* op) override { visit_logical(op); }
+  void visit(const less_equal* op) override { visit_logical(op); }
+  void visit(const logical_and* op) override { visit_logical(op); }
+  void visit(const logical_or* op) override { visit_logical(op); }
+  void visit(const logical_not* op) override { visit_logical(op); }
+  void visit(const class select* op) override {
+    expr t = mutate(op->true_value);
+    expr f = mutate(op->false_value);
+    const index_t* ct = as_constant(t);
+    const index_t* cf = as_constant(f);
+    if (sign < 0 && ct && cf) {
+      set_result(expr(std::min(*ct, *cf)));
+    } else if (sign > 0 && ct && cf) {
+      set_result(expr(std::max(*ct, *cf)));
+    } else if (t.same_as(op->true_value) && f.same_as(op->false_value)) {
+      set_result(op);
+    } else {
+      set_result(select::make(op->condition, std::move(t), std::move(f)));
+    }
+  }
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
+    case intrinsic::abs:
+      if (sign < 0) {
+        set_result(expr(0));
+        return;
+      }
+      break;
+    default: break;
+    }
+    set_result(op);
+  }
+};
+
+}  // namespace
+
+expr constant_upper_bound(const expr& x) { return simplify(constant_bound(/*sign=*/1).mutate(x)); }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);

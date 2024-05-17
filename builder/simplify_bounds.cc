@@ -37,8 +37,9 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
   }
 }
 
-// Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
-void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
+// Attempts to tighten the bounds for correlated expressions a +/- b, where the expressions are "stair step" functions
+// like ((x + c0) / c1) * c2.
+void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
   // Match the LHS and RHS both to the form ((x + a) / b) * c
   // clang-format off
@@ -89,6 +90,35 @@ void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr&
   }
   bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, min);
   bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, max);
+}
+
+// We can tighten the upper bounds of expressions like min(x, y) - max(z, w) when x or y is correlated to z or w in a
+// way we can understand the bounds of.
+// TODO: We could also do a better lower bound for max - min.
+void tighten_correlated_bounds_min_max(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
+  if (sign_b != -1) return;
+
+  const class min* min_a = a.as<class min>();
+  const class max* max_b = b.as<class max>();
+  if (!min_a || !max_b) return;
+
+  // min(aa, ab) - max(ba, bb) is bounded in a way that our interval arithmetic below will miss.
+  expr aa_ba = simplify(min_a->a - max_b->a);
+  expr aa_bb = simplify(min_a->a - max_b->b);
+  expr ab_ba = simplify(min_a->b - max_b->a);
+  expr ab_bb = simplify(min_a->b - max_b->b);
+
+  // TODO: This might be blowing expressions up ridiculously... we might only want to do this in `constant_upper_bound`.
+  for (const expr& i : {aa_ba, aa_bb, ab_ba, ab_bb}) {
+    bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, i);
+  }
+}
+
+// Some correlated expressions are very hard to simplify, but we can get some bounds for them relatively easily.
+// These functions take existing bounds from interval arithmetic, and tighten them (via clamps) when we can do so.
+void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
+  tighten_correlated_bounds_stairs(bounds, a, b, sign_b);
+  tighten_correlated_bounds_min_max(bounds, a, b, sign_b);
 }
 
 }  // namespace
@@ -314,8 +344,10 @@ interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t
     return t;
   } else if (is_false(c.max)) {
     return f;
+  } else if (c.is_point()) {
+    return select(c.min, std::move(t), std::move(f));
   } else {
-    return f | t;
+    return t | f;
   }
 }
 

@@ -41,11 +41,11 @@ struct pattern_type {
   static constexpr expr_node_type value = T::type;
 };
 template <>
-struct pattern_type<int> {
+struct pattern_type<std::int32_t> {
   static constexpr expr_node_type value = expr_node_type::constant;
 };
 template <>
-struct pattern_type<index_t> {
+struct pattern_type<std::int64_t> {
   static constexpr expr_node_type value = expr_node_type::constant;
 };
 

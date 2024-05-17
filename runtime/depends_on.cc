@@ -115,8 +115,17 @@ public:
       deps.buffer_dst = true;
       deps.buffer_meta = true;
     });
+
+    // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
+    depends_on_result* sym_deps = SLINKY_ALLOCA(depends_on_result, op->dst_x.size());
+    for (std::size_t i = 0; i < op->dst_x.size(); ++i) {
+      var_deps.push_back({op->dst_x[i], &sym_deps[i]});
+    }
     for (const expr& i : op->src_x) {
       i.accept(this);
+    }
+    for (std::size_t i = 0; i < op->dst_x.size(); ++i) {
+      var_deps.pop_back();
     }
   }
 
@@ -131,7 +140,7 @@ public:
     for (const dim_expr& i : op->dims) {
       i.bounds.min.accept(this);
       i.bounds.max.accept(this);
-      i.stride.accept(this);
+      if (i.stride.defined()) i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
     visit_sym_body(op);
@@ -177,7 +186,7 @@ public:
     depends_on_result sym_deps = visit_sym_body(op);
     propagate_deps(sym_deps, op->src);
   }
-  void visit(const truncate_rank* op) override {
+  void visit(const transpose* op) override {
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
     depends_on_result sym_deps = visit_sym_body(op);
     propagate_deps(sym_deps, op->src);

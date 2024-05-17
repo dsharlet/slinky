@@ -74,7 +74,7 @@ public:
   void visit(const crop_dim*) override;
   void visit(const slice_buffer*) override;
   void visit(const slice_dim*) override;
-  void visit(const truncate_rank*) override;
+  void visit(const transpose*) override;
   void visit(const check*) override;
 };
 
@@ -88,7 +88,7 @@ stmt clone_with_new_body(const crop_buffer* op, stmt new_body);
 stmt clone_with_new_body(const crop_dim* op, stmt new_body);
 stmt clone_with_new_body(const slice_buffer* op, stmt new_body);
 stmt clone_with_new_body(const slice_dim* op, stmt new_body);
-stmt clone_with_new_body(const truncate_rank* op, stmt new_body);
+stmt clone_with_new_body(const transpose* op, stmt new_body);
 
 // Helper for single statement mutators.
 template <typename T>

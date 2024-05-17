@@ -26,27 +26,25 @@ auto p = []() -> ::slinky::pipeline {
   auto i = var(ctx, "i");
   auto j = var(ctx, "j");
   auto ab = buffer_expr::make(ctx, "ab", /*rank=*/2, /*elem_size=*/4);
-  auto _1 = variable::make(ab->sym());
-  ab->dim(0).stride = (((((((buffer_max(_1, 1)) - (buffer_min(_1, 1)))) + 1)) * 4));
   ab->dim(1).stride = 4;
-  auto _3 = variable::make(a->sym());
-  auto _replica_fn_4 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+  auto _2 = variable::make(a->sym());
+  auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0, &i1};
     const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{a, {point(i), {(buffer_min(_3, 1)), (buffer_max(_3, 1))}}}, {b, {{(buffer_min(_3, 1)), (buffer_max(_3, 1))}, point(j)}}};
+    const func::input inputs[] = {{a, {point(i), {(buffer_min(_2, 1)), (buffer_max(_2, 1))}}}, {b, {{(buffer_min(_2, 1)), (buffer_max(_2, 1))}, point(j)}}};
     const std::vector<var> outputs[] = {{i, j}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_2 = func::make(std::move(_replica_fn_4), {{a, {point(i), {(buffer_min(_3, 1)), (buffer_max(_3, 1))}}}, {b, {{(buffer_min(_3, 1)), (buffer_max(_3, 1))}, point(j)}}}, {{ab, {i, j}}}, {});
-  auto _5 = variable::make(c->sym());
-  auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
+  auto _fn_1 = func::make(std::move(_replica_fn_3), {{a, {point(i), {(buffer_min(_2, 1)), (buffer_max(_2, 1))}}}, {b, {{(buffer_min(_2, 1)), (buffer_max(_2, 1))}, point(j)}}}, {{ab, {i, j}}}, {});
+  auto _4 = variable::make(c->sym());
+  auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<const void>& i1, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0, &i1};
     const buffer<void>* output_buffers[] = {&o0};
-    const func::input inputs[] = {{ab, {point(i), {(buffer_min(_5, 0)), (buffer_max(_5, 0))}}}, {c, {{(buffer_min(_5, 0)), (buffer_max(_5, 0))}, point(j)}}};
+    const func::input inputs[] = {{ab, {point(i), {(buffer_min(_4, 0)), (buffer_max(_4, 0))}}}, {c, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, point(j)}}};
     const std::vector<var> outputs[] = {{i, j}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_0 = func::make(std::move(_replica_fn_6), {{ab, {point(i), {(buffer_min(_5, 0)), (buffer_max(_5, 0))}}}, {c, {{(buffer_min(_5, 0)), (buffer_max(_5, 0))}, point(j)}}}, {{abc, {i, j}}}, {});
+  auto _fn_0 = func::make(std::move(_replica_fn_5), {{ab, {point(i), {(buffer_min(_4, 0)), (buffer_max(_4, 0))}}}, {c, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, point(j)}}}, {{abc, {i, j}}}, {});
   _fn_0.loops({{i, 1, loop::serial}});
   auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
   return p;

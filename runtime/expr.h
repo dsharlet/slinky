@@ -6,6 +6,7 @@
 #include "base/span.h"
 #include "runtime/buffer.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
 #include <memory>
@@ -180,8 +181,8 @@ public:
   expr& operator=(expr&&) = default;
 
   // Make a new constant expression.
-  expr(index_t x);
-  expr(int x) : expr(static_cast<index_t>(x)) {}
+  expr(std::int64_t x);
+  expr(std::int32_t x) : expr(static_cast<std::int64_t>(x)) {}
   expr(var sym);
 
   // Make an `expr` referencing an existing node.
@@ -305,6 +306,9 @@ inline interval_expr point(const expr& x) { return {x, x}; }
 
 inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
 inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
+
+expr clamp(expr x, interval_expr b);
+interval_expr select(const expr& c, interval_expr t, interval_expr f);
 
 // A box is a multidimensional interval.
 using box_expr = std::vector<interval_expr>;

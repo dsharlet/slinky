@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <utility>
@@ -84,19 +85,25 @@ stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
+namespace {
+
 const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
   return n;
 }
 
-const constant* make_constant(index_t value) {
+const constant* make_constant(std::int64_t value) {
+  assert(value <= std::numeric_limits<index_t>::max());
+  assert(value >= std::numeric_limits<index_t>::min());
   auto n = new constant();
   n->value = value;
   return n;
 }
 
-expr::expr(index_t x) : expr(make_constant(x)) {}
+}  // namespace
+
+expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return make_variable(sym); }
@@ -287,6 +294,18 @@ interval_expr interval_expr::operator&(const interval_expr& r) const {
   return result;
 }
 
+expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
+interval_expr select(const expr& c, interval_expr t, interval_expr f) {
+  if (t.is_point() && f.is_point()) {
+    return point(select(std::move(c), std::move(t.min), std::move(f.min)));
+  } else {
+    return {
+        select(c, std::move(t.min), std::move(f.min)),
+        select(c, std::move(t.max), std::move(f.max)),
+    };
+  }
+}
+
 box_expr operator|(box_expr a, const box_expr& b) {
   assert(a.size() == b.size());
   for (std::size_t i = 0; i < a.size(); ++i) {
@@ -466,13 +485,19 @@ stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
   return n;
 }
 
-stmt truncate_rank::make(var sym, var src, int rank, stmt body) {
-  auto n = new truncate_rank();
+stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
+  auto n = new transpose();
   n->sym = sym;
   n->src = src;
-  n->rank = rank;
+  n->dims = dims;
   n->body = std::move(body);
   return n;
+}
+
+stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
+  std::vector<int> dims(rank);
+  std::iota(dims.begin(), dims.end(), 0);
+  return make(sym, src, std::move(dims), std::move(body));
 }
 
 stmt check::make(expr condition) {
@@ -501,9 +526,7 @@ const expr& indeterminate() {
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, expr a) { return (x / a) * a; }
 expr align_up(expr x, expr a) { return ((x + a - 1) / a) * a; }
-interval_expr align(interval_expr x, expr a) {
-  return {align_down(x.min, a), align_up(x.max + 1, a) - 1};
-}
+interval_expr align(interval_expr x, expr a) { return {align_down(x.min, a), align_up(x.max + 1, a) - 1}; }
 
 expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::move(buf)}); }
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
@@ -695,7 +718,7 @@ void recursive_node_visitor::visit(const allocate* op) {
   for (const dim_expr& i : op->dims) {
     i.bounds.min.accept(this);
     i.bounds.max.accept(this);
-    i.stride.accept(this);
+    if (i.stride.defined()) i.stride.accept(this);
     if (i.fold_factor.defined()) i.fold_factor.accept(this);
   }
   if (op->body.defined()) op->body.accept(this);
@@ -736,7 +759,7 @@ void recursive_node_visitor::visit(const slice_dim* op) {
   op->at.accept(this);
   if (op->body.defined()) op->body.accept(this);
 }
-void recursive_node_visitor::visit(const truncate_rank* op) {
+void recursive_node_visitor::visit(const transpose* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const check* op) {

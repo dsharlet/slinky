@@ -287,13 +287,13 @@ public:
     if (!try_match(cds->body, op->body)) return;
   }
 
-  void visit(const truncate_rank* op) override {
-    const truncate_rank* trs = static_cast<const truncate_rank*>(self);
+  void visit(const transpose* op) override {
+    const transpose* trs = static_cast<const transpose*>(self);
     assert(trs);
 
     if (!try_match(trs->sym, op->sym)) return;
     if (!try_match(trs->src, op->src)) return;
-    if (!try_match(trs->rank, op->rank)) return;
+    if (!try_match(trs->dims, op->dims)) return;
     if (!try_match(trs->body, op->body)) return;
   }
 
@@ -544,20 +544,17 @@ public:
     }
   }
 
-  interval_expr substitute_crop_bounds(var src, int dim, const interval_expr& bounds) {
+  interval_expr substitute_crop_bounds(var new_src, var src, int dim, const interval_expr& bounds) {
     // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(sym, dim) and
     // buffer_max(src, dim).
     interval_expr old_bounds = buffer_bounds(src, dim);
     interval_expr new_bounds = {mutate(old_bounds.min), mutate(old_bounds.max)};
     interval_expr result = {mutate(bounds.min), mutate(bounds.max)};
-    // TODO: When substituting the crop src, this algorithm results in adding clamps that are unnecessary. The
-    // simplifier should remove them, but we should avoid generating them in the first place if possible.
-    // We could just not do this if src != op->src, but that seems like a hack.
-    if (!old_bounds.min.same_as(new_bounds.min)) {
+    if (!old_bounds.min.same_as(new_bounds.min) && !is_buffer_min(new_bounds.min, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.min = max(result.min, new_bounds.min);
     }
-    if (!old_bounds.max.same_as(new_bounds.max)) {
+    if (!old_bounds.max.same_as(new_bounds.max) && !is_buffer_max(new_bounds.max, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.max = min(result.max, new_bounds.max);
     }
@@ -569,7 +566,7 @@ public:
     box_expr bounds(op->bounds.size());
     bool changed = false;
     for (std::size_t i = 0; i < op->bounds.size(); ++i) {
-      bounds[i] = substitute_crop_bounds(op->src, i, op->bounds[i]);
+      bounds[i] = substitute_crop_bounds(src, op->src, i, op->bounds[i]);
       changed = changed || !bounds[i].same_as(op->bounds[i]);
     }
     stmt body = mutate_decl_body(op->sym, op->body);
@@ -582,7 +579,7 @@ public:
 
   void visit(const crop_dim* op) override {
     var src = visit_symbol(op->src);
-    interval_expr bounds = substitute_crop_bounds(op->src, op->dim, op->bounds);
+    interval_expr bounds = substitute_crop_bounds(src, op->src, op->dim, op->bounds);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (src == op->src && bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
@@ -625,13 +622,13 @@ public:
     node_mutator::visit(op);
   }
 
-  void visit(const truncate_rank* op) override {
-    // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
+  void visit(const transpose* op) override {
+    // TODO: transpose is a bit tricky, the replacements for expressions might be invalid if they access truncated
     // dims.
     var src = visit_symbol(op->src);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (src != op->src || !body.same_as(op->body)) {
-      set_result(truncate_rank::make(op->sym, src, op->rank, std::move(body)));
+      set_result(transpose::make(op->sym, src, op->dims, std::move(body)));
     } else {
       set_result(op);
     }

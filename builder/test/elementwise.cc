@@ -63,8 +63,7 @@ public:
   void visit(const constant* c) override {
     slinky::dim dims[Rank];
     for (std::size_t d = 0; d < Rank; ++d) {
-      // TODO: Find a better way to not care about bounds of broadcasted dimensions.
-      dims[d].set_bounds(std::numeric_limits<index_t>::min() / 2 + 1, std::numeric_limits<index_t>::max() / 2);
+      dims[d] = dim::broadcast();
     }
 
     auto value = raw_buffer::make(Rank, sizeof(T), dims);
@@ -144,37 +143,24 @@ public:
 
   void init_buffer(buffer<T, Rank>& b) {
     b.free();
-    index_t stride = sizeof(T);
     for (std::size_t d = 0; d < Rank; ++d) {
       b.dims[d].set_min_extent(0, extents[d]);
-      b.dims[d].set_stride(stride);
-      stride *= extents[d];
     }
     b.allocate();
-  }
-
-  std::size_t prepare_result() {
-    result.free();
-    index_t stride = 1;
-    for (std::size_t d = 0; d < Rank; ++d) {
-      result.dims[d].set_min_extent(0, extents[d]);
-      result.dims[d].set_stride(stride * sizeof(T));
-      stride *= extents[d];
-    }
-    result.allocate();
-    return stride;
   }
 
   void visit(const variable* v) override {
     const std::optional<buffer<T, Rank>*>& i = vars[v->sym];
     assert(i);
-    prepare_result();
+    result.free();
+    init_buffer(result);
     copy(**i, result);
   }
 
   void visit(const constant* c) override {
-    std::size_t flat_size = prepare_result();
-    std::fill_n(result.base(), flat_size, c->value);
+    result.free();
+    init_buffer(result);
+    std::fill_n(result.base(), result.elem_count(), c->value);
   }
 
   void visit_expr(const expr& e, buffer<T, Rank>& r) {
@@ -238,14 +224,9 @@ void test_expr_pipeline(node_context& ctx, const expr& e) {
   std::vector<buffer<T, Rank>> input_bufs(p.inputs.size());
 
   for (std::size_t i = 0; i < p.inputs.size(); ++i) {
-    index_t stride = sizeof(T);
     for (std::size_t d = 0; d < Rank; ++d) {
       input_bufs[i].dims[d].set_min_extent(0, extents[d]);
-      input_bufs[i].dims[d].set_stride(stride);
-      stride *= extents[d];
     }
-  }
-  for (std::size_t i = 0; i < p.inputs.size(); ++i) {
     init_random(input_bufs[i]);
     inputs.push_back(&input_bufs[i]);
   }
