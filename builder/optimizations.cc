@@ -634,7 +634,7 @@ public:
     if (!found && depends_on(s, names).any()) {
       found = true;
       if (visited_something) {
-        result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}) == 1)});
+        result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}))});
       }
     }
 
@@ -642,9 +642,7 @@ public:
   }
 
   void visit(const loop* op) override { visit_terminal(op); }
-
   void visit(const call_stmt* op) override { visit_terminal(op); }
-
   void visit(const copy_stmt* op) override { visit_terminal(op); }
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
@@ -677,7 +675,7 @@ public:
   void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
   void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const truncate_rank* op) override { visit_buffer_mutator(op); }
+  void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
 // Find allocate nodes and try to insert free into them.
