@@ -780,8 +780,7 @@ public:
 
     symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level.
-    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
-      const func* f = *i;
+    for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;

@@ -344,28 +344,28 @@ function pipeline(in1, in2, out) {
   check(((buffer_min(in2, 1) + 2) <= buffer_min(out, 1)));
   check(((buffer_max(out, 1) + 2) <= buffer_max(in2, 1)));
   check(((buffer_fold_factor(in2, 1) == 9223372036854775807) || ((buffer_max(out, 1) + 5) <= (buffer_fold_factor(in2, 1) + buffer_min(out, 1)))));
-  { let intm4 = allocate('intm4', 2, [
-      {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
-      {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:2}
+  { let intm1 = allocate('intm1', 2, [
+      {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:NaN, fold_factor:9223372036854775807},
+      {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:9223372036854775807}
     ]);
-    { let intm4_uncropped = clone_buffer(intm4);
-      { let intm2 = allocate('intm2', 2, [
-          {bounds:{min:(buffer_min(out, 0) + -2), max:(buffer_max(out, 0) + 2)}, stride:NaN, fold_factor:9223372036854775807},
-          {bounds:{min:(buffer_min(out, 1) + -2), max:(buffer_max(out, 1) + 2)}, stride:NaN, fold_factor:6}
-        ]);
-        { let intm2_uncropped = clone_buffer(intm2);
-          { let intm3 = allocate('intm3', 2, [
-              {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
-              {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:2}
-            ]);
-            { let intm3_uncropped = clone_buffer(intm3);
-              { let intm1 = allocate('intm1', 2, [
-                  {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:NaN, fold_factor:9223372036854775807},
-                  {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:9223372036854775807}
-                ]);
-                consume(in1);
-                produce(intm1);
-                __event_t++;
+    consume(in1);
+    produce(intm1);
+    __event_t++;
+    { let intm3 = allocate('intm3', 2, [
+        {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
+        {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:2}
+      ]);
+      { let intm3_uncropped = clone_buffer(intm3);
+        { let intm2 = allocate('intm2', 2, [
+            {bounds:{min:(buffer_min(out, 0) + -2), max:(buffer_max(out, 0) + 2)}, stride:NaN, fold_factor:9223372036854775807},
+            {bounds:{min:(buffer_min(out, 1) + -2), max:(buffer_max(out, 1) + 2)}, stride:NaN, fold_factor:6}
+          ]);
+          { let intm2_uncropped = clone_buffer(intm2);
+            { let intm4 = allocate('intm4', 2, [
+                {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
+                {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:2}
+              ]);
+              { let intm4_uncropped = clone_buffer(intm4);
                 let __loop_min = (buffer_min(out, 1) + -4);
                 let __loop_max = buffer_max(out, 1);
                 let __loop_step = 2;
@@ -404,16 +404,16 @@ function pipeline(in1, in2, out) {
                     out = __out;
                   }
                 }
-                free(intm1);
               }
+              free(intm4);
             }
-            free(intm3);
           }
+          free(intm2);
         }
-        free(intm2);
       }
+      free(intm3);
     }
-    free(intm4);
+    free(intm1);
   }
 }
 let in1 = allocate('in1', 2, [{bounds: {min:-1, max:20}, stride:2, fold_factor:9223372036854775807}, {bounds: {min:-1, max:30}, stride:44, fold_factor:9223372036854775807}], true);
