@@ -296,8 +296,8 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit(const truncate_rank* n) override {
-    *this << indent() << n->sym << " = truncate_rank(" << n->src << ", " << n->rank << ") {\n";
+  void visit(const transpose* n) override {
+    *this << indent() << n->sym << " = transpose(" << n->src << ", " << n->dims << ") {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }

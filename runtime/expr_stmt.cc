@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <utility>
@@ -484,13 +485,19 @@ stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
   return n;
 }
 
-stmt truncate_rank::make(var sym, var src, int rank, stmt body) {
-  auto n = new truncate_rank();
+stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
+  auto n = new transpose();
   n->sym = sym;
   n->src = src;
-  n->rank = rank;
+  n->dims = dims;
   n->body = std::move(body);
   return n;
+}
+
+stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
+  std::vector<int> dims(rank);
+  std::iota(dims.begin(), dims.end(), 0);
+  return make(sym, src, std::move(dims), std::move(body));
 }
 
 stmt check::make(expr condition) {
@@ -752,7 +759,7 @@ void recursive_node_visitor::visit(const slice_dim* op) {
   op->at.accept(this);
   if (op->body.defined()) op->body.accept(this);
 }
-void recursive_node_visitor::visit(const truncate_rank* op) {
+void recursive_node_visitor::visit(const transpose* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const check* op) {

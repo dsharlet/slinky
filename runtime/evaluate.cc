@@ -643,15 +643,27 @@ public:
     buffer->dims = old_dims;
   }
 
-  void eval_shadowed(const truncate_rank* op) {
+  void eval_shadowed(const transpose* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
     std::size_t old_rank = buffer->rank;
-    buffer->rank = op->rank;
+    buffer->rank = op->dims.size();
 
-    visit(op->body);
+    if (op->is_truncate()) {
+      visit(op->body);
+    } else {
+      dim* dims = buffer->dims;
+      buffer->dims = SLINKY_ALLOCA(dim, buffer->rank);
 
+      for (std::size_t i = 0; i < op->dims.size(); ++i) {
+        buffer->dims[i] = dims[op->dims[i]];
+      }
+
+      visit(op->body);
+
+      buffer->dims = dims;
+    }
     buffer->rank = old_rank;
   }
 
@@ -672,7 +684,7 @@ public:
   void visit(const crop_dim* op) override { visit_maybe_shadowed(op); }
   void visit(const slice_buffer* op) override { visit_maybe_shadowed(op); }
   void visit(const slice_dim* op) override { visit_maybe_shadowed(op); }
-  void visit(const truncate_rank* op) override { visit_maybe_shadowed(op); }
+  void visit(const transpose* op) override { visit_maybe_shadowed(op); }
 
   void visit(const check* op) override {
     result = eval(op->condition, 0) != 0 ? 0 : 1;

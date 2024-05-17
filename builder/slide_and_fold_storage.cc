@@ -555,7 +555,7 @@ public:
       set_result(clone_with_new_body(op, std::move(body)));
     }
   }
-  void visit(const truncate_rank*) override { std::abort(); }
+  void visit(const transpose*) override { std::abort(); }
   void visit(const clone_buffer* op) override { 
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     node_mutator::visit(op);

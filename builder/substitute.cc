@@ -287,13 +287,13 @@ public:
     if (!try_match(cds->body, op->body)) return;
   }
 
-  void visit(const truncate_rank* op) override {
-    const truncate_rank* trs = static_cast<const truncate_rank*>(self);
+  void visit(const transpose* op) override {
+    const transpose* trs = static_cast<const transpose*>(self);
     assert(trs);
 
     if (!try_match(trs->sym, op->sym)) return;
     if (!try_match(trs->src, op->src)) return;
-    if (!try_match(trs->rank, op->rank)) return;
+    if (!try_match(trs->dims, op->dims)) return;
     if (!try_match(trs->body, op->body)) return;
   }
 
@@ -622,13 +622,13 @@ public:
     node_mutator::visit(op);
   }
 
-  void visit(const truncate_rank* op) override {
-    // TODO: truncate_rank is a bit tricky, the replacements for expressions might be invalid if they access truncated
+  void visit(const transpose* op) override {
+    // TODO: transpose is a bit tricky, the replacements for expressions might be invalid if they access truncated
     // dims.
     var src = visit_symbol(op->src);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (src != op->src || !body.same_as(op->body)) {
-      set_result(truncate_rank::make(op->sym, src, op->rank, std::move(body)));
+      set_result(transpose::make(op->sym, src, op->dims, std::move(body)));
     } else {
       set_result(op);
     }
