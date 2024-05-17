@@ -678,7 +678,6 @@ public:
   void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
-// Find allocate nodes and try to insert free into them.
 class early_free_inserter : public node_mutator {
 public:
   void visit(const allocate* op) override {
