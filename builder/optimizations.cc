@@ -350,15 +350,37 @@ public:
     alias_copy_src(op);
   }
 
-  void merge_alloc_info(symbol_map<buffer_info> add) {
-    alloc_info.reserve(std::max(alloc_info.size(), add.size()));
-    for (std::size_t i = 0; i < add.size(); ++i) {
-      if (!add[i]) continue;
+  template <typename T, typename Fn>
+  void visit_buffer_mutator(const T* op, Fn&& handler) {
+    // We need to know which alias candidates are added inside this mutator.
+    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
+    std::swap(old_alloc_info, alloc_info);
+    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
+      if (old_alloc_info[i]) {
+        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
+      }
+    }
+
+    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
+    node_mutator::visit(op);
+
+    for (std::optional<buffer_info>& i : alloc_info) {
+      if (!i) continue;
+      auto j = i->can_alias().find(op->sym);
+      if (j != i->can_alias().end()) {
+        handler(j->second);
+      }
+    }
+
+    // Add the old alias candidates back to the alias info.
+    alloc_info.reserve(std::max(alloc_info.size(), old_alloc_info.size()));
+    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
+      if (!old_alloc_info[i]) continue;
       std::optional<buffer_info>& info = alloc_info[i];
       if (!info) {
-        info = std::move(add[i]);
+        info = std::move(old_alloc_info[i]);
       } else {
-        for (auto& j : add[i]->can_alias()) {
+        for (auto& j : old_alloc_info[i]->can_alias()) {
           info->maybe_alias(j.first, std::move(j.second));
         }
       }
@@ -366,60 +388,18 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
-    std::swap(old_alloc_info, alloc_info);
-    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
-      if (old_alloc_info[i]) {
-        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
+    visit_buffer_mutator(op, [=](buffer_alias& alias) {
+      for (std::size_t d = 0; d < op->at.size(); ++d) {
+        if (!op->at[d].defined()) continue;
+        alias.at.insert(alias.at.begin() + d, op->at[d]);
       }
-    }
-
-    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
-    node_mutator::visit(op);
-
-    // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
-    for (std::optional<buffer_info>& i : alloc_info) {
-      if (!i) continue;
-      auto j = i->can_alias().find(op->sym);
-      if (j != i->can_alias().end()) {
-        std::vector<expr>& at = j->second.at;
-        for (std::size_t d = 0; d < op->at.size(); ++d) {
-          if (!op->at[d].defined()) continue;
-          at.insert(at.begin() + d, op->at[d]);
-        }
-      }
-    }
-
-    // Add the old alias candidates back to the alias info.
-    merge_alloc_info(std::move(old_alloc_info));
+    });
   }
 
   void visit(const slice_dim* op) override {
-    // We need to know which alias candidates are added inside this slice.
-    symbol_map<buffer_info> old_alloc_info(alloc_info.size());
-    std::swap(old_alloc_info, alloc_info);
-    for (std::size_t i = 0; i < old_alloc_info.size(); ++i) {
-      if (old_alloc_info[i]) {
-        alloc_info[i] = buffer_info(old_alloc_info[i]->dims);
-      }
-    }
-
-    auto set_info_sym = set_value_in_scope(alloc_info, op->sym, alloc_info[op->src]);
-    node_mutator::visit(op);
-
-    // If we chose to alias this buffer, we need to insert offsets for where we sliced it.
-    for (std::optional<buffer_info>& i : alloc_info) {
-      if (!i) continue;
-      auto j = i->can_alias().find(op->sym);
-      if (j != i->can_alias().end()) {
-        std::vector<expr>& at = j->second.at;
-        at.insert(at.begin() + op->dim, op->at);
-      }
-    }
-
-    // Add the old alias candidates back to the alias info.
-    merge_alloc_info(std::move(old_alloc_info));
+    visit_buffer_mutator(op, [=](buffer_alias& alias) {
+      alias.at.insert(alias.at.begin() + op->dim, op->at);
+    });
   }
 
   void visit(const clone_buffer* op) override {
