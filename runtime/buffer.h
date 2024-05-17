@@ -469,9 +469,9 @@ const buffer<NewT>& raw_buffer::cast() const {
   return *reinterpret_cast<const buffer<NewT>*>(this);
 }
 
-// Copy the contents of `src` to `dst`. When the `src` is out of bounds of `dst`, fill with `padding`.
-// `padding` should point to `dst.elem_size` bytes, or if `padding` is null, out of bounds regions
-// are unmodified.
+// Copy the contents of `src` to `dst`.
+// If `padding` is null, `src` must contain every index that `dst` contains.
+// If `padding` is non-null, `dst` is filled with the padding when it is out of bounds of `src`.
 void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding = nullptr);
 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
