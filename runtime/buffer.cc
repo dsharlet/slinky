@@ -241,7 +241,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
         [elem_size, padding](void* dst, const void* src) {
           if (src) {
             memcpy(dst, src, elem_size);
-          } else if (padding) {
+          } else {
             memcpy(dst, padding, elem_size);
           }
         },
@@ -262,6 +262,10 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     constant_buffer buffer;
     if (padding) {
       optimize_fill_value(padding, elem_size, buffer);
+    } else {
+      assert(size == padded_size);
+      assert(pad_before == 0);
+      assert(pad_after == 0);
     }
 
     for_each_element(
@@ -269,16 +273,16 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
           // TDOO: There are a lot of branches in here. They could possibly be lifted out of the for_each_element loops,
           // but we need to find ways to do it that avoids increasing the number of cases we need to handle too much.
           if (src) {
-            if (padding) {
+            if (pad_before > 0) {
               fill(dst, padding, elem_size, pad_before);
+              dst = offset_bytes(dst, pad_before);
             }
-            dst = offset_bytes(dst, pad_before);
             memcpy(dst, src, size);
-            if (padding) {
+            if (pad_after > 0) {
               dst = offset_bytes(dst, size);
               fill(dst, padding, elem_size, pad_after);
             }
-          } else if (padding) {
+          } else {
             fill(dst, padding, elem_size, padded_size);
           }
         },

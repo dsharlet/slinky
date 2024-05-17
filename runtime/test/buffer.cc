@@ -752,36 +752,13 @@ TEST(buffer, copy) {
       }
     });
 
-    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent * elem_size; ++i) {
-        reinterpret_cast<char*>(base)[i] += 1;
-      }
-    });
-
-    slinky::copy(src, dst, nullptr);
-    for_each_index(dst, [&](auto i) {
-      if (src.contains(i)) {
-        // The copied area should have been copied.
-        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
-      } else {
-        // The padding should be unchanged.
-        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
-      }
-    });
-
-    for_each_contiguous_slice(src, [&](index_t extent, void* base) {
-      for (index_t i = 0; i < extent * elem_size; ++i) {
-        reinterpret_cast<char*>(base)[i] += -1;
-      }
-    });
-
     std::vector<char> new_padding(elem_size);
     std::fill(new_padding.begin(), new_padding.end(), 3);
     pad(src.dims, dst, new_padding.data());
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
-        // The src should not have been copied.
-        ASSERT_NE(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
+        // The src should not have been modified.
+        ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
         // But we should have new padding.
         ASSERT_EQ(memcmp(dst.address_at(i), new_padding.data(), elem_size), 0);
