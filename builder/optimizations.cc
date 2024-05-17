@@ -194,10 +194,14 @@ public:
     // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alloc_info, op->sym, buffer_info(op->dims));
     stmt body = mutate(op->body);
-    const std::map<var, buffer_alias>& can_alias = alloc_info[op->sym]->can_alias();
+    buffer_info info = std::move(*alloc_info[op->sym]);
 
-    if (!can_alias.empty()) {
-      const std::pair<var, buffer_alias>& target = *can_alias.begin();
+    // When an allocation goes out of scope, we should remove it as an aliasing candidate.
+    for (std::optional<buffer_info>& i : alloc_info) {
+      if (i) i->do_not_alias(op->sym);
+    }
+
+    for (const auto& target : info.can_alias()) {
       var target_var = target.first;
       const buffer_alias& alias = target.second;
 
@@ -222,15 +226,12 @@ public:
         alloc_info[target_var]->do_not_alias(op->sym);
       }
       set_result(pad_result);
-    } else if (!body.same_as(op->body)) {
+      return;
+    }
+    if (!body.same_as(op->body)) {
       set_result(clone_with_new_body(op, std::move(body)));
     } else {
       set_result(op);
-    }
-
-    // When an allocation goes out of scope, we should remove it as an aliasing candidate.
-    for (std::optional<buffer_info>& i : alloc_info) {
-      if (i) i->do_not_alias(op->sym);
     }
   }
 
@@ -259,9 +260,9 @@ public:
     }
   }
 
-  void alias_copy_src_to_dst(const copy_stmt* op) {
+  void alias_copy_dst(const copy_stmt* op) {
     if (!alloc_info[op->dst] || !can_alias(op->src)) {
-      // We didn't allocate the dst, don't alias to it.
+      // We didn't allocate the dst.
       return;
     }
 
@@ -291,9 +292,9 @@ public:
     info->maybe_alias(op->src, std::move(a));
   }
 
-  void alias_copy_dst_to_src(const copy_stmt* op) {
+  void alias_copy_src(const copy_stmt* op) {
     if (!alloc_info[op->src] || !can_alias(op->dst)) {
-      // We didn't allocate the src, don't alias to it.
+      // We didn't allocate the src.
       return;
     }
 
@@ -325,11 +326,11 @@ public:
       }
 
       a.dims[src_d] = {
-          buffer_bounds(op->dst, dst_d) & info->dims[src_d].bounds,
+          (buffer_bounds(op->dst, dst_d) + offset) & info->dims[src_d].bounds,
           buffer_stride(op->dst, dst_d),
           buffer_fold_factor(op->dst, dst_d),
       };
-      a.at[dst_d] = max(buffer_min(op->dst, dst_d) - offset, info->dims[dst_d].bounds.min);
+      a.at[dst_d] = max(buffer_min(op->dst, dst_d), info->dims[src_d].bounds.min - offset);
     }
 
     for (const dim_expr& d : a.dims) {
@@ -345,8 +346,8 @@ public:
   void visit(const copy_stmt* op) override {
     set_result(op);
 
-    alias_copy_src_to_dst(op);
-    alias_copy_dst_to_src(op);
+    alias_copy_dst(op);
+    alias_copy_src(op);
   }
 
   void merge_alloc_info(symbol_map<buffer_info> add) {
