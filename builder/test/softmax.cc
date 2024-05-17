@@ -98,25 +98,28 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<std::tuple<int, int, bool, bool>> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int, bool, int>> {};
 
 auto split_factors = testing::Values(0, 1, 4);
 
 INSTANTIATE_TEST_SUITE_P(mode, softmax,
-    testing::Combine(split_factors, split_factors, testing::Values(false), testing::Values(false)),
+    testing::Combine(split_factors, split_factors, testing::Values(false), testing::Values(0)),
     test_params_to_string<softmax::ParamType>);
 
-INSTANTIATE_TEST_SUITE_P(compute_at, softmax, testing::Values(std::make_tuple(1, 1, true, false)),
+INSTANTIATE_TEST_SUITE_P(compute_at, softmax, 
+    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(false), testing::Values(0)),
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(
-    with_copy, softmax, testing::Values(std::make_tuple(1, 1, false, true)), test_params_to_string<softmax::ParamType>);
+    with_copy, softmax, 
+    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(false), testing::Values(0, 1, 2)),
+    test_params_to_string<softmax::ParamType>);
 
 TEST_P(softmax, pipeline) {
   const int split_c = std::get<0>(GetParam());
   const int split_b = std::get<1>(GetParam());
   const bool use_compute_at = std::get<2>(GetParam());
-  const bool copy_at_the_end = std::get<3>(GetParam());
+  const int copy_at_the_end = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -153,8 +156,17 @@ TEST_P(softmax, pipeline) {
       {{copy_at_the_end ? add_out : out, {c, b}}}, call_stmt::attributes{.name = "consumer"});
 
   func copy;
-  if (copy_at_the_end) {
-    copy = func::make_copy({add_out, {point(c), point(b)}}, {out, {c, b}});
+  if (copy_at_the_end > 0) {
+    box_expr bounds;
+    if (copy_at_the_end == 1) {
+      bounds = {point(c), point(b)};
+    } else {
+      bounds = {
+          select(in->dim(0).extent() == 1, point(in->dim(0).min()), point(c)),
+          select(in->dim(1).extent() == 1, point(in->dim(1).min()), point(b)),
+      };
+    }
+    copy = func::make_copy({add_out, bounds}, {out, {c, b}});
   }
 
   std::vector<func::loop_info> loops;
@@ -207,12 +219,21 @@ TEST_P(softmax, pipeline) {
     const int softmax_in_allocation = split_b * D;
     // This one is a bit odd, not sure why max is needed.
     const int softmax_out_allocation = split_b * (split_c == 0 ? D : std::max(split_b, split_c));
+    int extra_memory = 0;
+    if (copy_at_the_end == 2) {
+      extra_memory = D * B;
+    }
     ASSERT_EQ(eval_ctx.heap.total_size, (sum_exp_in_allocation + exp_in_allocation + max_in_allocation +
-                                            softmax_in_allocation + softmax_out_allocation) *
+                                            softmax_in_allocation + softmax_out_allocation + extra_memory) *
                                             sizeof(float));
   }
 
-  ASSERT_EQ(eval_ctx.heap.total_count, 5);
+  int extra_allocs = 0;
+  if (copy_at_the_end == 2) {
+    extra_allocs++;
+  }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, 5 + extra_allocs);
 
   if (split_c == 0 && !use_compute_at) {
     check_visualize("softmax_split_" + std::to_string(split_b) + ".html", p, inputs, outputs, &ctx);
