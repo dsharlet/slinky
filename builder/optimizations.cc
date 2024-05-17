@@ -53,24 +53,40 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     src_dim.fold_factor = dim::unfolded;
     return true;
   } else {
-    expr offset = simplify(src_x - dst_x);
+    // check for f(x) = g(x * C)
+    expr scale = 1;
+    if (const class mul* s = src_x.as<class mul>()) {
+      if (!depends_on(s->a, dst_x).any()) {
+        scale = s->a;
+        src_x = s->b;
+      } else if (!depends_on(s->b, dst_x).any()) {
+        scale = s->b;
+        src_x = s->a;
+      } else {
+        return false;
+      }
+    }
+
+    src_dim.stride *= scale;
+
+    expr offset = simplify((src_x - dst_x) * scale);
     if (!depends_on(offset, dst_x).any()) {
       // The difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
       if (is_zero(offset)) {
         // If the offset is zero, the index we want for the buffer_at call is buffer_min(src, src_d), which is
         // definitely in bounds, so we don't need to clamp it.
-        src_dim.bounds = buffer_bounds(src, src_d);
-        at = src_dim.bounds.min;
+        src_dim.bounds = buffer_bounds(src, src_d) / scale;
+        at = src_dim.bounds.min * scale;
       } else {
         // The offset is non-zero, we might go out of bounds with our buffer_at call. To avoid this, we need to
         // clamp to the intersection of the src and dst buffers, like copy would have done.
-        src_dim.bounds &= (buffer_bounds(src, src_d) - offset);
-        at = src_dim.bounds.min + offset;
+        src_dim.bounds &= (buffer_bounds(src, src_d) - offset) / scale;
+        at = (src_dim.bounds.min + offset) * scale;
       }
       return true;
-    } else {
-      return false;
     }
+
+    return false;
   }
 }
 
