@@ -331,7 +331,7 @@ public:
         expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
         fold_factor = constant_upper_bound(fold_factor);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-          vector_at(fold_factors[output], d) = {fold_factor, fold_factor};
+          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.size() - 1};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
         }
