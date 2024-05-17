@@ -340,24 +340,21 @@ function pipeline(__in, out) {
       {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:4}
     ]);
     { let intm_uncropped = clone_buffer(intm);
-      {
-        let y_min_orig = buffer_min(out, 1);
-        let __loop_min = (y_min_orig + -2);
-        let __loop_max = buffer_max(out, 1);
-        let __loop_step = 2;
-        for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-          { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)});
-            consume(__in);
-            produce(intm);
-            __event_t++;
-            intm = __intm;
-          }
-          { let __out = crop_dim(out, 1, {min:y, max:(y + 1)});
-            consume(intm_uncropped);
-            produce(out);
-            __event_t++;
-            out = __out;
-          }
+      let __loop_min = (buffer_min(out, 1) + -2);
+      let __loop_max = buffer_max(out, 1);
+      let __loop_step = 2;
+      for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
+        { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)});
+          consume(__in);
+          produce(intm);
+          __event_t++;
+          intm = __intm;
+        }
+        { let __out = crop_dim(out, 1, {min:y, max:(y + 1)});
+          consume(intm_uncropped);
+          produce(out);
+          __event_t++;
+          out = __out;
         }
       }
     }

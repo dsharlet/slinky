@@ -348,9 +348,8 @@ function pipeline(__in, out) {
           ]);
           { let add_result_uncropped = clone_buffer(add_result);
             {
-              let y_min_orig = buffer_min(out, 1);
               let __trace_token = trace_begin(buffer_at(__trace_names, 17));
-              let __loop_min = (y_min_orig + -4);
+              let __loop_min = (buffer_min(out, 1) + -4);
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 2;
               for(let y = __loop_min; y <= __loop_max; y += __loop_step) {

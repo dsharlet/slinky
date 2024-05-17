@@ -566,7 +566,7 @@ public:
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
     symbol_map<interval_expr> last_expr_bounds = current_expr_bounds();
-    loops.emplace_back(ctx, op->sym, orig_min, bounds(orig_min, op->bounds.max), op->step, op->max_workers);
+    loops.emplace_back(ctx, op->sym, orig_min, op->bounds, op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
     current_expr_bounds() = last_expr_bounds;
 

@@ -361,48 +361,45 @@ function pipeline(__in, out) {
                         {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
                       ]);
                       { let softmax_in_uncropped = clone_buffer(softmax_in);
-                        {
-                          let b_min_orig = buffer_min(out, 1);
-                          let __loop_min = b_min_orig;
-                          let __loop_max = buffer_max(out, 1);
-                          let __loop_step = 1;
-                          for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
-                            { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:b});
+                        let __loop_min = buffer_min(out, 1);
+                        let __loop_max = buffer_max(out, 1);
+                        let __loop_step = 1;
+                        for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
+                          { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:b});
+                            consume(__in);
+                            produce(softmax_in);
+                            __event_t++;
+                            softmax_in = __softmax_in;
+                          }
+                          { let __max_in = crop_dim(max_in, 0, {min:b, max:b});
+                            consume(softmax_in_uncropped);
+                            produce(max_in);
+                            __event_t++;
+                            max_in = __max_in;
+                          }
+                          { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:b});
+                            { let __exp_in = crop_dim(exp_in, 1, {min:b, max:b});
                               consume(__in);
-                              produce(softmax_in);
+                              consume(max_in_uncropped);
+                              produce(exp_in);
+                              produce(sum_exp_in);
                               __event_t++;
-                              softmax_in = __softmax_in;
+                              exp_in = __exp_in;
                             }
-                            { let __max_in = crop_dim(max_in, 0, {min:b, max:b});
-                              consume(softmax_in_uncropped);
-                              produce(max_in);
-                              __event_t++;
-                              max_in = __max_in;
-                            }
-                            { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:b});
-                              { let __exp_in = crop_dim(exp_in, 1, {min:b, max:b});
-                                consume(__in);
-                                consume(max_in_uncropped);
-                                produce(exp_in);
-                                produce(sum_exp_in);
-                                __event_t++;
-                                exp_in = __exp_in;
-                              }
-                              sum_exp_in = __sum_exp_in;
-                            }
-                            { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:b});
-                              consume(exp_in_uncropped);
-                              consume(sum_exp_in_uncropped);
-                              produce(softmax_out);
-                              __event_t++;
-                              softmax_out = __softmax_out;
-                            }
-                            { let __out = crop_dim(out, 1, {min:b, max:b});
-                              consume(softmax_out_uncropped);
-                              produce(out);
-                              __event_t++;
-                              out = __out;
-                            }
+                            sum_exp_in = __sum_exp_in;
+                          }
+                          { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:b});
+                            consume(exp_in_uncropped);
+                            consume(sum_exp_in_uncropped);
+                            produce(softmax_out);
+                            __event_t++;
+                            softmax_out = __softmax_out;
+                          }
+                          { let __out = crop_dim(out, 1, {min:b, max:b});
+                            consume(softmax_out_uncropped);
+                            produce(out);
+                            __event_t++;
+                            out = __out;
                           }
                         }
                       }
