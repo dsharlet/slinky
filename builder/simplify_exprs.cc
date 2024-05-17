@@ -663,6 +663,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(max(x, y) < min(x, y), false) ||
         
       // Subtract terms from both sides within a min/max.
+      // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
       r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
       r.rewrite(min(x, y) < x - z, z < max(x - y, 0), !is_constant(x)) ||
       r.rewrite(max(x, y) < x + z, max(y - x, 0) < z, !is_constant(x)) ||

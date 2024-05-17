@@ -263,6 +263,7 @@ public:
           buffer_alias a;
           a.dims = buffer_dims(o, input_info->dims.size());
           a.at = buffer_mins(o, input_info->dims.size());
+          // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output.
           a.assume_in_bounds = true;
           input_info->maybe_alias(o, std::move(a));
         }
