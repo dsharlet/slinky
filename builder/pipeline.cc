@@ -941,8 +941,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
 
-  std::cout << result << std::endl;
-
   result = slide_and_fold_storage(result, ctx);
 
   // Add checks that the buffer constraints the user set are satisfied.
