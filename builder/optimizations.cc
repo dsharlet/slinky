@@ -611,7 +611,7 @@ public:
     bool changed = false;
     for (int i = static_cast<int>(op->stmts.size()) - 1; i >= 0; --i) {
       // Don't mutate the rest if we changed one of the block's statements.
-      if (changed) {
+      if (changed || found) {
         stmts[i] = op->stmts[i];
       } else {
         stmts[i] = mutate(op->stmts[i]);
