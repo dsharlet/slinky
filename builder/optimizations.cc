@@ -129,6 +129,7 @@ stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& 
       // No padding, this copy is now a no-op.
       return stmt();
     }
+
     // Make a call to `pad`.
     call_stmt::attributes pad_attrs;
     pad_attrs.name = "pad";
@@ -142,7 +143,9 @@ stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& 
           return 0;
         },
         {}, {op->src, op->dst}, std::move(pad_attrs));
-    return transpose::make(op->dst, op->dst, std::move(permutation), pad);
+
+    // The copy may have also be transposed.
+    return transpose::make(op->dst, op->dst, permutation, pad);
   });
 }
 
@@ -200,6 +203,38 @@ class buffer_aliaser : public node_mutator {
     }
   }
 
+  static bool alias_compatible(
+      const allocate* op, const buffer_alias& alias, const std::optional<buffer_info>& target_info) {
+    assert(op->dims.size() == alias.dims.size());
+    for (std::size_t d = 0; d < op->dims.size(); ++d) {
+      if (!alias.assume_in_bounds) {
+        assert(alias.permutation.size() == op->dims.size());
+        if (!prove_true(op->dims[d].bounds.min >= alias.dims[alias.permutation[d]].bounds.min) ||
+            !prove_true(op->dims[d].bounds.max <= alias.dims[alias.permutation[d]].bounds.max)) {
+          // We don't know if this target is big enough for this allocation.
+          if (!target_info) {
+            // We didn't allocate this buffer, we can't grow it to use this buffer as an alias target.
+            return false;
+          }
+        }
+      }
+      if (op->dims[d].stride.defined()) {
+        if (!prove_true(op->dims[d].stride == alias.dims[alias.permutation[d]].stride)) {
+          // This alias would violate a constraint on the stride of the buffer.
+          return false;
+        }
+      }
+      if (op->dims[d].fold_factor.defined()) {
+        if (target_info && target_info->dims[alias.permutation[d]].fold_factor.defined()) {
+          // This alias is not compatible because of fold factors.
+          // TODO: We should try to relax this constraint.
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
 public:
   buffer_aliaser(node_context& ctx) : ctx(ctx) {}
 
@@ -213,14 +248,6 @@ public:
     }
     auto set_do_not_alias = set_value_in_scope(do_not_alias, op->sym, do_not_alias_sym);
 
-    // When we allocate a buffer, we can look for all the uses of this buffer. If it is:
-    // - consumed elemenwise,
-    // - consumed by a producer that has an output that we can re-use,
-    // - not consumed after the buffer it aliases to is produced,
-    // - doesn't have any folded dimensions,
-    // then we can alias it to the buffer produced by its consumer.
-
-    // Start out by setting it to elementwise.
     auto s = set_value_in_scope(alloc_info, op->sym, buffer_info(op->dims));
     stmt body = mutate(op->body);
     buffer_info info = std::move(*alloc_info[op->sym]);
@@ -235,7 +262,12 @@ public:
       var target_var = target.first;
       buffer_alias& alias = target.second;
 
-      box_expr alias_bounds = dims_bounds(alias.dims);
+      var alloc_var = target_var;
+      std::optional<buffer_info>& target_info = lookup_alloc(target_var);
+      if (!alias_compatible(op, alias, target_info)) {
+        continue;
+      }
+
       // The alias might have used the bounds of this symbol, substitute them now.
       for (dim_expr& i : alias.dims) {
         i.bounds.min = substitute_bounds(i.bounds.min, op->sym, op_dims_bounds);
@@ -245,57 +277,19 @@ public:
         i = substitute_bounds(i, op->sym, op_dims_bounds);
       }
 
-      bool use_alias = true;
-
-      assert(op->dims.size() == alias.dims.size());
-      var alloc_var = target_var;
-      std::optional<buffer_info>& target_info = lookup_alloc(target_var);
-      for (std::size_t d = 0; d < op->dims.size(); ++d) {
-        if (!alias.assume_in_bounds) {
-          assert(alias.permutation.size() == op->dims.size());
-          if (!prove_true(op->dims[d].bounds.min >= alias_bounds[alias.permutation[d]].min) ||
-              !prove_true(op->dims[d].bounds.max <= alias_bounds[alias.permutation[d]].max)) {
-            // We don't know if this target is big enough for this allocation.
-            if (!target_info) {
-              // We didn't allocate this buffer, we can't grow it to use this buffer as an alias target.
-              use_alias = false;
-              break;
-            }
-          }
-        }
-        if (op->dims[d].stride.defined()) {
-          if (!prove_true(op->dims[d].stride == alias.dims[alias.permutation[d]].stride)) {
-            // This alias is not compatible because it would violate a constraint on the stride of the buffer.
-            use_alias = false;
-            break;
-          }
-        }
-        if (op->dims[d].fold_factor.defined()) {
-          if (target_info) {
-            if (target_info->dims[alias.permutation[d]].fold_factor.defined()) {
-              use_alias = false;
-              break;
-            }
-          }
-        }
-      }
-      if (!use_alias) {
-        continue;
-      }
-
       if (!alias.assume_in_bounds) {
-        for (std::size_t d = 0; d < op->dims.size(); ++d) {
-          assert(alias.permutation.size() == op->dims.size());
-          if (!prove_true(op->dims[d].bounds.min >= alias_bounds[alias.permutation[d]].min) ||
-              !prove_true(op->dims[d].bounds.max <= alias_bounds[alias.permutation[d]].max)) {
-            // We allocated this buffer, make it big enough to share with this buffer.
-            assert(target_info);
-            if (!target_info->shared_alloc_sym.defined()) {
-              target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));
-              alloc_var = target_info->shared_alloc_sym;
-            }
+        if (target_info) {
+          // We allocated this buffer, make it big enough to share with this buffer.
+          if (!target_info->shared_alloc_sym.defined()) {
+            target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));
+            alloc_var = target_info->shared_alloc_sym;
+          }
+          for (std::size_t d = 0; d < op->dims.size(); ++d) {
+            // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             target_info->dims[d].bounds |= alias.dims[alias.permutation[d]].bounds;
           }
+        } else {
+          // In this case, alias_compatible must have determined that we do not need to grow the allocation.
         }
       }
 
@@ -324,11 +318,9 @@ public:
       return;
     }
     if (!body.same_as(op->body)) {
-      bool changed = false;
-      for (std::size_t d = 0; d < op->dims.size(); ++d) {
-        changed = changed || !info.dims[d].same_as(op->dims[d]);
-      }
-      if (changed) {
+      if (info.shared_alloc_sym.defined()) {
+        // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
+        // original allocation a crop of the expanded allocation.
         stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, std::move(op_dims_bounds), std::move(body));
         result =
             allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
@@ -360,7 +352,8 @@ public:
           buffer_alias a;
           a.dims = buffer_dims(o, input_info->dims.size());
           a.at = buffer_mins(o, input_info->dims.size());
-          // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output, and the dimensions are not permuted.
+          // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output, and the
+          // dimensions are not permuted.
           a.assume_in_bounds = true;
           a.permutation.resize(input_info->dims.size());
           std::iota(a.permutation.begin(), a.permutation.end(), 0);
