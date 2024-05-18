@@ -297,7 +297,7 @@ public:
   }
 
   void visit(const transpose* n) override {
-    *this << indent() << n->sym << " = transpose(" << n->src << ", " << n->dims << ") {\n";
+    *this << indent() << n->sym << " = transpose(" << n->src << ", {" << n->dims << "}) {\n";
     *this << n->body;
     *this << indent() << "}\n";
   }
