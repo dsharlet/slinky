@@ -733,24 +733,36 @@ public:
   // symbol or its dependencies.
   void visit(const make_buffer* op) override {
     bool base_depends = depends_on(op->base, names).any();
-    if (base_depends) {
-      names.push_back(op->sym);
-    }
-    node_mutator::visit(op);
-    if (base_depends) {
-      names.pop_back();
+    found = found || base_depends;
+    if (std::find(names.begin(), names.end(), op->sym) != names.end()) {
+      // Don't look inside if shadowing names.
+      set_result(op);
+    } else {
+      if (base_depends) {
+        names.push_back(op->sym);
+      }
+      node_mutator::visit(op);
+      if (base_depends) {
+        names.pop_back();
+      }
     }
   }
 
   template <typename T>
   void visit_buffer_mutator(const T* op) {
     auto n = std::find(names.begin(), names.end(), op->src);
-    if (n != names.end()) {
-      names.push_back(op->sym);
-    }
-    node_mutator::visit(op);
-    if (n != names.end()) {
-      names.pop_back();
+    found = found || n != names.end();
+    if (std::find(names.begin(), names.end(), op->sym) != names.end()) {
+      // Don't look inside if shadowing names.
+      set_result(op);
+    } else {
+      if (n != names.end()) {
+        names.push_back(op->sym);
+      }
+      node_mutator::visit(op);
+      if (n != names.end()) {
+        names.pop_back();
+      }
     }
   }
 
