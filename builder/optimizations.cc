@@ -163,7 +163,6 @@ class buffer_aliaser : public node_mutator {
   public:
     std::vector<dim_expr> dims;
     std::map<var, buffer_alias> can_alias_;
-    std::set<var> cannot_alias_;
 
     // If we decided to alias this buffer, we might have grown the bounds. If so, we need to make a new allocation with
     // this symbol, but make a crop of it for the original bounds.
@@ -176,16 +175,11 @@ class buffer_aliaser : public node_mutator {
     const std::map<var, buffer_alias>& can_alias() const { return can_alias_; }
 
     void maybe_alias(var s, buffer_alias a) {
-      if (cannot_alias_.count(s)) {
-        return;
-      }
-
       can_alias_[s] = std::move(a);
     }
 
     void do_not_alias(var s) {
       can_alias_.erase(s);
-      cannot_alias_.insert(s);
     }
   };
   symbol_map<buffer_info> alloc_info;
