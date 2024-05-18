@@ -350,7 +350,6 @@ function pipeline(__in, out) {
         consume(intm);
         produce(padded_intm);
         __event_t++;
-        check(free(intm));
         consume(padded_intm);
         produce(out);
         __event_t++;

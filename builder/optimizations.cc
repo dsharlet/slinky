@@ -72,17 +72,8 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     expr offset = simplify((src_x - dst_x) * scale);
     if (!depends_on(offset, dst_x).any()) {
       // The difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
-      if (is_zero(offset)) {
-        // If the offset is zero, the index we want for the buffer_at call is buffer_min(src, src_d), which is
-        // definitely in bounds, so we don't need to clamp it.
-        src_dim.bounds = buffer_bounds(src, src_d) / scale;
-        at = src_dim.bounds.min * scale;
-      } else {
-        // The offset is non-zero, we might go out of bounds with our buffer_at call. To avoid this, we need to
-        // clamp to the intersection of the src and dst buffers, like copy would have done.
-        src_dim.bounds &= (buffer_bounds(src, src_d) - offset) / scale;
-        at = (src_dim.bounds.min + offset) * scale;
-      }
+      src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
+      at = (src_dim.bounds.min + offset) * scale;
       return true;
     }
 
@@ -361,12 +352,13 @@ public:
         return;
       }
 
+      // We want the bounds of the src buffer, but with dst's memory layout.
       a.dims[src_d] = {
-          (buffer_bounds(op->dst, dst_d) + offset) & info->dims[src_d].bounds,
+          info->dims[src_d].bounds,
           buffer_stride(op->dst, dst_d),
           buffer_fold_factor(op->dst, dst_d),
       };
-      a.at[dst_d] = max(buffer_min(op->dst, dst_d), info->dims[src_d].bounds.min - offset);
+      a.at[dst_d] = info->dims[src_d].bounds.min - offset;
     }
 
     for (const dim_expr& d : a.dims) {
@@ -433,9 +425,7 @@ public:
   }
 
   void visit(const slice_dim* op) override {
-    visit_buffer_mutator(op, [=](buffer_alias& alias) {
-      alias.at.insert(alias.at.begin() + op->dim, op->at);
-    });
+    visit_buffer_mutator(op, [=](buffer_alias& alias) { alias.at.insert(alias.at.begin() + op->dim, op->at); });
   }
 
   void visit(const clone_buffer* op) override {

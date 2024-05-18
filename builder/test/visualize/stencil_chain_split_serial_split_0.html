@@ -359,7 +359,6 @@ function pipeline(__in, out) {
           __event_t++;
           check(trace_end(__trace_token));
         }
-        check(free(add_result));
         {
           let __trace_token = trace_begin(buffer_at(__trace_names, 6));
           consume(stencil1_result);

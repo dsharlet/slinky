@@ -351,7 +351,6 @@ function pipeline(__in, out) {
         consume(softmax_in);
         produce(max_in);
         __event_t++;
-        check(free(softmax_in));
         { let sum_exp_in = allocate('sum_exp_in', 4, [
             {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:9223372036854775807}
           ]);
@@ -365,7 +364,6 @@ function pipeline(__in, out) {
               produce(exp_in);
               produce(sum_exp_in);
               __event_t++;
-              check(free(max_in));
               { let softmax_out = allocate('softmax_out', 4, [
                   {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
                   {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:9223372036854775807}
@@ -374,8 +372,6 @@ function pipeline(__in, out) {
                 consume(sum_exp_in_uncropped);
                 produce(softmax_out);
                 __event_t++;
-                check(free(sum_exp_in));
-                check(free(exp_in));
                 consume(softmax_out);
                 produce(out);
                 __event_t++;
