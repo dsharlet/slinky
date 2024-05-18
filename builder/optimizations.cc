@@ -49,11 +49,12 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
   } else if (!depends_on(src_x, dst_x).any()) {
     // This is a broadcast because the src_x is constant w.r.t. dst_x.
     at = src_x;
+    src_dim.bounds = buffer_bounds(dst, dst_d);
     src_dim.stride = 0;
     src_dim.fold_factor = dim::unfolded;
     return true;
   } else {
-    // check for f(x) = g(x * C)
+    // Try to parse src_x = dst_x * scale + offset
     expr scale = 1;
     if (const class mul* s = src_x.as<class mul>()) {
       if (!depends_on(s->a, dst_x).any()) {
@@ -67,17 +68,17 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
       }
     }
 
-    src_dim.stride *= scale;
-
     expr offset = simplify((src_x - dst_x) * scale);
-    if (!depends_on(offset, dst_x).any()) {
-      // The difference of src_x and dst_x does not depend on dst_x, it's a simple copy.
-      src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
-      at = (src_dim.bounds.min + offset) * scale;
-      return true;
+    if (depends_on(offset, dst_x).any()) {
+      // We don't understand this src_x as a copy.
+      return false;
     }
 
-    return false;
+    src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
+    src_dim.stride = buffer_stride(src, src_d) * scale;
+    src_dim.fold_factor = buffer_fold_factor(src, src_d);
+    at = buffer_min(src, src_d) + offset * (scale - 1);
+    return true;
   }
 }
 
@@ -199,9 +200,20 @@ public:
       if (i) i->do_not_alias(op->sym);
     }
 
-    for (const auto& target : info.can_alias()) {
+    box_expr op_dims_bounds = dims_bounds(op->dims);
+
+    for (auto& target : info.can_alias()) {
       var target_var = target.first;
-      const buffer_alias& alias = target.second;
+      buffer_alias& alias = target.second;
+
+      // The alias might have used the bounds of this symbol, substitute them now.
+      for (dim_expr& i : alias.dims) {
+        i.bounds.min = substitute_bounds(i.bounds.min, op->sym, op_dims_bounds);
+        i.bounds.max = substitute_bounds(i.bounds.max, op->sym, op_dims_bounds);
+      }
+      for (expr& i : alias.at) {
+        i = substitute_bounds(i, op->sym, op_dims_bounds);
+      }
 
       bool use_alias = true;
 
@@ -305,12 +317,15 @@ public:
         return;
       }
 
-      expr at_unused;
-      expr& at = src_d >= 0 ? a.at[src_d] : at_unused;
-      a.dims[dst_d].stride = buffer_stride(op->src, src_d);
-      a.dims[dst_d].fold_factor = buffer_fold_factor(op->src, src_d);
-      if (!is_copy(op, src_d, dst_d, at, a.dims[dst_d])) {
+      dim_expr src_dim;
+      expr at;
+      if (!is_copy(op, src_d, dst_d, at, src_dim)) {
         return;
+      }
+
+      a.dims[dst_d] = src_dim;
+      if (at.defined()) {
+        a.at[src_d] = at;
       }
     }
 
@@ -484,11 +499,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
       continue;
     }
 
-    dim_expr src_dim = {buffer_bounds(op->dst, dst_d), 0, dim::unfolded};
-    if (src_d >= 0) {
-      src_dim.stride = buffer_stride(op->src, src_d);
-      src_dim.fold_factor = buffer_fold_factor(op->src, src_d);
-    }
+    dim_expr src_dim;
     expr at;
     if (is_copy(op, src_d, dst_d, at, src_dim)) {
       src_dims.push_back(src_dim);
