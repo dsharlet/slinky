@@ -189,7 +189,6 @@ class buffer_aliaser : public node_mutator {
     }
   };
   symbol_map<buffer_info> alloc_info;
-  symbol_map<bool> do_not_alias;
 
   // We need to map clones back to their original allocations.
   symbol_map<var> alloc_map;
@@ -239,15 +238,6 @@ public:
   buffer_aliaser(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* op) override {
-    bool do_not_alias_sym = false;
-    for (const dim_expr& d : op->dims) {
-      if (d.fold_factor.defined()) {
-        // This buffer can't be aliased.
-        do_not_alias_sym = true;
-      }
-    }
-    auto set_do_not_alias = set_value_in_scope(do_not_alias, op->sym, do_not_alias_sym);
-
     auto s = set_value_in_scope(alloc_info, op->sym, buffer_info(op->dims));
     stmt body = mutate(op->body);
     buffer_info info = std::move(*alloc_info[op->sym]);
@@ -309,11 +299,6 @@ public:
           i->do_not_alias(target_var);
         }
       }
-      // We may attempt to alias this both ways (src -> dst and dst -> src), we only want to do one of them.
-      // TODO: Is this possible? The inner one should have gone out of scope.
-      if (target_info) {
-        target_info->do_not_alias(op->sym);
-      }
       set_result(pad_result);
       return;
     }
@@ -333,11 +318,6 @@ public:
     }
   }
 
-  bool can_alias(var x) {
-    std::optional<bool> no_alias = do_not_alias[x];
-    return !no_alias || !*no_alias;
-  }
-
   void visit(const call_stmt* op) override {
     set_result(op);
     if (!op->attrs.allow_in_place) {
@@ -345,7 +325,6 @@ public:
       return;
     }
     for (var o : op->outputs) {
-      if (!can_alias(o)) continue;
       for (var i : op->inputs) {
         std::optional<buffer_info>& input_info = lookup_alloc(i);
         if (input_info) {
@@ -364,7 +343,7 @@ public:
   }
 
   void alias_copy_dst(const copy_stmt* op) {
-    if (!lookup_alloc(op->dst) || !can_alias(op->src)) {
+    if (!lookup_alloc(op->dst)) {
       // We didn't allocate the dst.
       return;
     }
@@ -405,7 +384,7 @@ public:
   }
 
   void alias_copy_src(const copy_stmt* op) {
-    if (!lookup_alloc(op->src) || !can_alias(op->dst)) {
+    if (!lookup_alloc(op->src)) {
       // We didn't allocate the src.
       return;
     }
