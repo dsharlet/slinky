@@ -971,10 +971,19 @@ TEST_P(padded_stencil_separable, pipeline) {
   const index_t padded_intm_t_size = (W + 2) * H * sizeof(short);
   const index_t stencil_y_size = W * (schedule != 0 ? 1 : H) * sizeof(short);
   const index_t padded_intm_size = W * (schedule != 0 ? 3 : (H + 2)) * sizeof(short);
-  ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
-  ASSERT_EQ(eval_ctx.heap.total_count, 4);
-
-  // TODO: We should get aliasing for some of these buffers.
+  if (no_alias_buffers) {
+    ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
+    ASSERT_EQ(eval_ctx.heap.total_count, 4);
+  } else {
+    if (schedule != 0) {
+      // The folded buffers don't alias.
+      ASSERT_EQ(eval_ctx.heap.total_size, padded_intm_t_size + stencil_y_size + padded_intm_size);
+      ASSERT_EQ(eval_ctx.heap.total_count, 3);
+    } else {
+      ASSERT_EQ(eval_ctx.heap.total_size, padded_intm_t_size + padded_intm_size);
+      ASSERT_EQ(eval_ctx.heap.total_count, 2);
+    }
+  }
 }
 
 TEST(constant, pipeline) {

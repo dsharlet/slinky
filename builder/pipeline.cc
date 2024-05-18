@@ -955,12 +955,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = simplify(result);
 
-  if (is_verbose()) {
-    std::cout << result << std::endl;
-  }
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
-    result = alias_buffers(result);
+    result = alias_buffers(result, ctx);
   }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
