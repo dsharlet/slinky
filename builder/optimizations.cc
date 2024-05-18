@@ -323,10 +323,10 @@ public:
       // This call does not allow aliasing an input to an output.
       return;
     }
-    for (var o : op->outputs) {
-      for (var i : op->inputs) {
-        std::optional<alloc_info>& input_info = lookup_alloc(i);
-        if (input_info) {
+    for (var i : op->inputs) {
+      std::optional<alloc_info>& input_info = lookup_alloc(i);
+      if (input_info) {
+        for (var o : op->outputs) {
           buffer_alias a;
           a.dims = buffer_dims(o, input_info->dims.size());
           a.at = buffer_mins(o, input_info->dims.size());
