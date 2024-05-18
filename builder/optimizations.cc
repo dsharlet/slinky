@@ -162,7 +162,7 @@ class buffer_aliaser : public node_mutator {
   class buffer_info {
   public:
     std::vector<dim_expr> dims;
-    std::map<var, buffer_alias> can_alias_;
+    std::map<var, buffer_alias> aliases;
 
     // If we decided to alias this buffer, we might have grown the bounds. If so, we need to make a new allocation with
     // this symbol, but make a crop of it for the original bounds.
@@ -171,16 +171,11 @@ class buffer_aliaser : public node_mutator {
   public:
     buffer_info(std::vector<dim_expr> dims) : dims(std::move(dims)) {}
 
-    std::map<var, buffer_alias>& can_alias() { return can_alias_; }
-    const std::map<var, buffer_alias>& can_alias() const { return can_alias_; }
-
-    void maybe_alias(var s, buffer_alias a) {
-      can_alias_[s] = std::move(a);
+    void maybe_alias(var s, buffer_alias a) { 
+      assert(aliases.count(s) == 0);
+      aliases[s] = std::move(a); 
     }
-
-    void do_not_alias(var s) {
-      can_alias_.erase(s);
-    }
+    void do_not_alias(var s) { aliases.erase(s); }
   };
   symbol_map<buffer_info> alloc_info;
 
@@ -242,7 +237,7 @@ public:
     }
 
     box_expr op_dims_bounds = dims_bounds(op->dims);
-    for (auto& target : info.can_alias()) {
+    for (auto& target : info.aliases) {
       var target_var = target.first;
       buffer_alias& alias = target.second;
 
@@ -456,8 +451,8 @@ public:
 
     for (std::optional<buffer_info>& i : alloc_info) {
       if (!i) continue;
-      auto j = i->can_alias().find(op->sym);
-      if (j != i->can_alias().end()) {
+      auto j = i->aliases.find(op->sym);
+      if (j != i->aliases.end()) {
         handler(j->second);
       }
     }
@@ -470,7 +465,7 @@ public:
       if (!info) {
         info = std::move(old_alloc_info[i]);
       } else {
-        for (auto& j : old_alloc_info[i]->can_alias()) {
+        for (auto& j : old_alloc_info[i]->aliases) {
           info->maybe_alias(j.first, std::move(j.second));
         }
       }
