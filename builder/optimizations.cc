@@ -32,15 +32,15 @@ dim_expr select(const expr& c, dim_expr t, dim_expr f) {
 }
 
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(bool padded, var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
+bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
     expr at_t = at;
     expr at_f = at;
     dim_expr src_dim_t = src_dim;
     dim_expr src_dim_f = src_dim;
-    if (is_copy(padded, src, s->true_value, src_d, dst, dst_x, dst_d, at_t, src_dim_t) &&
-        is_copy(padded, src, s->false_value, src_d, dst, dst_x, dst_d, at_f, src_dim_f)) {
+    if (is_copy(src, s->true_value, src_d, dst, dst_x, dst_d, at_t, src_dim_t) &&
+        is_copy(src, s->false_value, src_d, dst, dst_x, dst_d, at_f, src_dim_f)) {
       at = select(s->condition, at_t, at_f);
       src_dim = select(s->condition, src_dim_t, src_dim_f);
       return true;
@@ -75,18 +75,15 @@ bool is_copy(bool padded, var src, expr src_x, int src_d, var dst, var dst_x, in
       return false;
     }
 
-    if (padded) {
-      // When the copy is padded, we should use the src bounds.
-      src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
-      at = buffer_min(src, src_d) + offset * (scale - 1);
-    } else {
-      // When the copy is not padded, we should use the dst bounds.
-      src_dim.bounds = buffer_bounds(dst, dst_d);
-      at = buffer_min(dst, dst_d) * scale + offset;
-    }
-    // We always want the memory layout of the src buffer.
+    src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
     src_dim.stride = buffer_stride(src, src_d) * scale;
     src_dim.fold_factor = buffer_fold_factor(src, src_d);
+    at = buffer_min(src, src_d) + offset * (scale - 1);
+
+    // Alternative definitions that may be useful in the future and were difficult to determine:
+    // src_dim.bounds = buffer_bounds(dst, dst_d);
+    // at = buffer_min(dst, dst_d) * scale + offset;
+
     return true;
   }
 }
@@ -94,8 +91,7 @@ bool is_copy(bool padded, var src, expr src_x, int src_d, var dst, var dst_x, in
 bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_dim) {
   // We might not have an src dim if we're trying to broadcast.
   expr src_x = src_d >= 0 ? op->src_x[src_d] : expr();
-  bool padded = op->padding && !op->padding->empty();
-  return is_copy(padded, op->src, src_x, src_d, op->dst, op->dst_x[dst_d], dst_d, at, src_dim);
+  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x[dst_d], dst_d, at, src_dim);
 }
 
 // `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,
