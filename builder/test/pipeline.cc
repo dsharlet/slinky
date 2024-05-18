@@ -871,6 +871,112 @@ TEST_P(padded_stencil, pipeline) {
   }
 }
 
+class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
+    testing::Combine(testing::Values(true, false), testing::Range(0, 2)),
+    test_params_to_string<padded_stencil_separable::ParamType>);
+
+TEST_P(padded_stencil_separable, pipeline) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  int schedule = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+  auto padded_intm_t = buffer_expr::make(ctx, "padded_intm_t", 2, sizeof(short));
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
+  auto stencil_y = buffer_expr::make(ctx, "stencil_y", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  int adds = 0;
+  int stencil_xs = 0;
+  int stencil_ys = 0;
+
+  func add = func::make(
+      [&](const buffer<const short>& a, const buffer<short>& b) {
+        auto result = add_1<short>(a, b);
+        adds += b.elem_count();
+        return result;
+      },
+      {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.name = "add"});
+  // transpose so we compute the stencil in x.
+  func padded_t =
+      func::make_copy({intm, {point(x), point(y)}, {in->dim(0).bounds, {}}}, {padded_intm_t, {y, x}}, {{0, 0}});
+  func stencil_x = func::make(
+      [&](const buffer<const short>& a, const buffer<short>& b) {
+        auto result = sum1x3<short>(a, b);
+        stencil_xs += b.elem_count();
+        return result;
+      },
+      {{padded_intm_t, {point(x), bounds(-1, 1) + y}}}, {{stencil_y, {x, y}}}, call_stmt::attributes{.name = "stencil_x"});
+  // transpose back, compute the stencil in y.
+  func padded =
+      func::make_copy({stencil_y, {point(y), point(x)}, {in->dim(1).bounds, {}}}, {padded_intm, {x, y}}, {{0, 0}});
+  func stencil = func::make(
+      [&](const buffer<const short>& a, const buffer<short>& b) {
+        auto result = sum1x3<short>(a, b);
+        stencil_ys += b.elem_count();
+        return result;
+      },
+      {{padded_intm, {point(x), bounds(-1, 1) + y}}}, {{out, {x, y}}}, call_stmt::attributes{.name = "stencil_y"});
+
+  switch (schedule) {
+  case 0: break;
+  case 1: stencil.loops({y}); break;
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = 0;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
+            correct += in_buf(x + dx, y + dy) + 1;
+          }
+        }
+      }
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+    }
+  }
+
+  ASSERT_EQ(adds, W * H);
+  ASSERT_EQ(stencil_xs, W * H);
+  ASSERT_EQ(stencil_ys, W * H);
+
+  const index_t intm_size = W * H * sizeof(short);
+  const index_t padded_intm_t_size = (W + 2) * H * sizeof(short);
+  const index_t stencil_y_size = W * (schedule != 0 ? 1 : H) * sizeof(short);
+  const index_t padded_intm_size = W * (schedule != 0 ? 3 : (H + 2)) * sizeof(short);
+  ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
+  ASSERT_EQ(eval_ctx.heap.total_count, 4);
+
+  // TODO: We should get aliasing for some of these buffers.
+}
+
 TEST(constant, pipeline) {
   // Make the pipeline
   node_context ctx;

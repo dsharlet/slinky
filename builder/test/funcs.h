@@ -97,6 +97,16 @@ index_t sum3x3(const buffer<const T>& in, const buffer<T>& out) {
   return sum_stencil<T, -1, -1, 1, 1>(in, out);
 }
 
+// Centered 1D separable stencil operations.
+template <typename T>
+index_t sum1x3(const buffer<const T>& in, const buffer<T>& out) {
+  return sum_stencil<T, 0, -1, 0, 1>(in, out);
+}
+template <typename T>
+index_t sum3x1(const buffer<const T>& in, const buffer<T>& out) {
+  return sum_stencil<T, -1, 0, 1, 0>(in, out);
+}
+
 // A centered 2D 5x5 stencil operation.
 template <typename T>
 index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
