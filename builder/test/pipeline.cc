@@ -878,7 +878,7 @@ INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
     test_params_to_string<padded_stencil_separable::ParamType>);
 
 TEST_P(padded_stencil_separable, pipeline) {
-  bool no_alias_buffers = std::get<0>(GetParam());
+  bool require_contiguous_x = std::get<0>(GetParam());
   int schedule = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -891,6 +891,11 @@ TEST_P(padded_stencil_separable, pipeline) {
   auto padded_intm_t = buffer_expr::make(ctx, "padded_intm_t", 2, sizeof(short));
   auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
   auto stencil_y = buffer_expr::make(ctx, "stencil_y", 2, sizeof(short));
+
+  if (require_contiguous_x) {
+    padded_intm_t->dim(0).stride = static_cast<index_t>(sizeof(short));
+    padded_intm->dim(0).stride = static_cast<index_t>(sizeof(short));
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -911,6 +916,9 @@ TEST_P(padded_stencil_separable, pipeline) {
       func::make_copy({intm, {point(x), point(y)}, {in->dim(0).bounds, {}}}, {padded_intm_t, {y, x}}, {{0, 0}});
   func stencil_x = func::make(
       [&](const buffer<const short>& a, const buffer<short>& b) {
+        // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
+        assert(a.dim(0).stride() == sizeof(short) || !require_contiguous_x);
+        assert(b.dim(0).stride() == sizeof(short) || !require_contiguous_x);
         auto result = sum1x3<short>(a, b);
         stencil_xs += b.elem_count();
         return result;
@@ -921,6 +929,9 @@ TEST_P(padded_stencil_separable, pipeline) {
       func::make_copy({stencil_y, {point(y), point(x)}, {in->dim(1).bounds, {}}}, {padded_intm, {x, y}}, {{0, 0}});
   func stencil = func::make(
       [&](const buffer<const short>& a, const buffer<short>& b) {
+        // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
+        assert(a.dim(0).stride() == sizeof(short) || !require_contiguous_x);
+        assert(b.dim(0).stride() == sizeof(short) || !require_contiguous_x);
         auto result = sum1x3<short>(a, b);
         stencil_ys += b.elem_count();
         return result;
@@ -932,7 +943,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   case 1: stencil.loops({y}); break;
   }
 
-  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
   const int W = 20;
@@ -971,7 +982,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   const index_t padded_intm_t_size = (W + 2) * H * sizeof(short);
   const index_t stencil_y_size = W * (schedule != 0 ? 1 : H) * sizeof(short);
   const index_t padded_intm_size = W * (schedule != 0 ? 3 : (H + 2)) * sizeof(short);
-  if (no_alias_buffers) {
+  if (require_contiguous_x) {
     ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
     ASSERT_EQ(eval_ctx.heap.total_count, 4);
   } else {
