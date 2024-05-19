@@ -878,7 +878,7 @@ INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
     test_params_to_string<padded_stencil_separable::ParamType>);
 
 TEST_P(padded_stencil_separable, pipeline) {
-  bool require_contiguous_x = std::get<0>(GetParam());
+  bool require_dense_x = std::get<0>(GetParam());
   int schedule = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -892,7 +892,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
   auto stencil_y = buffer_expr::make(ctx, "stencil_y", 2, sizeof(short));
 
-  if (require_contiguous_x) {
+  if (require_dense_x) {
     padded_intm_t->dim(0).stride = static_cast<index_t>(sizeof(short));
     padded_intm->dim(0).stride = static_cast<index_t>(sizeof(short));
   }
@@ -915,11 +915,12 @@ TEST_P(padded_stencil_separable, pipeline) {
   func padded_t =
       func::make_copy({intm, {point(x), point(y)}, {in->dim(0).bounds, {}}}, {padded_intm_t, {y, x}}, {{0, 0}});
   func stencil_x = func::make(
-      [&](const buffer<const short>& a, const buffer<short>& b) {
-        // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
-        assert(a.dim(0).stride() == sizeof(short) || !require_contiguous_x);
-        assert(b.dim(0).stride() == sizeof(short) || !require_contiguous_x);
-        auto result = sum1x3<short>(a, b);
+      [&](const buffer<const short>& a, const buffer<short>& b) -> index_t {
+        if (require_dense_x) {
+          // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
+          if (a.dim(0).stride() != sizeof(short) || b.dim(0).stride() != sizeof(short)) return 1;
+        }
+        index_t result = sum1x3<short>(a, b);
         stencil_xs += b.elem_count();
         return result;
       },
@@ -928,11 +929,12 @@ TEST_P(padded_stencil_separable, pipeline) {
   func padded =
       func::make_copy({stencil_y, {point(y), point(x)}, {in->dim(1).bounds, {}}}, {padded_intm, {x, y}}, {{0, 0}});
   func stencil = func::make(
-      [&](const buffer<const short>& a, const buffer<short>& b) {
-        // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
-        assert(a.dim(0).stride() == sizeof(short) || !require_contiguous_x);
-        assert(b.dim(0).stride() == sizeof(short) || !require_contiguous_x);
-        auto result = sum1x3<short>(a, b);
+      [&](const buffer<const short>& a, const buffer<short>& b) -> index_t {
+        if (require_dense_x) {
+          // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
+          if (a.dim(0).stride() != sizeof(short) || b.dim(0).stride() != sizeof(short)) return 1;
+        }
+        index_t result = sum1x3<short>(a, b);
         stencil_ys += b.elem_count();
         return result;
       },
@@ -958,7 +960,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+  ASSERT_EQ(0, p.evaluate(inputs, outputs, eval_ctx));
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
@@ -982,7 +984,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   const index_t padded_intm_t_size = (W + 2) * H * sizeof(short);
   const index_t stencil_y_size = W * (schedule != 0 ? 1 : H) * sizeof(short);
   const index_t padded_intm_size = W * (schedule != 0 ? 3 : (H + 2)) * sizeof(short);
-  if (require_contiguous_x) {
+  if (require_dense_x) {
     ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
     ASSERT_EQ(eval_ctx.heap.total_count, 4);
   } else {
