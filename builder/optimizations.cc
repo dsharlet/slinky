@@ -153,8 +153,9 @@ class buffer_aliaser : public node_mutator {
   node_context& ctx;
 
   struct alias_info {
-    // Dimensions for this alias to use.
+    // Parameters for this alias's make_buffer call.
     std::vector<dim_expr> dims;
+    expr elem_size;
 
     // Coordinates to pass to buffer_at to get the base pointer for the alias.
     std::vector<expr> at;
@@ -168,8 +169,9 @@ class buffer_aliaser : public node_mutator {
 
   class alloc_info {
   public:
-    // Dimensions for the buffer allocation.
+    // The buffer allocation parameters.
     std::vector<dim_expr> dims;
+    expr elem_size;
 
     // Possible aliases of this allocation.
     std::map<var, alias_info> aliases;
@@ -179,7 +181,7 @@ class buffer_aliaser : public node_mutator {
     var shared_alloc_sym;
 
   public:
-    alloc_info(std::vector<dim_expr> dims) : dims(std::move(dims)) {}
+    alloc_info(std::vector<dim_expr> dims, expr elem_size) : dims(std::move(dims)), elem_size(std::move(elem_size)) {}
 
     void maybe_alias(var s, alias_info a) { 
       assert(aliases.count(s) == 0);
@@ -237,7 +239,7 @@ public:
   buffer_aliaser(node_context& ctx) : ctx(ctx) {}
 
   void visit(const allocate* op) override {
-    auto s = set_value_in_scope(allocations, op->sym, alloc_info(op->dims));
+    auto s = set_value_in_scope(allocations, op->sym, alloc_info(op->dims, op->elem_size));
     stmt body = mutate(op->body);
     alloc_info info = std::move(*allocations[op->sym]);
 
@@ -282,9 +284,15 @@ public:
         }
       }
 
-      // Replace the allocation with a buffer using the dims the alias wants.
+      // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
+      expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
       stmt result =
-          make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), op->elem_size, alias.dims, std::move(body));
+          make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+
+      if (elem_size.defined()) {
+        result = block::make({check::make(elem_size == op->elem_size), result});
+      }
+
       // If we aliased the source and destination of a copy, replace the copy with a pad.
       stmt pad_result = replace_copy_with_pad(result, op->sym, target_var, alias.permutation);
       if (pad_result.same_as(result)) {
@@ -379,6 +387,9 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
+
+    a.elem_size = buffer_elem_size(op->src);
+
     info->maybe_alias(op->src, std::move(a));
   }
 
@@ -435,6 +446,8 @@ public:
     a.permutation.resize(op->dst_x.size());
     std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
+    a.elem_size = buffer_elem_size(op->dst);
+
     info->maybe_alias(op->dst, std::move(a));
   }
 
@@ -452,7 +465,7 @@ public:
     std::swap(old_allocations, allocations);
     for (std::size_t i = 0; i < old_allocations.size(); ++i) {
       if (old_allocations[i]) {
-        allocations[i] = alloc_info(old_allocations[i]->dims);
+        allocations[i] = alloc_info(old_allocations[i]->dims, old_allocations[i]->elem_size);
       }
     }
 
