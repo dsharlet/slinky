@@ -870,6 +870,8 @@ TEST_P(padded_stencil, pipeline) {
   }
 }
 
+interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx}; }
+
 class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
@@ -878,7 +880,7 @@ INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
 
 TEST_P(padded_stencil_separable, pipeline) {
   bool require_dense_x = std::get<0>(GetParam());
-  int schedule = std::get<1>(GetParam());
+  int split_y = std::get<1>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -911,8 +913,7 @@ TEST_P(padded_stencil_separable, pipeline) {
       },
       {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.name = "add"});
   // transpose so we compute the stencil in x.
-  func padded_t =
-      func::make_copy({intm, {point(x), point(y)}, {in->dim(0).bounds, {}}}, {padded_intm_t, {y, x}}, {{0, 0}});
+  func padded_t = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {padded_intm_t, {y, x}}, {{6, 0}});
   func stencil_x = func::make(
       [&](const buffer<const short>& a, const buffer<short>& b) -> index_t {
         if (require_dense_x) {
@@ -923,10 +924,10 @@ TEST_P(padded_stencil_separable, pipeline) {
         stencil_xs += b.elem_count();
         return result;
       },
-      {{padded_intm_t, {point(x), bounds(-1, 1) + y}}}, {{stencil_y, {x, y}}}, call_stmt::attributes{.name = "stencil_x"});
+      {{padded_intm_t, {point(x), bounds(-1, 1) + y}}}, {{stencil_y, {x, y}}},
+      call_stmt::attributes{.name = "stencil_x"});
   // transpose back, compute the stencil in y.
-  func padded =
-      func::make_copy({stencil_y, {point(y), point(x)}, {in->dim(1).bounds, {}}}, {padded_intm, {x, y}}, {{0, 0}});
+  func padded = func::make_copy({stencil_y, {point(y), point(x)}}, {padded_intm, {x, y}});
   func stencil = func::make(
       [&](const buffer<const short>& a, const buffer<short>& b) -> index_t {
         if (require_dense_x) {
@@ -939,9 +940,8 @@ TEST_P(padded_stencil_separable, pipeline) {
       },
       {{padded_intm, {point(x), bounds(-1, 1) + y}}}, {{out, {x, y}}}, call_stmt::attributes{.name = "stencil_y"});
 
-  switch (schedule) {
-  case 0: break;
-  case 1: stencil.loops({y}); break;
+  if (split_y > 0) {
+    stencil.loops({{y, split_y}});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -968,6 +968,8 @@ TEST_P(padded_stencil_separable, pipeline) {
         for (int dx = -1; dx <= 1; ++dx) {
           if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
             correct += in_buf(x + dx, y + dy) + 1;
+          } else {
+            correct += 6;
           }
         }
       }
@@ -976,24 +978,32 @@ TEST_P(padded_stencil_separable, pipeline) {
   }
 
   ASSERT_EQ(adds, W * H);
-  ASSERT_EQ(stencil_xs, W * H);
+  ASSERT_EQ(stencil_xs, W * (H + 2));
   ASSERT_EQ(stencil_ys, W * H);
 
-  const index_t intm_size = W * H * sizeof(short);
-  const index_t padded_intm_t_size = (W + 2) * H * sizeof(short);
-  const index_t stencil_y_size = W * (schedule != 0 ? 1 : H) * sizeof(short);
-  const index_t padded_intm_size = W * (schedule != 0 ? 3 : (H + 2)) * sizeof(short);
-  if (require_dense_x) {
+  if (split_y > 0) {
+    const index_t intm_size = W * split_y * sizeof(short);
+    const index_t padded_intm_t_size = (W + 2) * split_y * sizeof(short);
+    const index_t stencil_y_size = W * split_y * sizeof(short);
+    const index_t padded_intm_size = W * (split_y + 2) * sizeof(short);
+
+    // Folded buffers don't alias.
     ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
     ASSERT_EQ(eval_ctx.heap.total_count, 4);
   } else {
-    if (schedule != 0) {
-      // The folded buffers don't alias.
-      ASSERT_EQ(eval_ctx.heap.total_size, padded_intm_t_size + stencil_y_size + padded_intm_size);
-      ASSERT_EQ(eval_ctx.heap.total_count, 3);
-    } else {
-      ASSERT_EQ(eval_ctx.heap.total_size, padded_intm_t_size + padded_intm_size);
+    const index_t intm_size = W * H * sizeof(short);
+    const index_t padded_intm_t_size = (W + 2) * (H + 2) * sizeof(short);
+    const index_t stencil_y_size = W * (H + 2) * sizeof(short);
+    const index_t padded_intm_size = W * (H + 2) * sizeof(short);
+
+    if (!require_dense_x) {
+      ASSERT_EQ(eval_ctx.heap.total_size,
+          std::max(intm_size, padded_intm_t_size) + std::max(stencil_y_size, padded_intm_size));
       ASSERT_EQ(eval_ctx.heap.total_count, 2);
+    } else {
+      // We can't alias anything when we require the strides to be dense.
+      ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_y_size + padded_intm_size);
+      ASSERT_EQ(eval_ctx.heap.total_count, 4);
     }
   }
 }
