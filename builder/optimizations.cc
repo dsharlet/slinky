@@ -513,13 +513,15 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   copy_attrs.name = "copy";
   stmt result = call_stmt::make(
       [padding = op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
-        const raw_buffer* src_buf = ctx.lookup_buffer(op->inputs[0]);
-        const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[0]);
+        // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
+        // don't matter. But in this case, they do...
+        const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
+        const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
         const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
-      {op->src}, {op->dst}, std::move(copy_attrs));
+      {}, {op->src, op->dst}, std::move(copy_attrs));
 
   std::vector<expr> src_x = op->src_x;
   std::vector<var> dst_x = op->dst_x;

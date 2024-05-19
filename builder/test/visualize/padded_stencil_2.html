@@ -360,7 +360,7 @@ function pipeline(__in, out) {
                 }}
                 { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)}); {
                   let padded_intm = __padded_intm;
-                  consume(intm_uncropped);
+                  produce(intm_uncropped);
                   produce(padded_intm);
                   __event_t++;
                 }}
