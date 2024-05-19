@@ -167,11 +167,13 @@ class buffer_aliaser : public node_mutator {
     bool assume_in_bounds = false;
   };
 
-  class alloc_info {
+  class buffer_info {
   public:
     // The buffer allocation parameters.
     std::vector<dim_expr> dims;
     expr elem_size;
+
+    bool can_reallocate;
 
     // Possible aliases of this allocation.
     std::map<var, alias_info> aliases;
@@ -181,30 +183,31 @@ class buffer_aliaser : public node_mutator {
     var shared_alloc_sym;
 
   public:
-    alloc_info(std::vector<dim_expr> dims, expr elem_size) : dims(std::move(dims)), elem_size(std::move(elem_size)) {}
+    buffer_info(std::vector<dim_expr> dims, expr elem_size, bool can_reallocate)
+        : dims(std::move(dims)), elem_size(std::move(elem_size)), can_reallocate(can_reallocate) {}
 
-    void maybe_alias(var s, alias_info a) { 
+    void maybe_alias(var s, alias_info a) {
       assert(aliases.count(s) == 0);
-      aliases[s] = std::move(a); 
+      aliases[s] = std::move(a);
     }
     void do_not_alias(var s) { aliases.erase(s); }
   };
-  symbol_map<alloc_info> allocations;
+  symbol_map<buffer_info> buffers;
 
-  // We need to map clones back to their original allocations.
-  symbol_map<var> alloc_map;
+  // We need to map clones back to their original buffers.
+  symbol_map<var> buffer_map;
 
-  std::optional<alloc_info>& lookup_alloc(var x) {
-    const std::optional<var>& mapped = alloc_map[x];
+  std::optional<buffer_info>& lookup_buffer(var x) {
+    const std::optional<var>& mapped = buffer_map[x];
     if (mapped) {
-      return lookup_alloc(*mapped);
+      return lookup_buffer(*mapped);
     } else {
-      return allocations[x];
+      return buffers[x];
     }
   }
 
   static bool alias_compatible(
-      const allocate* op, const alias_info& alias, const std::optional<alloc_info>& target_info) {
+      const allocate* op, const alias_info& alias, var target, const std::optional<buffer_info>& target_info) {
     assert(op->dims.size() == alias.dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (!alias.assume_in_bounds) {
@@ -212,8 +215,8 @@ class buffer_aliaser : public node_mutator {
         if (!prove_true(op->dims[d].bounds.min >= alias.dims[alias.permutation[d]].bounds.min) ||
             !prove_true(op->dims[d].bounds.max <= alias.dims[alias.permutation[d]].bounds.max)) {
           // We don't know if this target is big enough for this allocation.
-          if (!target_info) {
-            // We didn't allocate this buffer, we can't grow it to use this buffer as an alias target.
+          if (!target_info || !target_info->can_reallocate) {
+            // We can't reallocate this buffer so we can't grow it to use this buffer as an alias target.
             return false;
           }
         }
@@ -225,10 +228,21 @@ class buffer_aliaser : public node_mutator {
         }
       }
       if (op->dims[d].fold_factor.defined()) {
-        if (target_info && target_info->dims[alias.permutation[d]].fold_factor.defined()) {
-          // This alias is not compatible because of fold factors.
-          // TODO: We should try to relax this constraint.
-          return false;
+        expr target_fold_factor = target_info ? target_info->dims[alias.permutation[d]].fold_factor
+                                              : buffer_fold_factor(target, static_cast<int>(d));
+        expr target_min =
+            target_info ? target_info->dims[alias.permutation[d]].min() : buffer_min(target, static_cast<int>(d));
+        if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
+          // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
+          // any memory anyways if it's an alias.
+        } else {
+          if (!prove_true(target_fold_factor % op->dims[d].fold_factor == 0)) {
+            // The fold factor of this allocation does not evenly divide the target fold factor.
+            return false;
+          } else if (!prove_true(op->dims[d].min() % target_fold_factor == target_min % target_fold_factor)) {
+            // The mins of these aliases do not align in the target alias.
+            return false;
+          }
         }
       }
     }
@@ -236,15 +250,19 @@ class buffer_aliaser : public node_mutator {
   }
 
 public:
-  buffer_aliaser(node_context& ctx) : ctx(ctx) {}
+  buffer_aliaser(node_context& ctx, const std::vector<buffer_expr_ptr>& outputs) : ctx(ctx) {
+    for (const buffer_expr_ptr& i : outputs) {
+      buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*can_reallocate=*/false);
+    }
+  }
 
   void visit(const allocate* op) override {
-    auto s = set_value_in_scope(allocations, op->sym, alloc_info(op->dims, op->elem_size));
+    auto s = set_value_in_scope(buffers, op->sym, buffer_info(op->dims, op->elem_size, /*can_reallocate=*/true));
     stmt body = mutate(op->body);
-    alloc_info info = std::move(*allocations[op->sym]);
+    buffer_info info = std::move(*buffers[op->sym]);
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
-    for (std::optional<alloc_info>& i : allocations) {
+    for (std::optional<buffer_info>& i : buffers) {
       if (i) i->do_not_alias(op->sym);
     }
 
@@ -254,8 +272,8 @@ public:
       alias_info& alias = target.second;
 
       var alloc_var = target_var;
-      std::optional<alloc_info>& target_info = lookup_alloc(target_var);
-      if (!alias_compatible(op, alias, target_info)) {
+      std::optional<buffer_info>& target_info = lookup_buffer(target_var);
+      if (!alias_compatible(op, alias, target_var, target_info)) {
         continue;
       }
 
@@ -286,8 +304,7 @@ public:
 
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      stmt result =
-          make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+      stmt result = make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
@@ -301,7 +318,7 @@ public:
         // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
         // of the region that has been aliased so far, and allow another alias as long as it does not intersect that
         // region. That will likely be very difficult to do symbolically.
-        for (std::optional<alloc_info>& i : allocations) {
+        for (std::optional<buffer_info>& i : buffers) {
           if (!i) continue;
           i->do_not_alias(target_var);
         }
@@ -332,7 +349,7 @@ public:
       return;
     }
     for (var i : op->inputs) {
-      std::optional<alloc_info>& input_info = lookup_alloc(i);
+      std::optional<buffer_info>& input_info = lookup_buffer(i);
       if (input_info) {
         for (var o : op->outputs) {
           alias_info a;
@@ -350,7 +367,7 @@ public:
   }
 
   void alias_copy_dst(const copy_stmt* op) {
-    if (!lookup_alloc(op->dst)) {
+    if (!lookup_buffer(op->dst)) {
       // We didn't allocate the dst.
       return;
     }
@@ -358,7 +375,7 @@ public:
     // We allocated the dst. We might be able to replace the allocation with an alias of the src.
     // This case is a straightforward use of is_copy, which produces the dims that should be the src of a copy, which
     // are the same dimensions we want the dst to be.
-    std::optional<alloc_info>& info = lookup_alloc(op->dst);
+    std::optional<buffer_info>& info = lookup_buffer(op->dst);
 
     alias_info a;
     a.at.resize(op->src_x.size());
@@ -394,7 +411,7 @@ public:
   }
 
   void alias_copy_src(const copy_stmt* op) {
-    if (!lookup_alloc(op->src)) {
+    if (!lookup_buffer(op->src)) {
       // We didn't allocate the src.
       return;
     }
@@ -403,7 +420,7 @@ public:
     // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
     // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
     // broadcasting).
-    std::optional<alloc_info>& info = lookup_alloc(op->src);
+    std::optional<buffer_info>& info = lookup_buffer(op->src);
 
     alias_info a;
     a.at.resize(op->dst_x.size());
@@ -461,18 +478,18 @@ public:
   template <typename T, typename Fn>
   void visit_buffer_mutator(const T* op, Fn&& handler) {
     // We need to know which alias candidates are added inside this mutator.
-    symbol_map<alloc_info> old_allocations(allocations.size());
-    std::swap(old_allocations, allocations);
-    for (std::size_t i = 0; i < old_allocations.size(); ++i) {
-      if (old_allocations[i]) {
-        allocations[i] = alloc_info(old_allocations[i]->dims, old_allocations[i]->elem_size);
+    symbol_map<buffer_info> old_buffers(buffers.size());
+    std::swap(old_buffers, buffers);
+    for (std::size_t i = 0; i < old_buffers.size(); ++i) {
+      if (old_buffers[i]) {
+        buffers[i] = buffer_info(old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->can_reallocate);
       }
     }
 
-    auto set_info_sym = set_value_in_scope(allocations, op->sym, lookup_alloc(op->src));
+    auto set_info_sym = set_value_in_scope(buffers, op->sym, lookup_buffer(op->src));
     node_mutator::visit(op);
 
-    for (std::optional<alloc_info>& i : allocations) {
+    for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       auto j = i->aliases.find(op->sym);
       if (j != i->aliases.end()) {
@@ -481,14 +498,14 @@ public:
     }
 
     // Add the old alias candidates back to the alias info.
-    allocations.reserve(std::max(allocations.size(), old_allocations.size()));
-    for (std::size_t i = 0; i < old_allocations.size(); ++i) {
-      if (!old_allocations[i]) continue;
-      std::optional<alloc_info>& info = allocations[i];
+    buffers.reserve(std::max(buffers.size(), old_buffers.size()));
+    for (std::size_t i = 0; i < old_buffers.size(); ++i) {
+      if (!old_buffers[i]) continue;
+      std::optional<buffer_info>& info = buffers[i];
       if (!info) {
-        info = std::move(old_allocations[i]);
+        info = std::move(old_buffers[i]);
       } else {
-        for (auto& j : old_allocations[i]->aliases) {
+        for (auto& j : old_buffers[i]->aliases) {
           info->maybe_alias(j.first, std::move(j.second));
         }
       }
@@ -509,7 +526,7 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    auto set_mapped_sym = set_value_in_scope(alloc_map, op->sym, op->src);
+    auto set_mapped_sym = set_value_in_scope(buffer_map, op->sym, op->src);
     node_mutator::visit(op);
   }
 
@@ -518,7 +535,9 @@ public:
 
 }  // namespace
 
-stmt alias_buffers(const stmt& s, node_context& ctx) { return buffer_aliaser(ctx).mutate(s); }
+stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& outputs) {
+  return buffer_aliaser(ctx, outputs).mutate(s);
+}
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // Start by making a call to copy.
