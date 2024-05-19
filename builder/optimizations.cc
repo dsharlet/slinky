@@ -152,7 +152,7 @@ stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& 
 class buffer_aliaser : public node_mutator {
   node_context& ctx;
 
-  struct buffer_alias {
+  struct alias_info {
     // Dimensions for this alias to use.
     std::vector<dim_expr> dims;
 
@@ -172,7 +172,7 @@ class buffer_aliaser : public node_mutator {
     std::vector<dim_expr> dims;
 
     // Possible aliases of this allocation.
-    std::map<var, buffer_alias> aliases;
+    std::map<var, alias_info> aliases;
 
     // If we decided to alias this buffer, we might have grown the bounds. If so, we need to make a new allocation with
     // this symbol, but make a crop of it for the original bounds.
@@ -181,7 +181,7 @@ class buffer_aliaser : public node_mutator {
   public:
     alloc_info(std::vector<dim_expr> dims) : dims(std::move(dims)) {}
 
-    void maybe_alias(var s, buffer_alias a) { 
+    void maybe_alias(var s, alias_info a) { 
       assert(aliases.count(s) == 0);
       aliases[s] = std::move(a); 
     }
@@ -202,7 +202,7 @@ class buffer_aliaser : public node_mutator {
   }
 
   static bool alias_compatible(
-      const allocate* op, const buffer_alias& alias, const std::optional<alloc_info>& target_info) {
+      const allocate* op, const alias_info& alias, const std::optional<alloc_info>& target_info) {
     assert(op->dims.size() == alias.dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (!alias.assume_in_bounds) {
@@ -249,7 +249,7 @@ public:
     box_expr op_dims_bounds = dims_bounds(op->dims);
     for (auto& target : info.aliases) {
       var target_var = target.first;
-      buffer_alias& alias = target.second;
+      alias_info& alias = target.second;
 
       var alloc_var = target_var;
       std::optional<alloc_info>& target_info = lookup_alloc(target_var);
@@ -327,7 +327,7 @@ public:
       std::optional<alloc_info>& input_info = lookup_alloc(i);
       if (input_info) {
         for (var o : op->outputs) {
-          buffer_alias a;
+          alias_info a;
           a.dims = buffer_dims(o, input_info->dims.size());
           a.at = buffer_mins(o, input_info->dims.size());
           // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output, and the
@@ -352,7 +352,7 @@ public:
     // are the same dimensions we want the dst to be.
     std::optional<alloc_info>& info = lookup_alloc(op->dst);
 
-    buffer_alias a;
+    alias_info a;
     a.at.resize(op->src_x.size());
     a.permutation.resize(op->dst_x.size());
     a.dims = info->dims;
@@ -394,7 +394,7 @@ public:
     // broadcasting).
     std::optional<alloc_info>& info = lookup_alloc(op->src);
 
-    buffer_alias a;
+    alias_info a;
     a.at.resize(op->dst_x.size());
     a.dims.resize(op->src_x.size());
     assert(op->src_x.size() == info->dims.size());
@@ -483,7 +483,7 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
-    visit_buffer_mutator(op, [=](buffer_alias& alias) {
+    visit_buffer_mutator(op, [=](alias_info& alias) {
       for (std::size_t d = 0; d < op->at.size(); ++d) {
         if (!op->at[d].defined()) continue;
         alias.at.insert(alias.at.begin() + d, op->at[d]);
@@ -492,7 +492,7 @@ public:
   }
 
   void visit(const slice_dim* op) override {
-    visit_buffer_mutator(op, [=](buffer_alias& alias) { alias.at.insert(alias.at.begin() + op->dim, op->at); });
+    visit_buffer_mutator(op, [=](alias_info& alias) { alias.at.insert(alias.at.begin() + op->dim, op->at); });
   }
 
   void visit(const clone_buffer* op) override {
