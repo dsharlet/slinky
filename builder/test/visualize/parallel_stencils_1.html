@@ -276,38 +276,38 @@ function make_buffer(name, base, elem_size, dims) {
 function clone_buffer(b) { return structuredClone(b); }
 function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
-  let new_min = max(b.dims[d].bounds.min, bounds.min);
-  let new_max = min(b.dims[d].bounds.max, bounds.max);
+  let new_min = max(result.dims[d].bounds.min, bounds.min);
+  let new_max = min(result.dims[d].bounds.max, bounds.max);
   if (new_max >= new_min) {
-    b.base += flat_offset_dim(b.dims[d], new_min);
+    result.base += flat_offset_dim(result.dims[d], new_min);
   }
-  b.dims[d].bounds.min = new_min;
-  b.dims[d].bounds.max = new_max;
+  result.dims[d].bounds.min = new_min;
+  result.dims[d].bounds.max = new_max;
   return result;
 }
 function crop_buffer(b, bounds) {
   let result = clone_buffer(b);
   for (let d = 0; d < bounds.length; ++d) {
-    crop_dim(b, d, bounds[d]);
+    result = crop_dim(result, d, bounds[d]);
   }
   return result;
 }
 function slice_dim(b, d, at) {
   let result = clone_buffer(b);
-  b.base += flat_offset_dim(b.dims[d], at);
-  b.dims.splice(d, 1);
+  result.base += flat_offset_dim(result.dims[d], at);
+  result.dims.splice(d, 1);
   return result;
 }
 function slice_buffer(b, at) {
   let result = clone_buffer(b);
   for (let d = at.length - 1; d >= 0; --d) {
-    slice_dim(b, d, at[d]);
+    result = slice_dim(result, d, at[d]);
   }
   return result;
 }
 function transpose(b, dims) {
   let result = clone_buffer(b);
-  b.dims = dims.map(i => b.dims[i]);
+  result.dims = dims.map(i => result.dims[i]);
   return result;
 }
 function produce(b) {
@@ -370,39 +370,39 @@ function pipeline(in1, in2, out) {
                 let __loop_max = buffer_max(out, 1);
                 let __loop_step = 2;
                 for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                  { let __intm3 = crop_dim(intm3, 1, {min:y, max:min((y + 1), buffer_max(out, 1))});
+                  { let __intm3 = crop_dim(intm3, 1, {min:y, max:min((y + 1), buffer_max(out, 1))}); {
+                    let intm3 = __intm3;
                     let __loop_min = max(y, buffer_min(out, 1));
                     let __loop_max = min((y + 1), buffer_max(out, 1));
                     let __loop_step = 1;
                     for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                      { let __intm3 = crop_dim(intm3, 1, {min:NaN, max:y});
+                      { let __intm3 = crop_dim(intm3, 1, {min:NaN, max:y}); {
+                        let intm3 = __intm3;
                         consume(intm1);
                         produce(intm3);
                         __event_t++;
-                        intm3 = __intm3;
-                      }
+                      }}
                     }
-                    intm3 = __intm3;
-                  }
-                  { let __intm2 = crop_dim(intm2, 1, {min:(y + 2), max:(min((y + 1), buffer_max(out, 1)) + 2)});
+                  }}
+                  { let __intm2 = crop_dim(intm2, 1, {min:(y + 2), max:(min((y + 1), buffer_max(out, 1)) + 2)}); {
+                    let intm2 = __intm2;
                     consume(in2);
                     produce(intm2);
                     __event_t++;
-                    intm2 = __intm2;
-                  }
-                  { let __intm4 = crop_dim(intm4, 1, {min:y, max:min((y + 1), buffer_max(out, 1))});
+                  }}
+                  { let __intm4 = crop_dim(intm4, 1, {min:y, max:min((y + 1), buffer_max(out, 1))}); {
+                    let intm4 = __intm4;
                     consume(intm2_uncropped);
                     produce(intm4);
                     __event_t++;
-                    intm4 = __intm4;
-                  }
-                  { let __out = crop_dim(out, 1, {min:y, max:(y + 1)});
+                  }}
+                  { let __out = crop_dim(out, 1, {min:y, max:(y + 1)}); {
+                    let out = __out;
                     consume(intm3_uncropped);
                     consume(intm4_uncropped);
                     produce(out);
                     __event_t++;
-                    out = __out;
-                  }
+                  }}
                 }
               }
               free(intm4);
