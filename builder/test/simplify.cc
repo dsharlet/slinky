@@ -470,7 +470,6 @@ public:
     switch (rng_() % 2) {
     case 0: return buffer_min(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
     case 1: return buffer_max(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
-    default: return buffer_at(random_pick(bufs_));
     }
   }
 
@@ -478,6 +477,7 @@ public:
     expr a = make_random_expr(depth - 1);
     expr b = make_random_expr(depth - 1);
     switch (rng_() % 8) {
+    // Give more weight to ==.
     default: return a == b;
     case 1: return a < b;
     case 2: return a <= b;
@@ -525,7 +525,7 @@ TEST(simplify, fuzz) {
     expr test = gen.make_random_expr(3);
     expr simplified = simplify(test);
 
-    // Also test bounds_of and constant_upper_bund.
+    // Also test bounds_of and constant_upper_bound.
     interval_expr bounds = bounds_of(test, gen.var_bounds());
     expr upper_bound = constant_upper_bound(test);
 
