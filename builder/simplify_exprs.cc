@@ -60,11 +60,34 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, min(y, min(z, min(x, w)))), min(x, min(y, min(z, w)))) ||
 
       // Pull common terms out.
-      r.rewrite(min(x + y, x + z), x + min(y, z)) ||
-      r.rewrite(min(x - y, x - z), x - max(y, z)) ||
-      r.rewrite(min(x - y, z - y), min(x, z) - y) ||
+      r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
+      r.rewrite(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
+      r.rewrite(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
+      r.rewrite(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
+      r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
+      r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
+      r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
+      r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
+      r.rewrite(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
+      r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
+      r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
+      r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
+      r.rewrite(min(x + z, y + z), z + min(x, y)) ||
+      r.rewrite(min(x - z, y - z), min(x, y) - z) ||
+      r.rewrite(min(z - x, z - y), z - max(x, y)) ||
+      r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
       r.rewrite(min(x, x + z), x + min(z, 0)) ||
       r.rewrite(min(x, x - z), x - max(z, 0)) ||
+      r.rewrite(min(x, -x), -abs(x)) ||
+
+      // Selects
+      r.rewrite(min(x, select(y, min(x, z), w)), min(x, select(y, z, w))) ||
+      r.rewrite(min(x, select(y, z, min(x, w))), min(x, select(y, z, w))) ||
+      r.rewrite(min(x, select(y, max(x, z), w)), select(y, x, min(x, w))) ||
+      r.rewrite(min(x, select(y, z, max(x, w))), select(y, min(x, z), w)) ||
+      r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
+      r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
+      r.rewrite(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
 
       // Move constants out.
       r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -117,33 +140,6 @@ expr simplify(const class min* op, expr a, expr b) {
 
       r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
 
-      // Algebraic simplifications
-      r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
-      r.rewrite(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
-      r.rewrite(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
-      r.rewrite(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
-      r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
-      r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
-      r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
-      r.rewrite(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
-      r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
-      r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
-      r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
-      r.rewrite(min(x + z, y + z), z + min(x, y)) ||
-      r.rewrite(min(x - z, y - z), min(x, y) - z) ||
-      r.rewrite(min(z - x, z - y), z - max(x, y)) ||
-      r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
-      r.rewrite(min(x, -x), -abs(x)) ||
-
-      // Selects
-      r.rewrite(min(x, select(y, min(x, z), w)), min(x, select(y, z, w))) ||
-      r.rewrite(min(x, select(y, z, min(x, w))), min(x, select(y, z, w))) ||
-      r.rewrite(min(x, select(y, max(x, z), w)), select(y, x, min(x, w))) ||
-      r.rewrite(min(x, select(y, z, max(x, w))), select(y, min(x, z), w)) ||
-      r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
-      r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
-      r.rewrite(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
       false) {
     return r.result;
   }
@@ -189,11 +185,32 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, max(y, max(z, max(x, w)))), max(x, max(y, max(z, w)))) ||
 
       // Pull common terms out.
-      r.rewrite(max(x + y, x + z), x + max(y, z)) ||
-      r.rewrite(max(x - y, x - z), x - min(y, z)) ||
-      r.rewrite(max(x - y, z - y), max(x, z) - y) ||
+      r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
+      r.rewrite(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
+      r.rewrite(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
+      r.rewrite(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
+      r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
+      r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
+      r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
+      r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
+      r.rewrite(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
+      r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
+      r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
+      r.rewrite(max(x + z, y + z), z + max(x, y)) ||
+      r.rewrite(max(x - z, y - z), max(x, y) - z) ||
+      r.rewrite(max(z - x, z - y), z - min(x, y)) ||
       r.rewrite(max(x, x + z), x + max(z, 0)) ||
       r.rewrite(max(x, x - z), x - min(z, 0)) ||
+      r.rewrite(max(x, -x), abs(x)) ||
+
+      // Selects
+      r.rewrite(max(x, select(y, max(x, z), w)), max(x, select(y, z, w))) ||
+      r.rewrite(max(x, select(y, z, max(x, w))), max(x, select(y, z, w))) ||
+      r.rewrite(max(x, select(y, min(x, z), w)), select(y, x, max(x, w))) ||
+      r.rewrite(max(x, select(y, z, min(x, w))), select(y, max(x, z), w)) ||
+      r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
+      r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
+      r.rewrite(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
 
       // Move constants out.
       r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -245,32 +262,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 <= 0)) ||
 
       r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
-
-      // Algebraic simplifications
-      r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
-      r.rewrite(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
-      r.rewrite(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
-      r.rewrite(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
-      r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
-      r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
-      r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
-      r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
-      r.rewrite(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
-      r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
-      r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
-      r.rewrite(max(x + z, y + z), z + max(x, y)) ||
-      r.rewrite(max(x - z, y - z), max(x, y) - z) ||
-      r.rewrite(max(z - x, z - y), z - min(x, y)) ||
-      r.rewrite(max(x, -x), abs(x)) ||
-
-      // Selects
-      r.rewrite(max(x, select(y, max(x, z), w)), max(x, select(y, z, w))) ||
-      r.rewrite(max(x, select(y, z, max(x, w))), max(x, select(y, z, w))) ||
-      r.rewrite(max(x, select(y, min(x, z), w)), select(y, x, max(x, w))) ||
-      r.rewrite(max(x, select(y, z, min(x, w))), select(y, max(x, z), w)) ||
-      r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
-      r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
-      r.rewrite(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
+    
       false) {
     return r.result;
   }
