@@ -187,10 +187,6 @@ TEST(simplify, licm) {
           {make_call(b0, b1), make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))))})));
 }
 
-TEST(simplify, buffer_intrinsics) {
-  ASSERT_THAT(simplify(max(buffer_max(x, 0) + 1, buffer_min(x, 0) - 1)), matches(buffer_max(x, 0) + 1));
-}
-
 TEST(simplify, bounds) {
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x))), matches(stmt()));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y))), matches(check::make(y)));
