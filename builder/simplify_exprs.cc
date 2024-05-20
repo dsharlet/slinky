@@ -50,14 +50,45 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
       r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
       r.rewrite(min(x, x), x) ||
-      r.rewrite(min(x, max(x, y)), x) ||
-      r.rewrite(min(x, min(x, y)), min(x, y)) ||
 
-      r.rewrite(min(x + y, x + z), x + min(y, z)) ||
-      r.rewrite(min(x - y, x - z), x - max(y, z)) ||
-      r.rewrite(min(x - y, z - y), min(x, z) - y) ||
+      // Canonicalize trees and find duplicate terms.
+      r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
+      r.rewrite(min(min(x, y), min(z, w)), min(x, min(y, min(z, w)))) ||
+      r.rewrite(min(x, min(x, y)), min(x, y)) ||
+      r.rewrite(min(x, min(y, min(x, z))), min(x, min(y, z))) ||
+      r.rewrite(min(x, min(y, min(z, min(x, w)))), min(x, min(y, min(z, w)))) ||
+
+      // Similar rules but with mixes of min and max.
+      r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
+      r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
+      r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
+      r.rewrite(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
+      r.rewrite(min(x, max(x, y)), x) ||
+
+      // Pull common terms out.
+      r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
+      r.rewrite(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
+      r.rewrite(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
+      r.rewrite(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
+      r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
+      r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
+      r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
+      r.rewrite(min(x + z, y + z), z + min(x, y)) ||
+      r.rewrite(min(x - z, y - z), min(x, y) - z) ||
+      r.rewrite(min(z - x, z - y), z - max(x, y)) ||
+      r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
       r.rewrite(min(x, x + z), x + min(z, 0)) ||
       r.rewrite(min(x, x - z), x - max(z, 0)) ||
+      r.rewrite(min(x, -x), -abs(x)) ||
+
+      // Selects
+      r.rewrite(min(x, select(y, min(x, z), w)), min(x, select(y, z, w))) ||
+      r.rewrite(min(x, select(y, z, min(x, w))), min(x, select(y, z, w))) ||
+      r.rewrite(min(x, select(y, max(x, z), w)), select(y, x, min(x, w))) ||
+      r.rewrite(min(x, select(y, z, max(x, w))), select(y, min(x, z), x)) ||
+      r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
+      r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
+      r.rewrite(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
 
       // Move constants out.
       r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -110,38 +141,6 @@ expr simplify(const class min* op, expr a, expr b) {
 
       r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
 
-      // Algebraic simplifications
-      r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
-      r.rewrite(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
-      r.rewrite(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
-      r.rewrite(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
-      r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
-      r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
-      r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
-      r.rewrite(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
-      r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
-      r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
-      r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
-      r.rewrite(min(x + z, y + z), z + min(x, y)) ||
-      r.rewrite(min(x - z, y - z), min(x, y) - z) ||
-      r.rewrite(min(z - x, z - y), z - max(x, y)) ||
-      r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
-      r.rewrite(min(x, -x), -abs(x)) ||
-
-      // Buffer meta simplifications
-      // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
-      // is true if we disallow empty buffers...
-      r.rewrite(min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), eval(c0 > 0)) ||
-      r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, eval(c0 < 0)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || 
-
-      // Selects
-      r.rewrite(min(select(x, y, z), select(x, y, w)), select(x, y, min(z, w))) ||
-      r.rewrite(min(select(x, y, z), select(x, w, z)), select(x, min(y, w), z)) ||
-      r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
-      r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
       false) {
     return r.result;
   }
@@ -177,14 +176,43 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
       r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
       r.rewrite(max(x, x), x) ||
-      r.rewrite(max(x, min(x, y)), x) ||
+    
+      // Canonicalize trees and find duplicate terms.
+      r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
+      r.rewrite(max(max(x, y), max(z, w)), max(x, max(y, max(z, w)))) ||
       r.rewrite(max(x, max(x, y)), max(x, y)) ||
+      r.rewrite(max(x, max(y, max(x, z))), max(x, max(y, z))) ||
+      r.rewrite(max(x, max(y, max(z, max(x, w)))), max(x, max(y, max(z, w)))) ||
+    
+      // Similar rules but with mixes of min and max.
+      r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
+      r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
+      r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
+      r.rewrite(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
+      r.rewrite(max(x, min(x, y)), x) ||
 
-      r.rewrite(max(x + y, x + z), x + max(y, z)) ||
-      r.rewrite(max(x - y, x - z), x - min(y, z)) ||
-      r.rewrite(max(x - y, z - y), max(x, z) - y) ||
+      // Pull common terms out.
+      r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
+      r.rewrite(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
+      r.rewrite(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
+      r.rewrite(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
+      r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
+      r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
+      r.rewrite(max(x + z, y + z), z + max(x, y)) ||
+      r.rewrite(max(x - z, y - z), max(x, y) - z) ||
+      r.rewrite(max(z - x, z - y), z - min(x, y)) ||
       r.rewrite(max(x, x + z), x + max(z, 0)) ||
       r.rewrite(max(x, x - z), x - min(z, 0)) ||
+      r.rewrite(max(x, -x), abs(x)) ||
+
+      // Selects
+      r.rewrite(max(x, select(y, max(x, z), w)), max(x, select(y, z, w))) ||
+      r.rewrite(max(x, select(y, z, max(x, w))), max(x, select(y, z, w))) ||
+      r.rewrite(max(x, select(y, min(x, z), w)), select(y, x, max(x, w))) ||
+      r.rewrite(max(x, select(y, z, min(x, w))), select(y, max(x, z), x)) ||
+      r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
+      r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
+      r.rewrite(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
 
       // Move constants out.
       r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -236,35 +264,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 <= 0)) ||
 
       r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
-
-      // Algebraic simplifications
-      r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
-      r.rewrite(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
-      r.rewrite(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
-      r.rewrite(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
-      r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
-      r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
-      r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
-      r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
-      r.rewrite(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
-      r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
-      r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
-      r.rewrite(max(x + z, y + z), z + max(x, y)) ||
-      r.rewrite(max(x - z, y - z), max(x, y) - z) ||
-      r.rewrite(max(z - x, z - y), z - min(x, y)) ||
-      r.rewrite(max(x, -x), abs(x)) ||
-
-      // Buffer meta simplifications
-      r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, eval(c0 > 0)) ||
-      r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), eval(c0 < 0)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || 
-
-      // Selects
-      r.rewrite(max(select(x, y, z), select(x, y, w)), select(x, y, max(z, w))) ||
-      r.rewrite(max(select(x, y, z), select(x, w, z)), select(x, max(y, w), z)) ||
-      r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
-      r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
+    
       false) {
     return r.result;
   }
@@ -546,18 +546,32 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
+    
+      // These rules taken from:
+      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
+      // with adjustments for the simplifier implementation here.
+ 
+      // Normalize subtractions to additions to cut down on cases to consider
+      r.rewrite(x - y < z, x < z + y) ||
+      r.rewrite(z < x - y, z + y < x) ||
+      r.rewrite(z + (x - y) < w, x + z < y + w) ||
+      r.rewrite(w < z + (x - y), w + y < x + z) ||
+      r.rewrite(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
+      r.rewrite(w < u + (z + (x - y)), w + y < x + (z + u)) ||
+
+      // Cancellations in linear expressions
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x - y < x, 0 < y) ||
+      r.rewrite(x < z + (x + y), 0 < z + y) ||
+      r.rewrite(z + (x + y) < x, z + y < 0) ||
+      r.rewrite(x + y < x + z, y < z) ||
+      r.rewrite(w + (x + y) < x + z, y + w < z) ||
+      r.rewrite(x + z < w + (x + y), z < y + w) ||
+      r.rewrite(w + (x + y) < u + (x + z), y + w < z + u) ||
 
       r.rewrite(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
-      r.rewrite(x + c0 < c1 - y, x + y < eval(c1 - c0)) ||
       r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
       r.rewrite(x + c0 < y, x < y + eval(-c0)) ||
-      r.rewrite(c0 - x < y + c1, eval(c0 - c1) < x + y) ||
-      r.rewrite(c0 - x < c1 - y, y < x + eval(c1 - c0)) ||
-      r.rewrite(c0 - x < c1, eval(c0 - c1) < x) ||
-      r.rewrite(c0 < c1 - x, x < eval(c1 - c0)) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
       r.rewrite(x < (x / c0) * c0 + c1, true, eval(c0 > 0 && c1 >= c0 - 1)) ||
@@ -584,28 +598,6 @@ expr simplify(const less* op, expr a, expr b) {
 
       r.rewrite(x * c0 < y * c0, x < y, eval(c0 > 0)) ||
       r.rewrite(x * c0 < y * c0, y < x, eval(c0 < 0)) ||
-    
-      // These rules taken from:
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
-      // with adjustments for the simplifier implementation here.
- 
-      // Normalize subtractions to additions to cut down on cases to consider
-      r.rewrite(x - y < z, x < z + y) ||
-      r.rewrite(z < x - y, z + y < x) ||
-      r.rewrite(z + (x - y) < w, x + z < y + w) ||
-      r.rewrite(w < z + (x - y), w + y < x + z) ||
-      r.rewrite(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
-      r.rewrite(w < u + (z + (x - y)), w + y < x + (z + u)) ||
-
-      // Cancellations in linear expressions
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x < z + (x + y), 0 < z + y) ||
-      r.rewrite(z + (x + y) < x, z + y < 0) ||
-      r.rewrite(x + y < x + z, y < z) ||
-      r.rewrite(w + (x + y) < x + z, y + w < z) ||
-      r.rewrite(x + z < w + (x + y), z < y + w) ||
-      r.rewrite(w + (x + y) < u + (x + z), y + w < z + u) ||
         
       // The following rules are taken from
       // https://github.com/halide/Halide/blob/7636c44acc2954a7c20275618093973da6767359/src/Simplify_LT.cpp#L186-L263
@@ -665,28 +657,20 @@ expr simplify(const less* op, expr a, expr b) {
       // Subtract terms from both sides within a min/max.
       // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
       r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
-      r.rewrite(min(x, y) < x - z, z < max(x - y, 0), !is_constant(x)) ||
       r.rewrite(max(x, y) < x + z, max(y - x, 0) < z, !is_constant(x)) ||
-      r.rewrite(max(x, y) < x - z, z < min(x - y, 0), !is_constant(x)) ||
 
       r.rewrite(x + z < min(x, y), z < min(y - x, 0), !is_constant(x)) ||
-      r.rewrite(x - z < min(x, y), max(x - y, 0) < z, !is_constant(x)) ||
       r.rewrite(x + z < max(x, y), z < max(y - x, 0), !is_constant(x)) ||
-      r.rewrite(x - z < max(x, y), min(x - y, 0) < z, !is_constant(x)) ||
 
       r.rewrite(min(z, x + y) < x + w, min(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(min(z, x - y) < x + w, min(-y, z - x) < w, !is_constant(x)) ||
-      r.rewrite(min(z, x - y) < w - y, min(x, z + y) < w, !is_constant(x)) ||
       r.rewrite(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
-      r.rewrite(max(z, x - y) < w - y, max(x, z + y) < w, !is_constant(x)) ||
 
       r.rewrite(x + y < max(w, x + z), y < max(z, w - y), !is_constant(x)) ||
       r.rewrite(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
-      r.rewrite(y - z < max(w, x - z), y < max(x, w + z), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x + z), y < min(z, w - y), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
-      r.rewrite(y - z < min(w, x - z), y < min(x, w + z), !is_constant(x)) ||
 
       // Selects
       r.rewrite(select(x, y, z) < select(x, y, w), select(x, false, z < w)) ||
@@ -873,9 +857,6 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
     }
   }
 
-  t = substitute(t, c, true);
-  f = substitute(f, c, false);
-
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
   // clang-format off
   if (r.rewrite(select(x, y, y), y) ||
@@ -886,7 +867,14 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
       r.rewrite(select(x, y + z, y), y + select(x, z, 0)) ||
       r.rewrite(select(x, y + z, y + w), y + select(x, z, w)) ||
       r.rewrite(select(x, z - y, w - y), select(x, z, w) - y) ||
-      false) {
+      
+      r.rewrite(select(x, select(x, y, z), w), select(x, y, w)) ||
+      r.rewrite(select(x, y, select(x, z, w)), select(x, y, w)) ||
+
+      r.rewrite(select(x, select(y, z, w), select(y, u, w)), select(y, select(x, z, u), w)) ||
+      r.rewrite(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
+
+    false) {
     return r.result;
   }
   // clang-format on
