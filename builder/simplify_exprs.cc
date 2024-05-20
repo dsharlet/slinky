@@ -51,8 +51,15 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
       r.rewrite(min(x, x), x) ||
       r.rewrite(min(x, max(x, y)), x) ||
-      r.rewrite(min(x, min(x, y)), min(x, y)) ||
 
+      // Canonicalize trees and find duplicate terms.
+      r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
+      r.rewrite(min(min(x, y), min(z, w)), min(x, min(y, min(z, w)))) ||
+      r.rewrite(min(x, min(x, y)), min(x, y)) ||
+      r.rewrite(min(x, min(y, min(x, z))), min(x, min(y, z))) ||
+      r.rewrite(min(x, min(y, min(z, min(x, w)))), min(x, min(y, min(z, w)))) ||
+
+      // Pull common terms out.
       r.rewrite(min(x + y, x + z), x + min(y, z)) ||
       r.rewrite(min(x - y, x - z), x - max(y, z)) ||
       r.rewrite(min(x - y, z - y), min(x, z) - y) ||
@@ -172,8 +179,15 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
       r.rewrite(max(x, x), x) ||
       r.rewrite(max(x, min(x, y)), x) ||
+    
+      // Canonicalize trees and find duplicate terms.
+      r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
+      r.rewrite(max(max(x, y), max(z, w)), max(x, max(y, max(z, w)))) ||
       r.rewrite(max(x, max(x, y)), max(x, y)) ||
+      r.rewrite(max(x, max(y, max(x, z))), max(x, max(y, z))) ||
+      r.rewrite(max(x, max(y, max(z, max(x, w)))), max(x, max(y, max(z, w)))) ||
 
+      // Pull common terms out.
       r.rewrite(max(x + y, x + z), x + max(y, z)) ||
       r.rewrite(max(x - y, x - z), x - min(y, z)) ||
       r.rewrite(max(x - y, z - y), max(x, z) - y) ||
