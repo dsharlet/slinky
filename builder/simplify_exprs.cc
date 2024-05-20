@@ -868,9 +868,13 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
       r.rewrite(select(x, y + z, y + w), y + select(x, z, w)) ||
       r.rewrite(select(x, z - y, w - y), select(x, z, w) - y) ||
       
+      r.rewrite(select(x, select(x, y, z), w), select(x, y, w)) ||
+      r.rewrite(select(x, y, select(x, z, w)), select(x, y, w)) ||
+
       r.rewrite(select(x, select(y, z, w), select(y, u, w)), select(y, select(x, z, u), w)) ||
       r.rewrite(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
-      false) {
+
+    false) {
     return r.result;
   }
   // clang-format on
