@@ -1,5 +1,5 @@
-#ifndef SLINKY_BUILDER_BAZEL_UTIL_H
-#define SLINKY_BUILDER_BAZEL_UTIL_H
+#ifndef SLINKY_BASE_TEST_BAZEL_UTIL_H
+#define SLINKY_BASE_TEST_BAZEL_UTIL_H
 
 #include <string>
 
@@ -12,4 +12,4 @@ std::string get_bazel_file_path(const std::string& repo_path);
 
 }  // namespace slinky
 
-#endif
+#endif  // SLINKY_BASE_TEST_BAZEL_UTIL_H
