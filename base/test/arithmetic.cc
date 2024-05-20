@@ -39,7 +39,7 @@ Dst saturate(Src x) {
 }
 
 template <typename Dst, typename Src>
-Dst saturates(Src x) {
+bool saturates(Src x) {
   return x < std::numeric_limits<Dst>::min() || x > std::numeric_limits<Dst>::max();
 }
 
