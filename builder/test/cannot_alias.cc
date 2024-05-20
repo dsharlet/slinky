@@ -169,7 +169,7 @@ TEST_P(may_alias, aligned) {
   }
 
   // TODO: This test actually currently requires that the input and output are aligned, so it can alias.
-  // I think there is a similar pipeline where this would not be true, and in that case it should not alias.
+  // I think there should be a similar pipeline where this would not be true, and in that case it should not alias.
   // ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
   ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }
@@ -225,7 +225,7 @@ TEST_P(may_alias, same_bounds) {
   }
 
   // TODO: This test actually currently requires that the input and output bounds are the same, so it can alias.
-  // I think there is a similar pipeline where this would not be true, and in that case it should not alias.
+  // I think there should be a similar pipeline where this would not be true, and in that case it should not alias.
   // ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
   ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }

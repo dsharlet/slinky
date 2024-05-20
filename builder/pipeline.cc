@@ -779,7 +779,8 @@ public:
     result = block::make({result, body});
 
     symbol_map<var> uncropped_subs;
-    // Add all allocations at this loop level.
+    // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
+    // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
     for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
