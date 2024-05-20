@@ -129,14 +129,6 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
       r.rewrite(min(x, -x), -abs(x)) ||
 
-      // Buffer meta simplifications
-      // TODO: These rules are sketchy, they assume buffer_max(x, y) > buffer_min(x, y), which
-      // is true if we disallow empty buffers...
-      r.rewrite(min(buffer_min(x, y), buffer_max(x, y)), buffer_min(x, y)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_min(x, y), eval(c0 > 0)) ||
-      r.rewrite(min(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_min(x, y) + c0, eval(c0 < 0)) ||
-      r.rewrite(min(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_min(x, y) + c1, eval(c0 > c1)) || 
-
       // Selects
       r.rewrite(min(select(x, y, z), select(x, y, w)), select(x, y, min(z, w))) ||
       r.rewrite(min(select(x, y, z), select(x, w, z)), select(x, min(y, w), z)) ||
@@ -255,12 +247,6 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x - z, y - z), max(x, y) - z) ||
       r.rewrite(max(z - x, z - y), z - min(x, y)) ||
       r.rewrite(max(x, -x), abs(x)) ||
-
-      // Buffer meta simplifications
-      r.rewrite(max(buffer_min(x, y), buffer_max(x, y)), buffer_max(x, y)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y)), buffer_max(x, y) + c0, eval(c0 > 0)) ||
-      r.rewrite(max(buffer_min(x, y) + c0, buffer_max(x, y)), buffer_max(x, y), eval(c0 < 0)) ||
-      r.rewrite(max(buffer_max(x, y) + c0, buffer_min(x, y) + c1), buffer_max(x, y) + c0, eval(c0 > c1)) || 
 
       // Selects
       r.rewrite(max(select(x, y, z), select(x, y, w)), select(x, y, max(z, w))) ||
