@@ -536,9 +536,28 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
+    
+      // These rules taken from:
+      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
+      // with adjustments for the simplifier implementation here.
+ 
+      // Normalize subtractions to additions to cut down on cases to consider
+      r.rewrite(x - y < z, x < z + y) ||
+      r.rewrite(z < x - y, z + y < x) ||
+      r.rewrite(z + (x - y) < w, x + z < y + w) ||
+      r.rewrite(w < z + (x - y), w + y < x + z) ||
+      r.rewrite(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
+      r.rewrite(w < u + (z + (x - y)), w + y < x + (z + u)) ||
+
+      // Cancellations in linear expressions
       r.rewrite(x < x + y, 0 < y) ||
       r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x - y < x, 0 < y) ||
+      r.rewrite(x < z + (x + y), 0 < z + y) ||
+      r.rewrite(z + (x + y) < x, z + y < 0) ||
+      r.rewrite(x + y < x + z, y < z) ||
+      r.rewrite(w + (x + y) < x + z, y + w < z) ||
+      r.rewrite(x + z < w + (x + y), z < y + w) ||
+      r.rewrite(w + (x + y) < u + (x + z), y + w < z + u) ||
 
       r.rewrite(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
       r.rewrite(x + c0 < c1 - y, x + y < eval(c1 - c0)) ||
@@ -574,28 +593,6 @@ expr simplify(const less* op, expr a, expr b) {
 
       r.rewrite(x * c0 < y * c0, x < y, eval(c0 > 0)) ||
       r.rewrite(x * c0 < y * c0, y < x, eval(c0 < 0)) ||
-    
-      // These rules taken from:
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
-      // with adjustments for the simplifier implementation here.
- 
-      // Normalize subtractions to additions to cut down on cases to consider
-      r.rewrite(x - y < z, x < z + y) ||
-      r.rewrite(z < x - y, z + y < x) ||
-      r.rewrite(z + (x - y) < w, x + z < y + w) ||
-      r.rewrite(w < z + (x - y), w + y < x + z) ||
-      r.rewrite(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
-      r.rewrite(w < u + (z + (x - y)), w + y < x + (z + u)) ||
-
-      // Cancellations in linear expressions
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x < z + (x + y), 0 < z + y) ||
-      r.rewrite(z + (x + y) < x, z + y < 0) ||
-      r.rewrite(x + y < x + z, y < z) ||
-      r.rewrite(w + (x + y) < x + z, y + w < z) ||
-      r.rewrite(x + z < w + (x + y), z < y + w) ||
-      r.rewrite(w + (x + y) < u + (x + z), y + w < z + u) ||
         
       // The following rules are taken from
       // https://github.com/halide/Halide/blob/7636c44acc2954a7c20275618093973da6767359/src/Simplify_LT.cpp#L186-L263
