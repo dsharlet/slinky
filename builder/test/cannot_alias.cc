@@ -122,14 +122,13 @@ TEST_P(may_alias, transpose_output) {
   ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
 }
 
-
 TEST_P(may_alias, aligned) {
   // Make the pipeline
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
-  
+
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
   var x(ctx, "x");
@@ -169,8 +168,10 @@ TEST_P(may_alias, aligned) {
     }
   }
 
-  // TODO: Enable this to alias.
-  //ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
+  // TODO: This test actually currently requires that the input and output are aligned, so it can alias.
+  // I think there should be a similar pipeline where this would not be true, and in that case it should not alias.
+  // ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }
 
 TEST_P(may_alias, same_bounds) {
@@ -223,8 +224,10 @@ TEST_P(may_alias, same_bounds) {
     }
   }
 
-  // TODO: Enable this to alias.
-  //ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
+  // TODO: This test actually currently requires that the input and output bounds are the same, so it can alias.
+  // I think there should be a similar pipeline where this would not be true, and in that case it should not alias.
+  // ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
+  ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }
 
 }  // namespace slinky

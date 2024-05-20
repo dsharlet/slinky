@@ -779,9 +779,9 @@ public:
     result = block::make({result, body});
 
     symbol_map<var> uncropped_subs;
-    // Add all allocations at this loop level.
-    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
-      const func* f = *i;
+    // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
+    // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
+    for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
@@ -958,7 +958,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
-    result = alias_buffers(result);
+    result = alias_buffers(result, ctx);
   }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.

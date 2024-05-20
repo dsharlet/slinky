@@ -196,11 +196,13 @@ public:
 }  // namespace
 
 void depends_on(const expr& e, span<const std::pair<var, depends_on_result&>> var_deps) {
+  if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (e.defined()) e.accept(&v);
 }
 
 void depends_on(const stmt& s, span<const std::pair<var, depends_on_result&>> var_deps) {
+  if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (s.defined()) s.accept(&v);
 }

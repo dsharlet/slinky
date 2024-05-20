@@ -516,8 +516,8 @@ TEST_P(broadcasted_elementwise, internal) {
       select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
   };
   func broadcast = func::make_copy({intm, bounds}, {intm_broadcasted, {x, y}});
-  func g = func::make(
-      subtract<int>, {{in1, {point(x), point(y)}}, {intm_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
+  func g = func::make(subtract<int>, {{in1, {point(x), point(y)}}, {intm_broadcasted, {point(x), point(y)}}},
+      {{out, {x, y}}}, call_stmt::attributes{.name = "g"});
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -548,8 +548,7 @@ TEST_P(broadcasted_elementwise, internal) {
   }
 
   if (!no_alias_buffers) {
-    // TODO: This should alias, but can't due to https://github.com/dsharlet/slinky/issues/313
-    ASSERT_EQ(eval_ctx.heap.total_count, 2);
+    ASSERT_EQ(eval_ctx.heap.total_count, 1);
   }
 }
 

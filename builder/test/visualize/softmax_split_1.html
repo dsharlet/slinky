@@ -276,38 +276,38 @@ function make_buffer(name, base, elem_size, dims) {
 function clone_buffer(b) { return structuredClone(b); }
 function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
-  let new_min = max(b.dims[d].bounds.min, bounds.min);
-  let new_max = min(b.dims[d].bounds.max, bounds.max);
+  let new_min = max(result.dims[d].bounds.min, bounds.min);
+  let new_max = min(result.dims[d].bounds.max, bounds.max);
   if (new_max >= new_min) {
-    b.base += flat_offset_dim(b.dims[d], new_min);
+    result.base += flat_offset_dim(result.dims[d], new_min);
   }
-  b.dims[d].bounds.min = new_min;
-  b.dims[d].bounds.max = new_max;
+  result.dims[d].bounds.min = new_min;
+  result.dims[d].bounds.max = new_max;
   return result;
 }
 function crop_buffer(b, bounds) {
   let result = clone_buffer(b);
   for (let d = 0; d < bounds.length; ++d) {
-    crop_dim(b, d, bounds[d]);
+    result = crop_dim(result, d, bounds[d]);
   }
   return result;
 }
 function slice_dim(b, d, at) {
   let result = clone_buffer(b);
-  b.base += flat_offset_dim(b.dims[d], at);
-  b.dims.splice(d, 1);
+  result.base += flat_offset_dim(result.dims[d], at);
+  result.dims.splice(d, 1);
   return result;
 }
 function slice_buffer(b, at) {
   let result = clone_buffer(b);
   for (let d = at.length - 1; d >= 0; --d) {
-    slice_dim(b, d, at[d]);
+    result = slice_dim(result, d, at[d]);
   }
   return result;
 }
 function transpose(b, dims) {
   let result = clone_buffer(b);
-  b.dims = dims.map(i => b.dims[i]);
+  result.dims = dims.map(i => result.dims[i]);
   return result;
 }
 function produce(b) {
@@ -338,84 +338,84 @@ function pipeline(__in, out) {
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
     check(((buffer_fold_factor(__in, 1) == 9223372036854775807) || ((buffer_max(out, 1) + 1) <= (buffer_fold_factor(__in, 1) + buffer_min(out, 1)))));
-    { let softmax_out = allocate('softmax_out', 4, [
-        {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
+    { let softmax_in = allocate('softmax_in', 4, [
+        {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
         {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
       ]);
-      { let softmax_out_uncropped = clone_buffer(softmax_out);
-        { let sum_exp_in = allocate('sum_exp_in', 4, [
+      { let softmax_in_uncropped = clone_buffer(softmax_in);
+        { let max_in = allocate('max_in', 4, [
             {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
           ]);
-          { let sum_exp_in_uncropped = clone_buffer(sum_exp_in);
-            { let exp_in = allocate('exp_in', 4, [
-                {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
+          { let max_in_uncropped = clone_buffer(max_in);
+            { let sum_exp_in = allocate('sum_exp_in', 4, [
                 {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
               ]);
-              { let exp_in_uncropped = clone_buffer(exp_in);
-                { let max_in = allocate('max_in', 4, [
+              { let sum_exp_in_uncropped = clone_buffer(sum_exp_in);
+                { let exp_in = allocate('exp_in', 4, [
+                    {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
                     {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
                   ]);
-                  { let max_in_uncropped = clone_buffer(max_in);
-                    { let softmax_in = allocate('softmax_in', 4, [
-                        {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
+                  { let exp_in_uncropped = clone_buffer(exp_in);
+                    { let softmax_out = allocate('softmax_out', 4, [
+                        {bounds:{min:buffer_min(out, 0), max:buffer_max(out, 0)}, stride:NaN, fold_factor:9223372036854775807},
                         {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
                       ]);
-                      { let softmax_in_uncropped = clone_buffer(softmax_in);
+                      { let softmax_out_uncropped = clone_buffer(softmax_out);
                         let __loop_min = buffer_min(out, 1);
                         let __loop_max = buffer_max(out, 1);
                         let __loop_step = 1;
                         for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
-                          { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:b});
+                          { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:b}); {
+                            let softmax_in = __softmax_in;
                             consume(__in);
                             produce(softmax_in);
                             __event_t++;
-                            softmax_in = __softmax_in;
-                          }
-                          { let __max_in = crop_dim(max_in, 0, {min:b, max:b});
+                          }}
+                          { let __max_in = crop_dim(max_in, 0, {min:b, max:b}); {
+                            let max_in = __max_in;
                             consume(softmax_in_uncropped);
                             produce(max_in);
                             __event_t++;
-                            max_in = __max_in;
-                          }
-                          { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:b});
-                            { let __exp_in = crop_dim(exp_in, 1, {min:b, max:b});
+                          }}
+                          { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:b}); {
+                            let sum_exp_in = __sum_exp_in;
+                            { let __exp_in = crop_dim(exp_in, 1, {min:b, max:b}); {
+                              let exp_in = __exp_in;
                               consume(__in);
                               consume(max_in_uncropped);
                               produce(exp_in);
                               produce(sum_exp_in);
                               __event_t++;
-                              exp_in = __exp_in;
-                            }
-                            sum_exp_in = __sum_exp_in;
-                          }
-                          { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:b});
+                            }}
+                          }}
+                          { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:b}); {
+                            let softmax_out = __softmax_out;
                             consume(exp_in_uncropped);
                             consume(sum_exp_in_uncropped);
                             produce(softmax_out);
                             __event_t++;
-                            softmax_out = __softmax_out;
-                          }
-                          { let __out = crop_dim(out, 1, {min:b, max:b});
+                          }}
+                          { let __out = crop_dim(out, 1, {min:b, max:b}); {
+                            let out = __out;
                             consume(softmax_out_uncropped);
                             produce(out);
                             __event_t++;
-                            out = __out;
-                          }
+                          }}
                         }
                       }
-                      free(softmax_in);
+                      free(softmax_out);
                     }
                   }
-                  free(max_in);
+                  free(exp_in);
                 }
               }
-              free(exp_in);
+              free(sum_exp_in);
             }
           }
-          free(sum_exp_in);
+          free(max_in);
         }
       }
-      free(softmax_out);
+      free(softmax_in);
     }
   }
 }

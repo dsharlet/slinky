@@ -42,6 +42,7 @@ public:
 
   std::string sanitize(std::string s) {
     std::replace(s.begin(), s.end(), '.', '_');
+    std::replace(s.begin(), s.end(), '/', '_');
     if (s == "in") {
       s = "__in";
     }
@@ -261,39 +262,39 @@ public:
       *this << "\n";
       *this << indent();
     }
-    *this << "]);\n";
+    *this << "]); {\n";
+    *this << indent(1) << "let " << n->sym << " = __" << n->sym << ";\n";
     *this << n->body;
-    *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
-    *this << indent() << "}\n";
+    *this << indent() << "}}\n";
   }
 
   void visit(const crop_dim* n) override {
     *this << indent() << "{ let __" << n->sym << " = crop_dim(" << n->src << ", " << n->dim << ", " << n->bounds
-          << ");\n";
+          << "); {\n";
+    *this << indent(1) << "let " << n->sym << " = __" << n->sym << ";\n";
     *this << n->body;
-    *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
-    *this << indent() << "}\n";
+    *this << indent() << "}}\n";
   }
 
   void visit(const slice_buffer* n) override {
-    *this << indent() << "{ let __" << n->sym << " = slice_buffer(" << n->src << ", {" << n->at << "});\n";
+    *this << indent() << "{ let __" << n->sym << " = slice_buffer(" << n->src << ", {" << n->at << "}); {\n";
+    *this << indent(1) << "let " << n->sym << " = __" << n->sym << ";\n";
     *this << n->body;
-    *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
-    *this << indent() << "}\n";
+    *this << indent() << "}}\n";
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << "{ let __" << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << ");\n";
+    *this << indent() << "{ let __" << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << "); {\n";
+    *this << indent(1) << "let " << n->sym << " = __" << n->sym << ";\n";
     *this << n->body;
-    *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
-    *this << indent() << "}\n";
+    *this << indent() << "}}\n";
   }
 
   void visit(const transpose* n) override {
-    *this << indent() << "{ let __" << n->sym << " = transpose(" << n->src << ", [" << n->dims << "]);\n";
+    *this << indent() << "{ let __" << n->sym << " = transpose(" << n->src << ", [" << n->dims << "]); {\n";
+    *this << indent(1) << "let " << n->sym << " = __" << n->sym << ";\n";
     *this << n->body;
-    *this << indent(1) << n->sym << " = __" << n->sym << ";\n";
-    *this << indent() << "}\n";
+    *this << indent() << "}}\n";
   }
 
   void visit(const check* n) override { *this << indent() << "check(" << n->condition << ");\n"; }
@@ -577,38 +578,38 @@ function make_buffer(name, base, elem_size, dims) {
 function clone_buffer(b) { return structuredClone(b); }
 function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
-  let new_min = max(b.dims[d].bounds.min, bounds.min);
-  let new_max = min(b.dims[d].bounds.max, bounds.max);
+  let new_min = max(result.dims[d].bounds.min, bounds.min);
+  let new_max = min(result.dims[d].bounds.max, bounds.max);
   if (new_max >= new_min) {
-    b.base += flat_offset_dim(b.dims[d], new_min);
+    result.base += flat_offset_dim(result.dims[d], new_min);
   }
-  b.dims[d].bounds.min = new_min;
-  b.dims[d].bounds.max = new_max;
+  result.dims[d].bounds.min = new_min;
+  result.dims[d].bounds.max = new_max;
   return result;
 }
 function crop_buffer(b, bounds) {
   let result = clone_buffer(b);
   for (let d = 0; d < bounds.length; ++d) {
-    crop_dim(b, d, bounds[d]);
+    result = crop_dim(result, d, bounds[d]);
   }
   return result;
 }
 function slice_dim(b, d, at) {
   let result = clone_buffer(b);
-  b.base += flat_offset_dim(b.dims[d], at);
-  b.dims.splice(d, 1);
+  result.base += flat_offset_dim(result.dims[d], at);
+  result.dims.splice(d, 1);
   return result;
 }
 function slice_buffer(b, at) {
   let result = clone_buffer(b);
   for (let d = at.length - 1; d >= 0; --d) {
-    slice_dim(b, d, at[d]);
+    result = slice_dim(result, d, at[d]);
   }
   return result;
 }
 function transpose(b, dims) {
   let result = clone_buffer(b);
-  b.dims = dims.map(i => b.dims[i]);
+  result.dims = dims.map(i => result.dims[i]);
   return result;
 }
 function produce(b) {
