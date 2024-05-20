@@ -824,6 +824,24 @@ TEST(fuse_contiguous_dims, fuse_folded) {
   ASSERT_EQ(b.dim(0).fold_factor(), dim::unfolded);
 }
 
+TEST(fuse_contiguous_dims, fuse_broadcasted) {
+  buffer<int, 3> a({6, 1, 1}), b({6, 1, 1});
+  a.dim(1) = dim::broadcast();
+  a.dim(2) = dim::broadcast();
+  b.dim(1) = dim::broadcast();
+  b.dim(2) = dim::broadcast();
+
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(a.dim(0).extent(), 6);
+  ASSERT_EQ(a.dim(0).stride(), 4);
+  ASSERT_EQ(a.dim(1).stride(), 0);
+  ASSERT_EQ(b.dim(0).extent(), 6);
+  ASSERT_EQ(b.dim(0).stride(), 4);
+  ASSERT_EQ(b.dim(1).stride(), 0);
+}
+
 TEST(fuse_contiguous_dims, cant_fuse) {
   buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
   ASSERT_NE(a.dim(0).stride(), 0);
@@ -839,6 +857,36 @@ TEST(fuse_contiguous_dims, cant_fuse) {
   ASSERT_EQ(b.dim(0).extent(), 6);
   ASSERT_EQ(b.dim(1).extent(), 5);
   ASSERT_EQ(b.dim(2).extent(), 4);
+}
+
+TEST(fuse_contiguous_dims, cant_fuse_broadcasted_inner) {
+  buffer<int, 3> a({1, 7, 8}), b({6, 7, 8});
+  a.dim(0) = dim::broadcast();
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(a.dim(0).stride(), 0);
+  ASSERT_EQ(a.dim(1).extent(), 7 * 8);
+  ASSERT_EQ(a.dim(1).stride(), 4);
+  ASSERT_EQ(b.dim(0).extent(), 6);
+  ASSERT_EQ(b.dim(0).stride(), 4);
+  ASSERT_EQ(b.dim(1).extent(), 7 * 8);
+  ASSERT_EQ(b.dim(1).stride(), 24);
+}
+
+TEST(fuse_contiguous_dims, cant_fuse_broadcasted_outer) {
+  buffer<int, 3> a({6, 7, 1}), b({6, 7, 8});
+  a.dim(2) = dim::broadcast();
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(a.dim(0).extent(), 6 * 7);
+  ASSERT_EQ(a.dim(0).stride(), 4);
+  ASSERT_EQ(a.dim(1).stride(), 0);
+  ASSERT_EQ(b.dim(0).extent(), 6 * 7);
+  ASSERT_EQ(b.dim(0).stride(), 4);
+  ASSERT_EQ(b.dim(1).extent(), 8);
+  ASSERT_EQ(b.dim(1).stride(), 6 * 7 * 4);
 }
 
 TEST(fuse_contiguous_dims, fuse_sets) {

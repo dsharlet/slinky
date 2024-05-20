@@ -137,7 +137,7 @@ void raw_buffer::init_strides(index_t alignment) {
       if (dim(j).stride() == dim::auto_stride) {
         // We don't know the stride of this dimension, it can't help us decide a stride for this dimension.
         continue;
-      } else if (dim(j).extent() <= 0) {
+      } else if (dim(j).max() < dim(j).min()) {
         // This dimension (and this buffer) is empty.
         min = 0;
         break;
