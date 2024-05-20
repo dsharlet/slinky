@@ -49,7 +49,10 @@ public:
   index_t max() const { return max_; }
   index_t begin() const { return min_; }
   index_t end() const { return max_ + 1; }
-  index_t extent() const { return max_ - min_ + 1; }
+  index_t extent() const { 
+    assert(!sub_overflows<index_t>(max_, min_) && !add_overflows<index_t>(max_ - min_, 1));
+    return max_ - min_ + 1; 
+  }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
   bool empty() const { return max_ < min_; }
@@ -482,7 +485,7 @@ void fill(const raw_buffer& dst, const void* value);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.extent() == 1 && outer.stride() != 0) return true;
+  if (outer.max() == outer.min() && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
   if (inner.stride() * inner.extent() != outer.stride()) return false;
   return true;
