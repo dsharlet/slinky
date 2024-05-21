@@ -514,7 +514,7 @@ public:
     } else {
       expr a = make_random_expr(depth - 1);
       expr b = make_random_expr(depth - 1);
-      switch (rng_() % 10) {
+      switch (rng_() % 11) {
       case 0: return a + b;
       case 1: return a - b;
       case 2: return a * b;
@@ -525,6 +525,7 @@ public:
       case 7: return select(make_random_condition(depth - 1), a, b);
       case 8: return random_constant();
       case 9: return random_pick(vars_);
+      case 10: return make_random_condition(depth - 1);
       default: std::abort();
       }
     }
