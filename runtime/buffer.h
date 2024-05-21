@@ -407,26 +407,26 @@ public:
   // All buffer copy/assignment operators are shallow copies.
   buffer(const raw_buffer& c) : buffer() { shallow_copy(c); }
   buffer(const buffer& c) : buffer() { shallow_copy(c); }
-  buffer(buffer&& m) : buffer() { move(m); }
+  buffer(buffer&& m) : buffer() { move(std::move(m)); }
   template <std::size_t OtherDimsSize>
   buffer(const buffer<T, OtherDimsSize>& c) : buffer() {
     shallow_copy(c);
   }
   template <std::size_t OtherDimsSize>
   buffer(buffer<T, OtherDimsSize>&& m) : buffer() {
-    move(m);
+    move(std::move(m));
   }
 
   buffer& operator=(const raw_buffer& c) { return shallow_copy(c); }
   buffer& operator=(const buffer& c) { return shallow_copy(c); }
-  buffer& operator=(buffer&& m) { return move(m); }
+  buffer& operator=(buffer&& m) { return move(std::move(m)); }
   template <std::size_t OtherDimsSize>
   buffer& operator=(const buffer<T, OtherDimsSize>& c) {
     return shallow_copy(c);
   }
   template <std::size_t OtherDimsSize>
   buffer& operator=(buffer<T, OtherDimsSize>&& m) {
-    return move(m);
+    return move(std::move(m));
   }
 
   T* base() const { return reinterpret_cast<T*>(raw_buffer::base); }
