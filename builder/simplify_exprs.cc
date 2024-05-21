@@ -546,6 +546,8 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
       r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
       r.rewrite(x < x, false) ||
+      r.rewrite(x < y + 1, x <= y) ||
+      r.rewrite(x + -1 < y, x <= y) ||
     
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
@@ -680,6 +682,9 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(y < select(x, y, w), select(x, false, y < w)) ||
       r.rewrite(w < select(x, y, w), select(x, w < y, false)) ||
 
+      // Nested logicals
+      r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
+
       false) {
     return r.result;
   }
@@ -770,11 +775,45 @@ expr simplify(const logical_and* op, expr a, expr b) {
 
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
   // clang-format off
-  if (r.rewrite(x && x, x) ||
-      r.rewrite(x && !x, false) ||
-      r.rewrite(!x && !y, !(x || y)) ||
+  if (r.rewrite(x && true, x) ||
+      r.rewrite(x && false, false) ||
+      r.rewrite(x && x, x) ||
+
+      // Canonicalize trees and find redundant terms.
+      r.rewrite((x && y) && (z && w), x && (y && (z && w))) ||
       r.rewrite(x && (x && y), x && y) ||
+      r.rewrite(x && (y && (x && z)), x && (y && z)) ||
+      r.rewrite(x && (y && (z && (x && w))), x && (y && (z && w))) ||
+    
       r.rewrite(x && (x || y), x) ||
+      r.rewrite(x && (y || (x && z)), x && (y || z)) ||
+      r.rewrite(x && (y && (x || z)), x && y) ||
+      r.rewrite((x || y) && (x || z), x || (y && z)) ||
+
+      r.rewrite(x && !x, false) ||
+      r.rewrite(x == y && x != y, false) ||
+      r.rewrite(x == y && (z && x != y), false) ||
+      r.rewrite(x != y && (z && x == y), false) ||
+      r.rewrite(x == c1 && x != c0, x == c1, eval(c0 != c1)) ||
+      r.rewrite(x == c0 && x == c1, false, eval(c0 != c1)) ||
+    
+      r.rewrite(x <= y && y <= x, x == y) ||
+      r.rewrite(x < y && y <= x, false) ||
+      r.rewrite(x < y && y < x, false) ||
+    
+      // These rules taken from:
+      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_And.cpp#L67-L76
+      r.rewrite(c0 < x && x < c1, false, eval(c1 <= c0 + 1)) ||
+      r.rewrite(x < c1 && c0 < x, false, eval(c1 <= c0 + 1)) ||
+      r.rewrite(c0 < x && x <= c1, false, eval(c1 <= c0)) ||
+      r.rewrite(x < c1 && c0 <= x, false, eval(c1 <= c0)) ||
+      r.rewrite(c0 <= x && x <= c1, false, eval(c1 < c0)) ||
+      r.rewrite(x <= c1 && c0 <= x, false, eval(c1 < c0)) ||
+      r.rewrite(c0 < x && c1 < x, eval(max(c0, c1)) < x) ||
+      r.rewrite(c0 <= x && c1 <= x, eval(max(c0, c1)) <= x) ||
+      r.rewrite(x < c0 && x < c1, x < eval(min(c0, c1))) ||
+      r.rewrite(x <= c0 && x <= c1, x <= eval(min(c0, c1))) ||
+
       false) {
     return r.result;
   }
@@ -801,11 +840,43 @@ expr simplify(const logical_or* op, expr a, expr b) {
 
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
   // clang-format off
-  if (r.rewrite(x || x, x) ||
-      r.rewrite(x || !x, true) ||
-      r.rewrite(!x || !y, !(x && y)) ||
-      r.rewrite(x || (x && y), x) ||
+  if (r.rewrite(x || true, true) ||
+      r.rewrite(x || false, x) ||
+      r.rewrite(x || x, x) ||
+    
+      // Canonicalize trees and find redundant terms.
+      r.rewrite((x || y) || (z || w), x || (y || (z || w))) ||
       r.rewrite(x || (x || y), x || y) ||
+      r.rewrite(x || (y || (x || z)), x || (y || z)) ||
+      r.rewrite(x || (y || (z || (x || w))), x || (y || (z || w))) ||
+
+      r.rewrite(x || (x && y), x) ||
+      r.rewrite(x || (y && (x || z)), x || (y && z)) || 
+      r.rewrite(x || (y || (x && z)), x || y) ||
+      r.rewrite((x && y) || (x && z), x && (y || z)) || 
+    
+      // These rules taken from:
+      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_Or.cpp#L59-L68
+      r.rewrite(x || !x, true) ||
+      r.rewrite(x == y || x != y, true) ||
+      r.rewrite(x == y || (z || x != y), true) ||
+      r.rewrite(x != y || (z || x == y), true) ||
+      r.rewrite(x == c1 || x != c0, x != c0, eval(c0 != c1)) ||
+      r.rewrite(x <= c0 || c1 <= x, true, eval(c1 <= c0 + 1)) ||
+      r.rewrite(c1 <= x || x <= c0, true, eval(c1 <= c0 + 1)) ||
+      r.rewrite(c1 < x || x <= c0, true, eval(c1 <= c0)) ||
+      r.rewrite(x < c0 || c1 <= x, true, eval(c1 <= c0)) ||
+      r.rewrite(x < c0 || c1 < x, true, eval(c1 < c0)) ||
+      r.rewrite(c1 < x || x < c0, true, eval(c1 < c0)) ||
+      r.rewrite(c0 < x || c1 < x, eval(min(c0, c1)) < x) ||
+      r.rewrite(c0 <= x || c1 <= x, eval(min(c0, c1)) <= x) ||
+      r.rewrite(x < c0 || x < c1, x < eval(max(c0, c1))) ||
+      r.rewrite(x <= c0 || x <= c1, x <= eval(max(c0, c1))) ||
+
+      r.rewrite(x <= y || y <= x, true) ||
+      r.rewrite(x < y || y <= x, true) ||
+      r.rewrite(x < y || y < x, x != y) ||
+
       false) {
     return r.result;
   }
