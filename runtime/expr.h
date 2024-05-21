@@ -573,7 +573,10 @@ const expr& indeterminate();
 
 inline bool is_positive(const expr& x) {
   if (is_positive_infinity(x)) return true;
-  if (const call* c = is_intrinsic(x, intrinsic::abs)) return is_positive(c);
+  if (const call* c = is_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return is_positive(c->args[0]);
+  }
   const index_t* c = as_constant(x);
   return c ? *c > 0 : false;
 }
