@@ -195,6 +195,18 @@ public:
     }
   }
 
+  index_t eval_short_circuit_op(const call* op) {
+    for (const expr& i : op->args) {
+      index_t x = eval(i);
+      if (!x && op->intrinsic == intrinsic::and_then) {
+        return false;
+      } else if (x && op->intrinsic == intrinsic::or_else) {
+        return true;
+      }
+    }
+    return op->intrinsic == intrinsic::and_then;
+  }
+
   index_t eval_buffer_metadata(const call* op) {
     assert(op->args.size() == 1);
     raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval(op->args[0]));
@@ -322,6 +334,9 @@ public:
       assert(op->args.size() == 1);
       result = std::abs(eval(op->args[0]));
       return;
+
+    case intrinsic::and_then:
+    case intrinsic::or_else: result = eval_short_circuit_op(op); return;
 
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:
@@ -801,6 +816,26 @@ public:
       } else {
         result = std::nullopt;
       }
+      return;
+    }
+    case intrinsic::and_then:
+    case intrinsic::or_else: {
+      for (const expr& i : op->args) {
+        std::optional<index_t> x = eval(i);
+        if (x) {
+          if (x && !*x && op->intrinsic == intrinsic::and_then) {
+            result = false;
+            return;
+          } else if (x && *x && op->intrinsic == intrinsic::or_else) {
+            result = true;
+            return;
+          }
+        } else {
+          result = std::nullopt;
+          return;
+        }
+      }
+      result = op->intrinsic == intrinsic::and_then;
       return;
     }
 

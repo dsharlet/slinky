@@ -827,8 +827,8 @@ public:
       for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
         checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
         checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
-        checks.push_back(check::make(buffer_fold_factor(buf_var, d) == dim::unfolded ||
-                                     (*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)));
+        checks.push_back(check::make(or_else({buffer_fold_factor(buf_var, d) == dim::unfolded,
+            (*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)})));
       }
     }
     return block::make(std::move(checks), std::move(body));
@@ -864,7 +864,7 @@ void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>&
     checks.push_back(check::make(b->dim(d).stride == buffer_stride(buf_var, d)));
     checks.push_back(check::make(b->dim(d).fold_factor == fold_factor));
     if (output) {
-      checks.push_back(check::make(fold_factor == dim::unfolded || b->dim(d).extent() <= fold_factor));
+      checks.push_back(check::make(or_else({fold_factor == dim::unfolded, b->dim(d).extent() <= fold_factor})));
     }
   }
 }
