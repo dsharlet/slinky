@@ -690,10 +690,9 @@ expr simplify(const less* op, expr a, expr b) {
 
       // Nested logicals
       r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
-      r.rewrite(x < (y + c0), true, is_logical(x) && is_logical(y) && eval(c1 > 1)) ||
-      r.rewrite(x < (y + c0), false, is_logical(x) && is_logical(y) && eval(c1 < -1)) ||
-      r.rewrite((x + c0) < y, false, is_logical(x) && is_logical(y) && eval(c1 >= 1)) ||
-      r.rewrite((x + c0) < y, true, is_logical(x) && is_logical(y) && eval(c1 <= -1)) ||
+      r.rewrite(x < 1, !x, is_logical(x)) ||
+      r.rewrite(x < c0, true, eval(c0 > 1) && is_logical(x)) ||
+      r.rewrite(x < c0, false, eval(c0 <= 0) && is_logical(x)) ||
 
       false) {
     return r.result;
@@ -748,7 +747,7 @@ expr simplify(const equal* op, expr a, expr b) {
       r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
       r.rewrite(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
       r.rewrite(x == 0, !x, is_logical(x)) ||
-      r.rewrite(x == 1, x, is_logical(x)) ||
+      r.rewrite(x == c0, x, is_logical(x) && eval(c0 != 0)) ||
       false) {
     return r.result;
   }
