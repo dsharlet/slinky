@@ -22,18 +22,6 @@ namespace slinky {
 
 namespace {
 
-// Returns true if e == select(e, 1, 0)
-bool is_boolean_valued(const expr& e) {
-  if (e.as<equal>()) return true;
-  if (e.as<not_equal>()) return true;
-  if (e.as<less>()) return true;
-  if (e.as<less_equal>()) return true;
-  if (e.as<logical_and>()) return true;
-  if (e.as<logical_or>()) return true;
-  if (e.as<logical_not>()) return true;
-  return false;
-}
-
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   symbol_map<box_expr> buffer_bounds;
@@ -271,7 +259,7 @@ public:
     expr t = op->true_value;
     expr f = op->false_value;
 
-    if (is_boolean_valued(c) || (is_zero(c_bounds.min) && is_one(c_bounds.max))) {
+    if (is_logical(c) || (is_zero(c_bounds.min) && is_one(c_bounds.max))) {
       t = substitute(t, c, true);
       f = substitute(f, c, false);
     } else {

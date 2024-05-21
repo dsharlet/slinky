@@ -419,7 +419,7 @@ class expr_generator {
   gtest_seeded_mt19937 rng_;
 
   static constexpr int max_rank = 2;
-  static constexpr int max_abs_constant = 256;
+  static constexpr int max_abs_constant = 64;
 
   std::vector<var> vars_;
   std::vector<var> bufs_;
@@ -467,9 +467,10 @@ public:
   index_t random_constant(int max = max_abs_constant) { return (rng_() & (2 * max - 1)) - max; }
 
   expr random_buffer_intrinsic() {
-    switch (rng_() % 2) {
-    case 0: return buffer_min(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
-    case 1: return buffer_max(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
+    if (rng_() % 2 == 0) {
+      return buffer_min(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
+    } else {
+      return buffer_max(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
     }
   }
 

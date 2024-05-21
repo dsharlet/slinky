@@ -377,8 +377,8 @@ DECLARE_BINARY_OP(equal, true)
 DECLARE_BINARY_OP(not_equal, true)
 DECLARE_BINARY_OP(less, false)
 DECLARE_BINARY_OP(less_equal, false)
-DECLARE_BINARY_OP(logical_and, false)
-DECLARE_BINARY_OP(logical_or, false)
+DECLARE_BINARY_OP(logical_and, true)
+DECLARE_BINARY_OP(logical_or, true)
 
 #undef DECLARE_BINARY_OP
 
@@ -533,6 +533,18 @@ inline bool is_true(const expr& x) {
   return cx ? cx->value != 0 : false;
 }
 SLINKY_ALWAYS_INLINE inline bool is_false(const expr& x) { return is_zero(x); }
+SLINKY_ALWAYS_INLINE inline bool is_logical(const expr& x) {
+  switch (x.type()) {
+  case expr_node_type::less: return true;
+  case expr_node_type::less_equal: return true;
+  case expr_node_type::equal: return true;
+  case expr_node_type::not_equal: return true;
+  case expr_node_type::logical_and: return true;
+  case expr_node_type::logical_or: return true;
+  case expr_node_type::logical_not: return true;
+  default: return false;
+  }
+}
 
 // Check if `x` is a call to the intrinsic `fn`.
 inline const call* is_intrinsic(const expr& x, intrinsic fn) {
@@ -561,7 +573,10 @@ const expr& indeterminate();
 
 inline bool is_positive(const expr& x) {
   if (is_positive_infinity(x)) return true;
-  if (const call* c = is_intrinsic(x, intrinsic::abs)) return is_positive(c);
+  if (const call* c = is_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return is_positive(c->args[0]);
+  }
   const index_t* c = as_constant(x);
   return c ? *c > 0 : false;
 }
