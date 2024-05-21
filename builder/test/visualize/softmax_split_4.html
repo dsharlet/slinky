@@ -327,17 +327,17 @@ function pipeline(__in, out) {
   check((out != 0));
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 4));
-  check(((buffer_fold_factor(out, 0) == 9223372036854775807) || (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-  check(((buffer_fold_factor(out, 1) == 9223372036854775807) || (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+  check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+  check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
     let g = buffer_min(out, 0);
     let g0 = buffer_max(out, 0);
     check((buffer_min(__in, 0) <= min(g, g0)));
     check((max(g, g0) <= buffer_max(__in, 0)));
-    check(((buffer_fold_factor(__in, 0) == 9223372036854775807) || (abs((g - g0)) < buffer_fold_factor(__in, 0))));
+    check(or_else((buffer_fold_factor(__in, 0) == 9223372036854775807), (abs((g - g0)) < buffer_fold_factor(__in, 0))));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    check(((buffer_fold_factor(__in, 1) == 9223372036854775807) || (buffer_max(out, 1) < (buffer_fold_factor(__in, 1) + buffer_min(out, 1)))));
+    check(or_else((buffer_fold_factor(__in, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(__in, 1) + buffer_min(out, 1)))));
     { let softmax_in = allocate('softmax_in', 4, [
         {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
         {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:4}

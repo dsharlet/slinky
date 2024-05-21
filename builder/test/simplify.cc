@@ -123,6 +123,18 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
   ASSERT_THAT(simplify(min(x, y) - 1 <= min(x, y - 1)), matches(true));
+
+  ASSERT_THAT(simplify(and_then({expr(true), expr(true)})), matches(true));
+  ASSERT_THAT(simplify(and_then({expr(true), expr(false)})), matches(false));
+  ASSERT_THAT(simplify(and_then({expr(false), x})), matches(false));
+  ASSERT_THAT(simplify(and_then({expr(true), x})), matches(x));
+  ASSERT_THAT(simplify(and_then({expr(true), x, y})), matches(and_then({x, y})));
+  ASSERT_THAT(simplify(or_else({expr(true), expr(true)})), matches(true));
+  ASSERT_THAT(simplify(or_else({expr(false), expr(true)})), matches(true));
+  ASSERT_THAT(simplify(or_else({expr(false), expr(false)})), matches(false));
+  ASSERT_THAT(simplify(or_else({expr(true), x})), matches(true));
+  ASSERT_THAT(simplify(or_else({expr(false), x})), matches(x));
+  ASSERT_THAT(simplify(or_else({expr(false), x, y})), matches(or_else({x, y})));
 }
 
 TEST(simplify, let) {
@@ -278,13 +290,16 @@ TEST(simplify, make_buffer) {
       matches(transpose::make_truncate(b1, b0, 3, slice_dim::make(b1, b1, 1, y, body))));
 
   // Not slices
-  ASSERT_THAT(simplify(make_slice(b1, b0, {}, buffer_dims(b1, 1))), matches(make_slice(b1, b0, {}, buffer_dims(b1, 1))));
+  ASSERT_THAT(
+      simplify(make_slice(b1, b0, {}, buffer_dims(b1, 1))), matches(make_slice(b1, b0, {}, buffer_dims(b1, 1))));
   ASSERT_THAT(simplify(make_crop(b1, b0, {}, {buffer_bounds(b0, 0)}, buffer_dims(b1, 1))),
       matches(make_crop(b1, b0, {}, {buffer_bounds(b0, 0)}, buffer_dims(b1, 1))));
 
   // Crops
-  ASSERT_THAT(simplify(make_crop(b1, b0, {}, {}, buffer_dims(b0, 0))), matches(transpose::make_truncate(b1, b0, 0, body)));
-  ASSERT_THAT(simplify(make_crop(b1, b0, {}, {}, buffer_dims(b0, 1))), matches(transpose::make_truncate(b1, b0, 1, body)));
+  ASSERT_THAT(
+      simplify(make_crop(b1, b0, {}, {}, buffer_dims(b0, 0))), matches(transpose::make_truncate(b1, b0, 0, body)));
+  ASSERT_THAT(
+      simplify(make_crop(b1, b0, {}, {}, buffer_dims(b0, 1))), matches(transpose::make_truncate(b1, b0, 1, body)));
   ASSERT_THAT(simplify(make_crop(b1, b0, {x}, {{x, y}}, buffer_dims(b0, 1))),
       matches(transpose::make_truncate(b1, b0, 1, crop_dim::make(b1, b1, 0, {x, y}, body))));
   ASSERT_THAT(simplify(make_crop(b1, b0, {x}, {{x, y}}, buffer_dims(b0, 2))),
@@ -432,7 +447,7 @@ class expr_generator {
   T random_pick(const std::vector<T>& from) {
     return from[rng_() % from.size()];
   }
- 
+
 public:
   expr_generator() {
     vars_ = {x, y, z};

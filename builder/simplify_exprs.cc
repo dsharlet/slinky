@@ -992,6 +992,33 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     } else if (is_non_positive(args[0])) {
       return simplify(static_cast<const sub*>(nullptr), 0, std::move(args[0]));
     }
+  } else if (fn == intrinsic::and_then || fn == intrinsic::or_else) {
+    // We could apply a subset of the rules of logical_and/logical_or, but it's probably not worth it, we're just going
+    // to do partial constant folding.
+    for (auto i = args.begin(); i != args.end();) {
+      if (is_zero(*i)) {
+        if (fn == intrinsic::and_then) {
+          return false;
+        } else {
+          i = args.erase(i);
+          changed = true;
+        }
+      } else if (as_constant(*i)) {
+        if (fn == intrinsic::or_else) {
+          return true;
+        } else {
+          i = args.erase(i);
+          changed = true;
+        }
+      } else {
+        ++i;
+      }
+    }
+    if (args.empty()) {
+      return fn == intrinsic::and_then;
+    } else if (args.size() == 1) {
+      return args[0];
+    }
   }
 
   expr e;

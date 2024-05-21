@@ -90,6 +90,10 @@ enum class intrinsic {
   // Common arithmetic functions.
   abs,
 
+  // These are short circuiting logical operations, unlike the && and || operators which are commutative and do not short circuit.
+  and_then,
+  or_else,
+
   // Functions with arguments (buf) that return buffer metadata.
   buffer_rank,
   buffer_elem_size,
@@ -605,6 +609,9 @@ expr align_down(expr x, expr a);
 expr align_up(expr x, expr a);
 // Expand the interval to have a min and extent aligned to a multiple of a.
 interval_expr align(interval_expr x, expr a);
+
+expr and_then(std::vector<expr> args);
+expr or_else(std::vector<expr> args);
 
 expr buffer_rank(expr buf);
 expr buffer_elem_size(expr buf);

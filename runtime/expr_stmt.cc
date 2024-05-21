@@ -528,6 +528,9 @@ expr align_down(expr x, expr a) { return (x / a) * a; }
 expr align_up(expr x, expr a) { return ((x + a - 1) / a) * a; }
 interval_expr align(interval_expr x, expr a) { return {align_down(x.min, a), align_up(x.max + 1, a) - 1}; }
 
+expr and_then(std::vector<expr> args) { return call::make(intrinsic::and_then, std::move(args)); }
+expr or_else(std::vector<expr> args) { return call::make(intrinsic::or_else, std::move(args)); } 
+
 expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::move(buf)}); }
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
