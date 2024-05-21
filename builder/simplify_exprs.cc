@@ -140,6 +140,8 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
+      r.rewrite(min(x, c0), c0, is_logical(x) && eval(c0 <= 0)) ||
+      r.rewrite(min(x, c0), x, is_logical(x) && eval(c0 > 0)) ||
 
       false) {
     return r.result;
@@ -264,6 +266,8 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
+      r.rewrite(max(x, c0), x, is_logical(x) && eval(c0 <= 0)) ||
+      r.rewrite(max(x, c0), c0, is_logical(x) && eval(c0 > 0)) ||
     
       false) {
     return r.result;
@@ -415,6 +419,7 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite(min(x, y) / c0 - max(x, y) / c0, -abs(x / c0 - y / c0), eval(c0 > 0)) ||
       r.rewrite(max(x, y) - min(x, y), abs(x - y)) ||
       r.rewrite(min(x, y) - max(x, y), -abs(x - y)) ||
+      r.rewrite(select(x, y, z) - select(x, w, u), select(x, y - w, z - u)) ||
       false) {
     return r.result;
   }
@@ -681,6 +686,8 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(select(x, y, z) < z, select(x, y < z, false)) ||
       r.rewrite(y < select(x, y, w), select(x, false, y < w)) ||
       r.rewrite(w < select(x, y, w), select(x, w < y, false)) ||
+      r.rewrite(select(x, y, z) < select(x, w, u), select(x, y < w, z < u)) ||
+      r.rewrite((x < y) < (x < (y + c0)), false, eval(c0 < 0)) ||
 
       // Nested logicals
       r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
@@ -736,6 +743,8 @@ expr simplify(const equal* op, expr a, expr b) {
       r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
       r.rewrite(x + c0 == c1 - y, x + y == eval(c1 - c0)) ||
       r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
+      r.rewrite(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
+      r.rewrite((x <= y) == 0, y < x) ||
       false) {
     return r.result;
   }
@@ -938,7 +947,9 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
       
       r.rewrite(select(x, select(y, z, w), select(y, u, w)), select(y, select(x, z, u), w)) ||
       r.rewrite(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
-
+      r.rewrite(select(x, 0, 1), x == 0) ||
+      r.rewrite(select(x, 1, 0), x != 0) ||
+      r.rewrite(select(x, y, true), y || !x, is_logical(y)) ||
     false) {
     return r.result;
   }
