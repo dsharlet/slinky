@@ -100,15 +100,15 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
     
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
-      r.rewrite(min(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
+      r.rewrite(min(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 > 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(min(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 < 0) && eval(c1 % c0 == 0)) ||
 
-      r.rewrite(min(x * c0, y * c1), min(x, y * eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(x * c0, y * c1), max(x, y * eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(x * c0, y * c1), min(y, x * eval(c0 / c1)) * c1, eval(c1 > 0 && c0 % c1 == 0)) ||
-      r.rewrite(min(x * c0, y * c1), max(y, x * eval(c0 / c1)) * c1, eval(c1 < 0 && c0 % c1 == 0)) ||
-      r.rewrite(min(y * c0 + c1, x * c0), min(x, y + eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(y * c0 + c1, x * c0), max(x, y + eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
+      r.rewrite(min(x * c0, y * c1), min(x, y * eval(c1 / c0)) * c0, eval(c0 > 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(min(x * c0, y * c1), max(x, y * eval(c1 / c0)) * c0, eval(c0 < 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(min(x * c0, y * c1), min(y, x * eval(c0 / c1)) * c1, eval(c1 > 0) && eval(c0 % c1 == 0)) ||
+      r.rewrite(min(x * c0, y * c1), max(y, x * eval(c0 / c1)) * c1, eval(c1 < 0) && eval(c0 % c1 == 0)) ||
+      r.rewrite(min(y * c0 + c1, x * c0), min(x, y + eval(c1 / c0)) * c0, eval(c0 > 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(min(y * c0 + c1, x * c0), max(x, y + eval(c1 / c0)) * c0, eval(c0 < 0) && eval(c1 % c0 == 0)) ||
 
       r.rewrite(min(x / c0, y / c0), min(x, y) / c0, eval(c0 > 0)) ||
       r.rewrite(min(x / c0, y / c0), max(x, y) / c0, eval(c0 < 0)) ||
@@ -119,25 +119,25 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(y / c0 + c1, x / c0), min(x, y + eval(c1 * c0)) / c0, eval(c0 > 0)) ||
       r.rewrite(min(y / c0 + c1, x / c0), max(x, y + eval(c1 * c0)) / c0, eval(c0 < 0)) ||
 
-      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(((x + c2) / c3) * c4, x / c1), x/c1, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(x / c1 + c0, (x / c3) * c4), (x / c3) * c4, eval(c0 > 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min((x / c3) * c4, x / c1), (x / c3) * c4, eval(c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= c2) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c2 <= c0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, x / c1), x/c1, eval(c3 - c1 <= c2) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c2 <= 0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= 0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(0 <= c0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min(x / c1 + c0, (x / c3) * c4), (x / c3) * c4, eval(c0 > 0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(min((x / c3) * c4, x / c1), (x / c3) * c4, eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
 
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
       // Compare x to a stair-step function in x
-      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0 && c0 + c2 <= 0)) ||
-      r.rewrite(min((x / c1) * c1 + c2, (x / c0) * c0), (x / c0) * c0, eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0) && eval(c0 + c2 >= c1 - 1)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0) && eval(c0 + c2 <= 0)) ||
+      r.rewrite(min((x / c1) * c1 + c2, (x / c0) * c0), (x / c0) * c0, eval(c1 > 0) && eval(c2 >= c1) && eval(c0 != 0)) ||
       // Special cases where c0 or c2 is zero
-      r.rewrite(min(x, (x / c1) * c1 + c2), x, eval(c1 > 0 && c2 >= c1 - 1)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(min(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0 && c2 <= 0)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0 && c0 <= 0)) ||
+      r.rewrite(min(x, (x / c1) * c1 + c2), x, eval(c1 > 0) && eval(c2 >= c1 - 1)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1), x, eval(c1 > 0) && eval(c0 >= c1 - 1)) ||
+      r.rewrite(min(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0) && eval(c2 <= 0)) ||
+      r.rewrite(min(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
 
@@ -224,15 +224,15 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
 
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
-      r.rewrite(max(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
+      r.rewrite(max(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 > 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(max(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 < 0) && eval(c1 % c0 == 0)) ||
 
-      r.rewrite(max(x * c0, y * c1), max(x, y * eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(x * c0, y * c1), min(x, y * eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(x * c0, y * c1), max(y, x * eval(c0 / c1)) * c1, eval(c1 > 0 && c0 % c1 == 0)) ||
-      r.rewrite(max(x * c0, y * c1), min(y, x * eval(c0 / c1)) * c1, eval(c1 < 0 && c0 % c1 == 0)) ||
-      r.rewrite(max(y * c0 + c1, x * c0), max(x, y + eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(y * c0 + c1, x * c0), min(x, y + eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
+      r.rewrite(max(x * c0, y * c1), max(x, y * eval(c1 / c0)) * c0, eval(c0 > 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(max(x * c0, y * c1), min(x, y * eval(c1 / c0)) * c0, eval(c0 < 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(max(x * c0, y * c1), max(y, x * eval(c0 / c1)) * c1, eval(c1 > 0) && eval(c0 % c1 == 0)) ||
+      r.rewrite(max(x * c0, y * c1), min(y, x * eval(c0 / c1)) * c1, eval(c1 < 0) && eval(c0 % c1 == 0)) ||
+      r.rewrite(max(y * c0 + c1, x * c0), max(x, y + eval(c1 / c0)) * c0, eval(c0 > 0) && eval(c1 % c0 == 0)) ||
+      r.rewrite(max(y * c0 + c1, x * c0), min(x, y + eval(c1 / c0)) * c0, eval(c0 < 0) && eval(c1 % c0 == 0)) ||
 
       r.rewrite(max(x / c0, y / c0), max(x, y) / c0, eval(c0 > 0)) ||
       r.rewrite(max(x / c0, y / c0), min(x, y) / c0, eval(c0 < 0)) ||
@@ -243,25 +243,25 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(y / c0 + c1, x / c0), max(x, y + eval(c1 * c0)) / c0, eval(c0 > 0)) ||
       r.rewrite(max(y / c0 + c1, x / c0), min(x, y + eval(c1 * c0)) / c0, eval(c0 < 0)) ||
  
-      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(((x + c2) / c3) * c4, x / c1), x/c1, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(x / c1 + c0, (x / c3) * c4), x / c1 + c0, eval(c0 > 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max((x / c3) * c4, x / c1), x / c1, eval(c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c2 <= c0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c0 + c3 - c1 <= c2) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, x / c1), x/c1, eval(c2 <= 0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c3 - c1 <= c2) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(0 <= c0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(c0 + c3 - c1 <= 0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max(x / c1 + c0, (x / c3) * c4), x / c1 + c0, eval(c0 > 0) && eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
+      r.rewrite(max((x / c3) * c4, x / c1), x / c1, eval(c1 > 0) && eval(c3 > 0) && eval(c1 * c4 == c3)) ||
     
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
       // Compare x to a stair-step function in x
-      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0 && c0 + c2 <= 0)) ||
-      r.rewrite(max((x / c1) * c1 + c2, (x / c0) * c0), (x / c1) * c1 + c2, eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0) && eval(c0 + c2 >= c1 - 1)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0) && eval(c0 + c2 <= 0)) ||
+      r.rewrite(max((x / c1) * c1 + c2, (x / c0) * c0), (x / c1) * c1 + c2, eval(c2 >= c1) && eval(c1 > 0) && eval(c0 != 0)) ||
       // Special cases where c0 or c2 is zero
-      r.rewrite(max(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0 && c2 >= c1 - 1)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(max(x, (x / c1) * c1 + c2), x, eval(c1 > 0 && c2 <= 0)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 <= 0)) ||
+      r.rewrite(max(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0) && eval(c2 >= c1 - 1)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0) && eval(c0 >= c1 - 1)) ||
+      r.rewrite(max(x, (x / c1) * c1 + c2), x, eval(c1 > 0) && eval(c2 <= 0)) ||
+      r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
     
@@ -490,14 +490,14 @@ expr simplify(const div* op, expr a, expr b) {
       r.rewrite(x / -1, -x) ||
       r.rewrite(x / x, x != 0) ||
 
-      r.rewrite((y + x / c0) / c1, (x + y * c0) / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0 && c0 % c1 == 0)) ||
+      r.rewrite((y + x / c0) / c1, (x + y * c0) / eval(c0 * c1), eval(c0 > 0) && eval(c1 > 0)) ||
+      r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0) && eval(c1 > 0)) ||
+      r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0) && eval(c0 % c1 == 0)) ||
 
       r.rewrite((x + y * c0) / c1, y * eval(c0 / c1) + x / c1, eval(c0 % c1 == 0)) ||
       r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), eval(c0 % c1 == 0)) ||
-      r.rewrite((y * c0 - x) / c1, y * eval(c0 / c1) + (-x / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
-      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 != 0 && c0 % c1 == 0)) ||
+      r.rewrite((y * c0 - x) / c1, y * eval(c0 / c1) + (-x / c1), eval(c0 % c1 == 0) && eval(c0 != 0)) ||
+      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 % c1 == 0) && eval(c0 != 0)) ||
       false) {
     return r.result;
   }
@@ -574,14 +574,14 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x + c0 < y, x < y + eval(-c0)) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
-      r.rewrite(x < (x / c0) * c0 + c1, true, eval(c0 > 0 && c1 >= c0 - 1)) ||
-      r.rewrite(x < (x / c0) * c0 + c1, false, eval(c0 > 0 && c1 <= 0)) ||
-      r.rewrite(x + c1 < (x / c0) * c0, true, eval(c0 > 0 && c1 <= -c0 + 1)) ||
-      r.rewrite(x + c1 < (x / c0) * c0, false, eval(c0 > 0 && c1 >= 0)) ||
-      r.rewrite((x / c0) * c0 < x + c1, true, eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x / c0) * c0 < x + c1, false, eval(c0 > 0 && -c1 >= c0 - 1)) ||
-      r.rewrite((x / c0) * c0 + c1 < x, true, eval(c0 > 0 && c1 < 0)) ||
-      r.rewrite((x / c0) * c0 + c1 < x, false, eval(c0 > 0 && c1 >= c0 - 1)) ||
+      r.rewrite(x < (x / c0) * c0 + c1, true, eval(c0 > 0) && eval(c1 >= c0 - 1)) ||
+      r.rewrite(x < (x / c0) * c0 + c1, false, eval(c0 > 0) && eval(c1 <= 0)) ||
+      r.rewrite(x + c1 < (x / c0) * c0, true, eval(c0 > 0) && eval(c1 <= -c0 + 1)) ||
+      r.rewrite(x + c1 < (x / c0) * c0, false, eval(c0 > 0) && eval(c1 >= 0)) ||
+      r.rewrite((x / c0) * c0 < x + c1, true, eval(c0 > 0) && eval(c1 > 0)) ||
+      r.rewrite((x / c0) * c0 < x + c1, false, eval(c0 > 0) && eval(-c1 >= c0 - 1)) ||
+      r.rewrite((x / c0) * c0 + c1 < x, true, eval(c0 > 0) && eval(c1 < 0)) ||
+      r.rewrite((x / c0) * c0 + c1 < x, false, eval(c0 > 0) && eval(c1 >= c0 - 1)) ||
       r.rewrite(x < (x / c0) * c0, false, eval(c0 > 0)) ||
       r.rewrite((x / c0) * c0 < x, x % c0 != 0, eval(c0 > 0)) ||
 
@@ -772,12 +772,9 @@ expr simplify(const logical_and* op, expr a, expr b) {
   // clang-format off
   if (r.rewrite(x && x, x) ||
       r.rewrite(x && !x, false) ||
-      r.rewrite(!x && x, false) ||
       r.rewrite(!x && !y, !(x || y)) ||
       r.rewrite(x && (x && y), x && y) ||
-      r.rewrite((x && y) && x, x && y) ||
       r.rewrite(x && (x || y), x) ||
-      r.rewrite((x || y) && x, x) ||
       false) {
     return r.result;
   }
@@ -806,12 +803,9 @@ expr simplify(const logical_or* op, expr a, expr b) {
   // clang-format off
   if (r.rewrite(x || x, x) ||
       r.rewrite(x || !x, true) ||
-      r.rewrite(!x || x, true) ||
       r.rewrite(!x || !y, !(x && y)) ||
       r.rewrite(x || (x && y), x) ||
-      r.rewrite((x && y) || x, x) ||
       r.rewrite(x || (x || y), x || y) ||
-      r.rewrite((x || y) || x, x || y) ||
       false) {
     return r.result;
   }

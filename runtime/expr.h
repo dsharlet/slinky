@@ -377,8 +377,8 @@ DECLARE_BINARY_OP(equal, true)
 DECLARE_BINARY_OP(not_equal, true)
 DECLARE_BINARY_OP(less, false)
 DECLARE_BINARY_OP(less_equal, false)
-DECLARE_BINARY_OP(logical_and, false)
-DECLARE_BINARY_OP(logical_or, false)
+DECLARE_BINARY_OP(logical_and, true)
+DECLARE_BINARY_OP(logical_or, true)
 
 #undef DECLARE_BINARY_OP
 
