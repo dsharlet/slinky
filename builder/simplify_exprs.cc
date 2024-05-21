@@ -691,8 +691,11 @@ expr simplify(const less* op, expr a, expr b) {
       // Nested logicals
       r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
       r.rewrite(x < 1, !x, is_logical(x)) ||
+      r.rewrite(0 < x, x, is_logical(x)) ||
       r.rewrite(x < c0, true, eval(c0 > 1) && is_logical(x)) ||
       r.rewrite(x < c0, false, eval(c0 <= 0) && is_logical(x)) ||
+      r.rewrite(c0 < x, true, eval(c0 < 0) && is_logical(x)) ||
+      r.rewrite(c0 < x, false, eval(c0 >= 1) && is_logical(x)) ||
 
       false) {
     return r.result;
