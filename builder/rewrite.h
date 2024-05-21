@@ -269,6 +269,7 @@ expr substitute(const pattern_call<Args...>& p, const match_context& ctx) {
 template <typename T, typename Fn>
 class replacement_predicate {
 public:
+  static constexpr expr_node_type type = expr_node_type::constant;
   T a;
   Fn fn;
 };
@@ -374,6 +375,8 @@ template <typename T>
 auto is_constant(const T& x) { return make_predicate(x, slinky::as_constant); }
 template <typename T>
 auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
+template <typename T>
+auto is_logical(const T& x) { return make_predicate(x, slinky::is_logical); }
 // clang-format on
 
 template <int N1, int N2>
