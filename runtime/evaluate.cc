@@ -195,7 +195,7 @@ public:
     }
   }
 
-  index_t eval_short_circuit_op(const call* op) {
+  bool eval_short_circuit_op(const call* op) {
     for (const expr& i : op->args) {
       index_t x = eval(i);
       if (!x && op->intrinsic == intrinsic::and_then) {
