@@ -747,7 +747,7 @@ expr simplify(const equal* op, expr a, expr b) {
       r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
       r.rewrite(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
       r.rewrite(x == 0, !x, is_logical(x)) ||
-      r.rewrite(x == c0, x, is_logical(x) && eval(c0 != 0)) ||
+      r.rewrite(x == 1, x, is_logical(x)) ||
       false) {
     return r.result;
   }
