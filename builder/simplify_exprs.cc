@@ -901,6 +901,9 @@ expr simplify(const class logical_not* op, expr a) {
       r.rewrite(!(x != y), x == y) ||
       r.rewrite(!(x < y), y <= x) ||
       r.rewrite(!(x <= y), y < x) ||
+
+      r.rewrite(!(x && !y), y || !x) ||
+      r.rewrite(!(x || !y), y && !x) ||
       false) {
     return r.result;
   }
