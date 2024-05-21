@@ -800,16 +800,16 @@ expr simplify(const logical_and* op, expr a, expr b) {
       // The way we implement <= and < means that constants will be on the LHS for <=, and on the RHS for <
       r.rewrite(x + c0 <= y && y + c1 <= x, false, eval(-c1 < c0)) ||
       r.rewrite(x + c0 <= y && y <= x, false, eval(0 < c0)) ||
-      r.rewrite(x <= y && y + c1 <= x, false, eval(-c1 < 0)) ||
+      r.rewrite(x <= y && y + c1 <= x, false, eval(0 < c1)) ||
       r.rewrite(x <= y && y <= x, x == y) ||
 
-      r.rewrite(x < y + c0 && y + c1 <= x, false, eval(-c1 < -c0 + 1)) ||
-      r.rewrite(x < y + c0 && y <= x, false, eval(0 < -c0 + 1)) ||
+      r.rewrite(x < y + c0 && y + c1 <= x, false, eval(c0 < c1 + 1)) ||
+      r.rewrite(x < y + c0 && y <= x, false, eval(c0 < 1)) ||
       r.rewrite(x < y && y + c1 <= x, false, eval(-c1 < 1)) ||
       r.rewrite(x < y && y <= x, false) ||
 
-      r.rewrite(x < y + c0 && y < x + c1, false, eval(c1 < -c0 + 2)) ||
-      r.rewrite(x < y + c0 && y < x, false, eval(0 < -c0 + 2)) ||
+      r.rewrite(x < y + c0 && y < x + c1, false, eval(c1 + c0 < 2)) ||
+      r.rewrite(x < y + c0 && y < x, false, eval(c0 < 2)) ||
       r.rewrite(x < y && y < x + c1, false, eval(c1 < 2)) ||
       r.rewrite(x < y && y < x, false) ||
 
@@ -873,19 +873,19 @@ expr simplify(const logical_or* op, expr a, expr b) {
       r.rewrite(x <= c0 || x <= c1, x <= eval(max(c0, c1))) ||
 
       // The way we implement <= and < means that constants will be on the LHS for <=, and on the RHS for <
-      r.rewrite(x + c0 <= y || y + c1 <= x, true, eval(-c1 > c0 - 1)) ||
-      r.rewrite(x + c0 <= y || y <= x, true, eval(0 > c0 - 1)) ||
-      r.rewrite(x <= y || y + c1 <= x, true, eval(-c1 > 0 - 1)) ||
+      r.rewrite(x + c0 <= y || y + c1 <= x, true, eval(c0 + c1 < 1)) ||
+      r.rewrite(x + c0 <= y || y <= x, true, eval(c0 < 1)) ||
+      r.rewrite(x <= y || y + c1 <= x, true, eval(c1 < 1)) ||
       r.rewrite(x <= y || y <= x, true) ||
 
-      r.rewrite(x < y + c0 || y + c1 <= x, true, eval(-c1 > -c0 + 0)) ||
-      r.rewrite(x < y + c0 || y <= x, true, eval(0 > -c0 + 0)) ||
-      r.rewrite(x < y || y + c1 <= x, true, eval(-c1 > 0)) ||
+      r.rewrite(x < y + c0 || y + c1 <= x, true, eval(c1 < c0)) ||
+      r.rewrite(x < y + c0 || y <= x, true, eval(0 < c0)) ||
+      r.rewrite(x < y || y + c1 <= x, true, eval(c1 < 0)) ||
       r.rewrite(x < y || y <= x, true) ||
 
-      r.rewrite(x < y + c0 || y < x + c1, true, eval(c1 > -c0 + 1)) ||
-      r.rewrite(x < y + c0 || y < x, true, eval(0 > -c0 + 1)) ||
-      r.rewrite(x < y || y < x + c1, true, eval(c1 > 1)) ||
+      r.rewrite(x < y + c0 || y < x + c1, true, eval(1 < c1 + c0)) ||
+      r.rewrite(x < y + c0 || y < x, true, eval(1 < c0)) ||
+      r.rewrite(x < y || y < x + c1, true, eval(1 < c1)) ||
       r.rewrite(x < y || y < x, x != y) ||
 
       false) {
