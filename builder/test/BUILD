@@ -54,6 +54,7 @@ cc_test(
     name = "elementwise",
     srcs = ["elementwise.cc"],
     deps = [
+        "//base/test:util",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",
@@ -173,6 +174,7 @@ cc_test(
     name = "simplify",
     srcs = ["simplify.cc"],
     deps = [
+        "//base/test:util",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",

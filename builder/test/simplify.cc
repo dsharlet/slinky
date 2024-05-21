@@ -3,6 +3,7 @@
 
 #include <cassert>
 
+#include "base/test/seeded_test.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/buffer.h"
@@ -414,111 +415,127 @@ TEST(simplify, where_true) {
   ASSERT_THAT(where_true(3 * (x + 2) < 5, x), matches(bounds(negative_infinity(), -1)));
 }
 
-std::vector<var> vars = {x, y, z};
-std::vector<var> bufs = {b0, b1};
+class expr_generator {
+  gtest_seeded_mt19937 rng_;
 
-template <typename T>
-T random_pick(const std::vector<T>& from) {
-  return from[rand() % from.size()];
-}
+  static constexpr int max_rank = 2;
+  static constexpr int max_abs_constant = 256;
 
-constexpr int max_rank = 2;
+  std::vector<var> vars_;
+  std::vector<var> bufs_;
 
-constexpr int max_abs_constant = 256;
+  std::vector<buffer<int, max_rank>> buffers_;
 
-index_t random_constant(int max = max_abs_constant) { return (rand() & (2 * max - 1)) - max; }
+  symbol_map<interval_expr> var_bounds_;
 
-expr random_buffer_intrinsic() {
-  switch (rand() % 2) {
-  case 0: return buffer_min(random_pick(bufs), rand() % max_rank);
-  case 1: return buffer_max(random_pick(bufs), rand() % max_rank);
-  default: return buffer_at(random_pick(bufs));
+  template <typename T>
+  T random_pick(const std::vector<T>& from) {
+    return from[rng_() % from.size()];
   }
-}
+ 
+public:
+  expr_generator() {
+    vars_ = {x, y, z};
+    bufs_ = {b0, b1};
 
-expr make_random_expr(int depth);
-
-expr make_random_condition(int depth) {
-  expr a = make_random_expr(depth - 1);
-  expr b = make_random_expr(depth - 1);
-  switch (rand() % 8) {
-  default: return a == b;
-  case 1: return a < b;
-  case 2: return a <= b;
-  case 3: return a != b;
-  case 4: return make_random_condition(depth - 1) && make_random_condition(depth - 1);
-  case 5: return make_random_condition(depth - 1) || make_random_condition(depth - 1);
-  case 6: return !make_random_condition(depth - 1);
-  }
-}
-
-expr make_random_expr(int depth) {
-  if (depth <= 0) {
-    switch (rand() % 4) {
-    default: return random_pick(vars);
-    case 1: return constant::make(random_constant());
-    case 2: return random_buffer_intrinsic();
+    buffers_.resize(bufs_.size());
+    for (const var& v : vars_) {
+      var_bounds_[v] = {-max_abs_constant, max_abs_constant};
     }
-  } else {
+  }
+
+  const symbol_map<interval_expr>& var_bounds() { return var_bounds_; }
+
+  void init_context(eval_context& ctx) {
+    for (const var& v : vars_) {
+      ctx[v] = random_constant();
+    }
+    for (int i = 0; i < static_cast<int>(bufs_.size()); ++i) {
+      ctx[bufs_[i]] = reinterpret_cast<index_t>(&buffers_[i]);
+    }
+    for (auto& b : buffers_) {
+      for (int d = 0; d < max_rank; ++d) {
+        // TODO: Add one to extent because the simplifier assumes buffer_max >= buffer_min. This is not
+        // correct in the case of empty buffers. But do we need to handle empty buffers...?
+        index_t min = random_constant();
+        index_t max = std::max(min + 1, random_constant());
+        b.dim(d).set_bounds(min, max);
+      }
+    }
+  }
+
+  index_t random_constant(int max = max_abs_constant) { return (rng_() & (2 * max - 1)) - max; }
+
+  expr random_buffer_intrinsic() {
+    switch (rng_() % 2) {
+    case 0: return buffer_min(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
+    case 1: return buffer_max(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
+    }
+  }
+
+  expr make_random_condition(int depth) {
     expr a = make_random_expr(depth - 1);
     expr b = make_random_expr(depth - 1);
-    switch (rand() % 9) {
-    default: return a + b;
-    case 1: return a - b;
-    case 2: return a * b;
-    case 3: return a / b;
-    case 4: return a % b;
-    case 5: return min(a, b);
-    case 6: return max(a, b);
-    case 7: return select(make_random_condition(depth - 1), a, b);
-    case 8: return random_constant();
+    switch (rng_() % 8) {
+    // Give more weight to ==.
+    default: return a == b;
+    case 1: return a < b;
+    case 2: return a <= b;
+    case 3: return a != b;
+    case 4: return make_random_condition(depth - 1) && make_random_condition(depth - 1);
+    case 5: return make_random_condition(depth - 1) || make_random_condition(depth - 1);
+    case 6: return !make_random_condition(depth - 1);
     }
   }
-}
+
+  expr make_random_expr(int depth) {
+    if (depth <= 0) {
+      switch (rng_() % 4) {
+      default: return random_pick(vars_);
+      case 1: return constant::make(random_constant());
+      case 2: return random_buffer_intrinsic();
+      }
+    } else {
+      expr a = make_random_expr(depth - 1);
+      expr b = make_random_expr(depth - 1);
+      switch (rng_() % 9) {
+      default: return a + b;
+      case 1: return a - b;
+      case 2: return a * b;
+      case 3: return a / b;
+      case 4: return a % b;
+      case 5: return min(a, b);
+      case 6: return max(a, b);
+      case 7: return select(make_random_condition(depth - 1), a, b);
+      case 8: return random_constant();
+      }
+    }
+  }
+};
 
 TEST(simplify, fuzz) {
-  const int seed = time(nullptr);
-  srand(seed);
+  expr_generator gen;
+
   constexpr int tests = 10000;
   constexpr int checks = 10;
 
   eval_context ctx;
 
-  std::vector<buffer<int, max_rank>> buffers(bufs.size());
-  for (int i = 0; i < static_cast<int>(bufs.size()); ++i) {
-    ctx[bufs[i]] = reinterpret_cast<index_t>(&buffers[i]);
-  }
-
-  symbol_map<interval_expr> var_bounds;
-  for (const var& v : vars) {
-    var_bounds[v] = {-max_abs_constant, max_abs_constant};
-  }
-
   for (int i = 0; i < tests; ++i) {
-    expr test = make_random_expr(3);
+    expr test = gen.make_random_expr(3);
     expr simplified = simplify(test);
 
     // Also test bounds_of and constant_upper_bound.
-    interval_expr bounds = bounds_of(test, var_bounds);
+    interval_expr bounds = bounds_of(test, gen.var_bounds());
     expr upper_bound = constant_upper_bound(test);
 
     for (int j = 0; j < checks; ++j) {
-      for (const var& v : vars) {
-        ctx[v] = random_constant();
-      }
-      for (auto& b : buffers) {
-        for (int d = 0; d < max_rank; ++d) {
-          // TODO: Add one to extent because the simplifier assumes buffer_max >= buffer_min. This is not
-          // correct in the case of empty buffers. But do we need to handle empty buffers...?
-          index_t min = random_constant();
-          index_t max = std::max(min + 1, random_constant());
-          b.dim(d).set_bounds(min, max);
-        }
-      }
+      gen.init_context(ctx);
+
       index_t eval_test = evaluate(test, ctx);
       index_t eval_simplified = evaluate(simplified, ctx);
       if (eval_test != eval_simplified) {
-        std::cerr << "simplify failure (seed = " << seed << "): " << std::endl;
+        std::cerr << "simplify failure: " << std::endl;
         print(std::cerr, test, &symbols);
         std::cerr << " -> " << eval_test << std::endl;
         print(std::cerr, simplified, &symbols);
@@ -531,7 +548,7 @@ TEST(simplify, fuzz) {
         index_t constant_max =
             !is_infinity(upper_bound) ? evaluate(upper_bound, ctx) : std::numeric_limits<index_t>::max();
         if (eval_test < min) {
-          std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
+          std::cerr << "bounds_of lower bound failure: " << std::endl;
           print(std::cerr, test, &symbols);
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.min, &symbols);
@@ -541,7 +558,7 @@ TEST(simplify, fuzz) {
           ASSERT_LE(min, eval_test);
         }
         if (eval_test > max) {
-          std::cerr << "bounds_of upper bound failure (seed = " << seed << "): " << std::endl;
+          std::cerr << "bounds_of upper bound failure: " << std::endl;
           print(std::cerr, test, &symbols);
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, bounds.max, &symbols);
@@ -551,7 +568,7 @@ TEST(simplify, fuzz) {
           ASSERT_LE(eval_test, max);
         }
         if (eval_test > constant_max) {
-          std::cerr << "constant_upper_bound failure (seed = " << seed << "): " << std::endl;
+          std::cerr << "constant_upper_bound failure: " << std::endl;
           print(std::cerr, test, &symbols);
           std::cerr << " -> " << eval_test << std::endl;
           print(std::cerr, upper_bound, &symbols);
@@ -566,36 +583,29 @@ TEST(simplify, fuzz) {
 }
 
 TEST(simplify, fuzz_correlated_bounds) {
-  const int seed = time(nullptr);
-  srand(seed);
+  expr_generator gen;
+
   constexpr int tests = 1000;
   constexpr int checks = 10;
 
   eval_context ctx;
 
-  symbol_map<interval_expr> var_bounds;
-  for (const var& v : vars) {
-    var_bounds[v] = {-max_abs_constant, max_abs_constant};
-  }
-
   for (int i = 0; i < tests; ++i) {
-    index_t a = random_constant(16);
-    index_t b = random_constant(16);
-    index_t c = random_constant(16);
+    index_t a = gen.random_constant(16);
+    index_t b = gen.random_constant(16);
+    index_t c = gen.random_constant(16);
     index_t d = euclidean_div(b * c, a);
-    expr test = ((x + random_constant()) / a) * b - ((x + random_constant()) / c) * d;
+    expr test = ((x + gen.random_constant()) / a) * b - ((x + gen.random_constant()) / c) * d;
 
-    interval_expr bounds = bounds_of(test, var_bounds);
+    interval_expr bounds = bounds_of(test, gen.var_bounds());
 
     for (int j = 0; j < checks; ++j) {
-      for (const var& v : vars) {
-        ctx[v] = random_constant();
-      }
+      gen.init_context(ctx);
       index_t eval_test = evaluate(test, ctx);
       index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
       index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
       if (eval_test < min) {
-        std::cerr << "bounds_of lower bound failure (seed = " << seed << "): " << std::endl;
+        std::cerr << "bounds_of lower bound failure: " << std::endl;
         print(std::cerr, test, &symbols);
         std::cerr << " -> " << eval_test << std::endl;
         print(std::cerr, bounds.min, &symbols);
@@ -605,7 +615,7 @@ TEST(simplify, fuzz_correlated_bounds) {
         ASSERT_LE(min, eval_test);
       }
       if (eval_test > max) {
-        std::cerr << "bounds_of upper bound failure (seed = " << seed << "): " << std::endl;
+        std::cerr << "bounds_of upper bound failure: " << std::endl;
         print(std::cerr, test, &symbols);
         std::cerr << " -> " << eval_test << std::endl;
         print(std::cerr, bounds.max, &symbols);

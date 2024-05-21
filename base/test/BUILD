@@ -6,7 +6,10 @@ package(
 cc_library(
     name = "util",
     srcs = ["bazel_util.cc"],
-    hdrs = ["bazel_util.h"],
+    hdrs = [
+        "bazel_util.h", 
+        "seeded_test.h",
+    ],
     deps = [
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest",

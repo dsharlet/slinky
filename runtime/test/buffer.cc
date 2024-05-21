@@ -7,29 +7,26 @@
 #include <numeric>
 #include <random>
 
+#include "base/test/seeded_test.h"
 #include "runtime/buffer.h"
-
-std::mt19937& rng() {
-  static std::mt19937 r{static_cast<uint32_t>(time(nullptr))};
-  return r;
-}
 
 namespace slinky {
 
 bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
 
-int random(int min, int max) { return rng()() % (max - min + 1) + min; }
+template <typename Rng>
+int random(Rng& rng, int min, int max) { return rng() % (max - min + 1) + min; }
 
-template <typename T, std::size_t N>
-void init_random(buffer<T, N>& buf) {
+template <typename T, std::size_t N, typename Rng>
+void init_random(Rng& rng, buffer<T, N>& buf) {
   buf.allocate();
   std::size_t flat_size = buf.size_bytes();
   std::size_t i = 0;
   for (; i + 3 < flat_size; i += 4) {
-    reinterpret_cast<int*>(buf.base())[i >> 2] = rng()();
+    reinterpret_cast<int*>(buf.base())[i >> 2] = rng();
   }
   for (; i < flat_size; ++i) {
-    reinterpret_cast<char*>(buf.base())[i] = rng()();
+    reinterpret_cast<char*>(buf.base())[i] = rng();
   }
 }
 
@@ -73,45 +70,47 @@ struct randomize_options {
   bool randomize_rank = false;
 };
 
-template <typename T, std::size_t N>
-void randomize_strides_and_padding(buffer<T, N>& buf, const randomize_options& options) {
+template <typename T, std::size_t N, typename Rng>
+void randomize_strides_and_padding(Rng& rng, buffer<T, N>& buf, const randomize_options& options) {
   std::vector<int> permutation(buf.rank);
   std::iota(permutation.begin(), permutation.end(), 0);
-  if (random(0, 3) == 0) {
+  if (random(rng, 0, 3) == 0) {
     // Randomize the strides ordering.
-    std::shuffle(permutation.begin(), permutation.end(), rng());
+    std::shuffle(permutation.begin(), permutation.end(), rng);
   }
 
   index_t stride = buf.elem_size;
   for (std::size_t d : permutation) {
     slinky::dim& dim = buf.dim(d);
     // Expand the bounds randomly.
-    dim.set_bounds(dim.min() - random(options.padding_min, options.padding_max),
-        dim.max() + random(options.padding_min, options.padding_max));
+    dim.set_bounds(dim.min() - random(rng, options.padding_min, options.padding_max),
+        dim.max() + random(rng, options.padding_min, options.padding_max));
     if (dim.extent() <= 0) {
       dim.set_extent(1);
     }
-    if (options.allow_broadcast && random(0, 9) == 0) {
+    if (options.allow_broadcast && random(rng, 0, 9) == 0) {
       dim = slinky::dim::broadcast();
     } else {
       dim.set_stride(stride);
       // Add some extra random padding.
-      stride *= dim.extent() + random(0, 3) * buf.elem_size;
+      stride *= dim.extent() + random(rng, 0, 3) * buf.elem_size;
     }
-    if (options.allow_fold && random(0, 9) == 0) {
+    if (options.allow_fold && random(rng, 0, 9) == 0) {
       // Make sure the fold factor divides the min so the fold is valid.
       dim.set_fold_factor(std::max<index_t>(1, std::abs(dim.min())));
     }
   }
 
   if (options.randomize_rank) {
-    buf.rank = random(0, buf.rank);
+    buf.rank = random(rng, 0, buf.rank);
   }
 }
 
 TEST(raw_buffer, make_copy) {
+  gtest_seeded_mt19937 rng;
+
   buffer<int, 2> src({10, 20});
-  init_random(src);
+  init_random(rng, src);
 
   auto dst = raw_buffer::make_copy(src);
   ASSERT_EQ(src.rank, dst->rank);
@@ -183,8 +182,10 @@ TEST(buffer, fill) {
 }
 
 TEST(buffer, shallow_copy) {
+  gtest_seeded_mt19937 rng;
+
   buffer<int, 2> buf({10, 20});
-  init_random(buf);
+  init_random(rng, buf);
   buffer<int, 2> buf2 = buf;
   ASSERT_EQ(buf.base(), buf2.base());
   ASSERT_EQ(buf.elem_size, buf2.elem_size);
@@ -196,8 +197,10 @@ TEST(buffer, shallow_copy) {
 }
 
 TEST(buffer, shallow_copy_different_capacity) {
+  gtest_seeded_mt19937 rng;
+
   buffer<int, 2> buf({10, 20});
-  init_random(buf);
+  init_random(rng, buf);
   buffer<int, 3> buf2 = buf;
   ASSERT_EQ(buf.base(), buf2.base());
   ASSERT_EQ(buf.elem_size, buf2.elem_size);
@@ -337,11 +340,13 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
 
 template <typename T>
 void test_for_each_contiguous_slice_fill() {
+  gtest_seeded_mt19937 rng;
+
   buffer<T, 4> dst;
   for (std::size_t d = 0; d < dst.rank; ++d) {
     dst.dim(d).set_min_extent(0, 5);
   }
-  randomize_strides_and_padding(dst, {-1, 1, false, true});
+  randomize_strides_and_padding(rng, dst, {-1, 1, false, true});
   dst.allocate();
 
   for_each_contiguous_slice(dst, [&](index_t slice_extent, T* dst) { std::fill_n(dst, slice_extent, 7); });
@@ -358,15 +363,17 @@ TEST(buffer, for_each_contiguous_slice_fill) {
 
 template <typename Src, typename Dst>
 void test_for_each_contiguous_slice_copy() {
+  gtest_seeded_mt19937 rng;
+
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(src, {-1, 1, true, true, true});
-  randomize_strides_and_padding(dst, {-1, 1, false, false});
-  init_random(src);
+  randomize_strides_and_padding(rng, src, {-1, 1, true, true, true});
+  randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+  init_random(rng, src);
   dst.allocate();
 
   for_each_contiguous_slice(
@@ -400,15 +407,17 @@ TEST(buffer, for_each_contiguous_slice_copy) {
 
 template <typename Src, typename Dst>
 void test_for_each_element_copy() {
+  gtest_seeded_mt19937 rng;
+
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
     src.dim(d).set_min_extent(0, 3);
     dst.dim(d).set_min_extent(0, 3);
   }
-  randomize_strides_and_padding(src, {-1, 1, true, true, true});
-  randomize_strides_and_padding(dst, {-1, 1, false, false});
-  init_random(src);
+  randomize_strides_and_padding(rng, src, {-1, 1, true, true, true});
+  randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+  init_random(rng, src);
   dst.allocate();
 
   for_each_element([&](Dst* dst, const Src* src) { *dst = src ? *src : 0; }, dst, src);
@@ -433,6 +442,8 @@ TEST(buffer, for_each_element_copy) {
 
 template <typename A, typename B, typename Dst>
 void test_for_each_contiguous_slice_add() {
+  gtest_seeded_mt19937 rng;
+
   buffer<A, 4> a;
   buffer<B, 4> b;
   for (std::size_t d = 0; d < a.rank; ++d) {
@@ -445,12 +456,12 @@ void test_for_each_contiguous_slice_add() {
     dst.dim(d) = a.dim(d);
   }
 
-  randomize_strides_and_padding(a, {0, 1, true, true, true});
-  randomize_strides_and_padding(b, {0, 1, true, true, true});
-  init_random(a);
-  init_random(b);
+  randomize_strides_and_padding(rng, a, {0, 1, true, true, true});
+  randomize_strides_and_padding(rng, b, {0, 1, true, true, true});
+  init_random(rng, a);
+  init_random(rng, b);
 
-  randomize_strides_and_padding(dst, {-1, 0, false, false});
+  randomize_strides_and_padding(rng, dst, {-1, 0, false, false});
   dst.allocate();
 
   for_each_contiguous_slice(
@@ -628,9 +639,11 @@ TEST(buffer, for_each_slice) {
 }
 
 TEST(buffer, for_each_slice_copy_folded) {
+  gtest_seeded_mt19937 rng;
+
   buffer<uint8_t, 2> src({20, 30});
   src.dim(1).set_fold_factor(2);
-  init_random(src);
+  init_random(rng, src);
 
   buffer<uint8_t, 2> dst({10, 20});
   dst.dim(1).set_min_extent(3, 20);
@@ -655,8 +668,10 @@ TEST(buffer, for_each_slice_copy_folded) {
 }
 
 TEST(buffer, for_each_slice_sum) {
+  gtest_seeded_mt19937 rng;
+
   buffer<short, 3> src({3, 10, 5});
-  init_random(src);
+  init_random(rng, src);
 
   buffer<int, 2> dst({10, 5});
   dst.allocate();
@@ -686,8 +701,10 @@ TEST(buffer, for_each_slice_sum) {
 }
 
 TEST(buffer, for_each_slice_broadcasted_slice) {
+  gtest_seeded_mt19937 rng;
+
   buffer<int, 1> src({10});
-  init_random(src);
+  init_random(rng, src);
 
   buffer<int, 3> dst({10, 4, 3});
   dst.allocate();
@@ -724,10 +741,12 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
 }
 
 TEST(buffer, copy) {
+  gtest_seeded_mt19937 rng;
+
   constexpr int max_rank = 4;
   for (int cases = 0; cases < 10000; ++cases) {
-    int rank = random(0, max_rank);
-    int elem_size = random(1, 12);
+    int rank = random(rng, 0, max_rank);
+    int elem_size = random(rng, 1, 12);
 
     std::vector<char> padding(elem_size);
     std::fill(padding.begin(), padding.end(), 7);
@@ -738,9 +757,9 @@ TEST(buffer, copy) {
       src.dim(d).set_min_extent(0, 5);
       dst.dim(d).set_min_extent(0, 5);
     }
-    randomize_strides_and_padding(src, {-1, 1, true, false});
-    randomize_strides_and_padding(dst, {-1, 1, false, false});
-    init_random(src);
+    randomize_strides_and_padding(rng, src, {-1, 1, true, false});
+    randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+    init_random(rng, src);
     dst.allocate();
 
     slinky::copy(src, dst, padding.data());
