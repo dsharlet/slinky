@@ -49,10 +49,16 @@ public:
   index_t max() const { return max_; }
   index_t begin() const { return min_; }
   index_t end() const { return max_ + 1; }
-  index_t extent() const { return max_ - min_ + 1; }
+  index_t extent() const {
+    assert(!sub_overflows<index_t>(max_, min_) && !add_overflows<index_t>(max_ - min_, 1));
+    return max_ - min_ + 1;
+  }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
   bool empty() const { return max_ < min_; }
+  bool unbounded() const {
+    return min_ == std::numeric_limits<index_t>::min() && max_ == std::numeric_limits<index_t>::max();
+  }
 
   void set_extent(index_t extent) { max_ = min_ + extent - 1; }
   void set_point(index_t x) {
@@ -66,6 +72,10 @@ public:
   void set_range(index_t begin, index_t end) {
     min_ = begin;
     max_ = end - 1;
+  }
+  void set_unbounded() {
+    min_ = std::numeric_limits<index_t>::min();
+    max_ = std::numeric_limits<index_t>::max();
   }
   void set_min_extent(index_t min, index_t extent) {
     min_ = min;
@@ -482,9 +492,11 @@ void fill(const raw_buffer& dst, const void* value);
 
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.extent() == 1 && outer.stride() != 0) return true;
+  if (outer.max() == outer.min() && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
-  if (inner.stride() * inner.extent() != outer.stride()) return false;
+  // Avoid overflow for broadcast dimensions
+  index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner.extent();
+  if (next_stride != outer.stride()) return false;
   return true;
 }
 
@@ -502,11 +514,22 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
-  if (od.extent() != 1 && od.fold_factor() != dim::unfolded) {
-    assert(id.fold_factor() == dim::unfolded);
-    id.set_fold_factor(od.fold_factor() * id.extent());
+  if (id.stride() == 0) {
+    assert(od.stride() == 0);
+    if (id.unbounded()) {
+      // Already fused
+    } else if (od.unbounded()) {
+      id.set_unbounded();
+    } else {
+      id.set_range(od.begin() * id.extent(), od.end() * id.extent());
+    }
+  } else {
+    if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
+      assert(id.fold_factor() == dim::unfolded);
+      id.set_fold_factor(od.fold_factor() * id.extent());
+    }
+    id.set_range(od.begin() * id.extent(), od.end() * id.extent());
   }
-  id.set_range(od.begin() * id.extent(), od.end() * id.extent());
   if (type == fuse_type::keep) {
     od.set_point(0);
   } else if (type == fuse_type::remove) {

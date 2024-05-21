@@ -125,6 +125,24 @@ inline T saturate_mod(T a, T b) {
   }
 }
 
+template <class T>
+bool add_overflows(T a, T b) {
+  T dummy;
+  return __builtin_add_overflow(a, b, &dummy);
+}
+
+template <class T>
+bool sub_overflows(T a, T b) {
+  T dummy;
+  return __builtin_sub_overflow(a, b, &dummy);
+}
+
+template <class T>
+bool mul_overflows(T a, T b) {
+  T dummy;
+  return __builtin_mul_overflow(a, b, &dummy);
+}
+
 template <typename T>
 inline T gcd(T a, T b) {
   while (a != b) {

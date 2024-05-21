@@ -38,6 +38,11 @@ Dst saturate(Src x) {
   return std::max<Src>(std::min<Src>(x, std::numeric_limits<Dst>::max()), std::numeric_limits<Dst>::min());
 }
 
+template <typename Dst, typename Src>
+bool saturates(Src x) {
+  return x < std::numeric_limits<Dst>::min() || x > std::numeric_limits<Dst>::max();
+}
+
 TEST(arithmetic, saturate) {
   constexpr int32_t min = std::numeric_limits<int32_t>::min();
   constexpr int32_t max = std::numeric_limits<int32_t>::max();
@@ -49,6 +54,10 @@ TEST(arithmetic, saturate) {
       ASSERT_EQ(saturate_mul(a, b), saturate<int32_t>(static_cast<int64_t>(a) * static_cast<int64_t>(b)));
       ASSERT_EQ(saturate_div(a, b), saturate<int32_t>(euclidean_div(static_cast<int64_t>(a), static_cast<int64_t>(b))));
       ASSERT_EQ(saturate_mod(a, b), saturate<int32_t>(euclidean_mod(static_cast<int64_t>(a), static_cast<int64_t>(b))));
+
+      ASSERT_EQ(add_overflows(a, b), saturates<int32_t>(static_cast<int64_t>(a) + static_cast<int64_t>(b)));
+      ASSERT_EQ(sub_overflows(a, b), saturates<int32_t>(static_cast<int64_t>(a) - static_cast<int64_t>(b)));
+      ASSERT_EQ(mul_overflows(a, b), saturates<int32_t>(static_cast<int64_t>(a) * static_cast<int64_t>(b)));
     }
   }
 }
