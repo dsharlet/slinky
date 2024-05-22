@@ -419,8 +419,9 @@ public:
         loop_info& loop = loops[loop_index];
         loop.add_synchronization();
 
-        expr loop_var = variable::make(loop.sym);
         if (!fold_factors[output]) continue;
+
+        expr loop_var = variable::make(loop.sym);
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
           if ((*fold_factors[output])[d].loop != loop_index) {
             // This is a fold factor for a different loop.
