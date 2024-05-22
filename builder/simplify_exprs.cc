@@ -549,7 +549,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < x, false) ||
       r.rewrite(x < y + 1, x <= y) ||
       r.rewrite(x + -1 < y, x <= y) ||
-    
+
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
       // with adjustments for the simplifier implementation here.
@@ -656,7 +656,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
       r.rewrite(min(x, y) < max(x, y), x != y) ||
       r.rewrite(max(x, y) < min(x, y), false) ||
-        
+
       // Subtract terms from both sides within a min/max.
       // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
       r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
@@ -670,9 +670,9 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
 
-      r.rewrite(x + y < max(w, x + z), y < max(z, w - y), !is_constant(x)) ||
+      r.rewrite(x + y < max(w, x + z), y < max(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
-      r.rewrite(x + y < min(w, x + z), y < min(z, w - y), !is_constant(x)) ||
+      r.rewrite(x + y < min(w, x + z), y < min(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
 
       // Selects
@@ -686,7 +686,6 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
       r.rewrite(x < 1, !x, is_logical(x)) ||
       r.rewrite(0 < x, x, is_logical(x)) ||
-
       false) {
     return r.result;
   }
