@@ -419,9 +419,6 @@ public:
         loop_info& loop = loops[loop_index];
         loop.add_synchronization();
 
-        // We don't want to use the bounds of the loop we are sliding over here.
-        auto ignore_loop_bounds = set_value_in_scope(*loop.expr_bounds, loop.sym, interval_expr::all());
-
         expr loop_var = variable::make(loop.sym);
         if (!fold_factors[output]) continue;
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
