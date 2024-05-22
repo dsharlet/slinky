@@ -141,10 +141,6 @@ expr simplify(const class min* op, expr a, expr b) {
 
       r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
 
-      // TODO: bounds analysis should replace these
-      r.rewrite(min(x, c0), c0, is_logical(x) && eval(c0 <= 0)) ||
-      r.rewrite(min(x, c0), x, is_logical(x) && eval(c0 > 0)) ||
-
       false) {
     return r.result;
   }
@@ -268,9 +264,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
-      r.rewrite(max(x, c0), x, is_logical(x) && eval(c0 <= 0)) ||
-      r.rewrite(max(x, c0), c0, is_logical(x) && eval(c0 > 0)) ||
-    
+
       false) {
     return r.result;
   }
@@ -692,10 +686,6 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
       r.rewrite(x < 1, !x, is_logical(x)) ||
       r.rewrite(0 < x, x, is_logical(x)) ||
-      r.rewrite(x < c0, true, eval(c0 > 1) && is_logical(x)) ||
-      r.rewrite(x < c0, false, eval(c0 <= 0) && is_logical(x)) ||
-      r.rewrite(c0 < x, true, eval(c0 < 0) && is_logical(x)) ||
-      r.rewrite(c0 < x, false, eval(c0 >= 1) && is_logical(x)) ||
 
       false) {
     return r.result;

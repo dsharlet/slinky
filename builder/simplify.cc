@@ -90,7 +90,7 @@ public:
     if (!e.defined()) return false;
 
     std::optional<index_t> ec = evaluate_constant(e);
-    if (ec && *ec != 0) return true;
+    if (ec) return *ec != 0;
 
     // This might have a constant bound we can use.
     expr predicate = constant_lower_bound(e) > 0 || constant_upper_bound(e) < 0;
@@ -102,7 +102,7 @@ public:
     if (!e.defined()) return false;
 
     std::optional<index_t> ec = evaluate_constant(e);
-    if (ec && *ec == 0) return true;
+    if (ec) return *ec == 0;
 
     // This might have a constant bound we can use.
     expr predicate = constant_lower_bound(e) == 0 && constant_upper_bound(e) == 0;
@@ -173,9 +173,9 @@ public:
     } else {
       interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
       if (evaluates_true(result_bounds.min)) {
-        set_result(result_bounds.min, point(result_bounds.min));
+        set_result(true, {1, 1});
       } else if (evaluates_false(result_bounds.max)) {
-        set_result(result_bounds.max, point(result_bounds.max));
+        set_result(false, {0, 0});
       } else {
         set_result(result, std::move(result_bounds));
       }
@@ -1116,55 +1116,33 @@ class constant_bound : public node_mutator {
 public:
   constant_bound(int sign) : sign(sign) {}
 
-  void visit(const class min* op) override {
-    if (sign < 0) {
-      // We can only learn about upper bounds from min.
-      set_result(op);
-      return;
-    }
-    expr a = mutate(op->a);
-    expr b = mutate(op->b);
+  template <typename T>
+  void visit_min_max(const T* op, bool take_constant) {
+    // We can only learn about upper bounds from min and lower bounds from max. Furthermore, it is an error to
+    // attempt to recursively mutate into a max while finding upper bounds or vice versa, because we might find
+    // incorrect conservative bounds in the wrong direction.
+    expr a = take_constant ? mutate(op->a) : op->a;
+    expr b = take_constant ? mutate(op->b) : op->b;
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
-      set_result(expr(std::min(*ca, *cb)));
-    } else if (ca) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (take_constant && ca) {
       set_result(std::move(a));
-    } else if (cb) {
+    } else if (take_constant && cb) {
       set_result(std::move(b));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
-      set_result(min(std::move(a), std::move(b)));
+      set_result(T::make(std::move(a), std::move(b)));
     }
   }
-
-  void visit(const class max* op) override {
-    if (sign > 0) {
-      // We can only learn about lower bounds from max.
-      set_result(op);
-      return;
-    }
-    expr a = mutate(op->a);
-    expr b = mutate(op->b);
-    const index_t* ca = as_constant(a);
-    const index_t* cb = as_constant(b);
-    if (ca && cb) {
-      set_result(expr(std::max(*ca, *cb)));
-    } else if (ca) {
-      set_result(std::move(a));
-    } else if (cb) {
-      set_result(std::move(b));
-    } else if (a.same_as(op->a) && b.same_as(op->b)) {
-      set_result(op);
-    } else {
-      set_result(min::make(std::move(a), std::move(b)));
-    }
-  }
+  void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0); }
+  void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
 
   // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
   template <typename T>
-  void visit_add_sub(const T* op, int rhs_sign){
+  void visit_add_sub(const T* op, int rhs_sign) {
     expr a = mutate(op->a);
     sign *= rhs_sign;
     expr b = mutate(op->b);
@@ -1176,7 +1154,7 @@ public:
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
-      set_result(T::make(a, b));
+      set_result(T::make(std::move(a), std::move(b)));
     }
   }
 
@@ -1226,6 +1204,7 @@ public:
 
   template <typename T>
   void visit_logical(const T* op) {
+    // Can we tighten this? I'm not sure. We need both upper and lower bounds to say anything here.
     if (sign < 0) {
       set_result(expr(0));
     } else {
@@ -1234,11 +1213,64 @@ public:
   }
   void visit(const equal* op) override { visit_logical(op); }
   void visit(const not_equal* op) override { visit_logical(op); }
-  void visit(const less* op) override { visit_logical(op); }
-  void visit(const less_equal* op) override { visit_logical(op); }
-  void visit(const logical_and* op) override { visit_logical(op); }
-  void visit(const logical_or* op) override { visit_logical(op); }
-  void visit(const logical_not* op) override { visit_logical(op); }
+
+  template <typename T>
+  void visit_less(const T* op) {
+    expr a, b;
+    // This is a constant version of that found in bounds_of_less.
+    sign = -sign;
+    a = mutate(op->a);
+    sign = -sign;
+    b = mutate(op->b);
+
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
+  void visit(const less* op) override { visit_less(op); }
+  void visit(const less_equal* op) override { visit_less(op); }
+
+  template <typename T>
+  void visit_logical_and_or(const T* op, bool recurse) {
+    // We can recursively mutate if:
+    // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
+    // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
+    expr a = recurse ? mutate(op->a) : op->a;
+    expr b = recurse ? mutate(op->b) : op->b;
+
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+
+    if (ca && cb) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
+  void visit(const logical_and* op) override { visit_logical_and_or(op, /*recurse=*/sign > 0); }
+  void visit(const logical_or* op) override { visit_logical_and_or(op, /*recurse=*/sign < 0); }
+
+  void visit(const logical_not* op) override {
+    sign = -sign;
+    expr a = mutate(op->a);
+    sign = -sign;
+    const index_t* ca = as_constant(a);
+    if (ca) {
+      set_result(*ca != 0 ? 0 : 1);
+    } else if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
   void visit(const class select* op) override {
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
@@ -1258,7 +1290,12 @@ public:
     switch (op->intrinsic) {
     case intrinsic::abs:
       if (sign < 0) {
-        set_result(expr(0));
+        expr a = mutate(op->args[0]);
+        if (const index_t* ca = as_constant(a)) {
+          set_result(std::max<index_t>(0, *ca));
+        } else {
+          set_result(expr(0));
+        }
         return;
       }
       break;

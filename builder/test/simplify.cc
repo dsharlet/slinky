@@ -135,6 +135,17 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(or_else({expr(true), x})), matches(true));
   ASSERT_THAT(simplify(or_else({expr(false), x})), matches(x));
   ASSERT_THAT(simplify(or_else({expr(false), x, y})), matches(or_else({x, y})));
+
+  ASSERT_THAT(simplify((x != y) < 1), matches(y == x));
+  ASSERT_THAT(simplify((x && y) < 2), matches(true));
+  ASSERT_THAT(simplify((x && y) < 0), matches(false));
+  ASSERT_THAT(simplify(-1 < (x || y)), matches(true));
+  ASSERT_THAT(simplify(2 < (x || y)), matches(false));
+
+  ASSERT_THAT(simplify(min(x < y, 0)), matches(0));
+  ASSERT_THAT(simplify(max(x && y, 0)), matches(x && y));
+  ASSERT_THAT(simplify(min(!x, 1)), matches(!x));
+  ASSERT_THAT(simplify(max(x == y, 1)), matches(1));
 }
 
 TEST(simplify, let) {
@@ -544,8 +555,9 @@ TEST(simplify, fuzz) {
     expr test = gen.make_random_expr(3);
     expr simplified = simplify(test);
 
-    // Also test bounds_of and constant_upper_bound.
+    // Also test bounds_of and constant_lower/upper_bound.
     interval_expr bounds = bounds_of(test, gen.var_bounds());
+    expr lower_bound = constant_lower_bound(test);
     expr upper_bound = constant_upper_bound(test);
 
     for (int j = 0; j < checks; ++j) {
@@ -564,6 +576,8 @@ TEST(simplify, fuzz) {
       } else {
         index_t min = !is_infinity(bounds.min) ? evaluate(bounds.min, ctx) : std::numeric_limits<index_t>::min();
         index_t max = !is_infinity(bounds.max) ? evaluate(bounds.max, ctx) : std::numeric_limits<index_t>::max();
+        index_t constant_min =
+            !is_infinity(lower_bound) ? evaluate(lower_bound, ctx) : std::numeric_limits<index_t>::min();
         index_t constant_max =
             !is_infinity(upper_bound) ? evaluate(upper_bound, ctx) : std::numeric_limits<index_t>::max();
         if (eval_test < min) {
@@ -595,6 +609,16 @@ TEST(simplify, fuzz) {
           dump_context_for_expr(std::cerr, ctx, test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(eval_test, constant_max);
+        }
+        if (eval_test < constant_min) {
+          std::cerr << "constant_lower_bound failure: " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << " -> " << eval_test << std::endl;
+          print(std::cerr, lower_bound, &symbols);
+          std::cerr << " -> " << constant_min << std::endl;
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          std::cerr << std::endl;
+          ASSERT_LE(constant_min, eval_test);
         }
       }
     }
