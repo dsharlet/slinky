@@ -17,7 +17,8 @@ interval_expr simplify(const interval_expr& e, const bounds_map& bounds = bounds
 interval_expr bounds_of(const expr& x, const bounds_map& bounds = bounds_map());
 interval_expr bounds_of(const interval_expr& x, const bounds_map& bounds = bounds_map());
 
-// Determine an upper bound of x that is conservative if the bound can be made constant.
+// Determine a lower or upper bound of x that is conservative if the bound can be made constant.
+expr constant_lower_bound(const expr& x);
 expr constant_upper_bound(const expr& x);
 
 // Attempts to determine if e can be proven to be always true or false.

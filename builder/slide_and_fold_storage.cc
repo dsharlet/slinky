@@ -329,7 +329,7 @@ public:
         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
         // can fold the storage.
         expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
-        fold_factor = constant_upper_bound(fold_factor);
+        fold_factor = simplify(constant_upper_bound(fold_factor));
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
           vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.size() - 1};
         } else {
@@ -349,7 +349,7 @@ public:
 
         if (!did_overlapped_fold) {
           expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
-          fold_factor = constant_upper_bound(fold_factor);
+          fold_factor = simplify(constant_upper_bound(fold_factor));
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
             vector_at(fold_factors[output], d) = {
@@ -393,7 +393,7 @@ public:
       // Remove folding for an input that was folded in a more deeply nested loop than the current loop.
       // We need to do this for any aliased symbols of the input as well.
       var a = input;
-      while(true) {
+      while (true) {
         if (fold_factors[a]) {
           for (dim_fold_info& i : *fold_factors[a]) {
             if (i.loop >= loops.size()) {
@@ -556,7 +556,7 @@ public:
     }
   }
   void visit(const transpose*) override { std::abort(); }
-  void visit(const clone_buffer* op) override { 
+  void visit(const clone_buffer* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     node_mutator::visit(op);
   }

@@ -84,12 +84,38 @@ public:
     }
   }
 
+  // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
+  // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
+  static bool evaluates_true(const expr& e) {
+    if (!e.defined()) return false;
+
+    std::optional<index_t> ec = evaluate_constant(e);
+    if (ec && *ec != 0) return true;
+
+    // This might have a constant bound we can use.
+    expr predicate = constant_lower_bound(e) > 0 || constant_upper_bound(e) < 0;
+    std::optional<index_t> result = evaluate_constant(predicate);
+    return result && *result != 0;
+  }
+
+  static bool evaluates_false(const expr& e) {
+    if (!e.defined()) return false;
+
+    std::optional<index_t> ec = evaluate_constant(e);
+    if (ec && *ec == 0) return true;
+
+    // This might have a constant bound we can use.
+    expr predicate = constant_lower_bound(e) == 0 && constant_upper_bound(e) == 0;
+    std::optional<index_t> result = evaluate_constant(predicate);
+    return result && *result != 0;
+  }
+
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
     mutate(e, &bounds);
-    if (is_true(bounds.min)) {
+    if (evaluates_true(bounds.min)) {
       return true;
-    } else if (is_false(bounds.max)) {
+    } else if (evaluates_false(bounds.max)) {
       return false;
     } else {
       return {};
@@ -104,18 +130,6 @@ public:
   bool prove_false(const expr& e) {
     std::optional<bool> result = attempt_to_prove(e);
     return result && !*result;
-  }
-
-  // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
-  // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
-  static bool evaluates_true(const expr& e) {
-    std::optional<index_t> result = evaluate_constant(e);
-    return result && *result != 0;
-  }
-
-  static bool evaluates_false(const expr& e) {
-    std::optional<index_t> result = evaluate_constant(e);
-    return result && *result == 0;
   }
 
   void visit(const variable* op) override {
@@ -1149,17 +1163,25 @@ public:
   }
 
   // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
-  void visit(const sub* op) override {
+  template <typename T>
+  void visit_add_sub(const T* op, int rhs_sign){
     expr a = mutate(op->a);
-    sign = -sign;
+    sign *= rhs_sign;
     expr b = mutate(op->b);
-    sign = -sign;
-    if (a.same_as(op->a) && b.same_as(op->b)) {
+    sign *= rhs_sign;
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
-      set_result(sub::make(a, b));
+      set_result(T::make(a, b));
     }
   }
+
+  void visit(const add* op) override { visit_add_sub(op, 1); }
+  void visit(const sub* op) override { visit_add_sub(op, -1); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
@@ -1248,7 +1270,8 @@ public:
 
 }  // namespace
 
-expr constant_upper_bound(const expr& x) { return simplify(constant_bound(/*sign=*/1).mutate(x)); }
+expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mutate(x); }
+expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);
