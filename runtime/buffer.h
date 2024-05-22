@@ -96,6 +96,10 @@ public:
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(contains(i));
+    if (stride() == 0) {
+      // We shouldn't need this special case, but it avoids sanitizer false positives on some of the arithmetic below.
+      return 0;
+    }
     if (fold_factor() == unfolded) {
       return (i - min()) * stride();
     } else {
