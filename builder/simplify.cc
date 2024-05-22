@@ -86,7 +86,7 @@ public:
 
   // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
   // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
-  static bool evaluates_true(const expr& e) {
+  static bool prove_constant_true(const expr& e) {
     if (!e.defined()) return false;
 
     std::optional<index_t> ec = evaluate_constant(e);
@@ -98,7 +98,7 @@ public:
     return result && *result != 0;
   }
 
-  static bool evaluates_false(const expr& e) {
+  static bool prove_constant_false(const expr& e) {
     if (!e.defined()) return false;
 
     std::optional<index_t> ec = evaluate_constant(e);
@@ -113,9 +113,9 @@ public:
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
     mutate(e, &bounds);
-    if (evaluates_true(bounds.min)) {
+    if (prove_constant_true(bounds.min)) {
       return true;
-    } else if (evaluates_false(bounds.max)) {
+    } else if (prove_constant_false(bounds.max)) {
       return false;
     } else {
       return {};
@@ -172,9 +172,9 @@ public:
       mutate_and_set_result(result);
     } else {
       interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
-      if (evaluates_true(result_bounds.min)) {
+      if (prove_constant_true(result_bounds.min)) {
         set_result(true, {1, 1});
-      } else if (evaluates_false(result_bounds.max)) {
+      } else if (prove_constant_false(result_bounds.max)) {
         set_result(false, {0, 0});
       } else {
         set_result(result, std::move(result_bounds));
@@ -191,9 +191,9 @@ public:
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       set_result(std::move(a), std::move(a_bounds));
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       set_result(std::move(b), std::move(b_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
@@ -208,9 +208,9 @@ public:
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       set_result(std::move(b), std::move(b_bounds));
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       set_result(std::move(a), std::move(a_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
@@ -245,9 +245,9 @@ public:
     interval_expr bounds;
     expr a = mutate(op->a, &bounds);
 
-    if (evaluates_true(bounds.min)) {
+    if (prove_constant_true(bounds.min)) {
       set_result(false, {0, 0});
-    } else if (evaluates_false(bounds.max)) {
+    } else if (prove_constant_false(bounds.max)) {
       set_result(true, {1, 1});
     } else {
       expr result = simplify(op, std::move(a));
@@ -262,10 +262,10 @@ public:
   void visit(const class select* op) override {
     interval_expr c_bounds;
     expr c = mutate(op->condition, &c_bounds);
-    if (evaluates_true(c_bounds.min)) {
+    if (prove_constant_true(c_bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
-    } else if (evaluates_false(c_bounds.max)) {
+    } else if (prove_constant_false(c_bounds.max)) {
       mutate_and_set_result(op->false_value);
       return;
     }
@@ -1063,9 +1063,9 @@ public:
 
     if (!c.defined()) {
       set_result(stmt());
-    } else if (evaluates_true(c_bounds.min)) {
+    } else if (prove_constant_true(c_bounds.min)) {
       set_result(stmt());
-    } else if (evaluates_false(c_bounds.max)) {
+    } else if (prove_constant_false(c_bounds.max)) {
       std::cerr << op->condition << " is statically false." << std::endl;
       std::abort();
     } else if (c.same_as(op->condition)) {
