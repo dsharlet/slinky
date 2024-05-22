@@ -84,12 +84,38 @@ public:
     }
   }
 
+  // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
+  // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
+  static bool prove_constant_true(const expr& e) {
+    if (!e.defined()) return false;
+
+    std::optional<index_t> ec = evaluate_constant(e);
+    if (ec) return *ec != 0;
+
+    // This might have a constant bound we can use.
+    expr predicate = constant_lower_bound(e) > 0 || constant_upper_bound(e) < 0;
+    std::optional<index_t> result = evaluate_constant(predicate);
+    return result && *result != 0;
+  }
+
+  static bool prove_constant_false(const expr& e) {
+    if (!e.defined()) return false;
+
+    std::optional<index_t> ec = evaluate_constant(e);
+    if (ec) return *ec == 0;
+
+    // This might have a constant bound we can use.
+    expr predicate = constant_lower_bound(e) == 0 && constant_upper_bound(e) == 0;
+    std::optional<index_t> result = evaluate_constant(predicate);
+    return result && *result != 0;
+  }
+
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
     mutate(e, &bounds);
-    if (is_true(bounds.min)) {
+    if (prove_constant_true(bounds.min)) {
       return true;
-    } else if (is_false(bounds.max)) {
+    } else if (prove_constant_false(bounds.max)) {
       return false;
     } else {
       return {};
@@ -104,18 +130,6 @@ public:
   bool prove_false(const expr& e) {
     std::optional<bool> result = attempt_to_prove(e);
     return result && !*result;
-  }
-
-  // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
-  // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
-  static bool evaluates_true(const expr& e) {
-    std::optional<index_t> result = evaluate_constant(e);
-    return result && *result != 0;
-  }
-
-  static bool evaluates_false(const expr& e) {
-    std::optional<index_t> result = evaluate_constant(e);
-    return result && *result == 0;
   }
 
   void visit(const variable* op) override {
@@ -158,10 +172,10 @@ public:
       mutate_and_set_result(result);
     } else {
       interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
-      if (evaluates_true(result_bounds.min)) {
-        set_result(result_bounds.min, point(result_bounds.min));
-      } else if (evaluates_false(result_bounds.max)) {
-        set_result(result_bounds.max, point(result_bounds.max));
+      if (prove_constant_true(result_bounds.min)) {
+        set_result(true, {1, 1});
+      } else if (prove_constant_false(result_bounds.max)) {
+        set_result(false, {0, 0});
       } else {
         set_result(result, std::move(result_bounds));
       }
@@ -177,9 +191,9 @@ public:
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       set_result(std::move(a), std::move(a_bounds));
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       set_result(std::move(b), std::move(b_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
@@ -194,9 +208,9 @@ public:
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       set_result(std::move(b), std::move(b_bounds));
-    } else if (evaluates_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       set_result(std::move(a), std::move(a_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
@@ -231,9 +245,9 @@ public:
     interval_expr bounds;
     expr a = mutate(op->a, &bounds);
 
-    if (evaluates_true(bounds.min)) {
+    if (prove_constant_true(bounds.min)) {
       set_result(false, {0, 0});
-    } else if (evaluates_false(bounds.max)) {
+    } else if (prove_constant_false(bounds.max)) {
       set_result(true, {1, 1});
     } else {
       expr result = simplify(op, std::move(a));
@@ -248,10 +262,10 @@ public:
   void visit(const class select* op) override {
     interval_expr c_bounds;
     expr c = mutate(op->condition, &c_bounds);
-    if (evaluates_true(c_bounds.min)) {
+    if (prove_constant_true(c_bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
-    } else if (evaluates_false(c_bounds.max)) {
+    } else if (prove_constant_false(c_bounds.max)) {
       mutate_and_set_result(op->false_value);
       return;
     }
@@ -1049,9 +1063,9 @@ public:
 
     if (!c.defined()) {
       set_result(stmt());
-    } else if (evaluates_true(c_bounds.min)) {
+    } else if (prove_constant_true(c_bounds.min)) {
       set_result(stmt());
-    } else if (evaluates_false(c_bounds.max)) {
+    } else if (prove_constant_false(c_bounds.max)) {
       std::cerr << op->condition << " is statically false." << std::endl;
       std::abort();
     } else if (c.same_as(op->condition)) {
@@ -1102,64 +1116,50 @@ class constant_bound : public node_mutator {
 public:
   constant_bound(int sign) : sign(sign) {}
 
-  void visit(const class min* op) override {
-    if (sign < 0) {
-      // We can only learn about upper bounds from min.
-      set_result(op);
-      return;
-    }
-    expr a = mutate(op->a);
-    expr b = mutate(op->b);
+  template <typename T>
+  void visit_min_max(const T* op, bool take_constant) {
+    // We can only learn about upper bounds from min and lower bounds from max. Furthermore, it is an error to
+    // attempt to recursively mutate into a max while finding upper bounds or vice versa, because we might find
+    // incorrect conservative bounds in the wrong direction.
+    expr a = take_constant ? mutate(op->a) : op->a;
+    expr b = take_constant ? mutate(op->b) : op->b;
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
-      set_result(expr(std::min(*ca, *cb)));
-    } else if (ca) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (take_constant && ca) {
       set_result(std::move(a));
-    } else if (cb) {
+    } else if (take_constant && cb) {
       set_result(std::move(b));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
-      set_result(min(std::move(a), std::move(b)));
+      set_result(T::make(std::move(a), std::move(b)));
     }
   }
+  void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0); }
+  void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
 
-  void visit(const class max* op) override {
-    if (sign > 0) {
-      // We can only learn about lower bounds from max.
-      set_result(op);
-      return;
-    }
+  template <typename T>
+  void visit_add_sub(const T* op, int rhs_sign) {
     expr a = mutate(op->a);
+    // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
+    sign *= rhs_sign;
     expr b = mutate(op->b);
+    sign *= rhs_sign;
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
     if (ca && cb) {
-      set_result(expr(std::max(*ca, *cb)));
-    } else if (ca) {
-      set_result(std::move(a));
-    } else if (cb) {
-      set_result(std::move(b));
+      set_result(make_binary<T>(*ca, *cb));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
-      set_result(min::make(std::move(a), std::move(b)));
+      set_result(T::make(std::move(a), std::move(b)));
     }
   }
 
-  // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
-  void visit(const sub* op) override {
-    expr a = mutate(op->a);
-    sign = -sign;
-    expr b = mutate(op->b);
-    sign = -sign;
-    if (a.same_as(op->a) && b.same_as(op->b)) {
-      set_result(op);
-    } else {
-      set_result(sub::make(a, b));
-    }
-  }
+  void visit(const add* op) override { visit_add_sub(op, 1); }
+  void visit(const sub* op) override { visit_add_sub(op, -1); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
@@ -1169,6 +1169,7 @@ public:
 
   template <typename T>
   void visit_mul_div(const T* op, bool is_mul) {
+    // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
     int sign_a = sign_of(op->a);
     int sign_b = sign_of(op->b);
     // TODO: We should be able to handle the numerator of div too, it's just tricky.
@@ -1203,20 +1204,78 @@ public:
   void visit(const mod* op) override { set_result(op); }
 
   template <typename T>
-  void visit_logical(const T* op) {
+  void visit_equal(const T* op) {
+    // Can we tighten this? I'm not sure. We need both upper and lower bounds to say anything here.
     if (sign < 0) {
       set_result(expr(0));
     } else {
       set_result(expr(1));
     }
   }
-  void visit(const equal* op) override { visit_logical(op); }
-  void visit(const not_equal* op) override { visit_logical(op); }
-  void visit(const less* op) override { visit_logical(op); }
-  void visit(const less_equal* op) override { visit_logical(op); }
-  void visit(const logical_and* op) override { visit_logical(op); }
-  void visit(const logical_or* op) override { visit_logical(op); }
-  void visit(const logical_not* op) override { visit_logical(op); }
+  void visit(const equal* op) override { visit_equal(op); }
+  void visit(const not_equal* op) override { visit_equal(op); }
+
+  template <typename T>
+  void visit_less(const T* op) {
+    expr a, b;
+    // This is a constant version of that found in bounds_of_less:
+    // - For a lower bound, we want to know if this can ever be false, so we want the upper bound of the lhs and the
+    // lower bound of the rhs.
+    // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
+    // upper bound of the rhs.
+    sign = -sign;
+    a = mutate(op->a);
+    sign = -sign;
+    b = mutate(op->b);
+
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+    if (ca && cb) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
+  void visit(const less* op) override { visit_less(op); }
+  void visit(const less_equal* op) override { visit_less(op); }
+
+  template <typename T>
+  void visit_logical_and_or(const T* op, bool recurse) {
+    // We can recursively mutate if:
+    // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
+    // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
+    expr a = recurse ? mutate(op->a) : op->a;
+    expr b = recurse ? mutate(op->b) : op->b;
+
+    const index_t* ca = as_constant(a);
+    const index_t* cb = as_constant(b);
+
+    if (ca && cb) {
+      set_result(make_binary<T>(*ca, *cb));
+    } else if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
+  void visit(const logical_and* op) override { visit_logical_and_or(op, /*recurse=*/sign > 0); }
+  void visit(const logical_or* op) override { visit_logical_and_or(op, /*recurse=*/sign < 0); }
+
+  void visit(const logical_not* op) override {
+    sign = -sign;
+    expr a = mutate(op->a);
+    sign = -sign;
+    const index_t* ca = as_constant(a);
+    if (ca) {
+      set_result(*ca != 0 ? 0 : 1);
+    } else if (sign < 0) {
+      set_result(expr(0));
+    } else {
+      set_result(expr(1));
+    }
+  }
   void visit(const class select* op) override {
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
@@ -1236,7 +1295,12 @@ public:
     switch (op->intrinsic) {
     case intrinsic::abs:
       if (sign < 0) {
-        set_result(expr(0));
+        expr a = mutate(op->args[0]);
+        if (const index_t* ca = as_constant(a)) {
+          set_result(std::max<index_t>(0, *ca));
+        } else {
+          set_result(expr(0));
+        }
         return;
       }
       break;
@@ -1248,7 +1312,8 @@ public:
 
 }  // namespace
 
-expr constant_upper_bound(const expr& x) { return simplify(constant_bound(/*sign=*/1).mutate(x)); }
+expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mutate(x); }
+expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
   simplifier s(expr_bounds);

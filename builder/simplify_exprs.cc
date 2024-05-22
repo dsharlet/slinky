@@ -17,6 +17,7 @@ pattern_wildcard<1> y;
 pattern_wildcard<2> z;
 pattern_wildcard<3> w;
 pattern_wildcard<4> u;
+pattern_wildcard<5> v;
 
 pattern_constant<0> c0;
 pattern_constant<1> c1;
@@ -89,6 +90,7 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
       r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
       r.rewrite(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
+      r.rewrite(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
 
       // Move constants out.
       r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -140,10 +142,6 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
-
-      // TODO: bounds analysis should replace these
-      r.rewrite(min(x, c0), c0, is_logical(x) && eval(c0 <= 0)) ||
-      r.rewrite(min(x, c0), x, is_logical(x) && eval(c0 > 0)) ||
 
       false) {
     return r.result;
@@ -217,6 +215,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
       r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
       r.rewrite(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
+      r.rewrite(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
 
       // Move constants out.
       r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -268,9 +267,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0) && eval(c0 <= 0)) ||
 
       r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
-      r.rewrite(max(x, c0), x, is_logical(x) && eval(c0 <= 0)) ||
-      r.rewrite(max(x, c0), c0, is_logical(x) && eval(c0 > 0)) ||
-    
+
       false) {
     return r.result;
   }
@@ -555,7 +552,7 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < x, false) ||
       r.rewrite(x < y + 1, x <= y) ||
       r.rewrite(x + -1 < y, x <= y) ||
-    
+
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
       // with adjustments for the simplifier implementation here.
@@ -662,24 +659,36 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
       r.rewrite(min(x, y) < max(x, y), x != y) ||
       r.rewrite(max(x, y) < min(x, y), false) ||
-        
+
       // Subtract terms from both sides within a min/max.
       // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
       r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
       r.rewrite(max(x, y) < x + z, max(y - x, 0) < z, !is_constant(x)) ||
+      r.rewrite(min(x, y) < x - z, z < max(x - y, 0), !is_constant(x)) ||
+      r.rewrite(max(x, y) < x - z, z < min(x - y, 0), !is_constant(x)) ||
 
       r.rewrite(x + z < min(x, y), z < min(y - x, 0), !is_constant(x)) ||
       r.rewrite(x + z < max(x, y), z < max(y - x, 0), !is_constant(x)) ||
+      r.rewrite(x - z < min(x, y), max(x - y, 0) < z, !is_constant(x)) ||
+      r.rewrite(x - z < max(x, y), min(x - y, 0) < z, !is_constant(x)) ||
 
       r.rewrite(min(z, x + y) < x + w, min(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(min(z, x - y) < x + w, min(-y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
+      r.rewrite(min(z, x + y) < x - w, min(y, z - x) < -w, !is_constant(x)) ||
+      r.rewrite(min(z, x - y) < x - w, w < max(y, x - z), !is_constant(x)) ||
+      r.rewrite(max(z, x + y) < x - w, max(y, z - x) < -w, !is_constant(x)) ||
+      r.rewrite(max(z, x - y) < x - w, w < max(y, x - z), !is_constant(x)) ||
 
-      r.rewrite(x + y < max(w, x + z), y < max(z, w - y), !is_constant(x)) ||
+      r.rewrite(x + y < max(w, x + z), y < max(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
-      r.rewrite(x + y < min(w, x + z), y < min(z, w - y), !is_constant(x)) ||
+      r.rewrite(x + y < min(w, x + z), y < min(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
+      r.rewrite(x - y < max(w, x + z), -y < max(z, w - x), !is_constant(x)) ||
+      r.rewrite(x - y < max(w, x - z), min(z, x - w) < y, !is_constant(x)) ||
+      r.rewrite(x - y < min(w, x + z), -y < min(z, w - x), !is_constant(x)) ||
+      r.rewrite(x - y < min(w, x - z), max(z, x - w) < y, !is_constant(x)) ||
 
       // Selects
       r.rewrite(select(x, y, z) < y, select(x, false, z < y)) ||
@@ -692,11 +701,6 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
       r.rewrite(x < 1, !x, is_logical(x)) ||
       r.rewrite(0 < x, x, is_logical(x)) ||
-      r.rewrite(x < c0, true, eval(c0 > 1) && is_logical(x)) ||
-      r.rewrite(x < c0, false, eval(c0 <= 0) && is_logical(x)) ||
-      r.rewrite(c0 < x, true, eval(c0 < 0) && is_logical(x)) ||
-      r.rewrite(c0 < x, false, eval(c0 >= 1) && is_logical(x)) ||
-
       false) {
     return r.result;
   }
