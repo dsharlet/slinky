@@ -17,6 +17,7 @@ pattern_wildcard<1> y;
 pattern_wildcard<2> z;
 pattern_wildcard<3> w;
 pattern_wildcard<4> u;
+pattern_wildcard<5> v;
 
 pattern_constant<0> c0;
 pattern_constant<1> c1;
@@ -89,6 +90,7 @@ expr simplify(const class min* op, expr a, expr b) {
       r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
       r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
       r.rewrite(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
+      r.rewrite(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
 
       // Move constants out.
       r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -213,6 +215,7 @@ expr simplify(const class max* op, expr a, expr b) {
       r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
       r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
       r.rewrite(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
+      r.rewrite(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
 
       // Move constants out.
       r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
