@@ -664,31 +664,31 @@ expr simplify(const less* op, expr a, expr b) {
       // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
       r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
       r.rewrite(max(x, y) < x + z, max(y - x, 0) < z, !is_constant(x)) ||
-      r.rewrite(min(x, y) < x - z, min(y - x, 0) < -z, !is_constant(x)) ||
-      r.rewrite(max(x, y) < x - z, max(y - x, 0) < -z, !is_constant(x)) ||
+      r.rewrite(min(x, y) < x - z, z < max(x - y, 0), !is_constant(x)) ||
+      r.rewrite(max(x, y) < x - z, z < min(x - y, 0), !is_constant(x)) ||
 
       r.rewrite(x + z < min(x, y), z < min(y - x, 0), !is_constant(x)) ||
       r.rewrite(x + z < max(x, y), z < max(y - x, 0), !is_constant(x)) ||
-      r.rewrite(x - z < min(x, y), -z < min(y - x, 0), !is_constant(x)) ||
-      r.rewrite(x - z < max(x, y), -z < max(y - x, 0), !is_constant(x)) ||
+      r.rewrite(x - z < min(x, y), max(x - y, 0) < z, !is_constant(x)) ||
+      r.rewrite(x - z < max(x, y), min(x - y, 0) < z, !is_constant(x)) ||
 
       r.rewrite(min(z, x + y) < x + w, min(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(min(z, x - y) < x + w, min(-y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
       r.rewrite(min(z, x + y) < x - w, min(y, z - x) < -w, !is_constant(x)) ||
-      r.rewrite(min(z, x - y) < x - w, min(-y, z - x) < -w, !is_constant(x)) ||
+      r.rewrite(min(z, x - y) < x - w, w < max(y, x - z), !is_constant(x)) ||
       r.rewrite(max(z, x + y) < x - w, max(y, z - x) < -w, !is_constant(x)) ||
-      r.rewrite(max(z, x - y) < x - w, max(-y, z - x) < -w, !is_constant(x)) ||
+      r.rewrite(max(z, x - y) < x - w, w < max(y, x - z), !is_constant(x)) ||
 
       r.rewrite(x + y < max(w, x + z), y < max(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x + z), y < min(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
       r.rewrite(x - y < max(w, x + z), -y < max(z, w - x), !is_constant(x)) ||
-      r.rewrite(x - y < max(w, x - z), -y < max(-z, w - x), !is_constant(x)) ||
+      r.rewrite(x - y < max(w, x - z), min(z, x - w) < y, !is_constant(x)) ||
       r.rewrite(x - y < min(w, x + z), -y < min(z, w - x), !is_constant(x)) ||
-      r.rewrite(x - y < min(w, x - z), -y < min(-z, w - x), !is_constant(x)) ||
+      r.rewrite(x - y < min(w, x - z), max(z, x - w) < y, !is_constant(x)) ||
 
       // Selects
       r.rewrite(select(x, y, z) < y, select(x, false, z < y)) ||
