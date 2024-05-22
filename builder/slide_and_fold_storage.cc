@@ -425,6 +425,11 @@ public:
         expr loop_var = variable::make(loop.sym);
         if (!fold_factors[output]) continue;
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
+          if ((*fold_factors[output])[d].loop != loop_index) {
+            // This is a fold factor for a different loop.
+            continue;
+          }
+
           expr fold_factor = (*fold_factors[output])[d].factor;
           expr overlap = (*fold_factors[output])[d].overlap;
           if (!is_finite(fold_factor)) {

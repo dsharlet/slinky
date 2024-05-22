@@ -217,8 +217,7 @@ TEST_P(softmax, pipeline) {
     const int exp_in_allocation = split_b * D;
     const int max_in_allocation = split_b;
     const int softmax_in_allocation = split_b * D;
-    // This one is a bit odd, not sure why max is needed.
-    const int softmax_out_allocation = split_b * (split_c == 0 ? D : std::max(split_b, split_c));
+    const int softmax_out_allocation = split_b * (split_c == 0 ? D : split_c);
     int extra_memory = 0;
     if (copy_at_the_end == 2) {
       extra_memory = D * B;
