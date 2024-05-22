@@ -1140,10 +1140,10 @@ public:
   void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0); }
   void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
 
-  // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
   template <typename T>
   void visit_add_sub(const T* op, int rhs_sign) {
     expr a = mutate(op->a);
+    // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
     sign *= rhs_sign;
     expr b = mutate(op->b);
     sign *= rhs_sign;
@@ -1169,6 +1169,7 @@ public:
 
   template <typename T>
   void visit_mul_div(const T* op, bool is_mul) {
+    // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
     int sign_a = sign_of(op->a);
     int sign_b = sign_of(op->b);
     // TODO: We should be able to handle the numerator of div too, it's just tricky.
@@ -1203,7 +1204,7 @@ public:
   void visit(const mod* op) override { set_result(op); }
 
   template <typename T>
-  void visit_logical(const T* op) {
+  void visit_equal(const T* op) {
     // Can we tighten this? I'm not sure. We need both upper and lower bounds to say anything here.
     if (sign < 0) {
       set_result(expr(0));
@@ -1211,13 +1212,17 @@ public:
       set_result(expr(1));
     }
   }
-  void visit(const equal* op) override { visit_logical(op); }
-  void visit(const not_equal* op) override { visit_logical(op); }
+  void visit(const equal* op) override { visit_equal(op); }
+  void visit(const not_equal* op) override { visit_equal(op); }
 
   template <typename T>
   void visit_less(const T* op) {
     expr a, b;
-    // This is a constant version of that found in bounds_of_less.
+    // This is a constant version of that found in bounds_of_less:
+    // - For a lower bound, we want to know if this can ever be false, so we want the upper bound of the lhs and the
+    // lower bound of the rhs.
+    // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
+    // upper bound of the rhs.
     sign = -sign;
     a = mutate(op->a);
     sign = -sign;
