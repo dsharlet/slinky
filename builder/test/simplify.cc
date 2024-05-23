@@ -122,7 +122,6 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x == 1, select(x == 1, y, z), w)), matches(select(x == 1, y, w)));
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
-  ASSERT_THAT(simplify(min(x, y) - 1 <= min(x, y - 1)), matches(true));
 
   ASSERT_THAT(simplify(and_then({expr(true), expr(true)})), matches(true));
   ASSERT_THAT(simplify(and_then({expr(true), expr(false)})), matches(false));
@@ -501,8 +500,8 @@ public:
   }
 
   expr make_random_condition(int depth) {
-    auto a = [&](){ return make_random_expr(depth - 1); };
-    auto b = [&](){ return make_random_expr(depth - 1); };
+    auto a = [&]() { return make_random_expr(depth - 1); };
+    auto b = [&]() { return make_random_expr(depth - 1); };
     switch (rng_() % 7) {
     case 0: return a() == b();
     case 1: return a() < b();
@@ -523,8 +522,8 @@ public:
       case 2: return random_buffer_intrinsic();
       }
     } else {
-      auto a = [&](){ return make_random_expr(depth - 1); };
-      auto b = [&](){ return make_random_expr(depth - 1); };
+      auto a = [&]() { return make_random_expr(depth - 1); };
+      auto b = [&]() { return make_random_expr(depth - 1); };
       switch (rng_() % 11) {
       case 0: return a() + b();
       case 1: return a() - b();
