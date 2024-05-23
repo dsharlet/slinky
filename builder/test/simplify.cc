@@ -147,6 +147,15 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(max(x == y, 1)), matches(1));
 
   ASSERT_THAT(simplify(buffer_fold_factor(x, 2) >= 1), matches(true));
+
+  ASSERT_THAT(simplify(0 <= x % 4), matches(true));
+  ASSERT_THAT(simplify(4 <= x % 4), matches(false));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 4), matches(false));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 3), matches(3 == y % 4));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 1), matches(y % 4 != 0));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y), matches(true));
+
+  ASSERT_THAT(simplify(x % -4 <= 1), matches(x % -4 <= 1));
 }
 
 TEST(simplify, let) {
@@ -444,15 +453,13 @@ TEST(simplify, where_true) {
 
 class expr_generator {
   gtest_seeded_mt19937 rng_;
+  // Generate normally distributed constants biased a bit towards positive numbers. We have more simplifications for
+  // positive constants.
+  std::normal_distribution<> constant_distribution_{4.0, 5.0};
 
-  static constexpr int max_rank = 2;
-  static constexpr int max_abs_constant = 64;
+  static constexpr int max_abs_constant = 100;
 
   std::vector<var> vars_;
-  std::vector<var> bufs_;
-
-  std::vector<buffer<int, max_rank>> buffers_;
-
   symbol_map<interval_expr> var_bounds_;
 
   template <typename T>
@@ -462,10 +469,8 @@ class expr_generator {
 
 public:
   expr_generator() {
-    vars_ = {x, y, z};
-    bufs_ = {b0, b1};
+    vars_ = {x, y, z, w};
 
-    buffers_.resize(bufs_.size());
     for (const var& v : vars_) {
       var_bounds_[v] = {-max_abs_constant, max_abs_constant};
     }
@@ -477,28 +482,10 @@ public:
     for (const var& v : vars_) {
       ctx[v] = random_constant();
     }
-    for (int i = 0; i < static_cast<int>(bufs_.size()); ++i) {
-      ctx[bufs_[i]] = reinterpret_cast<index_t>(&buffers_[i]);
-    }
-    for (auto& b : buffers_) {
-      for (int d = 0; d < max_rank; ++d) {
-        // TODO: Add one to extent because the simplifier assumes buffer_max >= buffer_min. This is not
-        // correct in the case of empty buffers. But do we need to handle empty buffers...?
-        index_t min = random_constant();
-        index_t max = std::max(min + 1, random_constant());
-        b.dim(d).set_bounds(min, max);
-      }
-    }
   }
 
-  index_t random_constant(int max = max_abs_constant) { return (rng_() & (2 * max - 1)) - max; }
-
-  expr random_buffer_intrinsic() {
-    if (rng_() % 2 == 0) {
-      return buffer_min(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
-    } else {
-      return buffer_max(random_pick(bufs_), static_cast<int>(rng_() % max_rank));
-    }
+  index_t random_constant(int max = max_abs_constant) {
+    return std::clamp<index_t>(std::round(constant_distribution_(rng_)), -max_abs_constant, max_abs_constant);
   }
 
   expr make_random_condition(int depth) {
@@ -521,7 +508,6 @@ public:
       switch (rng_() % 4) {
       default: return random_pick(vars_);
       case 1: return constant::make(random_constant());
-      case 2: return random_buffer_intrinsic();
       }
     } else {
       auto a = [&]() { return make_random_expr(depth - 1); };
