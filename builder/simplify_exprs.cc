@@ -400,6 +400,9 @@ expr simplify(const sub* op, expr a, expr b) {
       r.rewrite(x/c0 - (x - y)/c0, ((y + eval(c0 - 1)) - (x % c0))/c0, eval(c0 > 0)) ||
       r.rewrite((x - y)/c0 - x/c0, ((x % c0) - y)/c0, eval(c0 > 0)) ||
       r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, eval(eval(c0 > 0))) ||
+    
+      r.rewrite(x - (x / c0) * c0, x % c0, eval(c0 > 0)) ||
+      r.rewrite((x / c0) * c0 - x, -(x % c0), eval(c0 > 0)) ||
 
       r.rewrite(min(x, y + z) - z, min(y, x - z)) ||
       r.rewrite(max(x, y + z) - z, max(y, x - z)) ||
@@ -525,6 +528,8 @@ expr simplify(const mod* op, expr a, expr b) {
   if (r.rewrite(x % 1, 0) || 
       r.rewrite(x % 0, 0) || 
       r.rewrite(x % x, 0) ||
+
+      r.rewrite((x + c0) % c1, (x + eval(c0 % c1)) % c1, eval(c0 % c1 != c0)) ||
       false) {
     return r.result;
   }
@@ -580,12 +585,22 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(x + c0 < y, x < y + eval(-c0)) ||
       r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
 
-      r.rewrite(x < (x / c0) * c0 + c1, true, eval(c0 > 0) && eval(c1 >= c0)) ||
-      r.rewrite(x < (x / c0) * c0 + c1, false, eval(c0 > 0) && eval(c1 < 0)) ||
-      r.rewrite((x / c0) * c0 < x + c1, true, eval(c0 > 0) && eval(c1 > 0)) ||
-      r.rewrite((x / c0) * c0 < x + c1, false, eval(c0 > 0) && eval(c1 < -c0)) ||
-      r.rewrite(x < (x / c0) * c0, false, eval(c0 > 0)) ||
-      r.rewrite((x / c0) * c0 < x, x % c0 != 0, eval(c0 > 0)) ||
+      r.rewrite(x + y < z + (x / c0) * c0, y + x % c0 < z, eval(c0 > 0)) ||
+      r.rewrite(x + y < (x / c0) * c0, y + x % c0 < 0, eval(c0 > 0)) ||
+      r.rewrite(x < z + (x / c0) * c0, x % c0 < z, eval(c0 > 0)) ||
+      r.rewrite(x < (x / c0) * c0, x % c0 < 0, eval(c0 > 0)) ||
+    
+      r.rewrite(y + (x / c0) * c0 < x + z, y < z + x % c0, eval(c0 > 0)) ||
+      r.rewrite((x / c0) * c0 < x + z, 0 < z + x % c0, eval(c0 > 0)) ||
+      r.rewrite(y + (x / c0) * c0 < x, y < x % c0, eval(c0 > 0)) ||
+      r.rewrite((x / c0) * c0 < x, 0 < x % c0, eval(c0 > 0)) ||
+
+      r.rewrite(x % c0 < c1, true, eval(c0 > 0) && eval(c0 <= c1)) ||
+      r.rewrite(x % c0 < c1, false, eval(c0 > 0) && eval(c1 <= 0)) ||
+      r.rewrite(x % c0 < c1, x % c0 != c1, eval(c0 > 0) && eval(c1 >= c0 - 1)) ||
+      r.rewrite(c0 < x % c1, true, eval(c1 > 0) && eval(c0 < 0)) ||
+      r.rewrite(c0 < x % c1, false, eval(c1 > 0) && eval(c0 >= c1 - 1)) ||
+      r.rewrite(c0 < x % c1, x % c1 != 0, eval(c1 > 0) && eval(c0 <= 0)) ||
     
       // These rules taken from
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
@@ -665,31 +680,19 @@ expr simplify(const less* op, expr a, expr b) {
       // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
       r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
       r.rewrite(max(x, y) < x + z, max(y - x, 0) < z, !is_constant(x)) ||
-      r.rewrite(min(x, y) < x - z, z < max(x - y, 0), !is_constant(x)) ||
-      r.rewrite(max(x, y) < x - z, z < min(x - y, 0), !is_constant(x)) ||
 
       r.rewrite(x + z < min(x, y), z < min(y - x, 0), !is_constant(x)) ||
       r.rewrite(x + z < max(x, y), z < max(y - x, 0), !is_constant(x)) ||
-      r.rewrite(x - z < min(x, y), max(x - y, 0) < z, !is_constant(x)) ||
-      r.rewrite(x - z < max(x, y), min(x - y, 0) < z, !is_constant(x)) ||
 
       r.rewrite(min(z, x + y) < x + w, min(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(min(z, x - y) < x + w, min(-y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
       r.rewrite(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
-      r.rewrite(min(z, x + y) < x - w, min(y, z - x) < -w, !is_constant(x)) ||
-      r.rewrite(min(z, x - y) < x - w, w < max(y, x - z), !is_constant(x)) ||
-      r.rewrite(max(z, x + y) < x - w, max(y, z - x) < -w, !is_constant(x)) ||
-      r.rewrite(max(z, x - y) < x - w, w < max(y, x - z), !is_constant(x)) ||
 
       r.rewrite(x + y < max(w, x + z), y < max(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x + z), y < min(z, w - x), !is_constant(x)) ||
       r.rewrite(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
-      r.rewrite(x - y < max(w, x + z), -y < max(z, w - x), !is_constant(x)) ||
-      r.rewrite(x - y < max(w, x - z), min(z, x - w) < y, !is_constant(x)) ||
-      r.rewrite(x - y < min(w, x + z), -y < min(z, w - x), !is_constant(x)) ||
-      r.rewrite(x - y < min(w, x - z), max(z, x - w) < y, !is_constant(x)) ||
 
       // Selects
       r.rewrite(select(x, y, z) < y, select(x, false, z < y)) ||
@@ -740,12 +743,22 @@ expr simplify(const equal* op, expr a, expr b) {
   auto r = make_rewriter(pattern_expr{a} == pattern_expr{b});
   // clang-format off
   if (r.rewrite(x == x, true) ||
-      r.rewrite(x - y == 0, x == y) ||
       r.rewrite(x * y == x * z, y == z || x == 0) ||
       r.rewrite(x == x * y, y == 1 || x == 0) ||
-      r.rewrite(x + y == z + y, x == z) ||
-      r.rewrite(x - y == z - y, x == z) ||
-      r.rewrite(x - y == x - z, y == z) ||
+
+      // Normalize subtractions to additions to cut down on cases to consider
+      r.rewrite(z == x - y, x == y + z) ||
+      r.rewrite(w == z + (x - y), w + y == x + z) ||
+      r.rewrite(w == u + (z + (x - y)), w + y == x + (z + u)) ||
+
+      // Cancellations in linear expressions
+      r.rewrite(x == x + y, y == 0) ||
+      r.rewrite(x == z + (x + y), z + y == 0) ||
+      r.rewrite(x + y == x + z, y == z) ||
+      r.rewrite(w + (x + y) == x + z, z == y + w) ||
+      r.rewrite(x + z == w + (x + y), z == y + w) ||
+      r.rewrite(w + (x + y) == u + (x + z), y + w == z + u) ||
+
       r.rewrite(x * c0 == y * c1, x == y * eval(c1 / c0), eval(c1 % c0 == 0)) ||
       r.rewrite(x * c0 == y * c1, y == x * eval(c0 / c1), eval(c0 % c1 == 0)) ||
       r.rewrite(x * c0 == c1, x == eval(c1 / c0), eval(c1 % c0 == 0)) ||
@@ -756,6 +769,13 @@ expr simplify(const equal* op, expr a, expr b) {
       r.rewrite(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
       r.rewrite(x == 0, !x, is_logical(x)) ||
       r.rewrite(x == 1, x, is_logical(x)) ||
+    
+      r.rewrite(x + y == z + (x / c0) * c0, z == y + x % c0, eval(c0 > 0)) ||
+      r.rewrite(x + y == (x / c0) * c0, y + x % c0 == 0, eval(c0 > 0)) ||
+      r.rewrite(x == z + (x / c0) * c0, z == x % c0, eval(c0 > 0)) ||
+      r.rewrite(x == (x / c0) * c0, x % c0 == 0, eval(c0 > 0)) ||
+    
+      r.rewrite(x % c0 == c1, false, (eval(c1 > c0) || eval(c0 < 0)) && eval(c0 > 0)) ||
       false) {
     return r.result;
   }
