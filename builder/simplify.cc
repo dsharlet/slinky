@@ -145,42 +145,6 @@ public:
 
   void visit(const constant* op) override { set_result(op, {op, op}); }
 
-  template <typename T>
-  void visit_binary(const T* op) {
-    interval_expr a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
-    expr b = mutate(op->b, &b_bounds);
-
-    expr result = simplify(op, std::move(a), std::move(b));
-    if (!result.same_as(op)) {
-      mutate_and_set_result(result);
-    } else {
-      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
-    }
-  }
-
-  template <typename T>
-  void visit_logical(const T* op) {
-    interval_expr a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
-    expr b = mutate(op->b, &b_bounds);
-
-    expr result = simplify(op, std::move(a), std::move(b));
-    if (!result.same_as(op)) {
-      mutate_and_set_result(result);
-    } else {
-      interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
-      if (prove_constant_true(result_bounds.min)) {
-        set_result(true, {1, 1});
-      } else if (prove_constant_false(result_bounds.max)) {
-        set_result(false, {0, 0});
-      } else {
-        set_result(result, std::move(result_bounds));
-      }
-    }
-  }
 
   void visit(const class min* op) override {
     interval_expr a_bounds;
@@ -232,15 +196,52 @@ public:
     }
   }
 
+  template <typename T>
+  void visit_binary(const T* op) {
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
+    }
+  }
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }
   void visit(const mod* op) override { visit_binary(op); }
+
+  template <typename T>
+  void visit_logical(const T* op) {
+    interval_expr a_bounds;
+    expr a = mutate(op->a, &a_bounds);
+    interval_expr b_bounds;
+    expr b = mutate(op->b, &b_bounds);
+
+    expr result = simplify(op, std::move(a), std::move(b));
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
+    } else {
+      interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
+      if (prove_constant_true(result_bounds.min)) {
+        set_result(true, {1, 1});
+      } else if (prove_constant_false(result_bounds.max)) {
+        set_result(false, {0, 0});
+      } else {
+        set_result(result, std::move(result_bounds));
+      }
+    }
+  }
   void visit(const less* op) override { visit_logical(op); }
   void visit(const less_equal* op) override { visit_logical(op); }
   void visit(const equal* op) override { visit_logical(op); }
   void visit(const not_equal* op) override { visit_logical(op); }
   void visit(const logical_and* op) override { visit_logical(op); }
   void visit(const logical_or* op) override { visit_logical(op); }
+
   void visit(const logical_not* op) override {
     interval_expr bounds;
     expr a = mutate(op->a, &bounds);
