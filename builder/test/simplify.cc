@@ -536,7 +536,7 @@ public:
       case 7: return select(make_random_condition(depth - 1), a, b);
       case 8: return random_constant();
       case 9: return random_pick(vars_);
-      case 10: return make_random_condition(depth - 1);
+      case 10: return make_random_condition(depth);
       default: std::abort();
       }
     }
