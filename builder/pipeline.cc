@@ -827,8 +827,6 @@ public:
       for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
         checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
         checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
-        checks.push_back(check::make(or_else({buffer_fold_factor(buf_var, d) == dim::unfolded,
-            (*bounds)[d].extent() <= buffer_fold_factor(buf_var, d)})));
       }
     }
     return block::make(std::move(checks), std::move(body));
