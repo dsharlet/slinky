@@ -223,8 +223,6 @@ TEST_P(elementwise, pipeline_2d) {
 
   if (schedule_storage) {
     ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-  } else {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
   }
 }
 
@@ -987,9 +985,15 @@ TEST_P(padded_stencil_separable, pipeline) {
     const index_t stencil_intm_size = W * split_y * sizeof(short);
     const index_t padded_intm_size = W * (split_y + 2) * sizeof(short);
 
-    // Folded buffers don't alias.
-    ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_intm_size + padded_intm_size);
-    ASSERT_EQ(eval_ctx.heap.total_count, 4);
+    if (!require_dense_x) {
+      // We can't alias stencil_intm and padded_intm like we can without splitting because of fold factor constraints.
+      ASSERT_EQ(eval_ctx.heap.total_size, std::max(intm_size, padded_intm_t_size) + stencil_intm_size + padded_intm_size);
+      ASSERT_EQ(eval_ctx.heap.total_count, 3);
+    } else {
+      // We can't alias anything when we require the strides to be dense.
+      ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_intm_size + padded_intm_size);
+      ASSERT_EQ(eval_ctx.heap.total_count, 4);
+    }
   } else {
     const index_t intm_size = W * H * sizeof(short);
     const index_t padded_intm_t_size = (W + 2) * (H + 2) * sizeof(short);

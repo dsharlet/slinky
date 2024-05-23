@@ -230,4 +230,54 @@ TEST_P(may_alias, same_bounds) {
   ASSERT_EQ(eval_ctx.heap.total_count, 0);
 }
 
+TEST_P(may_alias, unfolded) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  // In this pipeline, the result is copied to the output, and we want to fold the intermediate buffer and alias it to
+  // the output. We can only alias it if we know the output is unfolded.
+  const bool may_alias = GetParam();
+  if (may_alias) {
+    out->dim(1).fold_factor = dim::unfolded;
+  }
+  func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
+
+  // The fold factor must be > 1, so we can't assume that the intermediate fold factor divides the output fold factor.
+  copied.loops({{y, 2}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<short, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  buffer<short, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y) + 1);
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.total_count, may_alias ? 0 : 1);
+}
+
 }  // namespace slinky

@@ -139,6 +139,10 @@ TEST_P(copied_output, pipeline) {
 
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
+  // Tell slinky the output is unfolded to allow aliasing it.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+
   var x(ctx, "x");
   var y(ctx, "y");
 
@@ -429,15 +433,16 @@ TEST(stacked_result, pipeline) {
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
 
-class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int>> {};
+class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise,
-    testing::Combine(testing::Values(true, false), testing::Range(0, 2)),
+    testing::Combine(testing::Values(true, false), testing::Range(0, 2), testing::Values(0, 1)),
     test_params_to_string<broadcasted_elementwise::ParamType>);
 
 TEST_P(broadcasted_elementwise, input) {
   bool no_alias_buffers = std::get<0>(GetParam());
   const int broadcast_dim = std::get<1>(GetParam());
+  const int split_y = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -457,6 +462,10 @@ TEST_P(broadcasted_elementwise, input) {
   func broadcast = func::make_copy({in2, bounds}, {in2_broadcasted, {x, y}});
   func f = func::make(
       subtract<int>, {{in1, {point(x), point(y)}}, {in2_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  if (split_y > 0) {
+    f.loops({{y, split_y}});
+  }
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -494,6 +503,7 @@ TEST_P(broadcasted_elementwise, input) {
 TEST_P(broadcasted_elementwise, internal) {
   bool no_alias_buffers = std::get<0>(GetParam());
   const int broadcast_dim = std::get<1>(GetParam());
+  const int split_y = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -519,6 +529,9 @@ TEST_P(broadcasted_elementwise, internal) {
   func g = func::make(subtract<int>, {{in1, {point(x), point(y)}}, {intm_broadcasted, {point(x), point(y)}}},
       {{out, {x, y}}}, call_stmt::attributes{.name = "g"});
 
+  if (split_y > 0) {
+    g.loops({{y, split_y}});
+  }
   pipeline p = build_pipeline(ctx, {in1, in2}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
   // Run the pipeline.

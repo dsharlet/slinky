@@ -519,7 +519,6 @@ inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
   if (id.stride() == 0) {
-    assert(od.stride() == 0);
     if (id.unbounded()) {
       // Already fused
     } else if (od.unbounded()) {

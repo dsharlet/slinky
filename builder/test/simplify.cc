@@ -146,6 +146,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(!x, 1)), matches(!x));
   ASSERT_THAT(simplify(max(x == y, 1)), matches(1));
 
+  ASSERT_THAT(simplify(buffer_fold_factor(x, 2) >= 1), matches(true));
+
   ASSERT_THAT(simplify(0 <= x % 4), matches(true));
   ASSERT_THAT(simplify(4 <= x % 4), matches(false));
   ASSERT_THAT(simplify((y / 4) * 4 <= y - 4), matches(false));
