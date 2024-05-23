@@ -64,11 +64,9 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
           !src_dim.fold_factor.defined() ||
           src_dim.fold_factor.same_as(dim::unfolded);
       if (is_unfolded && !depends_on(m->b, dst_x).any()) {
-        if (depends_on(m->a, dst_x).any()) {
-          fold_factor = m->b;
-          src_x = m->a;
-          is_mod = true;
-        }  // else this is a broadcast.
+        fold_factor = m->b;
+        src_x = m->a;
+        is_mod = true;
       } else {
         return false;
       }
