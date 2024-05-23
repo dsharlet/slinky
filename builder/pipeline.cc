@@ -956,7 +956,12 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
-    result = alias_buffers(result, ctx, inputs, outputs);
+    // For the purposes of aliasing, constants and inputs are the same thing.
+    std::vector<buffer_expr_ptr> inputs_and_constants;
+    inputs_and_constants.reserve(inputs.size() + constants.size());
+    inputs_and_constants.insert(inputs_and_constants.end(), inputs.begin(), inputs.end());
+    inputs_and_constants.insert(inputs_and_constants.end(), constants.begin(), constants.end());
+    result = alias_buffers(result, ctx, inputs_and_constants, outputs);
   }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
