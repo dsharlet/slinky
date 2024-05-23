@@ -1,9 +1,12 @@
 #ifndef SLINKY_BUILDER_REWRITE_H
 #define SLINKY_BUILDER_REWRITE_H
 
+#include <iostream>
+
 #include "builder/substitute.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 
 // This pattern matching engine is heavily inspired by https://github.com/halide/Halide/blob/main/src/IRMatch.h.
 
@@ -59,6 +62,8 @@ public:
   const expr& e;
 };
 
+inline std::ostream& operator<<(std::ostream& os, const pattern_expr& e) { return os << e.e; }
+
 SLINKY_ALWAYS_INLINE inline const expr& substitute(const pattern_expr& p, const match_context& ctx) { return p.e; }
 
 template <int N>
@@ -85,6 +90,12 @@ inline const base_expr_node* substitute(const pattern_wildcard<N>& p, const matc
 }
 
 template <int N>
+std::ostream& operator<<(std::ostream& os, const pattern_wildcard<N>&) {
+  static constexpr char names[] = "xyzwuv";
+  return os << names[N];
+}
+
+template <int N>
 class pattern_constant {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
@@ -107,6 +118,11 @@ template <int N>
 inline index_t substitute(const pattern_constant<N>& p, const match_context& ctx) {
   assert(ctx.constants[N]);
   return *ctx.constants[N];
+}
+
+template <int N>
+std::ostream& operator<<(std::ostream& os, const pattern_constant<N>&) {
+  return os << 'c' << N;
 }
 
 template <int N>
@@ -172,6 +188,26 @@ auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
   return make_binary<T>(substitute(p.a, ctx), substitute(p.b, ctx));
 }
 
+template <typename T, typename A, typename B>
+std::ostream& operator<<(std::ostream& os, const pattern_binary<T, A, B>& p) {
+  switch (T::static_type) {
+  case add::static_type: return os << '(' << p.a << " + " << p.b << ')';
+  case sub::static_type: return os << '(' << p.a << " - " << p.b << ')';
+  case mul::static_type: return os << '(' << p.a << " * " << p.b << ')';
+  case div::static_type: return os << '(' << p.a << " / " << p.b << ')';
+  case mod::static_type: return os << '(' << p.a << " % " << p.b << ')';
+  case min::static_type: return os << "min(" << p.a << ", " << p.b << ')';
+  case max::static_type: return os << "max(" << p.a << ", " << p.b << ')';
+  case less::static_type: return os << '(' << p.a << " < " << p.b << ')';
+  case less_equal::static_type: return os << '(' << p.a << " <= " << p.b << ')';
+  case equal::static_type: return os << '(' << p.a << " == " << p.b << ')';
+  case not_equal::static_type: return os << '(' << p.a << " != " << p.b << ')';
+  case logical_and::static_type: return os << '(' << p.a << " && " << p.b << ')';
+  case logical_or::static_type: return os << '(' << p.a << " || " << p.b << ')';
+  default: std::abort();
+  }
+}
+
 template <typename T, typename A>
 class pattern_unary {
 public:
@@ -191,6 +227,14 @@ bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
 template <typename T, typename A>
 bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x, match_context& ctx) {
   return match(p.a, x.a.e, ctx);
+}
+
+template <typename T, typename A>
+std::ostream& operator<<(std::ostream& os, const pattern_unary<T, A>& p) {
+  switch (T::static_type) {
+  case logical_not::static_type: return '!' << p.a;
+  default: std::abort();
+  }
 }
 
 template <typename T>
@@ -236,6 +280,11 @@ expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
   return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
 }
 
+template <typename C, typename T, typename F>
+std::ostream& operator<<(std::ostream& os, const pattern_select<C, T, F>& p) {
+  return os << "select(" << p.c << ", " << p.t << ", " << p.f << ")";
+}
+
 template <typename... Args>
 class pattern_call {
 public:
@@ -270,6 +319,16 @@ expr substitute(const pattern_call<Args...>& p, const match_context& ctx) {
   return call::make(p.fn, substitute_tuple(p.args, ctx, std::make_index_sequence<sizeof...(Args)>()));
 }
 
+inline std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
+template <typename A>
+std::ostream& operator<<(std::ostream& os, const pattern_call<A>& p) {
+  return os << p.fn << "(" << std::get<0>(p.args) << ")";
+}
+template <typename A, typename B>
+std::ostream& operator<<(std::ostream& os, const pattern_call<A, B>& p) {
+  return os << p.fn << "(" << std::get<0>(p.args) << ", " << std::get<1>(p.args) << ")";
+}
+
 template <typename T, typename Fn>
 class replacement_predicate {
 public:
@@ -298,6 +357,11 @@ public:
 template <typename T>
 index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
   return substitute(r.a, ctx);
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const replacement_eval<T>& r) {
+  return os << r.a;
 }
 
 // We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
