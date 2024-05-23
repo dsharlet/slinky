@@ -189,8 +189,6 @@ class buffer_aliaser : public node_mutator {
 
     void maybe_alias(var s, alias_info a) {
       assert(aliases.count(s) == 0);
-      assert(!is_input);
-      assert(!is_output);
       aliases[s] = std::move(a);
     }
     void do_not_alias(var s) { aliases.erase(s); }
