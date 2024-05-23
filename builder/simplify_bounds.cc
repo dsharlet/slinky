@@ -366,6 +366,9 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
       expr abs_max = simplify(op, intrinsic::abs, {args[0].max});
       return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
     }
+  case intrinsic::buffer_rank:
+  case intrinsic::buffer_elem_size: return {0, op};
+  case intrinsic::buffer_fold_factor: return {1, op};
   default: return {op, op};
   }
 }
