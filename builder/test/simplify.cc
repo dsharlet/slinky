@@ -145,6 +145,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(max(x && y, 0)), matches(x && y));
   ASSERT_THAT(simplify(min(!x, 1)), matches(!x));
   ASSERT_THAT(simplify(max(x == y, 1)), matches(1));
+
+  ASSERT_THAT(simplify(buffer_fold_factor(x, 2) >= 1), matches(true));
 }
 
 TEST(simplify, let) {
