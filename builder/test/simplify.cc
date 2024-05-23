@@ -501,13 +501,13 @@ public:
   }
 
   expr make_random_condition(int depth) {
-    expr a = make_random_expr(depth - 1);
-    expr b = make_random_expr(depth - 1);
+    auto a = [&](){ return make_random_expr(depth - 1); };
+    auto b = [&](){ return make_random_expr(depth - 1); };
     switch (rng_() % 7) {
-    case 0: return a == b;
-    case 1: return a < b;
-    case 2: return a <= b;
-    case 3: return a != b;
+    case 0: return a() == b();
+    case 1: return a() < b();
+    case 2: return a() <= b();
+    case 3: return a() != b();
     case 4: return make_random_condition(depth - 1) && make_random_condition(depth - 1);
     case 5: return make_random_condition(depth - 1) || make_random_condition(depth - 1);
     case 6: return !make_random_condition(depth - 1);
@@ -523,20 +523,20 @@ public:
       case 2: return random_buffer_intrinsic();
       }
     } else {
-      expr a = make_random_expr(depth - 1);
-      expr b = make_random_expr(depth - 1);
+      auto a = [&](){ return make_random_expr(depth - 1); };
+      auto b = [&](){ return make_random_expr(depth - 1); };
       switch (rng_() % 11) {
-      case 0: return a + b;
-      case 1: return a - b;
-      case 2: return a * b;
-      case 3: return a / b;
-      case 4: return a % b;
-      case 5: return min(a, b);
-      case 6: return max(a, b);
-      case 7: return select(make_random_condition(depth - 1), a, b);
+      case 0: return a() + b();
+      case 1: return a() - b();
+      case 2: return a() * b();
+      case 3: return a() / b();
+      case 4: return a() % b();
+      case 5: return min(a(), b());
+      case 6: return max(a(), b());
+      case 7: return select(make_random_condition(depth - 1), a(), b());
       case 8: return random_constant();
       case 9: return random_pick(vars_);
-      case 10: return make_random_condition(depth - 1);
+      case 10: return make_random_condition(depth);
       default: std::abort();
       }
     }
