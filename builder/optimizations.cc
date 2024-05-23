@@ -287,7 +287,7 @@ public:
       }
 
       if (!alias.assume_in_bounds) {
-        if (target_info) {
+        if (target_info && target_info->can_reallocate) {
           // We allocated this buffer, make it big enough to share with this buffer.
           if (!target_info->shared_alloc_sym.defined()) {
             target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));

@@ -223,8 +223,6 @@ TEST_P(elementwise, pipeline_2d) {
 
   if (schedule_storage) {
     ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
-  } else {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The buffers should alias.
   }
 }
 

@@ -139,6 +139,7 @@ TEST_P(copied_output, pipeline) {
 
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
+  // Tell slinky the output is unfolded to allow aliasing it.
   out->dim(0).fold_factor = dim::unfolded;
   out->dim(1).fold_factor = dim::unfolded;
 
