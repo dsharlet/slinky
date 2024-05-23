@@ -173,8 +173,8 @@ class buffer_aliaser : public node_mutator {
     std::vector<dim_expr> dims;
     expr elem_size;
 
-    bool can_reallocate;
-    bool read_only;
+    bool is_input;
+    bool is_output;
 
     // Possible aliases of this allocation.
     std::map<var, alias_info> aliases;
@@ -184,11 +184,13 @@ class buffer_aliaser : public node_mutator {
     var shared_alloc_sym;
 
   public:
-    buffer_info(std::vector<dim_expr> dims, expr elem_size, bool can_reallocate, bool read_only = false)
-        : dims(std::move(dims)), elem_size(std::move(elem_size)), can_reallocate(can_reallocate), read_only(read_only) {}
+    buffer_info(std::vector<dim_expr> dims, expr elem_size, bool is_input = false, bool is_output = false)
+        : dims(std::move(dims)), elem_size(std::move(elem_size)), is_input(is_input), is_output(is_output) {}
 
     void maybe_alias(var s, alias_info a) {
       assert(aliases.count(s) == 0);
+      assert(!is_input);
+      assert(!is_output);
       aliases[s] = std::move(a);
     }
     void do_not_alias(var s) { aliases.erase(s); }
@@ -208,49 +210,40 @@ class buffer_aliaser : public node_mutator {
   }
 
   static bool alias_compatible(
-      const allocate* op, const alias_info& alias, var target, const std::optional<buffer_info>& target_info) {
+      const allocate* op, const alias_info& alias, var target, const buffer_info& target_info) {
     assert(op->dims.size() == alias.dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
+      const dim_expr& alias_dim = alias.dims[alias.permutation[d]];
       if (!alias.assume_in_bounds) {
         assert(alias.permutation.size() == op->dims.size());
-        if (!prove_true(op->dims[d].bounds.min >= alias.dims[alias.permutation[d]].bounds.min) ||
-            !prove_true(op->dims[d].bounds.max <= alias.dims[alias.permutation[d]].bounds.max)) {
+        if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
+            !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
-          if (!target_info || !target_info->can_reallocate) {
-            // We can't reallocate this buffer so we can't grow it to use this buffer as an alias target.
+          assert(!target_info.is_input);
+          if (target_info.is_output) {
+            // We can't reallocate this output buffer.
             return false;
           }
         }
       }
       if (op->dims[d].stride.defined()) {
-        if (!prove_true(op->dims[d].stride == alias.dims[alias.permutation[d]].stride)) {
+        if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
           // This alias would violate a constraint on the stride of the buffer.
           return false;
         }
       }
       if (op->dims[d].fold_factor.defined()) {
-        expr target_fold_factor = target_info ? target_info->dims[alias.permutation[d]].fold_factor
-                                              : buffer_fold_factor(target, static_cast<int>(d));
-        expr target_min =
-            target_info ? target_info->dims[alias.permutation[d]].min() : buffer_min(target, static_cast<int>(d));
+        const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
         if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
-        } else {
-          if (is_one(op->dims[d].fold_factor)) {
-            // If our fold factor is one, we should always be able to alias.
-            // TODO: This is a hack because the check for the mins below will fail in this case, but aliases seem safe.
-            // We should figure out what the proper conditions are that don't need a special case for fold factor 1.
-            // If the min check below was for this fold factor instead of the target, it would just work, but that doesn't
-            // seem right either.
-          } else if (!prove_true(target_fold_factor % op->dims[d].fold_factor == 0)) {
-            // The fold factor of this allocation does not evenly divide the target fold factor.
-            return false;
-          } else if (!prove_true(op->dims[d].min() % target_fold_factor == target_min % target_fold_factor)) {
-            // The mins of these aliases do not align in the target alias.
-            return false;
-          }
+        } else if (!prove_true(target_fold_factor >= op->dims[d].fold_factor)) {
+          // The fold factor of this allocation does not evenly divide the target fold factor.
+          // TODO: We could increase the fold factor like we do the bounds.
+          return false;
         }
+        // It's surprising we don't need to check the mins are aligned here. I have tried very hard to write a test that
+        // fails without such a check, but I cannot.
       }
     }
     return true;
@@ -261,15 +254,15 @@ public:
       node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
       : ctx(ctx) {
     for (const buffer_expr_ptr& i : inputs) {
-      buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*can_reallocate=*/false, /*read_only=*/true);
+      buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*is_input=*/true, /*is_output=*/false);
     }
     for (const buffer_expr_ptr& i : outputs) {
-      buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*can_reallocate=*/false);
+      buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*is_input=*/false, /*is_output=*/true);
     }
   }
 
   void visit(const allocate* op) override {
-    auto s = set_value_in_scope(buffers, op->sym, buffer_info(op->dims, op->elem_size, /*can_reallocate=*/true));
+    auto s = set_value_in_scope(buffers, op->sym, buffer_info(op->dims, op->elem_size));
     stmt body = mutate(op->body);
     buffer_info info = std::move(*buffers[op->sym]);
 
@@ -285,7 +278,8 @@ public:
 
       var alloc_var = target_var;
       std::optional<buffer_info>& target_info = lookup_buffer(target_var);
-      if (!alias_compatible(op, alias, target_var, target_info)) {
+      assert(target_info);
+      if (!alias_compatible(op, alias, target_var, *target_info)) {
         continue;
       }
 
@@ -299,7 +293,8 @@ public:
       }
 
       if (!alias.assume_in_bounds) {
-        if (target_info && target_info->can_reallocate) {
+        if (!target_info->is_output) {
+          assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
           if (!target_info->shared_alloc_sym.defined()) {
             target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));
@@ -363,7 +358,7 @@ public:
     for (var i : op->inputs) {
       std::optional<buffer_info>& input_info = lookup_buffer(i);
       if (input_info) {
-        if (input_info->read_only) {
+        if (input_info->is_input) {
           // We can't write to this buffer.
           continue;
         }
@@ -384,7 +379,7 @@ public:
 
   void alias_copy_dst(const copy_stmt* op) {
     std::optional<buffer_info>& info = lookup_buffer(op->dst);
-    if (!info) {
+    if (!info || info->is_output) {
       // We didn't allocate the dst.
       return;
     }
@@ -427,7 +422,7 @@ public:
 
   void alias_copy_src(const copy_stmt* op) {
     std::optional<buffer_info>& info = lookup_buffer(op->src);
-    if (!info) {
+    if (!info || info->is_input) {
       // We didn't allocate the src.
       return;
     }
@@ -435,11 +430,6 @@ public:
     // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
     // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
     // broadcasting).
-
-    if (info->read_only && op->padding && !op->padding->empty()) {
-      // We can't write our padding to this buffer.
-      return;
-    }
 
     alias_info a;
     a.at.resize(op->dst_x.size());
@@ -501,7 +491,8 @@ public:
     std::swap(old_buffers, buffers);
     for (std::size_t i = 0; i < old_buffers.size(); ++i) {
       if (old_buffers[i]) {
-        buffers[i] = buffer_info(old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->can_reallocate);
+        buffers[i] = buffer_info(
+            old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
       }
     }
 
