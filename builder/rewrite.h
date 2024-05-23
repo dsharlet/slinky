@@ -40,26 +40,35 @@ SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&)
 SLINKY_ALWAYS_INLINE inline index_t substitute(index_t p, const match_context&) { return p; }
 
 template <typename T>
-struct pattern_type {
-  static constexpr expr_node_type value = T::type;
+struct pattern_info {
+  static constexpr expr_node_type type = T::type;
+  static constexpr bool is_canonical = true;
 };
 template <>
-struct pattern_type<std::int32_t> {
-  static constexpr expr_node_type value = expr_node_type::constant;
+struct pattern_info<std::int32_t> {
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_canonical = true;
 };
 template <>
-struct pattern_type<std::int64_t> {
-  static constexpr expr_node_type value = expr_node_type::constant;
+struct pattern_info<std::int64_t> {
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_canonical = true;
 };
 template <>
-struct pattern_type<bool> {
-  static constexpr expr_node_type value = expr_node_type::constant;
+struct pattern_info<bool> {
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_canonical = true;
 };
 
 class pattern_expr {
 public:
-  static constexpr expr_node_type type = expr_node_type::none;
   const expr& e;
+};
+
+template<>
+struct pattern_info<pattern_expr> {
+  static constexpr expr_node_type type = expr_node_type::none;
+  static constexpr bool is_canonical = true;
 };
 
 inline std::ostream& operator<<(std::ostream& os, const pattern_expr& e) { return os << e.e; }
@@ -141,19 +150,22 @@ inline index_t match_context::matched(const pattern_constant<N>& p, index_t def)
 template <typename T, typename A, typename B>
 class pattern_binary {
 public:
-  static constexpr expr_node_type type = T::static_type;
   A a;
   B b;
+};
 
-  static_assert(!T::commutative || !should_commute(pattern_type<A>::value, pattern_type<B>::value));
+template <typename T, typename A, typename B>
+struct pattern_info<pattern_binary<T, A, B>> {
+  static constexpr expr_node_type type = T::static_type;
+  static constexpr bool is_canonical = !T::commutative || !should_commute(pattern_info<A>::type, pattern_info<B>::type);
 };
 
 template <typename T, typename A, typename B>
 bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
   int this_bit = -1;
   if (T::commutative) {
-    constexpr expr_node_type ta = pattern_type<A>::value;
-    constexpr expr_node_type tb = pattern_type<B>::value;
+    constexpr expr_node_type ta = pattern_info<A>::type;
+    constexpr expr_node_type tb = pattern_info<B>::type;
     if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
       // This is a commutative operation and we can't canonicalize the ordering.
       // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
@@ -355,6 +367,12 @@ public:
 };
 
 template <typename T>
+struct pattern_info<replacement_eval<T>> {
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_canonical = true;
+};
+
+template <typename T>
 index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
   return substitute(r.a, ctx);
 }
@@ -466,6 +484,8 @@ auto eval(const T& x) {
 
 template <typename Pattern, typename T>
 bool match_any_variant(const Pattern& p, const T& x, match_context& ctx) {
+  static_assert(pattern_info<Pattern>::is_canonical);
+
   // We'll find out how many variant bits we have when we try to match.
   // This can grow if we fail early due to a commutative variant that doesn't match near the root
   // of the expression, so we track the max we've seen.
@@ -502,6 +522,8 @@ public:
 
   template <typename Pattern, typename Replacement>
   bool rewrite(const Pattern& p, const Replacement& r) {
+    static_assert(pattern_info<Replacement>::is_canonical);
+
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
@@ -511,6 +533,8 @@ public:
 
   template <typename Pattern, typename Replacement, typename Predicate>
   bool rewrite(const Pattern& p, const Replacement& r, const Predicate& pr) {
+    static_assert(pattern_info<Replacement>::is_canonical);
+
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
