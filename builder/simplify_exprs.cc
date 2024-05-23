@@ -775,7 +775,7 @@ expr simplify(const equal* op, expr a, expr b) {
       r.rewrite(x == z + (x / c0) * c0, z == x % c0, eval(c0 > 0)) ||
       r.rewrite(x == (x / c0) * c0, x % c0 == 0, eval(c0 > 0)) ||
     
-      r.rewrite(x % c0 == c1, false, eval(c0 > 0 && (c1 > c0 || c1 < 0))) ||
+      r.rewrite(x % c0 == c1, false, eval(c0 > 0 && (c1 >= c0 || c1 < 0))) ||
       false) {
     return r.result;
   }
