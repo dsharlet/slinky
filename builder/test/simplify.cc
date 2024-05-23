@@ -145,6 +145,11 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(max(x && y, 0)), matches(x && y));
   ASSERT_THAT(simplify(min(!x, 1)), matches(!x));
   ASSERT_THAT(simplify(max(x == y, 1)), matches(1));
+
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 4), matches(false));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 3), matches((y / 4) * 4 + 3 <= y));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 1), matches(y % 4 != 0));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y), matches(true));
 }
 
 TEST(simplify, let) {
