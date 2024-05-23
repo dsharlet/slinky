@@ -590,10 +590,18 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite((x / c0) * c0 + c1 < x, false, eval(c0 > 0) && eval(c1 >= c0 - 1)) ||
       r.rewrite(x < (x / c0) * c0, false, eval(c0 > 0)) ||
       r.rewrite((x / c0) * c0 < x, x % c0 != 0, eval(c0 > 0)) ||
-
-      r.rewrite((x + c0) / c2 < (x + c1) / c2, eval(c0 < c1), eval(c2 > 0)) ||
-      r.rewrite(x / c2 < (x + c1) / c2, eval(0 < c1), eval(c2 > 0)) ||
-      r.rewrite((x + c0) / c2 < x / c2, eval(c0 < 0), eval(c2 > 0)) ||
+    
+      // These rules taken from
+      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
+      // Cancel a division
+      r.rewrite((x + c1) / c0 < (x + c2) / c0, false, eval(c0 > 0) && eval(c1 >= c2)) ||
+      r.rewrite((x + c1) / c0 < (x + c2) / c0, true, eval(c0 > 0) && eval(c1 <= c2 - c0)) ||
+      // c1 == 0
+      r.rewrite(x / c0 < (x + c2) / c0, false, eval(c0 > 0) && eval(0 >= c2)) ||
+      r.rewrite(x / c0 < (x + c2) / c0, true, eval(c0 > 0) && eval(0 <= c2 - c0)) ||
+      // c2 == 0
+      r.rewrite((x + c1) / c0 < x / c0, false, eval(c0 > 0) && eval(c1 >= 0)) ||
+      r.rewrite((x + c1) / c0 < x / c0, true, eval(c0 > 0) && eval(c1 <= 0 - c0)) ||
 
       // TODO: These aren't fully simplified, the above rules can be applied to the rewritten result.
       // If we ever added a c2 < 0 version of the above, these would need to be duplicated as well.
@@ -640,9 +648,6 @@ expr simplify(const less* op, expr a, expr b) {
       r.rewrite(max(y, c0) < c1, y < c1 && eval(c0 < c1)) ||
       r.rewrite(c1 < min(y, c0), c1 < y && eval(c1 < c0)) ||
       r.rewrite(c1 < max(y, c0), c1 < y || eval(c1 < c0)) ||
-    
-      // TODO: This rule seems a bit specialized, but it's hard to find a more general rule.
-      r.rewrite(min(x, y + c0) < min(x, y) + c1, eval(0 < c1 || c0 < c1)) ||
 
       // Cases where we can remove a min on one side because
       // one term dominates another. These rules were
