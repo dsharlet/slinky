@@ -958,7 +958,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
-    result = alias_buffers(result, ctx, outputs);
+    result = alias_buffers(result, ctx, inputs, outputs);
   }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.

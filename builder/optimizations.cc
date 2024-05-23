@@ -174,6 +174,7 @@ class buffer_aliaser : public node_mutator {
     expr elem_size;
 
     bool can_reallocate;
+    bool read_only;
 
     // Possible aliases of this allocation.
     std::map<var, alias_info> aliases;
@@ -183,8 +184,8 @@ class buffer_aliaser : public node_mutator {
     var shared_alloc_sym;
 
   public:
-    buffer_info(std::vector<dim_expr> dims, expr elem_size, bool can_reallocate)
-        : dims(std::move(dims)), elem_size(std::move(elem_size)), can_reallocate(can_reallocate) {}
+    buffer_info(std::vector<dim_expr> dims, expr elem_size, bool can_reallocate, bool read_only = false)
+        : dims(std::move(dims)), elem_size(std::move(elem_size)), can_reallocate(can_reallocate), read_only(read_only) {}
 
     void maybe_alias(var s, alias_info a) {
       assert(aliases.count(s) == 0);
@@ -236,7 +237,13 @@ class buffer_aliaser : public node_mutator {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
         } else {
-          if (!prove_true(target_fold_factor % op->dims[d].fold_factor == 0)) {
+          if (is_one(op->dims[d].fold_factor)) {
+            // If our fold factor is one, we should always be able to alias.
+            // TODO: This is a hack because the check for the mins below will fail in this case, but aliases seem safe.
+            // We should figure out what the proper conditions are that don't need a special case for fold factor 1.
+            // If the min check below was for this fold factor instead of the target, it would just work, but that doesn't
+            // seem right either.
+          } else if (!prove_true(target_fold_factor % op->dims[d].fold_factor == 0)) {
             // The fold factor of this allocation does not evenly divide the target fold factor.
             return false;
           } else if (!prove_true(op->dims[d].min() % target_fold_factor == target_min % target_fold_factor)) {
@@ -250,7 +257,12 @@ class buffer_aliaser : public node_mutator {
   }
 
 public:
-  buffer_aliaser(node_context& ctx, const std::vector<buffer_expr_ptr>& outputs) : ctx(ctx) {
+  buffer_aliaser(
+      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
+      : ctx(ctx) {
+    for (const buffer_expr_ptr& i : inputs) {
+      buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*can_reallocate=*/false, /*read_only=*/true);
+    }
     for (const buffer_expr_ptr& i : outputs) {
       buffers[i->sym()] = buffer_info(i->dims(), i->elem_size(), /*can_reallocate=*/false);
     }
@@ -351,6 +363,10 @@ public:
     for (var i : op->inputs) {
       std::optional<buffer_info>& input_info = lookup_buffer(i);
       if (input_info) {
+        if (input_info->read_only) {
+          // We can't write to this buffer.
+          continue;
+        }
         for (var o : op->outputs) {
           alias_info a;
           a.dims = buffer_dims(o, input_info->dims.size());
@@ -367,15 +383,14 @@ public:
   }
 
   void alias_copy_dst(const copy_stmt* op) {
-    if (!lookup_buffer(op->dst)) {
+    std::optional<buffer_info>& info = lookup_buffer(op->dst);
+    if (!info) {
       // We didn't allocate the dst.
       return;
     }
-
     // We allocated the dst. We might be able to replace the allocation with an alias of the src.
     // This case is a straightforward use of is_copy, which produces the dims that should be the src of a copy, which
     // are the same dimensions we want the dst to be.
-    std::optional<buffer_info>& info = lookup_buffer(op->dst);
 
     alias_info a;
     a.at.resize(op->src_x.size());
@@ -411,16 +426,20 @@ public:
   }
 
   void alias_copy_src(const copy_stmt* op) {
-    if (!lookup_buffer(op->src)) {
+    std::optional<buffer_info>& info = lookup_buffer(op->src);
+    if (!info) {
       // We didn't allocate the src.
       return;
     }
-
     // We allocated the src. We might be able to replace the allocation with an alias of the dst.
     // In this case, we're going to make the src an alias of another buffer. We're more limited in what we can do here
     // vs. the above case, because we can't expect producers to handle everything the copy is doing (such as
     // broadcasting).
-    std::optional<buffer_info>& info = lookup_buffer(op->src);
+
+    if (info->read_only && op->padding && !op->padding->empty()) {
+      // We can't write our padding to this buffer.
+      return;
+    }
 
     alias_info a;
     a.at.resize(op->dst_x.size());
@@ -535,8 +554,9 @@ public:
 
 }  // namespace
 
-stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& outputs) {
-  return buffer_aliaser(ctx, outputs).mutate(s);
+stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+    const std::vector<buffer_expr_ptr>& outputs) {
+  return buffer_aliaser(ctx, inputs, outputs).mutate(s);
 }
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
