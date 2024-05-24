@@ -153,7 +153,7 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(4 <= x % 4), matches(false));
   ASSERT_THAT(simplify((y / 4) * 4 <= y - 4), matches(false));
   ASSERT_THAT(simplify((y / 4) * 4 <= y - 3), matches(3 == y % 4));
-  ASSERT_THAT(simplify((y / 4) * 4 <= y - 1), matches(y % 4 != 0));
+  ASSERT_THAT(simplify((y / 4) * 4 <= y - 1), matches(boolean(y % 4)));
   ASSERT_THAT(simplify((y / 4) * 4 <= y), matches(true));
 
   ASSERT_THAT(simplify(x % -4 <= 1), matches(x % -4 <= 1));

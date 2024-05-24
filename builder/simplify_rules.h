@@ -450,7 +450,7 @@ bool apply_less_rules(Fn&& apply) {
       apply(x%c0 < c1, x%c0 != c1, eval(c0 > 0 && c1 >= c0 - 1)) ||
       apply(c0 < x%c1, true, eval(c1 > 0 && c0 < 0)) ||
       apply(c0 < x%c1, false, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      apply(c0 < x%c1, x%c1 != 0, eval(c1 > 0 && c0 <= 0)) ||
+      apply(c0 < x%c1, boolean(x%c1), eval(c1 > 0 && c0 <= 0)) ||
     
       // These rules taken from
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
@@ -741,8 +741,8 @@ bool apply_select_rules(Fn&& apply) {
       
       apply(select(x, select(y, z, w), select(y, u, w)), select(y, select(x, z, u), w)) ||
       apply(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
-      apply(select(x, false, true), x == 0) ||
-      apply(select(x, true, false), x != 0) ||
+      apply(select(x, false, true), !x) ||
+      apply(select(x, true, false), boolean(x)) ||
       apply(select(x, y, true), y || !x, is_boolean(y)) ||
       apply(select(x, y, false), x && y, is_boolean(y)) ||
       apply(select(x, true, y), x || y, is_boolean(y)) ||
