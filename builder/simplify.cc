@@ -225,9 +225,13 @@ public:
   template <typename T>
   void visit_logical(const T* op, bool coerce_boolean = false) {
     interval_expr a_bounds;
-    expr a = strip_boolean(mutate(coerce_boolean ? boolean(op->a) : op->a, &a_bounds));
+    expr a = mutate(coerce_boolean ? boolean(op->a) : op->a, &a_bounds);
     interval_expr b_bounds;
-    expr b = strip_boolean(mutate(coerce_boolean ? boolean(op->b) : op->b, &b_bounds));
+    expr b = mutate(coerce_boolean ? boolean(op->b) : op->b, &b_bounds);
+    if (coerce_boolean) {
+      a = strip_boolean(a);
+      b = strip_boolean(b);
+    }
 
     expr result = simplify(op, std::move(a), std::move(b));
     if (!result.same_as(op)) {
