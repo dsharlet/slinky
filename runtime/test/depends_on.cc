@@ -22,6 +22,7 @@ bool operator==(const depends_on_result& l, const depends_on_result& r) {
   if (l.buffer_output != r.buffer_output) return false;
   if (l.buffer_src != r.buffer_src) return false;
   if (l.buffer_dst != r.buffer_dst) return false;
+  if (l.buffer_base != r.buffer_base) return false;
   if (l.buffer_meta != r.buffer_meta) return false;
   return true;
 }
@@ -32,6 +33,7 @@ std::ostream& operator<<(std::ostream& os, const depends_on_result& r) {
   os << ", .buffer_output = " << r.buffer_output;
   os << ", .buffer_src = " << r.buffer_src;
   os << ", .buffer_dst = " << r.buffer_dst;
+  os << ", .buffer_base = " << r.buffer_base;
   os << ", .buffer_meta = " << r.buffer_meta;
   os << "}";
   return os;
@@ -40,6 +42,7 @@ std::ostream& operator<<(std::ostream& os, const depends_on_result& r) {
 TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(x + y, x), (depends_on_result{.var = true}));
   ASSERT_EQ(depends_on(x + x, x), (depends_on_result{.var = true}));
+  ASSERT_EQ(depends_on(buffer_at(x), x), (depends_on_result{.buffer_base = true, .buffer_meta = true}));
 
   stmt loop_x = loop::make(x, loop::serial, {y, z}, 1, check::make(x && z));
   ASSERT_EQ(depends_on(loop_x, x), depends_on_result{});
