@@ -307,11 +307,11 @@ std::ostream& operator<<(std::ostream& os, const pattern_select<C, T, F>& p) {
   return os << "select(" << p.c << ", " << p.t << ", " << p.f << ")";
 }
 
-template <typename Args, bool IsBoolean = false>
+template <typename Args>
 class pattern_call {
 public:
   static constexpr expr_node_type type = expr_node_type::call;
-  static constexpr bool is_boolean = IsBoolean;
+  static constexpr bool is_boolean = false;
   slinky::intrinsic fn;
   Args args;
 };
@@ -326,8 +326,8 @@ std::vector<expr> substitute_tuple(const T& t, const match_context& ctx, std::in
   return {substitute(std::get<Is>(t), ctx)...};
 }
 
-template <typename Args, bool IsBoolean>
-bool match(const pattern_call<Args, IsBoolean>& p, const expr& x, match_context& ctx) {
+template <typename Args>
+bool match(const pattern_call<Args>& p, const expr& x, match_context& ctx) {
   if (const call* c = x.as<call>()) {
     if (c->intrinsic == p.fn) {
       constexpr std::size_t ArgsSize = std::tuple_size<Args>::value;
@@ -338,15 +338,15 @@ bool match(const pattern_call<Args, IsBoolean>& p, const expr& x, match_context&
   return false;
 }
 
-template <typename Args, bool IsBoolean>
-expr substitute(const pattern_call<Args, IsBoolean>& p, const match_context& ctx) {
+template <typename Args>
+expr substitute(const pattern_call<Args>& p, const match_context& ctx) {
   constexpr std::size_t ArgsSize = std::tuple_size<Args>::value;
   return call::make(p.fn, substitute_tuple(p.args, ctx, std::make_index_sequence<ArgsSize>()));
 }
 
 inline std::ostream& operator<<(std::ostream& os, const pattern_call<std::tuple<>>& p) { return os << p.fn << "()"; }
-template <typename A, bool IsBoolean>
-std::ostream& operator<<(std::ostream& os, const pattern_call<std::tuple<A>, IsBoolean>& p) {
+template <typename A>
+std::ostream& operator<<(std::ostream& os, const pattern_call<std::tuple<A>>& p) {
   return os << p.fn << "(" << std::get<0>(p.args) << ")";
 }
 template <typename A, typename B>
@@ -425,8 +425,8 @@ template <typename T, typename A, typename... Ts>
 struct enable_pattern_ops<pattern_unary<T, A>, Ts...> { using type = std::true_type; };
 template <typename C, typename T, typename F, typename... Ts>
 struct enable_pattern_ops<pattern_select<C, T, F>, Ts...> { using type = std::true_type; };
-template <typename Args, bool IsBoolean, typename... Ts>
-struct enable_pattern_ops<pattern_call<Args, IsBoolean>, Ts...> { using type = std::true_type; };
+template <typename Args, typename... Ts>
+struct enable_pattern_ops<pattern_call<Args>, Ts...> { using type = std::true_type; };
 template <typename T, typename... Ts>
 struct enable_pattern_ops<replacement_eval<T>, Ts...> { using type = std::true_type; };
 template <typename T, typename Fn, typename... Ts>
