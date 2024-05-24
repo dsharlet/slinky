@@ -95,9 +95,6 @@ enum class intrinsic {
   and_then,
   or_else,
 
-  // This coerces an expression to be a boolean value.
-  boolean,
-
   // Functions with arguments (buf) that return buffer metadata.
   buffer_rank,
   buffer_elem_size,

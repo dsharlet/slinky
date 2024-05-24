@@ -392,13 +392,6 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     } else if (args.size() == 1) {
       return args[0];
     }
-  } else if (fn == intrinsic::boolean) {
-    // This can't be a rewrite rule because the rewrite engine static_asserts that boolean patterns have boolean
-    // replacements, which can't easily be proven at compile time.
-    assert(args.size() == 1);
-    if (is_boolean(args[0])) {
-      return args[0];
-    }
   }
 
   expr e;

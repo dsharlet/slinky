@@ -471,7 +471,7 @@ auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 auto abs(const T& x) { return pattern_call<std::tuple<T>>{intrinsic::abs, {x}}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-auto boolean(const T& x) { return pattern_call<std::tuple<T>, /*IsBoolean=*/true>{intrinsic::boolean, {x}}; }
+auto boolean(const T& x) { return pattern_binary<not_equal, T, int>{x, 0}; }
 inline auto positive_infinity() { return pattern_call<std::tuple<>>{intrinsic::positive_infinity, {}}; }
 inline auto negative_infinity() { return pattern_call<std::tuple<>>{intrinsic::negative_infinity, {}}; }
 inline auto indeterminate() { return pattern_call<std::tuple<>>{intrinsic::indeterminate, {}}; }

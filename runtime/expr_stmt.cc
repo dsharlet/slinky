@@ -87,6 +87,15 @@ stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
 
 namespace {
 
+template <std::int64_t value>
+const constant* make_static_constant() {
+  static constant result;
+  // Don't let the ref counting free this object.
+  result.add_ref();
+  result.value = value;
+  return &result;
+}
+
 const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
@@ -94,11 +103,19 @@ const variable* make_variable(var sym) {
 }
 
 const constant* make_constant(std::int64_t value) {
-  assert(value <= std::numeric_limits<index_t>::max());
-  assert(value >= std::numeric_limits<index_t>::min());
-  auto n = new constant();
-  n->value = value;
-  return n;
+  static const constant* zero = make_static_constant<0>();
+  static const constant* one = make_static_constant<1>();
+  if (value == 0) {
+    return zero;
+  } else if (value == 1) {
+    return one;
+  } else {
+    assert(value <= std::numeric_limits<index_t>::max());
+    assert(value >= std::numeric_limits<index_t>::min());
+    auto n = new constant();
+    n->value = value;
+    return n;
+  }
 }
 
 }  // namespace
@@ -600,10 +617,16 @@ bool is_finite(const expr& x) {
   return false;
 }
 
-expr boolean(const expr& x) { return is_boolean(x) ? x : call::make(intrinsic::boolean, {x}); }
-bool is_boolean(const expr& x) {
-  return is_boolean_node(x.type()) || is_intrinsic(x, intrinsic::boolean) || is_one(x) || is_zero(x);
+expr boolean(const expr& x) {
+  if (is_boolean(x)) {
+    return x;
+  } else if (const index_t* c = as_constant(x)) {
+    return *c != 0;
+  } else {
+    return x != 0;
+  }
 }
+bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
 
 bool is_buffer_min(const expr& x, var sym, int dim) {
   const call* c = x.as<call>();

@@ -27,7 +27,6 @@ std::string to_string(intrinsic fn) {
   case intrinsic::abs: return "abs";
   case intrinsic::and_then: return "and_then";
   case intrinsic::or_else: return "or_else";
-  case intrinsic::boolean: return "boolean";
   case intrinsic::buffer_rank: return "buffer_rank";
   case intrinsic::buffer_elem_size: return "buffer_elem_size";
   case intrinsic::buffer_size_bytes: return "buffer_size_bytes";

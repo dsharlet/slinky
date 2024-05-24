@@ -23,10 +23,12 @@ namespace slinky {
 namespace {
 
 expr strip_boolean(expr x) {
-  while (const call* c = is_intrinsic(x, intrinsic::boolean)) {
-    assert(c->args.size() == 1);
-    expr next = c->args[0];
-    x = std::move(next);
+  if (const not_equal* ne = x.as<not_equal>()) {
+    if (is_zero(ne->b)) {
+      return strip_boolean(ne->a);
+    } else if (is_zero(ne->a)) {
+      return strip_boolean(ne->b);
+    }
   }
   return x;
 }
@@ -1320,16 +1322,6 @@ public:
         return;
       }
       break;
-    case intrinsic::boolean: {
-      expr a = mutate(op->args[0]);
-      if (const index_t* ca = as_constant(a)) {
-        set_result(*ca != 0);
-      } else {
-        set_result(expr(sign < 0 ? 0 : 1));
-      }
-      return;
-    }
-
     default: break;
     }
     set_result(op);
