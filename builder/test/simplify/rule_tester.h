@@ -28,14 +28,13 @@ bool contains_infinity(expr x) {
 }  // namespace
 
 class rule_tester {
-public:
   static constexpr std::size_t var_count = 6;
 
   gtest_seeded_mt19937 rng_;
   expr_generator<gtest_seeded_mt19937> expr_gen_;
 
-  rule_tester() : expr_gen_(rng_, var_count) {
-  }
+public:
+  rule_tester() : expr_gen_(rng_, var_count) {}
 
   SLINKY_NO_INLINE bool test_expr(expr e, expr simplified) {
     if (contains_infinity(e)) {
@@ -81,6 +80,8 @@ public:
 
   template <typename Pattern, typename Replacement, typename Predicate>
   bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
+    // Some rules are very picky about a large number of constants, which makes it very unlikely to generate an
+    // expression that the rule applies to.
     for (int test = 0; test < 100000; ++test) {
       init_match_context();
       if (substitute(pr, m)) {
@@ -95,7 +96,7 @@ public:
       }
     }
     const bool rule_applied = false;
-    // We failed to apply the rule to any expressions.
+    // We failed to apply the rule to an expression.
     EXPECT_TRUE(rule_applied) << p << " if " << pr;
     // Returning true stops any more tests.
     return true;
