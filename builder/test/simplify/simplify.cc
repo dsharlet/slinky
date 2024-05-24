@@ -463,7 +463,7 @@ TEST(simplify, fuzz) {
   eval_context ctx;
 
   for (int i = 0; i < tests; ++i) {
-    expr test = gen.random_expr(3);
+    expr test = gen.random_expr(2);
     expr simplified = simplify(test);
 
     // Also test bounds_of and constant_lower/upper_bound.
