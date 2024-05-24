@@ -172,10 +172,14 @@ cc_test(
 
 cc_test(
     name = "simplify",
-    srcs = ["simplify.cc"],
+    srcs = [
+        "simplify.cc", 
+        "simplify_rules.cc",
+    ],
     deps = [
         "//base/test:util",
         "//builder",
+        "//builder:simplify_rules",
         "//runtime",
         "@googletest//:gtest_main",
     ],

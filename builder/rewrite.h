@@ -23,8 +23,8 @@ template <int N>
 class pattern_constant;
 
 struct match_context {
-  const base_expr_node* vars[symbol_count];
-  const index_t* constants[constant_count];
+  std::array<const base_expr_node*, symbol_count> vars;
+  std::array<const index_t*, constant_count> constants;
   int variant;
   int variant_bits;
 
@@ -244,7 +244,7 @@ bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x
 template <typename T, typename A>
 std::ostream& operator<<(std::ostream& os, const pattern_unary<T, A>& p) {
   switch (T::static_type) {
-  case logical_not::static_type: return '!' << p.a;
+  case logical_not::static_type: return os << '!' << p.a;
   default: std::abort();
   }
 }
@@ -357,6 +357,11 @@ bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx)
 template <typename T, typename Fn>
 replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
   return {t, fn};
+}
+
+template <typename T, typename Fn>
+std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>&) {
+  return os << "<unknown predicate>";
 }
 
 template <typename T>
@@ -519,9 +524,10 @@ public:
   expr result;
 
   base_rewriter(T x) : x(std::move(x)) {}
+  base_rewriter(const base_rewriter&) = delete;
 
   template <typename Pattern, typename Replacement>
-  bool rewrite(const Pattern& p, const Replacement& r) {
+  bool operator()(const Pattern& p, const Replacement& r) {
     static_assert(pattern_info<Replacement>::is_canonical);
 
     match_context ctx;
@@ -532,7 +538,7 @@ public:
   }
 
   template <typename Pattern, typename Replacement, typename Predicate>
-  bool rewrite(const Pattern& p, const Replacement& r, const Predicate& pr) {
+  bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
     static_assert(pattern_info<Replacement>::is_canonical);
 
     match_context ctx;
@@ -548,8 +554,7 @@ public:
 class rewriter : public base_rewriter<const expr&> {
 public:
   rewriter(const expr& x) : base_rewriter(x) {}
-  using base_rewriter::result;
-  using base_rewriter::rewrite;
+  using base_rewriter::operator();
 };
 
 template <typename T>

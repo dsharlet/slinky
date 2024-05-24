@@ -3,6 +3,12 @@ package(
     default_visibility = ["//visibility:private"],
 )
 
+cc_library(
+    name = "simplify_rules",
+    hdrs = ["simplify_rules.h"],
+    visibility = ["//builder:__subpackages__"],
+)
+
 # This library provides the functionality to lower a graph of funcs into a pipeline suitable for
 # evaluation in the runtime.
 cc_library(
@@ -27,6 +33,7 @@ cc_library(
         "substitute.h",
     ],
     deps = [
+        ":simplify_rules",
         "//base",
         "//runtime",
     ],
