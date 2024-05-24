@@ -7,6 +7,7 @@
 #include <cassert>
 
 #include "base/test/seeded_test.h"
+#include "builder/rewrite.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "builder/test/simplify/expr_generator.h"
