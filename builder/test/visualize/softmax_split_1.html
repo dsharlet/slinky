@@ -365,9 +365,17 @@ function pipeline(__in, out) {
                         for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
                           { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:b}); {
                             let softmax_in = __softmax_in;
-                            consume(__in);
-                            produce(softmax_in);
-                            __event_t++;
+                            let __loop_min = max(b, buffer_min(max_in, 0));
+                            let __loop_max = min(b, buffer_max(max_in, 0));
+                            let __loop_step = 1;
+                            for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
+                              { let __softmax_in = crop_dim(softmax_in, 1, {min:NaN, max:min(b, buffer_max(out, 1))}); {
+                                let softmax_in = __softmax_in;
+                                consume(__in);
+                                produce(softmax_in);
+                                __event_t++;
+                              }}
+                            }
                           }}
                           { let __max_in = crop_dim(max_in, 0, {min:b, max:b}); {
                             let max_in = __max_in;

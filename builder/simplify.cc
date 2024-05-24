@@ -315,25 +315,6 @@ public:
       }
     }
 
-    if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
-      assert(args.size() == 2);
-      const var* buf = as_variable(args[0]);
-      const index_t* dim = as_constant(args[1]);
-      assert(buf);
-      assert(dim);
-      const std::optional<box_expr>& bounds = buffer_bounds[*buf];
-      if (bounds && *dim < static_cast<index_t>(bounds->size())) {
-        const interval_expr& dim_bounds = (*bounds)[*dim];
-        if (op->intrinsic == intrinsic::buffer_min && dim_bounds.min.defined()) {
-          mutate_and_set_result(dim_bounds.min);
-          return;
-        } else if (op->intrinsic == intrinsic::buffer_max && dim_bounds.max.defined()) {
-          mutate_and_set_result(dim_bounds.max);
-          return;
-        }
-      }
-    }
-
     expr e = simplify(op, op->intrinsic, std::move(args));
     if (e.same_as(op)) {
       set_result(e, bounds_of(op, std::move(args_bounds)));
@@ -552,9 +533,15 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(bounds_d));
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
-    if (!body.defined()) {
+    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       set_result(stmt());
+      return;
+    } else if (!deps.buffer_data()) {
+      // We only needed the bounds, not the allocation itself.
+      body = substitute_bounds(body, op->sym, bounds);
+      set_result(mutate(body));
       return;
     }
 
@@ -600,11 +587,16 @@ public:
       dims.push_back(std::move(new_dim));
       bounds.push_back(std::move(new_bounds));
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
+    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       // This make_buffer is unused.
       set_result(std::move(body));
+      return;
+    } else if (!deps.buffer_data()) {
+      // We only needed the bounds, not the buffer itself.
+      body = substitute_bounds(body, op->sym, bounds);
+      set_result(mutate(body));
       return;
     }
 
