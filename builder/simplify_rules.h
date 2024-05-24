@@ -555,9 +555,9 @@ bool apply_less_rules(Fn&& apply) {
       apply(select(x, y, z) < select(x, w, u), select(x, y < w, z < u)) ||
 
       // Nested logicals
-      apply(x < y, y && !x, is_logical(x) && is_logical(y)) ||
-      apply(x < 1, !x, is_logical(x)) ||
-      apply(0 < x, x, is_logical(x)) ||
+      apply(x < y, y && !x, is_boolean(x) && is_boolean(y)) ||
+      apply(x < 1, !x, is_boolean(x)) ||
+      apply(0 < x, boolean(x), is_boolean(x)) ||
 
       false;
 }
@@ -590,8 +590,8 @@ bool apply_equal_rules(Fn&& apply) {
       apply(x + c0 == c1 - y, x + y == eval(c1 - c0)) ||
       apply(c0 - x == c1, x == eval(c0 - c1)) ||
       apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
-      apply(x == 0, !x, is_logical(x)) ||
-      apply(x == 1, x, is_logical(x)) ||
+      apply(x == 0, !x, is_boolean(x)) ||
+      apply(x == 1, boolean(x), is_boolean(x)) ||
     
       apply(x + y == z + (x / c0) * c0, z == y + x % c0, eval(c0 > 0)) ||
       apply(x + y == (x / c0) * c0, y + x % c0 == 0, eval(c0 > 0)) ||
@@ -607,9 +607,9 @@ bool apply_equal_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_and_rules(Fn&& apply) {
   return
-      apply(x && true, x) ||
+      apply(x && c0, boolean(x), eval(c0 != 0)) ||
       apply(x && false, false) ||
-      apply(x && x, x) ||
+      apply(x && x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
       apply((x && y) && (z && w), x && (y && (z && w))) ||
@@ -617,7 +617,7 @@ bool apply_logical_and_rules(Fn&& apply) {
       apply(x && (y && (x && z)), x && (y && z)) ||
       apply(x && (y && (z && (x && w))), x && (y && (z && w))) ||
     
-      apply(x && (x || y), x) ||
+      apply(x && (x || y), boolean(x)) ||
       apply(x && (y || (x && z)), x && (y || z)) ||
       apply(x && (y && (x || z)), x && y) ||
       apply((x || y) && (x || z), x || (y && z)) ||
@@ -665,9 +665,9 @@ bool apply_logical_and_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_or_rules(Fn&& apply) {
   return
-      apply(x || true, true) ||
-      apply(x || false, x) ||
-      apply(x || x, x) ||
+      apply(x || c0, true, eval(c0 != 0)) ||
+      apply(x || false, boolean(x)) ||
+      apply(x || x, boolean(x)) ||
     
       // Canonicalize trees and find redundant terms.
       apply((x || y) || (z || w), x || (y || (z || w))) ||
@@ -675,7 +675,7 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x || (y || (x || z)), x || (y || z)) ||
       apply(x || (y || (z || (x || w))), x || (y || (z || w))) ||
 
-      apply(x || (x && y), x) ||
+      apply(x || (x && y), boolean(x)) ||
       apply(x || (y && (x || z)), x || (y && z)) || 
       apply(x || (y || (x && z)), x || y) ||
       apply((x && y) || (x && z), x && (y || z)) || 
@@ -720,7 +720,7 @@ bool apply_logical_or_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_not_rules(Fn&& apply) {
   return
-      apply(!!x, x) ||
+      apply(!!x, boolean(x)) ||
       apply(!(x == y), x != y) ||
       apply(!(x != y), x == y) ||
       apply(!(x < y), y <= x) ||
@@ -747,10 +747,10 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
       apply(select(x, false, true), x == 0) ||
       apply(select(x, true, false), x != 0) ||
-      apply(select(x, y, true), y || !x, is_logical(y)) ||
-      apply(select(x, y, false), x && y, is_logical(y)) ||
-      apply(select(x, true, y), x || y, is_logical(y)) ||
-      apply(select(x, false, y), y && !x, is_logical(y)) ||
+      apply(select(x, y, true), y || !x, is_boolean(y)) ||
+      apply(select(x, y, false), x && y, is_boolean(y)) ||
+      apply(select(x, true, y), x || y, is_boolean(y)) ||
+      apply(select(x, false, y), y && !x, is_boolean(y)) ||
 
       false;
 }

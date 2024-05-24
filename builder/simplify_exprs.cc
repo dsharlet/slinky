@@ -251,7 +251,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 && *cb != 0;
   } else if (cb) {
-    return *cb ? a : b;
+    return *cb ? boolean(a) : false;
   }
 
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
@@ -274,7 +274,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 || *cb != 0;
   } else if (cb) {
-    return *cb ? b : a;
+    return *cb ? true : boolean(a);
   }
 
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
@@ -390,6 +390,13 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     if (args.empty()) {
       return fn == intrinsic::and_then;
     } else if (args.size() == 1) {
+      return args[0];
+    }
+  } else if (fn == intrinsic::boolean) {
+    // This can't be a rewrite rule because the rewrite engine static_asserts that boolean patterns have boolean
+    // replacements, which can't easily be proven at compile time.
+    assert(args.size() == 1);
+    if (is_boolean(args[0])) {
       return args[0];
     }
   }

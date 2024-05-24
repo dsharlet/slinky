@@ -334,6 +334,10 @@ public:
       assert(op->args.size() == 1);
       result = std::abs(eval(op->args[0]));
       return;
+    case intrinsic::boolean:
+      assert(op->args.size() == 1);
+      result = eval(op->args[0]) != 0;
+      return;
 
     case intrinsic::and_then:
     case intrinsic::or_else: result = eval_short_circuit_op(op); return;

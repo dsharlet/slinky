@@ -371,6 +371,7 @@ TEST(simplify, bounds_of) {
       x < y && x != y,
       x < y || x == y,
       abs(x),
+      call::make(intrinsic::boolean, {x}),
   };
 
   for (const expr& e : exprs) {
