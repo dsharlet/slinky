@@ -58,6 +58,7 @@ public:
     }
 
     expr simplified = simplify(e);
+    ASSERT_FALSE(e.same_as(simplified)) << "Rule did not apply: " << rule_str << "\nTo: " << e << "\n";
 
     eval_context ctx;
     for (int test = 0; test < 100; ++test) {
@@ -67,7 +68,7 @@ public:
 
       index_t value = evaluate(e, ctx);
       index_t simplified_value = evaluate(simplified, ctx);
-      ASSERT_EQ(value, simplified_value) << rule_str << "\n" << e << " -> " << simplified << "\n";
+      ASSERT_EQ(value, simplified_value) << "Incorrect rule: " << rule_str << "\n" << e << " -> " << simplified << "\n";
     }
   }
 
