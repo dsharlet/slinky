@@ -26,19 +26,26 @@ bool contains_infinity(expr x) {
 
 class rule_tester {
 public:
+  static constexpr std::size_t var_count = 6;
+  static constexpr double constant_mean = 4.0;
+  static constexpr double constant_stddev = 10.0;
+
   gtest_seeded_mt19937 rng_;
-  std::normal_distribution<> constant_distribution_{4.0, 10.0};
+  std::normal_distribution<> constant_distribution_{constant_mean, constant_stddev};
 
   eval_context ctx;
 
   rewrite::match_context m;
-  std::array<expr, rewrite::symbol_count> vars;
+  std::vector<expr> exprs;
   std::array<index_t, rewrite::constant_count> constants;
 
   rule_tester() {
-    for (std::size_t i = 0; i < m.vars.size(); ++i) {
-      vars[i] = variable::make(var(i));
-      m.vars[i] = vars[i].get();
+    for (int i = 0; i < 1000; ++i) {
+      if (rng_() % 4 != 0) {
+        exprs.push_back(variable::make(var(rng_() % var_count)));
+      } else {
+        exprs.push_back(constant::make(random_constant()));
+      }
     }
     for (std::size_t i = 0; i < m.constants.size(); ++i) {
       m.constants[i] = &constants[i];
@@ -56,7 +63,7 @@ public:
     }
 
     for (int test = 0; test < 100; ++test) {
-      for (std::size_t i = 0; i < vars.size(); ++i) {
+      for (std::size_t i = 0; i < var_count; ++i) {
         ctx[var(i)] = random_constant();
       }
 
@@ -78,7 +85,9 @@ public:
       for (std::size_t i = 0; i < m.constants.size(); ++i) {
         constants[i] = random_constant();
       }
-
+      for (std::size_t i = 0; i < m.vars.size(); ++i) {
+        m.vars[i] = exprs[rng_() % exprs.size()].get();
+      }
       if (substitute(pr, m)) {
         expr e = substitute(p, m);
         expr simplified = simplify(e);
