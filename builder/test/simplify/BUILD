@@ -9,7 +9,7 @@ cc_test(
         "expr_generator.h",
         "rule_tester.h",
         "simplify.cc", 
-    ] + glob(["*_rules.cc"]),
+    ] + glob(["*rules.cc"]),
     deps = [
         "//base/test:util",
         "//builder",
