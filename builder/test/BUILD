@@ -169,30 +169,3 @@ cc_test(
     ],
     size = "small",
 )
-
-cc_test(
-    name = "simplify",
-    srcs = [
-        "simplify.cc", 
-        "simplify_rules.cc",
-    ],
-    deps = [
-        "//base/test:util",
-        "//builder",
-        "//builder:simplify_rules",
-        "//runtime",
-        "@googletest//:gtest_main",
-    ],
-    size = "small",
-)
-
-cc_test(
-    name = "substitute",
-    srcs = ["substitute.cc"],
-    deps = [
-        "//builder",
-        "//runtime",
-        "@googletest//:gtest_main",
-    ],
-    size = "small",
-)

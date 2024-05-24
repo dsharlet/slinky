@@ -6,6 +6,7 @@
 #include "base/test/seeded_test.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
+#include "builder/test/simplify/expr_generator.h"
 #include "runtime/buffer.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
@@ -451,87 +452,9 @@ TEST(simplify, where_true) {
   ASSERT_THAT(where_true(3 * (x + 2) < 5, x), matches(bounds(negative_infinity(), -1)));
 }
 
-class expr_generator {
-  gtest_seeded_mt19937 rng_;
-  // Generate normally distributed constants biased a bit towards positive numbers. We have more simplifications for
-  // positive constants.
-  std::normal_distribution<> constant_distribution_{4.0, 5.0};
-
-  static constexpr int max_abs_constant = 100;
-
-  std::vector<var> vars_;
-  symbol_map<interval_expr> var_bounds_;
-
-  template <typename T>
-  T random_pick(const std::vector<T>& from) {
-    return from[rng_() % from.size()];
-  }
-
-public:
-  expr_generator() {
-    vars_ = {x, y, z, w};
-
-    for (const var& v : vars_) {
-      var_bounds_[v] = {-max_abs_constant, max_abs_constant};
-    }
-  }
-
-  const symbol_map<interval_expr>& var_bounds() { return var_bounds_; }
-
-  void init_context(eval_context& ctx) {
-    for (const var& v : vars_) {
-      ctx[v] = random_constant();
-    }
-  }
-
-  index_t random_constant(int max = max_abs_constant) {
-    return std::clamp<index_t>(std::round(constant_distribution_(rng_)), -max_abs_constant, max_abs_constant);
-  }
-
-  expr make_random_condition(int depth) {
-    auto a = [&]() { return make_random_expr(depth - 1); };
-    auto b = [&]() { return make_random_expr(depth - 1); };
-    switch (rng_() % 7) {
-    case 0: return a() == b();
-    case 1: return a() < b();
-    case 2: return a() <= b();
-    case 3: return a() != b();
-    case 4: return make_random_condition(depth - 1) && make_random_condition(depth - 1);
-    case 5: return make_random_condition(depth - 1) || make_random_condition(depth - 1);
-    case 6: return !make_random_condition(depth - 1);
-    default: std::abort();
-    }
-  }
-
-  expr make_random_expr(int depth) {
-    if (depth <= 0) {
-      switch (rng_() % 4) {
-      default: return random_pick(vars_);
-      case 1: return constant::make(random_constant());
-      }
-    } else {
-      auto a = [&]() { return make_random_expr(depth - 1); };
-      auto b = [&]() { return make_random_expr(depth - 1); };
-      switch (rng_() % 11) {
-      case 0: return a() + b();
-      case 1: return a() - b();
-      case 2: return a() * b();
-      case 3: return a() / b();
-      case 4: return a() % b();
-      case 5: return min(a(), b());
-      case 6: return max(a(), b());
-      case 7: return select(make_random_condition(depth - 1), a(), b());
-      case 8: return random_constant();
-      case 9: return random_pick(vars_);
-      case 10: return make_random_condition(depth);
-      default: std::abort();
-      }
-    }
-  }
-};
-
 TEST(simplify, fuzz) {
-  expr_generator gen;
+  gtest_seeded_mt19937 rng;
+  expr_generator gen(rng, 4);
 
   constexpr int tests = 10000;
   constexpr int checks = 10;
@@ -539,7 +462,7 @@ TEST(simplify, fuzz) {
   eval_context ctx;
 
   for (int i = 0; i < tests; ++i) {
-    expr test = gen.make_random_expr(3);
+    expr test = gen.random_expr(3);
     expr simplified = simplify(test);
 
     // Also test bounds_of and constant_lower/upper_bound.
@@ -613,7 +536,8 @@ TEST(simplify, fuzz) {
 }
 
 TEST(simplify, fuzz_correlated_bounds) {
-  expr_generator gen;
+  gtest_seeded_mt19937 rng;
+  expr_generator gen(rng, 4);
 
   constexpr int tests = 1000;
   constexpr int checks = 10;
