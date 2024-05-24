@@ -90,7 +90,8 @@ enum class intrinsic {
   // Common arithmetic functions.
   abs,
 
-  // These are short circuiting logical operations, unlike the && and || operators which are commutative and do not short circuit.
+  // These are short circuiting logical operations, unlike the && and || operators which are commutative and do not
+  // short circuit.
   and_then,
   or_else,
 
@@ -537,18 +538,6 @@ inline bool is_true(const expr& x) {
   return cx ? cx->value != 0 : false;
 }
 SLINKY_ALWAYS_INLINE inline bool is_false(const expr& x) { return is_zero(x); }
-SLINKY_ALWAYS_INLINE inline bool is_logical(const expr& x) {
-  switch (x.type()) {
-  case expr_node_type::less: return true;
-  case expr_node_type::less_equal: return true;
-  case expr_node_type::equal: return true;
-  case expr_node_type::not_equal: return true;
-  case expr_node_type::logical_and: return true;
-  case expr_node_type::logical_or: return true;
-  case expr_node_type::logical_not: return true;
-  default: return false;
-  }
-}
 
 // Check if `x` is a call to the intrinsic `fn`.
 inline const call* is_intrinsic(const expr& x, intrinsic fn) {
@@ -568,6 +557,22 @@ inline int is_infinity(const expr& x) {
   return 0;
 }
 bool is_finite(const expr& x);
+
+expr boolean(const expr& x);
+bool is_boolean(const expr& x);
+
+inline constexpr bool is_boolean_node(expr_node_type t) {
+  switch (t) {
+  case expr_node_type::less: return true;
+  case expr_node_type::less_equal: return true;
+  case expr_node_type::equal: return true;
+  case expr_node_type::not_equal: return true;
+  case expr_node_type::logical_and: return true;
+  case expr_node_type::logical_or: return true;
+  case expr_node_type::logical_not: return true;
+  default: return false;
+  }
+}
 
 // Get an expression representing non-numerical constants.
 const expr& positive_infinity();

@@ -22,6 +22,17 @@ namespace slinky {
 
 namespace {
 
+expr strip_boolean(expr x) {
+  if (const not_equal* ne = x.as<not_equal>()) {
+    if (is_zero(ne->b)) {
+      return strip_boolean(ne->a);
+    } else if (is_zero(ne->a)) {
+      return strip_boolean(ne->b);
+    }
+  }
+  return x;
+}
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   symbol_map<box_expr> buffer_bounds;
@@ -112,7 +123,7 @@ public:
 
   std::optional<bool> attempt_to_prove(const expr& e) {
     interval_expr bounds;
-    mutate(e, &bounds);
+    mutate(boolean(e), &bounds);
     if (prove_constant_true(bounds.min)) {
       return true;
     } else if (prove_constant_false(bounds.max)) {
@@ -144,7 +155,6 @@ public:
   }
 
   void visit(const constant* op) override { set_result(op, {op, op}); }
-
 
   void visit(const class min* op) override {
     interval_expr a_bounds;
@@ -215,11 +225,15 @@ public:
   void visit(const mod* op) override { visit_binary(op); }
 
   template <typename T>
-  void visit_logical(const T* op) {
+  void visit_logical(const T* op, bool coerce_boolean = false) {
     interval_expr a_bounds;
-    expr a = mutate(op->a, &a_bounds);
+    expr a = mutate(coerce_boolean ? boolean(op->a) : op->a, &a_bounds);
     interval_expr b_bounds;
-    expr b = mutate(op->b, &b_bounds);
+    expr b = mutate(coerce_boolean ? boolean(op->b) : op->b, &b_bounds);
+    if (coerce_boolean) {
+      a = strip_boolean(a);
+      b = strip_boolean(b);
+    }
 
     expr result = simplify(op, std::move(a), std::move(b));
     if (!result.same_as(op)) {
@@ -239,12 +253,12 @@ public:
   void visit(const less_equal* op) override { visit_logical(op); }
   void visit(const equal* op) override { visit_logical(op); }
   void visit(const not_equal* op) override { visit_logical(op); }
-  void visit(const logical_and* op) override { visit_logical(op); }
-  void visit(const logical_or* op) override { visit_logical(op); }
+  void visit(const logical_and* op) override { visit_logical(op, /*coerce_boolean=*/true); }
+  void visit(const logical_or* op) override { visit_logical(op, /*coerce_boolean=*/true); }
 
   void visit(const logical_not* op) override {
     interval_expr bounds;
-    expr a = mutate(op->a, &bounds);
+    expr a = strip_boolean(mutate(boolean(op->a), &bounds));
 
     if (prove_constant_true(bounds.min)) {
       set_result(false, {0, 0});
@@ -262,7 +276,8 @@ public:
 
   void visit(const class select* op) override {
     interval_expr c_bounds;
-    expr c = mutate(op->condition, &c_bounds);
+    // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
+    expr c = strip_boolean(mutate(boolean(op->condition), &c_bounds));
     if (prove_constant_true(c_bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
@@ -274,7 +289,7 @@ public:
     expr t = op->true_value;
     expr f = op->false_value;
 
-    if (is_logical(c) || (is_zero(c_bounds.min) && is_one(c_bounds.max))) {
+    if (is_boolean(c) && !as_constant(c)) {
       t = substitute(t, c, true);
       f = substitute(f, c, false);
     } else {
@@ -1247,8 +1262,9 @@ public:
     // We can recursively mutate if:
     // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
     // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-    expr a = recurse ? mutate(op->a) : op->a;
-    expr b = recurse ? mutate(op->b) : op->b;
+    // Whenever we mutate an expression implicitly converted to bool, we need to force it to have the value 0 or 1.
+    expr a = recurse ? mutate(boolean(op->a)) : op->a;
+    expr b = recurse ? mutate(boolean(op->b)) : op->b;
 
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
@@ -1266,7 +1282,8 @@ public:
 
   void visit(const logical_not* op) override {
     sign = -sign;
-    expr a = mutate(op->a);
+    // Whenever we mutate an expression implicitly converted to bool, we need to force it to have the value 0 or 1.
+    expr a = mutate(boolean(op->a));
     sign = -sign;
     const index_t* ca = as_constant(a);
     if (ca) {

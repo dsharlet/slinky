@@ -4,28 +4,12 @@
 #include <cassert>
 
 #include "builder/rewrite.h"
+#include "builder/simplify_rules.h"
 #include "runtime/evaluate.h"
 
 namespace slinky {
 
 using namespace rewrite;
-
-namespace {
-
-pattern_wildcard<0> x;
-pattern_wildcard<1> y;
-pattern_wildcard<2> z;
-pattern_wildcard<3> w;
-pattern_wildcard<4> u;
-pattern_wildcard<5> v;
-
-pattern_constant<0> c0;
-pattern_constant<1> c1;
-pattern_constant<2> c2;
-pattern_constant<3> c3;
-pattern_constant<4> c4;
-
-}  // namespace
 
 expr simplify(const class min* op, expr a, expr b) {
   if (should_commute(a, b)) {
@@ -42,112 +26,9 @@ expr simplify(const class min* op, expr a, expr b) {
   if (is_indeterminate(b)) return b;
 
   auto r = make_rewriter(min(pattern_expr{a}, pattern_expr{b}));
-  // clang-format off
-  if (// One side is the min.
-      r.rewrite(min(x, std::numeric_limits<index_t>::max()), x) ||
-      r.rewrite(min(x, rewrite::positive_infinity()), x) ||
-      r.rewrite(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
-      r.rewrite(min(x, rewrite::negative_infinity()), rewrite::negative_infinity()) ||
-      r.rewrite(min(x, x + c0), x, eval(c0 > 0)) ||
-      r.rewrite(min(x, x + c0), x + c0, eval(c0 < 0)) ||
-      r.rewrite(min(x, x), x) ||
-
-      // Canonicalize trees and find duplicate terms.
-      r.rewrite(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
-      r.rewrite(min(min(x, y), min(z, w)), min(x, min(y, min(z, w)))) ||
-      r.rewrite(min(x, min(x, y)), min(x, y)) ||
-      r.rewrite(min(x, min(y, min(x, z))), min(x, min(y, z))) ||
-      r.rewrite(min(x, min(y, min(z, min(x, w)))), min(x, min(y, min(z, w)))) ||
-
-      // Similar rules but with mixes of min and max.
-      r.rewrite(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
-      r.rewrite(min(min(x, y), max(x, z)), min(x, y)) ||
-      r.rewrite(min(x, min(y, max(x, z))), min(x, y)) ||
-      r.rewrite(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
-      r.rewrite(min(x, max(x, y)), x) ||
-
-      // Pull common terms out.
-      r.rewrite(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
-      r.rewrite(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
-      r.rewrite(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
-      r.rewrite(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      r.rewrite(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
-      r.rewrite(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
-      r.rewrite(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
-      r.rewrite(min(x + z, y + z), z + min(x, y)) ||
-      r.rewrite(min(x - z, y - z), min(x, y) - z) ||
-      r.rewrite(min(z - x, z - y), z - max(x, y)) ||
-      r.rewrite(min(x + z, z - y), z + min(x, -y)) ||
-      r.rewrite(min(x, x + z), x + min(z, 0)) ||
-      r.rewrite(min(x, x - z), x - max(z, 0)) ||
-      r.rewrite(min(x, -x), -abs(x)) ||
-
-      // Selects
-      r.rewrite(min(x, select(y, min(x, z), w)), min(x, select(y, z, w))) ||
-      r.rewrite(min(x, select(y, z, min(x, w))), min(x, select(y, z, w))) ||
-      r.rewrite(min(x, select(y, max(x, z), w)), select(y, x, min(x, w))) ||
-      r.rewrite(min(x, select(y, z, max(x, w))), select(y, min(x, z), x)) ||
-      r.rewrite(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
-      r.rewrite(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
-      r.rewrite(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
-      r.rewrite(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
-
-      // Move constants out.
-      r.rewrite(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
-      r.rewrite(min(x + c0, (y + c1) / c2), min(x, (y + eval(c1 - c0 * c2)) / c2) + c0) ||
-      r.rewrite(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
-      r.rewrite(min(x + c0, c1 - y), c1 - max(y, eval(c1 - c0) - x)) ||
-      r.rewrite(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
-      r.rewrite(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
-      r.rewrite(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
-    
-      // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
-      r.rewrite(min(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-
-      r.rewrite(min(x * c0, y * c1), min(x, y * eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(x * c0, y * c1), max(x, y * eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(x * c0, y * c1), min(y, x * eval(c0 / c1)) * c1, eval(c1 > 0 && c0 % c1 == 0)) ||
-      r.rewrite(min(x * c0, y * c1), max(y, x * eval(c0 / c1)) * c1, eval(c1 < 0 && c0 % c1 == 0)) ||
-      r.rewrite(min(y * c0 + c1, x * c0), min(x, y + eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(min(y * c0 + c1, x * c0), max(x, y + eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-
-      r.rewrite(min(x / c0, y / c0), min(x, y) / c0, eval(c0 > 0)) ||
-      r.rewrite(min(x / c0, y / c0), max(x, y) / c0, eval(c0 < 0)) ||
-
-      r.rewrite(min(x / c0, c1), min(x, eval(c1 * c0)) / c0, eval(c0 > 0)) ||
-      r.rewrite(min(x / c0, c1), max(x, eval(c1 * c0)) / c0, eval(c0 < 0)) ||
-
-      r.rewrite(min(y / c0 + c1, x / c0), min(x, y + eval(c1 * c0)) / c0, eval(c0 > 0)) ||
-      r.rewrite(min(y / c0 + c1, x / c0), max(x, y + eval(c1 * c0)) / c0, eval(c0 < 0)) ||
-
-      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(((x + c2) / c3) * c4, x / c1), x/c1, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min(x / c1 + c0, (x / c3) * c4), (x / c3) * c4, eval(c0 > 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(min((x / c3) * c4, x / c1), (x / c3) * c4, eval(c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-
-      // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
-      // Compare x to a stair-step function in x
-      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0 && c0 + c2 <= 0)) ||
-      r.rewrite(min((x / c1) * c1 + c2, (x / c0) * c0), (x / c0) * c0, eval(c1 > 0 && c2 >= c1 && c0 != 0)) ||
-      // Special cases where c0 or c2 is zero
-      r.rewrite(min(x, (x / c1) * c1 + c2), x, eval(c1 > 0 && c2 >= c1 - 1)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(min(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0 && c2 <= 0)) ||
-      r.rewrite(min(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0 && c0 <= 0)) ||
-
-      r.rewrite(min(x, (x / c0) * c0), (x / c0) * c0, eval(c0 > 0)) ||
-
-      false) {
+  if (apply_min_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return min::make(std::move(a), std::move(b));
@@ -169,110 +50,9 @@ expr simplify(const class max* op, expr a, expr b) {
   if (is_indeterminate(b)) return b;
 
   auto r = make_rewriter(max(pattern_expr{a}, pattern_expr{b}));
-  // clang-format off
-  if (// One side is the max.
-      r.rewrite(max(x, std::numeric_limits<index_t>::min()), x) ||
-      r.rewrite(max(x, rewrite::negative_infinity()), x) ||
-      r.rewrite(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
-      r.rewrite(max(x, rewrite::positive_infinity()), rewrite::positive_infinity()) ||
-      r.rewrite(max(x, x + c0), x + c0, eval(c0 > 0)) ||
-      r.rewrite(max(x, x + c0), x, eval(c0 < 0)) ||
-      r.rewrite(max(x, x), x) ||
-    
-      // Canonicalize trees and find duplicate terms.
-      r.rewrite(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
-      r.rewrite(max(max(x, y), max(z, w)), max(x, max(y, max(z, w)))) ||
-      r.rewrite(max(x, max(x, y)), max(x, y)) ||
-      r.rewrite(max(x, max(y, max(x, z))), max(x, max(y, z))) ||
-      r.rewrite(max(x, max(y, max(z, max(x, w)))), max(x, max(y, max(z, w)))) ||
-    
-      // Similar rules but with mixes of min and max.
-      r.rewrite(max(min(x, y), max(x, z)), max(x, z)) ||
-      r.rewrite(max(x, max(y, min(x, z))), max(x, y)) ||
-      r.rewrite(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
-      r.rewrite(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
-      r.rewrite(max(x, min(x, y)), x) ||
-
-      // Pull common terms out.
-      r.rewrite(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
-      r.rewrite(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
-      r.rewrite(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
-      r.rewrite(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
-      r.rewrite(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
-      r.rewrite(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
-      r.rewrite(max(x + z, y + z), z + max(x, y)) ||
-      r.rewrite(max(x - z, y - z), max(x, y) - z) ||
-      r.rewrite(max(z - x, z - y), z - min(x, y)) ||
-      r.rewrite(max(x, x + z), x + max(z, 0)) ||
-      r.rewrite(max(x, x - z), x - min(z, 0)) ||
-      r.rewrite(max(x, -x), abs(x)) ||
-
-      // Selects
-      r.rewrite(max(x, select(y, max(x, z), w)), max(x, select(y, z, w))) ||
-      r.rewrite(max(x, select(y, z, max(x, w))), max(x, select(y, z, w))) ||
-      r.rewrite(max(x, select(y, min(x, z), w)), select(y, x, max(x, w))) ||
-      r.rewrite(max(x, select(y, z, min(x, w))), select(y, max(x, z), x)) ||
-      r.rewrite(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
-      r.rewrite(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
-      r.rewrite(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
-      r.rewrite(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
-
-      // Move constants out.
-      r.rewrite(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
-      r.rewrite(max(x + c0, (y + c1) / c2), max(x, (y + eval(c1 - c0 * c2)) / c2) + c0) ||
-      r.rewrite(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
-      r.rewrite(max(x + c0, c1 - y), c1 - min(y, eval(c1 - c0) - x)) ||
-      r.rewrite(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
-      r.rewrite(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
-      r.rewrite(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
-
-      // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
-      r.rewrite(max(x * c0, c1), max(x, eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(x * c0, c1), min(x, eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-
-      r.rewrite(max(x * c0, y * c1), max(x, y * eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(x * c0, y * c1), min(x, y * eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(x * c0, y * c1), max(y, x * eval(c0 / c1)) * c1, eval(c1 > 0 && c0 % c1 == 0)) ||
-      r.rewrite(max(x * c0, y * c1), min(y, x * eval(c0 / c1)) * c1, eval(c1 < 0 && c0 % c1 == 0)) ||
-      r.rewrite(max(y * c0 + c1, x * c0), max(x, y + eval(c1 / c0)) * c0, eval(c0 > 0 && c1 % c0 == 0)) ||
-      r.rewrite(max(y * c0 + c1, x * c0), min(x, y + eval(c1 / c0)) * c0, eval(c0 < 0 && c1 % c0 == 0)) ||
-
-      r.rewrite(max(x / c0, y / c0), max(x, y) / c0, eval(c0 > 0)) ||
-      r.rewrite(max(x / c0, y / c0), min(x, y) / c0, eval(c0 < 0)) ||
-
-      r.rewrite(max(x / c0, c1), max(x, eval(c1 * c0)) / c0, eval(c0 > 0)) ||
-      r.rewrite(max(x / c0, c1), min(x, eval(c1 * c0)) / c0, eval(c0 < 0)) ||
-
-      r.rewrite(max(y / c0 + c1, x / c0), max(x, y + eval(c1 * c0)) / c0, eval(c0 > 0)) ||
-      r.rewrite(max(y / c0 + c1, x / c0), min(x, y + eval(c1 * c0)) / c0, eval(c0 < 0)) ||
- 
-      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(((x + c2) / c3) * c4, (x + c0) / c1), ((x + c2) / c3) * c4, eval(c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(((x + c2) / c3) * c4, x / c1), x/c1, eval(c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(((x + c2) / c3) * c4, x / c1), ((x + c2) / c3) * c4, eval(c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x + c0) / c1, eval(0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max((x / c3) * c4, (x + c0) / c1), (x / c3) * c4, eval(c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max(x / c1 + c0, (x / c3) * c4), x / c1 + c0, eval(c0 > 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-      r.rewrite(max((x / c3) * c4, x / c1), x / c1, eval(c1 > 0 && c3 > 0 && c1 * c4 == c3)) ||
-    
-      // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
-      // Compare x to a stair-step function in x
-      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), ((x + c0) / c1) * c1 + c2, eval(c1 > 0 && c0 + c2 >= c1 - 1)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1 + c2), x, eval(c1 > 0 && c0 + c2 <= 0)) ||
-      r.rewrite(max((x / c1) * c1 + c2, (x / c0) * c0), (x / c1) * c1 + c2, eval(c2 >= c1 && c1 > 0 && c0 != 0)) ||
-      // Special cases where c0 or c2 is zero
-      r.rewrite(max(x, (x / c1) * c1 + c2), (x / c1) * c1 + c2, eval(c1 > 0 && c2 >= c1 - 1)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1), ((x + c0) / c1) * c1, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(max(x, (x / c1) * c1 + c2), x, eval(c1 > 0 && c2 <= 0)) ||
-      r.rewrite(max(x, ((x + c0) / c1) * c1), x, eval(c1 > 0 && c0 <= 0)) ||
-
-      r.rewrite(max(x, (x / c0) * c0), x, eval(c0 > 0)) ||
-
-      false) {
+  if (apply_max_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return max::make(std::move(a), std::move(b));
@@ -297,55 +77,9 @@ expr simplify(const add* op, expr a, expr b) {
   if (inf_a && inf_b) return inf_a == inf_b ? a : slinky::indeterminate();
 
   auto r = make_rewriter(pattern_expr{a} + pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      r.rewrite(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
-      r.rewrite(x + 0, x) ||
-      r.rewrite(x + x, x * 2) ||
-      r.rewrite(x + (x + y), y + x * 2) ||
-      r.rewrite(x + (x - y), x * 2 - y) ||
-      r.rewrite(x + (y - x), y) ||
-      r.rewrite(x + x * y, x * (y + 1), eval(!is_constant(x))) ||
-      r.rewrite(x * y + x * z, x * (y + z)) ||
-      r.rewrite((x + y) + (x + z), (y + z) + x * 2) ||
-      r.rewrite((x + z) + (x - y), (z - y) + x * 2) ||
-      r.rewrite((x + z) + (y - x), y + z) ||
-      r.rewrite((x + y) + (x - z), (y - z) + x * 2) ||
-      r.rewrite((x + y) + (z - x), y + z) ||
-      r.rewrite((x - y) + (x - z), x * 2 - (y + z)) ||
-      r.rewrite((y - x) + (x - z), y - z) ||
-      r.rewrite((x - y) + (z - x), z - y) ||
-      r.rewrite((y - x) + (z - x), (y + z) + x * -2) ||
-
-      r.rewrite((x + c0) + c1, x + eval(c0 + c1)) ||
-      r.rewrite((c0 - x) + c1, eval(c0 + c1) - x) ||
-      r.rewrite(x + (c0 - y), (x - y) + c0) ||
-      r.rewrite(x + (y + c0), (x + y) + c0) ||
-      r.rewrite((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
-    
-      r.rewrite(((x + c0) / c1) * c2 + c3, ((x + eval((c3 / c2) * c1 + c0)) / c1) * c2, eval(c3 % c2 == 0)) ||
-      r.rewrite((x + c0) * c2 + c3, (x + eval(c3 / c2 + c0)) * c2, eval(c3 % c2 == 0)) ||
-      r.rewrite((x + c0) / c1 + c3, (x + eval(c3 * c1 + c0)) / c1) ||
-
-      r.rewrite(z + min(x, y - (z - w)), min(x + z, y + w)) ||
-      r.rewrite(z + max(x, y - (z - w)), max(x + z, y + w)) ||
-      r.rewrite(z + min(x, y - z), min(y, x + z)) ||
-      r.rewrite(z + max(x, y - z), max(y, x + z)) ||
-
-      r.rewrite(select(x, c0, c1) + c2, select(x, eval(c0 + c2), eval(c1 + c2))) ||
-      r.rewrite(select(x, y + c0, c1) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2))) ||
-      r.rewrite(select(x, c0 - y, c1) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2))) ||
-      r.rewrite(select(x, c0, y + c1) + c2, select(x, eval(c0 + c2), y + eval(c1 + c2))) ||
-      r.rewrite(select(x, c0, c1 - y) + c2, select(x, eval(c0 + c2), eval(c1 + c2) - y)) ||
-      r.rewrite(select(x, y + c0, z + c1) + c2, select(x, y + eval(c0 + c2), z + eval(c1 + c2))) ||
-      r.rewrite(select(x, c0 - y, z + c1) + c2, select(x, eval(c0 + c2) - y, z + eval(c1 + c2))) ||
-      r.rewrite(select(x, y + c0, c1 - z) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2) - z)) ||
-      r.rewrite(select(x, c0 - y, c1 - z) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2) - z)) ||
-      false) {
+  if (apply_add_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return add::make(std::move(a), std::move(b));
@@ -369,64 +103,9 @@ expr simplify(const sub* op, expr a, expr b) {
   if (inf_a && inf_b) return inf_a == inf_b ? slinky::indeterminate() : a;
 
   auto r = make_rewriter(pattern_expr{a} - pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
-      r.rewrite(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      r.rewrite(x - x, 0) ||
-      r.rewrite(x - 0, x) ||
-      r.rewrite(x - y * c0, x + y * (-c0)) ||
-      r.rewrite(x - (c0 - y), (x + y) - c0) ||
-      r.rewrite(c0 - (x - y), (y - x) + c0) ||
-      r.rewrite(x - (y + c0), (x - y) - c0) ||
-      r.rewrite((c0 - x) - y, c0 - (x + y)) ||
-      r.rewrite((x + c0) - y, (x - y) + c0) ||
-      r.rewrite((x + y) - x, y) ||
-      r.rewrite((x - y) - x, -y) ||
-      r.rewrite(x - (x + y), -y) ||
-      r.rewrite(x - (x - y), y) ||
-      r.rewrite((x + y) - (x + z), y - z) ||
-      r.rewrite((x - y) - (z - y), x - z) ||
-      r.rewrite((x - y) - (x - z), z - y) ||
-      r.rewrite((c0 - x) - (y - z), ((z - x) - y) + c0) ||
-      r.rewrite((x + c0) - (y + c1), (x - y) + eval(c0 - c1)) ||
-    
-      // These rules taken from https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Sub.cpp#L411-L421
-      r.rewrite((x + y)/c0 - (x + c1)/c0, ((y - c1) + ((x + eval(c1 % c0)) % c0))/c0, eval(c0 > 0)) ||
-      r.rewrite((x + c1)/c0 - (x + y)/c0, ((eval(c0 + c1 - 1) - y) - ((x + eval(c1 % c0)) % c0))/c0, eval(c0 > 0)) ||
-      r.rewrite((x - y)/c0 - (x + c1)/c0, (((x + eval(c1 % c0)) % c0) - y - c1)/c0, eval(c0 > 0)) ||
-      r.rewrite((x + c1)/c0 - (x - y)/c0, ((y + eval(c0 + c1 - 1)) - ((x + eval(c1 % c0)) % c0))/c0, eval(c0 > 0)) ||
-      r.rewrite(x/c0 - (x + y)/c0, ((eval(c0 - 1) - y) - (x % c0))/c0, eval(c0 > 0)) ||
-      r.rewrite((x + y)/c0 - x/c0, (y + (x % c0))/c0, eval(c0 > 0)) ||
-      r.rewrite(x/c0 - (x - y)/c0, ((y + eval(c0 - 1)) - (x % c0))/c0, eval(c0 > 0)) ||
-      r.rewrite((x - y)/c0 - x/c0, ((x % c0) - y)/c0, eval(c0 > 0)) ||
-      r.rewrite((x + y) / c0 - x / c0, (y + (x % c0)) / c0, eval(eval(c0 > 0))) ||
-    
-      r.rewrite(x - (x / c0) * c0, x % c0, eval(c0 > 0)) ||
-      r.rewrite((x / c0) * c0 - x, -(x % c0), eval(c0 > 0)) ||
-
-      r.rewrite(min(x, y + z) - z, min(y, x - z)) ||
-      r.rewrite(max(x, y + z) - z, max(y, x - z)) ||
-
-      r.rewrite(c2 - select(x, c0, c1), select(x, eval(c2 - c0), eval(c2 - c1))) ||
-      r.rewrite(c2 - select(x, y + c0, c1), select(x, eval(c2 - c0) - y, eval(c2 - c1))) ||
-      r.rewrite(c2 - select(x, c0 - y, c1), select(x, y + eval(c2 - c0), eval(c2 - c1))) ||
-      r.rewrite(c2 - select(x, c0, y + c1), select(x, eval(c2 - c0), eval(c2 - c1) - y)) ||
-      r.rewrite(c2 - select(x, c0, c1 - y), select(x, eval(c2 - c0), y + eval(c2 - c1))) ||
-      r.rewrite(c2 - select(x, y + c0, z + c1), select(x, eval(c2 - c0) - y, eval(c2 - c1) - z)) ||
-      r.rewrite(c2 - select(x, c0 - y, z + c1), select(x, y + eval(c2 - c0), eval(c2 - c1) - z)) ||
-      r.rewrite(c2 - select(x, y + c0, c1 - z), select(x, eval(c2 - c0) - y, z + eval(c2 - c1))) ||
-      r.rewrite(c2 - select(x, c0 - y, c1 - z), select(x, y + eval(c2 - c0), z + eval(c2 - c1))) ||
-    
-      r.rewrite(max(x, y) / c0 - min(x, y) / c0, abs(x / c0 - y / c0), eval(c0 > 0)) ||
-      r.rewrite(min(x, y) / c0 - max(x, y) / c0, -abs(x / c0 - y / c0), eval(c0 > 0)) ||
-      r.rewrite(max(x, y) - min(x, y), abs(x - y)) ||
-      r.rewrite(min(x, y) - max(x, y), -abs(x - y)) ||
-      r.rewrite(select(x, y, z) - select(x, w, u), select(x, y - w, z - u)) ||
-      false) {
+  if (apply_sub_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return sub::make(std::move(a), std::move(b));
@@ -451,21 +130,9 @@ expr simplify(const mul* op, expr a, expr b) {
   if (inf_a && inf_b) return infinity(inf_a * inf_b);
 
   auto r = make_rewriter(pattern_expr{a} * pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(rewrite::positive_infinity() * c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
-      r.rewrite(rewrite::negative_infinity() * c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
-      r.rewrite(rewrite::positive_infinity() * c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
-      r.rewrite(rewrite::negative_infinity() * c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
-      r.rewrite(x * 0, 0) ||
-      r.rewrite(x * 1, x) ||
-      r.rewrite((x * c0) * c1, x * eval(c0 * c1)) ||
-      r.rewrite((x + c0) * c1, x * c1 + eval(c0 * c1)) ||
-      r.rewrite((c0 - x) * c1, x * eval(-c1) + eval(c0 * c1)) ||
-      false) {
+  if (apply_mul_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return mul::make(std::move(a), std::move(b));
@@ -484,32 +151,9 @@ expr simplify(const div* op, expr a, expr b) {
   if (is_infinity(a) && is_infinity(b)) return slinky::indeterminate();
 
   auto r = make_rewriter(pattern_expr{a} / pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x / rewrite::positive_infinity(), 0, is_finite(x)) ||
-      r.rewrite(x / rewrite::negative_infinity(), 0, is_finite(x)) ||
-      r.rewrite(rewrite::positive_infinity() / c0, rewrite::positive_infinity(), eval(c0 > 0)) ||
-      r.rewrite(rewrite::negative_infinity() / c0, rewrite::negative_infinity(), eval(c0 > 0)) ||
-      r.rewrite(rewrite::positive_infinity() / c0, rewrite::negative_infinity(), eval(c0 < 0)) ||
-      r.rewrite(rewrite::negative_infinity() / c0, rewrite::positive_infinity(), eval(c0 < 0)) ||
-      r.rewrite(x / 0, 0) ||
-      r.rewrite(0 / x, 0) ||
-      r.rewrite(x / 1, x) ||
-      r.rewrite(x / -1, -x) ||
-      r.rewrite(x / x, x != 0) ||
-
-      r.rewrite((y + x / c0) / c1, (x + y * c0) / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x / c0) / c1, x / eval(c0 * c1), eval(c0 > 0 && c1 > 0)) ||
-      r.rewrite((x * c0) / c1, x * eval(c0 / c1), eval(c1 > 0 && c0 % c1 == 0)) ||
-
-      r.rewrite((x + y * c0) / c1, y * eval(c0 / c1) + x / c1, eval(c0 % c1 == 0)) ||
-      r.rewrite((x + c0) / c1, x / c1 + eval(c0 / c1), eval(c0 % c1 == 0)) ||
-      r.rewrite((y * c0 - x) / c1, y * eval(c0 / c1) + (-x / c1), eval(c0 % c1 == 0 && c0 != 0)) ||
-      r.rewrite((c0 - x) / c1, (-x / c1) + eval(c0 / c1), eval(c0 % c1 == 0 && c0 != 0)) ||
-      false) {
+  if (apply_div_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return div::make(std::move(a), std::move(b));
@@ -524,17 +168,9 @@ expr simplify(const mod* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} % pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x % 1, 0) || 
-      r.rewrite(x % 0, 0) || 
-      r.rewrite(x % x, 0) ||
-
-      r.rewrite((x + c0) % c1, (x + eval(c0 % c1)) % c1, eval(c0 % c1 != c0)) ||
-      false) {
+  if (apply_mod_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return mod::make(std::move(a), std::move(b));
@@ -549,167 +185,9 @@ expr simplify(const less* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} < pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(rewrite::positive_infinity() < x, false, is_finite(x)) ||
-      r.rewrite(rewrite::negative_infinity() < x, true, is_finite(x)) ||
-      r.rewrite(x < rewrite::positive_infinity(), true, is_finite(x)) ||
-      r.rewrite(x < rewrite::negative_infinity(), false, is_finite(x)) ||
-      r.rewrite(x < x, false) ||
-      r.rewrite(x < y + 1, x <= y) ||
-      r.rewrite(x + -1 < y, x <= y) ||
-
-      // These rules taken from:
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L87-L169
-      // with adjustments for the simplifier implementation here.
- 
-      // Normalize subtractions to additions to cut down on cases to consider
-      r.rewrite(x - y < z, x < z + y) ||
-      r.rewrite(z < x - y, z + y < x) ||
-      r.rewrite(z + (x - y) < w, x + z < y + w) ||
-      r.rewrite(w < z + (x - y), w + y < x + z) ||
-      r.rewrite(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
-      r.rewrite(w < u + (z + (x - y)), w + y < x + (z + u)) ||
-
-      // Cancellations in linear expressions
-      r.rewrite(x < x + y, 0 < y) ||
-      r.rewrite(x + y < x, y < 0) ||
-      r.rewrite(x < z + (x + y), 0 < z + y) ||
-      r.rewrite(z + (x + y) < x, z + y < 0) ||
-      r.rewrite(x + y < x + z, y < z) ||
-      r.rewrite(w + (x + y) < x + z, y + w < z) ||
-      r.rewrite(x + z < w + (x + y), z < y + w) ||
-      r.rewrite(w + (x + y) < u + (x + z), y + w < z + u) ||
-
-      r.rewrite(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
-      r.rewrite(x + c0 < c1, x < eval(c1 - c0)) ||
-      r.rewrite(x + c0 < y, x < y + eval(-c0)) ||
-      r.rewrite(c0 < x + c1, eval(c0 - c1) < x) ||
-
-      r.rewrite(x + y < z + (x / c0) * c0, y + x % c0 < z, eval(c0 > 0)) ||
-      r.rewrite(x + y < (x / c0) * c0, y + x % c0 < 0, eval(c0 > 0)) ||
-      r.rewrite(x < z + (x / c0) * c0, x % c0 < z, eval(c0 > 0)) ||
-      r.rewrite(x < (x / c0) * c0, x % c0 < 0, eval(c0 > 0)) ||
-    
-      r.rewrite(y + (x / c0) * c0 < x + z, y < z + x % c0, eval(c0 > 0)) ||
-      r.rewrite((x / c0) * c0 < x + z, 0 < z + x % c0, eval(c0 > 0)) ||
-      r.rewrite(y + (x / c0) * c0 < x, y < x % c0, eval(c0 > 0)) ||
-      r.rewrite((x / c0) * c0 < x, 0 < x % c0, eval(c0 > 0)) ||
-
-      r.rewrite(x % c0 < c1, true, eval(c0 > 0 && c0 <= c1)) ||
-      r.rewrite(x % c0 < c1, false, eval(c0 > 0 && c1 <= 0)) ||
-      r.rewrite(x % c0 < c1, x % c0 != c1, eval(c0 > 0 && c1 >= c0 - 1)) ||
-      r.rewrite(c0 < x % c1, true, eval(c1 > 0 && c0 < 0)) ||
-      r.rewrite(c0 < x % c1, false, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      r.rewrite(c0 < x % c1, x % c1 != 0, eval(c1 > 0 && c0 <= 0)) ||
-    
-      // These rules taken from
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
-      // Cancel a division
-      r.rewrite((x + c1) / c0 < (x + c2) / c0, false, eval(c0 > 0 && c1 >= c2)) ||
-      r.rewrite((x + c1) / c0 < (x + c2) / c0, true, eval(c0 > 0 && c1 <= c2 - c0)) ||
-      // c1 == 0
-      r.rewrite(x / c0 < (x + c2) / c0, false, eval(c0 > 0 && 0 >= c2)) ||
-      r.rewrite(x / c0 < (x + c2) / c0, true, eval(c0 > 0 && 0 <= c2 - c0)) ||
-      // c2 == 0
-      r.rewrite((x + c1) / c0 < x / c0, false, eval(c0 > 0 && c1 >= 0)) ||
-      r.rewrite((x + c1) / c0 < x / c0, true, eval(c0 > 0 && c1 <= 0 - c0)) ||
-
-      // TODO: These aren't fully simplified, the above rules can be applied to the rewritten result.
-      // If we ever added a c2 < 0 version of the above, these would need to be duplicated as well.
-      r.rewrite((x + c0) / c1 < x / c1 + c2, (x + eval(c0 - c2 * c1)) / c1 < x / c1) ||
-      r.rewrite(x / c1 < x / c1 + c2, (x - eval(c2 * c1)) / c1 < x / c1) ||
-      r.rewrite(x / c1 + c2 < (x + c0) / c1, x / c1 < (x + eval(c0 - c2 * c1)) / c1) ||
-      r.rewrite(x / c1 + c2 < x / c1, x / c1 < (x - eval(c2 * c1)) / c1) ||
-
-      r.rewrite(x * c0 < y * c0, x < y, eval(c0 > 0)) ||
-      r.rewrite(x * c0 < y * c0, y < x, eval(c0 < 0)) ||
-        
-      // The following rules are taken from
-      // https://github.com/halide/Halide/blob/7636c44acc2954a7c20275618093973da6767359/src/Simplify_LT.cpp#L186-L263
-      // with adjustments for the simplifier implementation here.
-
-      // We want to break max(x, y) < z into x < z && y <
-      // z in cases where one of those two terms is going
-      // to eval.
-      r.rewrite(min(y, x + c0) < x + c1, y < x + c1 || eval(c0 < c1)) ||
-      r.rewrite(max(y, x + c0) < x + c1, y < x + c1 && eval(c0 < c1)) ||
-      r.rewrite(x < min(y, x + c0) + c1, x < y + c1 && eval(0 < c0 + c1)) ||
-      r.rewrite(x < max(y, x + c0) + c1, x < y + c1 || eval(0 < c0 + c1)) ||
-
-      // Special cases where c0 == 0
-      r.rewrite(min(x, y) < x + c1, y < x + c1 || eval(0 < c1)) ||
-      r.rewrite(max(x, y) < x + c1, y < x + c1 && eval(0 < c1)) ||
-      r.rewrite(x < min(x, y) + c1, x < y + c1 && eval(0 < c1)) ||
-      r.rewrite(x < max(x, y) + c1, x < y + c1 || eval(0 < c1)) ||
-
-      // Special cases where c1 == 0
-      r.rewrite(min(y, x + c0) < x, y < x || eval(c0 < 0)) ||
-      r.rewrite(max(y, x + c0) < x, y < x && eval(c0 < 0)) ||
-      r.rewrite(x < min(y, x + c0), x < y && eval(0 < c0)) ||
-      r.rewrite(x < max(y, x + c0), x < y || eval(0 < c0)) ||
-
-      // Special cases where c0 == c1 == 0
-      r.rewrite(min(x, y) < x, y < x) ||
-      r.rewrite(max(x, y) < x, false) ||
-      r.rewrite(x < max(x, y), x < y) ||
-      r.rewrite(x < min(x, y), false) ||
-
-      // Special case where x is constant
-      r.rewrite(min(y, c0) < c1, y < c1 || eval(c0 < c1)) ||
-      r.rewrite(max(y, c0) < c1, y < c1 && eval(c0 < c1)) ||
-      r.rewrite(c1 < min(y, c0), c1 < y && eval(c1 < c0)) ||
-      r.rewrite(c1 < max(y, c0), c1 < y || eval(c1 < c0)) ||
-
-      // Cases where we can remove a min on one side because
-      // one term dominates another. These rules were
-      // synthesized then extended by hand.
-      r.rewrite(min(z, y) < min(x, y), z < min(x, y)) ||
-      r.rewrite(min(z, y) < min(x, y + c0), min(z, y) < x, eval(c0 > 0)) ||
-      r.rewrite(min(z, y + c0) < min(x, y), min(z, y + c0) < x, eval(c0 < 0)) ||
-
-      // Equivalents with max
-      r.rewrite(max(z, y) < max(x, y), max(z, y) < x) ||
-      r.rewrite(max(z, y) < max(x, y + c0), max(z, y) < x, eval(c0 < 0)) ||
-      r.rewrite(max(z, y + c0) < max(x, y), max(z, y + c0) < x, eval(c0 > 0)) ||
-
-      r.rewrite(min(x, min(y, z)) < y, min(x, z) < y) ||
-      r.rewrite(min(x, y) < max(x, y), x != y) ||
-      r.rewrite(max(x, y) < min(x, y), false) ||
-
-      // Subtract terms from both sides within a min/max.
-      // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
-      r.rewrite(min(x, y) < x + z, min(y - x, 0) < z, !is_constant(x)) ||
-      r.rewrite(max(x, y) < x + z, max(y - x, 0) < z, !is_constant(x)) ||
-
-      r.rewrite(x + z < min(x, y), z < min(y - x, 0), !is_constant(x)) ||
-      r.rewrite(x + z < max(x, y), z < max(y - x, 0), !is_constant(x)) ||
-
-      r.rewrite(min(z, x + y) < x + w, min(y, z - x) < w, !is_constant(x)) ||
-      r.rewrite(min(z, x - y) < x + w, min(-y, z - x) < w, !is_constant(x)) ||
-      r.rewrite(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
-      r.rewrite(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
-
-      r.rewrite(x + y < max(w, x + z), y < max(z, w - x), !is_constant(x)) ||
-      r.rewrite(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
-      r.rewrite(x + y < min(w, x + z), y < min(z, w - x), !is_constant(x)) ||
-      r.rewrite(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
-
-      // Selects
-      r.rewrite(select(x, y, z) < y, select(x, false, z < y)) ||
-      r.rewrite(select(x, y, z) < z, select(x, y < z, false)) ||
-      r.rewrite(y < select(x, y, w), select(x, false, y < w)) ||
-      r.rewrite(w < select(x, y, w), select(x, w < y, false)) ||
-      r.rewrite(select(x, y, z) < select(x, w, u), select(x, y < w, z < u)) ||
-
-      // Nested logicals
-      r.rewrite(x < y, y && !x, is_logical(x) && is_logical(y)) ||
-      r.rewrite(x < 1, !x, is_logical(x)) ||
-      r.rewrite(0 < x, x, is_logical(x)) ||
-      false) {
+  if (apply_less_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return less::make(std::move(a), std::move(b));
@@ -741,46 +219,9 @@ expr simplify(const equal* op, expr a, expr b) {
   }
 
   auto r = make_rewriter(pattern_expr{a} == pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x == x, true) ||
-      r.rewrite(x * y == x * z, y == z || x == 0) ||
-      r.rewrite(x == x * y, y == 1 || x == 0) ||
-
-      // Normalize subtractions to additions to cut down on cases to consider
-      r.rewrite(z == x - y, x == y + z) ||
-      r.rewrite(w == z + (x - y), w + y == x + z) ||
-      r.rewrite(w == u + (z + (x - y)), w + y == x + (z + u)) ||
-
-      // Cancellations in linear expressions
-      r.rewrite(x == x + y, y == 0) ||
-      r.rewrite(x == z + (x + y), z + y == 0) ||
-      r.rewrite(x + y == x + z, y == z) ||
-      r.rewrite(w + (x + y) == x + z, z == y + w) ||
-      r.rewrite(x + z == w + (x + y), z == y + w) ||
-      r.rewrite(w + (x + y) == u + (x + z), y + w == z + u) ||
-
-      r.rewrite(x * c0 == y * c1, x == y * eval(c1 / c0), eval(c1 % c0 == 0)) ||
-      r.rewrite(x * c0 == y * c1, y == x * eval(c0 / c1), eval(c0 % c1 == 0)) ||
-      r.rewrite(x * c0 == c1, x == eval(c1 / c0), eval(c1 % c0 == 0)) ||
-      r.rewrite(x + c0 == y + c1, x == y + eval(c1 - c0)) ||
-      r.rewrite(x + c0 == c1, x == eval(c1 - c0)) ||
-      r.rewrite(x + c0 == c1 - y, x + y == eval(c1 - c0)) ||
-      r.rewrite(c0 - x == c1, x == eval(c0 - c1)) ||
-      r.rewrite(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
-      r.rewrite(x == 0, !x, is_logical(x)) ||
-      r.rewrite(x == 1, x, is_logical(x)) ||
-    
-      r.rewrite(x + y == z + (x / c0) * c0, z == y + x % c0, eval(c0 > 0)) ||
-      r.rewrite(x + y == (x / c0) * c0, y + x % c0 == 0, eval(c0 > 0)) ||
-      r.rewrite(x == z + (x / c0) * c0, z == x % c0, eval(c0 > 0)) ||
-      r.rewrite(x == (x / c0) * c0, x % c0 == 0, eval(c0 > 0)) ||
-    
-      r.rewrite(x % c0 == c1, false, eval(c0 > 0 && (c1 >= c0 || c1 < 0))) ||
-      false) {
+  if (apply_equal_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return equal::make(std::move(a), std::move(b));
@@ -810,67 +251,13 @@ expr simplify(const logical_and* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 && *cb != 0;
   } else if (cb) {
-    return *cb ? a : b;
+    return *cb ? boolean(a) : false;
   }
 
   auto r = make_rewriter(pattern_expr{a} && pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x && true, x) ||
-      r.rewrite(x && false, false) ||
-      r.rewrite(x && x, x) ||
-
-      // Canonicalize trees and find redundant terms.
-      r.rewrite((x && y) && (z && w), x && (y && (z && w))) ||
-      r.rewrite(x && (x && y), x && y) ||
-      r.rewrite(x && (y && (x && z)), x && (y && z)) ||
-      r.rewrite(x && (y && (z && (x && w))), x && (y && (z && w))) ||
-    
-      r.rewrite(x && (x || y), x) ||
-      r.rewrite(x && (y || (x && z)), x && (y || z)) ||
-      r.rewrite(x && (y && (x || z)), x && y) ||
-      r.rewrite((x || y) && (x || z), x || (y && z)) ||
-
-      r.rewrite(x && !x, false) ||
-      r.rewrite(x == y && x != y, false) ||
-      r.rewrite(x == y && (z && x != y), false) ||
-      r.rewrite(x != y && (z && x == y), false) ||
-      r.rewrite(x == c1 && x != c0, x == c1, eval(c0 != c1)) ||
-      r.rewrite(x == c0 && x == c1, false, eval(c0 != c1)) ||
-    
-      // These rules taken from:
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_And.cpp#L67-L76
-      r.rewrite(c0 < x && x < c1, false, eval(c1 <= c0 + 1)) ||
-      r.rewrite(x < c1 && c0 < x, false, eval(c1 <= c0 + 1)) ||
-      r.rewrite(c0 < x && x <= c1, false, eval(c1 <= c0)) ||
-      r.rewrite(x < c1 && c0 <= x, false, eval(c1 <= c0)) ||
-      r.rewrite(c0 <= x && x <= c1, false, eval(c1 < c0)) ||
-      r.rewrite(x <= c1 && c0 <= x, false, eval(c1 < c0)) ||
-      r.rewrite(c0 < x && c1 < x, eval(max(c0, c1)) < x) ||
-      r.rewrite(c0 <= x && c1 <= x, eval(max(c0, c1)) <= x) ||
-      r.rewrite(x < c0 && x < c1, x < eval(min(c0, c1))) ||
-      r.rewrite(x <= c0 && x <= c1, x <= eval(min(c0, c1))) ||
-
-      // The way we implement <= and < means that constants will be on the LHS for <=, and on the RHS for <
-      r.rewrite(x + c0 <= y && y + c1 <= x, false, eval(-c1 < c0)) ||
-      r.rewrite(x + c0 <= y && y <= x, false, eval(0 < c0)) ||
-      r.rewrite(x <= y && y + c1 <= x, false, eval(0 < c1)) ||
-      r.rewrite(x <= y && y <= x, x == y) ||
-
-      r.rewrite(x < y + c0 && y + c1 <= x, false, eval(c0 < c1 + 1)) ||
-      r.rewrite(x < y + c0 && y <= x, false, eval(c0 < 1)) ||
-      r.rewrite(x < y && y + c1 <= x, false, eval(-c1 < 1)) ||
-      r.rewrite(x < y && y <= x, false) ||
-
-      r.rewrite(x < y + c0 && y < x + c1, false, eval(c1 + c0 < 2)) ||
-      r.rewrite(x < y + c0 && y < x, false, eval(c0 < 2)) ||
-      r.rewrite(x < y && y < x + c1, false, eval(c1 < 2)) ||
-      r.rewrite(x < y && y < x, false) ||
-
-      false) {
+  if (apply_logical_and_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return logical_and::make(std::move(a), std::move(b));
@@ -887,65 +274,13 @@ expr simplify(const logical_or* op, expr a, expr b) {
   if (ca && cb) {
     return *ca != 0 || *cb != 0;
   } else if (cb) {
-    return *cb ? b : a;
+    return *cb ? true : boolean(a);
   }
 
   auto r = make_rewriter(pattern_expr{a} || pattern_expr{b});
-  // clang-format off
-  if (r.rewrite(x || true, true) ||
-      r.rewrite(x || false, x) ||
-      r.rewrite(x || x, x) ||
-    
-      // Canonicalize trees and find redundant terms.
-      r.rewrite((x || y) || (z || w), x || (y || (z || w))) ||
-      r.rewrite(x || (x || y), x || y) ||
-      r.rewrite(x || (y || (x || z)), x || (y || z)) ||
-      r.rewrite(x || (y || (z || (x || w))), x || (y || (z || w))) ||
-
-      r.rewrite(x || (x && y), x) ||
-      r.rewrite(x || (y && (x || z)), x || (y && z)) || 
-      r.rewrite(x || (y || (x && z)), x || y) ||
-      r.rewrite((x && y) || (x && z), x && (y || z)) || 
-    
-      // These rules taken from:
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_Or.cpp#L59-L68
-      r.rewrite(x || !x, true) ||
-      r.rewrite(x == y || x != y, true) ||
-      r.rewrite(x == y || (z || x != y), true) ||
-      r.rewrite(x != y || (z || x == y), true) ||
-      r.rewrite(x == c1 || x != c0, x != c0, eval(c0 != c1)) ||
-      r.rewrite(x <= c0 || c1 <= x, true, eval(c1 <= c0 + 1)) ||
-      r.rewrite(c1 <= x || x <= c0, true, eval(c1 <= c0 + 1)) ||
-      r.rewrite(c1 < x || x <= c0, true, eval(c1 <= c0)) ||
-      r.rewrite(x < c0 || c1 <= x, true, eval(c1 <= c0)) ||
-      r.rewrite(x < c0 || c1 < x, true, eval(c1 < c0)) ||
-      r.rewrite(c1 < x || x < c0, true, eval(c1 < c0)) ||
-      r.rewrite(c0 < x || c1 < x, eval(min(c0, c1)) < x) ||
-      r.rewrite(c0 <= x || c1 <= x, eval(min(c0, c1)) <= x) ||
-      r.rewrite(x < c0 || x < c1, x < eval(max(c0, c1))) ||
-      r.rewrite(x <= c0 || x <= c1, x <= eval(max(c0, c1))) ||
-
-      // The way we implement <= and < means that constants will be on the LHS for <=, and on the RHS for <
-      r.rewrite(x + c0 <= y || y + c1 <= x, true, eval(c0 + c1 < 1)) ||
-      r.rewrite(x + c0 <= y || y <= x, true, eval(c0 < 1)) ||
-      r.rewrite(x <= y || y + c1 <= x, true, eval(c1 < 1)) ||
-      r.rewrite(x <= y || y <= x, true) ||
-
-      r.rewrite(x < y + c0 || y + c1 <= x, true, eval(c1 < c0)) ||
-      r.rewrite(x < y + c0 || y <= x, true, eval(0 < c0)) ||
-      r.rewrite(x < y || y + c1 <= x, true, eval(c1 < 0)) ||
-      r.rewrite(x < y || y <= x, true) ||
-
-      r.rewrite(x < y + c0 || y < x + c1, true, eval(1 < c1 + c0)) ||
-      r.rewrite(x < y + c0 || y < x, true, eval(1 < c0)) ||
-      r.rewrite(x < y || y < x + c1, true, eval(1 < c1)) ||
-      r.rewrite(x < y || y < x, x != y) ||
-
-      false) {
+  if (apply_logical_or_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+  } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
     return op;
   } else {
     return logical_or::make(std::move(a), std::move(b));
@@ -959,20 +294,9 @@ expr simplify(const class logical_not* op, expr a) {
   }
 
   auto r = make_rewriter(!pattern_expr{a});
-  // clang-format off
-  if (r.rewrite(!!x, x) ||
-      r.rewrite(!(x == y), x != y) ||
-      r.rewrite(!(x != y), x == y) ||
-      r.rewrite(!(x < y), y <= x) ||
-      r.rewrite(!(x <= y), y < x) ||
-
-      r.rewrite(!(x && !y), y || !x) ||
-      r.rewrite(!(x || !y), y && !x) ||
-      false) {
+  if (apply_logical_not_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && a.same_as(op->a)) {
+  } else if (op && a.same_as(op->a)) {
     return op;
   } else {
     return logical_not::make(std::move(a));
@@ -990,30 +314,9 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   }
 
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
-  // clang-format off
-  if (r.rewrite(select(x, y, y), y) ||
-      r.rewrite(select(!x, y, z), select(x, z, y)) ||
-
-      // Pull common expressions out
-      r.rewrite(select(x, y, y + z), y + select(x, 0, z)) ||
-      r.rewrite(select(x, y + z, y), y + select(x, z, 0)) ||
-      r.rewrite(select(x, y + z, y + w), y + select(x, z, w)) ||
-      r.rewrite(select(x, z - y, w - y), select(x, z, w) - y) ||
-      
-      r.rewrite(select(x, select(y, z, w), select(y, u, w)), select(y, select(x, z, u), w)) ||
-      r.rewrite(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
-      r.rewrite(select(x, false, true), x == 0) ||
-      r.rewrite(select(x, true, false), x != 0) ||
-      r.rewrite(select(x, y, true), y || !x, is_logical(y)) ||
-      r.rewrite(select(x, y, false), x && y, is_logical(y)) ||
-      r.rewrite(select(x, true, y), x || y, is_logical(y)) ||
-      r.rewrite(select(x, false, y), y && !x, is_logical(y)) ||
-
-    false) {
+  if (apply_select_rules(r)) {
     return r.result;
-  }
-  // clang-format on
-  if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+  } else if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
     return op;
   } else {
     return select::make(std::move(c), std::move(t), std::move(f));
@@ -1104,15 +407,11 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 
   rewriter r(e);
-  // clang-format off
-  if (r.rewrite(abs(x * c0), abs(x) * c0, c0 > 0) ||
-      r.rewrite(abs(x * c0), abs(x) * eval(-c0), c0 < 0) ||
-      r.rewrite(abs(c0 - x), abs(x + eval(-c0))) ||
-      false) {
+  if (apply_call_rules(r)) {
     return r.result;
+  } else {
+    return e;
   }
-  // clang-format on
-  return e;
 }
 
 }  // namespace slinky
