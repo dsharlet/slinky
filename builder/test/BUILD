@@ -169,3 +169,14 @@ cc_test(
     ],
     size = "small",
 )
+
+cc_test(
+    name = "substitute",
+    srcs = ["substitute.cc"],
+    deps = [
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
