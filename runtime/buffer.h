@@ -242,16 +242,19 @@ public:
     for (std::size_t i = slice_leading; i < ds.size(); ++i) {
       std::size_t d = ds[i];
       std::size_t next_d = i + 1 < ds.size() ? ds[i + 1] : rank;
+      assert(d < rank);
+      assert(next_d <= rank);
 
       // Move the dimensions between this slice and the next slice down by the number of slices we've done so far.
+      // d and next_d are indices in the original dimensions.
       for (std::size_t j = d; j + 1 < next_d; ++j) {
-        dims[j] = dims[j + i + 1];
+        dims[j - (i - slice_leading)] = dims[j + 1];
       }
-      --rank;
     }
 
     dims += slice_leading;
-    rank -= slice_leading;
+    rank -= ds.size();
+
     return *this;
   }
   raw_buffer& slice(std::initializer_list<std::size_t> ds) { return slice({&*ds.begin(), ds.size()}); }

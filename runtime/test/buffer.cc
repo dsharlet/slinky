@@ -275,6 +275,39 @@ TEST(buffer, slice_leading_and_trailing) {
   ASSERT_EQ(sliced.dim(0), buf.dim(1));
 }
 
+TEST(buffer, slice_0_2) {
+  buffer<int, 5> buf({1, 2, 3, 4, 5});
+  buffer<int, 5> sliced = buf;
+
+  sliced.slice({0, 2});
+  ASSERT_EQ(sliced.rank, 3);
+  ASSERT_EQ(sliced.dim(0), buf.dim(1));
+  ASSERT_EQ(sliced.dim(1), buf.dim(3));
+  ASSERT_EQ(sliced.dim(2), buf.dim(4));
+}
+
+TEST(buffer, slice_0_2_4) {
+  buffer<int, 6> buf({1, 2, 3, 4, 5, 6});
+  buffer<int, 6> sliced = buf;
+
+  sliced.slice({0, 2, 4});
+  ASSERT_EQ(sliced.rank, 3);
+  ASSERT_EQ(sliced.dim(0), buf.dim(1));
+  ASSERT_EQ(sliced.dim(1), buf.dim(3));
+  ASSERT_EQ(sliced.dim(2), buf.dim(5));
+}
+
+TEST(buffer, slice_1_3_5) {
+  buffer<int, 6> buf({1, 2, 3, 4, 5, 6});
+  buffer<int, 6> sliced = buf;
+
+  sliced.slice({1, 3, 5});
+  ASSERT_EQ(sliced.rank, 3);
+  ASSERT_EQ(sliced.dim(0), buf.dim(0));
+  ASSERT_EQ(sliced.dim(1), buf.dim(2));
+  ASSERT_EQ(sliced.dim(2), buf.dim(4));
+}
+
 TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
