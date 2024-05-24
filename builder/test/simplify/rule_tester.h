@@ -33,36 +33,6 @@ class rule_tester {
   gtest_seeded_mt19937 rng_;
   expr_generator<gtest_seeded_mt19937> expr_gen_;
 
-public:
-  rule_tester() : expr_gen_(rng_, var_count) {}
-
-  SLINKY_NO_INLINE bool test_expr(expr e, expr simplified) {
-    if (contains_infinity(e)) {
-      // TODO: Maybe there's a way to test this...
-      return true;
-    }
-
-    eval_context ctx;
-    for (int test = 0; test < 100; ++test) {
-      for (std::size_t i = 0; i < var_count; ++i) {
-        ctx[var(i)] = expr_gen_.random_constant();
-      }
-
-      index_t value = evaluate(e, ctx);
-      index_t simplified_value = evaluate(simplified, ctx);
-      if (value != simplified_value) {
-        std::cout << value << " != " << simplified_value << std::endl;
-        return false;
-      }
-    }
-    return true;
-  }
-
-  template <typename Pattern, typename Replacement>
-  bool operator()(const Pattern& p, const Replacement& r) {
-    return operator()(p, r, 1);
-  }
-
   std::array<expr, rewrite::symbol_count> exprs;
   std::array<index_t, rewrite::constant_count> constants;
   rewrite::match_context m;
@@ -78,18 +48,59 @@ public:
     }
   }
 
+public:
+  rule_tester() : expr_gen_(rng_, var_count) { init_match_context(); }
+
+  SLINKY_NO_INLINE void test_expr(expr e, const std::string& rule_str) {
+    if (contains_infinity(e)) {
+      // TODO: Maybe there's a way to test this...
+      return;
+    }
+
+    expr simplified = simplify(e);
+
+    eval_context ctx;
+    for (int test = 0; test < 100; ++test) {
+      for (std::size_t i = 0; i < var_count; ++i) {
+        ctx[var(i)] = expr_gen_.random_constant();
+      }
+
+      index_t value = evaluate(e, ctx);
+      index_t simplified_value = evaluate(simplified, ctx);
+      ASSERT_EQ(value, simplified_value) << rule_str << "\n" << e << " -> " << simplified << "\n";
+    }
+  }
+
+  template <typename Pattern, typename Replacement>
+  bool operator()(const Pattern& p, const Replacement& r) {
+    // This function needs to be kept small and simple, because it is instantiated by hundreds of different rules.
+    std::stringstream rule_str;
+    rule_str << p << " -> " << r;
+
+    expr e = substitute(p, m);
+
+    // Make sure the expressions have the same value when evaluated.
+    test_expr(e, rule_str.str());
+
+    // Returning false means the rule applicator will continue to the next rule.
+    return false;
+  }
+
   template <typename Pattern, typename Replacement, typename Predicate>
   bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
+    // This function needs to be kept small and simple, because it is instantiated by hundreds of different rules.
+    std::stringstream rule_str;
+    rule_str << p << " -> " << r << " if " << pr;
+
     // Some rules are very picky about a large number of constants, which makes it very unlikely to generate an
     // expression that the rule applies to.
     for (int test = 0; test < 100000; ++test) {
       init_match_context();
       if (substitute(pr, m)) {
         expr e = substitute(p, m);
-        expr simplified = simplify(e);
 
-        // Make sure the expressions have the same value.
-        EXPECT_TRUE(test_expr(e, simplified)) << p << " -> " << r << " if " << pr << "\n" << e << " -> " << simplified;
+        // Make sure the expressions have the same value when evaluated.
+        test_expr(e, rule_str.str());
 
         // Returning false means the rule applicator will continue to the next rule.
         return false;
@@ -97,7 +108,7 @@ public:
     }
     const bool rule_applied = false;
     // We failed to apply the rule to an expression.
-    EXPECT_TRUE(rule_applied) << p << " if " << pr;
+    EXPECT_TRUE(rule_applied) << rule_str.str();
     // Returning true stops any more tests.
     return true;
   }
