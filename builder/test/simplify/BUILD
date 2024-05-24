@@ -13,7 +13,6 @@ cc_test(
     deps = [
         "//base/test:util",
         "//builder",
-        "//builder:simplify_rules",
         "//runtime",
         "@googletest//:gtest_main",
     ],

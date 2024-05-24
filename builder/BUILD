@@ -3,12 +3,6 @@ package(
     default_visibility = ["//visibility:private"],
 )
 
-cc_library(
-    name = "simplify_rules",
-    hdrs = ["simplify_rules.h"],
-    visibility = ["//builder:__subpackages__"],
-)
-
 # This library provides the functionality to lower a graph of funcs into a pipeline suitable for
 # evaluation in the runtime.
 cc_library(
@@ -17,7 +11,6 @@ cc_library(
         "pipeline.cc",
         "node_mutator.cc",
         "optimizations.cc",
-        "rewrite.h",
         "simplify.cc",
         "simplify_bounds.cc",
         "simplify_exprs.cc",
@@ -28,12 +21,13 @@ cc_library(
         "pipeline.h",
         "node_mutator.h",
         "optimizations.h",
+        "rewrite.h",
         "simplify.h",
+        "simplify_rules.h",
         "slide_and_fold_storage.h",
         "substitute.h",
     ],
     deps = [
-        ":simplify_rules",
         "//base",
         "//runtime",
     ],
