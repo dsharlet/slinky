@@ -454,7 +454,7 @@ TEST(simplify, where_true) {
 
 TEST(simplify, fuzz) {
   gtest_seeded_mt19937 rng;
-  expr_generator gen(rng, 4);
+  expr_generator<gtest_seeded_mt19937> gen(rng, 4);
 
   constexpr int tests = 10000;
   constexpr int checks = 10;
@@ -537,7 +537,7 @@ TEST(simplify, fuzz) {
 
 TEST(simplify, fuzz_correlated_bounds) {
   gtest_seeded_mt19937 rng;
-  expr_generator gen(rng, 4);
+  expr_generator<gtest_seeded_mt19937> gen(rng, 4);
 
   constexpr int tests = 1000;
   constexpr int checks = 10;
