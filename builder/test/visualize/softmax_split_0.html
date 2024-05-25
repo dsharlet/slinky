@@ -321,10 +321,10 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  check((__in != 0));
+  check(__in);
   check((buffer_rank(__in) == 2));
   check((buffer_elem_size(__in) == 4));
-  check((out != 0));
+  check(out);
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 4));
   check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));

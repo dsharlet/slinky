@@ -162,6 +162,11 @@ public:
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
+    if (!a.defined() || !b.defined()) {
+      set_result(expr(), interval_expr());
+      return;
+    }
+
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
@@ -178,6 +183,11 @@ public:
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
+
+    if (!a.defined() || !b.defined()) {
+      set_result(expr(), interval_expr());
+      return;
+    }
 
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
@@ -197,6 +207,11 @@ public:
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
     expr b = mutate(op->b, &b_bounds);
+
+    if (!a.defined() || !b.defined()) {
+      set_result(expr(), interval_expr());
+      return;
+    }
 
     expr result = simplify(op, std::move(a), std::move(b));
     if (!result.same_as(op)) {
@@ -220,6 +235,11 @@ public:
     if (coerce_boolean) {
       a = strip_boolean(a);
       b = strip_boolean(b);
+    }
+
+    if (!a.defined() || !b.defined()) {
+      set_result(expr(), interval_expr());
+      return;
     }
 
     expr result = simplify(op, std::move(a), std::move(b));
@@ -247,7 +267,9 @@ public:
     interval_expr bounds;
     expr a = strip_boolean(mutate(boolean(op->a), &bounds));
 
-    if (prove_constant_true(bounds.min)) {
+    if (!a.defined()) {
+      set_result(expr(), interval_expr());
+    } else if (prove_constant_true(bounds.min)) {
       set_result(false, {0, 0});
     } else if (prove_constant_false(bounds.max)) {
       set_result(true, {1, 1});
@@ -265,7 +287,10 @@ public:
     interval_expr c_bounds;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
     expr c = strip_boolean(mutate(boolean(op->condition), &c_bounds));
-    if (prove_constant_true(c_bounds.min)) {
+    if (!c.defined()) {
+      set_result(expr(), interval_expr());
+      return;
+    } else if (prove_constant_true(c_bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
     } else if (prove_constant_false(c_bounds.max)) {
@@ -287,6 +312,11 @@ public:
     t = mutate(t, &t_bounds);
     interval_expr f_bounds;
     f = mutate(f, &f_bounds);
+
+    if (!t.defined() || !f.defined()) {
+      set_result(expr(), interval_expr());
+      return;
+    }
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
@@ -320,9 +350,7 @@ public:
         assert(dim);
         const std::optional<box_expr>& bounds = buffer_bounds[*buf];
         if (bounds && *dim < static_cast<index_t>(bounds->size())) {
-          // TODO: Should we set the interval to a point that is the min or max depending on if we are buffer_min or
-          // buffer_max?
-          set_result(op, (*bounds)[*dim]);
+          set_result(op, point(op->intrinsic == intrinsic::buffer_min ? (*bounds)[*dim].min : (*bounds)[*dim].max));
           return;
         }
       }
@@ -1059,7 +1087,7 @@ public:
 
   void visit(const check* op) override {
     interval_expr c_bounds;
-    expr c = mutate(op->condition, &c_bounds);
+    expr c = strip_boolean(mutate(boolean(op->condition), &c_bounds));
 
     if (!c.defined()) {
       set_result(stmt());

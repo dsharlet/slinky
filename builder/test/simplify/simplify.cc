@@ -46,7 +46,7 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
 }
 
 TEST(simplify, basic) {
-  ASSERT_THAT(simplify(expr() == 1), matches(expr() == 1));
+  ASSERT_THAT(simplify(expr() == 1), matches(expr()));
   ASSERT_THAT(simplify(expr(1) + 2), matches(3));
   ASSERT_THAT(simplify(expr(1) - 2), matches(-1));
   ASSERT_THAT(simplify(expr(1) < 2), matches(1));
@@ -246,8 +246,8 @@ TEST(simplify, bounds) {
                   crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
       matches(stmt()));
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
-                  crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2)))),
-      matches(check::make(y == 2)));
+                  crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == y && buffer_at(x))))),
+      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(buffer_at(x)))));
 
   ASSERT_THAT(simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
                   crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1))))),
@@ -276,14 +276,16 @@ TEST(simplify, allocate) {
   // Pull statements that don't use the buffer out of allocate nodes.
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
                   block::make({check::make(y), check::make(buffer_at(x)), check::make(z)}))),
-      matches(block::make({check::make(y),
-          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))), check::make(z)})));
+      matches(block::make(
+          {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))),
+              check::make(z)})));
 
   // Make sure clone_buffer doesn't hide uses of buffers or bounds.
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
                   block::make({check::make(y), clone_buffer::make(w, x, check::make(buffer_at(w))), check::make(z)}))),
-      matches(block::make({check::make(y),
-          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))), check::make(z)})));
+      matches(block::make(
+          {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))),
+              check::make(z)})));
 }
 
 TEST(simplify, make_buffer) {

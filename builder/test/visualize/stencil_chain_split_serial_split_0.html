@@ -323,10 +323,10 @@ let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride
 function pipeline(__in, out) {
   {
     let __trace_token = trace_begin(buffer_at(__trace_names, 13));
-    check((__in != 0));
+    check(__in);
     check((buffer_rank(__in) == 2));
     check((buffer_elem_size(__in) == 2));
-    check((out != 0));
+    check(out);
     check((buffer_rank(out) == 2));
     check((buffer_elem_size(out) == 2));
     check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
