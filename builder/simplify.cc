@@ -313,6 +313,19 @@ public:
         set_result(expr(), interval_expr());
         return;
       }
+      if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
+        const var* buf = as_variable(op->args[0]);
+        const index_t* dim = as_constant(op->args[1]);
+        assert(buf);
+        assert(dim);
+        const std::optional<box_expr>& bounds = buffer_bounds[*buf];
+        if (bounds && *dim < static_cast<index_t>(bounds->size())) {
+          // TODO: Should we set the interval to a point that is the min or max depending on if we are buffer_min or
+          // buffer_max?
+          set_result(op, (*bounds)[*dim]);
+          return;
+        }
+      }
     }
 
     expr e = simplify(op, op->intrinsic, std::move(args));
