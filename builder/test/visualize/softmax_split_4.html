@@ -363,14 +363,22 @@ function pipeline(__in, out) {
                         let __loop_max = buffer_max(out, 1);
                         let __loop_step = 4;
                         for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
-                          { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                          { let __softmax_in = crop_buffer(softmax_in, [
+                              {min:min(g, g#0), max:max(g, g#0)},
+                              {min:b, max:min((b + 3), buffer_max(out, 1))}
+                          ]); {
                             let softmax_in = __softmax_in;
-                            { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
-                              let softmax_in = __softmax_in;
-                              consume(__in);
-                              produce(softmax_in);
-                              __event_t++;
-                            }}
+                            let __loop_min = buffer_min(softmax_in, 1);
+                            let __loop_max = buffer_max(softmax_in, 1);
+                            let __loop_step = 4;
+                            for(let b_b = __loop_min; b_b <= __loop_max; b_b += __loop_step) {
+                              { let __softmax_in = crop_dim(softmax_in, 1, {min:b_b, max:min((min(b, b_b) + 3), buffer_max(out, 1))}); {
+                                let softmax_in = __softmax_in;
+                                consume(__in);
+                                produce(softmax_in);
+                                __event_t++;
+                              }}
+                            }
                           }}
                           { let __max_in = crop_dim(max_in, 0, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
                             let max_in = __max_in;
@@ -380,7 +388,10 @@ function pipeline(__in, out) {
                           }}
                           { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
                             let sum_exp_in = __sum_exp_in;
-                            { let __exp_in = crop_dim(exp_in, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                            { let __exp_in = crop_buffer(exp_in, [
+                                {min:min(g, g#0), max:max(g, g#0)},
+                                {min:b, max:min((b + 3), buffer_max(out, 1))}
+                            ]); {
                               let exp_in = __exp_in;
                               consume(__in);
                               consume(max_in_uncropped);

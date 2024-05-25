@@ -33,9 +33,29 @@ expr strip_boolean(expr x) {
   return x;
 }
 
+bool is_buffer_dim_intrinsic(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::buffer_min:
+  case intrinsic::buffer_max:
+  case intrinsic::buffer_stride:
+  case intrinsic::buffer_fold_factor: return true;
+  default: return false;
+  }
+}
+
+expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
+  switch (fn) {
+  case intrinsic::buffer_min: return d.bounds.min;
+  case intrinsic::buffer_max: return d.bounds.max;
+  case intrinsic::buffer_stride: return d.stride;
+  case intrinsic::buffer_fold_factor: return d.fold_factor;
+  default: std::abort();
+  }
+}
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
-  symbol_map<box_expr> buffer_bounds;
+  symbol_map<std::vector<dim_expr>> buffer_dims;
   bounds_map expr_bounds;
 
   interval_expr result_bounds;
@@ -343,14 +363,14 @@ public:
         set_result(expr(), interval_expr());
         return;
       }
-      if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
+      if (is_buffer_dim_intrinsic(op->intrinsic)) {
         const var* buf = as_variable(op->args[0]);
         const index_t* dim = as_constant(op->args[1]);
         assert(buf);
         assert(dim);
-        const std::optional<box_expr>& bounds = buffer_bounds[*buf];
-        if (bounds && *dim < static_cast<index_t>(bounds->size())) {
-          set_result(op, point(op->intrinsic == intrinsic::buffer_min ? (*bounds)[*dim].min : (*bounds)[*dim].max));
+        const std::optional<std::vector<dim_expr>>& dims = buffer_dims[*buf];
+        if (dims && *dim < static_cast<index_t>(dims->size())) {
+          set_result(op, point(eval_buffer_intrinsic(op->intrinsic, (*dims)[*dim])));
           return;
         }
       }
@@ -426,9 +446,22 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  stmt mutate_with_dims(stmt body, var buf, std::optional<std::vector<dim_expr>> dims) {
+    assert(!buffer_dims.contains(buf));
+    auto set_bounds = set_value_in_scope(buffer_dims, buf, std::move(dims));
+    return mutate(body);
+  }
   stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
-    assert(!buffer_bounds.contains(buf));
-    auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
+    assert(!buffer_dims.contains(buf));
+    std::optional<std::vector<dim_expr>> dims;
+    if (bounds) {
+      dims = std::vector<dim_expr>{bounds->size()};
+      for (std::size_t d = 0; d < dims->size(); ++d) {
+        if ((*bounds)[d].min.defined()) (*dims)[d].bounds.min = (*bounds)[d].min;
+        if ((*bounds)[d].max.defined()) (*dims)[d].bounds.max = (*bounds)[d].max;
+      }
+    }
+    auto set_bounds = set_value_in_scope(buffer_dims, buf, std::move(dims));
     return mutate(body);
   }
 
@@ -560,28 +593,30 @@ public:
     }
   }
 
+  dim_expr mutate(const dim_expr& d) {
+    dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
+    if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
+    return result;
+  }
+
   void visit(const allocate* op) override {
     expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
-    box_expr bounds;
     dims.reserve(op->dims.size());
     bool changed = false;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      interval_expr bounds_d = mutate(op->dims[d].bounds);
-      dim_expr new_dim = {bounds_d, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
+      dim_expr new_dim = mutate(op->dims[d]);
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
-      bounds.push_back(std::move(bounds_d));
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
+    stmt body = mutate_with_dims(op->body, op->sym, dims);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(stmt());
       return;
     } else if (!deps.buffer_data()) {
-      // We only needed the bounds, not the allocation itself.
-      body = substitute_bounds(body, op->sym, bounds);
+      // We only needed the buffer meta, not the allocation itself.
+      body = substitute_buffer(body, op->sym, elem_size, dims);
       set_result(mutate(body));
       return;
     }
@@ -616,27 +651,22 @@ public:
     expr base = mutate(op->base);
     expr elem_size = mutate(op->elem_size);
     std::vector<dim_expr> dims;
-    box_expr bounds;
     dims.reserve(op->dims.size());
-    bounds.reserve(op->dims.size());
     bool changed = false;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      interval_expr new_bounds = mutate(op->dims[d].bounds);
-      dim_expr new_dim = {new_bounds, mutate(op->dims[d].stride), mutate(op->dims[d].fold_factor)};
-      if (is_constant(new_dim.fold_factor, dim::unfolded)) new_dim.fold_factor = expr();
+      dim_expr new_dim = mutate(op->dims[d]);
       changed = changed || !new_dim.same_as(op->dims[d]);
       dims.push_back(std::move(new_dim));
-      bounds.push_back(std::move(new_bounds));
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
+    stmt body = mutate_with_dims(op->body, op->sym, dims);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       // This make_buffer is unused.
       set_result(std::move(body));
       return;
     } else if (!deps.buffer_data()) {
-      // We only needed the bounds, not the buffer itself.
-      body = substitute_bounds(body, op->sym, bounds);
+      // We only needed the buffer meta, not the buffer itself.
+      body = substitute_buffer(body, op->sym, elem_size, dims);
       set_result(mutate(body));
       return;
     }
@@ -796,7 +826,7 @@ public:
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    const std::optional<box_expr>& prev_bounds = buffer_bounds[op->sym];
+    const std::optional<std::vector<dim_expr>>& prev_dims = buffer_dims[op->sym];
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
@@ -808,8 +838,8 @@ public:
 
       // If the new bounds are the same as the existing bounds, set the crop in this dimension to
       // be undefined.
-      if (prev_bounds && i < static_cast<index_t>(prev_bounds->size())) {
-        bounds_i = simplify_redundant_bounds(bounds_i, (*prev_bounds)[i]);
+      if (prev_dims && i < static_cast<index_t>(prev_dims->size())) {
+        bounds_i = simplify_redundant_bounds(bounds_i, (*prev_dims)[i].bounds);
       }
       if (bounds_i.min.defined()) new_bounds[i].min = bounds_i.min;
       if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
@@ -868,9 +898,9 @@ public:
       return;
     }
 
-    std::optional<box_expr> buf_bounds = buffer_bounds[op->sym];
-    if (buf_bounds && op->dim < static_cast<index_t>(buf_bounds->size())) {
-      interval_expr& buf_bounds_dim = (*buf_bounds)[op->dim];
+    std::optional<std::vector<dim_expr>> dims = buffer_dims[op->sym];
+    if (dims && op->dim < static_cast<index_t>(dims->size())) {
+      interval_expr& buf_bounds_dim = (*dims)[op->dim].bounds;
       bounds = simplify_redundant_bounds(bounds, buf_bounds_dim);
 
       if (!bounds.min.defined() && !bounds.max.defined()) {
@@ -883,7 +913,7 @@ public:
       if (bounds.max.defined()) buf_bounds_dim.max = bounds.max;
     }
 
-    stmt body = mutate_with_bounds(op->body, op->sym, std::move(buf_bounds));
+    stmt body = mutate_with_dims(op->body, op->sym, std::move(dims));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(std::move(body));
@@ -935,11 +965,13 @@ public:
       *i = slinky::update_sliced_buffer_metadata(*i, sym, sliced);
     }
   }
-  static void update_sliced_buffer_metadata(symbol_map<box_expr>& bounds, var sym, span<const int> sliced) {
-    for (std::optional<box_expr>& i : bounds) {
+  static void update_sliced_buffer_metadata(symbol_map<std::vector<dim_expr>>& dims, var sym, span<const int> sliced) {
+    for (std::optional<std::vector<dim_expr>>& i : dims) {
       if (!i) continue;
-      for (interval_expr& j : *i) {
-        j = slinky::update_sliced_buffer_metadata(j, sym, sliced);
+      for (dim_expr& j : *i) {
+        j.bounds = slinky::update_sliced_buffer_metadata(j.bounds, sym, sliced);
+        j.stride = slinky::update_sliced_buffer_metadata(j.stride, sym, sliced);
+        j.fold_factor = slinky::update_sliced_buffer_metadata(j.fold_factor, sym, sliced);
       }
     }
   }
@@ -956,12 +988,12 @@ public:
       }
     }
 
-    symbol_map<box_expr> old_buffer_bounds = buffer_bounds;
+    symbol_map<std::vector<dim_expr>> old_buffer_dims = buffer_dims;
     bounds_map old_expr_bounds = expr_bounds;
-    update_sliced_buffer_metadata(buffer_bounds, op->sym, sliced_dims);
+    update_sliced_buffer_metadata(buffer_dims, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
-    buffer_bounds = std::move(old_buffer_bounds);
+    buffer_dims = std::move(old_buffer_dims);
     expr_bounds = std::move(old_expr_bounds);
 
     auto deps = depends_on(body, op->sym);
@@ -1001,13 +1033,13 @@ public:
   void visit(const slice_dim* op) override {
     expr at = mutate(op->at);
 
-    symbol_map<box_expr> old_buffer_bounds = buffer_bounds;
+    symbol_map<std::vector<dim_expr>> old_buffer_dims = buffer_dims;
     bounds_map old_expr_bounds = expr_bounds;
     int sliced_dims[] = {op->dim};
-    update_sliced_buffer_metadata(buffer_bounds, op->sym, sliced_dims);
+    update_sliced_buffer_metadata(buffer_dims, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
-    buffer_bounds = std::move(old_buffer_bounds);
+    buffer_dims = std::move(old_buffer_dims);
     expr_bounds = std::move(old_expr_bounds);
 
     auto deps = depends_on(body, op->sym);
@@ -1028,23 +1060,23 @@ public:
   }
 
   void visit(const transpose* op) override {
-    std::optional<box_expr> bounds = buffer_bounds[op->sym];
-    if (bounds) {
-      if (op->is_truncate() && bounds->size() <= op->dims.size()) {
+    std::optional<std::vector<dim_expr>> dims = buffer_dims[op->sym];
+    if (dims) {
+      if (op->is_truncate() && dims->size() <= op->dims.size()) {
         // transpose can't add dimensions.
-        assert(bounds->size() == op->dims.size());
+        assert(dims->size() == op->dims.size());
         // This truncate is a no-op.
         set_result(mutate(op->body));
         return;
       }
-      box_expr new_bounds(op->dims.size());
+      std::vector<dim_expr> new_dims(op->dims.size());
       for (std::size_t i = 0; i < op->dims.size(); ++i) {
-        new_bounds[i] = (*bounds)[op->dims[i]];
+        new_dims[i] = (*dims)[op->dims[i]];
       }
-      bounds = std::move(new_bounds);
+      dims = std::move(new_dims);
     }
 
-    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
+    stmt body = mutate_with_dims(op->body, op->sym, std::move(dims));
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -1064,7 +1096,7 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    stmt body = mutate_with_bounds(op->body, op->sym, buffer_bounds[op->src]);
+    stmt body = mutate_with_dims(op->body, op->sym, buffer_dims[op->src]);
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
