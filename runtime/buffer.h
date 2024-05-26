@@ -281,14 +281,18 @@ public:
     max = std::min(max, dim(d).max());
 
     index_t offset = 0;
-    if (base != nullptr && max >= min) {
-      offset = dim(d).flat_offset_bytes(min);
-      base = offset_bytes(base, offset);
+    if (base != nullptr) {
+      if (max >= min) {
+        offset = dim(d).flat_offset_bytes(min);
+        base = offset_bytes(base, offset);
+      } else {
+        base = nullptr;
+      }
     }
 
     dim(d).set_bounds(min, max);
     // Crops can't span a folding boundary if they move the base pointer.
-    assert(offset == 0 || !dim(d).is_folded());
+    assert(base == nullptr || offset == 0 || !dim(d).is_folded());
     return *this;
   }
 
