@@ -363,15 +363,24 @@ public:
         set_result(expr(), interval_expr());
         return;
       }
+      const var* buf = as_variable(op->args[0]);
+      assert(buf);
+      const std::optional<std::vector<dim_expr>>& dims = buffer_dims[*buf];
       if (is_buffer_dim_intrinsic(op->intrinsic)) {
-        const var* buf = as_variable(op->args[0]);
         const index_t* dim = as_constant(op->args[1]);
-        assert(buf);
         assert(dim);
-        const std::optional<std::vector<dim_expr>>& dims = buffer_dims[*buf];
         if (dims && *dim < static_cast<index_t>(dims->size())) {
           set_result(op, point(eval_buffer_intrinsic(op->intrinsic, (*dims)[*dim])));
           return;
+        }
+      } else if (op->intrinsic == intrinsic::buffer_at) {
+        // This buffer_at call might be passing expression equivalent to buffer_min in each dimension, which is the
+        // default value.
+        const std::optional<std::vector<dim_expr>>& dims = buffer_dims[*buf];
+        if (dims) {
+          for (int d = 0; d < static_cast<int>(std::min(dims->size(), args.size() - 1)); ++d) {
+            if (prove_true(args[d + 1] == (*dims)[d].bounds.min)) args[d + 1] = expr();
+          }
         }
       }
     }
@@ -676,6 +685,21 @@ public:
       if (bc->intrinsic == intrinsic::buffer_at) {
         const var* src_buf = as_variable(bc->args[0]);
         assert(src_buf);
+
+        const std::optional<std::vector<dim_expr>>& src_dims = buffer_dims[*src_buf];
+        if (src_dims) {
+          // Before Trying to do anything, try to normalize the dimensions to be in terms of src_buf metadata.
+          for (dim_expr& d : dims) {
+            for (int src_d = 0; src_d < static_cast<int>(src_dims->size()); ++src_d) {
+              const dim_expr& src_dim = (*src_dims)[src_d];
+              if (prove_true(d.bounds.min == src_dim.bounds.min)) d.bounds.min = buffer_min(*src_buf, src_d);
+              if (prove_true(d.bounds.max == src_dim.bounds.max)) d.bounds.max = buffer_max(*src_buf, src_d);
+              if (prove_true(d.stride == src_dim.stride)) d.stride = buffer_stride(*src_buf, src_d);
+              if (prove_true(d.fold_factor == src_dim.fold_factor)) d.fold_factor = buffer_fold_factor(*src_buf, src_d);
+            }
+          }
+        }
+
         if (match(elem_size, buffer_elem_size(*src_buf))) {
           // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
           // the dimensions to be identity.

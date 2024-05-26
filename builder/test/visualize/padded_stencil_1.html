@@ -354,11 +354,11 @@ function pipeline(__in, out) {
       ]); {
         let intm = __intm;
         {
-          let __base = buffer_at(intm_padded_intm, (buffer_min(out, 0) + -1), (buffer_min(out, 1) + -1));
+          let __base = buffer_at(intm_padded_intm);
           let __elem_size = buffer_elem_size(intm);
           let __dims = [
-              {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:buffer_stride(intm, 0), fold_factor:buffer_fold_factor(intm, 0)},
-              {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:buffer_stride(intm, 1), fold_factor:buffer_fold_factor(intm, 1)}
+              {bounds:{min:buffer_min(intm_padded_intm, 0), max:buffer_max(intm_padded_intm, 0)}, stride:buffer_stride(intm, 0), fold_factor:buffer_fold_factor(intm, 0)},
+              {bounds:{min:buffer_min(intm_padded_intm, 1), max:buffer_max(intm_padded_intm, 1)}, stride:buffer_stride(intm, 1), fold_factor:buffer_fold_factor(intm, 1)}
           ];
           { let padded_intm#1 = make_buffer('padded_intm#1', __base, __elem_size, __dims);
             { let __padded_intm#1 = transpose(padded_intm#1, [0, 1]); {
