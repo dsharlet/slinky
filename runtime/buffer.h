@@ -13,7 +13,11 @@
 
 namespace slinky {
 
-using index_t = std::ptrdiff_t;
+#ifdef __APPLE__
+  using index_t = std::int64_t;
+#else
+  using index_t = std::ptrdiff_t;
+#endif
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>
