@@ -480,7 +480,7 @@ public:
     }
   }
 
-  stmt mutate_slice_body(var sym, span<const int> slices, stmt body) {
+  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) {
     const symbol_map<expr>* old_replacements = replacements;
     expr old_replacement = replacement;
     span<const std::pair<expr, expr>> old_expr_replacements = expr_replacements;
@@ -504,7 +504,9 @@ public:
     }
     expr_replacements = span<const std::pair<expr, expr>>(new_expr_replacements);
 
+    if (sym != src) shadowed.push_back(sym);
     body = mutate(body);
+    if (sym != src) shadowed.pop_back();
 
     replacements = old_replacements;
     replacement = old_replacement;
@@ -528,7 +530,7 @@ public:
         dims.push_back(d);
       }
     }
-    stmt body = mutate_slice_body(op->sym, dims, op->body);
+    stmt body = mutate_slice_body(op->sym, op->src, dims, op->body);
     if (!changed && sym == op->sym && src == op->src && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -542,7 +544,7 @@ public:
     var src = visit_symbol(op->src);
     expr at = mutate(op->at);
     int slices[] = {op->dim};
-    stmt body = mutate_slice_body(op->sym, slices, op->body);
+    stmt body = mutate_slice_body(op->sym, op->src, slices, op->body);
     if (sym == op->sym && src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {

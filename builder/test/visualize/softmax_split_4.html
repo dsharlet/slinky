@@ -331,13 +331,13 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
     let g = buffer_min(out, 0);
-    let g0 = buffer_max(out, 0);
-    check((buffer_min(__in, 0) <= min(g, g0)));
-    check((max(g, g0) <= buffer_max(__in, 0)));
+    let g#0 = buffer_max(out, 0);
+    check((buffer_min(__in, 0) <= min(g, g#0)));
+    check((max(g, g#0) <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
     { let softmax_in = allocate('softmax_in', 4, [
-        {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
+        {bounds:{min:min(g, g#0), max:max(g, g#0)}, stride:NaN, fold_factor:9223372036854775807},
         {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:4}
       ]);
       { let softmax_in_uncropped = clone_buffer(softmax_in);
@@ -350,7 +350,7 @@ function pipeline(__in, out) {
               ]);
               { let sum_exp_in_uncropped = clone_buffer(sum_exp_in);
                 { let exp_in = allocate('exp_in', 4, [
-                    {bounds:{min:min(g, g0), max:max(g, g0)}, stride:NaN, fold_factor:9223372036854775807},
+                    {bounds:{min:min(g, g#0), max:max(g, g#0)}, stride:NaN, fold_factor:9223372036854775807},
                     {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:4}
                   ]);
                   { let exp_in_uncropped = clone_buffer(exp_in);

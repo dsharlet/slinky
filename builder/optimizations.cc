@@ -19,9 +19,6 @@
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 
-#include <iostream>
-#include "runtime/print.h"
-
 namespace slinky {
 
 namespace {
@@ -122,15 +119,29 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
   return result;
 }
 
-stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& permutation) {
-  return recursive_mutate<copy_stmt>(s, [a, b, &permutation](const copy_stmt* op) {
-    if (!((op->src == a && op->dst == b) || (op->src == b && op->dst == a))) {
+// Replace copies between buffers a and b with calls to pad.
+class copy_replacer : public node_mutator {
+  // Track all names of a and b as we go.
+  std::vector<var> as;
+  std::vector<var> bs;
+  const std::vector<int>& permutation;
+
+public:
+  copy_replacer(var a, var b, const std::vector<int>& permutation) : as({a}), bs({b}), permutation(permutation) {}
+
+  void visit(const copy_stmt* op) override {
+    if (!((std::find(as.begin(), as.end(), op->src) != as.end() &&
+              std::find(bs.begin(), bs.end(), op->dst) != bs.end()) ||
+            (std::find(as.begin(), as.end(), op->dst) != as.end() &&
+                std::find(bs.begin(), bs.end(), op->src) != bs.end()))) {
       // Not this copy.
-      return stmt(op);
+      set_result(op);
+      return;
     }
     if (!op->padding || op->padding->empty()) {
       // No padding, this copy is now a no-op.
-      return stmt();
+      set_result(stmt());
+      return;
     }
 
     // Make a call to `pad`.
@@ -148,8 +159,30 @@ stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& 
         {}, {op->src, op->dst}, std::move(pad_attrs));
 
     // The copy may have also be transposed.
-    return transpose::make(op->dst, op->dst, permutation, pad);
-  });
+    set_result(transpose::make(op->dst, op->dst, permutation, pad));
+  }
+
+  template <typename T>
+  void visit_buffer_mutator(const T* op) {
+    bool a_contains = std::find(as.begin(), as.end(), op->src) != as.end();
+    bool b_contains = std::find(bs.begin(), bs.end(), op->src) != bs.end();
+    if (a_contains) as.push_back(op->sym);
+    if (b_contains) bs.push_back(op->sym);
+    node_mutator::visit(op);
+    if (a_contains) as.pop_back();
+    if (b_contains) bs.pop_back();
+  }
+
+  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const clone_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const transpose* op) override { visit_buffer_mutator(op); }
+};
+
+stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& permutation) {
+  return copy_replacer(a, b, permutation).mutate(s);
 }
 
 class buffer_aliaser : public node_mutator {
@@ -197,18 +230,6 @@ class buffer_aliaser : public node_mutator {
     void do_not_alias(var s) { aliases.erase(s); }
   };
   symbol_map<buffer_info> buffers;
-
-  // We need to map clones back to their original buffers.
-  symbol_map<var> buffer_map;
-
-  std::optional<buffer_info>& lookup_buffer(var x) {
-    const std::optional<var>& mapped = buffer_map[x];
-    if (mapped) {
-      return lookup_buffer(*mapped);
-    } else {
-      return buffers[x];
-    }
-  }
 
   static bool alias_compatible(
       const allocate* op, const alias_info& alias, var target, const buffer_info& target_info) {
@@ -278,7 +299,7 @@ public:
       alias_info& alias = target.second;
 
       var alloc_var = target_var;
-      std::optional<buffer_info>& target_info = lookup_buffer(target_var);
+      std::optional<buffer_info>& target_info = buffers[target_var];
       assert(target_info);
       if (!alias_compatible(op, alias, target_var, *target_info)) {
         continue;
@@ -357,7 +378,7 @@ public:
       return;
     }
     for (var i : op->inputs) {
-      std::optional<buffer_info>& input_info = lookup_buffer(i);
+      std::optional<buffer_info>& input_info = buffers[i];
       if (input_info) {
         if (input_info->is_input) {
           // We can't write to this buffer.
@@ -379,7 +400,7 @@ public:
   }
 
   void alias_copy_dst(const copy_stmt* op) {
-    std::optional<buffer_info>& info = lookup_buffer(op->dst);
+    std::optional<buffer_info>& info = buffers[op->dst];
     if (!info || info->is_output) {
       // We didn't allocate the dst.
       return;
@@ -422,7 +443,7 @@ public:
   }
 
   void alias_copy_src(const copy_stmt* op) {
-    std::optional<buffer_info>& info = lookup_buffer(op->src);
+    std::optional<buffer_info>& info = buffers[op->src];
     if (!info || info->is_input) {
       // We didn't allocate the src.
       return;
@@ -494,10 +515,11 @@ public:
       if (old_buffers[i]) {
         buffers[i] = buffer_info(
             old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
+        buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
       }
     }
 
-    auto set_info_sym = set_value_in_scope(buffers, op->sym, lookup_buffer(op->src));
+    auto set_info_sym = set_value_in_scope(buffers, op->sym, buffers[op->src]);
     node_mutator::visit(op);
 
     for (std::optional<buffer_info>& i : buffers) {
@@ -506,21 +528,41 @@ public:
       if (j != i->aliases.end()) {
         handler(j->second);
       }
-    }
-
-    // Add the old alias candidates back to the alias info.
-    buffers.reserve(std::max(buffers.size(), old_buffers.size()));
-    for (std::size_t i = 0; i < old_buffers.size(); ++i) {
-      if (!old_buffers[i]) continue;
-      std::optional<buffer_info>& info = buffers[i];
-      if (!info) {
-        info = std::move(old_buffers[i]);
-      } else {
-        for (auto& j : old_buffers[i]->aliases) {
-          info->maybe_alias(j.first, std::move(j.second));
+      for (auto& a : i->aliases) {
+        // We need to substitute uses of sym with uses of src in the aliases we added here.
+        for (dim_expr& d : a.second.dims) {
+          d.bounds = substitute(d.bounds, op->sym, op->src);
+          d.stride = substitute(d.stride, op->sym, op->src);
+          d.fold_factor = substitute(d.fold_factor, op->sym, op->src);
+        }
+        a.second.elem_size = substitute(a.second.elem_size, op->sym, op->src);
+        for (expr& i : a.second.at) {
+          i = substitute(i, op->sym, op->src);
         }
       }
     }
+
+    // Add the old alias candidates back to the alias info.
+    old_buffers.reserve(std::max(buffers.size(), old_buffers.size()));
+    for (std::size_t i = 0; i < buffers.size(); ++i) {
+      if (!buffers[i]) continue;
+      std::optional<buffer_info> info = std::move(buffers[i]);
+      std::optional<buffer_info>& old_info = old_buffers[var(i) != op->sym ? var(i) : op->src];
+      if (!old_info) {
+        old_info = buffer_info(info->dims, info->elem_size, info->is_input, info->is_output);
+      } else {
+        old_info->dims = std::move(info->dims);
+        old_info->elem_size = std::move(info->elem_size);
+      }
+      if (info->shared_alloc_sym.defined()) {
+        assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
+        old_info->shared_alloc_sym = info->shared_alloc_sym;
+      }
+      for (auto& j : info->aliases) {
+        old_info->maybe_alias(j.first == op->sym ? op->src : j.first, std::move(j.second));
+      }
+    }
+    std::swap(old_buffers, buffers);
   }
 
   void visit(const slice_buffer* op) override {
@@ -536,12 +578,22 @@ public:
     visit_buffer_mutator(op, [=](alias_info& alias) { alias.at.insert(alias.at.begin() + op->dim, op->at); });
   }
 
-  void visit(const clone_buffer* op) override {
-    auto set_mapped_sym = set_value_in_scope(buffer_map, op->sym, op->src);
-    node_mutator::visit(op);
+  void visit(const crop_buffer* op) override {
+    visit_buffer_mutator(op, [](alias_info&) {});
   }
 
-  void visit(const transpose*) override { std::abort(); }
+  void visit(const crop_dim* op) override {
+    visit_buffer_mutator(op, [](alias_info&) {});
+  }
+
+  void visit(const clone_buffer* op) override {
+    visit_buffer_mutator(op, [](alias_info&) {});
+  }
+
+  void visit(const transpose*) override {
+    // TODO: We should be able to handle this.
+    std::abort();
+  }
 };
 
 }  // namespace
@@ -806,6 +858,89 @@ stmt insert_early_free(const stmt& s) { return early_free_inserter().mutate(s); 
 
 namespace {
 
+class deshadower : public node_mutator {
+  node_context& ctx;
+  symbol_map<bool> symbols;
+  var in_loop;
+
+public:
+  deshadower(node_context& ctx) : ctx(ctx) {}
+
+  void visit_symbol(var x) { symbols[x] = true; }
+
+  void visit(const variable* op) override {
+    visit_symbol(op->sym);
+    set_result(op);
+  }
+
+  var rename(var x) {
+    std::string suffix = in_loop.defined() ? "." + ctx.name(in_loop) : "";
+    return ctx.insert_unique(ctx.name(x) + suffix);
+  }
+
+  template <typename T>
+  void visit_decl(const T* op) {
+    stmt result = op;
+    const std::optional<bool>& sym_defined = symbols[op->sym];
+    var sym = op->sym;
+    if (sym_defined && *sym_defined) {
+      sym = rename(op->sym);
+      result = clone_with(op, sym, substitute(op->body, op->sym, sym));
+    }
+    auto s = set_value_in_scope(symbols, sym, true);
+    node_mutator::visit(result.as<T>());
+  }
+
+  void visit(const loop* op) override {
+    stmt result = op;
+    const std::optional<bool>& sym_defined = symbols[op->sym];
+    var sym = op->sym;
+    if (sym_defined && *sym_defined) {
+      sym = rename(op->sym);
+      result = clone_with(op, sym, substitute(op->body, op->sym, sym));
+    }
+    var old_in_loop = in_loop;
+    in_loop = sym;
+    auto s = set_value_in_scope(symbols, sym, true);
+    node_mutator::visit(result.as<loop>());
+    in_loop = old_in_loop;
+  }
+  void visit(const allocate* op) override { visit_decl(op); }
+  void visit(const make_buffer* op) override {
+    stmt result = op;
+    // We want to keep the name of allocates that shadow make_buffers, so rename the make_buffer instead.
+    // TODO: We should only do this if there is actually an allocate shadowing this buffer.
+    var sym = rename(op->sym);
+    result = clone_with(op, sym, substitute(op->body, op->sym, sym));
+    auto s = set_value_in_scope(symbols, sym, true);
+    node_mutator::visit(result.as<make_buffer>());
+  }
+  void visit(const crop_buffer* op) override {
+    visit_symbol(op->src);
+    visit_decl(op);
+  }
+  void visit(const crop_dim* op) override {
+    visit_symbol(op->src);
+    visit_decl(op);
+  }
+  void visit(const slice_buffer* op) override {
+    visit_symbol(op->src);
+    visit_decl(op);
+  }
+  void visit(const slice_dim* op) override {
+    visit_symbol(op->src);
+    visit_decl(op);
+  }
+  void visit(const transpose* op) override {
+    visit_symbol(op->src);
+    visit_decl(op);
+  }
+  void visit(const clone_buffer* op) override {
+    visit_symbol(op->src);
+    visit_decl(op);
+  }
+};
+
 // This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
 // efficient when performed in place.
 class reuse_shadows : public node_mutator {
@@ -838,6 +973,7 @@ public:
 
 }  // namespace
 
+stmt deshadow(const stmt& s, node_context& ctx) { return deshadower(ctx).mutate(s); }
 stmt optimize_symbols(const stmt& s, node_context& ctx) { return reuse_shadows().mutate(s); }
 
 }  // namespace slinky

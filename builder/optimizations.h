@@ -26,6 +26,9 @@ stmt fix_buffer_races(const stmt& s);
 // Find allocate nodes and try to insert free into them.
 stmt insert_early_free(const stmt& s);
 
+// The simplifier can't handle shadowed symbols. This mutator rewrites all declarations to avoid any shadowing.
+stmt deshadow(const stmt& s, node_context& ctx);
+
 // We can improve `evaluate`'s performance and memory usage if:
 // - Buffer mutators are self-shadowing, so they can be performed in-place on existing buffers.
 // - Symbols are indexed such that there are no unused symbol indices.

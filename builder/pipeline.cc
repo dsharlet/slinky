@@ -952,6 +952,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
   result = block::make(std::move(checks), std::move(result));
 
+  result = deshadow(result, ctx);
   result = simplify(result);
 
   // Try to reuse buffers and eliminate copies where possible.
@@ -973,9 +974,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = simplify(result);
 
-  if (is_verbose()) {
-    std::cout << result << std::endl;
-  }
   result = optimize_symbols(result, ctx);
 
   result = fix_buffer_races(result);
