@@ -830,6 +830,7 @@ public:
     }
     if (new_bounds.empty()) {
       // This crop was a no-op.
+      body = substitute(body, op->sym, op->src);
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
@@ -854,7 +855,9 @@ public:
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
     bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
-      set_result(mutate(op->body));
+      // This crop is a no-op.
+      stmt body = substitute(op->body, op->sym, op->src);
+      set_result(mutate(body));
       return;
     }
 
@@ -865,7 +868,8 @@ public:
 
       if (!bounds.min.defined() && !bounds.max.defined()) {
         // This crop is a no-op.
-        set_result(mutate(op->body));
+        stmt body = substitute(op->body, op->sym, op->src);
+        set_result(mutate(body));
         return;
       }
       if (bounds.min.defined()) buf_bounds_dim.min = bounds.min;
@@ -966,6 +970,7 @@ public:
     changed = changed || at.size() != op->at.size();
     if (at.empty()) {
       // This slice was a no-op.
+      body = substitute(body, op->sym, op->src);
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
