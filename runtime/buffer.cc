@@ -429,33 +429,41 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
 }
 
 template <typename T>
-SLINKY_ALWAYS_INLINE inline T* get_plan(void*& x, std::size_t n = 1) {
+SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
   T* result = reinterpret_cast<T*>(x);
   x = offset_bytes(x, sizeof(T) * n);
   return result;
 }
 
+// Helper function to write a plan that does nothing when interpreted by for_each_slice_impl.
+void write_empty_plan(void* plan, std::size_t bufs_size) {
+  for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
+  next->impl = for_each_slice_dim::loop_linear;
+  next->extent = 0;
+ 
+  // for_each_slice_impl looks ahead to the next dimension, don't leave it uninitialized.
+  increment_plan<dim_or_stride>(plan, bufs_size);
+  next = increment_plan<for_each_slice_dim>(plan);
+  next->impl = for_each_slice_dim::call_f;
+}
+
 template <bool SkipContiguous, std::size_t BufsSize>
 index_t make_for_each_slice_dims_impl(
-    const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan) {
+    const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
   for (std::size_t n = 0; n < bufs_size; ++n) {
     bases[n] = bufs[n]->base;
   }
-  for_each_slice_dim* next = get_plan<for_each_slice_dim>(plan);
-  dim_or_stride* next_dims = get_plan<dim_or_stride>(plan, bufs_size);
+  void* plan = plan_base;
+  for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
+  dim_or_stride* next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
   index_t slice_extent = 1;
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
     if (buf_dim.empty()) {
-      // This dimension (and thus the entire loop nest) contains no elements.
-      next->impl = for_each_slice_dim::loop_linear;
-      next->extent = 0;
-      // for_each_slice_impl looks ahead, don't leave it uninitialized.
-      next = get_plan<for_each_slice_dim>(plan);
-      next->impl = for_each_slice_dim::call_f;
+      write_empty_plan(plan_base, bufs_size);
       return 0;
     }
 
@@ -469,8 +477,8 @@ index_t make_for_each_slice_dims_impl(
       for (std::size_t n = 0; n < bufs_size; n++) {
         next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
       }
-      next = get_plan<for_each_slice_dim>(plan);
-      next_dims = get_plan<dim_or_stride>(plan, bufs_size);
+      next = increment_plan<for_each_slice_dim>(plan);
+      next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
       extent = 1;
       continue;
     } else {
@@ -508,8 +516,8 @@ index_t make_for_each_slice_dims_impl(
       for (std::size_t n = 0; n < bufs_size; n++) {
         next_dims[n].stride = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
       }
-      next = get_plan<for_each_slice_dim>(plan);
-      next_dims = get_plan<dim_or_stride>(plan, bufs_size);
+      next = increment_plan<for_each_slice_dim>(plan);
+      next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
       extent = 1;
     }
   }
