@@ -450,7 +450,7 @@ public:
       // This loop is dead.
       set_result(stmt());
       return;
-    } else if (prove_true(bounds.min + step > bounds.max)) {
+    } else if (prove_true(bounds.min <= bounds.max && bounds.min + step > bounds.max)) {
       // The loop only runs once.
       set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
       return;
