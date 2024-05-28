@@ -15,6 +15,7 @@ namespace slinky {
 
 #ifdef __APPLE__
   using index_t = std::int64_t;
+  static_assert(sizeof(index_t) == sizeof(std::size_t));
 #else
   using index_t = std::ptrdiff_t;
 #endif
