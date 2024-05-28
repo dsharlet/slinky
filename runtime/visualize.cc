@@ -240,7 +240,7 @@ public:
       *this << "\n";
     }
     *this << indent() << "];\n";
-    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);\n";
     *this << n->body;
     *this << indent() << "}\n";
     --depth;

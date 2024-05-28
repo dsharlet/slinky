@@ -157,6 +157,13 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify((y / 4) * 4 <= y), matches(true));
 
   ASSERT_THAT(simplify(x % -4 <= 1), matches(x % -4 <= 1));
+
+  ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
+      matches(call_stmt::make(nullptr, {}, {x}, {})));
+  ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
+      matches(call_stmt::make(nullptr, {}, {x}, {})));
+  ASSERT_THAT(simplify(slice_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
+      matches(call_stmt::make(nullptr, {}, {x}, {})));
 }
 
 TEST(simplify, let) {

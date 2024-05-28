@@ -190,21 +190,6 @@ public:
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
   }
-  void visit(const add* op) override { visit_binary(op); }
-
-  void visit(const sub* op) override {
-    interval_expr a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
-    expr b = mutate(op->b, &b_bounds);
-
-    expr result = simplify(op, std::move(a), std::move(b));
-    if (result.same_as(op)) {
-      set_result(std::move(result), bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
-    } else {
-      mutate_and_set_result(result);
-    }
-  }
 
   template <typename T>
   void visit_binary(const T* op) {
@@ -220,6 +205,8 @@ public:
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
   }
+  void visit(const add* op) override { visit_binary(op); }
+  void visit(const sub* op) override { visit_binary(op); }
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }
   void visit(const mod* op) override { visit_binary(op); }
@@ -450,7 +437,7 @@ public:
       // This loop is dead.
       set_result(stmt());
       return;
-    } else if (prove_true(bounds.min + step > bounds.max)) {
+    } else if (prove_true(bounds.min <= bounds.max && bounds.min + step > bounds.max)) {
       // The loop only runs once.
       set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
       return;
@@ -830,6 +817,7 @@ public:
     }
     if (new_bounds.empty()) {
       // This crop was a no-op.
+      body = substitute(body, op->sym, op->src);
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
@@ -854,7 +842,9 @@ public:
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
     bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
-      set_result(mutate(op->body));
+      // This crop is a no-op.
+      stmt body = substitute(op->body, op->sym, op->src);
+      set_result(mutate(body));
       return;
     }
 
@@ -865,7 +855,8 @@ public:
 
       if (!bounds.min.defined() && !bounds.max.defined()) {
         // This crop is a no-op.
-        set_result(mutate(op->body));
+        stmt body = substitute(op->body, op->sym, op->src);
+        set_result(mutate(body));
         return;
       }
       if (bounds.min.defined()) buf_bounds_dim.min = bounds.min;
@@ -966,6 +957,7 @@ public:
     changed = changed || at.size() != op->at.size();
     if (at.empty()) {
       // This slice was a no-op.
+      body = substitute(body, op->sym, op->src);
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
       std::vector<stmt> stmts;
