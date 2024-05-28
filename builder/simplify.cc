@@ -190,21 +190,6 @@ public:
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
   }
-  void visit(const add* op) override { visit_binary(op); }
-
-  void visit(const sub* op) override {
-    interval_expr a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
-    expr b = mutate(op->b, &b_bounds);
-
-    expr result = simplify(op, std::move(a), std::move(b));
-    if (result.same_as(op)) {
-      set_result(std::move(result), bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
-    } else {
-      mutate_and_set_result(result);
-    }
-  }
 
   template <typename T>
   void visit_binary(const T* op) {
@@ -220,6 +205,8 @@ public:
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
   }
+  void visit(const add* op) override { visit_binary(op); }
+  void visit(const sub* op) override { visit_binary(op); }
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }
   void visit(const mod* op) override { visit_binary(op); }
