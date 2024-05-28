@@ -972,6 +972,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
   }
 
+  // `implement_copies` adds shadowed declarations, remove them before simplifying.
+  result = deshadow(result, ctx);
   result = simplify(result);
 
   result = optimize_symbols(result, ctx);
