@@ -360,7 +360,8 @@ function pipeline(__in, out) {
               {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:buffer_stride(intm, 0), fold_factor:buffer_fold_factor(intm, 0)},
               {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:buffer_stride(intm, 1), fold_factor:buffer_fold_factor(intm, 1)}
           ];
-          { let padded_intm = make_buffer('padded_intm', __base, __elem_size, __dims);            produce(intm);
+          { let padded_intm = make_buffer('padded_intm', __base, __elem_size, __dims);
+            produce(intm);
             produce(padded_intm);
             __event_t++;
           }
