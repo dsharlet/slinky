@@ -635,11 +635,7 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
-          if (allocation_bounds_[o.sym()]) {
-            bounds |= (*allocation_bounds_[o.sym()])[d];
-          } else {
-            bounds |= buffer_bounds(o.sym(), d);
-          }
+          bounds |= buffer_bounds(o.sym(), d);
         }
       }
     }
