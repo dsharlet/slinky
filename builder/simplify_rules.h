@@ -78,7 +78,7 @@ bool apply_min_rules(Fn&& apply) {
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
-      apply(min(x + c0, (y + c1)/c2), min(x, (y + eval(c1 - c0*c2))/c2) + c0) ||
+      apply(min(x + c0, (y + c1)/c2), min(x, (y + eval(c1 - c0*c2))/c2) + c0, eval(c2 != 0 && c0%c2 == 0)) ||
       apply(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
       apply(min(x + c0, c1 - y), c1 - max(y, eval(c1 - c0) - x)) ||
       apply(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
@@ -182,7 +182,7 @@ bool apply_max_rules(Fn&& apply) {
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
-      apply(max(x + c0, (y + c1)/c2), max(x, (y + eval(c1 - c0*c2))/c2) + c0) ||
+      apply(max(x + c0, (y + c1)/c2), max(x, (y + eval(c1 - c0*c2))/c2) + c0, eval(c2 != 0 && c0%c2 == 0)) ||
       apply(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
       apply(max(x + c0, c1 - y), c1 - min(y, eval(c1 - c0) - x)) ||
       apply(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
@@ -262,9 +262,9 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + (y + c0), (x + y) + c0) ||
       apply((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
     
-      apply(((x + c0)/c1)*c2 + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, eval(c3%c2 == 0)) ||
-      apply((x + c0)*c2 + c3, (x + eval(c3/c2 + c0))*c2, eval(c3%c2 == 0)) ||
-      apply((x + c0)/c1 + c3, (x + eval(c3*c1 + c0))/c1) ||
+      apply(((x + c0)/c1)*c2 + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, eval(c1 != 0 && c2 != 0 && c3%c2 == 0)) ||
+      apply((x + c0)*c2 + c3, (x + eval(c3/c2 + c0))*c2, eval(c2 != 0 && c3%c2 == 0)) ||
+      apply((x + c0)/c1 + c3, (x + eval(c3*c1 + c0))/c1, eval(c1 != 0)) ||
 
       apply(z + min(x, y - (z - w)), min(x + z, y + w)) ||
       apply(z + max(x, y - (z - w)), max(x + z, y + w)) ||
@@ -450,7 +450,7 @@ bool apply_less_rules(Fn&& apply) {
       apply(x%c0 < c1, x%c0 != c1, eval(c0 > 0 && c1 >= c0 - 1)) ||
       apply(c0 < x%c1, true, eval(c1 > 0 && c0 < 0)) ||
       apply(c0 < x%c1, false, eval(c1 > 0 && c0 >= c1 - 1)) ||
-      apply(c0 < x%c1, boolean(x%c1), eval(c1 > 0 && c0 <= 0)) ||
+      apply(c0 < x%c1, boolean(x%c1), eval(c1 > 0 && c0 == 0)) ||
     
       // These rules taken from
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
@@ -579,9 +579,9 @@ bool apply_equal_rules(Fn&& apply) {
       apply(x + z == w + (x + y), z == y + w) ||
       apply(w + (x + y) == u + (x + z), y + w == z + u) ||
 
-      apply(x*c0 == y*c1, x == y*eval(c1/c0), eval(c1%c0 == 0)) ||
-      apply(x*c0 == y*c1, y == x*eval(c0/c1), eval(c0%c1 == 0)) ||
-      apply(x*c0 == c1, x == eval(c1/c0), eval(c1%c0 == 0)) ||
+      apply(x*c0 == y*c1, x == y*eval(c1/c0), eval(c0 != 0 && c1%c0 == 0)) ||
+      apply(x*c0 == y*c1, y == x*eval(c0/c1), eval(c1 != 0 && c0%c1 == 0)) ||
+      apply(x*c0 == c1, x == eval(c1/c0), eval(c0 != 0 && c1%c0 == 0)) ||
       apply(x + c0 == y + c1, x == y + eval(c1 - c0)) ||
       apply(x + c0 == c1, x == eval(c1 - c0)) ||
       apply(x + c0 == c1 - y, x + y == eval(c1 - c0)) ||

@@ -52,14 +52,14 @@ class rule_tester {
 public:
   rule_tester() : expr_gen_(rng_, var_count) { init_match_context(); }
 
-  SLINKY_NO_INLINE void test_expr(expr e, const std::string& rule_str) {
-    if (contains_infinity(e)) {
+  SLINKY_NO_INLINE void test_expr(expr pattern, expr replacement, const std::string& rule_str) {
+    if (contains_infinity(pattern)) {
       // TODO: Maybe there's a way to test this...
       return;
     }
 
-    expr simplified = simplify(e);
-    ASSERT_FALSE(e.same_as(simplified)) << "Rule did not apply: " << rule_str << "\nTo: " << e << "\n";
+    expr simplified = simplify(pattern);
+    ASSERT_FALSE(pattern.same_as(simplified)) << "Rule did not apply: " << rule_str << "\nTo: " << pattern << "\n";
 
     eval_context ctx;
     for (int test = 0; test < 100; ++test) {
@@ -67,9 +67,13 @@ public:
         ctx[var(i)] = expr_gen_.random_constant();
       }
 
-      index_t value = evaluate(e, ctx);
+      index_t value = evaluate(pattern, ctx);
+      index_t replacement_value = evaluate(replacement, ctx);
       index_t simplified_value = evaluate(simplified, ctx);
-      ASSERT_EQ(value, simplified_value) << "Incorrect rule: " << rule_str << "\n" << e << " -> " << simplified << "\n";
+      ASSERT_EQ(value, replacement_value) << "Incorrect rule: " << rule_str << "\n"
+                                          << pattern << " -> " << replacement << "\n";
+      ASSERT_EQ(value, simplified_value) << "Incorrect simplification: " << rule_str << "\n"
+                                         << pattern << " -> " << simplified << "\n";
     }
   }
 
@@ -79,10 +83,11 @@ public:
     std::stringstream rule_str;
     rule_str << p << " -> " << r;
 
-    expr e = substitute(p, m);
+    expr pattern = substitute(p, m);
+    expr replacement = substitute(r, m);
 
     // Make sure the expressions have the same value when evaluated.
-    test_expr(e, rule_str.str());
+    test_expr(pattern, replacement, rule_str.str());
 
     // Returning false means the rule applicator will continue to the next rule.
     return false;
@@ -99,10 +104,11 @@ public:
     for (int test = 0; test < 100000; ++test) {
       init_match_context();
       if (substitute(pr, m)) {
-        expr e = substitute(p, m);
+        expr pattern = substitute(p, m);
+        expr replacement = substitute(r, m);
 
         // Make sure the expressions have the same value when evaluated.
-        test_expr(e, rule_str.str());
+        test_expr(pattern, replacement, rule_str.str());
 
         // Returning false means the rule applicator will continue to the next rule.
         return false;
