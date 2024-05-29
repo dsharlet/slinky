@@ -261,10 +261,17 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + (c0 - y), (x - y) + c0) ||
       apply(x + (y + c0), (x + y) + c0) ||
       apply((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
-    
+
       apply(((x + c0)/c1)*c2 + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, eval(c1 != 0 && c2 != 0 && c3%c2 == 0)) ||
       apply((x + c0)*c2 + c3, (x + eval(c3/c2 + c0))*c2, eval(c2 != 0 && c3%c2 == 0)) ||
       apply((x + c0)/c1 + c3, (x + eval(c3*c1 + c0))/c1, eval(c1 != 0)) ||
+
+      apply(min(x + c0, y + c1) + c2, min(x + eval(c0 + c2), y + eval(c1 + c2))) ||
+      apply(max(x + c0, y + c1) + c2, max(x + eval(c0 + c2), y + eval(c1 + c2))) ||
+      apply(min(x + c0, c1 - y) + c2, min(x + eval(c0 + c2), eval(c1 + c2) - y)) ||
+      apply(max(x + c0, c1 - y) + c2, max(x + eval(c0 + c2), eval(c1 + c2) - y)) ||
+      apply(min(x, y + c1) + c2, min(y, x + c2), eval(c1 == -c2)) ||
+      apply(max(x, y + c1) + c2, max(y, x + c2), eval(c1 == -c2)) ||
 
       apply(z + min(x, y - (z - w)), min(x + z, y + w)) ||
       apply(z + max(x, y - (z - w)), max(x + z, y + w)) ||
@@ -306,8 +313,9 @@ bool apply_sub_rules(Fn&& apply) {
       apply((x - y) - (x - z), z - y) ||
       apply((c0 - x) - (y - z), ((z - x) - y) + c0) ||
       apply((x + c0) - (y + c1), (x - y) + eval(c0 - c1)) ||
-    
-      // These rules taken from https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Sub.cpp#L411-L421
+
+      // These rules taken from 
+      // https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_Sub.cpp#L411-L421
       apply((x + y)/c0 - (x + c1)/c0, ((y - c1) + ((x + eval(c1%c0))%c0))/c0, eval(c0 > 0)) ||
       apply((x + c1)/c0 - (x + y)/c0, ((eval(c0 + c1 - 1) - y) - ((x + eval(c1%c0))%c0))/c0, eval(c0 > 0)) ||
       apply((x - y)/c0 - (x + c1)/c0, (((x + eval(c1%c0))%c0) - y - c1)/c0, eval(c0 > 0)) ||
@@ -317,9 +325,16 @@ bool apply_sub_rules(Fn&& apply) {
       apply(x/c0 - (x - y)/c0, ((y + eval(c0 - 1)) - (x%c0))/c0, eval(c0 > 0)) ||
       apply((x - y)/c0 - x/c0, ((x%c0) - y)/c0, eval(c0 > 0)) ||
       apply((x + y)/c0 - x/c0, (y + (x%c0))/c0, eval(eval(c0 > 0))) ||
-    
+
       apply(x - (x/c0)*c0, x%c0, eval(c0 > 0)) ||
       apply((x/c0)*c0 - x, -(x%c0), eval(c0 > 0)) ||
+
+      apply(c2 - min(x + c0, y + c1), max(eval(c2 - c0) - x, eval(c2 - c1) - y)) ||
+      apply(c2 - max(x + c0, y + c1), min(eval(c2 - c0) - x, eval(c2 - c1) - y)) ||
+      apply(c2 - min(x + c0, c1 - y), max(y + eval(c2 - c1), eval(c2 - c0) - x)) ||
+      apply(c2 - max(x + c0, c1 - y), min(y + eval(c2 - c1), eval(c2 - c0) - x)) ||
+      apply(c2 - min(x, c1 - y), max(y, c2 - x), eval(c1 == c2)) ||
+      apply(c2 - max(x, c1 - y), min(y, c2 - x), eval(c1 == c2)) ||
 
       apply(min(x, y + z) - z, min(y, x - z)) ||
       apply(max(x, y + z) - z, max(y, x - z)) ||
