@@ -32,8 +32,6 @@ jobs:
 
       - name: Setup Cpp
         uses: aminya/setup-cpp@v1
-        with:
-          compiler: llvm
 
       - name: Build and test
         run: bazel test --test_output=errors ...

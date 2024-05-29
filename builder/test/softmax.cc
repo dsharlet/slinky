@@ -213,26 +213,26 @@ TEST_P(softmax, pipeline) {
   }
 
   if (split_b > 0) {
-    const int sum_exp_in_allocation = split_b;
-    const int exp_in_allocation = split_b * D;
-    const int max_in_allocation = split_b;
-    const int softmax_in_allocation = split_b * D;
-    const int softmax_out_allocation = split_b * (split_c == 0 ? D : split_c);
-    int extra_memory = 0;
+    const int sum_exp_in_size = split_b * sizeof(float);
+    const int exp_in_size = split_b * D * sizeof(float);
+    const int max_in_size = split_b * sizeof(float);
+    const int softmax_in_size = split_b * D * sizeof(float);
+    const int softmax_out_size = split_b * (split_c == 0 ? D : split_c) * sizeof(float);
     if (copy_at_the_end == 2) {
-      extra_memory = D * B;
+      const int add_out_size = D * B * sizeof(float);
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size, add_out_size));
+    } else {
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size));
     }
-    ASSERT_EQ(eval_ctx.heap.total_size, (sum_exp_in_allocation + exp_in_allocation + max_in_allocation +
-                                            softmax_in_allocation + softmax_out_allocation + extra_memory) *
-                                            sizeof(float));
+  } else {
+    if (copy_at_the_end == 2) {
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), 6);
+    } else {
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), 5);
+    }
   }
-
-  int extra_allocs = 0;
-  if (copy_at_the_end == 2) {
-    extra_allocs++;
-  }
-
-  ASSERT_EQ(eval_ctx.heap.total_count, 5 + extra_allocs);
 
   if (split_c == 0 && !use_compute_at) {
     check_visualize("softmax_split_" + std::to_string(split_b) + ".html", p, inputs, outputs, &ctx);

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
@@ -86,8 +87,7 @@ TEST_P(pyramid, pipeline) {
   p.evaluate(inputs, outputs, eval_ctx);
 
   const int parallel_extra = max_workers != loop::serial ? 1 : 0;
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) / 2 * (2 + parallel_extra) * sizeof(int));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W + 2) / 2 * (2 + parallel_extra) * sizeof(int)));
 
   if (max_workers == loop::serial) {
     check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));

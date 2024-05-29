@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <numeric>
@@ -86,7 +87,7 @@ TEST_P(trivial, pipeline) {
     ASSERT_EQ(out_buf(i), 2 * i);
   }
 
-  ASSERT_EQ(eval_ctx.heap.total_size, 0);
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
 }
 
 class elementwise : public testing::TestWithParam<std::tuple<int, int, bool>> {};
@@ -154,7 +155,7 @@ TEST_P(elementwise, pipeline_1d) {
   }
 
   if (schedule_storage) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);  // The intermediate only needs stack.
   }
 }
 
@@ -222,7 +223,7 @@ TEST_P(elementwise, pipeline_2d) {
   }
 
   if (schedule_storage) {
-    ASSERT_EQ(eval_ctx.heap.total_count, 0);  // The intermediate only needs stack.
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);  // The intermediate only needs stack.
   }
 }
 
@@ -316,7 +317,7 @@ TEST_P(matmuls, pipeline) {
   }
 
   if (split > 0 && max_workers == loop::serial) {
-    ASSERT_EQ(eval_ctx.heap.total_size, N * sizeof(int) * split);
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(N * sizeof(int) * split));
   }
 
   if (split == 1 && max_workers == loop::serial) {
@@ -392,9 +393,11 @@ TEST_P(stencil, pipeline) {
 
   if (split > 0) {
     const int parallel_extra = max_workers != loop::serial ? split : 0;
-    ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short));
+    const int intm_size = (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short);
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size));
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
 
   // Also visualize this pipeline.
   if (max_workers == loop::serial && split_intermediate == 0) {
@@ -469,8 +472,7 @@ TEST_P(slide_2d, pipeline) {
     }
   }
 
-  ASSERT_EQ(eval_ctx.heap.total_size, (W + 2) * 3 * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);
+  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W + 2) * 3 * sizeof(short)));
   ASSERT_EQ(add_count, (W + 2) * (H + 2));
 }
 
@@ -553,9 +555,10 @@ TEST_P(stencil_chain, pipeline) {
     const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
     const int intm_size = (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short);
     const int intm2_size = (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short);
-    ASSERT_EQ(eval_ctx.heap.total_size, intm_size + intm2_size);
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size, intm2_size));
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
   }
-  ASSERT_EQ(eval_ctx.heap.total_count, 2);
 
   // Also visualize this pipeline.
   if (max_workers == loop::serial) {
@@ -782,8 +785,8 @@ TEST(unrelated, pipeline) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
 
-  ASSERT_EQ(eval_ctx.heap.total_size, (W1 + 2) * 4 * sizeof(short));
-  ASSERT_EQ(eval_ctx.heap.total_count, 1);  // intm2 aliased to out2.
+  // intm2 aliased to out2.
+  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W1 + 2) * 4 * sizeof(short)));
 }
 
 class padded_stencil : public testing::TestWithParam<int> {};
@@ -852,12 +855,11 @@ TEST_P(padded_stencil, pipeline) {
   }
 
   if (schedule == 2) {
-    const index_t intm_size = W * sizeof(short);
-    const index_t padded_intm_size = (W + 2) * 3 * sizeof(short);
-    ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_size);
-    ASSERT_EQ(eval_ctx.heap.total_count, 2);
+    const int intm_size = W * sizeof(short);
+    const int padded_intm_size = (W + 2) * 3 * sizeof(short);
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size, padded_intm_size));
   } else {
-    ASSERT_EQ(eval_ctx.heap.total_count, 1);
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
 
   // Also visualize this pipeline.
@@ -987,12 +989,12 @@ TEST_P(padded_stencil_separable, pipeline) {
 
     if (!require_dense_x) {
       // We can't alias stencil_intm and padded_intm like we can without splitting because of fold factor constraints.
-      ASSERT_EQ(eval_ctx.heap.total_size, std::max(intm_size, padded_intm_t_size) + stencil_intm_size + padded_intm_size);
-      ASSERT_EQ(eval_ctx.heap.total_count, 3);
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), stencil_intm_size, padded_intm_size));
     } else {
       // We can't alias anything when we require the strides to be dense.
-      ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_intm_size + padded_intm_size);
-      ASSERT_EQ(eval_ctx.heap.total_count, 4);
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(intm_size, padded_intm_t_size, stencil_intm_size, padded_intm_size));
     }
   } else {
     const index_t intm_size = W * H * sizeof(short);
@@ -1001,13 +1003,12 @@ TEST_P(padded_stencil_separable, pipeline) {
     const index_t padded_intm_size = W * (H + 2) * sizeof(short);
 
     if (!require_dense_x) {
-      ASSERT_EQ(eval_ctx.heap.total_size,
-          std::max(intm_size, padded_intm_t_size) + std::max(stencil_intm_size, padded_intm_size));
-      ASSERT_EQ(eval_ctx.heap.total_count, 2);
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), std::max(stencil_intm_size, padded_intm_size)));
     } else {
       // We can't alias anything when we require the strides to be dense.
-      ASSERT_EQ(eval_ctx.heap.total_size, intm_size + padded_intm_t_size + stencil_intm_size + padded_intm_size);
-      ASSERT_EQ(eval_ctx.heap.total_count, 4);
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(intm_size, padded_intm_t_size, stencil_intm_size, padded_intm_size));
     }
   }
 }
