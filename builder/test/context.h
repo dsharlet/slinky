@@ -1,7 +1,9 @@
 #ifndef SLINKY_BUILDER_TEST_CONTEXT_H
 #define SLINKY_BUILDER_TEST_CONTEXT_H
 
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include "runtime/evaluate.h"
 
@@ -12,14 +14,14 @@ void setup_tracing(eval_context& ctx, const std::string& filename);
 struct memory_info {
   std::atomic<index_t> live_count = 0;
   std::atomic<index_t> live_size = 0;
-  std::atomic<index_t> total_count = 0;
-  std::atomic<index_t> total_size = 0;
+  std::mutex m;
+  std::vector<index_t> allocs;
 
   void track_allocate(index_t size) {
     live_count += 1;
     live_size += size;
-    total_count += 1;
-    total_size += size;
+    std::unique_lock l(m);
+    allocs.push_back(size);
   }
 
   void track_free(index_t size) {
