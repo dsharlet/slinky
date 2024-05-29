@@ -59,7 +59,6 @@ TEST(flip_y, pipeline) {
   }
 
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 }
 
 TEST(padded_copy, pipeline) {
@@ -117,7 +116,6 @@ TEST(padded_copy, pipeline) {
   }
 
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 }
 
 class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};

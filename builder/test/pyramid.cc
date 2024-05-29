@@ -88,7 +88,6 @@ TEST_P(pyramid, pipeline) {
 
   const int parallel_extra = max_workers != loop::serial ? 1 : 0;
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W + 2) / 2 * (2 + parallel_extra) * sizeof(int)));
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 
   if (max_workers == loop::serial) {
     check_replica_pipeline(define_replica_pipeline(ctx, {in}, {out}));

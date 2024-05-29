@@ -395,8 +395,9 @@ TEST_P(stencil, pipeline) {
     const int parallel_extra = max_workers != loop::serial ? split : 0;
     const int intm_size = (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short);
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size));
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 
   // Also visualize this pipeline.
   if (max_workers == loop::serial && split_intermediate == 0) {
@@ -472,7 +473,6 @@ TEST_P(slide_2d, pipeline) {
   }
 
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W + 2) * 3 * sizeof(short)));
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   ASSERT_EQ(add_count, (W + 2) * (H + 2));
 }
 
@@ -785,8 +785,8 @@ TEST(unrelated, pipeline) {
     ASSERT_EQ(out2_buf(i), 2 * i + 1);
   }
 
+  // intm2 aliased to out2.
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W1 + 2) * 4 * sizeof(short)));
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);  // intm2 aliased to out2.
 }
 
 class padded_stencil : public testing::TestWithParam<int> {};
@@ -855,8 +855,9 @@ TEST_P(padded_stencil, pipeline) {
   }
 
   if (schedule == 2) {
-    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * sizeof(short), (W + 2) * 3 * sizeof(short)));
-    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+    const int intm_size = W * sizeof(short);
+    const int padded_intm_size = (W + 2) * 3 * sizeof(short);
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size, padded_intm_size));
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
