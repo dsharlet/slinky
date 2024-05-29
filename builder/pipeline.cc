@@ -635,11 +635,7 @@ class pipeline_builder {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
           // This output uses this loop. Add it to the bounds.
-          if (allocation_bounds_[o.sym()]) {
-            bounds |= (*allocation_bounds_[o.sym()])[d];
-          } else {
-            bounds |= buffer_bounds(o.sym(), d);
-          }
+          bounds |= buffer_bounds(o.sym(), d);
         }
       }
     }
@@ -915,7 +911,7 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
       expr iter_name = get_trace_arg("loop " + ctx.name(op->sym) + " iteration");
       expr loop_name = get_trace_arg("loop " + ctx.name(op->sym));
       stmt body = add_trace(mutate(op->body), iter_name);
-      stmt result = clone_with_new_body(op, std::move(body));
+      stmt result = clone_with(op, std::move(body));
       set_result(add_trace(std::move(result), loop_name));
     }
   };
@@ -952,6 +948,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
   result = block::make(std::move(checks), std::move(result));
 
+  result = deshadow(result, ctx);
   result = simplify(result);
 
   // Try to reuse buffers and eliminate copies where possible.
@@ -971,7 +968,11 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
   }
 
+  // `implement_copies` adds shadowed declarations, remove them before simplifying.
+  result = deshadow(result, ctx);
   result = simplify(result);
+
+  result = optimize_symbols(result, ctx);
 
   result = fix_buffer_races(result);
 

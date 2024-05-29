@@ -359,6 +359,7 @@ public:
       lets.emplace_back(s.first, mutate(s.second, &value_bounds));
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
+      assert(!expr_bounds.contains(s.first));
       scoped_values.push_back(set_value_in_scope(expr_bounds, s.first, value_bounds));
     }
 
@@ -403,28 +404,14 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  // Assuming that we've entered the body of a declaration of `sym`, remove any references to `sym` from the bounds (as
-  // if they came from outside the body).
-  static void clear_shadowed_bounds(var sym, interval_expr& bounds) {
-    if (depends_on(bounds.min, sym).buffer_meta) bounds.min = expr();
-    if (depends_on(bounds.max, sym).buffer_meta) bounds.max = expr();
-  }
-  static void clear_shadowed_bounds(var sym, box_expr& bounds) {
-    for (interval_expr& i : bounds) {
-      clear_shadowed_bounds(sym, i);
-    }
-  }
-
   stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
-    if (bounds) {
-      clear_shadowed_bounds(buf, *bounds);
-    }
+    assert(!buffer_bounds.contains(buf));
     auto set_bounds = set_value_in_scope(buffer_bounds, buf, std::move(bounds));
     return mutate(body);
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
-    clear_shadowed_bounds(v, bounds);
+    assert(!expr_bounds.contains(v));
     auto set_bounds = set_value_in_scope(expr_bounds, v, std::move(bounds));
     return mutate(body);
   }
