@@ -363,7 +363,7 @@ function pipeline(__in, out) {
                       check(trace_end(__trace_token));
                     }
                   }}
-                  { let __stencil1_result = crop_dim(stencil1_result, 1, {min:(min(y, (min((y + 1), buffer_max(out, 1)) + 1)) + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)}); {
+                  { let __stencil1_result = crop_dim(stencil1_result, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)}); {
                     let stencil1_result = __stencil1_result;
                     {
                       let __trace_token = trace_begin(buffer_at(__trace_names, 30));
