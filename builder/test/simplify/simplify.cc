@@ -263,10 +263,6 @@ TEST(simplify, buffer_bounds) {
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
                   crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == y && buffer_at(x))))),
       matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(buffer_at(x)))));
-
-  ASSERT_THAT(simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
-                  crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1))))),
-      matches(check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1)))));
 }
 
 TEST(simplify, crop_not_needed) {

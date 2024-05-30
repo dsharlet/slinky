@@ -828,6 +828,28 @@ public:
     }
   }
 
+  interval_expr get_dim_bounds(var buf, int dim) {
+    const std::optional<buffer_info>& info = buffers[buf];
+    if (info && dim < static_cast<int>(info->dims.size())) {
+      return info->dims[dim].bounds;
+    }
+    return buffer_bounds(buf, dim);
+  }
+
+  box_expr get_buffer_bounds(var buf, int rank) {
+    box_expr result(rank);
+    const std::optional<buffer_info>& info = buffers[buf];
+    for (int d = 0; d < rank; ++d) {
+      if (info) {
+        assert(d <= static_cast<int>(info->dims.size()));
+        result[d] = info->dims[d].bounds;
+      } else {
+        result[d] = buffer_bounds(buf, d);
+      }
+    }
+    return result;
+  }
+
   // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
   static expr simplify_crop_bound(expr x, var sym, int dim) {
     if (const class max* m = x.as<class max>()) {
@@ -840,8 +862,16 @@ public:
     return x;
   }
 
-  static interval_expr simplify_crop_bounds(interval_expr i, var sym, int dim) {
-    return {simplify_crop_bound(i.min, sym, dim), simplify_crop_bound(i.max, sym, dim)};
+  interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
+    interval_expr result = mutate(crop & buffer);
+
+    if (match(result.min, buffer.min)) result.min = expr();
+    if (match(result.max, buffer.max)) result.max = expr();
+
+    result.min = simplify_crop_bound(result.min, buf, dim);
+    result.max = simplify_crop_bound(result.max, buf, dim);
+
+    return result;
   }
 
   static bool crop_needed(const depends_on_result& deps) {
@@ -850,42 +880,20 @@ public:
     return deps.buffer_output || deps.buffer_src || deps.buffer_dst;
   }
 
-  // Simplify bounds, assuming they will be clamped to outer_bounds.
-  interval_expr simplify_redundant_bounds(interval_expr bounds, const interval_expr& outer_bounds) {
-    if (bounds.min.defined() && outer_bounds.min.defined() && prove_true(bounds.min <= outer_bounds.min)) {
-      bounds.min = expr();
-    }
-    if (bounds.max.defined() && outer_bounds.max.defined() && prove_true(bounds.max >= outer_bounds.max)) {
-      bounds.max = expr();
-    }
-    return bounds;
-  }
-
   void visit(const crop_buffer* op) override {
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
-    box_expr bounds(op->bounds.size());
+    box_expr bounds = get_buffer_bounds(op->src, op->bounds.size());
     // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    const std::optional<buffer_info>& info = buffers[op->sym];
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
-      interval_expr bounds_i = simplify_crop_bounds(mutate(op->bounds[i]), op->src, i);
-      bounds_i = simplify_redundant_bounds(bounds_i, slinky::buffer_bounds(op->src, i));
-      changed = changed || !bounds_i.same_as(op->bounds[i]);
+      new_bounds[i] = mutate_crop_bounds(op->bounds[i], op->src, i, bounds[i]);
+      changed = changed || !new_bounds[i].same_as(op->bounds[i]);
 
-      bounds[i] = bounds_i;
-
-      // If the new bounds are the same as the existing bounds, set the crop in this dimension to
-      // be undefined.
-      if (info && i < static_cast<index_t>(info->dims.size())) {
-        bounds_i = simplify_redundant_bounds(bounds_i, info->dims[i].bounds);
-      }
-      if (bounds_i.min.defined()) new_bounds[i].min = bounds_i.min;
-      if (bounds_i.max.defined()) new_bounds[i].max = bounds_i.max;
-      dims_count += bounds_i.min.defined() || bounds_i.max.defined() ? 1 : 0;
+      dims_count += new_bounds[i].min.defined() || new_bounds[i].max.defined() ? 1 : 0;
     }
     stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
     auto deps = depends_on(body, op->sym);
@@ -931,9 +939,11 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
-    bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
-    if (!bounds.min.defined() && !bounds.max.defined()) {
+    // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
+    interval_expr bounds = get_dim_bounds(op->src, op->dim);
+    // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
+    interval_expr new_bounds = mutate_crop_bounds(op->bounds, op->src, op->dim, bounds);
+    if (!new_bounds.min.defined() && !new_bounds.max.defined()) {
       // This crop is a no-op.
       stmt body = substitute(op->body, op->sym, op->src);
       set_result(mutate(body));
@@ -942,17 +952,7 @@ public:
 
     std::optional<buffer_info> info = buffers[op->sym];
     if (info && op->dim < static_cast<index_t>(info->dims.size())) {
-      interval_expr& buf_bounds_dim = info->dims[op->dim].bounds;
-      bounds = simplify_redundant_bounds(bounds, buf_bounds_dim);
-
-      if (!bounds.min.defined() && !bounds.max.defined()) {
-        // This crop is a no-op.
-        stmt body = substitute(op->body, op->sym, op->src);
-        set_result(mutate(body));
-        return;
-      }
-      if (bounds.min.defined()) buf_bounds_dim.min = bounds.min;
-      if (bounds.max.defined()) buf_bounds_dim.max = bounds.max;
+      info->dims[op->dim].bounds = bounds;
     }
 
     stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
@@ -961,7 +961,7 @@ public:
       set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds & slinky::buffer_bounds(op->src, op->dim));
+      body = substitute_bounds(body, op->sym, op->dim, bounds);
       body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
@@ -979,7 +979,7 @@ public:
       if (crop->sym == op->sym) {
         if (crop->dim == op->dim) {
           // Two nested crops of the same dimension, do one crop of the intersection instead.
-          set_result(mutate(crop_dim::make(op->sym, op->src, op->dim, bounds & crop->bounds, crop->body)));
+          set_result(mutate(crop_dim::make(op->sym, op->src, op->dim, new_bounds & crop->bounds, crop->body)));
           return;
         } else {
           // TODO: This is a nested crop of the same buffer, use crop_buffer instead.
@@ -991,13 +991,13 @@ public:
       std::vector<stmt> stmts;
       stmts.reserve(b->stmts.size());
       for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(crop_dim::make(op->sym, op->src, op->dim, bounds, s)));
+        stmts.push_back(mutate(crop_dim::make(op->sym, op->src, op->dim, new_bounds, s)));
       }
       set_result(block::make(std::move(stmts)));
-    } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
+    } else if (new_bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(bounds), std::move(body)));
+      set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(new_bounds), std::move(body)));
     }
   }
 

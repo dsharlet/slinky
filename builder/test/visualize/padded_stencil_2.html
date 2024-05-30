@@ -350,10 +350,7 @@ function pipeline(__in, out) {
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 1;
               for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                { let __intm = crop_buffer(intm, [
-                    {min:max(g, (buffer_min(out, 0) + -1)), max:min(g#0, (buffer_max(out, 0) + 1))},
-                    {min:select((y <= y_min_orig), max(g#1, (y + 1)), (min(g#2, y) + 1)), max:min(g#2, (y + 1))}
-                ]); {
+                { let __intm = crop_dim(intm, 1, {min:max(g#1, (max((buffer_min(out, 1) + -2), select((y <= y_min_orig), y, min(g#2, y))) + 1)), max:min(g#2, (y + 1))}); {
                   let intm = __intm;
                   consume(__in);
                   produce(intm);
