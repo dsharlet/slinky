@@ -12,16 +12,6 @@
 
 namespace slinky {
 
-std::string get_replica_golden() {
-  static std::string golden = read_entire_file(get_bazel_file_path("builder/test/replica_pipeline.cc"));
-  return golden;
-}
-
-void check_replica_pipeline(const std::string& replica_text) {
-  size_t pos = get_replica_golden().find(replica_text);
-  ASSERT_NE(pos, std::string::npos) << "Matching replica text not found, expected:\n" << replica_text;
-}
-
 TEST(flip_y, pipeline) {
   // Make the pipeline
   node_context ctx;
