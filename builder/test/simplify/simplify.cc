@@ -244,6 +244,8 @@ TEST(simplify, bounds) {
   ASSERT_THAT(simplify(min(x, y), {{x, {y + 1, z}}}), matches(y));
   ASSERT_THAT(simplify(min(x, y), {{x, {y + abs(w), z}}}), matches(y));
 
+  ASSERT_THAT(simplify(expr(x) == y, {{x, {y, y}}}), matches(true));
+
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x))), matches(stmt()));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y))), matches(check::make(y)));
 }

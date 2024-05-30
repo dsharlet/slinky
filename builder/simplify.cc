@@ -88,6 +88,9 @@ public:
   expr mutate(const expr& e, interval_expr* bounds) {
     expr result = node_mutator::mutate(e);
     if (bounds) {
+      if (!result_bounds.is_point() && match(result_bounds.min, result_bounds.max)) {
+        result_bounds.max = result_bounds.min;
+      }
       if (bounds != &result_bounds) {
         *bounds = std::move(result_bounds);
       }
