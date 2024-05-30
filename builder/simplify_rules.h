@@ -58,8 +58,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, min(x, y) + c1), min(x, y + c1), eval(c1 > 0)) ||
       apply(min(x, min(x, y) + c1), min(x, y) + c1, eval(c1 < 0)) ||
 
-      apply(min(x, max(y, x + c0)), x, c0 > 0) ||
-      apply(min(x, max(x, y) + c1), x, c1 > 0) ||
+      apply(min(x, max(y, x + c0)), x, eval(c0 > 0)) ||
+      apply(min(x, max(x, y) + c1), x, eval(c1 > 0)) ||
 
       // Pull common terms out.
       apply(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
@@ -175,8 +175,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, max(x, y) + c1), max(x, y + c1), eval(c1 < 0)) ||
       apply(max(x, max(x, y) + c1), max(x, y) + c1, eval(c1 > 0)) ||
 
-      apply(max(x, min(y, x + c0)), x, c0 < 0) ||
-      apply(max(x, min(x, y) + c1), x, c1 < 0) ||
+      apply(max(x, min(y, x + c0)), x, eval(c0 < 0)) ||
+      apply(max(x, min(x, y) + c1), x, eval(c1 < 0)) ||
 
       // Pull common terms out.
       apply(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
