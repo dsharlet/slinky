@@ -233,9 +233,22 @@ TEST(simplify, licm) {
 }
 
 TEST(simplify, bounds) {
+  ASSERT_THAT(simplify(min(x, y), {{x, {y, z}}}), matches(y));
+  ASSERT_THAT(simplify(max(x, y), {{x, {y, z}}}), matches(x));
+  ASSERT_THAT(simplify(min(x, z), {{x, {y, z}}}), matches(x));
+  ASSERT_THAT(simplify(max(x, z), {{x, {y, z}}}), matches(z));
+  ASSERT_THAT(simplify(min(x + 1, y), {{x, {y, z}}}), matches(y));
+  ASSERT_THAT(simplify(min(x, y - 1), {{x, {y, z}}}), matches(y + -1));
+  ASSERT_THAT(simplify(max(x + 2, y), {{x, {y, z}}}), matches(x + 2));
+  ASSERT_THAT(simplify(max(x, y - 2), {{x, {y, z}}}), matches(x));
+  ASSERT_THAT(simplify(min(x, y), {{x, {y + 1, z}}}), matches(y));
+  ASSERT_THAT(simplify(min(x, y), {{x, {y + abs(w), z}}}), matches(y));
+
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x))), matches(stmt()));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y))), matches(check::make(y)));
+}
 
+TEST(simplify, buffer_bounds) {
   ASSERT_THAT(
       simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2))),
       matches(stmt()));
