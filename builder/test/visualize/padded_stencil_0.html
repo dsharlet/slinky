@@ -361,21 +361,15 @@ function pipeline(__in, out) {
               {bounds:{min:buffer_min(intm_padded_intm, 1), max:buffer_max(intm_padded_intm, 1)}, stride:buffer_stride(intm, 1), fold_factor:buffer_fold_factor(intm, 1)}
           ];
           { let padded_intm#1 = make_buffer('padded_intm#1', __base, __elem_size, __dims);
-            { let __padded_intm#1 = transpose(padded_intm#1, [0, 1]); {
-              let padded_intm#1 = __padded_intm#1;
-              produce(intm);
-              produce(padded_intm#1);
-              __event_t++;
-            }}
+            produce(intm);
+            produce(padded_intm#1);
+            __event_t++;
           }
         }
       }}
-      { let __intm_padded_intm = transpose(intm_padded_intm, [0, 1]); {
-        let intm_padded_intm = __intm_padded_intm;
-        consume(intm_padded_intm);
-        produce(out);
-        __event_t++;
-      }}
+      consume(intm_padded_intm);
+      produce(out);
+      __event_t++;
       free(intm_padded_intm);
     }
   }

@@ -58,9 +58,6 @@ class simplifier : public node_mutator {
   struct buffer_info {
     expr elem_size;
 
-    // The mapping of dimensions of this buffer to its original buffer.
-    std::vector<int> permutation;
-
     // The dimension metadata for this buffer.
     std::vector<dim_expr> dims;
   };
@@ -472,12 +469,10 @@ public:
   void visit(const let_stmt* op) override { visit_let(op); }
 
   stmt mutate_with_buffer(stmt body, var buf, std::optional<buffer_info> buffer) {
-    assert(!buffers.contains(buf));
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     return mutate(body);
   }
   stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
-    assert(!buffers.contains(buf));
     std::optional<buffer_info> info;
     if (bounds) {
       info = buffer_info();
@@ -759,7 +754,7 @@ public:
               break;
             }
 
-            // If the argument is defined, we need the min to be the same as the argument.
+            // If the argument to buffer_at is defined, we need the min to be the same as the argument.
             // If it is not defined, it must be buffer_min(buf, d).
             bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
             expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
@@ -831,26 +826,21 @@ public:
     }
   }
 
-  interval_expr get_dim_bounds(var buf, int dim) {
-    const std::optional<buffer_info>& info = buffers[buf];
-    if (info && dim < static_cast<int>(info->dims.size())) {
-      return info->dims[dim].bounds;
+  std::optional<buffer_info> get_buffer_info(var buf, int rank) { 
+    std::optional<buffer_info> info = buffers[buf];
+    if (!info) {
+      info = buffer_info();
+      info->dims.resize(rank);
     }
-    return buffer_bounds(buf, dim);
-  }
-
-  box_expr get_buffer_bounds(var buf, int rank) {
-    box_expr result(rank);
-    const std::optional<buffer_info>& info = buffers[buf];
-    for (int d = 0; d < rank; ++d) {
-      if (info) {
-        assert(d <= static_cast<int>(info->dims.size()));
-        result[d] = info->dims[d].bounds;
-      } else {
-        result[d] = buffer_bounds(buf, d);
-      }
+    assert(rank <= static_cast<int>(info->dims.size()));
+    if (!info->elem_size.defined()) info->elem_size = buffer_elem_size(buf);
+    for (int d = 0; d < static_cast<int>(info->dims.size()); ++d) {
+      if (!info->dims[d].bounds.min.defined()) info->dims[d].bounds.min = buffer_min(buf, d);
+      if (!info->dims[d].bounds.max.defined()) info->dims[d].bounds.max = buffer_max(buf, d);
+      if (!info->dims[d].stride.defined()) info->dims[d].stride = buffer_stride(buf, d);
+      if (!info->dims[d].fold_factor.defined()) info->dims[d].fold_factor = buffer_fold_factor(buf, d);
     }
-    return result;
+    return info;
   }
 
   // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
@@ -889,21 +879,19 @@ public:
   }
 
   void visit(const crop_buffer* op) override {
-    // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
-    box_expr bounds = get_buffer_bounds(op->src, op->bounds.size());
-    // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
+    std::optional<buffer_info> info = get_buffer_info(op->src, op->bounds.size());
     box_expr new_bounds(op->bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
     index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
-      new_bounds[i] = mutate_crop_bounds(op->bounds[i], op->src, i, bounds[i]);
+      new_bounds[i] = mutate_crop_bounds(op->bounds[i], op->src, i, info->dims[i].bounds);
       changed = changed || !new_bounds[i].same_as(op->bounds[i]);
 
       dims_count += new_bounds[i].min.defined() || new_bounds[i].max.defined() ? 1 : 0;
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, std::move(bounds));
+    stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(std::move(body));
@@ -947,20 +935,13 @@ public:
   }
 
   void visit(const crop_dim* op) override {
-    // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
-    interval_expr bounds = get_dim_bounds(op->src, op->dim);
-    // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
-    interval_expr new_bounds = mutate_crop_bounds(op->bounds, op->src, op->dim, bounds);
+    std::optional<buffer_info> info = get_buffer_info(op->src, op->dim + 1);
+    interval_expr new_bounds = mutate_crop_bounds(op->bounds, op->src, op->dim, info->dims[op->dim].bounds);
     if (!new_bounds.min.defined() && !new_bounds.max.defined()) {
       // This crop is a no-op.
       stmt body = substitute(op->body, op->sym, op->src);
       set_result(mutate(body));
       return;
-    }
-
-    std::optional<buffer_info> info = buffers[op->sym];
-    if (info && op->dim < static_cast<index_t>(info->dims.size())) {
-      info->dims[op->dim].bounds = bounds;
     }
 
     stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
@@ -969,7 +950,8 @@ public:
       set_result(std::move(body));
       return;
     } else if (!crop_needed(deps)) {
-      body = substitute_bounds(body, op->sym, op->dim, bounds);
+      // Add clamps for the implicit bounds like crop would have done.
+      body = substitute_bounds(body, op->sym, op->dim, new_bounds & buffer_bounds(op->src, op->dim));
       body = substitute(body, op->sym, op->src);
       set_result(mutate(body));
       return;
@@ -979,7 +961,7 @@ public:
       if (slice->src == op->sym && slice->dim == op->dim) {
         // This is a slice of the same dimension of the buffer we just cropped.
         // Rewrite the inner slice to just slice the src of the outer crop.
-        expr at = clamp(slice->at, bounds);
+        expr at = clamp(slice->at, new_bounds & buffer_bounds(op->src, op->dim));
         body = slice_dim::make(slice->sym, op->src, op->dim, at, slice->body);
       }
     } else if (const crop_dim* crop = body.as<crop_dim>()) {
@@ -1039,6 +1021,7 @@ public:
 
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
+    buffers[op->sym] = buffers[op->src];
     update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
@@ -1085,6 +1068,7 @@ public:
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
     int sliced_dims[] = {op->dim};
+    buffers[op->sym] = buffers[op->src];
     update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
@@ -1109,21 +1093,20 @@ public:
   }
 
   void visit(const transpose* op) override {
-    std::optional<buffer_info> info = buffers[op->sym];
+    std::optional<buffer_info> info = buffers[op->src];
     if (info) {
       if (op->is_truncate() && info->dims.size() <= op->dims.size()) {
         // transpose can't add dimensions.
         assert(info->dims.size() == op->dims.size());
         // This truncate is a no-op.
-        set_result(mutate(op->body));
+        set_result(mutate(substitute(op->body, op->sym, op->src)));
         return;
       }
       buffer_info new_info;
+      new_info.elem_size = info->elem_size;
       new_info.dims.resize(op->dims.size());
-      new_info.permutation.resize(op->dims.size());
       for (std::size_t i = 0; i < op->dims.size(); ++i) {
         new_info.dims[i] = info->dims[op->dims[i]];
-        new_info.permutation[i] = op->dims[i];
       }
       info = std::move(new_info);
     }

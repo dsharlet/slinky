@@ -358,12 +358,9 @@ function pipeline(__in, out) {
                 }}
                 { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)}); {
                   let padded_intm = __padded_intm;
-                  { let __intm_uncropped = transpose(intm_uncropped, [0, 1]); {
-                    let intm_uncropped = __intm_uncropped;
-                    produce(intm_uncropped);
-                    produce(padded_intm);
-                    __event_t++;
-                  }}
+                  produce(intm_uncropped);
+                  produce(padded_intm);
+                  __event_t++;
                 }}
                 { let __out = crop_dim(out, 1, {min:y, max:y}); {
                   let out = __out;
