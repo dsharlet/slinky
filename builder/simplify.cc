@@ -487,8 +487,7 @@ public:
         if ((*bounds)[d].max.defined()) info->dims[d].bounds.max = (*bounds)[d].max;
       }
     }
-    auto set_bounds = set_value_in_scope(buffers, buf, std::move(info));
-    return mutate(body);
+    return mutate_with_buffer(std::move(body), buf, std::move(info));
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
