@@ -968,19 +968,17 @@ public:
     }
 
     if (const slice_dim* slice = body.as<slice_dim>()) {
-      if (slice->sym == op->sym && slice->dim == op->dim) {
+      if (slice->src == op->sym && slice->dim == op->dim) {
         // This is a slice of the same dimension of the buffer we just cropped.
-        // Don't drop the clamp that crop performs.
+        // Rewrite the inner slice to just slice the src of the outer crop.
         expr at = clamp(slice->at, bounds);
-        set_result(mutate(slice_dim::make(op->sym, op->src, op->dim, at, slice->body)));
-        return;
+        body = slice_dim::make(slice->sym, op->src, op->dim, at, slice->body);
       }
     } else if (const crop_dim* crop = body.as<crop_dim>()) {
-      if (crop->sym == op->sym) {
+      if (crop->src == op->sym) {
         if (crop->dim == op->dim) {
-          // Two nested crops of the same dimension, do one crop of the intersection instead.
-          set_result(mutate(crop_dim::make(op->sym, op->src, op->dim, new_bounds & crop->bounds, crop->body)));
-          return;
+          // Two nested crops of the same dimension. Rewrite the inner crop to do both crops, the outer crop might become unused.
+          body = crop_dim::make(crop->sym, op->src, op->dim, new_bounds & crop->bounds, crop->body);
         } else {
           // TODO: This is a nested crop of the same buffer, use crop_buffer instead.
         }
