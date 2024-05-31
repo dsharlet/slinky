@@ -311,10 +311,6 @@ bool should_extract(const expr& e, bool lift_all) {
   return true;
 }
 
-struct expr_compare_deep {
-  bool operator()(const expr& a, const expr& b) const { return compare(a, b) < 0; }
-};
-
 // A global-value-numbering of expressions. Returns canonical form of
 // the expr and writes out a global value numbering as a side-effect.
 class global_value_numbering : public node_mutator {
@@ -323,13 +319,13 @@ public:
     expr e;
     int use_count = 0;
     // All consumer Exprs for which this is the last child expr.
-    std::map<expr, int, expr_compare_deep> uses;
+    std::map<expr, int, node_less> uses;
     entry(const expr& e) : e(e) {}
   };
   std::vector<std::unique_ptr<entry>> entries;
 
   std::map<expr, int, expr_compare_shallow> shallow_numbering, output_numbering;
-  std::map<expr, int, expr_compare_deep> leaves;
+  std::map<expr, int, node_less> leaves;
 
   int number = 0;
 
