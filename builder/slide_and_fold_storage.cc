@@ -579,17 +579,8 @@ public:
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
     symbol_map<interval_expr> last_expr_bounds = current_expr_bounds();
-    loops.emplace_back(ctx, op->sym, orig_min, op->bounds, op->step, op->max_workers);
-    current_buffer_bounds() = last_buffer_bounds;
-    current_expr_bounds() = last_expr_bounds;
 
-    stmt body;
-    {
-      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, op->bounds);
-      body = mutate(op->body);
-    }
-
-    interval_expr loop_bounds = {loops.back().bounds.min, op->bounds.max};
+    interval_expr loop_bounds = op->bounds;
     // It's possible that after sliding some of the buffers the bounds of the
     // loop will need to include the region which is outside of the actual buffer bounds this loop
     // depends on. In this case buffer bounds will be clamped to the actual buffer bounds
@@ -597,6 +588,17 @@ public:
     // we substitute current buffer bounds into loop bounds.
     substitute_bounds(loop_bounds, current_buffer_bounds());
 
+    loops.emplace_back(ctx, op->sym, orig_min, loop_bounds, op->step, op->max_workers);
+    current_buffer_bounds() = last_buffer_bounds;
+    current_expr_bounds() = last_expr_bounds;
+
+    stmt body;
+    {
+      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, loop_bounds);
+      body = mutate(op->body);
+    }
+
+    loop_bounds.min = loops.back().bounds.min;
     if (body.same_as(op->body) && loop_bounds.min.same_as(op->bounds.min) && loop_bounds.max.same_as(op->bounds.max)) {
       set_result(op);
       return;
