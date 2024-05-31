@@ -63,6 +63,17 @@ expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   }
 }
 
+bool deep_is_point(const interval_expr& x) { return x.is_point() || match(x.min, x.max); }
+
+// Ensure that an interval that is a point in a deep equality sense is also a point in a shallow equality sense.
+interval_expr ensure_is_point(const interval_expr& x) {
+  if (deep_is_point(x)) {
+    return point(x.min);
+  } else {
+    return x;
+  }
+}
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   struct buffer_info {
@@ -92,15 +103,6 @@ class simplifier : public node_mutator {
 public:
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
 
-  // Ensure that an interval that is a point in a deep equality sense is also a point in a shallow equality sense.
-  static interval_expr ensure_is_point(const interval_expr& x) {
-    if (!x.is_point() && match(x.min, x.max)) {
-      return point(x.min);
-    } else {
-      return x;
-    }
-  }
-
   expr mutate(const expr& e, interval_expr* bounds) {
     expr result = node_mutator::mutate(e);
     if (bounds) {
@@ -125,7 +127,7 @@ public:
 
   interval_expr mutate(
       const interval_expr& x, interval_expr* min_bounds = nullptr, interval_expr* max_bounds = nullptr) {
-    if (x.is_point() || match(x.min, x.max)) {
+    if (deep_is_point(x)) {
       expr result = mutate(x.min, min_bounds);
       if (min_bounds && max_bounds) {
         *max_bounds = *min_bounds;
@@ -1214,7 +1216,7 @@ interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
 }
 
 interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
-  if (x.is_point()) {
+  if (deep_is_point(x)) {
     return bounds_of(x.min, expr_bounds);
   } else {
     interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
