@@ -394,6 +394,8 @@ public:
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
+        // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
+        // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
         if (op->intrinsic == intrinsic::buffer_elem_size) {
           expr value = info->elem_size;
           if (should_substitute(value) || value.as<call>()) {
