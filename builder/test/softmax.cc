@@ -216,12 +216,7 @@ TEST_P(softmax, pipeline) {
     const int exp_in_size = split_b * D * sizeof(float);
     const int max_in_size = split_b * sizeof(float);
     const int softmax_in_size = split_b * D * sizeof(float);
-    // TODO: This should fold when we split c even with a copy, but it does not.
-    // https://github.com/dsharlet/slinky/pull/305 enabled it, but caused
-    // https://github.com/dsharlet/slinky/issues/363. Simplification could only handle it because it incorrectly handled
-    // shadowing. Fixing that required reverting #305. I think a proper implementation of is_monotonic instead of trying
-    // to prove the bounds are monotonically increasing would fix this.
-    const int softmax_out_size = split_b * (split_c == 0 || copy_at_the_end != 0 ? D : split_c) * sizeof(float);
+    const int softmax_out_size = split_b * (split_c == 0 ? D : split_c) * sizeof(float);
     if (copy_at_the_end == 2) {
       const int add_out_size = D * B * sizeof(float);
       ASSERT_THAT(eval_ctx.heap.allocs,
