@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
@@ -79,6 +80,14 @@ std::vector<dim_expr> recursive_substitute(
       }
     }
     if (!changed) return dims;
+  }
+}
+
+void substitute_bounds(interval_expr& bounds, const symbol_map<box_expr>& buffers) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
+    if (!buffers[i]) continue;
+    if (bounds.min.defined()) bounds.min = substitute_bounds(bounds.min, var(i), *buffers[i]);
+    if (bounds.max.defined()) bounds.max = substitute_bounds(bounds.max, var(i), *buffers[i]);
   }
 }
 
@@ -273,6 +282,7 @@ public:
   }
 
   void slide_and_fold_buffer(const var& output, const stmt& body) {
+    scoped_trace trace("slide_and_fold_buffer");
     // We only want to fold if we are inside of the loop and the cropped buffer
     // is produced there.
     if (loops.size() < 2 || !is_produced_by(output, body)) return;
@@ -387,6 +397,7 @@ public:
 
   template <typename T>
   void visit_call_or_copy(const T* op, span<const var> inputs, span<const var> outputs) {
+    scoped_trace trace("visit_call_or_copy");
     set_result(op);
 
     for (var input : inputs) {
@@ -467,8 +478,6 @@ public:
       substitute_bounds(*bounds, current_buffer_bounds());
       // Now do the reverse substitution, because the updated bounds can be used in other
       // bounds.
-      // NOTE(vksnk): I'm not sure this needed anymore, but seems logical to update it in
-      // both directions.
       substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
 
       // This simplify can be heavy, but is really useful in reducing the size of the
@@ -499,8 +508,6 @@ public:
     substitute_bounds(*bounds, current_buffer_bounds());
     // Now do the reverse substitution, because the updated bounds can be used in other
     // bounds.
-    // NOTE(vksnk): I'm not sure this needed anymore, but seems logical to update it in
-    // both directions.
     substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
     // This simplify can be heavy, but is really useful in reducing the size of the
     // expressions.
@@ -558,13 +565,16 @@ public:
       set_result(clone_with(op, std::move(body)));
     }
   }
-  void visit(const transpose*) override { std::abort(); }
+  void visit(const transpose*) override {
+    std::abort();
+  }
   void visit(const clone_buffer* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     node_mutator::visit(op);
   }
 
   void visit(const loop* op) override {
+    scoped_trace trace("visit(const loop*)");
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
@@ -578,13 +588,16 @@ public:
       auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, op->bounds);
       body = mutate(op->body);
     }
+
     interval_expr loop_bounds = {loops.back().bounds.min, op->bounds.max};
+    // It's possible that after sliding some of the buffers the bounds of the
+    // loop will need to include the region which is outside of the actual buffer bounds this loop
+    // depends on. In this case buffer bounds will be clamped to the actual buffer bounds
+    // which will make the loop bounds smaller than necessary, so in order to avoid this clamping
+    // we substitute current buffer bounds into loop bounds.
+    substitute_bounds(loop_bounds, current_buffer_bounds());
 
-    if (loop_bounds.min.same_as(orig_min)) {
-      loop_bounds.min = op->bounds.min;
-    }
-
-    if (body.same_as(op->body)) {
+    if (body.same_as(op->body) && loop_bounds.min.same_as(op->bounds.min) && loop_bounds.max.same_as(op->bounds.max)) {
       set_result(op);
       return;
     }
@@ -652,6 +665,9 @@ public:
 
 }  // namespace
 
-stmt slide_and_fold_storage(const stmt& s, node_context& ctx) { return slide_and_fold(ctx).mutate(s); }
+stmt slide_and_fold_storage(const stmt& s, node_context& ctx) {
+  scoped_trace trace("slide_and_fold_storage");
+  return slide_and_fold(ctx).mutate(s);
+}
 
 }  // namespace slinky

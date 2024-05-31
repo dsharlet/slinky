@@ -304,13 +304,10 @@ expr simplify(const class logical_not* op, expr a) {
 }
 
 expr simplify(const class select* op, expr c, expr t, expr f) {
-  std::optional<bool> const_c = attempt_to_prove(c);
-  if (const_c) {
-    if (*const_c) {
-      return op->true_value;
-    } else {
-      return op->false_value;
-    }
+  if (is_true(c)) {
+    return t;
+  } else if (is_false(c)) {
+    return f;
   }
 
   auto r = make_rewriter(select(pattern_expr{c}, pattern_expr{t}, pattern_expr{f}));
