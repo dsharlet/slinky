@@ -522,13 +522,13 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
   // Wrap the final expr in the lets.
   std::vector<std::pair<var, expr>> new_lets;
   new_lets.reserve(lets.size());
-  for (size_t i = lets.size(); i > 0; i--) {
-    expr value = lets[i - 1].second;
+  for (const auto& l : lets) {
+    expr value = l.second;
     // Drop this variable as an acceptable replacement for this expr.
     r.erase(value);
     // Use containing lets in the value.
-    value = r.mutate(lets[i - 1].second);
-    new_lets.emplace_back(lets[i - 1].first, value);
+    value = r.mutate(l.second);
+    new_lets.emplace_back(l.first, value);
   }
 
   if (!new_lets.empty()) {
