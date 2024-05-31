@@ -19,7 +19,8 @@ interval_expr substitute(const interval_expr& x, var target, const expr& replace
 expr substitute(const expr& e, const expr& target, const expr& replacement);
 stmt substitute(const stmt& s, const expr& target, const expr& replacement);
 
-
+// Substitute `elem_size` in for buffer_elem_size(buffer) and the other buffer metadata in `dims` for per-dimension
+// metadata.
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
 stmt substitute_buffer(const stmt& s, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds);
