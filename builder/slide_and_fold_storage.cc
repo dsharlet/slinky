@@ -475,8 +475,6 @@ public:
       substitute_bounds(*bounds, current_buffer_bounds());
       // Now do the reverse substitution, because the updated bounds can be used in other
       // bounds.
-      // NOTE(vksnk): I'm not sure this needed anymore, but seems logical to update it in
-      // both directions.
       substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
 
       // This simplify can be heavy, but is really useful in reducing the size of the
@@ -507,8 +505,6 @@ public:
     substitute_bounds(*bounds, current_buffer_bounds());
     // Now do the reverse substitution, because the updated bounds can be used in other
     // bounds.
-    // NOTE(vksnk): I'm not sure this needed anymore, but seems logical to update it in
-    // both directions.
     substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
     // This simplify can be heavy, but is really useful in reducing the size of the
     // expressions.
@@ -586,11 +582,14 @@ public:
       auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, op->bounds);
       body = mutate(op->body);
     }
+
     interval_expr loop_bounds = {loops.back().bounds.min, op->bounds.max};
+    // It's possible that after sliding some of the buffers the bounds of the
+    // loop will need to include the region which is outside of the actual buffer bounds this loop
+    // depends on. In this case buffer bounds will be clamped to the actual buffer bounds
+    // which will make the loop bounds smaller than necessary, so in order to avoid this clamping
+    // we substitute current buffer bounds into loop bounds.
     substitute_bounds(loop_bounds, current_buffer_bounds());
-    // if (loop_bounds.min.same_as(orig_min)) {
-    //   loop_bounds.min = op->bounds.min;
-    // }
 
     if (body.same_as(op->body)) {
       set_result(op);
