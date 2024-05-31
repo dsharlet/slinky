@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "builder/cse.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
 #include "builder/simplify.h"
@@ -950,6 +951,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = deshadow(result, ctx);
   result = simplify(result);
+  result = common_subexpression_elimination(result, ctx);
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {

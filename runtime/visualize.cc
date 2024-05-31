@@ -43,6 +43,7 @@ public:
   std::string sanitize(std::string s) {
     std::replace(s.begin(), s.end(), '.', '_');
     std::replace(s.begin(), s.end(), '/', '_');
+    std::replace(s.begin(), s.end(), '#', '_');
     if (s == "in") {
       s = "__in";
     }
@@ -130,15 +131,12 @@ public:
   void visit(const constant* c) override { *this << c->value; }
 
   void visit(const let* l) override {
-    // TODO: this is wrong and needs attention
+    // Use a lambda to allow scoped lets within an expression
+    *this << "(() => { ";
     for (const auto& s : l->lets) {
-      *this << "(let " << s.first << " = " << s.second << "; \n";
+      *this << "let " << s.first << " = " << s.second << "; ";
     }
-    *this << l->body;
-    for (const auto& s : l->lets) {
-      (void)s;
-      *this << ")\n";
-    }
+    *this << "return " << l->body << "; })()";
   }
 
   void visit(const let_stmt* l) override {

@@ -191,3 +191,14 @@ cc_test(
     ],
     size = "small",
 )
+
+cc_test(
+    name = "cse",
+    srcs = ["cse.cc"],
+    deps = [
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)

@@ -329,8 +329,8 @@ function pipeline(__in, out) {
     check((out != 0));
     check((buffer_rank(out) == 2));
     check((buffer_elem_size(out) == 2));
-    check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-    check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+    check((() => { let _ = buffer_fold_factor(out, 0); return or_else((_ == 9223372036854775807), (buffer_max(out, 0) < (_ + buffer_min(out, 0)))); })());
+    check((() => { let __0 = buffer_fold_factor(out, 1); return or_else((__0 == 9223372036854775807), (buffer_max(out, 1) < (__0 + buffer_min(out, 1)))); })());
     check(((buffer_min(__in, 0) + 2) <= buffer_min(out, 0)));
     check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
     check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));

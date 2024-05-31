@@ -327,20 +327,20 @@ function pipeline(__in, out) {
   check((out != 0));
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 2));
-  check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-  check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+  check((() => { let _ = buffer_fold_factor(out, 0); return or_else((_ == 9223372036854775807), (buffer_max(out, 0) < (_ + buffer_min(out, 0)))); })());
+  check((() => { let __0 = buffer_fold_factor(out, 1); return or_else((__0 == 9223372036854775807), (buffer_max(out, 1) < (__0 + buffer_min(out, 1)))); })());
   {
     let g = buffer_min(__in, 0);
-    let g#1 = buffer_min(__in, 1);
-    let g#0 = buffer_max(__in, 0);
-    let g#2 = buffer_max(__in, 1);
+    let g_1 = buffer_min(__in, 1);
+    let g_0 = buffer_max(__in, 0);
+    let g_2 = buffer_max(__in, 1);
     { let intm_padded_intm = allocate('intm/padded_intm', 2, [
         {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:NaN, fold_factor:9223372036854775807},
         {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:9223372036854775807}
       ]);
       { let __intm_padded_intm = crop_buffer(intm_padded_intm, [
-          {min:max(g, (buffer_min(out, 0) + -1)), max:min(g#0, (buffer_max(out, 0) + 1))},
-          {min:max(g#1, (buffer_min(out, 1) + -1)), max:min(g#2, (buffer_max(out, 1) + 1))}
+          {min:max(g, (buffer_min(out, 0) + -1)), max:min(g_0, (buffer_max(out, 0) + 1))},
+          {min:max(g_1, (buffer_min(out, 1) + -1)), max:min(g_2, (buffer_max(out, 1) + 1))}
       ]); {
         let intm_padded_intm = __intm_padded_intm;
         consume(__in);
@@ -349,8 +349,8 @@ function pipeline(__in, out) {
       }}
       check((buffer_elem_size(intm_padded_intm) == 2));
       { let __intm = crop_buffer(intm_padded_intm, [
-          {min:max(g, (buffer_min(out, 0) + -1)), max:min(g#0, (buffer_max(out, 0) + 1))},
-          {min:max(g#1, (buffer_min(out, 1) + -1)), max:min(g#2, (buffer_max(out, 1) + 1))}
+          {min:max(g, (buffer_min(out, 0) + -1)), max:min(g_0, (buffer_max(out, 0) + 1))},
+          {min:max(g_1, (buffer_min(out, 1) + -1)), max:min(g_2, (buffer_max(out, 1) + 1))}
       ]); {
         let intm = __intm;
         {
@@ -360,11 +360,11 @@ function pipeline(__in, out) {
               {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:buffer_stride(intm, 0), fold_factor:buffer_fold_factor(intm, 0)},
               {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:buffer_stride(intm, 1), fold_factor:buffer_fold_factor(intm, 1)}
           ];
-          { let padded_intm#1 = make_buffer('padded_intm#1', __base, __elem_size, __dims);
-            { let __padded_intm#1 = transpose(padded_intm#1, [0, 1]); {
-              let padded_intm#1 = __padded_intm#1;
+          { let padded_intm_1 = make_buffer('padded_intm#1', __base, __elem_size, __dims);
+            { let __padded_intm_1 = transpose(padded_intm_1, [0, 1]); {
+              let padded_intm_1 = __padded_intm_1;
               produce(intm);
-              produce(padded_intm#1);
+              produce(padded_intm_1);
               __event_t++;
             }}
           }
