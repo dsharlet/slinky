@@ -29,11 +29,6 @@ var t1(symbols, "t1");
 var t2(symbols, "t2");
 var t3(symbols, "t3");
 var t4(symbols, "t4");
-var t5(symbols, "t5");
-var t6(symbols, "t6");
-var t7(symbols, "t7");
-var t8(symbols, "t8");
-var t9(symbols, "t9");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
@@ -77,9 +72,9 @@ public:
 
 expr ssa_block(node_context& ctx, std::vector<expr> exprs) {
   std::vector<std::pair<var, expr>> lets;
-  for (size_t i = exprs.size() - 1; i > 0; i--) {
-    var sym = ctx.insert("t" + std::to_string(i - 1));
-    lets.emplace_back(sym, exprs[i - 1]);
+  for (size_t i = 0; i < exprs.size() - 1; i++) {
+    var sym = ctx.insert("t" + std::to_string(i));
+    lets.emplace_back(sym, exprs[i]);
   }
   return let::make(lets, exprs.back());
 }

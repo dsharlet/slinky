@@ -451,9 +451,9 @@ class let_remover : public graph_node_mutator {
     tmp.swap(expr_replacements);
 
     std::vector<scoped_value_in_symbol_map<expr>> s;
-    for (auto it = op->lets.rbegin(); it != op->lets.rend(); it++) {
-      expr e = mutate(it->second);
-      s.push_back(set_value_in_scope(scope, it->first, e));
+    for (const auto& l : op->lets) {
+      expr e = mutate(l.second);
+      s.push_back(set_value_in_scope(scope, l.first, e));
     }
     auto result = mutate(op->body);
     tmp.swap(expr_replacements);
@@ -522,14 +522,15 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
   // Wrap the final expr in the lets.
   std::vector<std::pair<var, expr>> new_lets;
   new_lets.reserve(lets.size());
-  for (const auto& l : lets) {
-    expr value = l.second;
+  for (size_t i = lets.size(); i > 0; i--) {
+    expr value = lets[i - 1].second;
     // Drop this variable as an acceptable replacement for this expr.
     r.erase(value);
     // Use containing lets in the value.
-    value = r.mutate(l.second);
-    new_lets.emplace_back(l.first, value);
+    value = r.mutate(lets[i - 1].second);
+    new_lets.emplace_back(lets[i - 1].first, value);
   }
+  std::reverse(new_lets.begin(), new_lets.end());
 
   if (!new_lets.empty()) {
     e = let::make(new_lets, e);
