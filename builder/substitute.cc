@@ -692,6 +692,7 @@ public:
   }
 };
 
+// TODO: These helpers are messy and maybe inefficient. We should support substituting buffers directly in substitutor.
 template <typename T>
 T substitute_bounds_impl(T op, var buffer, int dim, const interval_expr& bounds) {
   expr buf_var = variable::make(buffer);
