@@ -23,11 +23,9 @@ namespace slinky {
 
 namespace {
 
-struct expr_compare_shallow {
+// Like node_less, but only compare the pointer/value vs the deep structure
+struct node_less_shallow {
   bool operator()(const expr& a, const expr& b) const { return a.get() < b.get(); }
-};
-
-struct stmt_compare_shallow {
   bool operator()(const stmt& a, const stmt& b) const { return a.get() < b.get(); }
 };
 
@@ -243,8 +241,8 @@ private:
 // TODO: should this be moved into node_mutator.h?
 class graph_node_mutator : public node_mutator {
 protected:
-  std::map<expr, expr, expr_compare_shallow> expr_replacements;
-  std::map<stmt, stmt, stmt_compare_shallow> stmt_replacements;
+  std::map<expr, expr, node_less_shallow> expr_replacements;
+  std::map<stmt, stmt, node_less_shallow> stmt_replacements;
 
 public:
   stmt mutate(const stmt& s) override {
@@ -324,7 +322,7 @@ public:
   };
   std::vector<std::unique_ptr<entry>> entries;
 
-  std::map<expr, int, expr_compare_shallow> shallow_numbering, output_numbering;
+  std::map<expr, int, node_less_shallow> shallow_numbering, output_numbering;
   std::map<expr, int, node_less> leaves;
 
   int number = 0;
@@ -415,7 +413,7 @@ public:
 class replacer : public graph_node_mutator {
 public:
   replacer() = default;
-  replacer(const std::map<expr, expr, expr_compare_shallow>& r) : graph_node_mutator() { expr_replacements = r; }
+  replacer(const std::map<expr, expr, node_less_shallow>& r) : graph_node_mutator() { expr_replacements = r; }
 
   void erase(const expr& e) { expr_replacements.erase(e); }
 };
@@ -497,7 +495,7 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
 
   // Figure out which ones we'll pull out as lets and variables.
   std::vector<std::pair<var, expr>> lets;
-  std::map<expr, expr, expr_compare_shallow> replacements;
+  std::map<expr, expr, node_less_shallow> replacements;
   for (size_t i = 0; i < gvn.entries.size(); i++) {
     const auto& e = gvn.entries[i];
     if (e->use_count > 1) {
