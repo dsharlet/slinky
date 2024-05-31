@@ -151,8 +151,8 @@ TEST(cse, select) {
   expr index = select(x * x + y * y > 0, x * x + y * y + 2, x * x + y * y + 10);
   expr at_args[] = {index};
   expr load = buffer_at(buf, at_args);
-
   expr e = select(x * y > 10, x * y + 2, x * y + 3 + load);
+
   expr cse_index = select(t1 > 0, t1 + 2, t1 + 10);
   expr cse_at_args[] = {cse_index};
   expr cse_load = buffer_at(buf, cse_at_args);
