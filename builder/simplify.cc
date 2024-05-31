@@ -369,6 +369,8 @@ public:
     }
   }
 
+  static bool should_substitute(expr& e) { return e.as<constant>() || e.as<variable>(); }
+
   void visit(const call* op) override {
     std::vector<expr> args;
     std::vector<interval_expr> args_bounds;
@@ -390,11 +392,24 @@ public:
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
-        if (is_buffer_dim_intrinsic(op->intrinsic)) {
+        if (op->intrinsic == intrinsic::buffer_elem_size) {
+          expr value = info->elem_size;
+          if (should_substitute(value) || value.as<call>()) {
+            set_result(value, point(value));
+          } else {
+            set_result(op, point(value));
+          }
+          return;
+        } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
           const index_t* dim = as_constant(op->args[1]);
           assert(dim);
           if (*dim < static_cast<index_t>(info->dims.size())) {
-            set_result(op, point(eval_buffer_intrinsic(op->intrinsic, info->dims[*dim])));
+            expr value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
+            if (should_substitute(value) || value.as<call>()) {
+              set_result(value, point(value));
+            } else {
+              set_result(op, point(value));
+            }
             return;
           }
         } else if (op->intrinsic == intrinsic::buffer_at) {
@@ -415,8 +430,6 @@ public:
       mutate_and_set_result(e);
     }
   }
-
-  static bool is_trivial_let_value(expr& e) { return e.as<constant>() || e.as<variable>(); }
 
   template <typename T>
   void visit_let(const T* op) {
@@ -452,8 +465,7 @@ public:
         // Prune dead lets
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
-      } else if (is_trivial_let_value(it->second)) {
-        // Inline single-ref lets outside of a loop, along with lets that are trivial
+      } else if (should_substitute(it->second)) {
         body = mutate(substitute(body, it->first, it->second), &body_bounds);
         for (auto inner = lets.rbegin(); inner != it; ++inner) {
           inner->second = substitute(inner->second, it->first, it->second);
@@ -836,7 +848,7 @@ public:
     }
   }
 
-  std::optional<buffer_info> get_buffer_info(var buf, int rank) { 
+  std::optional<buffer_info> get_buffer_info(var buf, int rank) {
     std::optional<buffer_info> info = buffers[buf];
     if (!info) {
       info = buffer_info();
@@ -1122,6 +1134,13 @@ public:
     }
 
     stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
+
+    if (const transpose* body_t = body.as<transpose>()) {
+      if (body_t->src == op->sym) {
+        // Nested transposes of the same buffer, rewrite the inner transpose to directly transpose our src.
+        body = transpose::make(body_t->sym, op->src, permute(body_t->dims, op->dims), body_t->body);
+      }
+    }
 
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {

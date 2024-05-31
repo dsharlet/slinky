@@ -372,6 +372,15 @@ TEST(simplify, make_buffer) {
       matches(transpose::make(b1, b0, {0, 2}, body)));
 }
 
+TEST(simplify, transpose) {
+  ASSERT_THAT(simplify(transpose::make(
+                  b1, b0, {2, 1, 0}, transpose::make(b2, b1, {2, 1, 0}, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(transpose::make(b2, b0, {0, 1, 2}, call_stmt::make(nullptr, {}, {b2}, {}))));
+  ASSERT_THAT(simplify(transpose::make(
+                  b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(transpose::make(b2, b0, {2, 3}, call_stmt::make(nullptr, {}, {b2}, {}))));
+}
+
 TEST(simplify, bounds_of) {
   // Test bounds_of by testing expressions of up to two operands, and setting the
   // bounds of the two operands to all possible cases of overlap. This approach

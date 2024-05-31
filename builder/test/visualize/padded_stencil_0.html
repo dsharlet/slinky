@@ -347,25 +347,14 @@ function pipeline(__in, out) {
         produce(intm_padded_intm);
         __event_t++;
       }}
-      check((buffer_elem_size(intm_padded_intm) == 2));
       { let __intm = crop_buffer(intm_padded_intm, [
           {min:max(g, (buffer_min(out, 0) + -1)), max:min(g#0, (buffer_max(out, 0) + 1))},
           {min:max(g#1, (buffer_min(out, 1) + -1)), max:min(g#2, (buffer_max(out, 1) + 1))}
       ]); {
         let intm = __intm;
-        {
-          let __base = buffer_at(intm_padded_intm);
-          let __elem_size = buffer_elem_size(intm);
-          let __dims = [
-              {bounds:{min:buffer_min(intm_padded_intm, 0), max:buffer_max(intm_padded_intm, 0)}, stride:buffer_stride(intm, 0), fold_factor:buffer_fold_factor(intm, 0)},
-              {bounds:{min:buffer_min(intm_padded_intm, 1), max:buffer_max(intm_padded_intm, 1)}, stride:buffer_stride(intm, 1), fold_factor:buffer_fold_factor(intm, 1)}
-          ];
-          { let padded_intm#1 = make_buffer('padded_intm#1', __base, __elem_size, __dims);
-            produce(intm);
-            produce(padded_intm#1);
-            __event_t++;
-          }
-        }
+        produce(intm);
+        produce(intm_padded_intm);
+        __event_t++;
       }}
       consume(intm_padded_intm);
       produce(out);
