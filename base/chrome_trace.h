@@ -28,7 +28,8 @@ public:
   void begin(const char* name);
   void end(const char* name);
 
-  // Return the global instance of tracing, or nullptr if none.
+  // Return the global instance of tracing, or nullptr if none. Trace files will be written to the path in the
+  // `SLINKY_TRACE` environment variable.
   static chrome_trace* global();
 };
 
