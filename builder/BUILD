@@ -29,6 +29,7 @@ cc_library(
     ],
     deps = [
         "//base",
+        "//base:chrome_trace",
         "//runtime",
     ],
     visibility = ["//visibility:public"],

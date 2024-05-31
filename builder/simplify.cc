@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"
@@ -54,6 +55,7 @@ class simplifier : public node_mutator {
   void set_result(stmt s, interval_expr) { set_result(std::move(s)); }
 
 public:
+  simplifier() {}
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
 
   expr mutate(const expr& e, interval_expr* bounds) {
@@ -122,6 +124,7 @@ public:
   }
 
   std::optional<bool> attempt_to_prove(const expr& e) {
+    scoped_trace trace("attempt_to_prove");
     interval_expr bounds;
     mutate(boolean(e), &bounds);
     if (prove_constant_true(bounds.min)) {
@@ -417,6 +420,7 @@ public:
   }
 
   void visit(const loop* op) override {
+    scoped_trace trace("visit(const loop*)");
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
@@ -439,6 +443,7 @@ public:
       set_result(std::move(body));
       return;
     } else if (const block* b = body.as<block>()) {
+      scoped_trace trace("licm");
       // This next bit of logic implements loop invariant code motion. It is allowed to split the loop around invariant
       // code, turning a loop into possibly multiple loops, with loop invariant code between the loops.
       std::vector<stmt> result;
@@ -475,6 +480,7 @@ public:
     }
 
     if (op->is_serial()) {
+      scoped_trace trace("drop_loop");
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
@@ -757,6 +763,7 @@ public:
   }
 
   void visit(const crop_buffer* op) override {
+    scoped_trace trace("visit(const crop_buffer*)");
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
     // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
@@ -826,6 +833,7 @@ public:
   }
 
   void visit(const crop_dim* op) override {
+    scoped_trace trace("visit(const crop_dim*)");
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
     bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
@@ -912,6 +920,7 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
+    scoped_trace trace("visit(const slice_buffer*)");
     std::vector<expr> at(op->at.size());
     std::vector<int> sliced_dims;
     bool changed = false;
@@ -966,6 +975,7 @@ public:
   }
 
   void visit(const slice_dim* op) override {
+    scoped_trace trace("visit(const slice_dim*)");
     expr at = mutate(op->at);
 
     symbol_map<box_expr> old_buffer_bounds = buffer_bounds;
@@ -995,6 +1005,7 @@ public:
   }
 
   void visit(const transpose* op) override {
+    scoped_trace trace("visit(const transpose*)");
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
       if (op->is_truncate() && bounds->size() <= op->dims.size()) {
@@ -1074,13 +1085,17 @@ public:
 }  // namespace
 
 expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e, nullptr); }
-stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
+stmt simplify(const stmt& s, const bounds_map& bounds) {
+  scoped_trace trace("simplify");
+  return simplifier(bounds).mutate(s);
+}
 interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
   simplifier s(bounds);
   return s.mutate(e);
 }
 
 interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
+  scoped_trace trace("bounds_of");
   simplifier s(expr_bounds);
   interval_expr bounds;
   s.mutate(x, &bounds);
@@ -1091,13 +1106,12 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
   if (x.is_point()) {
     return bounds_of(x.min, expr_bounds);
   } else {
-    interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
-    interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
-
-    return {
-        simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
-        simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
-    };
+    scoped_trace trace("bounds_of");
+    simplifier s(expr_bounds);
+    interval_expr bounds_of_min, bounds_of_max;
+    s.mutate(x.min, &bounds_of_min);
+    s.mutate(x.max, &bounds_of_max);
+    return s.mutate(bounds_of_min | bounds_of_max);
   }
 }
 
@@ -1328,6 +1342,7 @@ bool prove_false(const expr& condition, const bounds_map& expr_bounds) {
 }
 
 interval_expr where_true(const expr& condition, var x) {
+  scoped_trace trace("where_true");
   // TODO: This needs a proper implementation. For now, a ridiculous hack: trial and error.
   // We use the leaves of the expression as guesses around which to search.
   // We could use every node in the expression...
