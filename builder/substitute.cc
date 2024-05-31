@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
@@ -717,12 +718,16 @@ T substitute_bounds_impl(T op, var buffer, const box_expr& bounds) {
 }  // namespace
 
 expr substitute(const expr& e, const symbol_map<expr>& replacements) { return substitutor(replacements).mutate(e); }
-stmt substitute(const stmt& s, const symbol_map<expr>& replacements) { return substitutor(replacements).mutate(s); }
+stmt substitute(const stmt& s, const symbol_map<expr>& replacements) {
+  scoped_trace trace("substitute");
+  return substitutor(replacements).mutate(s);
+}
 
 expr substitute(const expr& e, var target, const expr& replacement) {
   return substitutor(target, replacement).mutate(e);
 }
 stmt substitute(const stmt& s, var target, const expr& replacement) {
+  scoped_trace trace("substitute");
   return substitutor(target, replacement).mutate(s);
 }
 interval_expr substitute(const interval_expr& x, var target, const expr& replacement) {
@@ -738,6 +743,7 @@ expr substitute(const expr& e, const expr& target, const expr& replacement) {
   return substitutor(subs).mutate(e);
 }
 stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
+  scoped_trace trace("substitute");
   std::pair<expr, expr> subs[] = {{target, replacement}};
   return substitutor(subs).mutate(s);
 }

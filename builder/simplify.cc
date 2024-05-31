@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"
@@ -417,6 +418,7 @@ public:
   }
 
   void visit(const loop* op) override {
+    scoped_trace trace("visit(const loop*)");
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
@@ -439,6 +441,7 @@ public:
       set_result(std::move(body));
       return;
     } else if (const block* b = body.as<block>()) {
+      scoped_trace trace("licm");
       // This next bit of logic implements loop invariant code motion. It is allowed to split the loop around invariant
       // code, turning a loop into possibly multiple loops, with loop invariant code between the loops.
       std::vector<stmt> result;
@@ -475,6 +478,7 @@ public:
     }
 
     if (op->is_serial()) {
+      scoped_trace trace("drop_loop");
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
@@ -757,6 +761,7 @@ public:
   }
 
   void visit(const crop_buffer* op) override {
+    scoped_trace trace("visit(const crop_buffer*)");
     // This is the bounds of the buffer as we understand them, for simplifying the inner scope.
     box_expr bounds(op->bounds.size());
     // This is the new bounds of the crop operation. Crops that are no-ops become undefined here.
@@ -826,6 +831,7 @@ public:
   }
 
   void visit(const crop_dim* op) override {
+    scoped_trace trace("visit(const crop_dim*)");
     interval_expr bounds = simplify_crop_bounds(mutate(op->bounds), op->src, op->dim);
     bounds = simplify_redundant_bounds(bounds, slinky::buffer_bounds(op->src, op->dim));
     if (!bounds.min.defined() && !bounds.max.defined()) {
@@ -912,6 +918,7 @@ public:
   }
 
   void visit(const slice_buffer* op) override {
+    scoped_trace trace("visit(const slice_buffer*)");
     std::vector<expr> at(op->at.size());
     std::vector<int> sliced_dims;
     bool changed = false;
@@ -966,6 +973,7 @@ public:
   }
 
   void visit(const slice_dim* op) override {
+    scoped_trace trace("visit(const slice_dim*)");
     expr at = mutate(op->at);
 
     symbol_map<box_expr> old_buffer_bounds = buffer_bounds;
@@ -995,6 +1003,7 @@ public:
   }
 
   void visit(const transpose* op) override {
+    scoped_trace trace("visit(const transpose*)");
     std::optional<box_expr> bounds = buffer_bounds[op->sym];
     if (bounds) {
       if (op->is_truncate() && bounds->size() <= op->dims.size()) {
@@ -1074,7 +1083,10 @@ public:
 }  // namespace
 
 expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e, nullptr); }
-stmt simplify(const stmt& s, const bounds_map& bounds) { return simplifier(bounds).mutate(s); }
+stmt simplify(const stmt& s, const bounds_map& bounds) {
+  scoped_trace trace("simplify");
+  return simplifier(bounds).mutate(s);
+}
 interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
   simplifier s(bounds);
   return s.mutate(e);
@@ -1313,21 +1325,25 @@ expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mu
 expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
+  scoped_trace trace("attempt_to_prove");
   simplifier s(expr_bounds);
   return s.attempt_to_prove(condition);
 }
 
 bool prove_true(const expr& condition, const bounds_map& expr_bounds) {
+  scoped_trace trace("prove_true");
   simplifier s(expr_bounds);
   return s.prove_true(condition);
 }
 
 bool prove_false(const expr& condition, const bounds_map& expr_bounds) {
+  scoped_trace trace("prove_false");
   simplifier s(expr_bounds);
   return s.prove_false(condition);
 }
 
 interval_expr where_true(const expr& condition, var x) {
+  scoped_trace trace("where_true");
   // TODO: This needs a proper implementation. For now, a ridiculous hack: trial and error.
   // We use the leaves of the expression as guesses around which to search.
   // We could use every node in the expression...

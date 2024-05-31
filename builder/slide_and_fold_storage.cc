@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
@@ -281,6 +282,7 @@ public:
   }
 
   void slide_and_fold_buffer(const var& output, const stmt& body) {
+    scoped_trace trace("slide_and_fold_buffer");
     // We only want to fold if we are inside of the loop and the cropped buffer
     // is produced there.
     if (loops.size() < 2 || !is_produced_by(output, body)) return;
@@ -395,6 +397,7 @@ public:
 
   template <typename T>
   void visit_call_or_copy(const T* op, span<const var> inputs, span<const var> outputs) {
+    scoped_trace trace("visit_call_or_copy");
     set_result(op);
 
     for (var input : inputs) {
@@ -562,13 +565,16 @@ public:
       set_result(clone_with(op, std::move(body)));
     }
   }
-  void visit(const transpose*) override { std::abort(); }
+  void visit(const transpose*) override {
+    std::abort();
+  }
   void visit(const clone_buffer* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     node_mutator::visit(op);
   }
 
   void visit(const loop* op) override {
+    scoped_trace trace("visit(const loop*)");
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
@@ -659,6 +665,9 @@ public:
 
 }  // namespace
 
-stmt slide_and_fold_storage(const stmt& s, node_context& ctx) { return slide_and_fold(ctx).mutate(s); }
+stmt slide_and_fold_storage(const stmt& s, node_context& ctx) {
+  scoped_trace trace("slide_and_fold_storage");
+  return slide_and_fold(ctx).mutate(s);
+}
 
 }  // namespace slinky
