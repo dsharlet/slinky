@@ -26,8 +26,6 @@ var t2(symbols, "t2");
 var t3(symbols, "t3");
 var t4(symbols, "t4");
 
-MATCHER_P(matches, expected, "") { return match(arg, expected); }
-
 // Normalize all names in an expr so that expr compares can be done
 // without worrying about mere name differences. This only works
 // for exprs that are structurally identical (but we those that aren't
@@ -65,6 +63,12 @@ public:
   normalize_var_names(const node_context& c) : ctx(c) {}
 };
 
+MATCHER_P2(matches, correct, ctx, "") {
+  expr actual = normalize_var_names(ctx).mutate(arg);
+  expr expected = normalize_var_names(ctx).mutate(correct);
+  return match(actual, expected);
+}
+
 expr ssa_block(node_context& ctx, std::vector<expr> exprs) {
   std::vector<std::pair<var, expr>> lets;
   for (size_t i = 0; i < exprs.size() - 1; i++) {
@@ -74,23 +78,13 @@ expr ssa_block(node_context& ctx, std::vector<expr> exprs) {
   return let::make(lets, exprs.back());
 }
 
-void test(node_context& ctx, const expr& in, const expr& correct) {
-  expr result = common_subexpression_elimination(in, ctx);
-  expr actual = normalize_var_names(ctx).mutate(result);
-  expr expected = normalize_var_names(ctx).mutate(correct);
-  ASSERT_THAT(actual, matches(expected)) << "Incorrect CSE:\n"
-                                         << in << "\nbecame:\n"
-                                         << actual << "\ninstead of:\n"
-                                         << expected << "\n";
-}
-
 }  // namespace
 
 TEST(cse, no_op) {
   node_context ctx = symbols;
   expr e = ssa_block(ctx, {abs(x), t0 * t0});
   // This is fine as-is.
-  test(ctx, e, e);
+  ASSERT_THAT(e, matches(e, ctx));
 }
 
 TEST(cse, simple) {
@@ -102,17 +96,19 @@ TEST(cse, simple) {
                                     t1 * t1 + t0,  // (x*x + x)*(x*x + x) + x*x
                                     t2 + t2});
   // Test a simple case.
-  test(ctx, e, correct);
+  expr result = common_subexpression_elimination(e, ctx);
+  ASSERT_THAT(result, matches(correct, ctx));
 
   // Check for idempotence (also checks a case with lets)
-  test(ctx, correct, correct);
+  ASSERT_THAT(correct, matches(correct, ctx));
 }
 
 TEST(cse, redundant_lets) {
   node_context ctx = symbols;
   expr e = ssa_block(ctx, {x * x, x * x, t0 / t1, t1 / t1, t2 % t3, (t4 + x * x) + x * x});
   expr correct = ssa_block(ctx, {x * x, t0 / t0, (t1 % t1 + t0) + t0});
-  test(ctx, e, correct);
+  expr result = common_subexpression_elimination(e, ctx);
+  ASSERT_THAT(result, matches(correct, ctx));
 }
 
 TEST(cse, nested_lets) {
@@ -133,7 +129,8 @@ TEST(cse, nested_lets) {
                                     t2 + t0,                          // t3 = f = c + a     = t2 + t0
                                     t0 - x,                           // t4 = d = a - x     = t0 - x
                                     t3 + t3 * (t2 + t4 * t4 * t0)});  // h (with g substituted in)
-  test(ctx, e, correct);
+  expr result = common_subexpression_elimination(e, ctx);
+  ASSERT_THAT(result, matches(correct, ctx));
 }
 
 TEST(cse, scales_ok) {
@@ -160,7 +157,8 @@ TEST(cse, select) {
   expr cse_at_args[] = {cse_index};
   expr cse_load = buffer_at(buf, cse_at_args);
   expr correct = ssa_block(ctx, {x * y, x * x + y * y, select(t0 > 10, t0 + 2, t0 + 3 + cse_load)});
-  test(ctx, e, correct);
+  expr result = common_subexpression_elimination(e, ctx);
+  ASSERT_THAT(result, matches(correct, ctx));
 }
 
 }  // namespace slinky
