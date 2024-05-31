@@ -488,7 +488,7 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
   for (size_t i = 0; i < gvn.entries.size(); i++) {
     const auto& e = gvn.entries[i];
     if (e->use_count > 1) {
-      var sym = ctx.insert_unique();
+      var sym = ctx.insert_unique("cse");
       lets.emplace_back(sym, e->e);
       // Point references to this expr to the variable instead.
       replacements[e->e] = sym;
