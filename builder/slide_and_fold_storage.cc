@@ -82,6 +82,14 @@ std::vector<dim_expr> recursive_substitute(
   }
 }
 
+void substitute_bounds(interval_expr& bounds, const symbol_map<box_expr>& buffers) {
+  for (std::size_t i = 0; i < buffers.size(); ++i) {
+    if (!buffers[i]) continue;
+    if (bounds.min.defined()) bounds.min = substitute_bounds(bounds.min, var(i), *buffers[i]);
+    if (bounds.max.defined()) bounds.max = substitute_bounds(bounds.max, var(i), *buffers[i]);
+  }
+}
+
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
@@ -579,10 +587,10 @@ public:
       body = mutate(op->body);
     }
     interval_expr loop_bounds = {loops.back().bounds.min, op->bounds.max};
-
-    if (loop_bounds.min.same_as(orig_min)) {
-      loop_bounds.min = op->bounds.min;
-    }
+    substitute_bounds(loop_bounds, current_buffer_bounds());
+    // if (loop_bounds.min.same_as(orig_min)) {
+    //   loop_bounds.min = op->bounds.min;
+    // }
 
     if (body.same_as(op->body)) {
       set_result(op);
