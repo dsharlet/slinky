@@ -266,10 +266,6 @@ public:
 
 // ----------------------
 
-bool is_const(const expr& e) { return e.as<constant>() != nullptr; }
-
-bool is_var(const expr& e) { return e.as<variable>() != nullptr; }
-
 // Some expressions are not worth lifting out into lets, even if they
 // occur redundantly many times. They may also be illegal to lift out
 // (e.g. calls with side-effects).
@@ -278,7 +274,7 @@ bool is_var(const expr& e) { return e.as<variable>() != nullptr; }
 // simplifier for lets, otherwise CSE and the simplifier will fight each
 // other pointlessly.
 bool should_extract(const expr& e, bool lift_all) {
-  if (is_const(e) || is_var(e)) {
+  if (as_constant(e) || as_variable(e)) {
     return false;
   }
 
@@ -287,23 +283,23 @@ bool should_extract(const expr& e, bool lift_all) {
   }
 
   if (const add* a = e.as<add>()) {
-    return !(is_const(a->a) || is_const(a->b));
+    return !(as_constant(a->a) || as_constant(a->b));
   }
 
   if (const sub* a = e.as<sub>()) {
-    return !(is_const(a->a) || is_const(a->b));
+    return !(as_constant(a->a) || as_constant(a->b));
   }
 
   if (const mul* a = e.as<mul>()) {
-    return !(is_const(a->a) || is_const(a->b));
+    return !(as_constant(a->a) || as_constant(a->b));
   }
 
   if (const div* a = e.as<div>()) {
-    return !(is_const(a->a) || is_const(a->b));
+    return !(as_constant(a->a) || as_constant(a->b));
   }
 
   if (const mod* a = e.as<mod>()) {
-    return !(is_const(a->a) || is_const(a->b));
+    return !(as_constant(a->a) || as_constant(a->b));
   }
 
   return true;
@@ -472,7 +468,7 @@ public:
 expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool lift_all) {
   expr e = e_in;
 
-  if (!e.defined() || is_const(e) || is_var(e)) {
+  if (!e.defined() || as_constant(e) || as_variable(e)) {
     // My, that was easy.
     return e;
   }
