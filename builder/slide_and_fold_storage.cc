@@ -591,7 +591,7 @@ public:
     // we substitute current buffer bounds into loop bounds.
     substitute_bounds(loop_bounds, current_buffer_bounds());
 
-    if (body.same_as(op->body)) {
+    if (body.same_as(op->body) && loop_bounds.min.same_as(op->bounds.min) && loop_bounds.max.same_as(op->bounds.max)) {
       set_result(op);
       return;
     }
