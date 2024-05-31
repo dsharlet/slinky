@@ -473,6 +473,10 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
+// TODO: or_else() + and_then() are supposed to short-circuit in order
+// to avoid integer overflow, but since each expression is evaluated
+// when passed to this function it's not really functioning as intended here.
+// Good enough for the visualizer, but not quite right.
 function or_else(...cond) {
   for (let d = 0; d < cond.length; ++d) {
     if (cond[d]) return true;
