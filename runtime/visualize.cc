@@ -43,6 +43,7 @@ public:
   std::string sanitize(std::string s) {
     std::replace(s.begin(), s.end(), '.', '_');
     std::replace(s.begin(), s.end(), '/', '_');
+    std::replace(s.begin(), s.end(), '#', '_');
     if (s == "in") {
       s = "__in";
     }
@@ -130,15 +131,12 @@ public:
   void visit(const constant* c) override { *this << c->value; }
 
   void visit(const let* l) override {
-    // TODO: this is wrong and needs attention
+    // Use a lambda to allow scoped lets within an expression
+    *this << "(() => { ";
     for (const auto& s : l->lets) {
-      *this << "(let " << s.first << " = " << s.second << "; \n";
+      *this << "let " << s.first << " = " << s.second << "; ";
     }
-    *this << l->body;
-    for (const auto& s : l->lets) {
-      (void)s;
-      *this << ")\n";
-    }
+    *this << "return " << l->body << "; })()";
   }
 
   void visit(const let_stmt* l) override {
@@ -475,6 +473,22 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
+// TODO: or_else() + and_then() are supposed to short-circuit in order
+// to avoid integer overflow, but since each expression is evaluated
+// when passed to this function it's not really functioning as intended here.
+// Good enough for the visualizer, but not quite right.
+function or_else(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (cond[d]) return true;
+  }
+  return false;
+}
+function and_then(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (!cond[d]) return false;
+  }
+  return true;
+}
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {
