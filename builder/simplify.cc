@@ -863,13 +863,18 @@ public:
   }
 
   interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
-    interval_expr result = mutate(crop & buffer);
+    interval_expr result = mutate(crop);
 
-    if (match(result.min, buffer.min)) result.min = expr();
-    if (match(result.max, buffer.max)) result.max = expr();
+    // TODO: We should not need to compare to both buffer_bounds(buf, dim) and buffer.
+    if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
+    if (prove_true(result.max >= buffer.max || result.max >= buffer_max(buf, dim))) result.max = expr();
 
     result.min = simplify_crop_bound(result.min, buf, dim);
     result.max = simplify_crop_bound(result.max, buf, dim);
+
+    // We already proved above that this min/max is necessary (otherwise result would be undefined here.
+    if (result.min.defined()) buffer.min = max(buffer.min, result.min);
+    if (result.max.defined()) buffer.max = min(buffer.max, result.max);
 
     return result;
   }

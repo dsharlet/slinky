@@ -366,19 +366,11 @@ function pipeline(in1, in2, out) {
                 let __loop_max = buffer_max(out, 1);
                 let __loop_step = 2;
                 for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                  { let __intm3 = crop_dim(intm3, 1, {min:max(y, buffer_min(out, 1)), max:min((y + 1), buffer_max(out, 1))}); {
+                  { let __intm3 = crop_dim(intm3, 1, {min:y, max:min((y + 1), buffer_max(out, 1))}); {
                     let intm3 = __intm3;
-                    let __loop_min = y;
-                    let __loop_max = min((y + 1), buffer_max(out, 1));
-                    let __loop_step = 1;
-                    for(let y_y = __loop_min; y_y <= __loop_max; y_y += __loop_step) {
-                      { let __intm3 = crop_dim(intm3, 1, {min:max(y_y, buffer_min(out, 1)), max:y_y}); {
-                        let intm3 = __intm3;
-                        consume(intm1);
-                        produce(intm3);
-                        __event_t++;
-                      }}
-                    }
+                    consume(intm1);
+                    produce(intm3);
+                    __event_t++;
                   }}
                   { let __intm2 = crop_dim(intm2, 1, {min:(y + 2), max:(min((y + 1), buffer_max(out, 1)) + 2)}); {
                     let intm2 = __intm2;
@@ -386,7 +378,7 @@ function pipeline(in1, in2, out) {
                     produce(intm2);
                     __event_t++;
                   }}
-                  { let __intm4 = crop_dim(intm4, 1, {min:max(y, buffer_min(out, 1)), max:min((y + 1), buffer_max(out, 1))}); {
+                  { let __intm4 = crop_dim(intm4, 1, {min:y, max:min((y + 1), buffer_max(out, 1))}); {
                     let intm4 = __intm4;
                     consume(intm2_uncropped);
                     produce(intm4);
