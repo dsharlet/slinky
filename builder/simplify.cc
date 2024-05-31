@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -887,15 +888,53 @@ public:
     return x;
   }
 
+  template <typename T>
+  static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds) {
+    bounds.insert(x);
+    if (const T* t = x.as<T>()) {
+      enumerate_bounds<T>(t->a, bounds);
+      enumerate_bounds<T>(t->b, bounds);
+    }
+  }
+
+  template <typename T>
+  static expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
+    if (bounds.count(x)) return expr();
+    while (const T* t = x.as<T>()) {
+      bool a_is_bound = bounds.count(t->a);
+      bool b_is_bound = bounds.count(t->b);
+      if (a_is_bound && b_is_bound) {
+        return expr();
+      } else if (a_is_bound) {
+        x = t->b;
+      } else if (b_is_bound) {
+        x = t->a;
+      } else {
+        break;
+      }
+    }
+    return x;
+  }
+
   interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
     interval_expr result = mutate(crop);
+
+    // Find and remove redundant clamps in the crop bounds.
+    // TODO: This seems like a hack. We should be able to do this with the simplifier itself. We basically want to do something like:
+    //
+    //   result = simplify(result & x, {{x, buffer}})
+    // 
+    // and then remove the clamps of x. But this is pretty tricky.
+    std::set<expr, node_less> mins = {buffer_min(buf, dim)};
+    std::set<expr, node_less> maxs = {buffer_max(buf, dim)};
+    enumerate_bounds<class max>(buffer.min, mins);
+    enumerate_bounds<class min>(buffer.max, maxs);
+    result.min = remove_redundant_bounds<class max>(result.min, mins);
+    result.max = remove_redundant_bounds<class min>(result.max, maxs);
 
     // TODO: We should not need to compare to both buffer_bounds(buf, dim) and buffer.
     if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
     if (prove_true(result.max >= buffer.max || result.max >= buffer_max(buf, dim))) result.max = expr();
-
-    result.min = simplify_crop_bound(result.min, buf, dim);
-    result.max = simplify_crop_bound(result.max, buf, dim);
 
     // We already proved above that this min/max is necessary (otherwise result would be undefined here.
     if (result.min.defined()) buffer.min = max(buffer.min, result.min);
