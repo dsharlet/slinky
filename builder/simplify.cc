@@ -1095,6 +1095,7 @@ interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
 }
 
 interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
+  scoped_trace trace("bounds_of");
   simplifier s(expr_bounds);
   interval_expr bounds;
   s.mutate(x, &bounds);
@@ -1105,13 +1106,12 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
   if (x.is_point()) {
     return bounds_of(x.min, expr_bounds);
   } else {
-    interval_expr bounds_of_min = bounds_of(x.min, expr_bounds);
-    interval_expr bounds_of_max = bounds_of(x.max, expr_bounds);
-
-    return {
-        simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
-        simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
-    };
+    scoped_trace trace("bounds_of");
+    simplifier s(expr_bounds);
+    interval_expr bounds_of_min, bounds_of_max;
+    s.mutate(x.min, &bounds_of_min);
+    s.mutate(x.max, &bounds_of_max);
+    return s.mutate(bounds_of_min | bounds_of_max);
   }
 }
 
