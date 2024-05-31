@@ -13,9 +13,14 @@
 
 #if 0
 // For debugging
-#define cse_debug(...) do { __VA_ARGS__ ; } while (0)
+#define cse_debug(...)                                                                                                 \
+  do {                                                                                                                 \
+    __VA_ARGS__;                                                                                                       \
+  } while (0)
 #else
-#define cse_debug(...) do { } while (0)
+#define cse_debug(...)                                                                                                 \
+  do {                                                                                                                 \
+  } while (0)
 #endif
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/CSE.cpp
@@ -276,33 +281,21 @@ public:
 bool should_extract(const expr& e, bool lift_all) {
   if (as_constant(e) || as_variable(e)) {
     return false;
-  }
-
-  if (lift_all) {
+  } else if (lift_all) {
+    return true;
+  } else if (const add* a = e.as<add>()) {
+    return !(as_constant(a->a) || as_constant(a->b));
+  } else if (const sub* a = e.as<sub>()) {
+    return !(as_constant(a->a) || as_constant(a->b));
+  } else if (const mul* a = e.as<mul>()) {
+    return !(as_constant(a->a) || as_constant(a->b));
+  } else if (const div* a = e.as<div>()) {
+    return !(as_constant(a->a) || as_constant(a->b));
+  } else if (const mod* a = e.as<mod>()) {
+    return !(as_constant(a->a) || as_constant(a->b));
+  } else {
     return true;
   }
-
-  if (const add* a = e.as<add>()) {
-    return !(as_constant(a->a) || as_constant(a->b));
-  }
-
-  if (const sub* a = e.as<sub>()) {
-    return !(as_constant(a->a) || as_constant(a->b));
-  }
-
-  if (const mul* a = e.as<mul>()) {
-    return !(as_constant(a->a) || as_constant(a->b));
-  }
-
-  if (const div* a = e.as<div>()) {
-    return !(as_constant(a->a) || as_constant(a->b));
-  }
-
-  if (const mod* a = e.as<mod>()) {
-    return !(as_constant(a->a) || as_constant(a->b));
-  }
-
-  return true;
 }
 
 // A global-value-numbering of expressions. Returns canonical form of
