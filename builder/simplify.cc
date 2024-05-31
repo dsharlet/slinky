@@ -85,12 +85,19 @@ class simplifier : public node_mutator {
 public:
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
 
+  // Ensure that an interval that is a point in a deep equality sense is also a point in a shallow equality sense.
+  static interval_expr ensure_is_point(const interval_expr& x) {
+    if (!x.is_point() && match(x.min, x.max)) {
+      return point(x.min);
+    } else {
+      return x;
+    }
+  }
+
   expr mutate(const expr& e, interval_expr* bounds) {
     expr result = node_mutator::mutate(e);
     if (bounds) {
-      if (!result_bounds.is_point() && match(result_bounds.min, result_bounds.max)) {
-        result_bounds.max = result_bounds.min;
-      }
+      result_bounds = ensure_is_point(result_bounds);
       if (bounds != &result_bounds) {
         *bounds = std::move(result_bounds);
       }
@@ -111,7 +118,7 @@ public:
 
   interval_expr mutate(
       const interval_expr& x, interval_expr* min_bounds = nullptr, interval_expr* max_bounds = nullptr) {
-    if (x.is_point()) {
+    if (x.is_point() || match(x.min, x.max)) {
       expr result = mutate(x.min, min_bounds);
       if (min_bounds && max_bounds) {
         *max_bounds = *min_bounds;
@@ -119,10 +126,7 @@ public:
       return point(result);
     } else {
       interval_expr result = {mutate(x.min, min_bounds), mutate(x.max, max_bounds)};
-      if (!result.is_point() && match(result.min, result.max)) {
-        // If the bounds are the same, make sure same_as returns true.
-        result.max = result.min;
-      }
+      result = ensure_is_point(result);
       return result;
     }
   }
@@ -982,7 +986,8 @@ public:
     } else if (const crop_dim* crop = body.as<crop_dim>()) {
       if (crop->src == op->sym) {
         if (crop->dim == op->dim) {
-          // Two nested crops of the same dimension. Rewrite the inner crop to do both crops, the outer crop might become unused.
+          // Two nested crops of the same dimension. Rewrite the inner crop to do both crops, the outer crop might
+          // become unused.
           body = crop_dim::make(crop->sym, op->src, op->dim, new_bounds & crop->bounds, crop->body);
         } else {
           // TODO: This is a nested crop of the same buffer, use crop_buffer instead.
