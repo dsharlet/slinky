@@ -35,29 +35,28 @@ MATCHER_P(matches, expected, "") { return match(arg, expected); }
 class normalize_var_names : public node_mutator {
   node_context ctx;
   int counter = 0;
-  std::map<var, var> new_names;
+  symbol_map<var> scope;
 
   using node_mutator::visit;
 
-  void visit(const variable* v) override {
-    auto iter = new_names.find(var(v->sym));
-    if (iter == new_names.end()) {
-      set_result(v);
+  void visit(const variable* op) override {
+    std::optional<var> v = scope.lookup(op->sym);
+    if (v) {
+      set_result(*v);
     } else {
-      set_result(variable::make(iter->second));
+      set_result(op);
     }
   }
 
   void visit(const let* let) override {
     for (const auto& l : let->lets) {
       std::string new_name_str = "n" + std::to_string(counter++);
-      assert(!ctx.lookup(new_name_str));
       var new_name = ctx.insert(new_name_str);
-      new_names[l.first] = new_name;
+      scope[l.first] = new_name;
     }
     std::vector<std::pair<var, expr>> new_lets;
     for (const auto& l : let->lets) {
-      new_lets.emplace_back(new_names[l.first], mutate(l.second));
+      new_lets.emplace_back(*scope[l.first], mutate(l.second));
     }
     set_result(let::make(new_lets, mutate(let->body)));
   }
