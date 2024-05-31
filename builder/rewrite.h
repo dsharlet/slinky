@@ -43,7 +43,7 @@ template <typename T>
 struct pattern_info {
   static constexpr expr_node_type type = T::type;
   static constexpr bool is_boolean = T::is_boolean;
-  static constexpr bool is_canonical = true;
+  static constexpr bool is_canonical = T::is_canonical;
 };
 template <>
 struct pattern_info<std::int32_t> {
@@ -85,6 +85,7 @@ class pattern_wildcard {
 public:
   static constexpr expr_node_type type = expr_node_type::none;
   static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = true;
 };
 
 template <int N>
@@ -115,6 +116,7 @@ class pattern_constant {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = true;
 };
 
 template <int N>
@@ -165,7 +167,9 @@ template <typename T, typename A, typename B>
 struct pattern_info<pattern_binary<T, A, B>> {
   static constexpr expr_node_type type = T::static_type;
   static constexpr bool is_boolean = is_boolean_node(T::static_type);
-  static constexpr bool is_canonical = !T::commutative || !should_commute(pattern_info<A>::type, pattern_info<B>::type);
+  static constexpr bool is_canonical =
+      pattern_info<A>::is_canonical && pattern_info<B>::is_canonical &&
+      (!T::commutative || !should_commute(pattern_info<A>::type, pattern_info<B>::type));
 };
 
 template <typename T, typename A, typename B>
@@ -233,6 +237,7 @@ class pattern_unary {
 public:
   static constexpr expr_node_type type = T::static_type;
   static constexpr bool is_boolean = is_boolean_node(T::static_type);
+  static constexpr bool is_canonical = pattern_info<A>::is_canonical;
   A a;
 };
 
@@ -277,6 +282,8 @@ class pattern_select {
 public:
   static constexpr expr_node_type type = expr_node_type::select;
   static constexpr bool is_boolean = pattern_info<T>::is_boolean && pattern_info<F>::is_boolean;
+  static constexpr bool is_canonical =
+      pattern_info<C>::is_canonical && pattern_info<T>::is_canonical && pattern_info<F>::is_canonical;
   C c;
   T t;
   F f;
@@ -307,13 +314,14 @@ std::ostream& operator<<(std::ostream& os, const pattern_select<C, T, F>& p) {
   return os << "select(" << p.c << ", " << p.t << ", " << p.f << ")";
 }
 
-template <typename Args>
+template <typename... Args>
 class pattern_call {
 public:
   static constexpr expr_node_type type = expr_node_type::call;
   static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = (... && pattern_info<Args>::is_canonical);
   slinky::intrinsic fn;
-  Args args;
+  std::tuple<Args...> args;
 };
 
 template <typename T, std::size_t... Is>
@@ -326,11 +334,11 @@ std::vector<expr> substitute_tuple(const T& t, const match_context& ctx, std::in
   return {substitute(std::get<Is>(t), ctx)...};
 }
 
-template <typename Args>
-bool match(const pattern_call<Args>& p, const expr& x, match_context& ctx) {
+template <typename... Args>
+bool match(const pattern_call<Args...>& p, const expr& x, match_context& ctx) {
   if (const call* c = x.as<call>()) {
     if (c->intrinsic == p.fn) {
-      constexpr std::size_t ArgsSize = std::tuple_size<Args>::value;
+      constexpr std::size_t ArgsSize = sizeof...(Args);
       assert(c->args.size() == ArgsSize);
       return match_tuple(p.args, c->args, ctx, std::make_index_sequence<ArgsSize>());
     }
@@ -338,19 +346,19 @@ bool match(const pattern_call<Args>& p, const expr& x, match_context& ctx) {
   return false;
 }
 
-template <typename Args>
-expr substitute(const pattern_call<Args>& p, const match_context& ctx) {
-  constexpr std::size_t ArgsSize = std::tuple_size<Args>::value;
+template <typename... Args>
+expr substitute(const pattern_call<Args...>& p, const match_context& ctx) {
+  constexpr std::size_t ArgsSize = sizeof...(Args);
   return call::make(p.fn, substitute_tuple(p.args, ctx, std::make_index_sequence<ArgsSize>()));
 }
 
-inline std::ostream& operator<<(std::ostream& os, const pattern_call<std::tuple<>>& p) { return os << p.fn << "()"; }
+inline std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
 template <typename A>
-std::ostream& operator<<(std::ostream& os, const pattern_call<std::tuple<A>>& p) {
+std::ostream& operator<<(std::ostream& os, const pattern_call<A>& p) {
   return os << p.fn << "(" << std::get<0>(p.args) << ")";
 }
 template <typename A, typename B>
-std::ostream& operator<<(std::ostream& os, const pattern_call<std::tuple<A, B>>& p) {
+std::ostream& operator<<(std::ostream& os, const pattern_call<A, B>& p) {
   return os << p.fn << "(" << std::get<0>(p.args) << ", " << std::get<1>(p.args) << ")";
 }
 
@@ -358,6 +366,7 @@ template <typename T, typename Fn>
 class replacement_predicate {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_canonical = true;
   T a;
   Fn fn;
 };
@@ -381,14 +390,9 @@ template <typename T>
 class replacement_eval {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
-  T a;
-};
-
-template <typename T>
-struct pattern_info<replacement_eval<T>> {
-  static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = pattern_info<T>::is_boolean;
   static constexpr bool is_canonical = true;
+  T a;
 };
 
 template <typename T>
@@ -469,12 +473,12 @@ auto max(const A& a, const B& b) { return pattern_binary<class max, A, B>{a, b};
 template <typename C, typename T, typename F, bool = typename enable_pattern_ops<C, T, F>::type()>
 auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>{c, t, f}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-auto abs(const T& x) { return pattern_call<std::tuple<T>>{intrinsic::abs, {x}}; }
+auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 auto boolean(const T& x) { return pattern_binary<not_equal, T, int>{x, 0}; }
-inline auto positive_infinity() { return pattern_call<std::tuple<>>{intrinsic::positive_infinity, {}}; }
-inline auto negative_infinity() { return pattern_call<std::tuple<>>{intrinsic::negative_infinity, {}}; }
-inline auto indeterminate() { return pattern_call<std::tuple<>>{intrinsic::indeterminate, {}}; }
+inline auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
+inline auto negative_infinity() { return pattern_call<>{intrinsic::negative_infinity, {}}; }
+inline auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
 
 template <typename T>
 auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
@@ -487,7 +491,7 @@ auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
 // clang-format on
 
 template <int N1, int N2>
-using buffer_dim_meta = pattern_call<std::tuple<pattern_wildcard<N1>, pattern_wildcard<N2>>>;
+using buffer_dim_meta = pattern_call<pattern_wildcard<N1>, pattern_wildcard<N2>>;
 
 template <int N1, int N2>
 inline auto buffer_min(const pattern_wildcard<N1>& buf, const pattern_wildcard<N2>& dim) {
