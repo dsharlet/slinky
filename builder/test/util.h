@@ -37,15 +37,6 @@ std::string remove_windows_newlines(std::string s);
 
 std::string read_entire_file(const std::string& pathname);
 
-template <typename T>
-std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
-  std::vector<T> result(p.size());
-  for (std::size_t i = 0; i < p.size(); ++i) {
-    result[i] = x[p[i]];
-  }
-  return result;
-}
-
 inline bool is_permutation(span<const int> p) {
   std::vector<int> unpermuted(p.size());
   std::iota(unpermuted.begin(), unpermuted.end(), 0);
