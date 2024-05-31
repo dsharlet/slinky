@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
@@ -600,6 +601,7 @@ public:
 
 stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs) {
+  scoped_trace trace("alias_buffers");
   return buffer_aliaser(ctx, inputs, outputs).mutate(s);
 }
 
@@ -680,6 +682,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 }
 
 stmt implement_copies(const stmt& s, node_context& ctx) {
+  scoped_trace trace("implement_copies");
   return recursive_mutate<copy_stmt>(s, [&](const copy_stmt* op) { return implement_copy(op, ctx); });
 }
 
@@ -738,7 +741,10 @@ public:
 
 }  // namespace
 
-stmt fix_buffer_races(const stmt& s) { return race_condition_fixer().mutate(s); }
+stmt fix_buffer_races(const stmt& s) {
+  scoped_trace trace("fix_buffer_races");
+  return race_condition_fixer().mutate(s);
+}
 
 namespace {
 
@@ -854,7 +860,10 @@ public:
 
 }  // namespace
 
-stmt insert_early_free(const stmt& s) { return early_free_inserter().mutate(s); }
+stmt insert_early_free(const stmt& s) {
+  scoped_trace trace("insert_early_free");
+  return early_free_inserter().mutate(s);
+}
 
 namespace {
 
@@ -973,7 +982,13 @@ public:
 
 }  // namespace
 
-stmt deshadow(const stmt& s, node_context& ctx) { return deshadower(ctx).mutate(s); }
-stmt optimize_symbols(const stmt& s, node_context& ctx) { return reuse_shadows().mutate(s); }
+stmt deshadow(const stmt& s, node_context& ctx) {
+  scoped_trace trace("deshadow");
+  return deshadower(ctx).mutate(s);
+}
+stmt optimize_symbols(const stmt& s, node_context& ctx) {
+  scoped_trace trace("optimize_symbols");
+  return reuse_shadows().mutate(s);
+}
 
 }  // namespace slinky
