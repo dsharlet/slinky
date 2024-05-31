@@ -55,6 +55,7 @@ class simplifier : public node_mutator {
   void set_result(stmt s, interval_expr) { set_result(std::move(s)); }
 
 public:
+  simplifier() {}
   simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
 
   expr mutate(const expr& e, interval_expr* bounds) {
@@ -123,6 +124,7 @@ public:
   }
 
   std::optional<bool> attempt_to_prove(const expr& e) {
+    scoped_trace trace("attempt_to_prove");
     interval_expr bounds;
     mutate(boolean(e), &bounds);
     if (prove_constant_true(bounds.min)) {
@@ -1325,19 +1327,16 @@ expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mu
 expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
 
 std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
-  scoped_trace trace("attempt_to_prove");
   simplifier s(expr_bounds);
   return s.attempt_to_prove(condition);
 }
 
 bool prove_true(const expr& condition, const bounds_map& expr_bounds) {
-  scoped_trace trace("prove_true");
   simplifier s(expr_bounds);
   return s.prove_true(condition);
 }
 
 bool prove_false(const expr& condition, const bounds_map& expr_bounds) {
-  scoped_trace trace("prove_false");
   simplifier s(expr_bounds);
   return s.prove_false(condition);
 }
