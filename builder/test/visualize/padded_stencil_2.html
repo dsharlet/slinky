@@ -337,10 +337,10 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  check((__in != 0));
+  check(__in);
   check((buffer_rank(__in) == 2));
   check((buffer_elem_size(__in) == 2));
-  check((out != 0));
+  check(out);
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 2));
   check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
@@ -366,7 +366,7 @@ function pipeline(__in, out) {
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 1;
               for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                { let __intm = crop_dim(intm, 1, {min:select((y <= y_min_orig), max(g_1, (y + 1)), (min(g_2, y) + 1)), max:min(g_2, (y + 1))}); {
+                { let __intm = crop_dim(intm, 1, {min:select((y <= y_min_orig), max(g_1, (y + 1)), (min(g_2, y) + 1)), max:(y + 1)}); {
                   let intm = __intm;
                   consume(__in);
                   produce(intm);
@@ -374,18 +374,9 @@ function pipeline(__in, out) {
                 }}
                 { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)}); {
                   let padded_intm = __padded_intm;
-                  { let __intm_uncropped = transpose(intm_uncropped, [0, 1]); {
-                    let intm_uncropped = __intm_uncropped;
-                    { let __intm_uncropped = crop_buffer(intm_uncropped, [
-                        {min:max(g, (buffer_min(out, 0) + -1)), max:min(g_0, (buffer_max(out, 0) + 1))},
-                        {min:max(g_1, (buffer_min(out, 1) + -1)), max:min(g_2, (buffer_max(out, 1) + 1))}
-                    ]); {
-                      let intm_uncropped = __intm_uncropped;
-                      produce(intm_uncropped);
-                      produce(padded_intm);
-                      __event_t++;
-                    }}
-                  }}
+                  produce(intm_uncropped);
+                  produce(padded_intm);
+                  __event_t++;
                 }}
                 { let __out = crop_dim(out, 1, {min:y, max:y}); {
                   let out = __out;

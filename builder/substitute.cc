@@ -693,6 +693,7 @@ public:
   }
 };
 
+// TODO: These helpers are messy and maybe inefficient. We should support substituting buffers directly in substitutor.
 template <typename T>
 T substitute_bounds_impl(T op, var buffer, int dim, const interval_expr& bounds) {
   expr buf_var = variable::make(buffer);
@@ -711,6 +712,21 @@ T substitute_bounds_impl(T op, var buffer, const box_expr& bounds) {
   for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
     if (bounds[d].min.defined()) subs.emplace_back(buffer_min(buf_var, d), bounds[d].min);
     if (bounds[d].max.defined()) subs.emplace_back(buffer_max(buf_var, d), bounds[d].max);
+  }
+  return substitutor(subs).mutate(op);
+}
+
+template <typename T>
+T substitute_buffer_impl(T op, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
+  expr buf_var = variable::make(buffer);
+  std::vector<std::pair<expr, expr>> subs;
+  subs.reserve(dims.size() * 4 + 1);
+  subs.emplace_back(buffer_elem_size(buffer), elem_size);
+  for (index_t d = 0; d < static_cast<index_t>(dims.size()); ++d) {
+    if (dims[d].bounds.min.defined()) subs.emplace_back(buffer_min(buf_var, d), dims[d].bounds.min);
+    if (dims[d].bounds.max.defined()) subs.emplace_back(buffer_max(buf_var, d), dims[d].bounds.max);
+    if (dims[d].stride.defined()) subs.emplace_back(buffer_stride(buf_var, d), dims[d].stride);
+    if (dims[d].fold_factor.defined()) subs.emplace_back(buffer_fold_factor(buf_var, d), dims[d].fold_factor);
   }
   return substitutor(subs).mutate(op);
 }
@@ -748,6 +764,12 @@ stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
   return substitutor(subs).mutate(s);
 }
 
+expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
+  return substitute_buffer_impl(e, buffer, elem_size, dims);
+}
+stmt substitute_buffer(const stmt& s, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
+  return substitute_buffer_impl(s, buffer, elem_size, dims);
+}
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds) {
   return substitute_bounds_impl(e, buffer, bounds);
 }

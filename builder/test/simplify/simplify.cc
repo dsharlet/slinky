@@ -46,7 +46,7 @@ void dump_symbol_map(std::ostream& s, const symbol_map<T>& m) {
 }
 
 TEST(simplify, basic) {
-  ASSERT_THAT(simplify(expr() == 1), matches(expr() == 1));
+  ASSERT_THAT(simplify(expr() == 1), matches(expr()));
   ASSERT_THAT(simplify(expr(1) + 2), matches(3));
   ASSERT_THAT(simplify(expr(1) - 2), matches(-1));
   ASSERT_THAT(simplify(expr(1) < 2), matches(1));
@@ -233,8 +233,29 @@ TEST(simplify, licm) {
 }
 
 TEST(simplify, bounds) {
+  ASSERT_THAT(simplify(min(x, y), {{x, {y, z}}}), matches(y));
+  ASSERT_THAT(simplify(max(x, y), {{x, {y, z}}}), matches(x));
+  ASSERT_THAT(simplify(min(x, z), {{x, {y, z}}}), matches(x));
+  ASSERT_THAT(simplify(max(x, z), {{x, {y, z}}}), matches(z));
+  ASSERT_THAT(simplify(min(x + 1, y), {{x, {y, z}}}), matches(y));
+  ASSERT_THAT(simplify(min(x, y - 1), {{x, {y, z}}}), matches(y + -1));
+  ASSERT_THAT(simplify(max(x + 2, y), {{x, {y, z}}}), matches(x + 2));
+  ASSERT_THAT(simplify(max(x, y - 2), {{x, {y, z}}}), matches(x));
+  ASSERT_THAT(simplify(min(x, y), {{x, {y + 1, z}}}), matches(y));
+  ASSERT_THAT(simplify(min(x, y), {{x, {y + abs(w), z}}}), matches(y));
+
+  ASSERT_THAT(simplify(expr(x) == y, {{x, {y, y}}}), matches(true));
+
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x))), matches(stmt()));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y))), matches(check::make(y)));
+}
+
+TEST(simplify, buffer_bounds) {
+  ASSERT_THAT(
+      simplify(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0), 4, 5}},
+          crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0), 4, 5}},
+          crop_dim::make(b2, b0, 0, bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))));
 
   ASSERT_THAT(
       simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2))),
@@ -246,12 +267,8 @@ TEST(simplify, bounds) {
                   crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
       matches(stmt()));
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
-                  crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == 2)))),
-      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(y == 2))));
-
-  ASSERT_THAT(simplify(crop_dim::make(x, x, 1, {buffer_min(y, 1), buffer_max(y, 1)},
-                  crop_dim::make(y, y, 1, {1, 3}, check::make(buffer_min(x, 1) == buffer_min(y, 1))))),
-      matches(check::make(max(1, buffer_min(y, 1)) == max(buffer_min(y, 1), buffer_min(x, 1)))));
+                  crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == y && buffer_at(x))))),
+      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(buffer_at(x)))));
 }
 
 TEST(simplify, crop_not_needed) {
@@ -275,15 +292,17 @@ TEST(simplify, clone) {
 TEST(simplify, allocate) {
   // Pull statements that don't use the buffer out of allocate nodes.
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                  block::make({check::make(y), check::make(x), check::make(z)}))),
-      matches(block::make({check::make(y),
-          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)})));
+                  block::make({check::make(y), check::make(buffer_at(x)), check::make(z)}))),
+      matches(block::make(
+          {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))),
+              check::make(z)})));
 
   // Make sure clone_buffer doesn't hide uses of buffers or bounds.
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
-                  block::make({check::make(y), clone_buffer::make(w, x, check::make(w)), check::make(z)}))),
-      matches(block::make({check::make(y),
-          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(x)), check::make(z)})));
+                  block::make({check::make(y), clone_buffer::make(w, x, check::make(buffer_at(w))), check::make(z)}))),
+      matches(block::make(
+          {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))),
+              check::make(z)})));
 }
 
 TEST(simplify, make_buffer) {
@@ -357,6 +376,15 @@ TEST(simplify, make_buffer) {
   ASSERT_THAT(simplify(make_buffer::make(
                   b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 2)}, body)),
       matches(transpose::make(b1, b0, {0, 2}, body)));
+}
+
+TEST(simplify, transpose) {
+  ASSERT_THAT(simplify(transpose::make(
+                  b1, b0, {2, 1, 0}, transpose::make(b2, b1, {2, 1, 0}, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(transpose::make(b2, b0, {0, 1, 2}, call_stmt::make(nullptr, {}, {b2}, {}))));
+  ASSERT_THAT(simplify(transpose::make(
+                  b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(transpose::make(b2, b0, {2, 3}, call_stmt::make(nullptr, {}, {b2}, {}))));
 }
 
 TEST(simplify, bounds_of) {
