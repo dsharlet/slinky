@@ -14,10 +14,6 @@
 
 namespace slinky {
 
-#ifndef NDEBUG
-const node_context* set_default_print_context(const node_context* ctx);
-#endif
-
 namespace {
 
 node_context symbols;
@@ -80,9 +76,6 @@ expr ssa_block(node_context& ctx, std::vector<expr> exprs) {
 }
 
 void test(node_context& ctx, const expr& in, const expr& correct) {
-#ifndef NDEBUG
-  auto* old = set_default_print_context(&ctx);
-#endif
   expr result = common_subexpression_elimination(in, ctx);
   expr actual = normalize_var_names(ctx).mutate(result);
   expr expected = normalize_var_names(ctx).mutate(correct);
@@ -90,9 +83,6 @@ void test(node_context& ctx, const expr& in, const expr& correct) {
                                          << in << "\nbecame:\n"
                                          << actual << "\ninstead of:\n"
                                          << expected << "\n";
-#ifndef NDEBUG
-  set_default_print_context(old);
-#endif
 }
 
 }  // namespace
