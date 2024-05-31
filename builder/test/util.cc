@@ -21,7 +21,6 @@ std::string read_entire_file(const std::string& pathname) {
 
 void check_visualize(const std::string& filename, const pipeline& p, pipeline::buffers inputs,
     pipeline::buffers outputs, const node_context* ctx) {
-  // return ;
   std::stringstream viz_stream;
   visualize(viz_stream, p, inputs, outputs, ctx);
   std::string viz = viz_stream.str();
