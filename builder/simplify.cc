@@ -22,6 +22,16 @@ namespace slinky {
 
 namespace {
 
+// std::optional::operator= causes asan failures...
+template <typename T>
+void assign(std::optional<T>& dst, std::optional<T> src) {
+  if (src) {
+    dst = std::move(src);
+  } else {
+    dst = std::nullopt;
+  }
+}
+
 expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
     if (is_zero(ne->b)) {
@@ -1021,7 +1031,7 @@ public:
 
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
-    buffers[op->sym] = buffers[op->src];
+    assign(buffers[op->sym], buffers[op->src]);
     update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
@@ -1068,7 +1078,7 @@ public:
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
     int sliced_dims[] = {op->dim};
-    buffers[op->sym] = buffers[op->src];
+    assign(buffers[op->sym], buffers[op->src]);
     update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
