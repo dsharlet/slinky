@@ -173,6 +173,18 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
+function or_else(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (cond[d]) return true;
+  }
+  return false;
+}
+function and_then(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (!cond[d]) return false;
+  }
+  return true;
+}
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {
@@ -331,12 +343,12 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
     let g = buffer_min(__in, 0);
-    let g#1 = buffer_min(__in, 1);
-    let g#0 = buffer_max(__in, 0);
-    let g#2 = buffer_max(__in, 1);
+    let g_1 = buffer_min(__in, 1);
+    let g_0 = buffer_max(__in, 0);
+    let g_2 = buffer_max(__in, 1);
     { let intm = allocate('intm', 2, [
-        {bounds:{min:max(g, (buffer_min(out, 0) + -1)), max:min(g#0, (buffer_max(out, 0) + 1))}, stride:NaN, fold_factor:9223372036854775807},
-        {bounds:{min:max(g#1, (buffer_min(out, 1) + -1)), max:min(g#2, (buffer_max(out, 1) + 1))}, stride:NaN, fold_factor:1}
+        {bounds:{min:max(g, (buffer_min(out, 0) + -1)), max:min(g_0, (buffer_max(out, 0) + 1))}, stride:NaN, fold_factor:9223372036854775807},
+        {bounds:{min:max(g_1, (buffer_min(out, 1) + -1)), max:min(g_2, (buffer_max(out, 1) + 1))}, stride:NaN, fold_factor:1}
       ]);
       { let intm_uncropped = clone_buffer(intm);
         { let padded_intm = allocate('padded_intm', 2, [
@@ -350,7 +362,7 @@ function pipeline(__in, out) {
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 1;
               for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                { let __intm = crop_dim(intm, 1, {min:select((y <= y_min_orig), max(g#1, (y + 1)), (min(g#2, y) + 1)), max:min(g#2, (y + 1))}); {
+                { let __intm = crop_dim(intm, 1, {min:select((y <= y_min_orig), max(g_1, (y + 1)), (min(g_2, y) + 1)), max:min(g_2, (y + 1))}); {
                   let intm = __intm;
                   consume(__in);
                   produce(intm);
@@ -361,8 +373,8 @@ function pipeline(__in, out) {
                   { let __intm_uncropped = transpose(intm_uncropped, [0, 1]); {
                     let intm_uncropped = __intm_uncropped;
                     { let __intm_uncropped = crop_buffer(intm_uncropped, [
-                        {min:max(g, (buffer_min(out, 0) + -1)), max:min(g#0, (buffer_max(out, 0) + 1))},
-                        {min:max(g#1, (buffer_min(out, 1) + -1)), max:min(g#2, (buffer_max(out, 1) + 1))}
+                        {min:max(g, (buffer_min(out, 0) + -1)), max:min(g_0, (buffer_max(out, 0) + 1))},
+                        {min:max(g_1, (buffer_min(out, 1) + -1)), max:min(g_2, (buffer_max(out, 1) + 1))}
                     ]); {
                       let intm_uncropped = __intm_uncropped;
                       produce(intm_uncropped);

@@ -473,6 +473,18 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
+function or_else(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (cond[d]) return true;
+  }
+  return false;
+}
+function and_then(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (!cond[d]) return false;
+  }
+  return true;
+}
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {

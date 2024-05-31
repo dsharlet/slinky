@@ -173,6 +173,18 @@ function draw(mem, t) {
   window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
 }
 function check(condition) {}
+function or_else(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (cond[d]) return true;
+  }
+  return false;
+}
+function and_then(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (!cond[d]) return false;
+  }
+  return true;
+}
 function buffer_at(b, ...at) {
   let result = b.base;
   for (let d = 0; d < at.length; ++d) {
@@ -331,13 +343,13 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
     let g = buffer_min(out, 0);
-    let g#0 = buffer_max(out, 0);
-    check((buffer_min(__in, 0) <= min(g, g#0)));
-    check((max(g, g#0) <= buffer_max(__in, 0)));
+    let g_0 = buffer_max(out, 0);
+    check((buffer_min(__in, 0) <= min(g, g_0)));
+    check((max(g, g_0) <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
     { let softmax_in = allocate('softmax_in', 4, [
-        {bounds:{min:min(g, g#0), max:max(g, g#0)}, stride:NaN, fold_factor:9223372036854775807},
+        {bounds:{min:min(g, g_0), max:max(g, g_0)}, stride:NaN, fold_factor:9223372036854775807},
         {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
       ]);
       { let softmax_in_uncropped = clone_buffer(softmax_in);
@@ -350,7 +362,7 @@ function pipeline(__in, out) {
               ]);
               { let sum_exp_in_uncropped = clone_buffer(sum_exp_in);
                 { let exp_in = allocate('exp_in', 4, [
-                    {bounds:{min:min(g, g#0), max:max(g, g#0)}, stride:NaN, fold_factor:9223372036854775807},
+                    {bounds:{min:min(g, g_0), max:max(g, g_0)}, stride:NaN, fold_factor:9223372036854775807},
                     {bounds:{min:buffer_min(out, 1), max:buffer_max(out, 1)}, stride:NaN, fold_factor:1}
                   ]);
                   { let exp_in_uncropped = clone_buffer(exp_in);
