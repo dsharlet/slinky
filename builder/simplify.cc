@@ -1126,10 +1126,7 @@ public:
       }
       buffer_info new_info;
       new_info.elem_size = info->elem_size;
-      new_info.dims.resize(op->dims.size());
-      for (std::size_t i = 0; i < op->dims.size(); ++i) {
-        new_info.dims[i] = info->dims[op->dims[i]];
-      }
+      new_info.dims = permute(op->dims, info->dims);
       info = std::move(new_info);
     }
 
