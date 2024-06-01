@@ -929,6 +929,8 @@ public:
   }
 
   interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
+    if (!crop.min.defined() && !crop.max.defined()) return crop;
+
     interval_expr result = mutate(crop);
 
     // Find and remove redundant clamps in the crop bounds.
@@ -962,17 +964,17 @@ public:
     return deps.buffer_output || deps.buffer_src || deps.buffer_dst;
   }
 
-  void visit(const crop_buffer* op) override {
-    scoped_trace trace("visit(const crop_buffer*)");
-    std::optional<buffer_info> info = get_buffer_info(op->src, op->bounds.size());
-    box_expr bounds(op->bounds.size());
+  template <typename T>
+  void visit_crop(const T* op, const box_expr& op_bounds) {
+    std::optional<buffer_info> info = get_buffer_info(op->src, op_bounds.size());
+    box_expr bounds(op_bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
     index_t dims_count = 0;
     bool changed = false;
-    for (index_t i = 0; i < static_cast<index_t>(op->bounds.size()); ++i) {
-      bounds[i] = mutate_crop_bounds(op->bounds[i], op->src, i, info->dims[i].bounds);
-      changed = changed || !bounds[i].same_as(op->bounds[i]);
+    for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
+      bounds[i] = mutate_crop_bounds(op_bounds[i], op->src, i, info->dims[i].bounds);
+      changed = changed || !bounds[i].same_as(op_bounds[i]);
 
       dims_count += bounds[i].min.defined() || bounds[i].max.defined() ? 1 : 0;
     }
@@ -1002,7 +1004,7 @@ public:
         // This crop is of one dimension, replace it with crop_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
         int d = static_cast<int>(bounds.size()) - 1;
-        return mutate(crop_dim::make(op->sym, op->src, d, bounds[d], body));
+        return crop_dim::make(op->sym, op->src, d, bounds[d], body);
       } else if (changed || !body.same_as(op->body)) {
         return crop_buffer::make(op->sym, op->src, bounds, body);
       } else {
@@ -1020,57 +1022,12 @@ public:
     }
   }
 
+  void visit(const crop_buffer* op) override { visit_crop(op, op->bounds); }
+
   void visit(const crop_dim* op) override {
-    scoped_trace trace("visit(const crop_dim*)");
-    std::optional<buffer_info> info = get_buffer_info(op->src, op->dim + 1);
-    interval_expr bounds = mutate_crop_bounds(op->bounds, op->src, op->dim, info->dims[op->dim].bounds);
-    if (!bounds.min.defined() && !bounds.max.defined()) {
-      // This crop is a no-op.
-      stmt body = substitute(op->body, op->sym, op->src);
-      set_result(mutate(body));
-      return;
-    }
-
-    stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      set_result(std::move(body));
-      return;
-    } else if (!crop_needed(deps)) {
-      // Add clamps for the implicit bounds like crop would have done.
-      body = substitute_bounds(body, op->sym, op->dim, bounds & buffer_bounds(op->src, op->dim));
-      body = substitute(body, op->sym, op->src);
-      set_result(mutate(body));
-      return;
-    }
-
-    if (const slice_dim* slice = body.as<slice_dim>()) {
-      if (slice->src == op->sym && slice->dim == op->dim) {
-        // This is a slice of the same dimension of the buffer we just cropped.
-        // Rewrite the inner slice to just slice the src of the outer crop.
-        expr at = clamp(slice->at, bounds & buffer_bounds(op->src, op->dim));
-        body = slice_dim::make(slice->sym, op->src, op->dim, at, slice->body);
-      }
-    } else if (const crop_dim* crop = body.as<crop_dim>()) {
-      if (crop->src == op->sym) {
-        if (crop->dim == op->dim) {
-          // Two nested crops of the same dimension. Rewrite the inner crop to do both crops, the outer crop might
-          // become unused.
-          body = crop_dim::make(crop->sym, op->src, op->dim, bounds & crop->bounds, crop->body);
-        } else {
-          // TODO: This is a nested crop of the same buffer, use crop_buffer instead.
-        }
-      }
-    }
-
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return mutate(crop_dim::make(op->sym, op->src, op->dim, bounds, std::move(body))); }));
-    } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(bounds), std::move(body)));
-    }
+    box_expr bounds(op->dim + 1);
+    bounds[op->dim] = op->bounds;
+    visit_crop(op, bounds);
   }
 
   static void update_sliced_buffer_metadata(bounds_map& bounds, var sym, span<const int> sliced) {
