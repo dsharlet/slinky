@@ -379,8 +379,8 @@ public:
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
         expr new_loop_min = negative_infinity();
 
-        // TODO: this search by trying to cover wider range of depth using binary search 
-        // or something similar.
+        // TODO: this search can be more efficient by trying to cover wider range of depth 
+        // using binary search or something similar.
         const int max_search_depth = 10;
         for (int ix = 0; ix < max_search_depth; ix++) {
           expr nn = substitute(new_min, loop.sym, (loop.bounds.min - ix));
