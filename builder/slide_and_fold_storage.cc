@@ -574,7 +574,6 @@ public:
   }
 
   void visit(const loop* op) override {
-    scoped_trace trace("visit(const loop*)");
     var orig_min(ctx, ctx.name(op->sym) + ".min_orig");
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
