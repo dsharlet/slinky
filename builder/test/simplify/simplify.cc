@@ -161,6 +161,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(
       simplify(max(((y + 14) / 16) * 2 + 1, (y + 6) / 8) <= max(((y + 15) / 16) * 2 + 1, (y + 7) / 8)), matches(true));
 
+  ASSERT_THAT(simplify((x < 1) != 0), matches(x < 1));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
