@@ -714,6 +714,15 @@ public:
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     buffer_info info = mutate_buffer(op);
+
+    // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
+    // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
+    // check below could be unnecessary.
+    if (!depends_on(op->body, op->sym).buffer_data()) {
+      // We only needed the buffer meta, not the buffer itself.
+      set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
+      return;
+    }
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -1187,8 +1196,8 @@ public:
     stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(sym_info));
 
     if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return mutate(transpose::make(op->sym, src, dims, std::move(body))); }));
+      set_result(lift_decl_invariants(
+          b->stmts, op->sym, [&](stmt body) { return mutate(transpose::make(op->sym, src, dims, std::move(body))); }));
     } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
     } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
