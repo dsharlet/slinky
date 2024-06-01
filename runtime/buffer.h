@@ -14,10 +14,10 @@
 namespace slinky {
 
 #ifdef __APPLE__
-  using index_t = std::int64_t;
-  static_assert(sizeof(index_t) == sizeof(std::size_t));
+using index_t = std::int64_t;
+static_assert(sizeof(index_t) == sizeof(std::size_t));
 #else
-  using index_t = std::ptrdiff_t;
+using index_t = std::ptrdiff_t;
 #endif
 
 // Helper to offset a pointer by a number of bytes.
@@ -112,10 +112,12 @@ public:
     }
   }
 
-  bool is_folded() const {
+  // Check if the dimension crosses a fold between min and max.
+  bool is_folded(index_t min, index_t max) const {
     if (fold_factor() == unfolded) return false;
-    return min() / fold_factor() != max() / fold_factor();
+    return euclidean_div(min, fold_factor()) != euclidean_div(max, fold_factor());
   }
+  bool is_folded() const { return is_folded(min(), max()); }
 };
 
 template <typename T, std::size_t DimsSize = 0>
