@@ -996,23 +996,27 @@ public:
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
       bounds.pop_back();
     }
+
+    auto make_crop = [&](const stmt& body) -> stmt {
+      if (dims_count == 1) {
+        // This crop is of one dimension, replace it with crop_dim.
+        // We removed undefined trailing bounds, so this must be the dim we want.
+        int d = static_cast<int>(bounds.size()) - 1;
+        return mutate(crop_dim::make(op->sym, op->src, d, bounds[d], body));
+      } else if (changed || !body.same_as(op->body)) {
+        return crop_buffer::make(op->sym, op->src, bounds, body);
+      } else {
+        return op;
+      }
+    };
+
     if (bounds.empty()) {
       // This crop was a no-op.
       set_result(substitute(body, op->sym, op->src));
     } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym, [&](stmt body) {
-        // We don't need to recursively mutate here because we don't have any simplifications for nested stmts.
-        return mutate(crop_buffer::make(op->sym, op->src, bounds, std::move(body)));
-      }));
-    } else if (dims_count == 1) {
-      // This crop is of one dimension, replace it with crop_dim.
-      // We removed undefined trailing bounds, so this must be the dim we want.
-      int d = static_cast<int>(bounds.size()) - 1;
-      set_result(mutate(crop_dim::make(op->sym, op->src, d, std::move(bounds[d]), std::move(body))));
-    } else if (changed || !body.same_as(op->body)) {
-      set_result(crop_buffer::make(op->sym, op->src, std::move(bounds), std::move(body)));
+      set_result(lift_decl_invariants(b->stmts, op->sym, make_crop));
     } else {
-      set_result(op);
+      set_result(make_crop(body));
     }
   }
 
@@ -1119,21 +1123,27 @@ public:
       at.pop_back();
     }
     changed = changed || at.size() != op->at.size();
+
+    auto make_slice = [&](const stmt& body) -> stmt {
+      if (sliced_dims.size() == 1) {
+        // This slice is of one dimension, replace it with slice_dim.
+        // We removed undefined trailing bounds, so this must be the dim we want.
+        int d = static_cast<int>(at.size()) - 1;
+        return slice_dim::make(op->sym, op->src, d, at[d], body);
+      } else if (changed || !body.same_as(op->body)) {
+        return slice_buffer::make(op->sym, op->src, at, body);
+      } else {
+        return op;
+      }
+    };
+
     if (at.empty()) {
       // This slice was a no-op.
       set_result(substitute(body, op->sym, op->src));
     } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return mutate(slice_buffer::make(op->sym, op->src, at, std::move(body))); }));
-    } else if (sliced_dims.size() == 1) {
-      // This slice is of one dimension, replace it with slice_dim.
-      // We removed undefined trailing bounds, so this must be the dim we want.
-      int d = static_cast<int>(at.size()) - 1;
-      set_result(slice_dim::make(op->sym, op->src, d, std::move(at[d]), std::move(body)));
-    } else if (changed || !body.same_as(op->body)) {
-      set_result(slice_buffer::make(op->sym, op->src, std::move(at), std::move(body)));
+      set_result(lift_decl_invariants(b->stmts, op->sym, make_slice));
     } else {
-      set_result(op);
+      set_result(make_slice(body));
     }
   }
 
@@ -1152,8 +1162,10 @@ public:
     expr_bounds = std::move(old_expr_bounds);
 
     if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return mutate(slice_dim::make(op->sym, op->src, op->dim, at, std::move(body))); }));
+      set_result(lift_decl_invariants(b->stmts, op->sym, [&](stmt body) {
+        // We don't have any nested simplifications, no need to recursively mutate.
+        return slice_dim::make(op->sym, op->src, op->dim, at, std::move(body));
+      }));
     } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
     } else if (at.same_as(op->at) && body.same_as(op->body)) {
@@ -1204,18 +1216,24 @@ public:
   void visit(const clone_buffer* op) override {
     stmt body = mutate_with_buffer(op->body, op->sym, buffers[op->src]);
 
+    auto make_clone = [&](const stmt& body) -> stmt {
+      if (!depends_on(body, op->src).any()) {
+        // We didn't use the original buffer. We can just use that instead.
+        return substitute(body, op->sym, op->src);
+      } else if (!body.same_as(op->body)) {
+        // We don't have any nested simplifications, no need to recursively mutate.
+        return clone_buffer::make(op->sym, op->src, body);
+      } else {
+        return op;
+      }
+    };
+
     if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(
-          b->stmts, op->sym, [&](stmt body) { return mutate(clone_buffer::make(op->sym, op->src, std::move(body))); }));
+      set_result(lift_decl_invariants(b->stmts, op->sym, make_clone));
     } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (!depends_on(body, op->src).any()) {
-      // We didn't use the original buffer. We can just use that instead.
-      set_result(substitute(body, op->sym, op->src));
-    } else if (body.same_as(op->body)) {
-      set_result(op);
     } else {
-      set_result(clone_buffer::make(op->sym, op->src, std::move(body)));
+      set_result(make_clone(body));
     }
   }
 
