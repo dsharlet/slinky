@@ -1035,15 +1035,15 @@ public:
     }
   }
 
-  void visit(const slice_buffer* op) override {
-    scoped_trace trace("visit(const slice_buffer*)");
-    std::vector<expr> at(op->at.size());
+  template <typename T>
+  void visit_slice(const T* op, const std::vector<expr>& op_at) {
+    std::vector<expr> at(op_at.size());
     std::vector<int> sliced_dims;
     bool changed = false;
-    for (index_t i = 0; i < static_cast<index_t>(op->at.size()); ++i) {
-      if (op->at[i].defined()) {
-        at[i] = mutate(op->at[i]);
-        changed = changed || !at[i].same_as(op->at[i]);
+    for (index_t i = 0; i < static_cast<index_t>(op_at.size()); ++i) {
+      if (op_at[i].defined()) {
+        at[i] = mutate(op_at[i]);
+        changed = changed || !at[i].same_as(op_at[i]);
         sliced_dims.push_back(i);
       }
     }
@@ -1067,7 +1067,7 @@ public:
     while (!at.empty() && !at.back().defined()) {
       at.pop_back();
     }
-    changed = changed || at.size() != op->at.size();
+    changed = changed || at.size() != op_at.size();
 
     auto make_slice = [&](const stmt& body) -> stmt {
       if (sliced_dims.size() == 1) {
@@ -1092,32 +1092,12 @@ public:
     }
   }
 
+  void visit(const slice_buffer* op) override { visit_slice(op, op->at); }
+
   void visit(const slice_dim* op) override {
-    scoped_trace trace("visit(const slice_dim*)");
-    expr at = mutate(op->at);
-
-    symbol_map<buffer_info> old_buffers = buffers;
-    bounds_map old_expr_bounds = expr_bounds;
-    int sliced_dims[] = {op->dim};
-    assign(buffers[op->sym], buffers[op->src]);
-    update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
-    update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
-    stmt body = mutate(op->body);
-    buffers = std::move(old_buffers);
-    expr_bounds = std::move(old_expr_bounds);
-
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym, [&](stmt body) {
-        // We don't have any nested simplifications, no need to recursively mutate.
-        return slice_dim::make(op->sym, op->src, op->dim, at, std::move(body));
-      }));
-    } else if (!depends_on(body, op->sym).any()) {
-      set_result(std::move(body));
-    } else if (at.same_as(op->at) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(slice_dim::make(op->sym, op->src, op->dim, std::move(at), std::move(body)));
-    }
+    std::vector<expr> at(op->dim + 1);
+    at[op->dim] = op->at;
+    visit_slice(op, at);
   }
 
   void visit(const transpose* op) override {
