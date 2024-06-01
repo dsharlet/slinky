@@ -26,6 +26,8 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var u(symbols, "u");
+var v(symbols, "v");
 var b0(symbols, "b0");
 var b1(symbols, "b1");
 var b2(symbols, "b2");
@@ -305,6 +307,32 @@ TEST(simplify, allocate) {
       matches(block::make(
           {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_at(x))),
               check::make(z)})));
+}
+
+TEST(simplify, crop_and_slice) {
+  stmt body = call_stmt::make(nullptr, {}, {b2}, {});
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 0, {z, w}, body))),
+      matches(crop_dim::make(b2, b0, 0, {max(x, z), min(y, w)}, body)));
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 1, {z, w}, body))),
+      matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}}, body)));
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 2, {z, w}, body))),
+      matches(crop_buffer::make(b2, b0, {{x, y}, {}, {z, w}}, body)));
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 2, {z, w}, body))),
+      matches(crop_buffer::make(b2, b0, {{x, y}, {}, {z, w}}, body)));
+
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}}, crop_buffer::make(b2, b1, {{z, w}}, body))),
+      matches(crop_dim::make(b2, b0, 0, {max(x, z), min(y, w)}, body)));
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}}, crop_buffer::make(b2, b1, {{z, w}, {u, v}}, body))),
+      matches(crop_buffer::make(b2, b0, {{max(x, z), min(y, w)}, {u, v}}, body)));
+  ASSERT_THAT(
+      simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, crop_buffer::make(b2, b1, {{}, {z, w}, {u, v}}, body))),
+      matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
+
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}}, slice_buffer::make(b2, b1, {z}, body))),
+      matches(slice_dim::make(b2, b0, 0, z, body)));
+  ASSERT_THAT(simplify(crop_buffer::make(
+                  b1, b0, {{x, y}}, block::make({check::make(w), slice_buffer::make(b2, b1, {z}, body)}))),
+      matches(block::make({check::make(w), slice_dim::make(b2, b0, 0, z, body)})));
 }
 
 TEST(simplify, make_buffer) {

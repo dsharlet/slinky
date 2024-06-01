@@ -858,9 +858,8 @@ public:
     std::optional<buffer_info> info = buffers[buf];
     if (!info) {
       info = buffer_info();
-      info->dims.resize(rank);
     }
-    assert(rank <= static_cast<int>(info->dims.size()));
+    info->dims.resize(std::max(info->dims.size(), static_cast<std::size_t>(rank)));
     if (!info->elem_size.defined()) info->elem_size = buffer_elem_size(buf);
     for (int d = 0; d < static_cast<int>(info->dims.size()); ++d) {
       if (!info->dims[d].bounds.min.defined()) info->dims[d].bounds.min = buffer_min(buf, d);
@@ -953,13 +952,10 @@ public:
     box_expr bounds(op_bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    index_t dims_count = 0;
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
       bounds[i] = mutate_crop_bounds(op_bounds[i], op->src, i, info->dims[i].bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
-
-      dims_count += bounds[i].min.defined() || bounds[i].max.defined() ? 1 : 0;
     }
     stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
     auto deps = depends_on(body, op->sym);
@@ -977,29 +973,61 @@ public:
       return;
     }
 
+    // Rewrite nested crops to be one crop.
+    var sym = op->sym;
+    while (true) {
+      if (const crop_buffer* c = body.as<crop_buffer>()) {
+        if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
+          bounds.resize(std::max(bounds.size(), c->bounds.size()));
+          bounds = bounds & c->bounds;
+          sym = c->sym;
+          body = c->body;
+          continue;
+        }
+      } else if (const crop_dim* c = body.as<crop_dim>()) {
+        if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
+          if (c->dim < static_cast<int>(bounds.size())) {
+            bounds[c->dim] &= c->bounds;
+          } else {
+            bounds.resize(c->dim + 1);
+            bounds[c->dim] = c->bounds;
+          }
+          sym = c->sym;
+          body = c->body;
+          continue;
+        }
+      }
+      break;
+    }
+
     // Remove trailing undefined bounds.
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
       bounds.pop_back();
     }
 
+    // If this was a crop_buffer, and we only have one dim, we're going to change it to a crop_dim.
+    const int dims_count = std::count_if(
+        bounds.begin(), bounds.end(), [](const interval_expr& i) { return i.min.defined() || i.max.defined(); });
+    changed = changed || (dims_count == 1 && std::is_same_v<T, crop_buffer>) || !body.same_as(op->body);
+
     auto make_crop = [&](const stmt& body) -> stmt {
-      if (dims_count == 1) {
+      if (!changed) {
+        return op;
+      } else if (dims_count == 1) {
         // This crop is of one dimension, replace it with crop_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
         int d = static_cast<int>(bounds.size()) - 1;
-        return crop_dim::make(op->sym, op->src, d, bounds[d], body);
-      } else if (changed || !body.same_as(op->body)) {
-        return crop_buffer::make(op->sym, op->src, bounds, body);
+        return crop_dim::make(sym, op->src, d, bounds[d], body);
       } else {
-        return op;
+        return crop_buffer::make(sym, op->src, bounds, body);
       }
     };
 
     if (bounds.empty()) {
       // This crop was a no-op.
-      set_result(substitute(body, op->sym, op->src));
+      set_result(substitute(body, sym, op->src));
     } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym, make_crop));
+      set_result(lift_decl_invariants(b->stmts, sym, make_crop));
     } else {
       set_result(make_crop(body));
     }
@@ -1045,7 +1073,23 @@ public:
 
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
-    std::optional<buffer_info> info = buffers[op->src];
+    var src = op->src;
+    std::optional<buffer_info> info;
+    while (true) {
+      info = buffers[src];
+      if (!info) break;
+      var info_src = src;
+      // Slice doesn't care about crops, rewrite slices to use the src of those crops.
+      if (const crop_buffer* c = info->decl.as<crop_buffer>()) {
+        info_src = c->src;
+      } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
+        info_src = c->src;
+      }
+      // TODO: It also could rewrite some other ops too (make_buffer, transpose at least).
+      if (info_src == src) break;
+      src = info_src;
+    }
+
     if (info) {
       info->decl = op;
       buffers[op->sym] = std::move(info);
@@ -1068,24 +1112,29 @@ public:
     while (!at.empty() && !at.back().defined()) {
       at.pop_back();
     }
-    changed = changed || at.size() != op_at.size();
+
+    changed = changed || src != op->src || at.size() != op_at.size() || !body.same_as(op->body);
+
+    // If this was a slice_buffer, and we only have one dimension, we're going to change it to a slice_dim.
+    const int at_count = std::count_if(at.begin(), at.end(), [](const expr& i) { return i.defined(); });
+    changed = changed || (at_count == 1 && std::is_same_v<T, slice_buffer>);
 
     auto make_slice = [&](const stmt& body) -> stmt {
-      if (sliced_dims.size() == 1) {
+      if (!changed) {
+        return op;
+      } else if (at_count == 1) {
         // This slice is of one dimension, replace it with slice_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
         int d = static_cast<int>(at.size()) - 1;
-        return slice_dim::make(op->sym, op->src, d, at[d], body);
-      } else if (changed || !body.same_as(op->body)) {
-        return slice_buffer::make(op->sym, op->src, at, body);
+        return slice_dim::make(op->sym, src, d, at[d], body);
       } else {
-        return op;
+        return slice_buffer::make(op->sym, src, at, body);
       }
     };
 
     if (at.empty()) {
       // This slice was a no-op.
-      set_result(substitute(body, op->sym, op->src));
+      set_result(substitute(body, op->sym, src));
     } else if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(b->stmts, op->sym, make_slice));
     } else {

@@ -324,16 +324,15 @@ interval_expr select(const expr& c, interval_expr t, interval_expr f) {
 }
 
 box_expr operator|(box_expr a, const box_expr& b) {
-  assert(a.size() == b.size());
-  for (std::size_t i = 0; i < a.size(); ++i) {
+  a.resize(std::max(a.size(), b.size()));
+  for (std::size_t i = 0; i < b.size(); ++i) {
     a[i] |= b[i];
   }
   return a;
 }
 
 box_expr operator&(box_expr a, const box_expr& b) {
-  assert(a.size() == b.size());
-  for (std::size_t i = 0; i < a.size(); ++i) {
+  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
     a[i] &= b[i];
   }
   return a;
