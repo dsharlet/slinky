@@ -472,6 +472,7 @@ public:
     interval_expr body_bounds;
     auto body = mutate(op->body, &body_bounds);
 
+    bool substituted = false;
     for (auto it = lets.rbegin(); it != lets.rend();) {
       scoped_values.pop_back();
       auto deps = depends_on(body, it->first);
@@ -485,15 +486,19 @@ public:
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
       } else if (should_substitute(it->second)) {
-        body = mutate(substitute(body, it->first, it->second), &body_bounds);
+        body = substitute(body, it->first, it->second);
         for (auto inner = lets.rbegin(); inner != it; ++inner) {
           inner->second = substitute(inner->second, it->first, it->second);
         }
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
+        substituted = true;
       } else {
         ++it;
       }
+    }
+    if (substituted) {
+      body = mutate(body, &body_bounds);
     }
 
     if (lets.empty()) {
@@ -688,12 +693,11 @@ public:
     stmt body = mutate_with_buffer(op->body, op->sym, info);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
-      set_result(stmt());
+      set_result(std::move(body));
       return;
     } else if (!deps.buffer_data()) {
       // We only needed the buffer meta, not the allocation itself.
-      body = substitute_buffer(body, op->sym, info.elem_size, info.dims);
-      set_result(mutate(body));
+      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
       return;
     }
 
@@ -733,8 +737,7 @@ public:
       return;
     } else if (!deps.buffer_data()) {
       // We only needed the buffer meta, not the buffer itself.
-      body = substitute_buffer(body, op->sym, info.elem_size, info.dims);
-      set_result(mutate(body));
+      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
       return;
     }
 
@@ -993,8 +996,7 @@ public:
     }
     if (bounds.empty()) {
       // This crop was a no-op.
-      body = substitute(body, op->sym, op->src);
-      set_result(std::move(body));
+      set_result(substitute(body, op->sym, op->src));
     } else if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(b->stmts, op->sym, [&](stmt body) {
         // We don't need to recursively mutate here because we don't have any simplifications for nested stmts.
@@ -1117,8 +1119,7 @@ public:
     changed = changed || at.size() != op->at.size();
     if (at.empty()) {
       // This slice was a no-op.
-      body = substitute(body, op->sym, op->src);
-      set_result(std::move(body));
+      set_result(substitute(body, op->sym, op->src));
     } else if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(b->stmts, op->sym,
           [&](stmt body) { return mutate(slice_buffer::make(op->sym, op->src, at, std::move(body))); }));
@@ -1182,7 +1183,7 @@ public:
     if (const transpose* body_t = body.as<transpose>()) {
       if (body_t->src == op->sym) {
         // Nested transposes of the same buffer, rewrite the inner transpose to directly transpose our src.
-        body = transpose::make(body_t->sym, op->src, permute(body_t->dims, op->dims), body_t->body);
+        body = mutate(transpose::make(body_t->sym, op->src, permute(body_t->dims, op->dims), body_t->body));
       }
     }
 
@@ -1208,7 +1209,7 @@ public:
       set_result(std::move(body));
     } else if (!depends_on(body, op->src).any()) {
       // We didn't use the original buffer. We can just use that instead.
-      set_result(mutate(substitute(body, op->sym, variable::make(op->src))));
+      set_result(substitute(body, op->sym, op->src));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
