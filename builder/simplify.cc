@@ -336,7 +336,7 @@ public:
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
-        set_result(result, bounds_of(op, bounds));
+        set_result(result, bounds_of(op, std::move(bounds)));
       } else {
         mutate_and_set_result(result);
       }
@@ -612,8 +612,10 @@ public:
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            interval_expr new_crop = bounds_of(crop->bounds, {{op->sym, bounds}});
-            new_crops.emplace_back(crop->sym, crop->src, crop->dim, new_crop);
+            auto set_bounds_of_sym = set_value_in_scope(expr_bounds, op->sym, bounds);
+            interval_expr bounds_of_min, bounds_of_max;
+            mutate(crop->bounds, &bounds_of_min, &bounds_of_max);
+            new_crops.emplace_back(crop->sym, crop->src, crop->dim, mutate(bounds_of_min | bounds_of_max));
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
@@ -1251,9 +1253,9 @@ interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
 interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
   scoped_trace trace("bounds_of");
   simplifier s(expr_bounds);
-  interval_expr bounds;
-  s.mutate(x, &bounds);
-  return bounds;
+  interval_expr result;
+  s.mutate(x, &result);
+  return result;
 }
 
 interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
@@ -1263,9 +1265,11 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
     scoped_trace trace("bounds_of");
     simplifier s(expr_bounds);
     interval_expr bounds_of_min, bounds_of_max;
-    s.mutate(x.min, &bounds_of_min);
-    s.mutate(x.max, &bounds_of_max);
-    return s.mutate(bounds_of_min | bounds_of_max);
+    s.mutate(x, &bounds_of_min, &bounds_of_max);
+    return {
+        simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
+        simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
+    };
   }
 }
 
