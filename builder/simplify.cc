@@ -546,35 +546,29 @@ public:
       return;
     } else if (const block* b = body.as<block>()) {
       scoped_trace trace("licm");
-      // This next bit of logic implements loop invariant code motion. It is allowed to split the loop around invariant
-      // code, turning a loop into possibly multiple loops, with loop invariant code between the loops.
-      std::vector<stmt> result;
-      result.reserve(b->stmts.size());
-
-      // We build loops by adding to their body, and possibly "flushing" to an actual loop if we reach the end of where
-      // we want a loop to be.
-      std::vector<stmt> loop_body;
-      loop_body.reserve(b->stmts.size());
-      auto flush_loop = [&]() {
-        if (loop_body.empty()) return;
-        stmt body = block::make(std::move(loop_body));
-        loop_body.clear();
-        result.push_back(loop::make(op->sym, op->max_workers, bounds, step, std::move(body)));
-      };
-      for (const stmt& i : b->stmts) {
-        if (depends_on(i, op->sym).any()) {
-          // This stmt should be in the loop.
-          loop_body.push_back(i);
-        } else {
-          // This stmt should not be in the loop. If we already have some loop body, we need to make a loop now, and
-          // then put this stmt after that loop.
-          flush_loop();
-          result.push_back(i);
-        }
+      // Lift loop invariants from the end of the loop.
+      std::vector<stmt> after;
+      after.reserve(b->stmts.size());
+      std::vector<stmt> loop_body = b->stmts;
+      while (!loop_body.empty() && !depends_on(loop_body.back(), op->sym).any()) {
+        after.push_back(std::move(loop_body.back()));
+        loop_body.pop_back();
       }
-      if (!result.empty()) {
-        flush_loop();
-        set_result(mutate(block::make(std::move(result))));
+      // Lift loop invariants from the beginning of the loop.
+      std::vector<stmt> before;
+      before.reserve(b->stmts.size());
+      while (!loop_body.empty() && !depends_on(loop_body.front(), op->sym).any()) {
+        before.push_back(std::move(loop_body.front()));
+        loop_body.erase(loop_body.begin());
+      }
+      if (!before.empty() || !after.empty()) {
+        std::reverse(after.begin(), after.end());
+        stmt result = block::make({
+            block::make(std::move(before)),
+            loop::make(op->sym, op->max_workers, bounds, step, block::make(std::move(loop_body))),
+            block::make(std::move(after)),
+        });
+        set_result(mutate(result));
         return;
       } else {
         // We didn't find anything to lift out of the loop, proceed on to other possible simplifications.
@@ -920,10 +914,11 @@ public:
     interval_expr result = mutate(crop);
 
     // Find and remove redundant clamps in the crop bounds.
-    // TODO: This seems like a hack. We should be able to do this with the simplifier itself. We basically want to do something like:
+    // TODO: This seems like a hack. We should be able to do this with the simplifier itself. We basically want to do
+    // something like:
     //
     //   result = simplify(result & x, {{x, buffer}})
-    // 
+    //
     // and then remove the clamps of x. But this is pretty tricky.
     std::set<expr, node_less> mins = {buffer_min(buf, dim)};
     std::set<expr, node_less> maxs = {buffer_max(buf, dim)};
