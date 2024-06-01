@@ -520,7 +520,6 @@ public:
   }
 
   void visit(const loop* op) override {
-    scoped_trace trace("visit(const loop*)");
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
@@ -543,7 +542,6 @@ public:
       set_result(std::move(body));
       return;
     } else if (const block* b = body.as<block>()) {
-      scoped_trace trace("licm");
       // This next bit of logic implements loop invariant code motion. It is allowed to split the loop around invariant
       // code, turning a loop into possibly multiple loops, with loop invariant code between the loops.
       std::vector<stmt> result;
@@ -580,7 +578,6 @@ public:
     }
 
     if (op->is_serial()) {
-      scoped_trace trace("drop_loop");
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
@@ -1160,7 +1157,6 @@ public:
   }
 
   void visit(const transpose* op) override {
-    scoped_trace trace("visit(const transpose*)");
     const std::optional<buffer_info>* src_info = &buffers[op->src];
 
     var src = op->src;
