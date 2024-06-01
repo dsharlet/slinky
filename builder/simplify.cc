@@ -518,18 +518,6 @@ public:
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     return mutate(body);
   }
-  stmt mutate_with_bounds(stmt body, var buf, std::optional<box_expr> bounds) {
-    std::optional<buffer_info> info;
-    if (bounds) {
-      info = buffer_info();
-      info->dims.resize(bounds->size());
-      for (std::size_t d = 0; d < info->dims.size(); ++d) {
-        if ((*bounds)[d].min.defined()) info->dims[d].bounds.min = (*bounds)[d].min;
-        if ((*bounds)[d].max.defined()) info->dims[d].bounds.max = (*bounds)[d].max;
-      }
-    }
-    return mutate_with_buffer(std::move(body), buf, std::move(info));
-  }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
     assert(!expr_bounds.contains(v));
