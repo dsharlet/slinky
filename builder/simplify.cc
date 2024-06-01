@@ -1108,8 +1108,7 @@ public:
     buffers = std::move(old_buffers);
     expr_bounds = std::move(old_expr_bounds);
 
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
+    if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
       return;
     }
