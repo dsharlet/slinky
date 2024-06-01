@@ -76,6 +76,17 @@ interval_expr ensure_is_point(const interval_expr& x) {
   }
 }
 
+// Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
+template <class Fn>
+stmt lift_decl_invariants(std::vector<stmt> stmts, var sym, Fn&& make_decl) {
+  for (stmt& i : stmts) {
+    if (depends_on(i, sym).any()) {
+      i = make_decl(i);
+    }
+  }
+  return block::make(std::move(stmts));
+}
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   struct buffer_info {
@@ -845,12 +856,8 @@ public:
     }
 
     if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(make_buffer::make(op->sym, base, info.elem_size, info.dims, s)));
-      }
-      set_result(block::make(std::move(stmts)));
+      set_result(lift_decl_invariants(b->stmts, op->sym,
+          [&](stmt body) { return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body)); }));
     } else if (buffer_changed(op, info) || !base.same_as(op->base) || !body.same_as(op->body)) {
       set_result(make_buffer::make(
           op->sym, std::move(base), std::move(info.elem_size), std::move(info.dims), std::move(body)));
@@ -920,10 +927,11 @@ public:
     interval_expr result = mutate(crop);
 
     // Find and remove redundant clamps in the crop bounds.
-    // TODO: This seems like a hack. We should be able to do this with the simplifier itself. We basically want to do something like:
+    // TODO: This seems like a hack. We should be able to do this with the simplifier itself. We basically want to do
+    // something like:
     //
     //   result = simplify(result & x, {{x, buffer}})
-    // 
+    //
     // and then remove the clamps of x. But this is pretty tricky.
     std::set<expr, node_less> mins = {buffer_min(buf, dim)};
     std::set<expr, node_less> maxs = {buffer_max(buf, dim)};
@@ -988,12 +996,10 @@ public:
       body = substitute(body, op->sym, op->src);
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(crop_buffer::make(op->sym, op->src, bounds, s)));
-      }
-      set_result(block::make(std::move(stmts)));
+      set_result(lift_decl_invariants(b->stmts, op->sym, [&](stmt body) {
+        // We don't need to recursively mutate here because we don't have any simplifications for nested stmts.
+        return mutate(crop_buffer::make(op->sym, op->src, bounds, std::move(body)));
+      }));
     } else if (dims_count == 1) {
       // This crop is of one dimension, replace it with crop_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1050,12 +1056,8 @@ public:
     }
 
     if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(crop_dim::make(op->sym, op->src, op->dim, bounds, s)));
-      }
-      set_result(block::make(std::move(stmts)));
+      set_result(lift_decl_invariants(b->stmts, op->sym,
+          [&](stmt body) { return mutate(crop_dim::make(op->sym, op->src, op->dim, bounds, std::move(body))); }));
     } else if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1118,12 +1120,8 @@ public:
       body = substitute(body, op->sym, op->src);
       set_result(std::move(body));
     } else if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(slice_buffer::make(op->sym, op->src, at, s)));
-      }
-      set_result(block::make(std::move(stmts)));
+      set_result(lift_decl_invariants(b->stmts, op->sym,
+          [&](stmt body) { return mutate(slice_buffer::make(op->sym, op->src, at, std::move(body))); }));
     } else if (sliced_dims.size() == 1) {
       // This slice is of one dimension, replace it with slice_dim.
       // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1150,16 +1148,11 @@ public:
     buffers = std::move(old_buffers);
     expr_bounds = std::move(old_expr_bounds);
 
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
+    if (const block* b = body.as<block>()) {
+      set_result(lift_decl_invariants(b->stmts, op->sym,
+          [&](stmt body) { return mutate(slice_dim::make(op->sym, op->src, op->dim, at, std::move(body))); }));
+    } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(slice_dim::make(op->sym, op->src, op->dim, at, s)));
-      }
-      set_result(block::make(std::move(stmts)));
     } else if (at.same_as(op->at) && body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1193,16 +1186,11 @@ public:
       }
     }
 
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
+    if (const block* b = body.as<block>()) {
+      set_result(lift_decl_invariants(b->stmts, op->sym,
+          [&](stmt body) { return mutate(transpose::make(op->sym, op->src, op->dims, std::move(body))); }));
+    } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(transpose::make(op->sym, op->src, op->dims, s)));
-      }
-      set_result(block::make(std::move(stmts)));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
@@ -1213,18 +1201,14 @@ public:
   void visit(const clone_buffer* op) override {
     stmt body = mutate_with_buffer(op->body, op->sym, buffers[op->src]);
 
-    if (!depends_on(body, op->sym).any()) {
+    if (const block* b = body.as<block>()) {
+      set_result(lift_decl_invariants(
+          b->stmts, op->sym, [&](stmt body) { return mutate(clone_buffer::make(op->sym, op->src, std::move(body))); }));
+    } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
     } else if (!depends_on(body, op->src).any()) {
       // We didn't use the original buffer. We can just use that instead.
       set_result(mutate(substitute(body, op->sym, variable::make(op->src))));
-    } else if (const block* b = body.as<block>()) {
-      std::vector<stmt> stmts;
-      stmts.reserve(b->stmts.size());
-      for (const stmt& s : b->stmts) {
-        stmts.push_back(mutate(clone_buffer::make(op->sym, op->src, s)));
-      }
-      set_result(block::make(std::move(stmts)));
     } else if (body.same_as(op->body)) {
       set_result(op);
     } else {
