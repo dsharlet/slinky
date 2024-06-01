@@ -24,16 +24,6 @@ namespace slinky {
 
 namespace {
 
-// std::optional::operator= causes asan failures...
-template <typename T>
-void assign(std::optional<T>& dst, std::optional<T> src) {
-  if (src) {
-    dst = std::move(src);
-  } else {
-    dst = std::nullopt;
-  }
-}
-
 expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
     if (is_zero(ne->b)) {
@@ -94,6 +84,9 @@ class simplifier : public node_mutator {
 
     // The dimension metadata for this buffer.
     std::vector<dim_expr> dims;
+
+    // The op that defined this buffer.
+    stmt decl;
   };
   symbol_map<buffer_info> buffers;
   bounds_map expr_bounds;
@@ -514,7 +507,8 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  stmt mutate_with_buffer(stmt body, var buf, std::optional<buffer_info> buffer) {
+  stmt mutate_with_buffer(stmt decl, stmt body, var buf, std::optional<buffer_info> buffer) {
+    if (buffer) buffer->decl = decl;
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     return mutate(body);
   }
@@ -666,6 +660,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       info.dims.push_back(mutate(op->dims[d]));
     }
+    info.decl = op;
     return info;
   }
 
@@ -680,7 +675,7 @@ public:
 
   void visit(const allocate* op) override {
     buffer_info info = mutate_buffer(op);
-    stmt body = mutate_with_buffer(op->body, op->sym, info);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, info);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(std::move(body));
@@ -719,7 +714,7 @@ public:
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     buffer_info info = mutate_buffer(op);
-    stmt body = mutate_with_buffer(op->body, op->sym, info);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, info);
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       // This make_buffer is unused.
@@ -966,7 +961,7 @@ public:
 
       dims_count += bounds[i].min.defined() || bounds[i].max.defined() ? 1 : 0;
     }
-    stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
+    stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(std::move(body));
@@ -1050,7 +1045,13 @@ public:
 
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
-    assign(buffers[op->sym], buffers[op->src]);
+    std::optional<buffer_info> info = buffers[op->src];
+    if (info) {
+      info->decl = op;
+      buffers[op->sym] = std::move(info);
+    } else {
+      buffers[op->sym] = std::nullopt;
+    }
     update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
     update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
     stmt body = mutate(op->body);
@@ -1102,22 +1103,23 @@ public:
 
   void visit(const transpose* op) override {
     scoped_trace trace("visit(const transpose*)");
-    std::optional<buffer_info> info = buffers[op->src];
-    if (info) {
-      if (op->is_truncate() && info->dims.size() <= op->dims.size()) {
+    const std::optional<buffer_info>& src_info = buffers[op->src];
+    std::optional<buffer_info> sym_info;
+    if (src_info) {
+      if (op->is_truncate() && src_info->dims.size() <= op->dims.size()) {
         // transpose can't add dimensions.
-        assert(info->dims.size() == op->dims.size());
+        assert(src_info->dims.size() == op->dims.size());
         // This truncate is a no-op.
         set_result(mutate(substitute(op->body, op->sym, op->src)));
         return;
       }
-      buffer_info new_info;
-      new_info.elem_size = info->elem_size;
-      new_info.dims = permute(op->dims, info->dims);
-      info = std::move(new_info);
+      sym_info = buffer_info();
+      sym_info->elem_size = src_info->elem_size;
+      sym_info->dims = permute(op->dims, src_info->dims);
+      sym_info->decl = op;
     }
 
-    stmt body = mutate_with_buffer(op->body, op->sym, std::move(info));
+    stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(sym_info));
 
     if (const transpose* body_t = body.as<transpose>()) {
       if (body_t->src == op->sym) {
@@ -1139,7 +1141,9 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    stmt body = mutate_with_buffer(op->body, op->sym, buffers[op->src]);
+    std::optional<buffer_info> info = buffers[op->src];
+    if (info) info->decl = op;
+    stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
 
     auto make_clone = [&](const stmt& body) -> stmt {
       if (!depends_on(body, op->src).any()) {
