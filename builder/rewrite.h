@@ -405,6 +405,27 @@ std::ostream& operator<<(std::ostream& os, const replacement_eval<T>& r) {
   return os << r.a;
 }
 
+template <typename T>
+class replacement_boolean {
+public:
+  static constexpr expr_node_type type = expr_node_type::none;
+  static constexpr bool is_boolean = true;
+  static constexpr bool is_canonical = pattern_info<T>::is_canonical;
+  T a;
+};
+
+template <typename T>
+expr substitute(const replacement_boolean<T>& r, const match_context& ctx) {
+  expr result = substitute(r.a, ctx);
+  if (!is_boolean(result)) result = result != 0;
+  return result;
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const replacement_boolean<T>& r) {
+  return os << "boolean(" << r.a << ")";
+}
+
 // We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
 template <typename... Ts>
 struct enable_pattern_ops {
@@ -475,7 +496,7 @@ auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-auto boolean(const T& x) { return pattern_binary<not_equal, T, int>{x, 0}; }
+auto boolean(const T& x) { return replacement_boolean<T>{x}; }
 inline auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
 inline auto negative_infinity() { return pattern_call<>{intrinsic::negative_infinity, {}}; }
 inline auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
