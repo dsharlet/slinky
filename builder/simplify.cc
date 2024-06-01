@@ -1152,40 +1152,49 @@ public:
 
   void visit(const transpose* op) override {
     scoped_trace trace("visit(const transpose*)");
-    const std::optional<buffer_info>& src_info = buffers[op->src];
-    std::optional<buffer_info> sym_info;
-    if (src_info) {
-      if (op->is_truncate() && src_info->dims.size() <= op->dims.size()) {
+    const std::optional<buffer_info>* src_info = &buffers[op->src];
+
+    var src = op->src;
+    std::vector<int> dims = op->dims;
+    while (src_info && *src_info) {
+      if (const transpose* t = (*src_info)->decl.as<transpose>()) {
+        if (t->sym == src) {
+          // This is a transpose of another transpose. Rewrite this to directly transpose the parent.
+          dims = permute(dims, t->dims);
+          src = t->src;
+          src_info = &buffers[src];
+          continue;
+        }
+      }
+      break;
+    }
+
+    buffer_info sym_info;
+    if (src_info && *src_info) {
+      if (transpose::is_truncate(dims) && (*src_info)->dims.size() <= dims.size()) {
         // transpose can't add dimensions.
-        assert(src_info->dims.size() == op->dims.size());
+        assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
-        set_result(mutate(substitute(op->body, op->sym, op->src)));
+        set_result(mutate(substitute(op->body, op->sym, src)));
         return;
       }
-      sym_info = buffer_info();
-      sym_info->elem_size = src_info->elem_size;
-      sym_info->dims = permute(op->dims, src_info->dims);
-      sym_info->decl = op;
+
+      sym_info.elem_size = (*src_info)->elem_size;
+      sym_info.dims = permute(op->dims, (*src_info)->dims);
     }
+    sym_info.decl = op;
 
     stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(sym_info));
 
-    if (const transpose* body_t = body.as<transpose>()) {
-      if (body_t->src == op->sym) {
-        // Nested transposes of the same buffer, rewrite the inner transpose to directly transpose our src.
-        body = mutate(transpose::make(body_t->sym, op->src, permute(body_t->dims, op->dims), body_t->body));
-      }
-    }
-
     if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return mutate(transpose::make(op->sym, op->src, op->dims, std::move(body))); }));
+          [&](stmt body) { return mutate(transpose::make(op->sym, src, dims, std::move(body))); }));
     } else if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
-    } else if (body.same_as(op->body)) {
+    } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
       set_result(op);
     } else {
-      set_result(transpose::make(op->sym, op->src, op->dims, std::move(body)));
+      set_result(transpose::make(op->sym, src, dims, std::move(body)));
     }
   }
 
