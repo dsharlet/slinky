@@ -377,18 +377,8 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min = negative_infinity();
+        expr new_loop_min = where_less_equal(new_min, old_min_at_loop_min, loop.sym, loop.bounds.min);
 
-        // TODO: this search can be more efficient by trying to cover wider range of depth 
-        // using binary search or something similar.
-        const int max_search_depth = 10;
-        for (int ix = 0; ix < max_search_depth; ix++) {
-          expr nn = substitute(new_min, loop.sym, (loop.bounds.min - ix));
-          if (prove_true(nn <= old_min_at_loop_min)) {
-            new_loop_min = simplify(loop.bounds.min - ix);
-            break;
-          }
-        }
 
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;

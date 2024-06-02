@@ -1561,4 +1561,22 @@ interval_expr where_true(const expr& condition, var x) {
   return result;
 }
 
+expr where_less_equal(const expr& lhs, const expr& rhs, var x, const expr& initial_guess) {
+  expr result = negative_infinity();
+
+  // TODO: this search can be more efficient by trying to cover wider range of depth
+  // using binary search or something similar.
+  const int max_search_depth = 10;
+
+  for (int ix = 0; ix < max_search_depth; ix++) {
+    expr nn = substitute(lhs, x, (initial_guess - ix));
+    if (prove_true(nn <= rhs)) {
+      result = simplify(initial_guess - ix);
+      break;
+    }
+  }
+
+  return result;
+}
+
 }  // namespace slinky
