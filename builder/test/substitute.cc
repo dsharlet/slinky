@@ -61,8 +61,18 @@ TEST(substitute, shadowed) {
 
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(buffer_min(x, 3) == 0)), buffer_min(x, 3), 1),
       matches(slice_dim::make(x, x, 2, 0, check::make(buffer_min(x, 3) == 0))));
+  ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(buffer_min(x, 3) == 0)), buffer_min(x, 3), 1),
+      matches(slice_dim::make(x, u, 2, 0, check::make(buffer_min(x, 3) == 0))));
+  ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(buffer_min(u, 3) == 0)), buffer_min(u, 3), 1),
+      matches(slice_dim::make(x, u, 2, 0, check::make(expr(1) == 0))));
+
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3)),
       matches(slice_dim::make(x, x, 2, 0, check::make(buffer_max(x, 2) == buffer_min(x, 3)))));
+  ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3)),
+      matches(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3)))));
+  ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(u, 3)),
+      matches(slice_dim::make(x, u, 2, 0, check::make(buffer_max(u, 3) == buffer_min(x, 3)))));
+
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 2)),
       matches(slice_dim::make(x, x, 2, 0, check::make(expr() == buffer_min(x, 3)))));
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1)),
@@ -81,6 +91,10 @@ TEST(substitute, shadowed) {
       ASSERT_THAT(substitute_bounds(slice_dim::make(x, x, slice_d, 0, check::make(buffer_min(x, check_d) == w)), x,
                       {{0, expr()}, {1, expr()}, {2, expr()}, {3, expr()}}),
           matches(slice_dim::make(x, x, slice_d, 0, check::make(expected == w))))
+          << "slice_d=" << slice_d << ", check_d=" << check_d;
+      ASSERT_THAT(substitute_bounds(slice_dim::make(x, x, slice_d, 0, check::make(buffer_min(y, check_d) == w)), y,
+                      {{0, expr()}, {1, expr()}, {2, expr()}, {3, expr()}}),
+          matches(slice_dim::make(x, x, slice_d, 0, check::make(check_d == w))))
           << "slice_d=" << slice_d << ", check_d=" << check_d;
     }
   }

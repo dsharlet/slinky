@@ -808,9 +808,9 @@ public:
     // Update the replacements for slices.
     elem_size = update_sliced_buffer_metadata(elem_size, sym, slices);
     std::vector<dim_expr> new_dims;
-    new_dims.reserve(dims.size() - slices.size());
+    new_dims.reserve(dims.size());
     for (std::size_t d = 0; d < dims.size(); ++d) {
-      if (std::find(slices.begin(), slices.end(), d) == slices.end()) {
+      if (target != sym || std::find(slices.begin(), slices.end(), d) == slices.end()) {
         new_dims.push_back(update_sliced_buffer_metadata(dims[d], sym, slices));
       }
     }
