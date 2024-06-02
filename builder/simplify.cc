@@ -1103,22 +1103,7 @@ public:
 
     symbol_map<buffer_info> old_buffers = buffers;
     bounds_map old_expr_bounds = expr_bounds;
-    var src = op->src;
-    std::optional<buffer_info> info;
-    while (true) {
-      info = buffers[src];
-      if (!info) break;
-      var info_src = src;
-      // Slice doesn't care about crops, rewrite slices to use the src of those crops.
-      if (const crop_buffer* c = info->decl.as<crop_buffer>()) {
-        info_src = c->src;
-      } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
-        info_src = c->src;
-      }
-      // TODO: It also could rewrite some other ops too (make_buffer, transpose at least).
-      if (info_src == src) break;
-      src = info_src;
-    }
+    std::optional<buffer_info> info = buffers[op->src];
 
     if (info) {
       info->decl = op;
@@ -1142,7 +1127,7 @@ public:
       at.pop_back();
     }
 
-    changed = changed || src != op->src || at.size() != op_at.size() || !body.same_as(op->body);
+    changed = changed || at.size() != op_at.size() || !body.same_as(op->body);
 
     // If this was a slice_buffer, and we only have one dimension, we're going to change it to a slice_dim.
     const int at_count = std::count_if(at.begin(), at.end(), [](const expr& i) { return i.defined(); });
@@ -1155,15 +1140,15 @@ public:
         // This slice is of one dimension, replace it with slice_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
         int d = static_cast<int>(at.size()) - 1;
-        return slice_dim::make(op->sym, src, d, at[d], body);
+        return slice_dim::make(op->sym, op->src, d, at[d], body);
       } else {
-        return slice_buffer::make(op->sym, src, at, body);
+        return slice_buffer::make(op->sym, op->src, at, body);
       }
     };
 
     if (at.empty()) {
       // This slice was a no-op.
-      set_result(substitute(body, op->sym, src));
+      set_result(substitute(body, op->sym, op->src));
     } else if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(b->stmts, op->sym, make_slice));
     } else {
