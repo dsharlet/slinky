@@ -313,6 +313,28 @@ bool match(const dim_expr& a, const dim_expr& b) {
   return match(a.bounds, b.bounds) && match(a.stride, b.stride) && match(a.fold_factor, b.fold_factor);
 }
 
+const call* match_call(const expr& x, intrinsic fn, var a) {
+  const call* c = is_intrinsic(x, fn);
+  if (!c) return nullptr;
+
+  assert(c->args.size() >= 1);
+  const var* av = as_variable(c->args[0]);
+  if (!av || *av != a) return nullptr;
+
+  return c;
+}
+
+const call* match_call(const expr& x, intrinsic fn, var a, index_t b) {
+  const call* c = match_call(x, fn, a);
+  if (!c) return nullptr;
+
+  assert(c->args.size() >= 2);
+  const index_t* bv = as_constant(c->args[1]);
+  if (!bv || *bv != b) return nullptr;
+
+  return c;
+}
+
 int compare(const var& a, const var& b) {
   matcher m;
   m.try_match(a, b);
@@ -333,23 +355,6 @@ int compare(const stmt& a, const stmt& b) {
 }
 
 namespace {
-
-bool is_buffer_dim_intrinsic(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::buffer_min:
-  case intrinsic::buffer_max:
-  case intrinsic::buffer_stride:
-  case intrinsic::buffer_fold_factor: return true;
-  default: return false;
-  }
-}
-
-const call* is_buffer_dim_intrinsic(const expr& x) {
-  if (const call* c = x.as<call>()) {
-    if (is_buffer_dim_intrinsic(c->intrinsic)) return c;
-  }
-  return nullptr;
-}
 
 expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   switch (fn) {
@@ -505,11 +510,11 @@ public:
     interval_expr old_bounds = buffer_bounds(src, dim);
     interval_expr new_bounds = {mutate(old_bounds.min), mutate(old_bounds.max)};
     interval_expr result = {mutate(bounds.min), mutate(bounds.max)};
-    if (!old_bounds.min.same_as(new_bounds.min) && !is_buffer_min(new_bounds.min, new_src, dim)) {
+    if (!old_bounds.min.same_as(new_bounds.min) && !match_call(new_bounds.min, intrinsic::buffer_min, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.min = max(result.min, new_bounds.min);
     }
-    if (!old_bounds.max.same_as(new_bounds.max) && !is_buffer_max(new_bounds.max, new_src, dim)) {
+    if (!old_bounds.max.same_as(new_bounds.max) && !match_call(new_bounds.max, intrinsic::buffer_max, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.max = min(result.max, new_bounds.max);
     }
@@ -767,8 +772,8 @@ public:
   }
 
   std::size_t get_target_buffer_rank(var x) override {
-    if (const call* c = is_buffer_dim_intrinsic(target)) {
-      if (is_variable(c->args[0], x)) {
+    if (const call* c = target.as<call>()) {
+      if (is_buffer_dim_intrinsic(c->intrinsic) && is_variable(c->args[0], x)) {
         const index_t* dim = as_constant(c->args[1]);
         assert(dim);
         return *dim + 1;

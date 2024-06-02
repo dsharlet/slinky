@@ -10,6 +10,8 @@ bool match(const expr& a, const expr& b);
 bool match(const stmt& a, const stmt& b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
+const call* match_call(const expr& x, intrinsic fn, var a);
+const call* match_call(const expr& x, intrinsic fn, var a, index_t b);
 
 expr substitute(const expr& e, const symbol_map<expr>& replacements);
 stmt substitute(const stmt& s, const symbol_map<expr>& replacements);
