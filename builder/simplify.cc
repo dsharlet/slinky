@@ -35,16 +35,6 @@ expr strip_boolean(expr x) {
   return x;
 }
 
-bool is_buffer_dim_intrinsic(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::buffer_min:
-  case intrinsic::buffer_max:
-  case intrinsic::buffer_stride:
-  case intrinsic::buffer_fold_factor: return true;
-  default: return false;
-  }
-}
-
 expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   switch (fn) {
   case intrinsic::buffer_min: return d.bounds.min;
@@ -732,6 +722,46 @@ public:
     }
   }
 
+  // If d is equal to buffer_dim(sym, x), return x, otherwise return -1.
+  int is_buffer_dim(const dim_expr& d, var sym) {
+    const call* min = match_call(d.bounds.min, intrinsic::buffer_min, sym);
+    if (min) {
+      assert(min->args.size() == 2);
+      const index_t* dim = as_constant(min->args[1]);
+      assert(dim);
+      if (match_call(d.bounds.max, intrinsic::buffer_max, sym, *dim) &&
+          match_call(d.stride, intrinsic::buffer_stride, sym, *dim) &&
+          match_call(d.fold_factor, intrinsic::buffer_fold_factor, sym, *dim)) {
+        return *dim;
+      }
+    }
+    return -1;
+  }
+
+  // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
+  // when thoes references use the same values.
+  void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym) {
+    if (!match_call(x, fn, sym) && prove_true(x == value)) x = call::make(fn, {sym});
+  }
+  void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym, int dim) {
+    if (!match_call(x, fn, sym, dim) && prove_true(x == value)) x = call::make(fn, {sym, dim});
+  }
+  void canonicalize_dim(dim_expr& dim, const dim_expr& src, var sym, int src_d) {
+    canonicalize_buffer_meta(dim.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, src_d);
+    canonicalize_buffer_meta(dim.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, src_d);
+    canonicalize_buffer_meta(dim.stride, src.stride, intrinsic::buffer_stride, sym, src_d);
+    canonicalize_buffer_meta(dim.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, src_d);
+  }
+  void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
+    canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
+    for (dim_expr& d : buf.dims) {
+      if (is_buffer_dim(d, sym) >= 0) continue;
+      for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
+        canonicalize_dim(d, src.dims[src_d], sym, src_d);
+      }
+    }
+  }
+
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     buffer_info info = mutate_buffer(op);
@@ -756,119 +786,94 @@ public:
       return;
     }
 
-    if (const call* bc = base.as<call>()) {
+    if (const call* bc = is_intrinsic(base, intrinsic::buffer_at)) {
       // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
-      if (bc->intrinsic == intrinsic::buffer_at) {
-        const var* src_buf = as_variable(bc->args[0]);
-        assert(src_buf);
+      const var* src_buf = as_variable(bc->args[0]);
+      assert(src_buf);
 
-        const std::optional<buffer_info>& src_info = buffers[*src_buf];
-        if (src_info) {
-          // Before trying to do anything, try to normalize the dimensions to be in terms of src_buf metadata.
-          if (prove_true(info.elem_size == src_info->elem_size)) info.elem_size = buffer_elem_size(*src_buf);
-          for (dim_expr& d : info.dims) {
-            for (int src_d = 0; src_d < static_cast<int>(src_info->dims.size()); ++src_d) {
-              const dim_expr& src_dim = src_info->dims[src_d];
-              if (prove_true(d.bounds.min == src_dim.bounds.min)) d.bounds.min = buffer_min(*src_buf, src_d);
-              if (prove_true(d.bounds.max == src_dim.bounds.max)) d.bounds.max = buffer_max(*src_buf, src_d);
-              if (prove_true(d.stride == src_dim.stride)) d.stride = buffer_stride(*src_buf, src_d);
-              if (prove_true(d.fold_factor == src_dim.fold_factor)) d.fold_factor = buffer_fold_factor(*src_buf, src_d);
-            }
+      const std::optional<buffer_info>& src_info = buffers[*src_buf];
+      if (src_info) {
+        // Before trying to do anything, try to normalize the dimensions to be in terms of src_buf metadata.
+        canonicalize_buffer(info, *src_info, *src_buf);
+      }
+
+      if (match(info.elem_size, buffer_elem_size(*src_buf))) {
+        // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
+        // the dimensions to be identity.
+        int dim = 0;
+        std::size_t slice_rank = 0;
+        std::size_t at_rank =
+            std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
+        bool is_slice = true;
+        for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
+          if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
+            // Skip this dimension.
+            ++dim;
+          } else if (slice_rank < info.dims.size()) {
+            // This arg is undefined. We need to find the next dimension here to be a slice.
+            is_slice = is_slice && is_buffer_dim(info.dims[slice_rank++], *src_buf) == dim++;
+          } else {
+            is_slice = false;
+            break;
           }
         }
+        if (is_slice && slice_rank == info.dims.size()) {
+          std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
+          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), std::move(body));
+          // make_buffer drops trailing dims, do the same here.
+          result = transpose::make_truncate(op->sym, *src_buf, info.dims.size() + at_rank, std::move(result));
+          set_result(mutate(result));
+          return;
+        }
 
-        if (match(info.elem_size, buffer_elem_size(*src_buf))) {
-          // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
-          // the dimensions to be identity.
-          int dim = 0;
-          std::size_t slice_rank = 0;
-          std::size_t at_rank =
-              std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
-          bool is_slice = true;
-          for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
-            if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
-              // Skip this dimension.
-              ++dim;
-            } else if (slice_rank < info.dims.size()) {
-              // This arg is undefined. We need to find the next dimension here to be a slice.
-              is_slice = is_slice && match(info.dims[slice_rank++], buffer_dim(*src_buf, dim++));
-            } else {
-              is_slice = false;
-              break;
-            }
-          }
-          if (is_slice && slice_rank == info.dims.size()) {
-            std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-            stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), std::move(body));
-            // make_buffer drops trailing dims, do the same here.
-            result = transpose::make_truncate(op->sym, *src_buf, info.dims.size() + at_rank, std::move(result));
-            set_result(mutate(result));
-            return;
+        // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
+        bool is_crop = bc->args.size() <= info.dims.size() + 1;
+        box_expr crop_bounds(info.dims.size());
+        for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
+          if (!match_call(info.dims[d].stride, intrinsic::buffer_stride, *src_buf, d) ||
+              !match_call(info.dims[d].fold_factor, intrinsic::buffer_fold_factor, *src_buf, d)) {
+            is_crop = false;
+            break;
           }
 
-          // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
-          bool is_crop = bc->args.size() <= info.dims.size() + 1;
-          box_expr crop_bounds(info.dims.size());
-          for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
-            if (!match(info.dims[d].stride, buffer_stride(*src_buf, d)) ||
-                !match(info.dims[d].fold_factor, buffer_fold_factor(*src_buf, d))) {
-              is_crop = false;
-              break;
-            }
+          // If the argument to buffer_at is defined, we need the min to be the same as the argument.
+          // If it is not defined, it must be buffer_min(buf, d).
+          bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
+          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
+          if (match(info.dims[d].bounds.min, crop_min)) {
+            // We rewrite src -> sym in the truncate below.
+            crop_bounds[d] = substitute(info.dims[d].bounds, *src_buf, op->sym);
+          } else {
+            is_crop = false;
+            break;
+          }
+        }
+        if (is_crop) {
+          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), std::move(body));
+          // make_buffer drops trailing dims, do the same here.
+          result = transpose::make_truncate(op->sym, *src_buf, info.dims.size(), std::move(result));
+          set_result(mutate(result));
+          return;
+        }
 
-            // If the argument to buffer_at is defined, we need the min to be the same as the argument.
-            // If it is not defined, it must be buffer_min(buf, d).
-            bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
-            expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
-            if (match(info.dims[d].bounds.min, crop_min)) {
-              // We rewrite src -> sym in the truncate below.
-              crop_bounds[d] = substitute(info.dims[d].bounds, *src_buf, op->sym);
-            } else {
-              is_crop = false;
-              break;
-            }
+        // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
+        // original buffer.
+        // TODO: This could probably be built into the slice check above.
+        bool is_transpose = bc->args.size() == 1;
+        std::vector<int> permutation;
+        permutation.reserve(info.dims.size());
+        for (std::size_t d = 0; d < info.dims.size(); ++d) {
+          int dim = is_buffer_dim(info.dims[d], *src_buf);
+          if (dim >= 0) {
+            permutation.push_back(dim);
+          } else {
+            is_transpose = false;
+            break;
           }
-          if (is_crop) {
-            stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), std::move(body));
-            // make_buffer drops trailing dims, do the same here.
-            result = transpose::make_truncate(op->sym, *src_buf, info.dims.size(), std::move(result));
-            set_result(mutate(result));
-            return;
-          }
-
-          // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
-          // original buffer.
-          // TODO: This could probably be built into the slice check above.
-          bool is_transpose = bc->args.size() == 1;
-          std::vector<int> permutation;
-          permutation.reserve(info.dims.size());
-          // Returns the dimension of a buffer intrinsic, or -1 if not the expected intrinsic.
-          auto buffer_intrinsic_dim = [=](intrinsic fn, const expr& x) -> int {
-            if (const call* c = x.as<call>()) {
-              if (c->intrinsic != fn) return -1;
-              assert(c->args.size() == 2);
-
-              if (*as_variable(c->args[0]) != *src_buf) return -1;
-              return *as_constant(c->args[1]);
-            }
-            return -1;
-          };
-          for (std::size_t d = 0; d < info.dims.size(); ++d) {
-            int min_dim = buffer_intrinsic_dim(intrinsic::buffer_min, info.dims[d].bounds.min);
-            int max_dim = buffer_intrinsic_dim(intrinsic::buffer_max, info.dims[d].bounds.max);
-            int stride_dim = buffer_intrinsic_dim(intrinsic::buffer_stride, info.dims[d].stride);
-            int fold_factor_dim = buffer_intrinsic_dim(intrinsic::buffer_fold_factor, info.dims[d].fold_factor);
-            if (min_dim >= 0 && min_dim == max_dim && min_dim == stride_dim && fold_factor_dim == min_dim) {
-              permutation.push_back(min_dim);
-            } else {
-              is_transpose = false;
-              break;
-            }
-          }
-          if (is_transpose) {
-            set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), std::move(body))));
-            return;
-          }
+        }
+        if (is_transpose) {
+          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), std::move(body))));
+          return;
         }
       }
     }
@@ -903,11 +908,11 @@ public:
   // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
   static expr simplify_crop_bound(expr x, var sym, int dim) {
     if (const class max* m = x.as<class max>()) {
-      if (is_buffer_min(m->a, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
-      if (is_buffer_min(m->b, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
+      if (match_call(m->a, intrinsic::buffer_min, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
+      if (match_call(m->b, intrinsic::buffer_min, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
     } else if (const class min* m = x.as<class min>()) {
-      if (is_buffer_max(m->a, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
-      if (is_buffer_max(m->b, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
+      if (match_call(m->a, intrinsic::buffer_max, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
+      if (match_call(m->b, intrinsic::buffer_max, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
     }
     return x;
   }

@@ -544,9 +544,9 @@ inline const call* is_intrinsic(const expr& x, intrinsic fn) {
   const call* c = x.as<call>();
   return c && c->intrinsic == fn ? c : nullptr;
 }
-bool is_buffer_min(const expr& x, var sym, int dim);
-bool is_buffer_max(const expr& x, var sym, int dim);
 bool is_buffer_intrinsic(intrinsic fn);
+bool is_buffer_dim_intrinsic(intrinsic fn);
+const call* is_buffer_dim_intrinsic(const expr& x);
 
 inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
 inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
