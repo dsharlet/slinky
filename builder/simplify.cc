@@ -336,6 +336,34 @@ public:
     }
   }
 
+  // substitute c = true into x.
+  static expr substitute_true(expr x, const expr& c) {
+    if (const logical_and* l = c.as<logical_and>()) {
+      // If we assume a && b is true, then a and b both must be true.
+      x = substitute_true(x, l->a);
+      x = substitute_true(x, l->b);
+    } else if (const logical_not* l = c.as<logical_not>()) {
+      x = substitute_false(x, l->a);
+    } else if (is_boolean(c) && !as_constant(c)) {
+      x = substitute(x, c, true);
+    }
+    return x;
+  }
+
+  // substitute c = false into x.
+  static expr substitute_false(expr x, const expr& c) {
+    if (const logical_or* l = c.as<logical_or>()) {
+      // If we assume a || b is false, then a and b both must be false.
+      x = substitute_false(x, l->a);
+      x = substitute_false(x, l->b);
+    } else if (const logical_not* l = c.as<logical_not>()) {
+      x = substitute_true(x, l->a);
+    } else if (is_boolean(c) && !as_constant(c)) {
+      x = substitute(x, c, false);
+    }
+    return x;
+  }
+
   void visit(const class select* op) override {
     interval_expr c_bounds;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
@@ -354,12 +382,8 @@ public:
     expr t = op->true_value;
     expr f = op->false_value;
 
-    if (is_boolean(c) && !as_constant(c)) {
-      t = substitute(t, c, true);
-      f = substitute(f, c, false);
-    } else {
-      // We can't substitute in this case because if c is true but not 1, it will change the meaning of the values.
-    }
+    t = substitute_true(t, c);
+    f = substitute_false(f, c);
 
     interval_expr t_bounds;
     t = mutate(t, &t_bounds);

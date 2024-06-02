@@ -165,6 +165,13 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify((x < 1) != 0), matches(x < 1));
 
+  ASSERT_THAT(simplify(select(x == 0 && y == 0, x == 0 && y == 0, true)), matches(true));
+  ASSERT_THAT(simplify(select(x == 0 && y == 0, x == 0, true)), matches(true));
+  ASSERT_THAT(simplify(select(x == 0 || y == 0, x == 0, y == 0)), matches(x == 0));
+  ASSERT_THAT(simplify(select(x == 0 || y == 0, false, y == 0)), matches(false));
+  ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
+  ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
