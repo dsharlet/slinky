@@ -618,7 +618,7 @@ public:
             auto set_bounds_of_sym = set_value_in_scope(expr_bounds, op->sym, bounds);
             interval_expr bounds_of_min, bounds_of_max;
             mutate(crop->bounds, &bounds_of_min, &bounds_of_max);
-            new_crops.emplace_back(crop->sym, crop->src, crop->dim, mutate(bounds_of_min | bounds_of_max));
+            new_crops.emplace_back(crop->sym, crop->src, crop->dim, bounds_of_min | bounds_of_max);
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
