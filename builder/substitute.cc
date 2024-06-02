@@ -1009,7 +1009,6 @@ interval_expr update_sliced_buffer_metadata(const interval_expr& x, var buf, spa
 }
 
 dim_expr update_sliced_buffer_metadata(const dim_expr& x, var buf, span<const int> slices) {
-  slice_updater m(buf, slices);
   return {
       update_sliced_buffer_metadata(x.bounds, buf, slices),
       update_sliced_buffer_metadata(x.stride, buf, slices),
