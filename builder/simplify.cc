@@ -755,8 +755,8 @@ public:
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
     for (dim_expr& d : buf.dims) {
-      if (is_buffer_dim(d, sym) >= 0) continue;
       for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
+        if (is_buffer_dim(d, sym) >= 0) continue;
         canonicalize_dim(d, src.dims[src_d], sym, src_d);
       }
     }
