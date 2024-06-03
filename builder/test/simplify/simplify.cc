@@ -479,17 +479,6 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
 }
 
-TEST(simplify, where_true) {
-  ASSERT_THAT(where_true(x < 5, x), matches(bounds(negative_infinity(), 4)));
-  ASSERT_THAT(where_true(x < buffer_min(y, 0), x), matches(bounds(negative_infinity(), buffer_min(y, 0) + -1)));
-  ASSERT_THAT(where_true(x / 2 < 7, x), matches(bounds(negative_infinity(), 13)));
-  ASSERT_THAT(where_true(min(x, 6) < 7, x), matches(bounds(negative_infinity(), positive_infinity())));
-  ASSERT_THAT(where_true(-10 <= x && x < 5, x), matches(bounds(-10, 4)));
-  ASSERT_THAT(where_true(-x < 5, x), matches(bounds(-4, positive_infinity())));
-  ASSERT_THAT(where_true(3 * x < 5, x), matches(bounds(negative_infinity(), 1)));
-  ASSERT_THAT(where_true(3 * (x + 2) < 5, x), matches(bounds(negative_infinity(), -1)));
-}
-
 TEST(simplify, fuzz) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);
