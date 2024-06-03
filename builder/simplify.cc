@@ -380,8 +380,11 @@ public:
     interval_expr f_bounds;
     f = mutate(f, &f_bounds);
 
-    if (!t.defined() || !f.defined()) {
-      set_result(expr(), interval_expr());
+    if (!t.defined()) {
+      set_result(std::move(f), std::move(f_bounds));
+      return;
+    } else if (!f.defined()) {
+      set_result(std::move(t), std::move(t_bounds));
       return;
     }
 
