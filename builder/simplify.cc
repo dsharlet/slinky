@@ -551,6 +551,7 @@ public:
     }
 
     stmt body = mutate_with_bounds(op->body, op->sym, bounds);
+    scoped_trace trace("visit(const loop*)");
     if (!body.defined()) {
       set_result(stmt());
       return;
@@ -669,6 +670,7 @@ public:
 
   template <typename T>
   buffer_info mutate_buffer(const T* op) {
+    scoped_trace trace("mutate_buffer");
     buffer_info info;
     info.elem_size = mutate(op->elem_size);
     info.dims.reserve(op->dims.size());
@@ -691,6 +693,7 @@ public:
   void visit(const allocate* op) override {
     buffer_info info = mutate_buffer(op);
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);
+    scoped_trace trace("visit(const allocate*)");
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(std::move(body));
@@ -757,6 +760,7 @@ public:
     canonicalize_buffer_meta(dim.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, src_d);
   }
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
+    scoped_trace trace("canonicalize_buffer");
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
     for (dim_expr& d : buf.dims) {
       for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
@@ -779,6 +783,7 @@ public:
       return;
     }
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);
+    scoped_trace trace("visit(const make_buffer*)");
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       // This make_buffer is unused.
@@ -951,6 +956,7 @@ public:
 
   interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
     if (!crop.min.defined() && !crop.max.defined()) return crop;
+    scoped_trace trace("mutate_crop_bounds");
 
     interval_expr result = mutate(crop);
 
@@ -997,6 +1003,7 @@ public:
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
     stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
+    scoped_trace trace("visit_crop");
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
       set_result(std::move(body));
@@ -1224,6 +1231,8 @@ public:
     std::optional<buffer_info> info = buffers[op->src];
     if (info) info->decl = op;
     stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
+
+    scoped_trace trace("visit(const clone_buffer*)");
 
     auto make_clone = [&](const stmt& body) -> stmt {
       if (!depends_on(body, op->src).any()) {
