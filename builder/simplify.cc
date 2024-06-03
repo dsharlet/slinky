@@ -786,7 +786,7 @@ public:
       return;
     }
 
-    if (const call* bc = is_intrinsic(base, intrinsic::buffer_at)) {
+    if (const call* bc = as_intrinsic(base, intrinsic::buffer_at)) {
       // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
       const var* src_buf = as_variable(bc->args[0]);
       assert(src_buf);
