@@ -582,6 +582,11 @@ bool apply_less_rules(Fn&& apply) {
       apply(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
 
       // Selects
+      apply(select(x, c0, y) < c1, select(x, eval(c0 < c1), y < c1)) ||
+      apply(select(x, y, c0) < c1, select(x, y < c1, eval(c0 < c1))) ||
+      apply(c1 < select(x, c0, y), select(x, eval(c1 < c0), c1 < y)) ||
+      apply(c1 < select(x, y, c0), select(x, c1 < y, eval(c1 < c0))) ||
+
       apply(select(x, y, z) < y, select(x, false, z < y)) ||
       apply(select(x, y, z) < z, select(x, y < z, false)) ||
       apply(y < select(x, y, w), select(x, false, y < w)) ||
@@ -633,6 +638,12 @@ bool apply_equal_rules(Fn&& apply) {
       apply(x == (x/c0)*c0, x%c0 == 0, eval(c0 > 0)) ||
     
       apply(x%c0 == c1, false, eval(c0 > 0 && (c1 >= c0 || c1 < 0))) ||
+    
+      apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
+      apply(select(x, c0, y) == c1, select(x, eval(c0 == c1), y == c1)) ||
+      apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
+      apply(y == select(x == y, x, z), x == y || y == z) ||
+      apply(y == select(x == y, z, x), x == y && y == z) ||
 
       false;
 }

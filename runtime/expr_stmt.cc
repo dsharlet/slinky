@@ -324,16 +324,15 @@ interval_expr select(const expr& c, interval_expr t, interval_expr f) {
 }
 
 box_expr operator|(box_expr a, const box_expr& b) {
-  assert(a.size() == b.size());
-  for (std::size_t i = 0; i < a.size(); ++i) {
+  a.resize(std::max(a.size(), b.size()));
+  for (std::size_t i = 0; i < b.size(); ++i) {
     a[i] |= b[i];
   }
   return a;
 }
 
 box_expr operator&(box_expr a, const box_expr& b) {
-  assert(a.size() == b.size());
-  for (std::size_t i = 0; i < a.size(); ++i) {
+  for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
     a[i] &= b[i];
   }
   return a;
@@ -609,6 +608,16 @@ bool is_buffer_intrinsic(intrinsic fn) {
   }
 }
 
+bool is_buffer_dim_intrinsic(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::buffer_min:
+  case intrinsic::buffer_max:
+  case intrinsic::buffer_stride:
+  case intrinsic::buffer_fold_factor: return true;
+  default: return false;
+  }
+}
+
 bool is_finite(const expr& x) {
   if (x.as<constant>()) return true;
   if (const call* c = x.as<call>()) {
@@ -628,21 +637,6 @@ expr boolean(const expr& x) {
 }
 bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
 
-bool is_buffer_min(const expr& x, var sym, int dim) {
-  const call* c = x.as<call>();
-  if (!c || c->intrinsic != intrinsic::buffer_min) return false;
-
-  assert(c->args.size() == 2);
-  return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
-}
-
-bool is_buffer_max(const expr& x, var sym, int dim) {
-  const call* c = x.as<call>();
-  if (!c || c->intrinsic != intrinsic::buffer_max) return false;
-
-  assert(c->args.size() == 2);
-  return is_variable(c->args[0], sym) && is_constant(c->args[1], dim);
-}
 
 expr semaphore_init(expr sem, expr count) {
   return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});

@@ -16,7 +16,7 @@ chrome_trace::~chrome_trace() { os_ << "]\n"; }
 void chrome_trace::write_event(const char* name, const char* cat, char type) {
   auto tid = std::this_thread::get_id();
   auto t = std::chrono::high_resolution_clock::now();
-  auto ts = std::chrono::duration_cast<std::chrono::nanoseconds>(t - t0_).count() / 1000.0;
+  auto ts = std::chrono::duration_cast<std::chrono::microseconds>(t - t0_).count();
   std::unique_lock l(mtx_);
   if (event_written_) {
     os_ << ",\n";
@@ -29,7 +29,7 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
 void chrome_trace::begin(const char* name) { write_event(name, "stmt", 'B'); }
 void chrome_trace::end(const char* name) { write_event(name, "stmt", 'E'); }
 
-chrome_trace* chrome_trace::global() { 
+chrome_trace* chrome_trace::global() {
   static std::unique_ptr<std::ofstream> file;
   static std::unique_ptr<chrome_trace> trace;
   if (!trace) {

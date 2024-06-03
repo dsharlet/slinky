@@ -10,6 +10,8 @@ bool match(const expr& a, const expr& b);
 bool match(const stmt& a, const stmt& b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
+const call* match_call(const expr& x, intrinsic fn, var a);
+const call* match_call(const expr& x, intrinsic fn, var a, index_t b);
 
 expr substitute(const expr& e, const symbol_map<expr>& replacements);
 stmt substitute(const stmt& s, const symbol_map<expr>& replacements);
@@ -37,6 +39,7 @@ int compare(const stmt& a, const stmt& b);
 // Update buffer metadata expressions to account for a slice that has occurred.
 expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices);
 interval_expr update_sliced_buffer_metadata(const interval_expr& x, var buf, span<const int> slices);
+dim_expr update_sliced_buffer_metadata(const dim_expr& x, var buf, span<const int> slices);
 
 // A comparator suitable for using expr/stmt as keys in an std::map/std::set.
 struct node_less {
