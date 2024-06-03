@@ -380,8 +380,11 @@ public:
     interval_expr f_bounds;
     f = mutate(f, &f_bounds);
 
-    if (!t.defined() || !f.defined()) {
-      set_result(expr(), interval_expr());
+    if (!t.defined()) {
+      set_result(std::move(f), std::move(f_bounds));
+      return;
+    } else if (!f.defined()) {
+      set_result(std::move(t), std::move(t_bounds));
       return;
     }
 
@@ -660,6 +663,7 @@ public:
   dim_expr mutate(const dim_expr& d) {
     dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
     if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
+    if (is_constant(result.stride, dim::auto_stride)) result.stride = expr();
     return result;
   }
 

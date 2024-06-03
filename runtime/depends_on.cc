@@ -31,13 +31,15 @@ public:
     }
   }
 
-  // If a symbol is used as a buffer input or output, that should propagate through aliases of the symbol.
   void propagate_deps(const depends_on_result& deps, var to) {
     update_deps(to, [&](depends_on_result& to_deps) {
+      to_deps.var = to_deps.var || deps.var;
       to_deps.buffer_input = to_deps.buffer_input || deps.buffer_input;
       to_deps.buffer_output = to_deps.buffer_output || deps.buffer_output;
       to_deps.buffer_src = to_deps.buffer_src || deps.buffer_src;
       to_deps.buffer_dst = to_deps.buffer_dst || deps.buffer_dst;
+      to_deps.buffer_base = to_deps.buffer_base || deps.buffer_base;
+      to_deps.buffer_meta = to_deps.buffer_meta || deps.buffer_meta;
     });
   }
 
@@ -135,7 +137,6 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
     depends_on_result sym_deps = visit_sym_body(op);
     propagate_deps(sym_deps, op->src);
   }

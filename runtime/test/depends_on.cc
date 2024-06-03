@@ -13,6 +13,8 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var xc(symbols, "xc");
+var yc(symbols, "yc");
 
 }  // namespace
 
@@ -48,7 +50,9 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(loop_x, x), depends_on_result{});
   ASSERT_EQ(depends_on(loop_x, y), (depends_on_result{.var = true}));
 
-  stmt call = call_stmt::make(nullptr, {x}, {y}, {});
+  stmt call = call_stmt::make(nullptr, {xc}, {yc}, {});
+  // Everything here should be transparent to clones.
+  call = clone_buffer::make(xc, x, clone_buffer::make(yc, y, call));
   ASSERT_EQ(depends_on(call, x), (depends_on_result{.buffer_input = true}));
   ASSERT_EQ(depends_on(call, y), (depends_on_result{.buffer_output = true, .buffer_meta = true}));
 

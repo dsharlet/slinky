@@ -267,6 +267,7 @@ struct interval_expr {
   bool same_as(const interval_expr& r) const { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_point() const { return min.defined() && min.same_as(max); }
+  bool is_point(const expr& x) const { return x.same_as(min) && x.same_as(max); }
 
   static const interval_expr& all();
   static const interval_expr& none();
