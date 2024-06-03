@@ -743,7 +743,7 @@ public:
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
-  // when thoes references use the same values.
+  // when those references use the same values.
   void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym) {
     if (!match_call(x, fn, sym) && prove_true(x == value)) x = call::make(fn, {sym});
   }
@@ -790,7 +790,7 @@ public:
       return;
     }
 
-    if (const call* bc = is_intrinsic(base, intrinsic::buffer_at)) {
+    if (const call* bc = as_intrinsic(base, intrinsic::buffer_at)) {
       // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
       const var* src_buf = as_variable(bc->args[0]);
       assert(src_buf);

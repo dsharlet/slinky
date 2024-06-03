@@ -314,7 +314,7 @@ bool match(const dim_expr& a, const dim_expr& b) {
 }
 
 const call* match_call(const expr& x, intrinsic fn, var a) {
-  const call* c = is_intrinsic(x, fn);
+  const call* c = as_intrinsic(x, fn);
   if (!c) return nullptr;
 
   assert(c->args.size() >= 1);
@@ -783,7 +783,7 @@ public:
   }
 
   expr mutate_buffer_intrinsic(intrinsic fn, var buf, span<const expr> args) override {
-    const call* c = is_intrinsic(target, fn);
+    const call* c = as_intrinsic(target, fn);
     if (!c) return expr();
     if (!match(c->args[0], buf)) return expr();
     if (c->args.size() != args.size() + 1) return expr();
