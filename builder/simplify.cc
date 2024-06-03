@@ -739,7 +739,7 @@ public:
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
-  // when thoes references use the same values.
+  // when those references use the same values.
   void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym) {
     if (!match_call(x, fn, sym) && prove_true(x == value)) x = call::make(fn, {sym});
   }
