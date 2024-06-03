@@ -861,7 +861,7 @@ template <typename T>
 T substitute_bounds_impl(const T& op, var buffer, int dim, const interval_expr& bounds) {
   std::vector<dim_expr> dims(dim + 1);
   dims[dim].bounds = bounds;
-  return substitute_buffer(op, buffer, expr(), dims);
+  return buffer_substitutor(buffer, expr(), dims).mutate(op);
 }
 
 template <typename T>
@@ -870,7 +870,7 @@ T substitute_bounds_impl(const T& op, var buffer, const box_expr& bounds) {
   for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
     dims[d].bounds = bounds[d];
   }
-  return substitute_buffer(op, buffer, expr(), dims);
+  return buffer_substitutor(buffer, expr(), dims).mutate(op);
 }
 
 }  // namespace
