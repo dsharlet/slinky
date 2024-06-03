@@ -309,6 +309,9 @@ bool apply_add_rules(Fn&& apply) {
       apply(select(x, c0 - y, z + c1) + c2, select(x, eval(c0 + c2) - y, z + eval(c1 + c2))) ||
       apply(select(x, y + c0, c1 - z) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2) - z)) ||
       apply(select(x, c0 - y, c1 - z) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2) - z)) ||
+    
+      apply(w + select(x, y, z - w), select(x, y + w, z)) ||
+      apply(w + select(x, y - w, z), select(x, y, z + w)) ||
 
       false;
 }
@@ -360,6 +363,10 @@ bool apply_sub_rules(Fn&& apply) {
 
       apply(min(x, y + z) - z, min(y, x - z)) ||
       apply(max(x, y + z) - z, max(y, x - z)) ||
+      apply(min(x, y) - x, min(y - x, 0), !is_constant(x)) ||
+      apply(max(x, y) - x, max(y - x, 0), !is_constant(x)) ||
+      apply(x - min(x, y), max(x - y, 0), !is_constant(x)) ||
+      apply(x - max(x, y), min(x - y, 0), !is_constant(x)) ||
 
       apply(c2 - select(x, c0, c1), select(x, eval(c2 - c0), eval(c2 - c1))) ||
       apply(c2 - select(x, y + c0, c1), select(x, eval(c2 - c0) - y, eval(c2 - c1))) ||
@@ -370,12 +377,25 @@ bool apply_sub_rules(Fn&& apply) {
       apply(c2 - select(x, c0 - y, z + c1), select(x, y + eval(c2 - c0), eval(c2 - c1) - z)) ||
       apply(c2 - select(x, y + c0, c1 - z), select(x, eval(c2 - c0) - y, z + eval(c2 - c1))) ||
       apply(c2 - select(x, c0 - y, c1 - z), select(x, y + eval(c2 - c0), z + eval(c2 - c1))) ||
-    
+
       apply(max(x, y)/c0 - min(x, y)/c0, abs(x/c0 - y/c0), eval(c0 > 0)) ||
       apply(min(x, y)/c0 - max(x, y)/c0, -abs(x/c0 - y/c0), eval(c0 > 0)) ||
       apply(max(x, y) - min(x, y), abs(x - y)) ||
       apply(min(x, y) - max(x, y), -abs(x - y)) ||
       apply(select(x, y, z) - select(x, w, u), select(x, y - w, z - u)) ||
+    
+      apply(select(x, y, z + w) - w, select(x, y - w, z)) ||
+      apply(select(x, y + w, z) - w, select(x, y, z - w)) ||
+      apply(select(x, y, w - z) - w, select(x, y - w, -z)) ||
+      apply(select(x, w - y, z) - w, select(x, -y, z - w)) ||
+      apply(w - select(x, y, z + w), select(x, w - y, -z)) ||
+      apply(w - select(x, y + w, z), select(x, -y, w - z)) ||
+      apply(w - select(x, y, w - z), select(x, w - y, z)) ||
+      apply(w - select(x, w - y, z), select(x, y, w - z)) ||
+      apply(select(x, y, z) - y, select(x, 0, z - y)) ||
+      apply(select(x, y, z) - z, select(x, y - z, 0)) ||
+      apply(y - select(x, y, z), select(x, 0, y - z)) ||
+      apply(z - select(x, y, z), select(x, z - y, 0)) ||
 
       false;
 }
@@ -582,6 +602,11 @@ bool apply_less_rules(Fn&& apply) {
       apply(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
 
       // Selects
+      apply(select(x, c0, y) < c1, select(x, eval(c0 < c1), y < c1)) ||
+      apply(select(x, y, c0) < c1, select(x, y < c1, eval(c0 < c1))) ||
+      apply(c1 < select(x, c0, y), select(x, eval(c1 < c0), c1 < y)) ||
+      apply(c1 < select(x, y, c0), select(x, c1 < y, eval(c1 < c0))) ||
+
       apply(select(x, y, z) < y, select(x, false, z < y)) ||
       apply(select(x, y, z) < z, select(x, y < z, false)) ||
       apply(y < select(x, y, w), select(x, false, y < w)) ||
@@ -626,13 +651,29 @@ bool apply_equal_rules(Fn&& apply) {
       apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
       apply(x == 0, !x, is_boolean(x)) ||
       apply(x == 1, boolean(x), is_boolean(x)) ||
-    
+
       apply(x + y == z + (x/c0)*c0, z == y + x%c0, eval(c0 > 0)) ||
       apply(x + y == (x/c0)*c0, y + x%c0 == 0, eval(c0 > 0)) ||
       apply(x == z + (x/c0)*c0, z == x%c0, eval(c0 > 0)) ||
       apply(x == (x/c0)*c0, x%c0 == 0, eval(c0 > 0)) ||
-    
+
       apply(x%c0 == c1, false, eval(c0 > 0 && (c1 >= c0 || c1 < 0))) ||
+    
+      apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
+      apply(select(x, c0, y) == c1, select(x, eval(c0 == c1), y == c1)) ||
+      apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
+      apply(y == select(x == y, x, z), x == y || y == z) ||
+      apply(y == select(x == y, z, x), x == y && y == z) ||
+
+      apply(y == max(x, y), x <= y) ||
+      apply(y == min(x, y), y <= x) ||
+
+      apply(max(x, c0) == c1, false, eval(c0 > c1)) ||
+      apply(min(x, c0) == c1, false, eval(c0 < c1)) ||
+      apply(max(x, c0) == c1, x == c1, eval(c0 < c1)) ||
+      apply(min(x, c0) == c1, x == c1, eval(c0 > c1)) ||
+      apply(max(x, c0) == c1, x <= c0, eval(c0 == c1)) ||
+      apply(min(x, c0) == c1, c0 <= x, eval(c0 == c1)) ||
 
       false;
 }
@@ -775,6 +816,7 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, y + z, y), y + select(x, z, 0)) ||
       apply(select(x, y + z, y + w), y + select(x, z, w)) ||
       apply(select(x, z - y, w - y), select(x, z, w) - y) ||
+      apply(select(x, w - y, w - z), w - select(x, y, z)) ||
 
       apply(select(x, select(y, z, w), select(y, u, w + c0) + c1), select(y, select(x, z, u + c1), w), eval(c0 + c1 == 0)) ||
       apply(select(x, select(y, z, w), select(y, z + c0, u) + c1), select(y, z, select(x, w, u + c1)), eval(c0 + c1 == 0)) ||

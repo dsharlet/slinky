@@ -315,12 +315,13 @@ public:
   std::vector<int> dims;
   stmt body;
 
-  bool is_truncate() const {
+  static bool is_truncate(span<const int> dims) {
     for (std::size_t i = 0; i < dims.size(); ++i) {
       if (dims[i] != static_cast<int>(i)) return false;
     }
     return true;
   }
+  bool is_truncate() const { return is_truncate(dims); }
 
   void accept(stmt_visitor* v) const override;
 

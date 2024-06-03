@@ -53,7 +53,8 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     at = src_x;
     src_dim.bounds = buffer_bounds(dst, dst_d);
     src_dim.stride = 0;
-    src_dim.fold_factor = dim::unfolded;
+    // It doesn't matter what we choose for the fold factor because the stride is 0.
+    src_dim.fold_factor = expr();
     return true;
   } else {
     // Try to parse src_x = dst_x * scale + offset

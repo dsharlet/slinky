@@ -267,6 +267,7 @@ struct interval_expr {
   bool same_as(const interval_expr& r) const { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_point() const { return min.defined() && min.same_as(max); }
+  bool is_point(const expr& x) const { return x.same_as(min) && x.same_as(max); }
 
   static const interval_expr& all();
   static const interval_expr& none();
@@ -540,17 +541,16 @@ inline bool is_true(const expr& x) {
 SLINKY_ALWAYS_INLINE inline bool is_false(const expr& x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
-inline const call* is_intrinsic(const expr& x, intrinsic fn) {
+inline const call* as_intrinsic(const expr& x, intrinsic fn) {
   const call* c = x.as<call>();
   return c && c->intrinsic == fn ? c : nullptr;
 }
-bool is_buffer_min(const expr& x, var sym, int dim);
-bool is_buffer_max(const expr& x, var sym, int dim);
 bool is_buffer_intrinsic(intrinsic fn);
+bool is_buffer_dim_intrinsic(intrinsic fn);
 
-inline bool is_positive_infinity(const expr& x) { return is_intrinsic(x, intrinsic::positive_infinity); }
-inline bool is_negative_infinity(const expr& x) { return is_intrinsic(x, intrinsic::negative_infinity); }
-inline bool is_indeterminate(const expr& x) { return is_intrinsic(x, intrinsic::indeterminate); }
+inline bool is_positive_infinity(const expr& x) { return as_intrinsic(x, intrinsic::positive_infinity); }
+inline bool is_negative_infinity(const expr& x) { return as_intrinsic(x, intrinsic::negative_infinity); }
+inline bool is_indeterminate(const expr& x) { return as_intrinsic(x, intrinsic::indeterminate); }
 inline int is_infinity(const expr& x) {
   if (is_positive_infinity(x)) return 1;
   if (is_negative_infinity(x)) return -1;
@@ -582,7 +582,7 @@ const expr& indeterminate();
 
 inline bool is_positive(const expr& x) {
   if (is_positive_infinity(x)) return true;
-  if (const call* c = is_intrinsic(x, intrinsic::abs)) {
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
     assert(c->args.size() == 1);
     return is_positive(c->args[0]);
   }
@@ -592,7 +592,7 @@ inline bool is_positive(const expr& x) {
 
 inline bool is_non_negative(const expr& x) {
   if (is_positive_infinity(x)) return true;
-  if (is_intrinsic(x, intrinsic::abs)) return true;
+  if (as_intrinsic(x, intrinsic::abs)) return true;
   const index_t* c = as_constant(x);
   return c ? *c >= 0 : false;
 }
