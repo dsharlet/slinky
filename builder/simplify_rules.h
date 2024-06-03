@@ -360,6 +360,10 @@ bool apply_sub_rules(Fn&& apply) {
 
       apply(min(x, y + z) - z, min(y, x - z)) ||
       apply(max(x, y + z) - z, max(y, x - z)) ||
+      apply(min(x, y) - x, min(y - x, 0), !is_constant(x)) ||
+      apply(max(x, y) - x, max(y - x, 0), !is_constant(x)) ||
+      apply(x - min(x, y), max(x - y, 0), !is_constant(x)) ||
+      apply(x - max(x, y), min(x - y, 0), !is_constant(x)) ||
 
       apply(c2 - select(x, c0, c1), select(x, eval(c2 - c0), eval(c2 - c1))) ||
       apply(c2 - select(x, y + c0, c1), select(x, eval(c2 - c0) - y, eval(c2 - c1))) ||
@@ -631,12 +635,12 @@ bool apply_equal_rules(Fn&& apply) {
       apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
       apply(x == 0, !x, is_boolean(x)) ||
       apply(x == 1, boolean(x), is_boolean(x)) ||
-    
+
       apply(x + y == z + (x/c0)*c0, z == y + x%c0, eval(c0 > 0)) ||
       apply(x + y == (x/c0)*c0, y + x%c0 == 0, eval(c0 > 0)) ||
       apply(x == z + (x/c0)*c0, z == x%c0, eval(c0 > 0)) ||
       apply(x == (x/c0)*c0, x%c0 == 0, eval(c0 > 0)) ||
-    
+
       apply(x%c0 == c1, false, eval(c0 > 0 && (c1 >= c0 || c1 < 0))) ||
     
       apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
@@ -644,6 +648,16 @@ bool apply_equal_rules(Fn&& apply) {
       apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
       apply(y == select(x == y, x, z), x == y || y == z) ||
       apply(y == select(x == y, z, x), x == y && y == z) ||
+
+      apply(y == max(x, y), x <= y) ||
+      apply(y == min(x, y), y <= x) ||
+
+      apply(max(x, c0) == c1, false, eval(c0 > c1)) ||
+      apply(min(x, c0) == c1, false, eval(c0 < c1)) ||
+      apply(max(x, c0) == c1, x == c1, eval(c0 < c1)) ||
+      apply(min(x, c0) == c1, x == c1, eval(c0 > c1)) ||
+      apply(max(x, c0) == c1, x <= c0, eval(c0 == c1)) ||
+      apply(min(x, c0) == c1, c0 <= x, eval(c0 == c1)) ||
 
       false;
 }
