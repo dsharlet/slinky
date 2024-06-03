@@ -271,6 +271,29 @@ public:
 
 // ----------------------
 
+// Only pure exprs should be considered for CSE.
+bool is_pure(const expr& e) {
+  if (const call* c = e.as<call>()) {
+    switch (c->intrinsic) {
+      // buffer accessors and semaphore helpers are never pure.
+    case intrinsic::buffer_rank:
+    case intrinsic::buffer_elem_size:
+    case intrinsic::buffer_size_bytes:
+    case intrinsic::buffer_min:
+    case intrinsic::buffer_max:
+    case intrinsic::buffer_stride:
+    case intrinsic::buffer_fold_factor:
+    case intrinsic::buffer_at:
+    case intrinsic::semaphore_init:
+    case intrinsic::semaphore_signal:
+    case intrinsic::semaphore_wait: return false;
+    default: return true;
+    }
+  } else {
+    return true;
+  }
+}
+
 // Some expressions are not worth lifting out into lets, even if they
 // occur redundantly many times. They may also be illegal to lift out
 // (e.g. calls with side-effects).
@@ -281,7 +304,7 @@ public:
 bool should_extract(const expr& e, bool lift_all) {
   if (!e.defined()) {
     return false;
-  } else if (as_constant(e) || as_variable(e)) {
+  } else if (as_constant(e) || as_variable(e) || !is_pure(e)) {
     return false;
   } else if (lift_all) {
     return true;
