@@ -281,6 +281,26 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
+  // Find a maximum value of x which makes `condition` expression true. The search goes
+  // backwards from initial_guess up to some fixed depth.
+  expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess) {
+    expr result = negative_infinity();
+
+    // TODO: this search can be more efficient by trying to cover wider range of depth
+    // using binary search or something similar.
+    const int max_search_depth = 10;
+
+    for (int ix = 0; ix < max_search_depth; ix++) {
+      expr shifted = substitute(condition, x, (initial_guess - ix));
+      if (prove_true(shifted)) {
+        result = simplify(initial_guess - ix);
+        break;
+      }
+    }
+
+    return result;
+  }
+
   void slide_and_fold_buffer(const var& output, const stmt& body) {
     scoped_trace trace("slide_and_fold_buffer");
     // We only want to fold if we are inside of the loop and the cropped buffer
@@ -377,7 +397,9 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min = where_true(new_min_at_new_loop_min <= old_min_at_loop_min, x).max;
+        expr new_loop_min = where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min);
+
+
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
 
