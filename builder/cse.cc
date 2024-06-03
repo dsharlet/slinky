@@ -279,7 +279,9 @@ public:
 // simplifier for lets, otherwise CSE and the simplifier will fight each
 // other pointlessly.
 bool should_extract(const expr& e, bool lift_all) {
-  if (as_constant(e) || as_variable(e)) {
+  if (!e.defined()) {
+    return false;
+  } else if (as_constant(e) || as_variable(e)) {
     return false;
   } else if (lift_all) {
     return true;
@@ -380,7 +382,9 @@ public:
     // the children.
     cse_debug(std::cerr << "Include: " << e << "; should extract: " << should_extract(e, lift_all) << "\n");
     if (!should_extract(e, lift_all)) {
-      e.accept(this);
+      if (e.defined()) {
+        e.accept(this);
+      }
       return;
     }
 
