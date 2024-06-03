@@ -618,7 +618,7 @@ bool is_finite(const expr& x) {
 }
 
 expr boolean(const expr& x) {
-  if (is_boolean(x)) {
+  if (!x.defined() || is_boolean(x)) {
     return x;
   } else if (const index_t* c = as_constant(x)) {
     return *c != 0;
@@ -690,8 +690,8 @@ namespace {
 
 template <typename T>
 void visit_binary(recursive_node_visitor* _this, const T* op) {
-  op->a.accept(_this);
-  op->b.accept(_this);
+  if (op->a.defined()) op->a.accept(_this);
+  if (op->b.defined()) op->b.accept(_this);
 }
 
 }  // namespace
@@ -709,11 +709,13 @@ void recursive_node_visitor::visit(const less* op) { visit_binary(this, op); }
 void recursive_node_visitor::visit(const less_equal* op) { visit_binary(this, op); }
 void recursive_node_visitor::visit(const logical_and* op) { visit_binary(this, op); }
 void recursive_node_visitor::visit(const logical_or* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const logical_not* op) { op->a.accept(this); }
+void recursive_node_visitor::visit(const logical_not* op) {
+  if (op->a.defined()) op->a.accept(this);
+}
 void recursive_node_visitor::visit(const class select* op) {
-  op->condition.accept(this);
-  op->true_value.accept(this);
-  op->false_value.accept(this);
+  if (op->condition.defined()) op->condition.accept(this);
+  if (op->true_value.defined()) op->true_value.accept(this);
+  if (op->false_value.defined()) op->false_value.accept(this);
 }
 void recursive_node_visitor::visit(const call* op) {
   for (const expr& i : op->args) {
@@ -723,13 +725,13 @@ void recursive_node_visitor::visit(const call* op) {
 
 void recursive_node_visitor::visit(const let_stmt* op) {
   for (const auto& p : op->lets) {
-    p.second.accept(this);
+    if (p.second.defined()) p.second.accept(this);
   }
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const block* op) {
   for (const auto& s : op->stmts) {
-    s.accept(this);
+    if (s.defined()) s.accept(this);
   }
 }
 void recursive_node_visitor::visit(const loop* op) {

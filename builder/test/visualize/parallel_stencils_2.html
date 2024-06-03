@@ -337,13 +337,13 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
 function pipeline(in1, in2, out) {
-  check((in1 != 0));
+  check(in1);
   check((buffer_rank(in1) == 2));
   check((buffer_elem_size(in1) == 2));
-  check((in2 != 0));
+  check(in2);
   check((buffer_rank(in2) == 2));
   check((buffer_elem_size(in2) == 2));
-  check((out != 0));
+  check(out);
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 2));
   check((() => { let cse = buffer_fold_factor(out, 0); return or_else((cse == 9223372036854775807), (buffer_max(out, 0) < (cse + buffer_min(out, 0)))); })());
@@ -386,7 +386,7 @@ function pipeline(in1, in2, out) {
                       produce(intm1);
                       __event_t++;
                     }}
-                    { let __intm3 = crop_dim(intm3, 1, {min:y, max:min((y + 1), buffer_max(out, 1))}); {
+                    { let __intm3 = crop_dim(intm3, 1, {min:y, max:(y + 1)}); {
                       let intm3 = __intm3;
                       consume(intm1_uncropped);
                       produce(intm3);
@@ -398,7 +398,7 @@ function pipeline(in1, in2, out) {
                       produce(intm2);
                       __event_t++;
                     }}
-                    { let __intm4 = crop_dim(intm4, 1, {min:y, max:min((y + 1), buffer_max(out, 1))}); {
+                    { let __intm4 = crop_dim(intm4, 1, {min:y, max:(y + 1)}); {
                       let intm4 = __intm4;
                       consume(intm2_uncropped);
                       produce(intm4);

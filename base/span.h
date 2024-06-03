@@ -46,6 +46,15 @@ public:
   span subspan(std::size_t offset, std::size_t size) const { return span(data_ + offset, size); }
 };
 
+template <typename T>
+std::vector<T> permute(span<const int> p, const std::vector<T>& x) {
+  std::vector<T> result(p.size());
+  for (std::size_t i = 0; i < p.size(); ++i) {
+    result[i] = x[p[i]];
+  }
+  return result;
+}
+
 }  // namespace slinky
 
 #endif  // SLINKY_BASE_SPAN_H

@@ -17,11 +17,13 @@ struct depends_on_result {
   // True if the buffer is used as a copy source or destination, respectively.
   bool buffer_src = false;
   bool buffer_dst = false;
+  // True if the buffer's base pointer is read.
+  bool buffer_base = false;
 
   // True if the buffer metadata is read.
   bool buffer_meta = false;
 
-  bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst; }
+  bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst || buffer_base; }
   bool buffer() const { return buffer_data() || buffer_meta; }
 
   bool any() const { return var || buffer(); }

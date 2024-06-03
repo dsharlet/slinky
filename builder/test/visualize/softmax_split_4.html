@@ -337,10 +337,10 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  check((__in != 0));
+  check(__in);
   check((buffer_rank(__in) == 2));
   check((buffer_elem_size(__in) == 4));
-  check((out != 0));
+  check(out);
   check((buffer_rank(out) == 2));
   check((buffer_elem_size(out) == 4));
   check((() => { let cse = buffer_fold_factor(out, 0); return or_else((cse == 9223372036854775807), (buffer_max(out, 0) < (cse + buffer_min(out, 0)))); })());
@@ -379,24 +379,21 @@ function pipeline(__in, out) {
                         let __loop_max = buffer_max(out, 1);
                         let __loop_step = 4;
                         for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
-                          { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                          { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:(b + 3)}); {
                             let softmax_in = __softmax_in;
-                            { let __softmax_in = crop_dim(softmax_in, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
-                              let softmax_in = __softmax_in;
-                              consume(__in);
-                              produce(softmax_in);
-                              __event_t++;
-                            }}
+                            consume(__in);
+                            produce(softmax_in);
+                            __event_t++;
                           }}
-                          { let __max_in = crop_dim(max_in, 0, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                          { let __max_in = crop_dim(max_in, 0, {min:b, max:(b + 3)}); {
                             let max_in = __max_in;
                             consume(softmax_in_uncropped);
                             produce(max_in);
                             __event_t++;
                           }}
-                          { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                          { let __sum_exp_in = crop_dim(sum_exp_in, 0, {min:b, max:(b + 3)}); {
                             let sum_exp_in = __sum_exp_in;
-                            { let __exp_in = crop_dim(exp_in, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                            { let __exp_in = crop_dim(exp_in, 1, {min:b, max:(b + 3)}); {
                               let exp_in = __exp_in;
                               consume(__in);
                               consume(max_in_uncropped);
@@ -405,7 +402,7 @@ function pipeline(__in, out) {
                               __event_t++;
                             }}
                           }}
-                          { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:min((b + 3), buffer_max(out, 1))}); {
+                          { let __softmax_out = crop_dim(softmax_out, 1, {min:b, max:(b + 3)}); {
                             let softmax_out = __softmax_out;
                             consume(exp_in_uncropped);
                             consume(sum_exp_in_uncropped);
