@@ -64,6 +64,7 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
 // Keep substituting substitutions until nothing happens.
 std::vector<dim_expr> recursive_substitute(
     std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
+  scoped_trace trace("recursive_substitute");
   while (true) {
     bool changed = false;
     for (dim_expr& dim : dims) {
@@ -84,6 +85,7 @@ std::vector<dim_expr> recursive_substitute(
 }
 
 void substitute_bounds(interval_expr& bounds, const symbol_map<box_expr>& buffers) {
+  scoped_trace trace("substitute_bounds");
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     if (bounds.min.defined()) bounds.min = substitute_bounds(bounds.min, var(i), *buffers[i]);
@@ -92,6 +94,7 @@ void substitute_bounds(interval_expr& bounds, const symbol_map<box_expr>& buffer
 }
 
 void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
+  scoped_trace trace("substitute_bounds");
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     for (interval_expr& j : bounds) {
@@ -102,6 +105,7 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
 }
 
 void substitute_bounds(symbol_map<box_expr>& buffers, var buffer_id, const box_expr& bounds) {
+  scoped_trace trace("substitute_bounds");
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     slinky::box_expr& b = *buffers[i];
@@ -129,10 +133,32 @@ public:
 };
 
 bool is_produced_by(var v, const stmt& body) {
+  scoped_trace trace("is_produced_by");
   if (!body.defined()) return false;
   check_if_produced f(v);
   body.accept(&f);
   return f.found;
+}
+
+// Find a maximum value of x which makes `condition` expression true. The search goes
+// backwards from initial_guess up to some fixed depth.
+expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess) {
+  scoped_trace trace("where_true_upper_bound");
+  expr result = negative_infinity();
+
+  // TODO: this search can be more efficient by trying to cover wider range of depth
+  // using binary search or something similar.
+  const int max_search_depth = 10;
+
+  for (int ix = 0; ix < max_search_depth; ix++) {
+    expr shifted = substitute(condition, x, (initial_guess - ix));
+    if (prove_true(shifted)) {
+      result = simplify(initial_guess - ix);
+      break;
+    }
+  }
+
+  return result;
 }
 
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
@@ -281,26 +307,6 @@ public:
     set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(dims), body));
   }
 
-  // Find a maximum value of x which makes `condition` expression true. The search goes
-  // backwards from initial_guess up to some fixed depth.
-  expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess) {
-    expr result = negative_infinity();
-
-    // TODO: this search can be more efficient by trying to cover wider range of depth
-    // using binary search or something similar.
-    const int max_search_depth = 10;
-
-    for (int ix = 0; ix < max_search_depth; ix++) {
-      expr shifted = substitute(condition, x, (initial_guess - ix));
-      if (prove_true(shifted)) {
-        result = simplify(initial_guess - ix);
-        break;
-      }
-    }
-
-    return result;
-  }
-
   void slide_and_fold_buffer(const var& output, const stmt& body) {
     scoped_trace trace("slide_and_fold_buffer");
     // We only want to fold if we are inside of the loop and the cropped buffer
@@ -398,7 +404,6 @@ public:
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
         expr new_loop_min = where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min);
-
 
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
@@ -587,9 +592,7 @@ public:
       set_result(clone_with(op, std::move(body)));
     }
   }
-  void visit(const transpose*) override {
-    std::abort();
-  }
+  void visit(const transpose*) override { std::abort(); }
   void visit(const clone_buffer* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     node_mutator::visit(op);
@@ -618,6 +621,8 @@ public:
       auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, loop_bounds);
       body = mutate(op->body);
     }
+
+    scoped_trace trace("visit(const loop*)");
 
     loop_bounds.min = loops.back().bounds.min;
     if (body.same_as(op->body) && loop_bounds.min.same_as(op->bounds.min) && loop_bounds.max.same_as(op->bounds.max)) {

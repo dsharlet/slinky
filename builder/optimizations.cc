@@ -184,6 +184,7 @@ public:
 };
 
 stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& permutation) {
+  scoped_trace trace("replace_copy_with_pad");
   return copy_replacer(a, b, permutation).mutate(s);
 }
 
@@ -235,6 +236,7 @@ class buffer_aliaser : public node_mutator {
 
   static bool alias_compatible(
       const allocate* op, const alias_info& alias, var target, const buffer_info& target_info) {
+    scoped_trace trace("alias_compatible");
     assert(op->dims.size() == alias.dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       const dim_expr& alias_dim = alias.dims[alias.permutation[d]];
@@ -288,6 +290,8 @@ public:
   void visit(const allocate* op) override {
     auto s = set_value_in_scope(buffers, op->sym, buffer_info(op->dims, op->elem_size));
     stmt body = mutate(op->body);
+
+    scoped_trace trace("visit(const allocate*)");
     buffer_info info = std::move(*buffers[op->sym]);
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
@@ -374,6 +378,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
+    scoped_trace trace("visit(const call_stmt*)");
     set_result(op);
     if (!op->attrs.allow_in_place) {
       // This call does not allow aliasing an input to an output.
@@ -402,6 +407,7 @@ public:
   }
 
   void alias_copy_dst(const copy_stmt* op) {
+    scoped_trace trace("alias_copy_dst");
     std::optional<buffer_info>& info = buffers[op->dst];
     if (!info || info->is_output) {
       // We didn't allocate the dst.
@@ -445,6 +451,7 @@ public:
   }
 
   void alias_copy_src(const copy_stmt* op) {
+    scoped_trace trace("alias_copy_src");
     std::optional<buffer_info>& info = buffers[op->src];
     if (!info || info->is_input) {
       // We didn't allocate the src.
@@ -523,6 +530,8 @@ public:
 
     auto set_info_sym = set_value_in_scope(buffers, op->sym, buffers[op->src]);
     node_mutator::visit(op);
+
+    scoped_trace trace("visit_buffer_mutator");
 
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
@@ -607,6 +616,7 @@ stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_ex
 }
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
+  scoped_trace trace("implement_copy");
   // Start by making a call to copy.
   call_stmt::attributes copy_attrs;
   copy_attrs.name = "copy";

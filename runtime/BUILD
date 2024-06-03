@@ -23,7 +23,10 @@ cc_library(
         "print.h",
         "stmt.h",
     ],
-    deps = ["//base"],
+    deps = [
+        "//base",
+        "//base:chrome_trace",
+    ],
     visibility = ["//visibility:public"],
 )
 

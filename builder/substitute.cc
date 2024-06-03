@@ -837,7 +837,7 @@ public:
 
   expr mutate_buffer_intrinsic(intrinsic fn, var buf, span<const expr> args) override {
     if (buf != target) return expr();
-    
+
     if (fn == intrinsic::buffer_elem_size) {
       if (elem_size.defined()) {
         return elem_size;
@@ -943,6 +943,15 @@ class slice_updater : public node_mutator {
 public:
   slice_updater(var sym, span<const int> slices) : sym(sym), slices(slices) {}
 
+  interval_expr mutate(const interval_expr& x) {
+    if (x.is_point()) {
+      return point(mutate(x.min));
+    } else {
+      return {mutate(x.min), mutate(x.max)};
+    }
+  }
+  using node_mutator::mutate;
+
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::buffer_min:
@@ -1001,24 +1010,19 @@ public:
 }  // namespace
 
 expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices) {
+  scoped_trace trace("update_sliced_buffer_metadata");
   return slice_updater(buf, slices).mutate(e);
 }
 
 interval_expr update_sliced_buffer_metadata(const interval_expr& x, var buf, span<const int> slices) {
-  slice_updater m(buf, slices);
-  if (x.is_point()) {
-    return point(m.mutate(x.min));
-  } else {
-    return {m.mutate(x.min), m.mutate(x.max)};
-  }
+  scoped_trace trace("update_sliced_buffer_metadata");
+  return slice_updater(buf, slices).mutate(x);
 }
 
 dim_expr update_sliced_buffer_metadata(const dim_expr& x, var buf, span<const int> slices) {
-  return {
-      update_sliced_buffer_metadata(x.bounds, buf, slices),
-      update_sliced_buffer_metadata(x.stride, buf, slices),
-      update_sliced_buffer_metadata(x.fold_factor, buf, slices),
-  };
+  scoped_trace trace("update_sliced_buffer_metadata");
+  slice_updater m(buf, slices);
+  return {m.mutate(x.bounds), m.mutate(x.stride), m.mutate(x.fold_factor)};
 }
 
 }  // namespace slinky

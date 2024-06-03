@@ -2,6 +2,7 @@
 
 #include <cassert>
 
+#include "base/chrome_trace.h"
 #include "runtime/expr.h"
 
 namespace slinky {
@@ -208,6 +209,7 @@ void depends_on(const expr& e, span<const std::pair<var, depends_on_result&>> va
 }
 
 void depends_on(const stmt& s, span<const std::pair<var, depends_on_result&>> var_deps) {
+  scoped_trace trace("depends_on");
   if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (s.defined()) s.accept(&v);
