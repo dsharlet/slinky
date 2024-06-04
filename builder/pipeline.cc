@@ -953,7 +953,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = deshadow(result, ctx);
   result = simplify(result);
-  result = common_subexpression_elimination(result, ctx);
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
@@ -977,6 +976,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = simplify(result);
 
   result = optimize_symbols(result, ctx);
+
+  result = common_subexpression_elimination(result, ctx);
 
   result = fix_buffer_races(result);
 
