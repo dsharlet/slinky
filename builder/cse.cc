@@ -442,20 +442,19 @@ public:
       if (e.defined()) {
         e.accept(this);
       }
-      return;
-    }
-
-    // Find this thing's number.
-    auto iter = gvn.output_numbering.find(e);
-    if (iter != gvn.output_numbering.end()) {
-      gvn.entries[iter->second]->use_count++;
     } else {
-      std::cerr << "expr not in shallow numbering: " << e << "\n";
-      std::abort();
-    }
+      // Find this thing's number.
+      auto iter = gvn.output_numbering.find(e);
+      if (iter != gvn.output_numbering.end()) {
+        gvn.entries[iter->second]->use_count++;
+      } else {
+        std::cerr << "expr not in shallow numbering: " << e << "\n";
+        std::abort();
+      }
 
-    // Visit the children if we haven't been here before.
-    node_graph_visitor::include(e);
+      // Visit the children if we haven't been here before.
+      node_graph_visitor::include(e);
+    }
   }
 };
 
