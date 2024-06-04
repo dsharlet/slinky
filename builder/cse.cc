@@ -267,7 +267,7 @@ public:
 
 // ----------------------
 
-bool is_pure_call_shallow(const call* c) {
+bool is_impure_call_shallow(const call* c) {
   switch (c->intrinsic) {
   case intrinsic::buffer_rank:
   case intrinsic::buffer_elem_size:
@@ -282,8 +282,8 @@ bool is_pure_call_shallow(const call* c) {
   case intrinsic::semaphore_wait:
   case intrinsic::trace_begin:
   case intrinsic::trace_end:
-  case intrinsic::free: return false;
-  default: return true;
+  case intrinsic::free: return true;
+  default: return false;
   }
 }
 
@@ -297,7 +297,7 @@ public:
   using recursive_node_visitor::visit;
 
   template <typename T>
-  void visit_op(const T* op, bool is_op_pure_shallow = true) {
+  void visit_op(const T* op, bool is_op_impure_shallow = false) {
     // Tracking visited isn't critical for correctness, but it is necessary
     // for efficiency; without this, pathological exprs can take exponential
     // time.
@@ -307,8 +307,11 @@ public:
       parent_impure = false;
       recursive_node_visitor::visit(op);
       // If any of our children set this flag (directly or transitively), we are impure too
-      if (parent_impure || !is_op_pure_shallow) impure.insert(op);
-      if (!is_op_pure_shallow) parent_impure = true;  // all parents are also impure
+      if (parent_impure || is_op_impure_shallow) {
+        cse_debug(std::cerr << "Impure: " << expr(op) << "\n";);
+        impure.insert(op);
+        parent_impure = true;  // all parents are also impure
+      }
     } else {
       // Already visited, but must set the parent-impure flag properly
       parent_impure = impure.count(op) > 0;
@@ -334,7 +337,7 @@ public:
   void visit(const logical_or* op) override { visit_op(op); }
   void visit(const logical_not* op) override { visit_op(op); }
   void visit(const class select* op) override { visit_op(op); }
-  void visit(const call* op) override { visit_op(op, is_pure_call_shallow(op)); }
+  void visit(const call* op) override { visit_op(op, is_impure_call_shallow(op)); }
 };
 
 // Some expressions are not worth lifting out into lets, even if they
@@ -428,11 +431,11 @@ public:
 // Fill in the use counts in a global value numbering.
 class compute_use_counts : public node_graph_visitor {
   global_value_numbering& gvn;
-  std::set<expr, node_less_shallow> impure;
+  const std::set<expr, node_less_shallow>& impure;
 
 public:
-  compute_use_counts(global_value_numbering& g, std::set<expr, node_less_shallow> impure_)
-      : gvn(g), impure(std::move(impure_)) {}
+  compute_use_counts(global_value_numbering& g, const std::set<expr, node_less_shallow>& i)
+      : gvn(g), impure(i) {}
 
   using node_graph_visitor::include;
   using node_graph_visitor::visit;
@@ -472,9 +475,13 @@ public:
 };
 
 class let_remover : public graph_node_mutator {
-  using graph_node_mutator::visit;
-
+public:
+  const std::set<expr, node_less_shallow>& impure;
   symbol_map<expr> scope;
+
+  explicit let_remover(const std::set<expr, node_less_shallow>& i) : impure(i) {}
+
+  using graph_node_mutator::visit;
 
   void visit(const variable* op) override {
     std::optional<expr> e = scope.lookup(op->sym);
@@ -500,6 +507,7 @@ class let_remover : public graph_node_mutator {
 
     std::vector<scoped_value_in_symbol_map<expr>> s;
     for (const auto& l : op->lets) {
+      if (impure.count(l.second)) continue;
       expr e = mutate(l.second);
       s.push_back(set_value_in_scope(scope, l.first, e));
     }
@@ -530,7 +538,11 @@ T common_subexpression_elimination_impl(const T& t_in, node_context& ctx) {
 
   cse_debug(std::cerr << "\n\n\nInput to CSE " << t << "\n");
 
-  t = let_remover().mutate(t);
+  {
+    find_impure_exprs find_impure;
+    t.accept(&find_impure);
+    t = let_remover(find_impure.impure).mutate(t);
+  }
 
   cse_debug(std::cerr << "After removing lets: " << t << "\n");
 
@@ -539,22 +551,24 @@ T common_subexpression_elimination_impl(const T& t_in, node_context& ctx) {
 
   cse_debug(std::cerr << "After gvn.mutate: " << t << "\n");
 
-  cse_debug(std::cerr << "find_impure_exprs... \n");
-  find_impure_exprs find_impure;
-  t.accept(&find_impure);
-
-  cse_debug(std::cerr << "compute_use_counts... \n");
-  compute_use_counts count_uses(gvn, std::move(find_impure.impure));
-  count_uses.include(t);
+  {
+    find_impure_exprs find_impure;
+    t.accept(&find_impure);
+    compute_use_counts count_uses(gvn, find_impure.impure);
+    count_uses.include(t);
+  }
 
   cse_debug(std::cerr << "Canonical form without lets " << t << "\n");
 
   // Figure out which ones we'll pull out as lets and variables.
+  find_impure_exprs find_impure;
+  t.accept(&find_impure);
+
   std::vector<std::pair<var, expr>> lets;
   std::map<expr, expr, node_less_shallow> replacements;
   for (size_t i = 0; i < gvn.entries.size(); i++) {
     const auto& t = gvn.entries[i];
-    if (t->use_count > 1) {
+    if (t->use_count > 1 && find_impure.impure.count(t->e) == 0) {
       var sym = ctx.insert_unique("cse");
       lets.emplace_back(sym, t->e);
       // Point references to this expr to the variable instead.
