@@ -267,7 +267,7 @@ public:
 
 // ----------------------
 
-bool is_pure_call_shallow(const call* c) {
+bool is_impure_call_shallow(const call* c) {
   switch (c->intrinsic) {
   case intrinsic::buffer_rank:
   case intrinsic::buffer_elem_size:
@@ -282,8 +282,8 @@ bool is_pure_call_shallow(const call* c) {
   case intrinsic::semaphore_wait:
   case intrinsic::trace_begin:
   case intrinsic::trace_end:
-  case intrinsic::free: return false;
-  default: return true;
+  case intrinsic::free: return true;
+  default: return false;
   }
 }
 
@@ -297,7 +297,7 @@ public:
   using recursive_node_visitor::visit;
 
   template <typename T>
-  void visit_op(const T* op, bool is_op_pure_shallow = true) {
+  void visit_op(const T* op, bool is_op_impure_shallow = false) {
     // Tracking visited isn't critical for correctness, but it is necessary
     // for efficiency; without this, pathological exprs can take exponential
     // time.
@@ -307,8 +307,8 @@ public:
       parent_impure = false;
       recursive_node_visitor::visit(op);
       // If any of our children set this flag (directly or transitively), we are impure too
-      if (parent_impure || !is_op_pure_shallow) impure.insert(op);
-      if (!is_op_pure_shallow) parent_impure = true;  // all parents are also impure
+      if (parent_impure || is_op_impure_shallow) impure.insert(op);
+      if (is_op_impure_shallow) parent_impure = true;  // all parents are also impure
     } else {
       // Already visited, but must set the parent-impure flag properly
       parent_impure = impure.count(op) > 0;
@@ -334,7 +334,7 @@ public:
   void visit(const logical_or* op) override { visit_op(op); }
   void visit(const logical_not* op) override { visit_op(op); }
   void visit(const class select* op) override { visit_op(op); }
-  void visit(const call* op) override { visit_op(op, is_pure_call_shallow(op)); }
+  void visit(const call* op) override { visit_op(op, is_impure_call_shallow(op)); }
 };
 
 // Some expressions are not worth lifting out into lets, even if they
