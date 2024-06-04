@@ -271,10 +271,16 @@ public:
 
 // ----------------------
 
-// Only pure exprs should be considered for CSE.
-bool is_pure(const expr& e) {
-  if (const call* c = e.as<call>()) {
-    switch (c->intrinsic) {
+// We don't actually mutate anything here, we just
+// want the default implementations for all the IR nodes.
+class purity_tester : public recursive_node_visitor {
+public:
+  bool pure = true;
+
+  using recursive_node_visitor::visit;
+
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
       // buffer accessors and semaphore helpers are never pure.
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:
@@ -286,13 +292,21 @@ bool is_pure(const expr& e) {
     case intrinsic::buffer_at:
     case intrinsic::semaphore_init:
     case intrinsic::semaphore_signal:
-    case intrinsic::semaphore_wait: return false;
-    default: return true;
+    case intrinsic::semaphore_wait:
+      pure = false;
+      // No need to break and do the full visit once we know we are impure
+      return;
+    default: break;
     }
-  } else {
-    return true;
+    recursive_node_visitor::visit(op);
   }
-}
+
+  static bool is_pure(const expr& e) {
+    purity_tester t;
+    e.accept(&t);
+    return t.pure;
+  }
+};
 
 // Some expressions are not worth lifting out into lets, even if they
 // occur redundantly many times. They may also be illegal to lift out
@@ -304,7 +318,11 @@ bool is_pure(const expr& e) {
 bool should_extract(const expr& e, bool lift_all) {
   if (!e.defined()) {
     return false;
-  } else if (as_constant(e) || as_variable(e) || !is_pure(e)) {
+  } else if (as_constant(e) || as_variable(e)) {
+    return false;
+  } else if (!purity_tester::is_pure(e)) {
+    // Any expr that contains any impure expr is itself impure
+    // TODO: using a visitor here isn't very efficient, can we do better?
     return false;
   } else if (lift_all) {
     return true;
