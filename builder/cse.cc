@@ -340,13 +340,11 @@ public:
 // This list should at least avoid lifting the same cases as that of the
 // simplifier for lets, otherwise CSE and the simplifier will fight each
 // other pointlessly.
-bool should_extract(const expr& e, bool lift_all) {
+bool should_extract(const expr& e) {
   if (!e.defined()) {
     return false;
   } else if (as_constant(e) || as_variable(e)) {
     return false;
-  } else if (lift_all) {
-    return true;
   } else if (const add* a = e.as<add>()) {
     return !(as_constant(a->a) || as_constant(a->b));
   } else if (const sub* a = e.as<sub>()) {
@@ -380,11 +378,7 @@ public:
 
   int number = 0;
 
-  stmt mutate(const stmt& s) override {
-    std::cerr << "Can't call global_value_numbering on a stmt: " << s << "\n";
-    std::abort();
-    return stmt();
-  }
+  using node_mutator::mutate;
 
   expr mutate(const expr& e) override {
     // Early out if we've already seen this exact expr.
@@ -431,11 +425,10 @@ public:
 class compute_use_counts : public node_graph_visitor {
   global_value_numbering& gvn;
   std::set<expr, node_less_shallow> impure;
-  bool lift_all;
 
 public:
-  compute_use_counts(global_value_numbering& g, std::set<expr, node_less_shallow> impure_, bool l)
-      : gvn(g), impure(std::move(impure_)), lift_all(l) {}
+  compute_use_counts(global_value_numbering& g, std::set<expr, node_less_shallow> impure_)
+      : gvn(g), impure(std::move(impure_)) {}
 
   using node_graph_visitor::include;
   using node_graph_visitor::visit;
@@ -444,8 +437,8 @@ public:
     // If it's not the sort of thing we want to extract as a let,
     // just use the generic visitor to increment use counts for
     // the children.
-    cse_debug(std::cerr << "Include: " << e << "; should extract: " << should_extract(e, lift_all) << "\n");
-    if (!should_extract(e, lift_all) || impure.count(e)) {
+    cse_debug(std::cerr << "Include: " << e << "; should extract: " << should_extract(e) << "\n");
+    if (!should_extract(e) || impure.count(e)) {
       if (e.defined()) {
         e.accept(this);
       }
@@ -489,7 +482,8 @@ class let_remover : public graph_node_mutator {
     }
   }
 
-  void visit(const let* op) override {
+  template<typename T>
+  void visit_let(const T* op) {
     // When we enter a let, we invalidate all cached mutations
     // with values that reference this var due to shadowing. When
     // we leave a let, we similarly invalidate any cached
@@ -510,70 +504,67 @@ class let_remover : public graph_node_mutator {
     tmp.swap(expr_replacements);
     set_result(result);
   }
-};
 
-class cse_every_expr_in_stmt : public node_mutator {
-  node_context& ctx;
-  bool lift_all;
+  void visit(const let* op) override {
+    visit_let(op);
+  }
 
-public:
-  using node_mutator::mutate;
-
-  expr mutate(const expr& e) override { return common_subexpression_elimination(e, ctx, lift_all); }
-
-  cse_every_expr_in_stmt(node_context& c, bool l) : ctx(c), lift_all(l) {}
+  // We don't want to remove lets from a stmt; they may have been inserted
+  // to 'freeze' a value that is otherwise impure (eg `g = buffer_min(b)`).
+  // If we were to remove them here, we'd need to take care to reinsert them
+  // as-is to guard against this, so it's better to simply leave them alone.
+  //
+  // void visit(const let_stmt* op) override {
+  //   visit_let(op);
+  // }
 };
 
 }  // namespace
 
-expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool lift_all) {
-  expr e = e_in;
+template<typename Op, typename T>
+T common_subexpression_elimination_impl(const T& t_in, node_context& ctx) {
+  T t = t_in;
 
-  if (!e.defined() || as_constant(e) || as_variable(e)) {
-    // My, that was easy.
-    return e;
-  }
+  cse_debug(std::cerr << "\n\n\nInput to CSE " << t << "\n");
 
-  cse_debug(std::cerr << "\n\n\nInput to CSE " << e << "\n");
+  t = let_remover().mutate(t);
 
-  e = let_remover().mutate(e);
-
-  cse_debug(std::cerr << "After removing lets: " << e << "\n");
+  cse_debug(std::cerr << "After removing lets: " << t << "\n");
 
   global_value_numbering gvn;
-  e = gvn.mutate(e);
+  t = gvn.mutate(t);
 
-  cse_debug(std::cerr << "After gvn.mutate: " << e << "\n");
+  cse_debug(std::cerr << "After gvn.mutate: " << t << "\n");
 
   cse_debug(std::cerr << "find_impure_exprs... \n");
   find_impure_exprs find_impure;
-  e.accept(&find_impure);
+  t.accept(&find_impure);
 
   cse_debug(std::cerr << "compute_use_counts... \n");
-  compute_use_counts count_uses(gvn, std::move(find_impure.impure), lift_all);
-  count_uses.include(e);
+  compute_use_counts count_uses(gvn, std::move(find_impure.impure));
+  count_uses.include(t);
 
-  cse_debug(std::cerr << "Canonical form without lets " << e << "\n");
+  cse_debug(std::cerr << "Canonical form without lets " << t << "\n");
 
   // Figure out which ones we'll pull out as lets and variables.
   std::vector<std::pair<var, expr>> lets;
   std::map<expr, expr, node_less_shallow> replacements;
   for (size_t i = 0; i < gvn.entries.size(); i++) {
-    const auto& e = gvn.entries[i];
-    if (e->use_count > 1) {
+    const auto& t = gvn.entries[i];
+    if (t->use_count > 1) {
       var sym = ctx.insert_unique("cse");
-      lets.emplace_back(sym, e->e);
+      lets.emplace_back(sym, t->e);
       // Point references to this expr to the variable instead.
-      replacements[e->e] = sym;
+      replacements[t->e] = sym;
     }
-    cse_debug(std::cerr << "GVN " << i << ": " << e->e << ", count=" << e->use_count << "\n");
+    cse_debug(std::cerr << "GVN " << i << ": " << t->e << ", count=" << t->use_count << "\n");
   }
 
   // Rebuild the expr to include references to the variables:
   replacer r(replacements);
-  e = r.mutate(e);
+  t = r.mutate(t);
 
-  cse_debug(std::cerr << "With variables " << e << "\n");
+  cse_debug(std::cerr << "With variables " << t << "\n");
 
   // Wrap the final expr in the lets.
   std::vector<std::pair<var, expr>> new_lets;
@@ -589,16 +580,28 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
   std::reverse(new_lets.begin(), new_lets.end());
 
   if (!new_lets.empty()) {
-    e = let::make(new_lets, e);
+    t = Op::make(new_lets, t);
   }
 
-  cse_debug(std::cerr << "With lets: " << e << "\n");
+  cse_debug(std::cerr << "Final (with lets): " << t << "\n");
 
-  return e;
+  return t;
 }
 
-stmt common_subexpression_elimination(const stmt& s, node_context& ctx, bool lift_all) {
-  return cse_every_expr_in_stmt(ctx, lift_all).mutate(s);
+expr common_subexpression_elimination(const expr& e, node_context& ctx) {
+  if (!e.defined() || as_constant(e) || as_variable(e)) {
+    // My, that was easy.
+    return e;
+  }
+  return common_subexpression_elimination_impl<let>(e, ctx);
+}
+
+stmt common_subexpression_elimination(const stmt& s, node_context& ctx) {
+  if (!s.defined()) {
+    // My, that was easy.
+    return s;
+  }
+  return common_subexpression_elimination_impl<let_stmt>(s, ctx);
 }
 
 }  // namespace slinky

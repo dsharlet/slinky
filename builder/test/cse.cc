@@ -46,7 +46,8 @@ class normalize_var_names : public node_mutator {
     }
   }
 
-  void visit(const let* let) override {
+  template <typename T>
+  void visit_let(const T* let) {
     for (const auto& l : let->lets) {
       std::string new_name_str = "n" + std::to_string(counter++);
       var new_name = ctx.insert(new_name_str);
@@ -56,8 +57,12 @@ class normalize_var_names : public node_mutator {
     for (const auto& l : let->lets) {
       new_lets.emplace_back(*scope[l.first], mutate(l.second));
     }
-    set_result(let::make(new_lets, mutate(let->body)));
+    set_result(T::make(new_lets, mutate(let->body)));
   }
+
+  void visit(const let* let) override { visit_let(let); }
+
+  void visit(const let_stmt* let_stmt) override { visit_let(let_stmt); }
 
 public:
   normalize_var_names(const node_context& c) : ctx(c) {}
@@ -66,6 +71,12 @@ public:
 MATCHER_P2(matches, correct, ctx, "") {
   expr actual = normalize_var_names(ctx).mutate(arg);
   expr expected = normalize_var_names(ctx).mutate(correct);
+  return match(actual, expected);
+}
+
+MATCHER_P2(matches_stmt, correct, ctx, "") {
+  stmt actual = normalize_var_names(ctx).mutate(arg);
+  stmt expected = normalize_var_names(ctx).mutate(correct);
   return match(actual, expected);
 }
 
@@ -182,6 +193,30 @@ TEST(cse, no_impure) {
       });
   expr result = common_subexpression_elimination(e, ctx);
   ASSERT_THAT(result, matches(correct, ctx));
+}
+
+TEST(cse, multiple_stmts) {
+  node_context ctx = symbols;
+
+  expr buf = ctx.insert_unique("buf");
+  expr index = ((x * x + x) * (x * x + x)) + x * x;
+  expr at_args[] = {index};
+  expr load = buffer_at(buf, at_args);
+  stmt s = block::make({block::make({check::make(load >= 0), check::make(load < 10)}), check::make(load < 1)});
+
+  std::vector<std::pair<var, expr>> cse_lets = {
+      {t0, x * x},
+      {t1, x + t0},
+      {t2, t0 + t1 * t1},
+  };
+  expr cse_at_args[] = {t2};
+  stmt cse_body =
+      block::make({check::make(0 <= buffer_at(buf, cse_at_args)), check::make(buffer_at(buf, cse_at_args) < 10)});
+  stmt cse_lets_in_stmts = let_stmt::make(cse_lets, cse_body);
+  stmt correct = cse_lets_in_stmts;
+
+  stmt result = common_subexpression_elimination(s, ctx);
+  ASSERT_THAT(result, matches_stmt(correct, ctx));
 }
 
 }  // namespace slinky
