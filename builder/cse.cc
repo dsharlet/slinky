@@ -46,22 +46,18 @@ protected:
   // it delegates to the appropriate visit method. You can override
   // them if you like.
   virtual void include(const expr& e) {
-    if (e.defined()) {
-      auto r = visited.insert(static_cast<const void*>(e.get()));
-      if (r.second) {
-        // Was newly inserted
-        e.accept(this);
-      }
+    auto r = visited.insert(static_cast<const void*>(e.get()));
+    if (r.second) {
+      // Was newly inserted
+      e.accept(this);
     }
   }
 
   virtual void include(const stmt& s) {
-    if (s.defined()) {
-      auto r = visited.insert(static_cast<const void*>(s.get()));
-      if (r.second) {
-        // Was newly inserted
-        s.accept(this);
-      }
+    auto r = visited.insert(static_cast<const void*>(s.get()));
+    if (r.second) {
+      // Was newly inserted
+      s.accept(this);
     }
   }
 
@@ -271,28 +267,71 @@ public:
 
 // ----------------------
 
-// Only pure exprs should be considered for CSE.
-bool is_pure(const expr& e) {
-  if (const call* c = e.as<call>()) {
-    switch (c->intrinsic) {
-      // buffer accessors and semaphore helpers are never pure.
-    case intrinsic::buffer_rank:
-    case intrinsic::buffer_elem_size:
-    case intrinsic::buffer_size_bytes:
-    case intrinsic::buffer_min:
-    case intrinsic::buffer_max:
-    case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor:
-    case intrinsic::buffer_at:
-    case intrinsic::semaphore_init:
-    case intrinsic::semaphore_signal:
-    case intrinsic::semaphore_wait: return false;
-    default: return true;
-    }
-  } else {
-    return true;
+bool is_pure_call_shallow(const call* c) {
+  switch (c->intrinsic) {
+  case intrinsic::buffer_rank:
+  case intrinsic::buffer_elem_size:
+  case intrinsic::buffer_size_bytes:
+  case intrinsic::buffer_min:
+  case intrinsic::buffer_max:
+  case intrinsic::buffer_stride:
+  case intrinsic::buffer_fold_factor:
+  case intrinsic::buffer_at:
+  case intrinsic::semaphore_init:
+  case intrinsic::semaphore_signal:
+  case intrinsic::semaphore_wait:
+  case intrinsic::trace_begin:
+  case intrinsic::trace_end:
+  case intrinsic::free: return false;
+  default: return true;
   }
 }
+
+// Find the set of all impure exprs.
+class find_impure_exprs : public recursive_node_visitor {
+public:
+  std::set<const void*> visited;
+  std::set<expr, node_less_shallow> impure;
+  bool pure = true;
+
+  using recursive_node_visitor::visit;
+
+  template <typename T>
+  void visit_op(const T* op, bool purity = true) {
+    // Tracking visited isn't critical for correctness, but it is necessary
+    // for efficiency; without this, pathological exprs can take exponential
+    // time.
+    auto r = visited.insert(static_cast<const void*>(op));
+    if (r.second) {
+      // Was newly inserted -- check our children for purity.
+      recursive_node_visitor::visit(op);
+      // If any of my children are impure, so am I.
+      if (!purity) pure = false;  // all parents are also impure
+      if (!pure) impure.insert(op);
+    }
+  }
+
+  // No need to override these, since they can never be impure
+  // void visit(const variable* op) override {}
+  // void visit(const constant* op) override {}
+  void visit(const let* op) override { visit_op(op); }
+  void visit(const add* op) override { visit_op(op); }
+  void visit(const sub* op) override { visit_op(op); }
+  void visit(const mul* op) override { visit_op(op); }
+  void visit(const div* op) override { visit_op(op); }
+  void visit(const mod* op) override { visit_op(op); }
+  void visit(const class min* op) override { visit_op(op); }
+  void visit(const class max* op) override { visit_op(op); }
+  void visit(const equal* op) override { visit_op(op); }
+  void visit(const not_equal* op) override { visit_op(op); }
+  void visit(const less* op) override { visit_op(op); }
+  void visit(const less_equal* op) override { visit_op(op); }
+  void visit(const logical_and* op) override { visit_op(op); }
+  void visit(const logical_or* op) override { visit_op(op); }
+  void visit(const logical_not* op) override { visit_op(op); }
+  void visit(const class select* op) override { visit_op(op); }
+  void visit(const call* op) override { visit_op(op, is_pure_call_shallow(op)); }
+};
 
 // Some expressions are not worth lifting out into lets, even if they
 // occur redundantly many times. They may also be illegal to lift out
@@ -304,7 +343,7 @@ bool is_pure(const expr& e) {
 bool should_extract(const expr& e, bool lift_all) {
   if (!e.defined()) {
     return false;
-  } else if (as_constant(e) || as_variable(e) || !is_pure(e)) {
+  } else if (as_constant(e) || as_variable(e)) {
     return false;
   } else if (lift_all) {
     return true;
@@ -391,10 +430,12 @@ public:
 // Fill in the use counts in a global value numbering.
 class compute_use_counts : public node_graph_visitor {
   global_value_numbering& gvn;
+  std::set<expr, node_less_shallow> impure;
   bool lift_all;
 
 public:
-  compute_use_counts(global_value_numbering& g, bool l) : gvn(g), lift_all(l) {}
+  compute_use_counts(global_value_numbering& g, std::set<expr, node_less_shallow> impure_, bool l)
+      : gvn(g), impure(std::move(impure_)), lift_all(l) {}
 
   using node_graph_visitor::include;
   using node_graph_visitor::visit;
@@ -404,7 +445,7 @@ public:
     // just use the generic visitor to increment use counts for
     // the children.
     cse_debug(std::cerr << "Include: " << e << "; should extract: " << should_extract(e, lift_all) << "\n");
-    if (!should_extract(e, lift_all)) {
+    if (!should_extract(e, lift_all) || impure.count(e)) {
       if (e.defined()) {
         e.accept(this);
       }
@@ -504,7 +545,12 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
 
   cse_debug(std::cerr << "After gvn.mutate: " << e << "\n");
 
-  compute_use_counts count_uses(gvn, lift_all);
+  cse_debug(std::cerr << "find_impure_exprs... \n");
+  find_impure_exprs find_impure;
+  e.accept(&find_impure);
+
+  cse_debug(std::cerr << "compute_use_counts... \n");
+  compute_use_counts count_uses(gvn, std::move(find_impure.impure), lift_all);
   count_uses.include(e);
 
   cse_debug(std::cerr << "Canonical form without lets " << e << "\n");

@@ -168,12 +168,18 @@ TEST(cse, no_impure) {
   expr buf = ctx.insert_unique("buf");
   expr index = select(x * x + y * y > 0, x * x + y * y + 2, x * x + y * y + 10);
   expr at_args[] = {index};
-  expr e = buffer_at(buf, at_args);
+  expr e = max(buffer_at(buf, at_args), 0);
+  e += e;
 
-  // Calls to impure intrinsics (eg the buffer accessors) should never be cse'ed,
-  // although the *arguments* to the intrinsic can (and should) be.
-  expr correct =
-      ssa_block(ctx, {x * x + y * y, call::make(intrinsic::buffer_at, {buf, select(0 < t0, t0 + 2, t0 + 10)})});
+  // Calls to impure intrinsics (eg the buffer accessors) should never be cse'd...
+  // nor should any other expr that contains anything impure,
+  // although the *arguments* to the intrinsic can (and should) be cse'd.
+  expr correct = ssa_block(ctx,
+      {
+          x * x + y * y,                    // t0
+          select(0 < t0, t0 + 2, t0 + 10),  // t1
+          max(call::make(intrinsic::buffer_at, {buf, t1}), 0) + max(call::make(intrinsic::buffer_at, {buf, t1}), 0),
+      });
   expr result = common_subexpression_elimination(e, ctx);
   ASSERT_THAT(result, matches(correct, ctx));
 }
