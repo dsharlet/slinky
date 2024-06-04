@@ -292,22 +292,26 @@ class find_impure_exprs : public recursive_node_visitor {
 public:
   std::set<const void*> visited;
   std::set<expr, node_less_shallow> impure;
-  bool pure = true;
+  bool parent_impure = false;
 
   using recursive_node_visitor::visit;
 
   template <typename T>
-  void visit_op(const T* op, bool purity = true) {
+  void visit_op(const T* op, bool is_op_pure_shallow = true) {
     // Tracking visited isn't critical for correctness, but it is necessary
     // for efficiency; without this, pathological exprs can take exponential
     // time.
     auto r = visited.insert(static_cast<const void*>(op));
     if (r.second) {
       // Was newly inserted -- check our children for purity.
+      parent_impure = false;
       recursive_node_visitor::visit(op);
-      // If any of my children are impure, so am I.
-      if (!purity) pure = false;  // all parents are also impure
-      if (!pure) impure.insert(op);
+      // If any of our children set this flag (directly or transitively), we are impure too
+      if (parent_impure || !is_op_pure_shallow) impure.insert(op);
+      if (!is_op_pure_shallow) parent_impure = true;  // all parents are also impure
+    } else {
+      // Already visited, but must set the parent-impure flag properly
+      parent_impure = impure.count(op) > 0;
     }
   }
 
