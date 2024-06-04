@@ -14,11 +14,11 @@ namespace slinky {
 // lifted, or only those that the simplifier would not substitute back
 // in (e.g. addition of a constant).
 //
-expr common_subexpression_elimination(const expr&, node_context& ctx, bool lift_all = false);
+expr common_subexpression_elimination(const expr&, node_context& ctx);
 
 // Do common-subexpression-elimination on each expression in a
 // statement. Does not introduce let statements.
-stmt common_subexpression_elimination(const stmt&, node_context& ctx, bool lift_all = false);
+stmt common_subexpression_elimination(const stmt&, node_context& ctx);
 
 }  // namespace slinky
 

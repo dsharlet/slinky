@@ -344,13 +344,11 @@ public:
 // This list should at least avoid lifting the same cases as that of the
 // simplifier for lets, otherwise CSE and the simplifier will fight each
 // other pointlessly.
-bool should_extract(const expr& e, bool lift_all) {
+bool should_extract(const expr& e) {
   if (!e.defined()) {
     return false;
   } else if (as_constant(e) || as_variable(e)) {
     return false;
-  } else if (lift_all) {
-    return true;
   } else if (const add* a = e.as<add>()) {
     return !(as_constant(a->a) || as_constant(a->b));
   } else if (const sub* a = e.as<sub>()) {
@@ -435,11 +433,10 @@ public:
 class compute_use_counts : public node_graph_visitor {
   global_value_numbering& gvn;
   std::set<expr, node_less_shallow> impure;
-  bool lift_all;
 
 public:
-  compute_use_counts(global_value_numbering& g, std::set<expr, node_less_shallow> impure_, bool l)
-      : gvn(g), impure(std::move(impure_)), lift_all(l) {}
+  compute_use_counts(global_value_numbering& g, std::set<expr, node_less_shallow> impure_)
+      : gvn(g), impure(std::move(impure_)) {}
 
   using node_graph_visitor::include;
   using node_graph_visitor::visit;
@@ -448,8 +445,8 @@ public:
     // If it's not the sort of thing we want to extract as a let,
     // just use the generic visitor to increment use counts for
     // the children.
-    cse_debug(std::cerr << "Include: " << e << "; should extract: " << should_extract(e, lift_all) << "\n");
-    if (!should_extract(e, lift_all) || impure.count(e)) {
+    cse_debug(std::cerr << "Include: " << e << "; should extract: " << should_extract(e) << "\n");
+    if (!should_extract(e) || impure.count(e)) {
       if (e.defined()) {
         e.accept(this);
       }
@@ -518,19 +515,18 @@ class let_remover : public graph_node_mutator {
 
 class cse_every_expr_in_stmt : public node_mutator {
   node_context& ctx;
-  bool lift_all;
 
 public:
   using node_mutator::mutate;
 
-  expr mutate(const expr& e) override { return common_subexpression_elimination(e, ctx, lift_all); }
+  expr mutate(const expr& e) override { return common_subexpression_elimination(e, ctx); }
 
-  cse_every_expr_in_stmt(node_context& c, bool l) : ctx(c), lift_all(l) {}
+  cse_every_expr_in_stmt(node_context& c) : ctx(c) {}
 };
 
 }  // namespace
 
-expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool lift_all) {
+expr common_subexpression_elimination(const expr& e_in, node_context& ctx) {
   expr e = e_in;
 
   if (!e.defined() || as_constant(e) || as_variable(e)) {
@@ -554,7 +550,7 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
   e.accept(&find_impure);
 
   cse_debug(std::cerr << "compute_use_counts... \n");
-  compute_use_counts count_uses(gvn, std::move(find_impure.impure), lift_all);
+  compute_use_counts count_uses(gvn, std::move(find_impure.impure));
   count_uses.include(e);
 
   cse_debug(std::cerr << "Canonical form without lets " << e << "\n");
@@ -601,8 +597,8 @@ expr common_subexpression_elimination(const expr& e_in, node_context& ctx, bool 
   return e;
 }
 
-stmt common_subexpression_elimination(const stmt& s, node_context& ctx, bool lift_all) {
-  return cse_every_expr_in_stmt(ctx, lift_all).mutate(s);
+stmt common_subexpression_elimination(const stmt& s, node_context& ctx) {
+  return cse_every_expr_in_stmt(ctx).mutate(s);
 }
 
 }  // namespace slinky
