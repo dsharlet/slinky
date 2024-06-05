@@ -696,9 +696,10 @@ public:
       // This loop is dead.
       set_result(stmt());
       return;
-    } else if (prove_true(bounds.min <= bounds.max && bounds.min + step > bounds.max)) {
-      // The loop only runs once.
-      set_result(mutate(let_stmt::make(op->sym, bounds.min, op->body)));
+    } else if (prove_true(bounds.min + step > bounds.max)) {
+      // The loop only runs at most once. It's safe to run the body even if the loop is empty, because we assume we can
+      // move loops freely in and out of calls, even if the buffers are empty.
+      set_result(mutate(substitute(op->body, op->sym, bounds.min)));
       return;
     }
 
