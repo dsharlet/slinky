@@ -956,7 +956,7 @@ public:
           // find a way to implement this reusing that (much more robust and complete) simplification instead of
           // expanding this logic.
           if (match(xa->b, bi->b)) {
-            // We have T(x + c0, b + c0). We can rewrite to T(x, b) + c0, and if we can eliminate the bound, the whole
+            // We have T(x + y, b + y). We can rewrite to T(x, b) + y, and if we can eliminate the bound, the whole
             // bound is redundant.
             expr removed = remove_redundant_bounds<T>(xa->a, {bi->a});
             if (!removed.same_as(xa->a)) {
@@ -964,6 +964,12 @@ public:
             }
           }
         }
+      }
+    } else if (const class select* xs = x.as<class select>()) {
+      expr t = remove_redundant_bounds<T>(xs->true_value, bounds);
+      expr f = remove_redundant_bounds<T>(xs->false_value, bounds);
+      if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
+        return mutate(select(xs->condition, std::move(t), std::move(f)));
       }
     }
     return x;
