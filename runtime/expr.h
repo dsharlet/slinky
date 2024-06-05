@@ -95,6 +95,9 @@ enum class intrinsic {
   and_then,
   or_else,
 
+  // `define_undef(x, def)` means that undefined expressions take the value `def` when evaluating `x`.
+  define_undef,
+
   // Functions with arguments (buf) that return buffer metadata.
   buffer_rank,
   buffer_elem_size,
