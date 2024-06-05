@@ -35,6 +35,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, x + c0), x, eval(c0 > 0)) ||
       apply(min(x, x + c0), x + c0, eval(c0 < 0)) ||
       apply(min(x, x), x) ||
+      apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
@@ -152,7 +153,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, x + c0), x + c0, eval(c0 > 0)) ||
       apply(max(x, x + c0), x, eval(c0 < 0)) ||
       apply(max(x, x), x) ||
-    
+      apply(max(x, y), x || y, is_boolean(x) && is_boolean(y)) ||
+
       // Canonicalize trees and find duplicate terms.
       apply(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
       apply(max(max(x, y), max(z, w)), max(x, max(y, max(z, w)))) ||
