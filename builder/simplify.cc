@@ -969,7 +969,7 @@ public:
       expr t = remove_redundant_bounds<T>(xs->true_value, bounds);
       expr f = remove_redundant_bounds<T>(xs->false_value, bounds);
       if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
-        return mutate(select(xs->condition, std::move(t), std::move(f)));
+        return select(xs->condition, std::move(t), std::move(f));
       }
     }
     return x;
