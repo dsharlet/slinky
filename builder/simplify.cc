@@ -67,6 +67,131 @@ stmt lift_decl_invariants(std::vector<stmt> stmts, var sym, Fn&& make_decl) {
   return block::make(std::move(stmts));
 }
 
+// Given an expression that produces a base pointer for a buffer, find the buffer the pointer is from.
+var find_buffer(const expr& e) {
+  class v : public recursive_node_visitor {
+  public:
+    var result;
+
+    void visit(const call* op) override {
+      if (op->intrinsic == intrinsic::buffer_at) {
+        assert(!result.defined());
+        result = *as_variable(op->args[0]);
+      }
+    }
+  };
+  v finder;
+  if (e.defined()) e.accept(&finder);
+  return finder.result;
+}
+
+// Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
+// report the buffer as it is visible to the caller. So something like:
+//
+//   x = crop_dim(y, ...) {
+//     call(f, {x}, {})
+//   }
+//
+// Will report that y is consumed in the stmt, not x.
+class find_buffers_accessed : public recursive_node_visitor {
+  bool consumed;
+  symbol_map<var> aliases;
+
+public:
+  std::set<var> result;
+
+  find_buffers_accessed(bool consumed) : consumed(consumed) {}
+
+  std::optional<var> lookup_alias(var x) {
+    if (aliases.contains(x)) {
+      return aliases.lookup(x);
+    } else {
+      return x;
+    }
+  }
+
+  void visit_buffer(var i) {
+    if (aliases.contains(i)) {
+      if (aliases.lookup(i)->defined()) {
+        result.insert(*aliases.lookup(i));
+      }
+    } else {
+      result.insert(i);
+    }
+  }
+
+  void visit(const call_stmt* op) override {
+    if (consumed) {
+      for (const var& i : op->inputs) {
+        visit_buffer(i);
+      }
+    } else {
+      for (const var& i : op->outputs) {
+        visit_buffer(i);
+      }
+    }
+  }
+  void visit(const copy_stmt* op) override {
+    if (consumed) {
+      visit_buffer(op->src);
+    } else {
+      visit_buffer(op->dst);
+    }
+  }
+
+  void visit(const allocate* op) override {
+    if (!op->body.defined()) return;
+    auto s = set_value_in_scope(aliases, op->sym, var());
+    op->body.accept(this);
+  }
+  void visit(const make_buffer* op) override {
+    if (!op->body.defined()) return;
+    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer(op->base)));
+    op->body.accept(this);
+  }
+
+  template <typename T>
+  void visit_buffer_alias(const T* op) {
+    if (!op->body.defined()) return;
+    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(op->src));
+    op->body.accept(this);
+  }
+  void visit(const crop_buffer* op) override { visit_buffer_alias(op); }
+  void visit(const crop_dim* op) override { visit_buffer_alias(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_alias(op); }
+  void visit(const slice_dim* op) override { visit_buffer_alias(op); }
+  void visit(const transpose* op) override { visit_buffer_alias(op); }
+  void visit(const clone_buffer* op) override { visit_buffer_alias(op); }
+};
+
+std::set<var> buffers_accessed(const stmt& s, bool consumed) {
+  find_buffers_accessed accessed(consumed);
+  if (s.defined()) s.accept(&accessed);
+  return accessed.result;
+}
+
+// The algorithm at https://en.cppreference.com/w/cpp/algorithm/set_intersection, but detects any intersection.
+template <typename It>
+bool empty_intersection(It a_begin, It a_end, It b_begin, It b_end) {
+  It a = a_begin;
+  It b = b_begin;
+  while (a != a_end && b != b_end) {
+    if (*a == *b) {
+      return false;
+    } else if (*a < *b) {
+      ++a;
+    } else {
+      ++b;
+    }
+  }
+  return true;
+}
+
+template <typename T>
+bool empty_intersection(const std::set<T>& a, const std::set<T>& b) {
+  return empty_intersection(a.begin(), a.end(), b.begin(), b.end());
+}
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   struct buffer_info {
@@ -77,6 +202,9 @@ class simplifier : public node_mutator {
 
     // The op that defined this buffer.
     stmt decl;
+
+    // Identifies the buffer this buffer is a descendent of, if any.
+    var src;
   };
   symbol_map<buffer_info> buffers;
   bounds_map expr_bounds;
@@ -524,6 +652,14 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
+  stmt mutate_with_buffer(stmt decl, stmt body, var buf, var src, std::optional<buffer_info> buffer) {
+    if (buffer) {
+      buffer->decl = decl;
+      buffer->src = src;
+    }
+    auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
+    return mutate(body);
+  }
   stmt mutate_with_buffer(stmt decl, stmt body, var buf, std::optional<buffer_info> buffer) {
     if (buffer) buffer->decl = decl;
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
@@ -534,6 +670,22 @@ public:
     assert(!expr_bounds.contains(v));
     auto set_bounds = set_value_in_scope(expr_bounds, v, std::move(bounds));
     return mutate(body);
+  }
+
+  // Find all buffers accessed in `s`, adding them, and all the aliases of them, to `bufs`.
+  void buffers_accessed_via_aliases(const stmt& s, bool consumed, std::set<var>& bufs) {
+    std::set<var> raw = buffers_accessed(s, consumed);
+    for (var i : raw) {
+      while (i.defined()) {
+        bufs.insert(i);
+        const std::optional<buffer_info>& info = buffers.lookup(i);
+        if (info && i != info->src) {
+          i = info->src;
+        } else {
+          break;
+        }
+      }
+    }
   }
 
   void visit(const loop* op) override {
@@ -560,35 +712,36 @@ public:
       set_result(std::move(body));
       return;
     } else if (const block* b = body.as<block>()) {
-      // This next bit of logic implements loop invariant code motion. It is allowed to split the loop around invariant
-      // code, turning a loop into possibly multiple loops, with loop invariant code between the loops.
+      scoped_trace trace("licm");
+      // Put the stmts that actually depend on the loop inside the loop.
       std::vector<stmt> result;
-      result.reserve(b->stmts.size());
-
-      // We build loops by adding to their body, and possibly "flushing" to an actual loop if we reach the end of where
-      // we want a loop to be.
       std::vector<stmt> loop_body;
+      std::set<var> produced_by_loop;
       loop_body.reserve(b->stmts.size());
-      auto flush_loop = [&]() {
-        if (loop_body.empty()) return;
-        stmt body = block::make(std::move(loop_body));
-        loop_body.clear();
-        result.push_back(loop::make(op->sym, op->max_workers, bounds, step, std::move(body)));
-      };
       for (const stmt& i : b->stmts) {
-        if (depends_on(i, op->sym).any()) {
-          // This stmt should be in the loop.
-          loop_body.push_back(i);
+        if (!depends_on(i, op->sym).any()) {
+          // This stmt does not depend on the loop variable. Find out which buffers are consumed by it.
+          std::set<var> consumed_by_i;
+          buffers_accessed_via_aliases(i, /*consumed=*/true, consumed_by_i);
+
+          if (empty_intersection(consumed_by_i, produced_by_loop)) {
+            // This doesn't depend on the loop and doesn't consume anything produced in the loop, lift it out.
+            if (i.defined()) result.push_back(i);
+          } else {
+            // This stmt consumes something produced by the loop we have so far, we can't lift it out of the loop.
+            buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_loop);
+            loop_body.push_back(i);
+          }
         } else {
-          // This stmt should not be in the loop. If we already have some loop body, we need to make a loop now, and
-          // then put this stmt after that loop.
-          flush_loop();
-          result.push_back(i);
+          // This stmt depends on the loop.
+          buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_loop);
+          loop_body.push_back(i);
         }
       }
       if (!result.empty()) {
-        flush_loop();
-        set_result(mutate(block::make(std::move(result))));
+        // We found something to lift out of the loop.
+        result.push_back(mutate(loop::make(op->sym, op->max_workers, bounds, step, block::make(std::move(loop_body)))));
+        set_result(block::make(std::move(result)));
         return;
       } else {
         // We didn't find anything to lift out of the loop, proceed on to other possible simplifications.
@@ -596,6 +749,7 @@ public:
     }
 
     if (op->is_serial()) {
+      scoped_trace trace("drop_loop");
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
@@ -782,7 +936,7 @@ public:
       set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
       return;
     }
-    stmt body = mutate_with_buffer(op, op->body, op->sym, info);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
     scoped_trace trace("visit(const make_buffer*)");
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -1002,7 +1156,7 @@ public:
       bounds[i] = mutate_crop_bounds(op_bounds[i], op->src, i, info->dims[i].bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
-    stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
+    stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(info));
     scoped_trace trace("visit_crop");
     auto deps = depends_on(body, op->sym);
     if (!deps.any()) {
@@ -1213,7 +1367,7 @@ public:
     }
     sym_info.decl = op;
 
-    stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(sym_info));
+    stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(sym_info));
 
     if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(
@@ -1230,7 +1384,7 @@ public:
   void visit(const clone_buffer* op) override {
     std::optional<buffer_info> info = buffers[op->src];
     if (info) info->decl = op;
-    stmt body = mutate_with_buffer(op, op->body, op->sym, std::move(info));
+    stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(info));
 
     scoped_trace trace("visit(const clone_buffer*)");
 
