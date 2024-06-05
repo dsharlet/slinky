@@ -95,13 +95,13 @@ inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ct
     return x.get() == ctx.vars[N] || slinky::compare(x.get(), ctx.vars[N]) == 0;
   } else {
     ctx.vars[N] = x.get();
-    // We want to allow matching undefined exprs.
-    return true;
+    return x.get() != nullptr;
   }
 }
 
 template <int N>
 inline const base_expr_node* substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
+  assert(ctx.vars[N]);
   return ctx.vars[N];
 }
 
