@@ -358,7 +358,7 @@ function pipeline(__in, out) {
       let __loop_max = buffer_max(out, 1);
       let __loop_step = 2;
       for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-        { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(min((y + 1), buffer_max(out, 1)) + 1)}); {
+        { let __intm = crop_dim(intm, 1, {min:(y + 1), max:(y + 2)}); {
           let intm = __intm;
           consume(__in);
           produce(intm);

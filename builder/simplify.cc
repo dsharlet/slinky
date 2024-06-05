@@ -936,19 +936,34 @@ public:
   }
 
   template <typename T>
-  static expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
+  expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
     if (bounds.count(x)) return expr();
-    while (const T* t = x.as<T>()) {
+    if (const T* t = x.as<T>()) {
       bool a_is_bound = bounds.count(t->a);
       bool b_is_bound = bounds.count(t->b);
       if (a_is_bound && b_is_bound) {
         return expr();
       } else if (a_is_bound) {
-        x = t->b;
+        return remove_redundant_bounds<T>(t->b, bounds);
       } else if (b_is_bound) {
-        x = t->a;
-      } else {
-        break;
+        return remove_redundant_bounds<T>(t->a, bounds);
+      }
+    } else if (const add* xa = x.as<add>()) {
+      for (const expr& i : bounds) {
+        if (const add* bi = i.as<add>()) {
+          // Currently we only check the RHS of adds, looking for similar constants. We could also support non-constants
+          // and other ops here too, but that's starting to duplicate a lot of simplify_rules.h. It would be best to
+          // find a way to implement this reusing that (much more robust and complete) simplification instead of
+          // expanding this logic.
+          if (match(xa->b, bi->b)) {
+            // We have T(x + c0, b + c0). We can rewrite to T(x, b) + c0, and if we can eliminate the bound, the whole
+            // bound is redundant.
+            expr removed = remove_redundant_bounds<T>(xa->a, {bi->a});
+            if (!removed.same_as(xa->a)) {
+              return mutate(removed + xa->b);
+            }
+          }
+        }
       }
     }
     return x;
@@ -978,7 +993,7 @@ public:
     if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
     if (prove_true(result.max >= buffer.max || result.max >= buffer_max(buf, dim))) result.max = expr();
 
-    // We already proved above that this min/max is necessary (otherwise result would be undefined here.
+    // We already proved above that this min/max is necessary (otherwise result would be undefined here).
     if (result.min.defined()) buffer.min = max(buffer.min, result.min);
     if (result.max.defined()) buffer.max = min(buffer.max, result.max);
 
