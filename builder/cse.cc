@@ -267,22 +267,14 @@ public:
 
 // ----------------------
 
-bool is_impure_call_shallow(const call* c) {
+bool is_pure_call_shallow(const call* c) {
   switch (c->intrinsic) {
-  case intrinsic::buffer_rank:
-  case intrinsic::buffer_elem_size:
-  case intrinsic::buffer_size_bytes:
-  case intrinsic::buffer_min:
-  case intrinsic::buffer_max:
-  case intrinsic::buffer_stride:
-  case intrinsic::buffer_fold_factor:
-  case intrinsic::buffer_at:
-  case intrinsic::semaphore_init:
-  case intrinsic::semaphore_signal:
-  case intrinsic::semaphore_wait:
-  case intrinsic::trace_begin:
-  case intrinsic::trace_end:
-  case intrinsic::free: return true;
+  case intrinsic::negative_infinity:
+  case intrinsic::positive_infinity:
+  case intrinsic::indeterminate:
+  case intrinsic::abs:
+  case intrinsic::and_then:
+  case intrinsic::or_else: return true;
   default: return false;
   }
 }
@@ -337,7 +329,7 @@ public:
   void visit(const logical_or* op) override { visit_op(op); }
   void visit(const logical_not* op) override { visit_op(op); }
   void visit(const class select* op) override { visit_op(op); }
-  void visit(const call* op) override { visit_op(op, is_impure_call_shallow(op)); }
+  void visit(const call* op) override { visit_op(op, !is_pure_call_shallow(op)); }
 };
 
 template <typename T>
