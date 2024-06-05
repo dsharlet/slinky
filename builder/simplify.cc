@@ -508,6 +508,11 @@ public:
     interval_expr f_bounds;
     f = mutate(f, &f_bounds);
 
+    if (!t.defined() && !f.defined()) {
+      set_result(expr(), interval_expr());
+      return;
+    }
+
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
       set_result(e, bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
