@@ -936,7 +936,7 @@ public:
   }
 
   template <typename T>
-  expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
+  static expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
     if (bounds.count(x)) return expr();
     if (const T* t = x.as<T>()) {
       bool a_is_bound = bounds.count(t->a);
@@ -960,7 +960,7 @@ public:
             // bound is redundant.
             expr removed = remove_redundant_bounds<T>(xa->a, {bi->a});
             if (!removed.same_as(xa->a)) {
-              return mutate(removed + xa->b);
+              return removed + xa->b;
             }
           }
         }
@@ -992,8 +992,13 @@ public:
     std::set<expr, node_less> maxs = {buffer_max(buf, dim)};
     enumerate_bounds<class max>(buffer.min, mins);
     enumerate_bounds<class min>(buffer.max, maxs);
-    result.min = remove_redundant_bounds<class max>(result.min, mins);
-    result.max = remove_redundant_bounds<class min>(result.max, maxs);
+    interval_expr deduped = {
+        remove_redundant_bounds<class max>(result.min, mins),
+        remove_redundant_bounds<class min>(result.max, maxs),
+    };
+    if (!deduped.same_as(result)) {
+      result = mutate(deduped);
+    }
 
     // TODO: We should not need to compare to both buffer_bounds(buf, dim) and buffer.
     if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
