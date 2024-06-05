@@ -75,22 +75,22 @@ function lerp_color(a, b, t) {
 function make_color(a) {
   return 'rgb(' + a[0] + ', ' + a[1] + ', ' + a[2] + ')';
 }
-function buffer_min(b, d) { return b.dims[d].bounds.min; }
-function buffer_max(b, d) { return b.dims[d].bounds.max; }
+function buffer_min(b, d) { return b.dims[d].bounds[0]; }
+function buffer_max(b, d) { return b.dims[d].bounds[1]; }
 function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
 function buffer_elem_size(b) { return b.elem_size; }
-function flat_offset_dim(d, x) { return ((x - d.bounds.min) % d.fold_factor) * d.stride; }
+function flat_offset_dim(d, x) { return ((x - d.bounds[0]) % d.fold_factor) * d.stride; }
 function unpack_dim(at, dim) {
   if (dim.stride == 0) {
     return 0;
   } else {
-    return euclidean_mod(euclidean_div(at, dim.stride), dim.bounds.max - dim.bounds.min + 1);
+    return euclidean_mod(euclidean_div(at, dim.stride), dim.bounds[1] - dim.bounds[0] + 1);
   }
 }
 function add_label(buf, name, dims, color) {
-  let label = name + ': ' + dims.map(i => '[' + i.bounds.min + ',' + i.bounds.max + ']').toString();
+  let label = name + ': ' + dims.map(i => '[' + i.bounds[0] + ',' + i.bounds[1] + ']').toString();
   let p = document.createElement('p');
   p.classList.add('label');
   p.style.color = make_color(color);
@@ -143,7 +143,7 @@ function add_mapping(buffer) {
   }
 }
 function for_each_offset_dim(buf, at, dim, fn) {
-  for (let i = buf.dims[dim].bounds.min; i <= buf.dims[dim].bounds.max; ++i) {
+  for (let i = buf.dims[dim].bounds[0]; i <= buf.dims[dim].bounds[1]; ++i) {
     if (dim == 0) {
       fn(at + flat_offset_dim(buf.dims[dim], i));
     } else {
@@ -214,7 +214,7 @@ function next_color() {
   return colors[(next_color.next++) % colors.length];
 }
 function alloc_extent(dim) {
-  let extent = dim.bounds.max - dim.bounds.min + 1;
+  let extent = dim.bounds[1] - dim.bounds[0] + 1;
   return isNaN(dim.fold_factor) ? extent : Math.min(extent, dim.fold_factor);
 }
 function is_stride_ok_dim(stride, extent, dim) {
@@ -250,7 +250,7 @@ function init_strides(elem_size, dims) {
     for (let j of dims) {
       if (isNaN(j.stride)) {
         continue;
-      } else if (j.bounds.max < j.bounds.min) {
+      } else if (j.bounds[1] < j.bounds[0]) {
         min = 0;
         break;
       }
@@ -271,7 +271,7 @@ function allocate(name, elem_size, dims, hidden = false) {
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
-    let extent = min(dims[i].bounds.max - dims[i].bounds.min + 1, dims[i].fold_factor);
+    let extent = min(dims[i].bounds[1] - dims[i].bounds[0] + 1, dims[i].fold_factor);
     flat_min += (extent - 1) * min(0, dims[i].stride);
     flat_max += (extent - 1) * max(0, dims[i].stride);
   }
@@ -292,13 +292,13 @@ function make_buffer(name, base, elem_size, dims) {
 function clone_buffer(b) { return structuredClone(b); }
 function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
-  let new_min = max(result.dims[d].bounds.min, bounds.min);
-  let new_max = min(result.dims[d].bounds.max, bounds.max);
+  let new_min = max(result.dims[d].bounds[0], bounds[0]);
+  let new_max = min(result.dims[d].bounds[1], bounds[1]);
   if (new_max >= new_min) {
     result.base += flat_offset_dim(result.dims[d], new_min);
   }
-  result.dims[d].bounds.min = new_min;
-  result.dims[d].bounds.max = new_max;
+  result.dims[d].bounds[0] = new_min;
+  result.dims[d].bounds[1] = new_max;
   return result;
 }
 function crop_buffer(b, bounds) {
@@ -335,7 +335,7 @@ function produce(b) {
 function consume(b) {}
 function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
-let __trace_names = allocate('__trace_names', 1, [{bounds:{min:0, max:0}, stride:1, fold_factor:1}], true);
+let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
   check(__in);
   check((buffer_rank(__in) == 2));
@@ -351,13 +351,13 @@ function pipeline(__in, out) {
     let g_0 = buffer_max(__in, 0);
     let g_2 = buffer_max(__in, 1);
     { let intm = allocate('intm', 2, [
-        {bounds:{min:max(g, (buffer_min(out, 0) + -1)), max:min(g_0, (buffer_max(out, 0) + 1))}, stride:NaN, fold_factor:9223372036854775807},
-        {bounds:{min:max(g_1, (buffer_min(out, 1) + -1)), max:min(g_2, (buffer_max(out, 1) + 1))}, stride:NaN, fold_factor:1}
+        {bounds:[max(g, (buffer_min(out, 0) + -1)), min(g_0, (buffer_max(out, 0) + 1))], stride:NaN, fold_factor:9223372036854775807},
+        {bounds:[max(g_1, (buffer_min(out, 1) + -1)), min(g_2, (buffer_max(out, 1) + 1))], stride:NaN, fold_factor:1}
       ]);
       { let intm_uncropped = clone_buffer(intm);
         { let padded_intm = allocate('padded_intm', 2, [
-            {bounds:{min:(buffer_min(out, 0) + -1), max:(buffer_max(out, 0) + 1)}, stride:NaN, fold_factor:9223372036854775807},
-            {bounds:{min:(buffer_min(out, 1) + -1), max:(buffer_max(out, 1) + 1)}, stride:NaN, fold_factor:3}
+            {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:9223372036854775807},
+            {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
           ]);
           { let padded_intm_uncropped = clone_buffer(padded_intm);
             {
@@ -366,19 +366,19 @@ function pipeline(__in, out) {
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 1;
               for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-                { let __intm = crop_dim(intm, 1, {min:(select((y <= y_min_orig), y, min(g_2, y)) + 1), max:(y + 1)}); {
+                { let __intm = crop_dim(intm, 1, [(select((y <= y_min_orig), y, min(g_2, y)) + 1), (y + 1)]); {
                   let intm = __intm;
                   consume(__in);
                   produce(intm);
                   __event_t++;
                 }}
-                { let __padded_intm = crop_dim(padded_intm, 1, {min:(y + 1), max:(y + 1)}); {
+                { let __padded_intm = crop_dim(padded_intm, 1, [(y + 1), (y + 1)]); {
                   let padded_intm = __padded_intm;
                   produce(intm_uncropped);
                   produce(padded_intm);
                   __event_t++;
                 }}
-                { let __out = crop_dim(out, 1, {min:y, max:y}); {
+                { let __out = crop_dim(out, 1, [y, y]); {
                   let out = __out;
                   consume(padded_intm_uncropped);
                   produce(out);
@@ -394,8 +394,8 @@ function pipeline(__in, out) {
     }
   }
 }
-let __in = allocate('in', 2, [{bounds: {min:0, max:19}, stride:2, fold_factor:9223372036854775807}, {bounds: {min:0, max:29}, stride:40, fold_factor:9223372036854775807}], true);
-let out = allocate('out', 2, [{bounds: {min:0, max:19}, stride:2, fold_factor:9223372036854775807}, {bounds: {min:0, max:29}, stride:40, fold_factor:9223372036854775807}]);
+let __in = allocate('in', 2, [{bounds: [0, 19], stride:2, fold_factor:9223372036854775807}, {bounds: [0, 29], stride:40, fold_factor:9223372036854775807}], true);
+let out = allocate('out', 2, [{bounds: [0, 19], stride:2, fold_factor:9223372036854775807}, {bounds: [0, 29], stride:40, fold_factor:9223372036854775807}]);
 pipeline(__in, out);
 
 let __end_t = __event_t;

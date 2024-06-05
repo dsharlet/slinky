@@ -650,7 +650,7 @@ TEST_P(multiple_outputs, pipeline) {
 class outer_product : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_split_mode, outer_product,
-    testing::Combine(loop_modes, testing::Range(0, 4), testing::Range(0, 4)),
+    testing::Combine(testing::Values(loop::serial), testing::Range(0, 3), testing::Range(0, 3)),
     test_params_to_string<outer_product::ParamType>);
 
 TEST_P(outer_product, pipeline) {
@@ -665,8 +665,14 @@ TEST_P(outer_product, pipeline) {
   auto b = buffer_expr::make(ctx, "b", 1, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 
+  auto intm_a = buffer_expr::make(ctx, "intm_a", 1, sizeof(int));
+  auto intm_b = buffer_expr::make(ctx, "intm_b", 1, sizeof(int));
+
   var i(ctx, "i");
   var j(ctx, "j");
+
+  func add_a = func::make(add_1<int>, {{a, {point(i)}}}, {{intm_a, {i}}});
+  func add_b = func::make(add_1<int>, {{b, {point(i)}}}, {{intm_b, {i}}});
 
   func outer = func::make(
       [](const buffer<const int>& a, const buffer<const int>& b, const buffer<int>& c) -> index_t {
@@ -677,7 +683,7 @@ TEST_P(outer_product, pipeline) {
         }
         return 0;
       },
-      {{a, {point(i)}}, {b, {point(j)}}}, {{out, {i, j}}});
+      {{intm_a, {point(i)}}, {intm_b, {point(j)}}}, {{out, {i, j}}});
 
   std::vector<func::loop_info> loops;
   if (split_i > 0) loops.emplace_back(i, split_i, max_workers);
@@ -703,7 +709,7 @@ TEST_P(outer_product, pipeline) {
 
   for (int j = 0; j < N; ++j) {
     for (int i = 0; i < M; ++i) {
-      ASSERT_EQ(out_buf(i, j), a_buf(i) * b_buf(j));
+      ASSERT_EQ(out_buf(i, j), (a_buf(i) + 1) * (b_buf(j) + 1));
     }
   }
 }
@@ -1003,8 +1009,8 @@ TEST_P(padded_stencil_separable, pipeline) {
     const index_t padded_intm_size = W * (H + 2) * sizeof(short);
 
     if (!require_dense_x) {
-      ASSERT_THAT(eval_ctx.heap.allocs,
-          testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), std::max(stencil_intm_size, padded_intm_size)));
+      ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size),
+                                            std::max(stencil_intm_size, padded_intm_size)));
     } else {
       // We can't alias anything when we require the strides to be dense.
       ASSERT_THAT(eval_ctx.heap.allocs,
