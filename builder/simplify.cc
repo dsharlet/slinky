@@ -1092,17 +1092,38 @@ public:
   template <typename T>
   static expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
     if (bounds.count(x)) return expr();
-    while (const T* t = x.as<T>()) {
+    if (const T* t = x.as<T>()) {
       bool a_is_bound = bounds.count(t->a);
       bool b_is_bound = bounds.count(t->b);
       if (a_is_bound && b_is_bound) {
         return expr();
       } else if (a_is_bound) {
-        x = t->b;
+        return remove_redundant_bounds<T>(t->b, bounds);
       } else if (b_is_bound) {
-        x = t->a;
-      } else {
-        break;
+        return remove_redundant_bounds<T>(t->a, bounds);
+      }
+    } else if (const add* xa = x.as<add>()) {
+      for (const expr& i : bounds) {
+        if (const add* bi = i.as<add>()) {
+          // Currently we only check the RHS of adds, looking for similar constants. We could also support non-constants
+          // and other ops here too, but that's starting to duplicate a lot of simplify_rules.h. It would be best to
+          // find a way to implement this reusing that (much more robust and complete) simplification instead of
+          // expanding this logic.
+          if (match(xa->b, bi->b)) {
+            // We have T(x + y, b + y). We can rewrite to T(x, b) + y, and if we can eliminate the bound, the whole
+            // bound is redundant.
+            expr removed = remove_redundant_bounds<T>(xa->a, {bi->a});
+            if (!removed.same_as(xa->a)) {
+              return removed + xa->b;
+            }
+          }
+        }
+      }
+    } else if (const class select* xs = x.as<class select>()) {
+      expr t = remove_redundant_bounds<T>(xs->true_value, bounds);
+      expr f = remove_redundant_bounds<T>(xs->false_value, bounds);
+      if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
+        return select(xs->condition, std::move(t), std::move(f));
       }
     }
     return x;
@@ -1125,14 +1146,19 @@ public:
     std::set<expr, node_less> maxs = {buffer_max(buf, dim)};
     enumerate_bounds<class max>(buffer.min, mins);
     enumerate_bounds<class min>(buffer.max, maxs);
-    result.min = remove_redundant_bounds<class max>(result.min, mins);
-    result.max = remove_redundant_bounds<class min>(result.max, maxs);
+    interval_expr deduped = {
+        remove_redundant_bounds<class max>(result.min, mins),
+        remove_redundant_bounds<class min>(result.max, maxs),
+    };
+    if (!deduped.same_as(result)) {
+      result = mutate(deduped);
+    }
 
     // TODO: We should not need to compare to both buffer_bounds(buf, dim) and buffer.
     if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
     if (prove_true(result.max >= buffer.max || result.max >= buffer_max(buf, dim))) result.max = expr();
 
-    // We already proved above that this min/max is necessary (otherwise result would be undefined here.
+    // We already proved above that this min/max is necessary (otherwise result would be undefined here).
     if (result.min.defined()) buffer.min = max(buffer.min, result.min);
     if (result.max.defined()) buffer.max = min(buffer.max, result.max);
 
