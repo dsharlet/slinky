@@ -24,11 +24,22 @@ namespace slinky {
 
 namespace {
 
+// A select that simplifies assuming that if t or f are undefined, the value can be anything.
+expr select_or_undef(const expr& c, expr t, expr f) {
+  if (t.defined() && f.defined()) {
+    return select(c, std::move(t), std::move(f));
+  } else if (t.defined()) {
+    return t;
+  } else {
+    return f;
+  }
+}
+
 dim_expr select(const expr& c, dim_expr t, dim_expr f) {
   return {
       select(c, std::move(t.bounds), std::move(f.bounds)),
-      select(c, std::move(t.stride), std::move(f.stride)),
-      select(c, std::move(t.fold_factor), std::move(f.fold_factor)),
+      select_or_undef(c, std::move(t.stride), std::move(f.stride)),
+      select_or_undef(c, std::move(t.fold_factor), std::move(f.fold_factor)),
   };
 }
 
