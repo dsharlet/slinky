@@ -1120,6 +1120,20 @@ public:
         }
       }
     } else if (const class select* xs = x.as<class select>()) {
+      for (const expr& i : bounds) {
+        if (const class select* bs = i.as<class select>()) {
+          if (match(xs->condition, bs->condition)) {
+            // We have T(select(c, xt, xf), select(c, bt, bf)), rewrite to select(c, T(xt, bt), T(xf, bf)) and attempt to
+            // eliminate bounds.
+            expr t = remove_redundant_bounds<T>(xs->true_value, {bs->true_value});
+            expr f = remove_redundant_bounds<T>(xs->false_value, {bs->false_value});
+            if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
+              return select(xs->condition, std::move(t), std::move(f));
+            }
+          }
+        }
+      }
+      // Also try select(x, T(xt, b), T(xf, b))
       expr t = remove_redundant_bounds<T>(xs->true_value, bounds);
       expr f = remove_redundant_bounds<T>(xs->false_value, bounds);
       if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
