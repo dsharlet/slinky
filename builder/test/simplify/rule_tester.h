@@ -44,7 +44,7 @@ class rule_tester {
       m.constants[i] = &constants[i];
     }
     for (std::size_t i = 0; i < rewrite::symbol_count; ++i) {
-      exprs[i] = expr_gen_.random_expr(2);
+      exprs[i] = expr_gen_.random_expr(0);
       m.vars[i] = exprs[i].get();
     }
   }
