@@ -263,23 +263,25 @@ TEST(simplify, bounds) {
 
 TEST(simplify, buffer_bounds) {
   ASSERT_THAT(
-      simplify(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0), 4, 5}},
+      simplify(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0)}},
           crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))),
-      matches(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0), 4, 5}},
+      matches(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0)}},
           crop_dim::make(b2, b0, 0, bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))));
 
-  ASSERT_THAT(
-      simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}}, check::make(buffer_min(x, 0) == 2))),
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}}, check::make(buffer_min(x, 0) == 2))),
       matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}},
                   clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2)))),
       matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}},
                   crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
       matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}},
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z)}},
                   crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == y && buffer_at(x))))),
-      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z), 4, 5}}, check::make(buffer_at(x)))));
+      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z)}}, check::make(buffer_at(x)))));
+  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{buffer_bounds(b0, 0) + 2}},
+                  crop_dim::make(x, x, 0, bounds(expr(), min(z, buffer_max(b0, 0)) + 2), check::make(buffer_at(x))))),
+      matches(allocate::make(x, memory_type::heap, 1, {{buffer_bounds(b0, 0) + 2}}, check::make(buffer_at(x)))));
 }
 
 TEST(simplify, crop_not_needed) {
