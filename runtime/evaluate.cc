@@ -120,8 +120,8 @@ public:
     }
   }
   interval eval(const interval_expr& x, interval def) {
-    if (x.is_point()) {
-      index_t result = eval(x.min, def.min);
+    if (x.is_point() && x.min.defined()) {
+      index_t result = eval(x.min);
       return {result, result};
     } else {
       return {eval(x.min, def.min), eval(x.max, def.max)};
