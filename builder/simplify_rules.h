@@ -809,6 +809,8 @@ bool apply_logical_not_rules(Fn&& apply) {
 
       apply(!(x && !y), y || !x) ||
       apply(!(x || !y), y && !x) ||
+      apply(!select(x, y, c0), select(x, !y, eval(!c0))) ||
+      apply(!select(x, c0, z), select(x, eval(!c0), !z)) ||
       false;
 }
 

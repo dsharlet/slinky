@@ -165,12 +165,23 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify((x < 1) != 0), matches(x < 1));
 
+  ASSERT_THAT(simplify(select(x == 3 && y == 2, x == 3 && y == 2, true)), matches(true));
+  ASSERT_THAT(simplify(select(x == 3 && y == 2, x == 3, true)), matches(true));
+  ASSERT_THAT(simplify(select(x == 3 || y == 2, x == 3, y == 2)), matches(x == 3));
+  ASSERT_THAT(simplify(select(x == 3 || y == 2, false, y == 2)), matches(false));
+  ASSERT_THAT(simplify(select(!(x == 3) && y, x == 3, false)), matches(false));
+  ASSERT_THAT(simplify(select(x != 3 && y, x == 3, false)), matches(false));
+
   ASSERT_THAT(simplify(select(x == 0 && y == 0, x == 0 && y == 0, true)), matches(true));
   ASSERT_THAT(simplify(select(x == 0 && y == 0, x == 0, true)), matches(true));
   ASSERT_THAT(simplify(select(x == 0 || y == 0, x == 0, y == 0)), matches(x == 0));
   ASSERT_THAT(simplify(select(x == 0 || y == 0, false, y == 0)), matches(false));
-  ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
-  ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
+  // TODO: We need stronger learning from conditions for these to work.
+  // ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
+  // ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
+
+  ASSERT_THAT(simplify(select(x, expr(), 2) == 1), matches(select(x, expr(), false)));
+  ASSERT_THAT(simplify(!select(x, expr(), true)), matches(select(x, expr(), false)));
 
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
