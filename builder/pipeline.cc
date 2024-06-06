@@ -679,11 +679,11 @@ class pipeline_builder {
         }
       }
 
-      interval_expr loop_bounds = get_loop_bounds(base_f, loop);
       // The loop body is done, and we have an actual loop to make here. Crop the body.
       body = crop_for_loop(body, base_f, loop);
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
+      interval_expr loop_bounds = get_loop_bounds(base_f, loop);
       body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop_step, body);
     }
 
