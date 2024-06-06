@@ -365,10 +365,17 @@ public:
   static constexpr expr_node_type static_type = expr_node_type::constant;
 };
 
+class binary_op : public base_expr_node {
+public:
+  expr a, b;
+
+  binary_op(expr_node_type type) : base_expr_node(type) {}
+};
+
 #define DECLARE_BINARY_OP(op, c)                                                                                       \
-  class op : public expr_node<class op> {                                                                              \
+  class op : public binary_op {                                                                                        \
   public:                                                                                                              \
-    expr a, b;                                                                                                         \
+    op() : binary_op(static_type) {}                                                                                   \
     void accept(expr_visitor* v) const override;                                                                       \
     static expr make(expr a, expr b);                                                                                  \
     static constexpr expr_node_type static_type = expr_node_type::op;                                                  \

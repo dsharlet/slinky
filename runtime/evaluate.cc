@@ -60,10 +60,7 @@ struct interval {
   index_t min, max;
 };
 
-// TODO(https://github.com/dsharlet/slinky/issues/2): I think the T::accept/T_visitor::visit
-// overhead (two virtual function calls per node) might be significant. This could be implemented
-// as a switch statement instead.
-class evaluator : public expr_visitor, public stmt_visitor {
+class evaluator : public stmt_visitor {
 public:
   index_t result = 0;
   eval_context& context;
@@ -72,15 +69,6 @@ public:
   bool undef;
 
   evaluator(eval_context& context) : context(context) {}
-
-  // Skip the visitor pattern (two virtual function calls) for some frequently used node types.
-  void visit(const expr& op) {
-    switch (op.type()) {
-    case expr_node_type::variable: visit(reinterpret_cast<const variable*>(op.get())); return;
-    case expr_node_type::constant: visit(reinterpret_cast<const constant*>(op.get())); return;
-    default: op.accept(this);
-    }
-  }
 
   void visit(const stmt& op) {
     switch (op.type()) {
@@ -93,11 +81,44 @@ public:
   }
 
   // Assume `e` is defined, evaluate it and return the result.
-  index_t eval(const expr& e) {
-    visit(e);
-    index_t r = result;
-    result = 0;
-    return r;
+  SLINKY_ALWAYS_INLINE index_t eval(const expr& e) {
+    switch (e.type()) {
+    case expr_node_type::variable: return eval_variable(static_cast<const variable*>(e.get()));
+    case expr_node_type::constant: return eval_constant(static_cast<const constant*>(e.get()));
+    default: return eval_non_inlined(e);
+    }
+  }
+
+  SLINKY_NO_INLINE index_t eval_non_inlined(const expr& e) {
+    switch (e.type()) {
+    case expr_node_type::let: return eval_let(static_cast<const let*>(e.get()));
+    case expr_node_type::logical_not: return eval_unary(static_cast<const logical_not*>(e.get()));
+    case expr_node_type::select: return eval_select(static_cast<const class select*>(e.get()));
+    case expr_node_type::call: return eval_call(static_cast<const call*>(e.get()));
+    default: return eval_binary(e);
+    }
+  }
+
+  index_t eval_binary(const expr& e) {
+    const binary_op* op = static_cast<const binary_op*>(e.get());
+    index_t a = eval(op->a);
+    index_t b = eval(op->b);
+    switch (op->type) {
+    case expr_node_type::add: return make_binary<add>(a, b);
+    case expr_node_type::sub: return make_binary<sub>(a, b);
+    case expr_node_type::mul: return make_binary<mul>(a, b);
+    case expr_node_type::div: return make_binary<div>(a, b);
+    case expr_node_type::mod: return make_binary<mod>(a, b);
+    case expr_node_type::min: return make_binary<class min>(a, b);
+    case expr_node_type::max: return make_binary<class max>(a, b);
+    case expr_node_type::equal: return make_binary<equal>(a, b);
+    case expr_node_type::not_equal: return make_binary<not_equal>(a, b);
+    case expr_node_type::less: return make_binary<less>(a, b);
+    case expr_node_type::less_equal: return make_binary<less_equal>(a, b);
+    case expr_node_type::logical_and: return make_binary<logical_and>(a, b);
+    case expr_node_type::logical_or: return make_binary<logical_or>(a, b);
+    default: std::abort();
+    }
   }
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
@@ -137,13 +158,32 @@ public:
     return result;
   }
 
-  void visit(const variable* op) override {
+  index_t eval_variable(const variable* op) {
     auto value = context.lookup(op->sym);
     assert(value);
-    result = *value;
+    return *value;
   }
 
-  void visit(const constant* op) override { result = op->value; }
+  static index_t eval_constant(const constant* op) { return op->value; }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval_let(const let* op) {
+    // This is a bit ugly but we really want to avoid heap allocations here.
+    const size_t size = op->lets.size();
+    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
+    (void)new (old_values) std::optional<index_t>[ size ];
+
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      old_values[i] = context[let.first];
+      context[let.first] = eval(let.second);
+    }
+    index_t result = eval(op->body);
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      context[let.first] = old_values[i];
+    }
+    return result;
+  }
 
   template <typename T>
   SLINKY_NO_STACK_PROTECTOR void visit_let(const T* op) {
@@ -164,44 +204,25 @@ public:
     }
   }
 
-  void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  template <typename T>
-  void visit_binary(const T* op) {
-    result = make_binary<T>(eval(op->a), eval(op->b));
-  }
 
-  void visit(const add* op) override { visit_binary(op); }
-  void visit(const sub* op) override { visit_binary(op); }
-  void visit(const mul* op) override { visit_binary(op); }
-  void visit(const div* op) override { visit_binary(op); }
-  void visit(const mod* op) override { visit_binary(op); }
-  void visit(const class min* op) override { visit_binary(op); }
-  void visit(const class max* op) override { visit_binary(op); }
-  void visit(const equal* op) override { visit_binary(op); }
-  void visit(const not_equal* op) override { visit_binary(op); }
-  void visit(const less* op) override { visit_binary(op); }
-  void visit(const less_equal* op) override { visit_binary(op); }
-  void visit(const logical_and* op) override { visit_binary(op); }
-  void visit(const logical_or* op) override { visit_binary(op); }
+  index_t eval_unary(const logical_not* op) { return eval(op->a) == 0; }
 
-  void visit(const logical_not* op) override { result = eval(op->a) == 0; }
-
-  void visit(const class select* op) override {
+  index_t eval_select(const class select* op) {
     if (eval(op->condition)) {
       if (op->true_value.defined()) {
-        result = eval(op->true_value);
+        return eval(op->true_value);
       } else {
-        result = 0;
         undef = true;
+        return 0;
       }
     } else {
       if (op->false_value.defined()) {
-        result = eval(op->false_value);
+        return eval(op->false_value);
       } else {
-        result = 0;
         undef = true;
+        return 0;
       }
     }
   }
@@ -218,7 +239,8 @@ public:
     return op->intrinsic == intrinsic::and_then;
   }
 
-  index_t eval_define_undef(const call* op) { assert(op->args.size() == 2);
+  index_t eval_define_undef(const call* op) {
+    assert(op->args.size() == 2);
     index_t def = eval(op->args[1]);
     return eval(op->args[0], def);
   }
@@ -340,41 +362,38 @@ public:
     return 1;
   }
 
-  void visit(const call* op) override {
+  SLINKY_NO_INLINE index_t eval_call(const call* op) {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
     case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
     case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
 
-    case intrinsic::abs:
-      assert(op->args.size() == 1);
-      result = std::abs(eval(op->args[0]));
-      return;
+    case intrinsic::abs: assert(op->args.size() == 1); return std::abs(eval(op->args[0]));
 
     case intrinsic::and_then:
-    case intrinsic::or_else: result = eval_short_circuit_op(op); return;
+    case intrinsic::or_else: return eval_short_circuit_op(op);
 
-    case intrinsic::define_undef: result = eval_define_undef(op); return;
+    case intrinsic::define_undef: return eval_define_undef(op);
 
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:
-    case intrinsic::buffer_size_bytes: result = eval_buffer_metadata(op); return;
+    case intrinsic::buffer_size_bytes: return eval_buffer_metadata(op);
 
     case intrinsic::buffer_min:
     case intrinsic::buffer_max:
     case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor: result = eval_dim_metadata(op); return;
+    case intrinsic::buffer_fold_factor: return eval_dim_metadata(op);
 
-    case intrinsic::buffer_at: result = reinterpret_cast<index_t>(eval_buffer_at(op)); return;
+    case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));
 
-    case intrinsic::semaphore_init: result = eval_semaphore_init(op); return;
-    case intrinsic::semaphore_signal: result = eval_semaphore_signal(op); return;
-    case intrinsic::semaphore_wait: result = eval_semaphore_wait(op); return;
+    case intrinsic::semaphore_init: return eval_semaphore_init(op);
+    case intrinsic::semaphore_signal: return eval_semaphore_signal(op);
+    case intrinsic::semaphore_wait: return eval_semaphore_wait(op);
 
-    case intrinsic::trace_begin: result = eval_trace_begin(op); return;
-    case intrinsic::trace_end: result = eval_trace_end(op); return;
+    case intrinsic::trace_begin: return eval_trace_begin(op);
+    case intrinsic::trace_end: return eval_trace_end(op);
 
-    case intrinsic::free: result = eval_free(op); return;
+    case intrinsic::free: return eval_free(op);
 
     default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
     }
@@ -738,8 +757,7 @@ public:
 
 index_t evaluate(const expr& e, eval_context& context) {
   evaluator eval(context);
-  e.accept(&eval);
-  return eval.result;
+  return eval.eval(e);
 }
 
 index_t evaluate(const stmt& s, eval_context& context) {
