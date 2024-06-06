@@ -60,25 +60,14 @@ struct interval {
   index_t min, max;
 };
 
-class evaluator : public stmt_visitor {
+class evaluator {
 public:
-  index_t result = 0;
   eval_context& context;
 
   // We want to propagate undefined values when we hit them.
   bool undef;
 
   evaluator(eval_context& context) : context(context) {}
-
-  void visit(const stmt& op) {
-    switch (op.type()) {
-    // case stmt_node_type::call_stmt: visit(reinterpret_cast<const call_stmt*>(op.get())); return;
-    // case stmt_node_type::crop_dim: visit(reinterpret_cast<const crop_dim*>(op.get())); return;
-    // case stmt_node_type::slice_dim: visit(reinterpret_cast<const slice_dim*>(op.get())); return;
-    // case stmt_node_type::block: visit(reinterpret_cast<const block*>(op.get())); return;
-    default: op.accept(this);
-    }
-  }
 
   // Assume `e` is defined, evaluate it and return the result.
   SLINKY_ALWAYS_INLINE index_t eval(const expr& e) {
@@ -184,28 +173,6 @@ public:
     }
     return result;
   }
-
-  template <typename T>
-  SLINKY_NO_STACK_PROTECTOR void visit_let(const T* op) {
-    // This is a bit ugly but we really want to avoid heap allocations here.
-    const size_t size = op->lets.size();
-    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
-    (void)new (old_values) std::optional<index_t>[ size ];
-
-    for (size_t i = 0; i < size; ++i) {
-      const auto& let = op->lets[i];
-      old_values[i] = context[let.first];
-      context[let.first] = eval(let.second);
-    }
-    visit(op->body);
-    for (size_t i = 0; i < size; ++i) {
-      const auto& let = op->lets[i];
-      context[let.first] = old_values[i];
-    }
-  }
-
-  void visit(const let_stmt* op) override { visit_let(op); }
-
 
   index_t eval_unary(const logical_not* op) { return eval(op->a) == 0; }
 
@@ -399,14 +366,54 @@ public:
     }
   }
 
-  void visit(const block* op) override {
-    for (const auto& s : op->stmts) {
-      if (result != 0) break;
-      visit(s);
+  index_t eval(const stmt& op) {
+    switch (op.type()) {
+    case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()));
+    case stmt_node_type::block: return eval(reinterpret_cast<const block*>(op.get()));
+    case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()));
+    case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()));
+    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
+    case stmt_node_type::allocate: return eval(reinterpret_cast<const allocate*>(op.get()));
+    case stmt_node_type::make_buffer: return eval(reinterpret_cast<const make_buffer*>(op.get()));
+    case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()));
+    case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()));
+    case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()));
+    case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
+    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
+    case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()));
+    case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()));
+    default: std::abort();
     }
   }
 
-  void visit(const loop* op) override {
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const let_stmt* op) {
+    // This is a bit ugly but we really want to avoid heap allocations here.
+    const size_t size = op->lets.size();
+    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
+    (void)new (old_values) std::optional<index_t>[ size ];
+
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      old_values[i] = context[let.first];
+      context[let.first] = eval(let.second);
+    }
+    index_t result = eval(op->body);
+    for (size_t i = 0; i < size; ++i) {
+      const auto& let = op->lets[i];
+      context[let.first] = old_values[i];
+    }
+    return result;
+  }
+
+  index_t eval(const block* op) {
+    for (const auto& s : op->stmts) {
+      index_t result = eval(s);
+      if (result) return result;
+    }
+    return 0;
+  }
+
+  index_t eval(const loop* op) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
     if (op->max_workers > 1) {
@@ -484,23 +491,25 @@ public:
       // While the loop still isn't done, work on other tasks.
       context.wait_for(
           [&]() { return state->result != 0 || !(bounds.min <= state->done && state->done <= bounds.max); });
-      result = state->result;
+      return state->result;
     } else {
       // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
       // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
       // not clear this optimization is necessary yet.
       std::optional<index_t> old_value = context[op->sym];
+      index_t result = 0;
       for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
         context[op->sym] = i;
-        visit(op->body);
+        result = eval(op->body);
       }
       context[op->sym] = old_value;
+      return result;
     }
   }
 
-  void visit(const call_stmt* op) override {
-    result = op->target(op, context);
+  index_t eval(const call_stmt* op) {
+    index_t result = op->target(op, context);
     if (result) {
       if (context.call_failed) {
         context.call_failed(op);
@@ -509,15 +518,16 @@ public:
         std::abort();
       }
     }
+    return result;
   }
 
-  void visit(const copy_stmt* op) override {
+  index_t eval(const copy_stmt* op) {
     std::cerr << "copy_stmt should have been implemented by calls to copy/pad." << std::endl;
     std::abort();
   }
 
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
-  void visit(const allocate* op) override {
+  index_t eval(const allocate* op) {
     std::size_t rank = op->dims.size();
     allocated_buffer buffer;
     buffer.elem_size = eval(op->elem_size);
@@ -538,14 +548,16 @@ public:
     }
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
-    visit(op->body);
+    index_t result = eval(op->body);
 
     if (op->storage == memory_type::heap) {
       context.free(op->sym, &buffer, buffer.allocation);
     }
+
+    return result;
   }
 
-  SLINKY_NO_STACK_PROTECTOR void visit(const make_buffer* op) override {
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const make_buffer* op) {
     std::size_t rank = op->dims.size();
     raw_buffer buffer;
     buffer.elem_size = eval(op->elem_size, 0);
@@ -558,12 +570,12 @@ public:
     }
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
-    visit(op->body);
+    return eval(op->body);
   }
 
   // Call `fn` while a clone of `src` (`sym`) is in scope.
   template <typename Fn>
-  SLINKY_NO_STACK_PROTECTOR void eval_in_clone(var sym, var src, Fn fn) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval_in_clone(var sym, var src, Fn fn) {
     raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(src));
 
     raw_buffer clone;
@@ -573,14 +585,14 @@ public:
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     memcpy(clone.dims, src_buf->dims, sizeof(dim) * src_buf->rank);
     auto set_buffer = set_value_in_scope(context, sym, reinterpret_cast<index_t>(&clone));
-    fn();
+    return fn();
   }
 
-  void visit(const clone_buffer* op) override {
-    eval_in_clone(op->sym, op->src, [=]() { visit(op->body); });
+  index_t eval(const clone_buffer* op) {
+    return eval_in_clone(op->sym, op->src, [=]() { return eval(op->body); });
   }
 
-  SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const crop_buffer* op) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const crop_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
@@ -599,16 +611,17 @@ public:
       buffer->crop(d, bounds.min, bounds.max);
     }
 
-    visit(op->body);
+    index_t result = eval(op->body);
 
     buffer->base = old_base;
     for (std::size_t d = 0; d < crop_rank; ++d) {
       slinky::dim& dim = buffer->dims[d];
       dim.set_bounds(old_bounds[d].min, old_bounds[d].max);
     }
+    return result;
   }
 
-  void eval_shadowed(const crop_dim* op) {
+  index_t eval_shadowed(const crop_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
     slinky::dim& dim = buffer->dims[op->dim];
@@ -618,13 +631,15 @@ public:
 
     interval bounds = eval(op->bounds, {old_min, old_max});
     buffer->crop(op->dim, bounds.min, bounds.max);
-    visit(op->body);
+    index_t result = eval(op->body);
 
     buffer->base = old_base;
     dim.set_bounds(old_min, old_max);
+
+    return result;
   }
 
-  SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_buffer* op) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const slice_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
     assert(op->at.size() <= buffer->rank);
@@ -653,14 +668,16 @@ public:
     std::swap(buffer->rank, rank);
     std::swap(buffer->dims, dims);
 
-    visit(op->body);
+    index_t result = eval(op->body);
 
     buffer->base = old_base;
     buffer->rank = rank;
     buffer->dims = dims;
+
+    return result;
   }
 
-  SLINKY_NO_STACK_PROTECTOR void eval_shadowed(const slice_dim* op) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const slice_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
     assert(op->dim < static_cast<int>(buffer->rank));
@@ -688,22 +705,25 @@ public:
     }
     buffer->rank -= 1;
 
-    visit(op->body);
+    index_t result = eval(op->body);
 
     buffer->base = old_base;
     buffer->rank += 1;
     buffer->dims = old_dims;
+
+    return result;
   }
 
-  void eval_shadowed(const transpose* op) {
+  index_t eval_shadowed(const transpose* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 
     std::size_t old_rank = buffer->rank;
     buffer->rank = op->dims.size();
 
+    index_t result;
     if (op->is_truncate()) {
-      visit(op->body);
+      result = eval(op->body);
     } else {
       dim* dims = buffer->dims;
       buffer->dims = SLINKY_ALLOCA(dim, buffer->rank);
@@ -712,35 +732,35 @@ public:
         buffer->dims[i] = dims[op->dims[i]];
       }
 
-      visit(op->body);
+      result = eval(op->body);
 
       buffer->dims = dims;
     }
     buffer->rank = old_rank;
+    return result;
   }
 
   template <typename T>
-  void visit_maybe_shadowed(const T* op) {
+  index_t eval_maybe_shadowed(const T* op) {
     if (op->sym == op->src) {
       // The operation is shadowed, we can use eval_shadowed.
-      eval_shadowed(op);
+      return eval_shadowed(op);
     } else {
       // The operation is not shadowed. Make a clone and use eval_shadowed on the clone. This is not as efficient as it
       // could be, but the shadowed case should be faster, so we'll optimize for that case, and prefer that case when
       // constructing programs.
-      eval_in_clone(op->sym, op->src, [=]() { eval_shadowed(op); });
+      return eval_in_clone(op->sym, op->src, [=]() { return eval_shadowed(op); });
     }
   }
 
-  void visit(const crop_buffer* op) override { visit_maybe_shadowed(op); }
-  void visit(const crop_dim* op) override { visit_maybe_shadowed(op); }
-  void visit(const slice_buffer* op) override { visit_maybe_shadowed(op); }
-  void visit(const slice_dim* op) override { visit_maybe_shadowed(op); }
-  void visit(const transpose* op) override { visit_maybe_shadowed(op); }
+  index_t eval(const crop_buffer* op) { return eval_maybe_shadowed(op); }
+  index_t eval(const crop_dim* op) { return eval_maybe_shadowed(op); }
+  index_t eval(const slice_buffer* op) { return eval_maybe_shadowed(op); }
+  index_t eval(const slice_dim* op) { return eval_maybe_shadowed(op); }
+  index_t eval(const transpose* op) { return eval_maybe_shadowed(op); }
 
-  void visit(const check* op) override {
-    result = eval(op->condition, 0) != 0 ? 0 : 1;
-    if (result) {
+  index_t eval(const check* op) {
+    if (!eval(op->condition, 0)) {
       if (context.check_failed) {
         context.check_failed(op->condition);
       } else {
@@ -749,6 +769,9 @@ public:
         dump_context_for_expr(std::cerr, context, op->condition);
         std::abort();
       }
+      return 1;
+    } else {
+      return 0;
     }
   }
 };
@@ -762,8 +785,7 @@ index_t evaluate(const expr& e, eval_context& context) {
 
 index_t evaluate(const stmt& s, eval_context& context) {
   evaluator eval(context);
-  s.accept(&eval);
-  return eval.result;
+  return eval.eval(s);
 }
 
 index_t evaluate(const expr& e) {
