@@ -508,16 +508,22 @@ public:
     interval_expr f_bounds;
     f = mutate(f, &f_bounds);
 
-    if (!t.defined() && !f.defined()) {
+    // TODO: The way we handle select of undefined seems like a hack.
+    if (t.defined() && f.defined()) {
+      expr e = simplify(op, std::move(c), std::move(t), std::move(f));
+      if (e.same_as(op)) {
+        set_result(e, bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
+      } else {
+        mutate_and_set_result(e);
+      }
+    } else if (!t.defined() && !f.defined()) {
       set_result(expr(), interval_expr());
       return;
-    }
-
-    expr e = simplify(op, std::move(c), std::move(t), std::move(f));
-    if (e.same_as(op)) {
-      set_result(e, bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
+    } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
+      set_result(op, bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
     } else {
-      mutate_and_set_result(e);
+      set_result(select::make(std::move(c), std::move(t), std::move(f)),
+          bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
     }
   }
 
