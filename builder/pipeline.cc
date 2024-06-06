@@ -615,12 +615,11 @@ class pipeline_builder {
     }
   }
 
-  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop, const interval_expr& loop_bounds) {
+  stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
     // Crop all the outputs of this func for this loop.
     for (const func::output& o : f->outputs()) {
       for (int d = 0; d < static_cast<int>(o.dims.size()); ++d) {
         if (o.dims[d] == loop.sym()) {
-          expr loop_max = loop_bounds.max;
           expr loop_step = sanitizer_.mutate(loop.step);
           interval_expr bounds = slinky::bounds(loop.var, simplify(loop.var + loop_step - 1));
           body = crop_dim::make(o.sym(), o.sym(), d, bounds, body);
@@ -682,7 +681,7 @@ class pipeline_builder {
 
       interval_expr loop_bounds = get_loop_bounds(base_f, loop);
       // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, base_f, loop, loop_bounds);
+      body = crop_for_loop(body, base_f, loop);
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
       body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop_step, body);
