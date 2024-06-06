@@ -25,6 +25,8 @@ class pattern_constant;
 struct match_context {
   std::array<const base_expr_node*, symbol_count> vars;
   std::array<const index_t*, constant_count> constants;
+  // A bitset indicating which vars have been matched.
+  int vars_mask;
   int variant;
   int variant_bits;
 
@@ -90,18 +92,19 @@ public:
 
 template <int N>
 inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
-  if (ctx.vars[N]) {
+  if (ctx.vars_mask & (1 << N)) {
     // Try pointer comparison first to short circuit the full match.
     return x.get() == ctx.vars[N] || slinky::compare(x.get(), ctx.vars[N]) == 0;
   } else {
+    ctx.vars_mask |= (1 << N);
     ctx.vars[N] = x.get();
-    return x.get() != nullptr;
+    return true;
   }
 }
 
 template <int N>
 inline const base_expr_node* substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
-  assert(ctx.vars[N]);
+  assert(ctx.vars_mask & (1 << N));
   return ctx.vars[N];
 }
 

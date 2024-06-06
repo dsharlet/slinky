@@ -35,6 +35,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, x + c0), x, eval(c0 > 0)) ||
       apply(min(x, x + c0), x + c0, eval(c0 < 0)) ||
       apply(min(x, x), x) ||
+      apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
@@ -152,7 +153,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, x + c0), x + c0, eval(c0 > 0)) ||
       apply(max(x, x + c0), x, eval(c0 < 0)) ||
       apply(max(x, x), x) ||
-    
+      apply(max(x, y), x || y, is_boolean(x) && is_boolean(y)) ||
+
       // Canonicalize trees and find duplicate terms.
       apply(max(max(x, y), max(x, z)), max(x, max(y, z))) ||
       apply(max(max(x, y), max(z, w)), max(x, max(y, max(z, w)))) ||
@@ -787,6 +789,11 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x < y + c0 || y < x, true, eval(1 < c0)) ||
       apply(x < y || y < x + c1, true, eval(1 < c1)) ||
       apply(x < y || y < x, x != y) ||
+    
+      // TODO: These rules are just a few of many similar possible rules. We should find a way to get at these
+      // some other way.
+      apply(y || x < y, y || x < 0, is_boolean(y)) ||
+      apply(y || y < x, y || 0 < x, is_boolean(y)) ||
 
       false;
 }
@@ -802,6 +809,8 @@ bool apply_logical_not_rules(Fn&& apply) {
 
       apply(!(x && !y), y || !x) ||
       apply(!(x || !y), y && !x) ||
+      apply(!select(x, y, c0), select(x, !y, eval(!c0))) ||
+      apply(!select(x, c0, z), select(x, eval(!c0), !z)) ||
       false;
 }
 

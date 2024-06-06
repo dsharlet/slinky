@@ -14,6 +14,8 @@ node_context ctx;
 var x(ctx, "x");
 var y(ctx, "y");
 
+expr define_undef(const expr& a, const expr& def) { return call::make(intrinsic::define_undef, {a, def}); }
+
 }  // namespace
 
 TEST(evaluate, arithmetic) {
@@ -47,6 +49,18 @@ TEST(evaluate, arithmetic) {
   ASSERT_EQ(evaluate(or_else({expr(false), expr(true)})), true);
   ASSERT_EQ(evaluate(or_else({expr(false), expr(false)})), false);
   ASSERT_EQ(evaluate(or_else({expr(true), indeterminate()})), true);
+}
+
+TEST(evaluate, undef) {
+  eval_context context;
+  context[x] = 4;
+
+  ASSERT_EQ(evaluate(define_undef(select(true, expr(), x), 0), context), 0);
+  ASSERT_EQ(evaluate(define_undef(select(false, expr(), x), 0), context), 4);
+  ASSERT_EQ(evaluate(define_undef(select(true, expr(), x) + 2, 0), context), 0);
+  ASSERT_EQ(evaluate(define_undef(select(false, expr(), x) + 2, 0), context), 6);
+  ASSERT_EQ(evaluate(define_undef(select(true, expr(), x) + 2, 0) + 1, context), 1);
+  ASSERT_EQ(evaluate(define_undef(select(false, expr(), x) + 2, 0) + 1, context), 7);
 }
 
 TEST(evaluate, call) {

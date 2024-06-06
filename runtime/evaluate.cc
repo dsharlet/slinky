@@ -68,6 +68,9 @@ public:
   index_t result = 0;
   eval_context& context;
 
+  // We want to propagate undefined values when we hit them.
+  bool undef;
+
   evaluator(eval_context& context) : context(context) {}
 
   // Skip the visitor pattern (two virtual function calls) for some frequently used node types.
@@ -99,8 +102,10 @@ public:
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
   index_t eval(const expr& e, index_t def) {
+    undef = false;
     if (e.defined()) {
-      return eval(e);
+      index_t result = eval(e);
+      return undef ? def : result;
     } else {
       return def;
     }
@@ -115,13 +120,9 @@ public:
     }
   }
   interval eval(const interval_expr& x, interval def) {
-    if (x.is_point()) {
-      if (x.min.defined()) {
-        index_t result = eval(x.min);
-        return {result, result};
-      } else {
-        return def;
-      }
+    if (x.is_point() && x.min.defined()) {
+      index_t result = eval(x.min);
+      return {result, result};
     } else {
       return {eval(x.min, def.min), eval(x.max, def.max)};
     }
@@ -189,9 +190,19 @@ public:
 
   void visit(const class select* op) override {
     if (eval(op->condition)) {
-      result = eval(op->true_value);
+      if (op->true_value.defined()) {
+        result = eval(op->true_value);
+      } else {
+        result = 0;
+        undef = true;
+      }
     } else {
-      result = eval(op->false_value);
+      if (op->false_value.defined()) {
+        result = eval(op->false_value);
+      } else {
+        result = 0;
+        undef = true;
+      }
     }
   }
 
@@ -205,6 +216,11 @@ public:
       }
     }
     return op->intrinsic == intrinsic::and_then;
+  }
+
+  index_t eval_define_undef(const call* op) { assert(op->args.size() == 2);
+    index_t def = eval(op->args[1]);
+    return eval(op->args[0], def);
   }
 
   index_t eval_buffer_metadata(const call* op) {
@@ -337,6 +353,8 @@ public:
 
     case intrinsic::and_then:
     case intrinsic::or_else: result = eval_short_circuit_op(op); return;
+
+    case intrinsic::define_undef: result = eval_define_undef(op); return;
 
     case intrinsic::buffer_rank:
     case intrinsic::buffer_elem_size:

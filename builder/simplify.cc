@@ -245,6 +245,15 @@ public:
   expr mutate(const expr& e) override { return mutate(e, nullptr); }
   stmt mutate(const stmt& s) override { return mutate(s, nullptr); }
 
+  // When mutating a value x interpreted as boolean, we need to effectively mutate x != 0, but we can't do that directly
+  // because it risks breaking the simplifiers ability to check if an expression has not changed. This helper emulates
+  // this.
+  expr mutate_boolean(const expr& e, interval_expr* bounds) {
+    expr result = strip_boolean(mutate(e, bounds));
+    if (bounds) *bounds = bounds_of(static_cast<const not_equal*>(nullptr), *bounds, point(0));
+    return result;
+  }
+
   void mutate_and_set_result(const expr& e) {
     assert(!result_bounds.min.defined() && !result_bounds.max.defined());
     node_mutator::set_result(mutate(e, &result_bounds));
@@ -294,7 +303,7 @@ public:
   std::optional<bool> attempt_to_prove(const expr& e) {
     scoped_trace trace("attempt_to_prove");
     interval_expr bounds;
-    mutate(boolean(e), &bounds);
+    mutate_boolean(e, &bounds);
     if (prove_constant_true(bounds.min)) {
       return true;
     } else if (prove_constant_false(bounds.max)) {
@@ -400,13 +409,9 @@ public:
   template <typename T>
   void visit_logical(const T* op, bool coerce_boolean = false) {
     interval_expr a_bounds;
-    expr a = mutate(coerce_boolean ? boolean(op->a) : op->a, &a_bounds);
+    expr a = coerce_boolean ? mutate_boolean(op->a, &a_bounds) : mutate(op->a, &a_bounds);
     interval_expr b_bounds;
-    expr b = mutate(coerce_boolean ? boolean(op->b) : op->b, &b_bounds);
-    if (coerce_boolean) {
-      a = strip_boolean(a);
-      b = strip_boolean(b);
-    }
+    expr b = coerce_boolean ? mutate_boolean(op->b, &b_bounds) : mutate(op->b, &b_bounds);
 
     if (!a.defined() || !b.defined()) {
       set_result(expr(), interval_expr());
@@ -436,7 +441,7 @@ public:
 
   void visit(const logical_not* op) override {
     interval_expr bounds;
-    expr a = strip_boolean(mutate(boolean(op->a), &bounds));
+    expr a = mutate_boolean(op->a, &bounds);
 
     if (!a.defined()) {
       set_result(expr(), interval_expr());
@@ -485,7 +490,7 @@ public:
   void visit(const class select* op) override {
     interval_expr c_bounds;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
-    expr c = strip_boolean(mutate(boolean(op->condition), &c_bounds));
+    expr c = mutate_boolean(op->condition, &c_bounds);
     if (!c.defined()) {
       set_result(expr(), interval_expr());
       return;
@@ -508,11 +513,8 @@ public:
     interval_expr f_bounds;
     f = mutate(f, &f_bounds);
 
-    if (!t.defined()) {
-      set_result(std::move(f), std::move(f_bounds));
-      return;
-    } else if (!f.defined()) {
-      set_result(std::move(t), std::move(t_bounds));
+    if (!t.defined() && !f.defined()) {
+      set_result(expr(), interval_expr());
       return;
     }
 
@@ -1121,6 +1123,20 @@ public:
         }
       }
     } else if (const class select* xs = x.as<class select>()) {
+      for (const expr& i : bounds) {
+        if (const class select* bs = i.as<class select>()) {
+          if (match(xs->condition, bs->condition)) {
+            // We have T(select(c, xt, xf), select(c, bt, bf)), rewrite to select(c, T(xt, bt), T(xf, bf)) and attempt
+            // to eliminate bounds.
+            expr t = remove_redundant_bounds<T>(xs->true_value, {bs->true_value});
+            expr f = remove_redundant_bounds<T>(xs->false_value, {bs->false_value});
+            if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
+              return select(xs->condition, std::move(t), std::move(f));
+            }
+          }
+        }
+      }
+      // Also try select(x, T(xt, b), T(xf, b))
       expr t = remove_redundant_bounds<T>(xs->true_value, bounds);
       expr f = remove_redundant_bounds<T>(xs->false_value, bounds);
       if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
@@ -1438,7 +1454,7 @@ public:
 
   void visit(const check* op) override {
     interval_expr c_bounds;
-    expr c = strip_boolean(mutate(boolean(op->condition), &c_bounds));
+    expr c = mutate_boolean(op->condition, &c_bounds);
 
     if (!c.defined()) {
       set_result(stmt());
