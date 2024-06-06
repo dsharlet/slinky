@@ -8,9 +8,10 @@ package(
 cc_library(
     name = "builder",
     srcs = [
-        "pipeline.cc",
+        "cse.cc",
         "node_mutator.cc",
         "optimizations.cc",
+        "pipeline.cc",
         "simplify.cc",
         "simplify_bounds.cc",
         "simplify_exprs.cc",
@@ -18,9 +19,10 @@ cc_library(
         "substitute.cc",
     ],
     hdrs = [
-        "pipeline.h",
+        "cse.h",
         "node_mutator.h",
         "optimizations.h",
+        "pipeline.h",
         "rewrite.h",
         "simplify.h",
         "simplify_rules.h",

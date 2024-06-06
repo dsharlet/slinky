@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/chrome_trace.h"
+#include "builder/cse.h"
 #include "builder/node_mutator.h"
 #include "builder/optimizations.h"
 #include "builder/simplify.h"
@@ -975,6 +976,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = simplify(result);
 
   result = optimize_symbols(result, ctx);
+
+  result = common_subexpression_elimination(result, ctx);
 
   result = fix_buffer_races(result);
 
