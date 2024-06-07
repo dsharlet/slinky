@@ -284,6 +284,7 @@ public:
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
   // Updates the base pointer to point to the new min.
   raw_buffer& crop(std::size_t d, index_t min, index_t max) {
+    index_t old_min = dim(d).min();
     min = std::max(min, dim(d).min());
     max = std::min(max, dim(d).max());
 
@@ -299,7 +300,7 @@ public:
 
     dim(d).set_bounds(min, max);
     // Crops can't span a folding boundary if they move the base pointer.
-    assert(base == nullptr || offset == 0 || !dim(d).is_folded());
+    assert(base == nullptr || offset == 0 || !dim(d).is_folded(min - old_min, max - old_min));
     return *this;
   }
 
