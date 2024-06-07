@@ -76,6 +76,7 @@ public:
     switch (e.type()) {
     case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()));
     case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
+    case expr_node_type::call: return eval(static_cast<const call*>(e.get()));
     default: return eval_non_inlined(e);
     }
   }
@@ -85,7 +86,6 @@ public:
     case expr_node_type::let: return eval(static_cast<const let*>(e.get()));
     case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()));
     case expr_node_type::select: return eval(static_cast<const class select*>(e.get()));
-    case expr_node_type::call: return eval(static_cast<const call*>(e.get()));
     default: return eval_binary(e);
     }
   }
@@ -124,11 +124,11 @@ public:
   }
 
   interval eval(const interval_expr& x) {
+    index_t min = eval(x.min);
     if (x.is_point()) {
-      index_t result = eval(x.min);
-      return {result, result};
+      return {min, min};
     } else {
-      return {eval(x.min), eval(x.max)};
+      return {min, eval(x.max)};
     }
   }
   interval eval(const interval_expr& x, interval def) {
