@@ -71,6 +71,8 @@ public:
 
   // Assume `e` is defined, evaluate it and return the result.
   SLINKY_ALWAYS_INLINE index_t eval(const expr& e) {
+    // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
+    // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (e.type()) {
     case expr_node_type::variable: return eval_variable(static_cast<const variable*>(e.get()));
     case expr_node_type::constant: return eval_constant(static_cast<const constant*>(e.get()));
@@ -366,20 +368,28 @@ public:
     }
   }
 
-  index_t eval(const stmt& op) {
+  SLINKY_ALWAYS_INLINE index_t eval(const stmt& op) {
+    // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
+    // we handle common node types here, and call a non-inlined handler for the less common nodes below.
+    switch (op.type()) {
+    case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()));
+    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
+    case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()));
+    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
+    default: return eval_non_inlined(op);
+    }
+  }
+
+  SLINKY_NO_INLINE index_t eval_non_inlined(const stmt& op) {
     switch (op.type()) {
     case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()));
     case stmt_node_type::block: return eval(reinterpret_cast<const block*>(op.get()));
     case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()));
-    case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()));
-    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
     case stmt_node_type::allocate: return eval(reinterpret_cast<const allocate*>(op.get()));
     case stmt_node_type::make_buffer: return eval(reinterpret_cast<const make_buffer*>(op.get()));
     case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()));
     case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()));
-    case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()));
     case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
-    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
     case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()));
     case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()));
     default: std::abort();
