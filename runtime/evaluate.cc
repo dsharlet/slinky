@@ -74,18 +74,18 @@ public:
     // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (e.type()) {
-    case expr_node_type::variable: return eval_variable(static_cast<const variable*>(e.get()));
-    case expr_node_type::constant: return eval_constant(static_cast<const constant*>(e.get()));
+    case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()));
+    case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
     default: return eval_non_inlined(e);
     }
   }
 
   SLINKY_NO_INLINE index_t eval_non_inlined(const expr& e) {
     switch (e.type()) {
-    case expr_node_type::let: return eval_let(static_cast<const let*>(e.get()));
-    case expr_node_type::logical_not: return eval_unary(static_cast<const logical_not*>(e.get()));
-    case expr_node_type::select: return eval_select(static_cast<const class select*>(e.get()));
-    case expr_node_type::call: return eval_call(static_cast<const call*>(e.get()));
+    case expr_node_type::let: return eval(static_cast<const let*>(e.get()));
+    case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()));
+    case expr_node_type::select: return eval(static_cast<const class select*>(e.get()));
+    case expr_node_type::call: return eval(static_cast<const call*>(e.get()));
     default: return eval_binary(e);
     }
   }
@@ -149,15 +149,15 @@ public:
     return result;
   }
 
-  index_t eval_variable(const variable* op) {
+  index_t eval(const variable* op) {
     auto value = context.lookup(op->sym);
     assert(value);
     return *value;
   }
 
-  static index_t eval_constant(const constant* op) { return op->value; }
+  static index_t eval(const constant* op) { return op->value; }
 
-  SLINKY_NO_STACK_PROTECTOR index_t eval_let(const let* op) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const let* op) {
     // This is a bit ugly but we really want to avoid heap allocations here.
     const size_t size = op->lets.size();
     std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
@@ -176,9 +176,9 @@ public:
     return result;
   }
 
-  index_t eval_unary(const logical_not* op) { return eval(op->a) == 0; }
+  index_t eval(const logical_not* op) { return eval(op->a) == 0; }
 
-  index_t eval_select(const class select* op) {
+  index_t eval(const class select* op) {
     if (eval(op->condition)) {
       if (op->true_value.defined()) {
         return eval(op->true_value);
@@ -331,7 +331,7 @@ public:
     return 1;
   }
 
-  SLINKY_NO_INLINE index_t eval_call(const call* op) {
+  SLINKY_NO_INLINE index_t eval(const call* op) {
     switch (op->intrinsic) {
     case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
     case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
