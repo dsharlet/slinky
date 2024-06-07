@@ -650,7 +650,7 @@ TEST_P(multiple_outputs, pipeline) {
 class outer_product : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_split_mode, outer_product,
-    testing::Combine(testing::Values(loop::serial), testing::Range(0, 3), testing::Range(0, 3)),
+    testing::Combine(loop_modes, testing::Range(0, 3), testing::Range(0, 3)),
     test_params_to_string<outer_product::ParamType>);
 
 TEST_P(outer_product, pipeline) {
