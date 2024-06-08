@@ -614,6 +614,7 @@ bool apply_less_rules(Fn&& apply) {
       apply(y < select(x, y, w), select(x, false, y < w)) ||
       apply(w < select(x, y, w), select(x, w < y, false)) ||
       apply(select(x, y, z) < select(x, w, u), select(x, y < w, z < u)) ||
+      apply(select(x, y, z) < select(x, w, u) + c0, select(x, y < w + c0, z < u + c0)) ||
 
       // Nested logicals
       apply(x < y, y && !x, is_boolean(x) && is_boolean(y)) ||
@@ -662,6 +663,7 @@ bool apply_equal_rules(Fn&& apply) {
       apply(x%c0 == c1, false, eval(c0 > 0 && (c1 >= c0 || c1 < 0))) ||
     
       apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
+      apply(select(x, y, z) + c0 == select(x, w, u), select(x, w == y + c0, u == z + c0)) ||
       apply(select(x, c0, y) == c1, select(x, eval(c0 == c1), y == c1)) ||
       apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
       apply(y == select(x == y, x, z), x == y || y == z) ||
