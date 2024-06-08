@@ -87,6 +87,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
       apply(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
       apply(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
+      apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
+      apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
+      apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -203,6 +206,9 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
       apply(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
       apply(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
+      apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
+      apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
+      apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||

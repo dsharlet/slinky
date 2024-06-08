@@ -183,6 +183,9 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x, expr(), 2) == 1), matches(select(x, expr(), false)));
   ASSERT_THAT(simplify(!select(x, expr(), true)), matches(select(x, expr(), false)));
 
+  ASSERT_THAT(simplify(min(select(x, 0, y) + 4, select(x, expr(), min(y, 113) + 4))),
+      matches(select(x, expr(), min(y, 113) + 4)));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
@@ -653,3 +656,4 @@ TEST(simplify, fuzz_correlated_bounds) {
 }
 
 }  // namespace slinky
+
