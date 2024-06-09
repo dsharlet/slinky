@@ -27,3 +27,14 @@ cc_test(
     ],
     size = "small",
 )
+
+cc_test(
+    name = "arithmetic_benchmark",
+    srcs = ["arithmetic_benchmark.cc"],
+    deps = [
+        "//base",
+        "@google_benchmark//:benchmark_main",
+    ],
+    args=["--benchmark_min_time=0.1s"],
+    size = "small",
+)

@@ -24,6 +24,12 @@ T euclidean_div(T a, T b) {
 }
 
 template <typename T>
+T euclidean_mod_positive_modulus(T a, T b) {
+  T r = a % b;
+  return r >= 0 ? r : r + b;
+}
+
+template <typename T>
 T euclidean_mod(T a, T b) {
   if (b == 0) {
     return 0;
