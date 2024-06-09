@@ -438,13 +438,8 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
 // Helper function to write a plan that does nothing when interpreted by for_each_slice_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
   for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-  next->impl = for_each_slice_dim::loop_linear;
+  next->impl = for_each_slice_dim::loop_linear_and_call_f;
   next->extent = 0;
-
-  // for_each_slice_impl looks ahead to the next dimension, don't leave it uninitialized.
-  increment_plan<const dim*>(plan, bufs_size);
-  next = increment_plan<for_each_slice_dim>(plan);
-  next->impl = for_each_slice_dim::call_f;
 }
 
 template <bool SkipContiguous, std::size_t BufsSize>
@@ -456,6 +451,11 @@ index_t make_for_each_slice_dims_impl(
   for (std::size_t n = 1; n < bufs_size; ++n) {
     bases[n] = bufs[n]->base;
   }
+
+  for_each_slice_dim* prev = reinterpret_cast<for_each_slice_dim*>(plan_base);
+  prev->impl = for_each_slice_dim::loop_linear;
+  prev->extent = 1;
+
   void* plan = plan_base;
   index_t slice_extent = 1;
   index_t extent = 1;
@@ -471,6 +471,7 @@ index_t make_for_each_slice_dims_impl(
         for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
         next->impl = for_each_slice_dim::loop_folded;
         next->extent = buf_dim.extent();
+        prev = next;
 
         const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
         next_dims[0] = &buf->dim(d);
@@ -518,6 +519,7 @@ index_t make_for_each_slice_dims_impl(
       for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = extent;
+      prev = next;
       extent = 1;
 
       index_t* strides = increment_plan<index_t>(plan, bufs_size);
@@ -527,7 +529,11 @@ index_t make_for_each_slice_dims_impl(
       }
     }
   }
-  reinterpret_cast<for_each_slice_dim*>(plan)->impl = for_each_slice_dim::call_f;
+  switch (prev->impl) {
+  case for_each_slice_dim::loop_linear: prev->impl = for_each_slice_dim::loop_linear_and_call_f; break;
+  case for_each_slice_dim::loop_folded: prev->impl = for_each_slice_dim::loop_folded_and_call_f; break;
+  default: break;
+  }
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
 }
