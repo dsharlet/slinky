@@ -523,7 +523,7 @@ index_t make_for_each_slice_dims_impl(
   }
   next->impl = for_each_slice_dim::call_f;
   assert(extent == 1);
-  return slice_extent;
+  return SkipContiguous ? slice_extent : 1;
 }
 
 }  // namespace
