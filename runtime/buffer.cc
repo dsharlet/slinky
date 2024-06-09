@@ -460,28 +460,31 @@ index_t make_for_each_slice_dims_impl(
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.empty()) {
+
+    if (buf_dim.min() == buf_dim.max()) {
+      // extent 1, we don't need any of the logic here, skip to below.
+    } else if (buf_dim.max() > buf_dim.min()) {
+      if (use_folded_loop(bufs, bufs_size, d)) {
+        // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
+        assert(extent == 1);
+        for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
+        next->impl = for_each_slice_dim::loop_folded;
+        next->extent = buf_dim.extent();
+
+        const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
+        for (std::size_t n = 0; n < bufs_size; n++) {
+          next_dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
+        }
+        continue;
+      } else {
+        // Not folded, use a linear, possibly fused loop below.
+        extent *= buf_dim.extent();
+      }
+    } else {
+      // extent <= 0.
+      assert(buf_dim.empty());
       write_empty_plan(plan_base, bufs_size);
       return 0;
-    }
-
-    if (buf_dim.stride() == 0) {
-      // This dimension is a broadcast, treat it as extent 1.
-    } else if (buf_dim.max() > buf_dim.min() && use_folded_loop(bufs, bufs_size, d)) {
-      // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
-      assert(extent == 1);
-      for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-      next->impl = for_each_slice_dim::loop_folded;
-      next->extent = buf_dim.extent();
-
-      const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
-      for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
-      }
-      continue;
-    } else {
-      // Not a broadcast, traverse this dimension.
-      extent *= buf_dim.extent();
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
