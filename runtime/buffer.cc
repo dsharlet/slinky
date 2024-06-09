@@ -440,7 +440,7 @@ void write_empty_plan(void* plan, std::size_t bufs_size) {
   for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
   next->impl = for_each_slice_dim::loop_linear;
   next->extent = 0;
- 
+
   // for_each_slice_impl looks ahead to the next dimension, don't leave it uninitialized.
   increment_plan<const dim*>(plan, bufs_size);
   next = increment_plan<for_each_slice_dim>(plan);
@@ -452,7 +452,8 @@ index_t make_for_each_slice_dims_impl(
     const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
-  for (std::size_t n = 0; n < bufs_size; ++n) {
+  bases[0] = buf->base;
+  for (std::size_t n = 1; n < bufs_size; ++n) {
     bases[n] = bufs[n]->base;
   }
   void* plan = plan_base;
@@ -472,7 +473,7 @@ index_t make_for_each_slice_dims_impl(
         next->extent = buf_dim.extent();
 
         const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
-        next_dims[0] = &bufs[0]->dim(d);
+        next_dims[0] = &buf->dim(d);
         for (std::size_t n = 1; n < bufs_size; n++) {
           next_dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
         }
@@ -520,7 +521,7 @@ index_t make_for_each_slice_dims_impl(
       extent = 1;
 
       index_t* strides = increment_plan<index_t>(plan, bufs_size);
-      strides[0] = bufs[0]->dim(d).stride();
+      strides[0] = buf->dim(d).stride();
       for (std::size_t n = 1; n < bufs_size; n++) {
         strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
       }
