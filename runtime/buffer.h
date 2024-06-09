@@ -543,7 +543,8 @@ enum class fuse_type {
 };
 
 // Fuse two dimensions of a buffer.
-inline void fuse(fuse_type type, int inner, int outer, raw_buffer& buf) {
+template <fuse_type type>
+inline void fuse(int inner, int outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
@@ -603,17 +604,16 @@ bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) 
 }
 
 // Fuse two dimensions of all buffers.
-inline void fuse(int inner, int outer, raw_buffer& buf) { fuse(fuse_type::remove, inner, outer, buf); }
-template <typename... Bufs>
+template <fuse_type type, typename... Bufs>
 void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
-  fuse(inner, outer, buf);
-  fuse(inner, outer, bufs...);
+  fuse<type>(inner, outer, buf);
+  fuse<type>(inner, outer, bufs...);
 }
 
 template <typename... Bufs>
 SLINKY_ALWAYS_INLINE inline void attempt_fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
-    fuse(inner, outer, buf, bufs...);
+    fuse<fuse_type::remove>(inner, outer, buf, bufs...);
   }
 }
 
