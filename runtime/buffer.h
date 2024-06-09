@@ -777,17 +777,33 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     // see common cases (eg main buffer never folded and one 'other' buffer that is folded).
     index_t begin = dims[0]->begin();
     index_t end = begin + slice_dim->extent;
-    for (index_t i = begin; i < end; ++i) {
-      std::array<void*, NumBufs> bases_i;
-      bases_i[0] = offset_bytes(bases[0], dims[0]->flat_offset_bytes(i));
-      for (std::size_t n = 1; n < NumBufs; n++) {
-        if (bases[n] && dims[n]->contains(i)) {
-          bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
-        } else {
-          bases_i[n] = nullptr;
+    const for_each_slice_dim* next = reinterpret_cast<const for_each_slice_dim*>(plan);
+    std::array<void*, NumBufs> bases_i;
+    if (next->impl == for_each_slice_dim::call_f) {
+      // If the next step is to call f, do that eagerly here to avoid an extra call.
+      for (index_t i = begin; i < end; ++i) {
+        bases_i[0] = offset_bytes(bases[0], dims[0]->flat_offset_bytes(i));
+        for (std::size_t n = 1; n < NumBufs; n++) {
+          if (bases[n] && dims[n]->contains(i)) {
+            bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
+          } else {
+            bases_i[n] = nullptr;
+          }
         }
+        f(bases_i);
       }
-      for_each_slice_impl(bases_i, plan, f);
+    } else {
+      for (index_t i = begin; i < end; ++i) {
+        bases_i[0] = offset_bytes(bases[0], dims[0]->flat_offset_bytes(i));
+        for (std::size_t n = 1; n < NumBufs; n++) {
+          if (bases[n] && dims[n]->contains(i)) {
+            bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
+          } else {
+            bases_i[n] = nullptr;
+          }
+        }
+        for_each_slice_impl(bases_i, plan, f);
+      }
     }
   } else {
     f(bases);
