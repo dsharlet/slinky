@@ -472,7 +472,8 @@ index_t make_for_each_slice_dims_impl(
         next->extent = buf_dim.extent();
 
         const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
-        for (std::size_t n = 0; n < bufs_size; n++) {
+        next_dims[0] = &bufs[0]->dim(d);
+        for (std::size_t n = 1; n < bufs_size; n++) {
           next_dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
         }
         continue;
@@ -519,7 +520,8 @@ index_t make_for_each_slice_dims_impl(
       extent = 1;
 
       index_t* strides = increment_plan<index_t>(plan, bufs_size);
-      for (std::size_t n = 0; n < bufs_size; n++) {
+      strides[0] = bufs[0]->dim(d).stride();
+      for (std::size_t n = 1; n < bufs_size; n++) {
         strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
       }
     }
