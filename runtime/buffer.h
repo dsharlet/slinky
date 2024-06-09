@@ -713,19 +713,15 @@ namespace internal {
 //
 // struct loop_desc {
 //   for_each_slice_dim loop;
-//   dim_or_stride[buffer_count];
+//   union {
+//     dim* dim;
+//     index_t stride;
+//   } dim_or_stride[buffer_count];
 // };
 // loop_desc loops[rank];
 //
 // We don't actually have this struct, because buffer_count needs to be a runtime variable, but we can emulate
 // this memory layout with pointer arithmetic.
-union dim_or_stride {
-  // For loop_folded to call flat_offset_bytes
-  const slinky::dim* dim;
-  // For loop_linear to offset the base.
-  index_t stride;
-};
-
 struct for_each_slice_dim {
   enum {
     call_f,       // Uses extent
@@ -736,7 +732,7 @@ struct for_each_slice_dim {
 };
 
 inline std::size_t size_of_plan(std::size_t rank, std::size_t bufs) {
-  return (rank + 1) * sizeof(for_each_slice_dim) + rank * bufs * sizeof(dim_or_stride);
+  return (rank + 1) * sizeof(for_each_slice_dim) + rank * bufs * sizeof(dim*);
 }
 
 index_t make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan);

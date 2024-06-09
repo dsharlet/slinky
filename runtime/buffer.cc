@@ -442,7 +442,7 @@ void write_empty_plan(void* plan, std::size_t bufs_size) {
   next->extent = 0;
  
   // for_each_slice_impl looks ahead to the next dimension, don't leave it uninitialized.
-  increment_plan<dim_or_stride>(plan, bufs_size);
+  increment_plan<const dim*>(plan, bufs_size);
   next = increment_plan<for_each_slice_dim>(plan);
   next->impl = for_each_slice_dim::call_f;
 }
@@ -456,8 +456,6 @@ index_t make_for_each_slice_dims_impl(
     bases[n] = bufs[n]->base;
   }
   void* plan = plan_base;
-  for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-  dim_or_stride* next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
   index_t slice_extent = 1;
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
@@ -472,14 +470,14 @@ index_t make_for_each_slice_dims_impl(
     } else if (buf_dim.max() > buf_dim.min() && use_folded_loop(bufs, bufs_size, d)) {
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
       assert(extent == 1);
+      for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
       next->impl = for_each_slice_dim::loop_folded;
       next->extent = buf_dim.extent();
+
+      const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
       for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
+        next_dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
       }
-      next = increment_plan<for_each_slice_dim>(plan);
-      next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
-      extent = 1;
       continue;
     } else {
       // Not a broadcast, traverse this dimension.
@@ -511,17 +509,19 @@ index_t make_for_each_slice_dims_impl(
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
+
+      for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
       next->impl = for_each_slice_dim::loop_linear;
       next->extent = extent;
-      for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n].stride = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
-      }
-      next = increment_plan<for_each_slice_dim>(plan);
-      next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
       extent = 1;
+
+      index_t* strides = increment_plan<index_t>(plan, bufs_size);
+      for (std::size_t n = 0; n < bufs_size; n++) {
+        strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+      }
     }
   }
-  next->impl = for_each_slice_dim::call_f;
+  reinterpret_cast<for_each_slice_dim*>(plan)->impl = for_each_slice_dim::call_f;
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
 }
