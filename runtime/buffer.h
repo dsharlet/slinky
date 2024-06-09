@@ -22,14 +22,23 @@ using index_t = std::ptrdiff_t;
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>
-T* offset_bytes(T* x, std::ptrdiff_t bytes) {
+T* offset_bytes_non_null(T* x, std::ptrdiff_t bytes) {
   assert(x != nullptr || bytes == 0);
   return reinterpret_cast<T*>(reinterpret_cast<char*>(x) + bytes);
 }
 template <typename T>
-const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
+const T* offset_bytes_non_null(const T* x, std::ptrdiff_t bytes) {
   assert(x != nullptr || bytes == 0);
   return reinterpret_cast<const T*>(reinterpret_cast<const char*>(x) + bytes);
+}
+
+template <typename T>
+T* offset_bytes(T* x, std::ptrdiff_t bytes) {
+  return x ? reinterpret_cast<T*>(reinterpret_cast<char*>(x) + bytes) : x;
+}
+template <typename T>
+const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
+  return x ? reinterpret_cast<const T*>(reinterpret_cast<const char*>(x) + bytes) : x;
 }
 
 // TODO(https://github.com/dsharlet/slinky/issues/1): This and buffer_expr in pipeline.h should have the same API
@@ -284,7 +293,7 @@ public:
   raw_buffer& slice(std::size_t d, index_t at) {
     if (base != nullptr) {
       if (dim(d).contains(at)) {
-        base = offset_bytes(base, dim(d).flat_offset_bytes(at));
+        base = offset_bytes_non_null(base, dim(d).flat_offset_bytes(at));
       } else {
         base = nullptr;
       }
@@ -302,7 +311,7 @@ public:
     if (base != nullptr) {
       if (max >= min) {
         offset = dim(d).flat_offset_bytes(min);
-        base = offset_bytes(base, offset);
+        base = offset_bytes_non_null(base, offset);
       } else {
         base = nullptr;
       }
@@ -464,7 +473,7 @@ public:
   // and maybe they are useful to compute addresses.
   template <typename... Indices>
   auto& at(index_t i0, Indices... indices) const {
-    return *offset_bytes(base(), flat_offset_bytes(i0, indices...));
+    return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
   }
   template <typename... Indices>
   auto& operator()(index_t i0, Indices... indices) const {
@@ -474,7 +483,7 @@ public:
   auto& at() const { return *base(); }
   auto& operator()() const { return *base(); }
 
-  auto& at(span<const index_t> indices) const { return *offset_bytes(base(), flat_offset_bytes(indices)); }
+  auto& at(span<const index_t> indices) const { return *offset_bytes_non_null(base(), flat_offset_bytes(indices)); }
   auto& operator()(span<const index_t> indices) const { return at(indices); }
 
   // Insert a new dimension `dim` at index d, increasing the rank by 1.
@@ -737,7 +746,7 @@ void make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases, void* 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1) {
   const T* result = reinterpret_cast<const T*>(x);
-  x = offset_bytes(x, sizeof(T) * n);
+  x = offset_bytes_non_null(x, sizeof(T) * n);
   return result;
 }
 
@@ -752,20 +761,20 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = 0; i < slice_dim->extent; ++i) {
         f(bases_i);
-        bases_i[0] = offset_bytes(bases_i[0], strides[0]);
+        bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
         // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
-        if (1 < NumBufs) bases_i[1] = bases_i[1] ? offset_bytes(bases_i[1], strides[1]) : nullptr;
-        if (2 < NumBufs) bases_i[2] = bases_i[2] ? offset_bytes(bases_i[2], strides[2]) : nullptr;
+        if (1 < NumBufs) bases_i[1] = offset_bytes(bases_i[1], strides[1]);
+        if (2 < NumBufs) bases_i[2] = offset_bytes(bases_i[2], strides[2]);
         for (std::size_t n = 3; n < NumBufs; n++) {
-          bases_i[n] = bases_i[n] ? offset_bytes(bases_i[n], strides[n]) : nullptr;
+          bases_i[n] = offset_bytes(bases_i[n], strides[n]);
         }
       }
     } else {
       for (index_t i = 0; i < slice_dim->extent; ++i) {
         for_each_slice_impl(bases_i, plan, f);
-        bases_i[0] = offset_bytes(bases_i[0], strides[0]);
+        bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
         for (std::size_t n = 1; n < NumBufs; n++) {
-          bases_i[n] = bases_i[n] ? offset_bytes(bases_i[n], strides[n]) : nullptr;
+          bases_i[n] = offset_bytes(bases_i[n], strides[n]);
         }
       }
     }
@@ -782,25 +791,17 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     if (next->impl == for_each_slice_dim::call_f) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       for (index_t i = begin; i < end; ++i) {
-        bases_i[0] = offset_bytes(bases[0], dims[0]->flat_offset_bytes(i));
+        bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
         for (std::size_t n = 1; n < NumBufs; n++) {
-          if (bases[n] && dims[n]->contains(i)) {
-            bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
-          } else {
-            bases_i[n] = nullptr;
-          }
+          bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
         }
         f(bases_i);
       }
     } else {
       for (index_t i = begin; i < end; ++i) {
-        bases_i[0] = offset_bytes(bases[0], dims[0]->flat_offset_bytes(i));
+        bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
         for (std::size_t n = 1; n < NumBufs; n++) {
-          if (bases[n] && dims[n]->contains(i)) {
-            bases_i[n] = offset_bytes(bases[n], dims[n]->flat_offset_bytes(i));
-          } else {
-            bases_i[n] = nullptr;
-          }
+          bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
         }
         for_each_slice_impl(bases_i, plan, f);
       }

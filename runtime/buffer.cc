@@ -203,7 +203,7 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
   } else {
     while (size >= elem_size) {
       memcpy(dst, value, elem_size);
-      dst = offset_bytes(dst, elem_size);
+      dst = offset_bytes_non_null(dst, elem_size);
       size -= elem_size;
     }
     // The elem_size might not divide the size if replicate_constant replicated it.
@@ -275,11 +275,11 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
           if (src) {
             if (pad_before > 0) {
               fill(dst, padding, elem_size, pad_before);
-              dst = offset_bytes(dst, pad_before);
+              dst = offset_bytes_non_null(dst, pad_before);
             }
             memcpy(dst, src, size);
             if (pad_after > 0) {
-              dst = offset_bytes(dst, size);
+              dst = offset_bytes_non_null(dst, size);
               fill(dst, padding, elem_size, pad_after);
             }
           } else {
@@ -431,7 +431,7 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
   T* result = reinterpret_cast<T*>(x);
-  x = offset_bytes(x, sizeof(T) * n);
+  x = offset_bytes_non_null(x, sizeof(T) * n);
   return result;
 }
 
@@ -495,7 +495,7 @@ index_t make_for_each_slice_dims_impl(
         const dim& buf_n_dim = bufs[n]->dim(d);
         if (buf_n_dim.contains(buf_dim)) {
           index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
-          bases[n] = offset_bytes(bases[n], offset);
+          bases[n] = offset_bytes_non_null(bases[n], offset);
         } else {
           // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
           // use_folded_loop should have returned true above.

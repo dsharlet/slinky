@@ -21,8 +21,8 @@ void memcpy_workaround(void* dst, const void* src, std::size_t size) {
   for (std::size_t i = 0; i < size; i += chunk_size) {
     std::size_t size_i = std::min(size - i, chunk_size);
     memmove(dst, src, size_i);
-    dst = offset_bytes(dst, chunk_size);
-    src = offset_bytes(src, chunk_size);
+    dst = offset_bytes_non_null(dst, chunk_size);
+    src = offset_bytes_non_null(src, chunk_size);
   }
 }
 
@@ -33,8 +33,8 @@ index_t copy_2d(const buffer<const void>& in, const buffer<void>& out) {
   std::size_t size_bytes = out.dim(0).extent() * out.elem_size;
   for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
     memcpy_workaround(dst, src, size_bytes);
-    dst = offset_bytes(dst, out.dim(1).stride());
-    src = offset_bytes(src, in.dim(1).stride());
+    dst = offset_bytes_non_null(dst, out.dim(1).stride());
+    src = offset_bytes_non_null(src, in.dim(1).stride());
   }
   return 0;
 }
