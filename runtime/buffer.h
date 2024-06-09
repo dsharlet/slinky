@@ -236,6 +236,8 @@ public:
 
   // Remove dimensions `ds`. The dimensions must be sorted in ascending order.
   raw_buffer& slice(span<const std::size_t> ds) {
+    if (ds.size() == 1) return slice(ds[0]);
+
     // Handle any slices of leading dimensions by just incrementing the dims pointer.
     std::size_t slice_leading = 0;
     for (std::size_t d : ds) {
@@ -269,7 +271,20 @@ public:
   // Remove dimension `d` and move the base pointer to point to `at` in this dimension.
   // `at` is dim(d).min() by default.
   // If `d` is 0 or rank - 1, the slice does not mutate the dims array.
-  raw_buffer& slice(std::size_t d) { return slice({d}); }
+  raw_buffer& slice(std::size_t d) {
+    assert(d < rank);
+    rank -= 1;
+    if (d == 0) {
+      // Slicing the first leading dimension, we can just increment the dims pointer.
+      dims += 1;
+    } else {
+      // We need to move all the dims above `d` down by one.
+      for (std::size_t i = d; i < rank; ++i) {
+        dims[i] = dims[i + 1];
+      }
+    }
+    return *this;
+  }
   raw_buffer& slice(std::size_t d, index_t at) {
     if (base != nullptr) {
       if (dim(d).contains(at)) {
@@ -278,7 +293,7 @@ public:
         base = nullptr;
       }
     }
-    return slice({d});
+    return slice(d);
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
