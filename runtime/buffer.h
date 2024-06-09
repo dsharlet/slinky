@@ -874,7 +874,8 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
 // sliced at the same indices as `buf`.  If the other buffers are out of bounds for a slice, the corresponding argument
 // to the callback will be `nullptr`.
 template <typename F, typename... Bufs>
-void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
+SLINKY_NO_STACK_PROTECTOR void for_each_slice(
+    std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs;
   // Remove the sliced dimensions from the bufs.
@@ -911,7 +912,7 @@ void for_each_slice(std::size_t slice_rank, const raw_buffer& buf, const F& f, c
 // Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`, or
 // `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
-void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
+SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
