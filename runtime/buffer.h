@@ -737,9 +737,7 @@ SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1
 template <typename F, std::size_t NumBufs>
 void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
   const for_each_slice_dim* slice_dim = read_plan<for_each_slice_dim>(plan);
-  if (slice_dim->impl == for_each_slice_dim::call_f) {
-    f(bases);
-  } else if (slice_dim->impl == for_each_slice_dim::loop_linear) {
+  if (slice_dim->impl == for_each_slice_dim::loop_linear) {
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     const for_each_slice_dim* next = reinterpret_cast<const for_each_slice_dim*>(plan);
     std::array<void*, NumBufs> bases_i = bases;
@@ -748,7 +746,10 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
       for (index_t i = 0; i < slice_dim->extent; ++i) {
         f(bases_i);
         bases_i[0] = offset_bytes(bases_i[0], strides[0]);
-        for (std::size_t n = 1; n < NumBufs; n++) {
+        // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
+        if (1 < NumBufs) bases_i[1] = bases_i[1] ? offset_bytes(bases_i[1], strides[1]) : nullptr;
+        if (2 < NumBufs) bases_i[2] = bases_i[2] ? offset_bytes(bases_i[2], strides[2]) : nullptr;
+        for (std::size_t n = 3; n < NumBufs; n++) {
           bases_i[n] = bases_i[n] ? offset_bytes(bases_i[n], strides[n]) : nullptr;
         }
       }
@@ -761,9 +762,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
         }
       }
     }
-  } else {
-    assert(slice_dim->impl == for_each_slice_dim::loop_folded);
-
+  } else if (slice_dim->impl == for_each_slice_dim::loop_folded) {
     dim* const* dims = read_plan<dim*>(plan, NumBufs);
     // TODO: If any buffer if folded in a given dimension, we just take the slow path
     // that handles either folded or unfolded for *all* the buffers in that dimension.
@@ -783,6 +782,8 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
       }
       for_each_slice_impl(bases_i, plan, f);
     }
+  } else {
+    f(bases);
   }
 }
 
