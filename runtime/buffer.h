@@ -602,10 +602,10 @@ bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bu
 }
 
 // Returns true if two dimensions of all buffers can be fused.
-inline bool can_fuse(int inner, int outer, const raw_buffer& buf) { return can_fuse(buf.dim(inner), buf.dim(outer)); }
+inline bool can_fuse(int, int) { return true; }
 template <typename... Bufs>
 bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) {
-  return can_fuse(inner, outer, buf) && can_fuse(inner, outer, bufs...);
+  return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
 }
 
 // Fuse two dimensions of all buffers.
