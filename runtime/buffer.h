@@ -753,58 +753,61 @@ SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1
 }
 
 template <typename F, std::size_t NumBufs>
-void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
+void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f);
+
+template <bool CallF, typename F, std::size_t NumBufs>
+void for_each_slice_impl_linear(const std::array<void*, NumBufs>& bases, index_t extent, const void* plan, const F& f) {
+  const index_t* strides = read_plan<index_t>(plan, NumBufs);
+  std::array<void*, NumBufs> bases_i = bases;
+  // If the next step is to call f, do that eagerly here to avoid an extra call.
+  for (index_t i = extent; i > 0; --i) {
+    if (CallF) {
+      f(bases_i);
+    } else {
+      for_each_slice_impl(bases_i, plan, f);
+    }
+    bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
+    // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
+    if (1 < NumBufs) bases_i[1] = offset_bytes(bases_i[1], strides[1]);
+    if (2 < NumBufs) bases_i[2] = offset_bytes(bases_i[2], strides[2]);
+    for (std::size_t n = 3; n < NumBufs; n++) {
+      bases_i[n] = offset_bytes(bases_i[n], strides[n]);
+    }
+  }
+}
+
+template <bool CallF, typename F, std::size_t NumBufs>
+void for_each_slice_impl_folded(const std::array<void*, NumBufs>& bases, index_t extent, const void* plan, const F& f) {
+  dim* const* dims = read_plan<dim*>(plan, NumBufs);
+  index_t begin = dims[0]->begin();
+  index_t end = begin + extent;
+  std::array<void*, NumBufs> bases_i;
+  // If the next step is to call f, do that eagerly here to avoid an extra call.
+  for (index_t i = begin; i < end; ++i) {
+    bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
+    for (std::size_t n = 1; n < NumBufs; n++) {
+      bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
+    }
+    if (CallF) {
+      f(bases_i);
+    } else {
+      for_each_slice_impl(bases_i, plan, f);
+    }
+  }
+}
+
+template <typename F, std::size_t NumBufs>
+SLINKY_ALWAYS_INLINE inline void for_each_slice_impl(
+    const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
   const for_each_slice_dim* slice_dim = read_plan<for_each_slice_dim>(plan);
   if (slice_dim->impl == (for_each_slice_dim::linear | for_each_slice_dim::call_f)) {
-    const index_t* strides = read_plan<index_t>(plan, NumBufs);
-    std::array<void*, NumBufs> bases_i = bases;
-    // If the next step is to call f, do that eagerly here to avoid an extra call.
-    for (index_t i = slice_dim->extent; i > 0; --i) {
-      f(bases_i);
-      bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
-      // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
-      if (1 < NumBufs) bases_i[1] = offset_bytes(bases_i[1], strides[1]);
-      if (2 < NumBufs) bases_i[2] = offset_bytes(bases_i[2], strides[2]);
-      for (std::size_t n = 3; n < NumBufs; n++) {
-        bases_i[n] = offset_bytes(bases_i[n], strides[n]);
-      }
-    }
+    for_each_slice_impl_linear<true>(bases, slice_dim->extent, plan, f);
   } else if (slice_dim->impl == for_each_slice_dim::linear) {
-    const index_t* strides = read_plan<index_t>(plan, NumBufs);
-    std::array<void*, NumBufs> bases_i = bases;
-    for (index_t i = slice_dim->extent; i > 0; --i) {
-      for_each_slice_impl(bases_i, plan, f);
-      bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
-      for (std::size_t n = 1; n < NumBufs; n++) {
-        bases_i[n] = offset_bytes(bases_i[n], strides[n]);
-      }
-    }
+    for_each_slice_impl_linear<false>(bases, slice_dim->extent, plan, f);
   } else if (slice_dim->impl == (for_each_slice_dim::folded | for_each_slice_dim::call_f)) {
-    dim* const* dims = read_plan<dim*>(plan, NumBufs);
-    index_t begin = dims[0]->begin();
-    index_t end = begin + slice_dim->extent;
-    std::array<void*, NumBufs> bases_i;
-    // If the next step is to call f, do that eagerly here to avoid an extra call.
-    for (index_t i = begin; i < end; ++i) {
-      bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
-      for (std::size_t n = 1; n < NumBufs; n++) {
-        bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
-      }
-      f(bases_i);
-    }
+    for_each_slice_impl_folded<true>(bases, slice_dim->extent, plan, f);
   } else {
-    assert(slice_dim->impl == for_each_slice_dim::folded);
-    dim* const* dims = read_plan<dim*>(plan, NumBufs);
-    index_t begin = dims[0]->begin();
-    index_t end = begin + slice_dim->extent;
-    std::array<void*, NumBufs> bases_i;
-    for (index_t i = begin; i < end; ++i) {
-      bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
-      for (std::size_t n = 1; n < NumBufs; n++) {
-        bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
-      }
-      for_each_slice_impl(bases_i, plan, f);
-    }
+    for_each_slice_impl_folded<false>(bases, slice_dim->extent, plan, f);
   }
 }
 
