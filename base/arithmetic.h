@@ -1,6 +1,7 @@
 #ifndef SLINKY_BASE_ARITHMETIC_H
 #define SLINKY_BASE_ARITHMETIC_H
 
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -25,6 +26,7 @@ T euclidean_div(T a, T b) {
 
 template <typename T>
 T euclidean_mod_positive_modulus(T a, T b) {
+  assert(b > 0);
   T r = a % b;
   return r >= 0 ? r : r + b;
 }
