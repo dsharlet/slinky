@@ -203,7 +203,7 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
   } else {
     while (size >= elem_size) {
       memcpy(dst, value, elem_size);
-      dst = offset_bytes(dst, elem_size);
+      dst = offset_bytes_non_null(dst, elem_size);
       size -= elem_size;
     }
     // The elem_size might not divide the size if replicate_constant replicated it.
@@ -275,11 +275,11 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
           if (src) {
             if (pad_before > 0) {
               fill(dst, padding, elem_size, pad_before);
-              dst = offset_bytes(dst, pad_before);
+              dst = offset_bytes_non_null(dst, pad_before);
             }
             memcpy(dst, src, size);
             if (pad_after > 0) {
-              dst = offset_bytes(dst, size);
+              dst = offset_bytes_non_null(dst, size);
               fill(dst, padding, elem_size, pad_after);
             }
           } else {
@@ -360,8 +360,12 @@ namespace internal {
 namespace {
 
 SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
-  for (std::size_t n = 0; n < size; n++) {
-    if (n > 0 && d >= static_cast<int>(bufs[n]->rank)) {
+  if (bufs[0]->dim(d).stride() != static_cast<index_t>(bufs[0]->elem_size)) {
+    // This dimension is not contiguous.
+    return false;
+  }
+  for (std::size_t n = 1; n < size; n++) {
+    if (d >= static_cast<int>(bufs[n]->rank)) {
       // This dimension is broadcasted, it's not contiguous.
       return false;
     } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
@@ -379,15 +383,17 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   if (base_inner.fold_factor() != dim::unfolded) {
     // One of the dimensions is folded.
     return false;
-  } else if (base_inner.stride() * base_inner.extent() != base_outer.stride()) {
+  }
+  const index_t inner_extent = base_inner.extent();
+  if (base_inner.stride() * inner_extent != base_outer.stride()) {
     // The dimensions are not contiguous in memory.
     return false;
   }
 
   for (std::size_t n = 1; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank)) {
-      // This is an implicitly broadcast dimension, it can't be fused.
-      return false;
+    if (d - 1 >= static_cast<int>(bufs[n]->rank)) {
+      // Both dimensions are broadcasts, they can be fused.
+      continue;
     }
 
     const dim& inner = bufs[n]->dim(d - 1);
@@ -399,8 +405,8 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
       return false;
     }
 
-    const dim& outer = bufs[n]->dim(d);
-    if (inner.stride() * inner.extent() != outer.stride()) {
+    const index_t outer_stride = d < static_cast<int>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+    if (inner.stride() * inner_extent != outer_stride) {
       // The dimensions are not contiguous in memory.
       return false;
     }
@@ -431,59 +437,64 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
   T* result = reinterpret_cast<T*>(x);
-  x = offset_bytes(x, sizeof(T) * n);
+  x = offset_bytes_non_null(x, sizeof(T) * n);
   return result;
 }
 
-// Helper function to write a plan that does nothing when interpreted by for_each_slice_impl.
+// Helper function to write a plan that does nothing when interpreted by for_each_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
-  for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-  next->impl = for_each_slice_dim::loop_linear;
+  for_each_loop* next = increment_plan<for_each_loop>(plan);
+  next->impl = for_each_loop::linear | for_each_loop::call_f;
   next->extent = 0;
- 
-  // for_each_slice_impl looks ahead to the next dimension, don't leave it uninitialized.
-  increment_plan<dim_or_stride>(plan, bufs_size);
-  next = increment_plan<for_each_slice_dim>(plan);
-  next->impl = for_each_slice_dim::call_f;
 }
 
 template <bool SkipContiguous, std::size_t BufsSize>
-index_t make_for_each_slice_dims_impl(
+SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
-  for (std::size_t n = 0; n < bufs_size; ++n) {
+  bases[0] = buf->base;
+  for (std::size_t n = 1; n < bufs_size; ++n) {
     bases[n] = bufs[n]->base;
   }
+
+  // Start out with a loop of extent 1, in case the buffer is rank 0.
+  for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan_base);
+  prev_loop->impl = for_each_loop::linear;
+  prev_loop->extent = 1;
+
   void* plan = plan_base;
-  for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-  dim_or_stride* next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
   index_t slice_extent = 1;
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
-    if (buf_dim.empty()) {
+
+    if (buf_dim.min() == buf_dim.max()) {
+      // extent 1, we don't need any of the logic here, skip to below.
+    } else if (buf_dim.max() > buf_dim.min()) {
+      if (use_folded_loop(bufs, bufs_size, d)) {
+        // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
+        assert(extent == 1);
+        for_each_loop* loop = increment_plan<for_each_loop>(plan);
+        loop->impl = for_each_loop::folded;
+        loop->extent = buf_dim.extent();
+        prev_loop = loop;
+
+        const dim** dims = increment_plan<const dim*>(plan, bufs_size);
+        dims[0] = &buf->dim(d);
+        for (std::size_t n = 1; n < bufs_size; n++) {
+          dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
+        }
+        continue;
+      } else {
+        // Not folded, use a linear, possibly fused loop below.
+        extent *= buf_dim.extent();
+      }
+    } else {
+      // extent <= 0.
+      assert(buf_dim.empty());
       write_empty_plan(plan_base, bufs_size);
       return 0;
-    }
-
-    if (buf_dim.stride() == 0) {
-      // This dimension is a broadcast, treat it as extent 1.
-    } else if (buf_dim.max() > buf_dim.min() && use_folded_loop(bufs, bufs_size, d)) {
-      // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
-      assert(extent == 1);
-      next->impl = for_each_slice_dim::loop_folded;
-      next->extent = buf_dim.extent();
-      for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n].dim = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
-      }
-      next = increment_plan<for_each_slice_dim>(plan);
-      next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
-      extent = 1;
-      continue;
-    } else {
-      // Not a broadcast, traverse this dimension.
-      extent *= buf_dim.extent();
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
@@ -492,7 +503,7 @@ index_t make_for_each_slice_dims_impl(
         const dim& buf_n_dim = bufs[n]->dim(d);
         if (buf_n_dim.contains(buf_dim)) {
           index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
-          bases[n] = offset_bytes(bases[n], offset);
+          bases[n] = offset_bytes_non_null(bases[n], offset);
         } else {
           // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
           // use_folded_loop should have returned true above.
@@ -511,44 +522,48 @@ index_t make_for_each_slice_dims_impl(
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
-      next->impl = for_each_slice_dim::loop_linear;
-      next->extent = extent;
-      for (std::size_t n = 0; n < bufs_size; n++) {
-        next_dims[n].stride = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
-      }
-      next = increment_plan<for_each_slice_dim>(plan);
-      next_dims = increment_plan<dim_or_stride>(plan, bufs_size);
+
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
+      loop->impl = for_each_loop::linear;
+      loop->extent = extent;
+      prev_loop = loop;
       extent = 1;
+
+      index_t* strides = increment_plan<index_t>(plan, bufs_size);
+      strides[0] = buf->dim(d).stride();
+      for (std::size_t n = 1; n < bufs_size; n++) {
+        strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+      }
     }
   }
-  next->impl = for_each_slice_dim::call_f;
+  prev_loop->impl |= for_each_loop::call_f;
   assert(extent == 1);
-  return slice_extent;
+  return SkipContiguous ? slice_extent : 1;
 }
 
 }  // namespace
 
-index_t make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan) {
+index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan) {
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: return make_for_each_slice_dims_impl<true, 1>(bufs.data(), bases, 0, plan);
-  case 2: return make_for_each_slice_dims_impl<true, 2>(bufs.data(), bases, 0, plan);
-  case 3: return make_for_each_slice_dims_impl<true, 3>(bufs.data(), bases, 0, plan);
-  default: return make_for_each_slice_dims_impl<true, 0>(bufs.data(), bases, bufs.size(), plan);
+  case 1: return make_for_each_loops_impl<true, 1>(bufs.data(), bases, 0, plan);
+  case 2: return make_for_each_loops_impl<true, 2>(bufs.data(), bases, 0, plan);
+  case 3: return make_for_each_loops_impl<true, 3>(bufs.data(), bases, 0, plan);
+  default: return make_for_each_loops_impl<true, 0>(bufs.data(), bases, bufs.size(), plan);
   }
 }
 
-void make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan) {
+void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan) {
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, plan); return;
-  case 2: make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, plan); return;
-  case 3: make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, plan); return;
-  default: make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), plan); return;
+  case 1: make_for_each_loops_impl<false, 1>(bufs.data(), bases, 0, plan); return;
+  case 2: make_for_each_loops_impl<false, 2>(bufs.data(), bases, 0, plan); return;
+  case 3: make_for_each_loops_impl<false, 3>(bufs.data(), bases, 0, plan); return;
+  default: make_for_each_loops_impl<false, 0>(bufs.data(), bases, bufs.size(), plan); return;
   }
 }
 

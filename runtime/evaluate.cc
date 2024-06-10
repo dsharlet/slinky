@@ -251,7 +251,7 @@ public:
       if (op->args[d + 1].defined()) {
         index_t at = eval(op->args[d + 1]);
         if (result && buf->dims[d].contains(at)) {
-          result = offset_bytes(result, buf->dims[d].flat_offset_bytes(at));
+          result = offset_bytes_non_null(result, buf->dims[d].flat_offset_bytes(at));
         } else {
           result = nullptr;
         }
@@ -665,7 +665,7 @@ public:
         if (buffer->base) {
           index_t at_d = eval(op->at[d]);
           if (buffer->dims[d].contains(at_d)) {
-            buffer->base = offset_bytes(buffer->base, buffer->dims[d].flat_offset_bytes(at_d));
+            buffer->base = offset_bytes_non_null(buffer->base, buffer->dims[d].flat_offset_bytes(at_d));
           } else {
             buffer->base = nullptr;
           }
@@ -701,7 +701,7 @@ public:
     if (buffer->base) {
       index_t at = eval(op->at);
       if (old_dims[op->dim].contains(at)) {
-        buffer->base = offset_bytes(buffer->base, old_dims[op->dim].flat_offset_bytes(at));
+        buffer->base = offset_bytes_non_null(buffer->base, old_dims[op->dim].flat_offset_bytes(at));
       } else {
         buffer->base = nullptr;
       }

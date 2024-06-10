@@ -13,6 +13,7 @@ TEST(arithmetic, euclidean_div_mod) {
 
     ASSERT_EQ(euclidean_div(a, b), a / b);
     ASSERT_EQ(euclidean_mod(a, b), a % b);
+    ASSERT_EQ(euclidean_mod_positive_modulus(a, b), a % b);
 
     // These are the properties we want from euclidean_div/mod:
     // 1. 0 <= a % b < |b|
@@ -24,12 +25,18 @@ TEST(arithmetic, euclidean_div_mod) {
     ASSERT_LT(euclidean_mod(-a, b), std::abs(b));
     ASSERT_LT(euclidean_mod(a, -b), std::abs(b));
     ASSERT_LT(euclidean_mod(-a, -b), std::abs(b));
+    ASSERT_GE(euclidean_mod_positive_modulus(a, b), 0);
+    ASSERT_GE(euclidean_mod_positive_modulus(-a, b), 0);
+    ASSERT_LT(euclidean_mod_positive_modulus(a, b), std::abs(b));
+    ASSERT_LT(euclidean_mod_positive_modulus(-a, b), std::abs(b));
 
     // 2. (a / b) * b + a % b == a
     ASSERT_EQ(euclidean_div(a, b) * b + euclidean_mod(a, b), a);
     ASSERT_EQ(euclidean_div(-a, b) * b + euclidean_mod(-a, b), -a);
     ASSERT_EQ(euclidean_div(a, -b) * -b + euclidean_mod(a, -b), a);
     ASSERT_EQ(euclidean_div(-a, -b) * -b + euclidean_mod(-a, -b), -a);
+    ASSERT_EQ(euclidean_div(a, b) * b + euclidean_mod_positive_modulus(a, b), a);
+    ASSERT_EQ(euclidean_div(-a, b) * b + euclidean_mod_positive_modulus(-a, b), -a);
   }
 }
 
