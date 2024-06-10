@@ -755,8 +755,7 @@ SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1
 template <typename F, std::size_t NumBufs>
 void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
   const for_each_slice_dim* slice_dim = read_plan<for_each_slice_dim>(plan);
-  switch (slice_dim->impl) {
-  case for_each_slice_dim::linear | for_each_slice_dim::call_f: {
+  if (slice_dim->impl == (for_each_slice_dim::linear | for_each_slice_dim::call_f)) {
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     std::array<void*, NumBufs> bases_i = bases;
     // If the next step is to call f, do that eagerly here to avoid an extra call.
@@ -770,9 +769,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
         bases_i[n] = offset_bytes(bases_i[n], strides[n]);
       }
     }
-    return;
-  }
-  case for_each_slice_dim::linear: {
+  } else if (slice_dim->impl == for_each_slice_dim::linear) {
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     std::array<void*, NumBufs> bases_i = bases;
     for (index_t i = slice_dim->extent; i > 0; --i) {
@@ -782,9 +779,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
         bases_i[n] = offset_bytes(bases_i[n], strides[n]);
       }
     }
-    return;
-  }
-  case for_each_slice_dim::folded | for_each_slice_dim::call_f: {
+  } else if (slice_dim->impl == (for_each_slice_dim::folded | for_each_slice_dim::call_f)) {
     dim* const* dims = read_plan<dim*>(plan, NumBufs);
     index_t begin = dims[0]->begin();
     index_t end = begin + slice_dim->extent;
@@ -797,9 +792,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
       }
       f(bases_i);
     }
-    return;
-  }
-  default: {
+  } else {
     assert(slice_dim->impl == for_each_slice_dim::folded);
     dim* const* dims = read_plan<dim*>(plan, NumBufs);
     index_t begin = dims[0]->begin();
@@ -812,8 +805,6 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
       }
       for_each_slice_impl(bases_i, plan, f);
     }
-    return;
-  }
   }
 }
 
