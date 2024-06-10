@@ -360,8 +360,12 @@ namespace internal {
 namespace {
 
 SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
-  for (std::size_t n = 0; n < size; n++) {
-    if (n > 0 && d >= static_cast<int>(bufs[n]->rank)) {
+  if (bufs[0]->dim(d).stride() != static_cast<index_t>(bufs[0]->elem_size)) {
+    // This dimension is not contiguous.
+    return false;
+  }
+  for (std::size_t n = 1; n < size; n++) {
+    if (d >= static_cast<int>(bufs[n]->rank)) {
       // This dimension is broadcasted, it's not contiguous.
       return false;
     } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
@@ -385,9 +389,9 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   }
 
   for (std::size_t n = 1; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank)) {
-      // This is an implicitly broadcast dimension, it can't be fused.
-      return false;
+    if (d - 1 >= static_cast<int>(bufs[n]->rank)) {
+      // Both dimensions are broadcasts, they can be fused.
+      continue;
     }
 
     const dim& inner = bufs[n]->dim(d - 1);
@@ -399,8 +403,8 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
       return false;
     }
 
-    const dim& outer = bufs[n]->dim(d);
-    if (inner.stride() * inner.extent() != outer.stride()) {
+    const index_t outer_stride = d < static_cast<int>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+    if (inner.stride() * base_inner.extent() != outer_stride) {
       // The dimensions are not contiguous in memory.
       return false;
     }
@@ -529,10 +533,11 @@ index_t make_for_each_slice_dims_impl(
       }
     }
   }
-  switch (prev->impl) {
-  case for_each_slice_dim::loop_linear: prev->impl = for_each_slice_dim::loop_linear_and_call_f; break;
-  case for_each_slice_dim::loop_folded: prev->impl = for_each_slice_dim::loop_folded_and_call_f; break;
-  default: break;
+  if (prev->impl == for_each_slice_dim::loop_folded) {
+    prev->impl = for_each_slice_dim::loop_folded_and_call_f;
+  } else {
+    assert(prev->impl == for_each_slice_dim::loop_linear);
+    prev->impl = for_each_slice_dim::loop_linear_and_call_f;
   }
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
