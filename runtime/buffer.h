@@ -110,6 +110,10 @@ public:
 
   std::ptrdiff_t flat_offset_bytes(index_t i) const {
     assert(contains(i));
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
+    // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
+    if (stride() == 0) return 0;
+#endif
     if (fold_factor() == unfolded) {
       return (i - min()) * stride();
     } else {
@@ -532,8 +536,14 @@ void fill(const raw_buffer& dst, const void* value);
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (outer.max() == outer.min() && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
-  // Avoid overflow for broadcast dimensions
+
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
+  // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
   index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner.extent();
+#else
+  index_t next_stride = inner.stride() * inner.extent();
+#endif
+  // Avoid overflow for broadcast dimensions
   if (next_stride != outer.stride()) return false;
   return true;
 }

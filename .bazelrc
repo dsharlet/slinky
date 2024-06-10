@@ -9,3 +9,8 @@ common --force_pic
 common:asan --copt -fsanitize=address
 common:asan --copt -DADDRESS_SANITIZER
 common:asan --linkopt -fsanitize=address
+
+# Allow us to run with --config=asan
+common:ubsan --copt -fsanitize=undefined
+common:ubsan --copt -DUNDEFINED_BEHAVIOR_SANITIZER
+common:ubsan --linkopt -fsanitize=undefined
