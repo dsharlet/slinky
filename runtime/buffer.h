@@ -759,7 +759,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     std::array<void*, NumBufs> bases_i = bases;
     // If the next step is to call f, do that eagerly here to avoid an extra call.
-    for (index_t i = 0; i < slice_dim->extent; ++i) {
+    for (index_t i = slice_dim->extent; i > 0; --i) {
       f(bases_i);
       bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
       // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
@@ -774,7 +774,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
   case for_each_slice_dim::loop_linear: {
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     std::array<void*, NumBufs> bases_i = bases;
-    for (index_t i = 0; i < slice_dim->extent; ++i) {
+    for (index_t i = slice_dim->extent; i > 0; --i) {
       for_each_slice_impl(bases_i, plan, f);
       bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
       for (std::size_t n = 1; n < NumBufs; n++) {
