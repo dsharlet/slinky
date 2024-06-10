@@ -729,11 +729,12 @@ namespace internal {
 // this memory layout with pointer arithmetic.
 struct for_each_slice_dim {
   enum {
-    loop_linear_and_call_f,  // Uses stride, extent
-    loop_linear,             // Uses stride, extent
-    loop_folded_and_call_f,  // Uses dim, extent
-    loop_folded,             // Uses dim, extent
-  } impl;
+    // Loop types are combinations of
+    call_f = 0x1,
+    folded = 0x2,  // Uses dim, extent
+    linear = 0,    // Uses stride, extent
+  };
+  int impl;
   index_t extent;
 };
 
@@ -755,7 +756,7 @@ template <typename F, std::size_t NumBufs>
 void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
   const for_each_slice_dim* slice_dim = read_plan<for_each_slice_dim>(plan);
   switch (slice_dim->impl) {
-  case for_each_slice_dim::loop_linear_and_call_f: {
+  case for_each_slice_dim::linear | for_each_slice_dim::call_f: {
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     std::array<void*, NumBufs> bases_i = bases;
     // If the next step is to call f, do that eagerly here to avoid an extra call.
@@ -771,7 +772,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     }
     return;
   }
-  case for_each_slice_dim::loop_linear: {
+  case for_each_slice_dim::linear: {
     const index_t* strides = read_plan<index_t>(plan, NumBufs);
     std::array<void*, NumBufs> bases_i = bases;
     for (index_t i = slice_dim->extent; i > 0; --i) {
@@ -783,7 +784,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     }
     return;
   }
-  case for_each_slice_dim::loop_folded_and_call_f: {
+  case for_each_slice_dim::folded | for_each_slice_dim::call_f: {
     dim* const* dims = read_plan<dim*>(plan, NumBufs);
     index_t begin = dims[0]->begin();
     index_t end = begin + slice_dim->extent;
@@ -799,7 +800,7 @@ void for_each_slice_impl(const std::array<void*, NumBufs>& bases, const void* pl
     return;
   }
   default: {
-    assert(slice_dim->impl == for_each_slice_dim::loop_folded);
+    assert(slice_dim->impl == for_each_slice_dim::folded);
     dim* const* dims = read_plan<dim*>(plan, NumBufs);
     index_t begin = dims[0]->begin();
     index_t end = begin + slice_dim->extent;

@@ -444,12 +444,12 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
 // Helper function to write a plan that does nothing when interpreted by for_each_slice_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
   for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-  next->impl = for_each_slice_dim::loop_linear_and_call_f;
+  next->impl = for_each_slice_dim::linear | for_each_slice_dim::call_f;
   next->extent = 0;
 }
 
 template <bool SkipContiguous, std::size_t BufsSize>
-index_t make_for_each_slice_dims_impl(
+SLINKY_NO_INLINE index_t make_for_each_slice_dims_impl(
     const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
@@ -459,7 +459,7 @@ index_t make_for_each_slice_dims_impl(
   }
 
   for_each_slice_dim* prev = reinterpret_cast<for_each_slice_dim*>(plan_base);
-  prev->impl = for_each_slice_dim::loop_linear;
+  prev->impl = for_each_slice_dim::linear;
   prev->extent = 1;
 
   void* plan = plan_base;
@@ -475,7 +475,7 @@ index_t make_for_each_slice_dims_impl(
         // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
         assert(extent == 1);
         for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-        next->impl = for_each_slice_dim::loop_folded;
+        next->impl = for_each_slice_dim::folded;
         next->extent = buf_dim.extent();
         prev = next;
 
@@ -523,7 +523,7 @@ index_t make_for_each_slice_dims_impl(
       assert(!buf_dim.is_folded());
 
       for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-      next->impl = for_each_slice_dim::loop_linear;
+      next->impl = for_each_slice_dim::linear;
       next->extent = extent;
       prev = next;
       extent = 1;
@@ -535,12 +535,7 @@ index_t make_for_each_slice_dims_impl(
       }
     }
   }
-  if (prev->impl == for_each_slice_dim::loop_folded) {
-    prev->impl = for_each_slice_dim::loop_folded_and_call_f;
-  } else {
-    assert(prev->impl == for_each_slice_dim::loop_linear);
-    prev->impl = for_each_slice_dim::loop_linear_and_call_f;
-  }
+  prev->impl |= for_each_slice_dim::call_f;
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
 }
