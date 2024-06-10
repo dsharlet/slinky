@@ -441,15 +441,15 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
   return result;
 }
 
-// Helper function to write a plan that does nothing when interpreted by for_each_slice_impl.
+// Helper function to write a plan that does nothing when interpreted by for_each_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
-  for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-  next->impl = for_each_slice_dim::linear | for_each_slice_dim::call_f;
+  for_each_loop* next = increment_plan<for_each_loop>(plan);
+  next->impl = for_each_loop::linear | for_each_loop::call_f;
   next->extent = 0;
 }
 
 template <bool SkipContiguous, std::size_t BufsSize>
-SLINKY_NO_INLINE index_t make_for_each_slice_dims_impl(
+SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
@@ -458,9 +458,10 @@ SLINKY_NO_INLINE index_t make_for_each_slice_dims_impl(
     bases[n] = bufs[n]->base;
   }
 
-  for_each_slice_dim* prev = reinterpret_cast<for_each_slice_dim*>(plan_base);
-  prev->impl = for_each_slice_dim::linear;
-  prev->extent = 1;
+  // Start out with a loop of extent 1, in case the buffer is rank 0.
+  for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan_base);
+  prev_loop->impl = for_each_loop::linear;
+  prev_loop->extent = 1;
 
   void* plan = plan_base;
   index_t slice_extent = 1;
@@ -474,15 +475,15 @@ SLINKY_NO_INLINE index_t make_for_each_slice_dims_impl(
       if (use_folded_loop(bufs, bufs_size, d)) {
         // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
         assert(extent == 1);
-        for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-        next->impl = for_each_slice_dim::folded;
-        next->extent = buf_dim.extent();
-        prev = next;
+        for_each_loop* loop = increment_plan<for_each_loop>(plan);
+        loop->impl = for_each_loop::folded;
+        loop->extent = buf_dim.extent();
+        prev_loop = loop;
 
-        const dim** next_dims = increment_plan<const dim*>(plan, bufs_size);
-        next_dims[0] = &buf->dim(d);
+        const dim** dims = increment_plan<const dim*>(plan, bufs_size);
+        dims[0] = &buf->dim(d);
         for (std::size_t n = 1; n < bufs_size; n++) {
-          next_dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
+          dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
         }
         continue;
       } else {
@@ -522,10 +523,10 @@ SLINKY_NO_INLINE index_t make_for_each_slice_dims_impl(
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
 
-      for_each_slice_dim* next = increment_plan<for_each_slice_dim>(plan);
-      next->impl = for_each_slice_dim::linear;
-      next->extent = extent;
-      prev = next;
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
+      loop->impl = for_each_loop::linear;
+      loop->extent = extent;
+      prev_loop = loop;
       extent = 1;
 
       index_t* strides = increment_plan<index_t>(plan, bufs_size);
@@ -535,34 +536,34 @@ SLINKY_NO_INLINE index_t make_for_each_slice_dims_impl(
       }
     }
   }
-  prev->impl |= for_each_slice_dim::call_f;
+  prev_loop->impl |= for_each_loop::call_f;
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
 }
 
 }  // namespace
 
-index_t make_for_each_contiguous_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan) {
+index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan) {
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: return make_for_each_slice_dims_impl<true, 1>(bufs.data(), bases, 0, plan);
-  case 2: return make_for_each_slice_dims_impl<true, 2>(bufs.data(), bases, 0, plan);
-  case 3: return make_for_each_slice_dims_impl<true, 3>(bufs.data(), bases, 0, plan);
-  default: return make_for_each_slice_dims_impl<true, 0>(bufs.data(), bases, bufs.size(), plan);
+  case 1: return make_for_each_loops_impl<true, 1>(bufs.data(), bases, 0, plan);
+  case 2: return make_for_each_loops_impl<true, 2>(bufs.data(), bases, 0, plan);
+  case 3: return make_for_each_loops_impl<true, 3>(bufs.data(), bases, 0, plan);
+  default: return make_for_each_loops_impl<true, 0>(bufs.data(), bases, bufs.size(), plan);
   }
 }
 
-void make_for_each_slice_dims(span<const raw_buffer*> bufs, void** bases, void* plan) {
+void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan) {
   // The implementation of this function benefits from knowing the size of the bufs span is constant.
   // By far the common case of this function is implementing elementwise unary or binary operations.
   // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
   switch (bufs.size()) {
-  case 1: make_for_each_slice_dims_impl<false, 1>(bufs.data(), bases, 0, plan); return;
-  case 2: make_for_each_slice_dims_impl<false, 2>(bufs.data(), bases, 0, plan); return;
-  case 3: make_for_each_slice_dims_impl<false, 3>(bufs.data(), bases, 0, plan); return;
-  default: make_for_each_slice_dims_impl<false, 0>(bufs.data(), bases, bufs.size(), plan); return;
+  case 1: make_for_each_loops_impl<false, 1>(bufs.data(), bases, 0, plan); return;
+  case 2: make_for_each_loops_impl<false, 2>(bufs.data(), bases, 0, plan); return;
+  case 3: make_for_each_loops_impl<false, 3>(bufs.data(), bases, 0, plan); return;
+  default: make_for_each_loops_impl<false, 0>(bufs.data(), bases, bufs.size(), plan); return;
   }
 }
 
