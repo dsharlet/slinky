@@ -383,7 +383,9 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   if (base_inner.fold_factor() != dim::unfolded) {
     // One of the dimensions is folded.
     return false;
-  } else if (base_inner.stride() * base_inner.extent() != base_outer.stride()) {
+  }
+  const index_t inner_extent = base_inner.extent();
+  if (base_inner.stride() * inner_extent != base_outer.stride()) {
     // The dimensions are not contiguous in memory.
     return false;
   }
@@ -404,7 +406,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
     }
 
     const index_t outer_stride = d < static_cast<int>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
-    if (inner.stride() * base_inner.extent() != outer_stride) {
+    if (inner.stride() * inner_extent != outer_stride) {
       // The dimensions are not contiguous in memory.
       return false;
     }
