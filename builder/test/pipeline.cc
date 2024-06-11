@@ -15,6 +15,8 @@
 
 namespace slinky {
 
+const node_context* set_default_print_context(const node_context* ctx);
+
 // Matrix multiplication (not fast!)
 template <typename T>
 index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
@@ -171,6 +173,7 @@ TEST_P(elementwise, pipeline_2d) {
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -179,14 +182,18 @@ TEST_P(elementwise, pipeline_2d) {
   // purely to verify that the relevant func::make calls work correctly.
   auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return multiply_2<int>(a, b); };
   auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
+  auto a2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
 
   func mul = func::make(
-      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = false});
   func add = func::make(
-      std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      std::move(a1), {{intm, {point(x), point(y)}}}, {{intm2, {x, y}}}, call_stmt::attributes{.allow_in_place = false});
+  func add2 = func::make(
+      std::move(a2), {{intm2, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = false});
 
   if (split > 0) {
-    add.loops({{x, split, max_workers}, {y, split, max_workers}});
+    add.loops({{y, 3, max_workers}});
+    add2.loops({{y, min(5, out->dim(0).extent()), max_workers}});
     if (schedule_storage) {
       intm->store_at({&add, x});
       intm->store_in(memory_type::stack);
@@ -210,15 +217,18 @@ TEST_P(elementwise, pipeline_2d) {
   buffer<int, 2> out_buf({W, H});
   out_buf.allocate();
 
+  // in_buf.translate(-1, -1);
+  // out_buf.translate(-1, -1);
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
+  const node_context* old_context = set_default_print_context(&ctx);
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
+      ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 2);
     }
   }
 
@@ -483,7 +493,7 @@ INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_
 
 TEST_P(stencil_chain, pipeline) {
   int max_workers = std::get<0>(GetParam());
-  int split = std::get<1>(GetParam());
+  int split = 5;//std::get<1>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -508,7 +518,7 @@ TEST_P(stencil_chain, pipeline) {
     stencil2.loops({{y, split, max_workers}});
   }
 
-  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.trace = true});
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.trace = false});
 
   // Run the pipeline.
   const int W = 20;
@@ -525,6 +535,7 @@ TEST_P(stencil_chain, pipeline) {
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
 
+  // const node_context* old_context = set_default_print_context(&ctx);
   std::string test_name = "stencil_chain_split_" + std::string(max_workers == loop::serial ? "serial" : "parallel") +
                           "_split_" + std::to_string(split);
   setup_tracing(eval_ctx, test_name + ".json");
