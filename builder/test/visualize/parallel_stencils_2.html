@@ -301,7 +301,7 @@ function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
   let new_min = max(result.dims[d].bounds[0], bounds[0]);
   let new_max = min(result.dims[d].bounds[1], bounds[1]);
-  if (new_max >= new_min && !is_folded(result.dims[d]) {
+  if (new_max >= new_min && !is_folded(result.dims[d])) {
     result.base += flat_offset_dim(result.dims[d], new_min);
   }
   result.dims[d].bounds[0] = new_min;
