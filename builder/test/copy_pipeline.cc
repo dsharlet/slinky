@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
@@ -181,15 +181,17 @@ TEST_P(copied_output, pipeline) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
 }
 
-class copied_input : public testing::TestWithParam<std::tuple<int, int, int>> {};
+class copied_input : public testing::TestWithParam<std::tuple<int, int, int, index_t>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, copied_input, testing::Combine(testing::Range(0, 3), offsets, offsets),
+INSTANTIATE_TEST_SUITE_P(schedule, copied_input,
+    testing::Combine(testing::Range(0, 3), offsets, offsets, testing::Values(dim::unfolded, 5)),
     test_params_to_string<copied_input::ParamType>);
 
 TEST_P(copied_input, pipeline) {
   int schedule = std::get<0>(GetParam());
   int offset_x = std::get<1>(GetParam());
   int offset_y = std::get<2>(GetParam());
+  index_t fold_y = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -204,7 +206,8 @@ TEST_P(copied_input, pipeline) {
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func copied = func::make_copy({in, {point(x + offset_x), point(y + offset_y)}}, {intm, {x, y}});
-  func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+  func stencil = func::make(sum3x3<short>, {{intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}},
+      call_stmt::attributes{.name = "stencil"});
 
   switch (schedule) {
   case 0: break;
@@ -222,6 +225,7 @@ TEST_P(copied_input, pipeline) {
   const int H = 10;
   buffer<short, 2> in_buf({W + 2, H + 2});
   in_buf.translate(-1 + offset_x, -1 + offset_y);
+  in_buf.dim(1).set_fold_factor(fold_y);
   buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
@@ -248,11 +252,11 @@ TEST_P(copied_input, pipeline) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
 }
 
-class concatenated_result : public testing::TestWithParam<bool> {};
+class concatenated_output : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, concatenated_result, testing::Values(true, false));
+INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output, testing::Values(true, false));
 
-TEST_P(concatenated_result, pipeline) {
+TEST_P(concatenated_output, pipeline) {
   bool no_alias_buffers = GetParam();
   // Make the pipeline
   node_context ctx;
@@ -309,15 +313,15 @@ TEST_P(concatenated_result, pipeline) {
   }
 }
 
-class transposed_result : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
+class transposed_output : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
 
 auto iota3 = testing::Values(0, 1, 2);
 
-INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
+INSTANTIATE_TEST_SUITE_P(schedule, transposed_output,
     testing::Combine(testing::Values(true, false), iota3, iota3, iota3),
-    test_params_to_string<transposed_result::ParamType>);
+    test_params_to_string<transposed_output::ParamType>);
 
-TEST_P(transposed_result, pipeline) {
+TEST_P(transposed_output, pipeline) {
   bool no_alias_buffers = std::get<0>(GetParam());
   std::vector<int> permutation = {std::get<1>(GetParam()), std::get<2>(GetParam()), std::get<3>(GetParam())};
 
@@ -371,7 +375,7 @@ TEST_P(transposed_result, pipeline) {
   }
 }
 
-TEST(stacked_result, pipeline) {
+TEST(stacked_output, pipeline) {
   // Make the pipeline
   node_context ctx;
 
