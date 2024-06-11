@@ -22,7 +22,7 @@ const dim& dim::broadcast() { return broadcast_dim; }
 
 namespace {
 
-index_t alloc_extent(const dim& dim) { return std::min(dim.extent(), dim.fold_factor()); }
+index_t alloc_extent(const dim& dim) { return dim.fold_factor() != dim::unfolded ? dim.fold_factor() : dim.extent(); }
 
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
   index_t flat_min = 0;
@@ -498,6 +498,11 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
+    if (bases[0]) {
+      // This is not a no-op for folded buffers.
+      index_t offset = buf_dim.flat_offset_bytes(buf_dim.min());
+      bases[0] = offset_bytes_non_null(bases[0], offset);
+    }
     for (std::size_t n = 1; n < bufs_size; n++) {
       if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
         const dim& buf_n_dim = bufs[n]->dim(d);

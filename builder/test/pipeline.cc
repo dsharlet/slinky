@@ -117,10 +117,10 @@ TEST_P(elementwise, pipeline_1d) {
   func::callable<const int, int> m2 = multiply_2<int>;
   func::callable<const int, int> a1 = add_1<int>;
 
-  func mul =
-      func::make(std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = true});
-  func add =
-      func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true});
+  func mul = func::make(
+      std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "mul"});
+  func add = func::make(
+      std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "add"});
 
   if (split > 0) {
     add.loops({{x, split, max_workers}});

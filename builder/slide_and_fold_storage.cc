@@ -662,7 +662,7 @@ public:
             // Initialize the first semaphore for each stage (the one before the loop min) to 1,
             // unblocking the first iteration.
             assert(sems.dim(0).stride() == sizeof(index_t));
-            std::fill_n(&sems(0), stage_count, 1);
+            std::fill_n(&sems(0, sems.dim(1).min()), stage_count, 1);
             return 0;
           },
           {}, {l.semaphores}, std::move(init_sems_attrs));
