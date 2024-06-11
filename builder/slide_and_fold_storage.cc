@@ -487,8 +487,7 @@ public:
             // buffer, so each worker can get its own fold.
 
             fold_factor += (loop.worker_count - 1) * overlap;
-            // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d).factor = simplify(align_up(fold_factor, loop.step));
+            vector_at(fold_factors[output], d).factor = simplify(fold_factor);
           }
         }
       }

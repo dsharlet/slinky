@@ -358,7 +358,7 @@ function pipeline(__in, out) {
   check((buffer_max(out, 1) < buffer_max(__in, 1)));
   { let intm = allocate('intm', 2, [
       {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-      {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:6}
+      {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:5}
     ]);
     { let intm_uncropped = clone_buffer(intm);
       let __loop_min = (buffer_min(out, 1) + -2);

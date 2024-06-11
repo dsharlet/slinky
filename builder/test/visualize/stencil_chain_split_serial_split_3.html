@@ -360,12 +360,12 @@ function pipeline(__in, out) {
     check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
     { let add_result = allocate('add_result', 2, [
         {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
-        {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:6}
+        {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:5}
       ]);
       { let add_result_uncropped = clone_buffer(add_result);
         { let stencil1_result = allocate('stencil1_result', 2, [
             {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-            {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:6}
+            {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:5}
           ]);
           { let stencil1_result_uncropped = clone_buffer(stencil1_result);
             {
