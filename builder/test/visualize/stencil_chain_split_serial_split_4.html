@@ -1,0 +1,440 @@
+
+<!DOCTYPE html><html><head><title>Visualizer</title>
+<style>
+div.buffer {
+  border:2px solid gray;
+  width:400px;
+  height:400px;
+  display:inline-block;
+  margin:3px;
+  position:relative;
+}
+div.mem_wrapper {
+  width:100%;
+  height:100%;
+  position:absolute;
+  top:0;
+}
+div.overlays {
+  margin:auto;
+  padding:3px;
+  position:absolute;
+  bottom:0;
+  right:0;
+}
+p.label {
+  font-family:monospace;
+  margin:4px;
+  border-radius:5px;
+  background:black;
+  opacity:75%;
+  padding:3px;
+}
+div.controls {
+  position:fixed;
+  bottom:0;
+  left:0;
+  right:0;
+  width: 300px;
+  margin: auto;
+}
+input.slider {
+  width:300px;
+  margin:10px;
+}
+</style>
+</head>
+<script>
+var __current_t = 0;
+</script>
+<body>
+<div width='100%' height='100%' id='buffers' class='buffers'>
+  <div class='buffer' id='template' style='display:none;'>
+    <div class='mem_wrapper'><canvas id='mem' style='width:100%; height:100%'></canvas></div>
+    <div class='overlays'></div>
+  </div>
+</div>
+<div class='controls' width='100%'>
+  <input type='range' min='0' value='0' class='slider' id='event_slider' oninput='__current_t = this.value'>
+</div>
+<script>
+var __buffers = document.getElementById('buffers');
+let __template = document.getElementById('template');
+var __heap_map = [];
+var __event_t = 1;
+function euclidean_div(a, b) { return Math.floor(a / b); }
+function euclidean_mod(a, b) { return Math.round(a - b * euclidean_div(a, b)); }
+function min(a, b) { return Math.min(a, b); }
+function max(a, b) { return Math.max(a, b); }
+function abs(a) { return Math.abs(a); }
+function clamp(x, a, b) { return min(max(x, a), b); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp_color(a, b, t) {
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+function make_color(a) {
+  return 'rgb(' + a[0] + ', ' + a[1] + ', ' + a[2] + ')';
+}
+function buffer_min(b, d) { return b.dims[d].bounds[0]; }
+function buffer_max(b, d) { return b.dims[d].bounds[1]; }
+function buffer_stride(b, d) { return b.dims[d].stride; }
+function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
+function buffer_rank(b) { return b.dims.length; }
+function buffer_elem_size(b) { return b.elem_size; }
+function is_folded(d) { return !isNaN(d.fold_factor); }
+function flat_offset_dim(d, x) { 
+  if (is_folded(d)) {
+    return euclidean_mod(x, d.fold_factor) * d.stride; 
+  } else {
+    return (x - d.bounds[0]) * d.stride; 
+  }
+}
+function unpack_dim(at, dim) {
+  if (dim.stride == 0) {
+    return 0;
+  } else {
+    return euclidean_mod(euclidean_div(at, dim.stride), dim.bounds[1] - dim.bounds[0] + 1);
+  }
+}
+function add_label(buf, name, dims, color) {
+  let label = name + ': ' + dims.map(i => '[' + i.bounds[0] + ',' + i.bounds[1] + ']').toString();
+  let p = document.createElement('p');
+  p.classList.add('label');
+  p.style.color = make_color(color);
+  p.appendChild(document.createTextNode(label));
+  buf.querySelector('.overlays').appendChild(p);
+}
+
+function define_mapping(buffer) {
+  let buf = __template.cloneNode(true);
+  buf.id = name;
+  buf.style = '';
+  buf.mem = buf.querySelector('canvas#mem');
+  add_label(buf, buffer.name, buffer.dims, buffer.color);
+  buf.mem.base = buffer.base;
+  closure = function(base, elem_size, dims) {
+    let sorted_dims = structuredClone(dims.toSorted(function(a, b) { return a.stride - b.stride; }));
+    if (sorted_dims.length > 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), unpack_dim(at, sorted_dims[1])];
+      }
+    } else if (sorted_dims.length == 1) {
+      return function(at) {
+        at -= base;
+        return [unpack_dim(at, sorted_dims[0]), 0];
+      }
+    } else {
+      return function(at) { return [0, 0]; }
+    }
+  }
+  buf.mem.mapping = closure(buffer.base, buffer.elem_size, buffer.dims);
+  buf.mem.elem_size = buffer.elem_size;
+  buf.mem.productions = [];
+  __buffers.appendChild(buf);
+  __heap_map.push({begin: buffer.base, end: buffer.base + buffer.size, element: buf})
+  window.requestAnimationFrame(function(t) { draw(buf.mem, __current_t); });
+}
+function find_mapping(base) {
+  for (let m of __heap_map) {
+    if (m.begin <= base && base < m.end) {
+      return m;
+    }
+  }
+  return 0;
+}
+function add_mapping(buffer) {
+  let m = find_mapping(buffer.base);
+  if (m) {
+    add_label(m.element, buffer.name, buffer.dims, buffer.color);
+  }
+}
+function for_each_offset_dim(buf, at, dim, fn) {
+  for (let i = buf.dims[dim].bounds[0]; i <= buf.dims[dim].bounds[1]; ++i) {
+    if (dim == 0) {
+      fn(at + flat_offset_dim(buf.dims[dim], i));
+    } else {
+      for_each_offset_dim(buf, at + flat_offset_dim(buf.dims[dim], i), dim - 1, fn);
+    }
+  }
+}
+function for_each_offset(buf, fn) {
+  for_each_offset_dim(buf, buf.base, buf.dims.length - 1, fn);
+}
+function draw(mem, t) {
+  if (!mem.getContext) return;
+  mem.width = mem.offsetWidth;
+  mem.height = mem.offsetHeight;
+  const ctx = mem.getContext('2d');
+  ctx.clearRect(0, 0, mem.width, mem.height);
+  for (let p of mem.productions) {
+    dt = t - p.t;
+    if (dt < 0) continue;
+    color = make_color(lerp_color(p.buf.color, [0, 0, 0], clamp(dt / 8, 0, 0.25)));
+    ctx.fillStyle = color;
+    for_each_offset(p.buf, function(at) {
+      [x, y] = mem.mapping(at);
+      ctx.fillRect(x*10 + 5, y*10 + 5, 8, 8);
+    });
+  }
+  window.requestAnimationFrame(function(t) { draw(mem, __current_t); });
+}
+function check(condition) {}
+// TODO: or_else() + and_then() are supposed to short-circuit in order
+// to avoid integer overflow, but since each expression is evaluated
+// when passed to this function it's not really functioning as intended here.
+// Good enough for the visualizer, but not quite right.
+function or_else(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (cond[d]) return true;
+  }
+  return false;
+}
+function and_then(...cond) {
+  for (let d = 0; d < cond.length; ++d) {
+    if (!cond[d]) return false;
+  }
+  return true;
+}
+function buffer_at(b, ...at) {
+  let result = b.base;
+  for (let d = 0; d < at.length; ++d) {
+    if (isNaN(at[d])) continue;
+    result = result + flat_offset_dim(b.dims[d], at[d]);
+  }
+  return result;
+}
+function select(c, t, f) { return c ? t : f; }
+function flat_allocate(size) {
+  if (typeof flat_allocate.heap == 'undefined') {
+    flat_allocate.heap = 0;
+  }
+  let result = flat_allocate.heap;
+  flat_allocate.heap += size;
+  return result;
+}
+function next_color() {
+  const colors = [[255, 0, 0], [0, 255, 0], [65, 105, 225], [240, 230, 140], [255, 0, 255], [0, 255, 255]];
+  if (typeof next_color.next == 'undefined') {
+    next_color.next = 0;
+  }
+  return colors[(next_color.next++) % colors.length];
+}
+function alloc_extent(dim) {
+  let extent = dim.bounds[1] - dim.bounds[0] + 1;
+  return isNaN(dim.fold_factor) ? extent : Math.min(extent, dim.fold_factor);
+}
+function is_stride_ok_dim(stride, extent, dim) {
+  if (isNaN(dim.stride)) {
+    return true;
+  } else if (extent == 1 && Math.abs(stride) == Math.abs(dim.stride) && alloc_extent(dim) > 1) {
+    return false;
+  } else if (alloc_extent(dim) * Math.abs(dim.stride) <= stride) {
+    return true;
+  }
+  return Math.abs(dim.stride) >= extent * stride;
+}
+function is_stride_ok(stride, extent, dims) {
+  for (let i of dims) {
+    if (!is_stride_ok_dim(stride, extent, i)) {
+      return false;
+    }
+  }
+  return true;
+}
+function init_strides(elem_size, dims) {
+  for (let i of dims) {
+    if (!isNaN(i.stride)) continue;
+
+    let alloc_extent_i = alloc_extent(i);
+
+    if (is_stride_ok(elem_size, alloc_extent_i, dims)) {
+      i.stride = elem_size;
+      continue;
+    }
+
+    let min = Infinity;
+    for (let j of dims) {
+      if (isNaN(j.stride)) {
+        continue;
+      } else if (j.bounds[1] < j.bounds[0]) {
+        min = 0;
+        break;
+      }
+
+      let candidate = Math.abs(j.stride) * alloc_extent(j);
+      if (candidate >= min) {
+        continue;
+      } else if (!is_stride_ok(candidate, alloc_extent_i, dims)) {
+        continue;
+      }
+      min = candidate;
+    }
+    i.stride = min;
+  }
+}
+function allocate(name, elem_size, dims, hidden = false) {
+  init_strides(elem_size, dims);
+  let flat_min = 0;
+  let flat_max = 0;
+  for (let i = 0; i < dims.length; ++i) {
+    let extent = is_folded(dims[i]) ? dims[i].fold_factor : (dims[i].bounds[1] - dims[i].bounds[0] + 1);
+    flat_min += (extent - 1) * min(0, dims[i].stride);
+    flat_max += (extent - 1) * max(0, dims[i].stride);
+  }
+  let size = flat_max - flat_min + elem_size;
+  let base = flat_allocate(size);
+  let buffer = {name: name, base: base, size: size, elem_size: elem_size, dims: dims, color: next_color()};
+  if (!hidden) {
+    define_mapping(buffer);
+  }
+  return buffer;
+}
+function free(b) {}
+function make_buffer(name, base, elem_size, dims) { 
+  let buffer = {name: name, base: base, elem_size: elem_size, dims: dims, color: next_color()};
+  add_mapping(buffer);
+  return buffer;  
+}
+function clone_buffer(b) { return structuredClone(b); }
+function crop_dim(b, d, bounds) {
+  let result = clone_buffer(b);
+  let new_min = max(result.dims[d].bounds[0], bounds[0]);
+  let new_max = min(result.dims[d].bounds[1], bounds[1]);
+  if (new_max >= new_min && !is_folded(result.dims[d]) {
+    result.base += flat_offset_dim(result.dims[d], new_min);
+  }
+  result.dims[d].bounds[0] = new_min;
+  result.dims[d].bounds[1] = new_max;
+  return result;
+}
+function crop_buffer(b, bounds) {
+  let result = clone_buffer(b);
+  for (let d = 0; d < bounds.length; ++d) {
+    result = crop_dim(result, d, bounds[d]);
+  }
+  return result;
+}
+function slice_dim(b, d, at) {
+  let result = clone_buffer(b);
+  result.base += flat_offset_dim(result.dims[d], at);
+  result.dims.splice(d, 1);
+  return result;
+}
+function slice_buffer(b, at) {
+  let result = clone_buffer(b);
+  for (let d = at.length - 1; d >= 0; --d) {
+    result = slice_dim(result, d, at[d]);
+  }
+  return result;
+}
+function transpose(b, dims) {
+  let result = clone_buffer(b);
+  result.dims = dims.map(i => result.dims[i]);
+  return result;
+}
+function produce(b) {
+  m = find_mapping(b.base);
+  if (m) {
+    m.element.mem.productions.push({t: __event_t, buf: clone_buffer(b)});
+  }
+}
+function consume(b) {}
+function trace_begin(x) { return x; }
+function trace_end(x) { return 1; }
+let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
+function pipeline(__in, out) {
+  {
+    let __trace_token = trace_begin(buffer_at(__trace_names, 37));
+    check(__in);
+    check((buffer_rank(__in) == 2));
+    check((buffer_elem_size(__in) == 2));
+    check(out);
+    check((buffer_rank(out) == 2));
+    check((buffer_elem_size(out) == 2));
+    check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+    check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+    check(((buffer_min(__in, 0) + 2) <= buffer_min(out, 0)));
+    check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
+    check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
+    check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
+    { let add_result = allocate('add_result', 2, [
+        {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
+        {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:8}
+      ]);
+      { let add_result_uncropped = clone_buffer(add_result);
+        { let stencil1_result = allocate('stencil1_result', 2, [
+            {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:8}
+          ]);
+          { let stencil1_result_uncropped = clone_buffer(stencil1_result);
+            {
+              let __trace_token = trace_begin(buffer_at(__trace_names, 17));
+              let __loop_min = (buffer_min(out, 1) + -4);
+              let __loop_max = buffer_max(out, 1);
+              let __loop_step = 4;
+              for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
+                {
+                  let __trace_token = trace_begin(buffer_at(__trace_names, 0));
+                  { let __add_result = crop_dim(add_result, 1, [(y + 2), (y + 5)]); {
+                    let add_result = __add_result;
+                    {
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
+                      consume(__in);
+                      produce(add_result);
+                      __event_t++;
+                      check(trace_end(__trace_token));
+                    }
+                  }}
+                  { let __stencil1_result = crop_dim(stencil1_result, 1, [(y + 1), (y + 4)]); {
+                    let stencil1_result = __stencil1_result;
+                    {
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 30));
+                      consume(add_result_uncropped);
+                      produce(stencil1_result);
+                      __event_t++;
+                      check(trace_end(__trace_token));
+                    }
+                  }}
+                  { let __out = crop_dim(out, 1, [y, (y + 3)]); {
+                    let out = __out;
+                    {
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 30));
+                      consume(stencil1_result_uncropped);
+                      produce(out);
+                      __event_t++;
+                      check(trace_end(__trace_token));
+                    }
+                  }}
+                  check(trace_end(__trace_token));
+                }
+              }
+              check(trace_end(__trace_token));
+            }
+          }
+          free(stencil1_result);
+        }
+      }
+      free(add_result);
+    }
+    check(trace_end(__trace_token));
+  }
+}
+let __in = allocate('in', 2, [{bounds: [-2, 21], stride:2, fold_factor:NaN}, {bounds: [-2, 31], stride:48, fold_factor:NaN}], true);
+let out = allocate('out', 2, [{bounds: [0, 19], stride:2, fold_factor:NaN}, {bounds: [0, 29], stride:40, fold_factor:NaN}]);
+pipeline(__in, out);
+
+let __end_t = __event_t;
+let __event_slider = document.getElementById('event_slider');
+let __autoplay = true;
+__event_slider.max = __end_t - 1;
+document.addEventListener('keyup', event => { if (event.code === 'Space') __autoplay = !__autoplay; });
+let rate = Math.min(1000, 5000 / __end_t);
+setInterval(function() {
+  if (__autoplay) {
+    __current_t = (__current_t + 1) % __end_t;
+    __event_slider.value = __current_t;
+  }
+}, rate);
+</script></body></html>
+

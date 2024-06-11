@@ -478,7 +478,7 @@ TEST_P(slide_2d, pipeline) {
 
 class stencil_chain : public testing::TestWithParam<std::tuple<int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_modes, testing::Range(0, 3)),
+INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_modes, testing::Range(0, 5)),
     test_params_to_string<stencil_chain::ParamType>);
 
 TEST_P(stencil_chain, pipeline) {
@@ -881,7 +881,7 @@ interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx};
 class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
-    testing::Combine(testing::Values(true, false), testing::Range(0, 2)),
+    testing::Combine(testing::Values(true, false), testing::Range(0, 3)),
     test_params_to_string<padded_stencil_separable::ParamType>);
 
 TEST_P(padded_stencil_separable, pipeline) {

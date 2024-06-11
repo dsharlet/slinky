@@ -84,11 +84,9 @@ TEST_P(pyramid, pipeline) {
   }
 }
 
-const auto schedule_modes = testing::Values(0, 1);
-
 class pyramid_multi : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(mode, pyramid_multi, schedule_modes);
+INSTANTIATE_TEST_SUITE_P(mode, pyramid_multi, testing::Range(0, 4));
 
 TEST_P(pyramid_multi, pipeline) {
   int split_y = GetParam();
