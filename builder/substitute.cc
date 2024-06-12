@@ -943,15 +943,6 @@ class slice_updater : public node_mutator {
 public:
   slice_updater(var sym, span<const int> slices) : sym(sym), slices(slices) {}
 
-  interval_expr mutate(const interval_expr& x) {
-    if (x.is_point()) {
-      return point(mutate(x.min));
-    } else {
-      return {mutate(x.min), mutate(x.max)};
-    }
-  }
-  using node_mutator::mutate;
-
   void visit(const call* op) override {
     switch (op->intrinsic) {
     case intrinsic::buffer_min:

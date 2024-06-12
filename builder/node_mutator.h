@@ -41,6 +41,14 @@ public:
     }
   }
 
+  virtual interval_expr mutate(const interval_expr& x) {
+    if (x.is_point()) {
+      return point(mutate(x.min));
+    } else {
+      return {mutate(x.min), mutate(x.max)};
+    }
+  }
+
   void visit(const variable* op) override { set_result(op); }
   void visit(const constant* op) override { set_result(op); }
 
