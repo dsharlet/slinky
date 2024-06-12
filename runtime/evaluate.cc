@@ -583,23 +583,15 @@ public:
     return eval(op->body);
   }
 
-  // Call `fn` while a clone of `src` (`sym`) is in scope.
-  template <typename Fn>
-  SLINKY_NO_STACK_PROTECTOR index_t eval_in_clone(var sym, var src, Fn fn) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(src));
+  index_t eval(const clone_buffer* op) {
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    assert(src_buf);
 
-    raw_buffer clone;
-    clone.base = src_buf->base;
-    clone.elem_size = src_buf->elem_size;
-    clone.rank = src_buf->rank;
+    raw_buffer clone = *src_buf;
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     memcpy(clone.dims, src_buf->dims, sizeof(dim) * src_buf->rank);
-    auto set_buffer = set_value_in_scope(context, sym, reinterpret_cast<index_t>(&clone));
-    return fn();
-  }
-
-  index_t eval(const clone_buffer* op) {
-    return eval_in_clone(op->sym, op->src, [=]() { return eval(op->body); });
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
+    return eval(op->body);
   }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const crop_buffer* op) {
@@ -759,7 +751,14 @@ public:
       // The operation is not shadowed. Make a clone and use eval_shadowed on the clone. This is not as efficient as it
       // could be, but the shadowed case should be faster, so we'll optimize for that case, and prefer that case when
       // constructing programs.
-      return eval_in_clone(op->sym, op->src, [=]() { return eval_shadowed(op); });
+      raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+      assert(src_buf);
+
+      raw_buffer clone = *src_buf;
+      clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+      memcpy(clone.dims, src_buf->dims, sizeof(dim) * src_buf->rank);
+      auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
+      return eval_shadowed(op);
     }
   }
 
