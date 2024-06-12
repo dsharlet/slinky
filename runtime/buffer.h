@@ -538,12 +538,11 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   if (inner.fold_factor() != dim::unfolded) return false;
 
   // Avoid asserts on overflow in extent.
-  index_t inner_extent = inner.max() - inner.min() + 1;
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
   // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
-  index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner_extent;
+  index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner.extent();
 #else
-  index_t next_stride = inner.stride() * inner_extent;
+  index_t next_stride = inner.stride() * (inner.max() - inner.min() + 1);
 #endif
   // Avoid overflow for broadcast dimensions
   if (next_stride != outer.stride()) return false;
