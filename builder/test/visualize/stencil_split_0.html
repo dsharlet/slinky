@@ -81,7 +81,14 @@ function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
 function buffer_elem_size(b) { return b.elem_size; }
-function flat_offset_dim(d, x) { return ((x - d.bounds[0]) % d.fold_factor) * d.stride; }
+function is_folded(d) { return !isNaN(d.fold_factor); }
+function flat_offset_dim(d, x) { 
+  if (is_folded(d)) {
+    return euclidean_mod(x, d.fold_factor) * d.stride; 
+  } else {
+    return (x - d.bounds[0]) * d.stride; 
+  }
+}
 function unpack_dim(at, dim) {
   if (dim.stride == 0) {
     return 0;
@@ -271,7 +278,7 @@ function allocate(name, elem_size, dims, hidden = false) {
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
-    let extent = min(dims[i].bounds[1] - dims[i].bounds[0] + 1, dims[i].fold_factor);
+    let extent = is_folded(dims[i]) ? dims[i].fold_factor : (dims[i].bounds[1] - dims[i].bounds[0] + 1);
     flat_min += (extent - 1) * min(0, dims[i].stride);
     flat_max += (extent - 1) * max(0, dims[i].stride);
   }
@@ -294,7 +301,7 @@ function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
   let new_min = max(result.dims[d].bounds[0], bounds[0]);
   let new_max = min(result.dims[d].bounds[1], bounds[1]);
-  if (new_max >= new_min) {
+  if (new_max >= new_min && !is_folded(result.dims[d])) {
     result.base += flat_offset_dim(result.dims[d], new_min);
   }
   result.dims[d].bounds[0] = new_min;
@@ -350,8 +357,8 @@ function pipeline(__in, out) {
   check((buffer_min(__in, 1) < buffer_min(out, 1)));
   check((buffer_max(out, 1) < buffer_max(__in, 1)));
   { let intm = allocate('intm', 2, [
-      {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:9223372036854775807},
-      {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:9223372036854775807}
+      {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+      {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
     ]);
     consume(__in);
     produce(intm);
@@ -362,8 +369,8 @@ function pipeline(__in, out) {
     free(intm);
   }
 }
-let __in = allocate('in', 2, [{bounds: [-1, 20], stride:2, fold_factor:9223372036854775807}, {bounds: [-1, 30], stride:44, fold_factor:9223372036854775807}], true);
-let out = allocate('out', 2, [{bounds: [0, 19], stride:2, fold_factor:9223372036854775807}, {bounds: [0, 29], stride:40, fold_factor:9223372036854775807}]);
+let __in = allocate('in', 2, [{bounds: [-1, 20], stride:2, fold_factor:NaN}, {bounds: [-1, 30], stride:44, fold_factor:NaN}], true);
+let out = allocate('out', 2, [{bounds: [0, 19], stride:2, fold_factor:NaN}, {bounds: [0, 29], stride:40, fold_factor:NaN}]);
 pipeline(__in, out);
 
 let __end_t = __event_t;

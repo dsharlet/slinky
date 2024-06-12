@@ -344,76 +344,84 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  check(__in);
-  check((buffer_rank(__in) == 2));
-  check((buffer_elem_size(__in) == 4));
-  check(out);
-  check((buffer_rank(out) == 2));
-  check((buffer_elem_size(out) == 4));
-  check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-  check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
-    let g = buffer_min(out, 0);
-    let g_0 = buffer_max(out, 0);
-    check((buffer_min(__in, 0) <= min(g, g_0)));
-    check((max(g, g_0) <= buffer_max(__in, 0)));
-    check((buffer_min(__in, 1) <= buffer_min(out, 1)));
-    check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    { let softmax_in = allocate('softmax_in', 4, [
-        {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
-        {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
+    let __trace_token = trace_begin(buffer_at(__trace_names, 37));
+    check(__in);
+    check((buffer_rank(__in) == 2));
+    check((buffer_elem_size(__in) == 2));
+    check(out);
+    check((buffer_rank(out) == 2));
+    check((buffer_elem_size(out) == 2));
+    check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+    check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+    check(((buffer_min(__in, 0) + 2) <= buffer_min(out, 0)));
+    check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
+    check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
+    check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
+    { let add_result = allocate('add_result', 2, [
+        {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
+        {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:6}
       ]);
-      consume(__in);
-      produce(softmax_in);
-      __event_t++;
-      { let max_in = allocate('max_in', 4, [
-          {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
-        ]);
-        consume(softmax_in);
-        produce(max_in);
-        __event_t++;
-        check(free(softmax_in));
-        { let sum_exp_in = allocate('sum_exp_in', 4, [
-            {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
+      { let add_result_uncropped = clone_buffer(add_result);
+        { let stencil1_result = allocate('stencil1_result', 2, [
+            {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:6}
           ]);
-          { let sum_exp_in_uncropped = clone_buffer(sum_exp_in);
-            { let exp_in = allocate('exp_in', 4, [
-                {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
-                {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
-              ]);
-              consume(__in);
-              consume(max_in);
-              produce(exp_in);
-              produce(sum_exp_in);
-              __event_t++;
-              check(free(max_in));
-              { let softmax_out = allocate('softmax_out', 4, [
-                  {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
-                  {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
-                ]);
-                consume(exp_in);
-                consume(sum_exp_in_uncropped);
-                produce(softmax_out);
-                __event_t++;
-                check(free(exp_in));
-                consume(softmax_out);
-                produce(out);
-                __event_t++;
-                free(softmax_out);
+          { let stencil1_result_uncropped = clone_buffer(stencil1_result);
+            {
+              let __trace_token = trace_begin(buffer_at(__trace_names, 17));
+              let __loop_min = (buffer_min(out, 1) + -4);
+              let __loop_max = buffer_max(out, 1);
+              let __loop_step = 4;
+              for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
+                {
+                  let __trace_token = trace_begin(buffer_at(__trace_names, 0));
+                  { let __add_result = crop_dim(add_result, 1, [(y + 2), (y + 5)]); {
+                    let add_result = __add_result;
+                    {
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 24));
+                      consume(__in);
+                      produce(add_result);
+                      __event_t++;
+                      check(trace_end(__trace_token));
+                    }
+                  }}
+                  { let __stencil1_result = crop_dim(stencil1_result, 1, [(y + 1), (y + 4)]); {
+                    let stencil1_result = __stencil1_result;
+                    {
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 30));
+                      consume(add_result_uncropped);
+                      produce(stencil1_result);
+                      __event_t++;
+                      check(trace_end(__trace_token));
+                    }
+                  }}
+                  { let __out = crop_dim(out, 1, [y, (y + 3)]); {
+                    let out = __out;
+                    {
+                      let __trace_token = trace_begin(buffer_at(__trace_names, 30));
+                      consume(stencil1_result_uncropped);
+                      produce(out);
+                      __event_t++;
+                      check(trace_end(__trace_token));
+                    }
+                  }}
+                  check(trace_end(__trace_token));
+                }
               }
-              free(exp_in);
+              check(trace_end(__trace_token));
             }
           }
-          free(sum_exp_in);
+          free(stencil1_result);
         }
-        free(max_in);
       }
-      free(softmax_in);
+      free(add_result);
     }
+    check(trace_end(__trace_token));
   }
 }
-let __in = allocate('in', 4, [{bounds: [0, 29], stride:4, fold_factor:NaN}, {bounds: [0, 19], stride:120, fold_factor:NaN}], true);
-let out = allocate('out', 4, [{bounds: [0, 29], stride:4, fold_factor:NaN}, {bounds: [0, 19], stride:120, fold_factor:NaN}]);
+let __in = allocate('in', 2, [{bounds: [-2, 21], stride:2, fold_factor:NaN}, {bounds: [-2, 31], stride:48, fold_factor:NaN}], true);
+let out = allocate('out', 2, [{bounds: [0, 19], stride:2, fold_factor:NaN}, {bounds: [0, 29], stride:40, fold_factor:NaN}]);
 pipeline(__in, out);
 
 let __end_t = __event_t;

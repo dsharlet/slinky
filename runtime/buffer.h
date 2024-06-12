@@ -117,7 +117,7 @@ public:
     if (fold_factor() == unfolded) {
       return (i - min()) * stride();
     } else {
-      return euclidean_mod_positive_modulus(i - min(), fold_factor()) * stride();
+      return euclidean_mod_positive_modulus(i, fold_factor()) * stride();
     }
   }
 
@@ -311,19 +311,18 @@ public:
     min = std::max(min, dim(d).min());
     max = std::min(max, dim(d).max());
 
-    index_t offset = 0;
     if (base != nullptr) {
       if (max >= min) {
-        offset = dim(d).flat_offset_bytes(min);
-        base = offset_bytes_non_null(base, offset);
+        if (dim(d).fold_factor() == dim::unfolded) {
+          index_t offset = dim(d).flat_offset_bytes(min);
+          base = offset_bytes_non_null(base, offset);
+        }
       } else {
         base = nullptr;
       }
     }
 
     dim(d).set_bounds(min, max);
-    // Crops can't span a folding boundary if they move the base pointer.
-    assert(base == nullptr || offset == 0 || !dim(d).is_folded());
     return *this;
   }
 
@@ -836,7 +835,7 @@ void for_each_tile(const index_t* tile, raw_buffer& buf, int d, const F& f) {
     for_each_tile(tile, buf, d - 1, f);
   } else {
     // TODO: Supporting folding here should be possible.
-    assert(dim.fold_factor() == dim::unfolded);
+    assert(!dim.is_folded());
     index_t stride = dim.stride() * step;
 
     // Save the old base and bounds.

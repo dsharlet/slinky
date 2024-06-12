@@ -96,8 +96,7 @@ void randomize_strides_and_padding(Rng& rng, buffer<T, N>& buf, const randomize_
       stride *= dim.extent() + random(rng, 0, 3) * buf.elem_size;
     }
     if (options.allow_fold && random(rng, 0, 9) == 0) {
-      // Make sure the fold factor divides the min so the fold is valid.
-      dim.set_fold_factor(std::max<index_t>(1, std::abs(dim.min())));
+      dim.set_fold_factor(random(rng, 1, 7));
     }
   }
 

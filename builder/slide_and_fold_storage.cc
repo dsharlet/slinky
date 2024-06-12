@@ -487,8 +487,7 @@ public:
             // buffer, so each worker can get its own fold.
 
             fold_factor += (loop.worker_count - 1) * overlap;
-            // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d).factor = simplify(align_up(fold_factor, loop.step));
+            vector_at(fold_factors[output], d).factor = simplify(fold_factor);
           }
         }
       }
@@ -662,7 +661,7 @@ public:
             // Initialize the first semaphore for each stage (the one before the loop min) to 1,
             // unblocking the first iteration.
             assert(sems.dim(0).stride() == sizeof(index_t));
-            std::fill_n(&sems(0), stage_count, 1);
+            std::fill_n(&sems(0, sems.dim(1).min()), stage_count, 1);
             return 0;
           },
           {}, {l.semaphores}, std::move(init_sems_attrs));

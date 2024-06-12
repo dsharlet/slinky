@@ -117,10 +117,10 @@ TEST_P(elementwise, pipeline_1d) {
   func::callable<const int, int> m2 = multiply_2<int>;
   func::callable<const int, int> a1 = add_1<int>;
 
-  func mul =
-      func::make(std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = true});
-  func add =
-      func::make(std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true});
+  func mul = func::make(
+      std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "mul"});
+  func add = func::make(
+      std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "add"});
 
   if (split > 0) {
     add.loops({{x, split, max_workers}});
@@ -393,7 +393,7 @@ TEST_P(stencil, pipeline) {
 
   if (split > 0) {
     const int parallel_extra = max_workers != loop::serial ? split : 0;
-    const int intm_size = (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short);
+    const int intm_size = (W + 2) * (split + parallel_extra + 2) * sizeof(short);
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size));
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
@@ -478,7 +478,7 @@ TEST_P(slide_2d, pipeline) {
 
 class stencil_chain : public testing::TestWithParam<std::tuple<int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_modes, testing::Range(0, 3)),
+INSTANTIATE_TEST_SUITE_P(split_split_mode, stencil_chain, testing::Combine(loop_modes, testing::Range(0, 5)),
     test_params_to_string<stencil_chain::ParamType>);
 
 TEST_P(stencil_chain, pipeline) {
@@ -553,8 +553,8 @@ TEST_P(stencil_chain, pipeline) {
 
   if (split > 0) {
     const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
-    const int intm_size = (W + 2) * align_up(split + parallel_extra + 2, split) * sizeof(short);
-    const int intm2_size = (W + 4) * align_up(split + parallel_extra + 2, split) * sizeof(short);
+    const int intm_size = (W + 2) * (split + parallel_extra + 2) * sizeof(short);
+    const int intm2_size = (W + 4) * (split + parallel_extra + 2) * sizeof(short);
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size, intm2_size));
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
@@ -881,7 +881,7 @@ interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx};
 class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
-    testing::Combine(testing::Values(true, false), testing::Range(0, 2)),
+    testing::Combine(testing::Values(true, false), testing::Range(0, 3)),
     test_params_to_string<padded_stencil_separable::ParamType>);
 
 TEST_P(padded_stencil_separable, pipeline) {

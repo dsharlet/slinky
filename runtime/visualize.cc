@@ -75,18 +75,12 @@ public:
   js_printer& operator<<(const interval_expr& e) { return *this << "[" << e.min << ", " << e.max << "]"; }
 
   js_printer& operator<<(const dim_expr& d) {
-    *this << "{bounds:" << d.bounds << ", stride:" << d.stride << ", fold_factor:";
-    if (d.fold_factor.defined()) {
-      *this << d.fold_factor;
-    } else {
-      *this << std::numeric_limits<index_t>::max();
-    }
-    return *this << "}";
+    return *this << "{bounds:" << d.bounds << ", stride:" << d.stride << ", fold_factor:" << d.fold_factor << "}";
   }
 
   js_printer& operator<<(const dim& d) {
     return *this << "{bounds: [" << d.min() << ", " << d.max() << "], stride:" << d.stride()
-                 << ", fold_factor:" << d.fold_factor() << "}";
+                 << ", fold_factor:" << (d.is_folded() ? std::to_string(d.fold_factor()) : "NaN") << "}";
   }
 
   template <typename T>
@@ -381,7 +375,14 @@ function buffer_stride(b, d) { return b.dims[d].stride; }
 function buffer_fold_factor(b, d) { return b.dims[d].fold_factor; }
 function buffer_rank(b) { return b.dims.length; }
 function buffer_elem_size(b) { return b.elem_size; }
-function flat_offset_dim(d, x) { return ((x - d.bounds[0]) % d.fold_factor) * d.stride; }
+function is_folded(d) { return !isNaN(d.fold_factor); }
+function flat_offset_dim(d, x) { 
+  if (is_folded(d)) {
+    return euclidean_mod(x, d.fold_factor) * d.stride; 
+  } else {
+    return (x - d.bounds[0]) * d.stride; 
+  }
+}
 function unpack_dim(at, dim) {
   if (dim.stride == 0) {
     return 0;
@@ -571,7 +572,7 @@ function allocate(name, elem_size, dims, hidden = false) {
   let flat_min = 0;
   let flat_max = 0;
   for (let i = 0; i < dims.length; ++i) {
-    let extent = min(dims[i].bounds[1] - dims[i].bounds[0] + 1, dims[i].fold_factor);
+    let extent = is_folded(dims[i]) ? dims[i].fold_factor : (dims[i].bounds[1] - dims[i].bounds[0] + 1);
     flat_min += (extent - 1) * min(0, dims[i].stride);
     flat_max += (extent - 1) * max(0, dims[i].stride);
   }
@@ -594,7 +595,7 @@ function crop_dim(b, d, bounds) {
   let result = clone_buffer(b);
   let new_min = max(result.dims[d].bounds[0], bounds[0]);
   let new_max = min(result.dims[d].bounds[1], bounds[1]);
-  if (new_max >= new_min) {
+  if (new_max >= new_min && !is_folded(result.dims[d])) {
     result.base += flat_offset_dim(result.dims[d], new_min);
   }
   result.dims[d].bounds[0] = new_min;
