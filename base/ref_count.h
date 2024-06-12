@@ -44,9 +44,9 @@ public:
 
   ref_count& operator=(T* v) {
     if (value != v) {
-      if (value) value->release();
-      value = v;
+      std::swap(value, v);
       if (value) value->add_ref();
+      if (v) v->release();
     }
     return *this;
   }
