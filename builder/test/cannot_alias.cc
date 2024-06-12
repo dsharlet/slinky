@@ -246,6 +246,7 @@ TEST_P(may_alias, unfolded) {
   // the output. We can only alias it if we know the output is unfolded.
   const bool may_alias = GetParam();
   if (may_alias) {
+    out->dim(0).fold_factor = dim::unfolded;
     out->dim(1).fold_factor = dim::unfolded;
   }
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});

@@ -199,6 +199,11 @@ TEST_P(copied_input, pipeline) {
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
+  in->dim(0).fold_factor = dim::unfolded;
+  if (fold_y == dim::unfolded) {
+    in->dim(1).fold_factor = dim::unfolded;
+  }
+
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
   var x(ctx, "x");
@@ -249,7 +254,7 @@ TEST_P(copied_input, pipeline) {
     }
   }
 
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), fold_y == dim::unfolded ? 0 : 1);
 }
 
 class concatenated_output : public testing::TestWithParam<bool> {};

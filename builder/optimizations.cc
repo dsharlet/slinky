@@ -269,18 +269,29 @@ class buffer_aliaser : public node_mutator {
           return false;
         }
       }
+      const dim_expr& target_dim = target_info.dims[alias.permutation[d]];
+      const expr& target_fold_factor = target_dim.fold_factor;
+      const bool target_folded = target_fold_factor.defined() && !is_constant(target_fold_factor, dim::unfolded);
       if (op->dims[d].fold_factor.defined()) {
-        const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
-        if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
+        // The allocation we're trying to alias is folded.
+        if (!target_folded) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
         } else if (!prove_true(target_fold_factor >= op->dims[d].fold_factor)) {
-          // The fold factor of this allocation does not evenly divide the target fold factor.
+          // The fold factor of this allocation is not big enough.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
         }
-        // It's surprising we don't need to check the mins are aligned here. I have tried very hard to write a test that
-        // fails without such a check, but I cannot.
+      }
+      if (target_folded) {
+        // The target we're trying to alias is folded.
+        const expr& alias_at = alias.at[alias.permutation[d]];
+        if (prove_true((alias_at - target_dim.bounds.min) % target_fold_factor == 0)) {
+          // This alias translates by a multiple of the fold factor, so it is OK.
+        } else {
+          // This alias may not be aligned to the fold factor.
+          return false;
+        }
       }
     }
     return true;
