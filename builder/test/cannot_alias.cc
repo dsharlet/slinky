@@ -29,7 +29,7 @@ TEST_P(may_alias, transpose_input) {
 
   if (!may_alias) {
     // Our callback requires the stride to be 1 element.
-    in_t->dim(0).stride = static_cast<index_t>(sizeof(int));
+    in_t->dim(0).stride = sizeof(int);
   }
 
   var x(ctx, "x");
@@ -82,7 +82,7 @@ TEST_P(may_alias, transpose_output) {
 
   if (!may_alias) {
     // Our callback requires the stride to be 1 element.
-    out_t->dim(0).stride = static_cast<index_t>(sizeof(int));
+    out_t->dim(0).stride = sizeof(int);
   }
 
   var x(ctx, "x");

@@ -796,7 +796,7 @@ TEST(reshape, copy) {
   // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
   // prior dimensions).
   for (auto i : {in, out}) {
-    i->dim(0).stride = static_cast<index_t>(sizeof(int));
+    i->dim(0).stride = sizeof(int);
     i->dim(1).stride = i->dim(0).stride * i->dim(0).extent();
     i->dim(2).stride = i->dim(1).stride * i->dim(1).extent();
   }
@@ -854,7 +854,7 @@ TEST(batch_reshape, copy) {
   // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
   // prior dimensions).
   for (auto i : {in, out}) {
-    i->dim(0).stride = static_cast<index_t>(sizeof(int));
+    i->dim(0).stride = sizeof(int);
     i->dim(1).stride = i->dim(0).stride * i->dim(0).extent();
     i->dim(2).stride = i->dim(1).stride * i->dim(1).extent();
   }

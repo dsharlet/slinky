@@ -146,19 +146,19 @@ public:
 
     expr bep_var = variable::make(bep->sym());
     for (std::size_t d = 0; d < bep->rank(); d++) {
-      if (!match(bep->dim(d).bounds.min, buffer_min(bep_var, static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).bounds.min, buffer_min(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").min = " << e << ";\n";
       }
-      if (!match(bep->dim(d).bounds.max, buffer_max(bep_var, static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).bounds.max, buffer_max(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").max = " << e << ";\n";
       }
-      if (!match(bep->dim(d).stride, buffer_stride(bep_var, static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).stride, buffer_stride(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
-      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(bep_var, static_cast<index_t>(d)))) {
+      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = " << e << ";\n";
       }

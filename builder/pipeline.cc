@@ -41,7 +41,7 @@ buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
 }
 
 buffer_expr::buffer_expr(var sym, const_raw_buffer_ptr constant_buffer)
-    : sym_(sym), elem_size_(static_cast<index_t>(constant_buffer->elem_size)), producer_(nullptr),
+    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr),
       constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
   dims_.reserve(constant_->rank);
@@ -59,16 +59,8 @@ buffer_expr_ptr buffer_expr::make(var sym, std::size_t rank, expr elem_size) {
   return buffer_expr_ptr(new buffer_expr(sym, rank, std::move(elem_size)));
 }
 
-buffer_expr_ptr buffer_expr::make(var sym, std::size_t rank, index_t elem_size) {
-  return make(sym, rank, expr(elem_size));
-}
-
 buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), rank, std::move(elem_size)));
-}
-
-buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size) {
-  return make(ctx, sym, rank, expr(elem_size));
 }
 
 buffer_expr_ptr buffer_expr::make(var sym, const_raw_buffer_ptr constant_buffer) {

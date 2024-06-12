@@ -47,9 +47,7 @@ class buffer_expr : public ref_counted<buffer_expr> {
 
 public:
   static buffer_expr_ptr make(var sym, std::size_t rank, expr elem_size);
-  static buffer_expr_ptr make(var sym, std::size_t rank, index_t elem_size);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size);
   // Make a constant buffer_expr. It takes ownership of the buffer from the caller.
   static buffer_expr_ptr make(var sym, const_raw_buffer_ptr constant_buffer);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
