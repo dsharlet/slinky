@@ -22,7 +22,14 @@ const dim& dim::broadcast() { return broadcast_dim; }
 
 namespace {
 
-index_t alloc_extent(const dim& dim) { return dim.fold_factor() != dim::unfolded ? dim.fold_factor() : dim.extent(); }
+index_t alloc_extent(const dim& dim) {
+  if (dim.fold_factor() != dim::unfolded) {
+    // TODO: We can do better than this if the dim doesn't cross a fold boundary.
+    return dim.fold_factor();
+  } else {
+    return dim.extent();
+  }
+}
 
 std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims) {
   index_t flat_min = 0;
