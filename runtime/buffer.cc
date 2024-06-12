@@ -506,7 +506,8 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
     if (bases[0]) {
-      // This is not a no-op for folded buffers.
+      // This function is expected to adjust all bases to point to the min of `buf_dim`. For non-folded dimensions, that
+      // is true by construction, but not for folded dimensions.
       index_t offset = buf_dim.flat_offset_bytes(buf_dim.min());
       bases[0] = offset_bytes_non_null(bases[0], offset);
     }
