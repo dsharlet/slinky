@@ -1254,7 +1254,7 @@ public:
     changed = changed || (dims_count == 1 && std::is_same_v<T, crop_buffer>) || !body.same_as(op->body);
 
     auto make_crop = [&](const stmt& body) -> stmt {
-      if (!changed) {
+      if (!changed && body.same_as(op->body)) {
         return op;
       } else if (dims_count == 1) {
         // This crop is of one dimension, replace it with crop_dim.
@@ -1347,7 +1347,7 @@ public:
     changed = changed || (at_count == 1 && std::is_same_v<T, slice_buffer>);
 
     auto make_slice = [&](const stmt& body) -> stmt {
-      if (!changed) {
+      if (!changed && body.same_as(op)) {
         return op;
       } else if (at_count == 1) {
         // This slice is of one dimension, replace it with slice_dim.
