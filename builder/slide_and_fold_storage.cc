@@ -390,7 +390,7 @@ public:
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
             vector_at(fold_factors[output], d) = {
                 simplify(fold_factor),
-                simplify(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max),
+                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max)),
                 loops.size() - 1,
             };
             did_overlapped_fold = true;
