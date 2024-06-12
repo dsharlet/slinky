@@ -259,8 +259,7 @@ public:
     node_mutator::set_result(mutate(e, &result_bounds));
   }
 
-  interval_expr mutate(
-      const interval_expr& x, interval_expr* min_bounds = nullptr, interval_expr* max_bounds = nullptr) {
+  interval_expr mutate(const interval_expr& x, interval_expr* min_bounds, interval_expr* max_bounds) {
     if (deep_is_point(x)) {
       expr result = mutate(x.min, min_bounds);
       if (min_bounds && max_bounds) {
@@ -273,6 +272,7 @@ public:
       return result;
     }
   }
+  interval_expr mutate(const interval_expr& x) override { return mutate(x, nullptr, nullptr); }
 
   // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
   // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
@@ -1254,7 +1254,7 @@ public:
     changed = changed || (dims_count == 1 && std::is_same_v<T, crop_buffer>) || !body.same_as(op->body);
 
     auto make_crop = [&](const stmt& body) -> stmt {
-      if (!changed) {
+      if (!changed && body.same_as(op->body)) {
         return op;
       } else if (dims_count == 1) {
         // This crop is of one dimension, replace it with crop_dim.
@@ -1347,7 +1347,7 @@ public:
     changed = changed || (at_count == 1 && std::is_same_v<T, slice_buffer>);
 
     auto make_slice = [&](const stmt& body) -> stmt {
-      if (!changed) {
+      if (!changed && body.same_as(op)) {
         return op;
       } else if (at_count == 1) {
         // This slice is of one dimension, replace it with slice_dim.

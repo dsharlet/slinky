@@ -41,7 +41,7 @@ buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
 }
 
 buffer_expr::buffer_expr(var sym, const_raw_buffer_ptr constant_buffer)
-    : sym_(sym), elem_size_(static_cast<index_t>(constant_buffer->elem_size)), producer_(nullptr),
+    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr),
       constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
   dims_.reserve(constant_->rank);
@@ -59,16 +59,8 @@ buffer_expr_ptr buffer_expr::make(var sym, std::size_t rank, expr elem_size) {
   return buffer_expr_ptr(new buffer_expr(sym, rank, std::move(elem_size)));
 }
 
-buffer_expr_ptr buffer_expr::make(var sym, std::size_t rank, index_t elem_size) {
-  return make(sym, rank, expr(elem_size));
-}
-
 buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size) {
   return buffer_expr_ptr(new buffer_expr(ctx.insert_unique(sym), rank, std::move(elem_size)));
-}
-
-buffer_expr_ptr buffer_expr::make(node_context& ctx, const std::string& sym, std::size_t rank, index_t elem_size) {
-  return make(ctx, sym, rank, expr(elem_size));
 }
 
 buffer_expr_ptr buffer_expr::make(var sym, const_raw_buffer_ptr constant_buffer) {
@@ -261,20 +253,12 @@ public:
       return;
     }
 
-    // Don't lift internally allocated buffer metadata expressions.
-    assert(op->args.size() >= 1 && as_variable(op->args[0]));
-    // TODO: This should be a proper API error.
-    assert(external.count(*as_variable(op->args[0])));
-
     auto i = replacements.insert(std::pair<const expr, var>(op, 0));
     if (i.second) {
       i.first->second = ctx.insert_unique("g");
     }
     set_result(variable::make(i.first->second));
   }
-
-  using node_mutator::mutate;
-  interval_expr mutate(const interval_expr& i) { return {mutate(i.min), mutate(i.max)}; }
 };
 
 bounds_map get_output_bounds(const std::vector<func::output>& outputs) {
@@ -934,8 +918,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   stmt result;
   result = builder.build(result, nullptr, loop_id());
   result = builder.add_input_checks(result);
-  result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
+  result = builder.make_buffers(result);
 
   result = slide_and_fold_storage(result, ctx);
 

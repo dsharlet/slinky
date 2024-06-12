@@ -565,7 +565,7 @@ public:
           for (std::size_t d = 0; d < buf_rank; ++d) {
             if (d + 1 >= args.size() || !args[d + 1].defined()) {
               // buffer_at has an implicit buffer_min if it is not defined.
-              expr min_args[] = {static_cast<index_t>(d)};
+              expr min_args[] = {d};
               expr min = mutate_buffer_intrinsic(intrinsic::buffer_min, *buf, min_args);
               if (min.defined()) {
                 args.resize(std::max(args.size(), d + 2));
@@ -942,15 +942,6 @@ class slice_updater : public node_mutator {
 
 public:
   slice_updater(var sym, span<const int> slices) : sym(sym), slices(slices) {}
-
-  interval_expr mutate(const interval_expr& x) {
-    if (x.is_point()) {
-      return point(mutate(x.min));
-    } else {
-      return {mutate(x.min), mutate(x.max)};
-    }
-  }
-  using node_mutator::mutate;
 
   void visit(const call* op) override {
     switch (op->intrinsic) {

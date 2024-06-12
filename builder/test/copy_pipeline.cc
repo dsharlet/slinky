@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "base/test/bazel_util.h"
 #include "builder/pipeline.h"
@@ -248,11 +248,11 @@ TEST_P(copied_input, pipeline) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
 }
 
-class concatenated_result : public testing::TestWithParam<bool> {};
+class concatenated_output : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, concatenated_result, testing::Values(true, false));
+INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output, testing::Values(true, false));
 
-TEST_P(concatenated_result, pipeline) {
+TEST_P(concatenated_output, pipeline) {
   bool no_alias_buffers = GetParam();
   // Make the pipeline
   node_context ctx;
@@ -309,15 +309,15 @@ TEST_P(concatenated_result, pipeline) {
   }
 }
 
-class transposed_result : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
+class transposed_output : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
 
 auto iota3 = testing::Values(0, 1, 2);
 
-INSTANTIATE_TEST_SUITE_P(schedule, transposed_result,
+INSTANTIATE_TEST_SUITE_P(schedule, transposed_output,
     testing::Combine(testing::Values(true, false), iota3, iota3, iota3),
-    test_params_to_string<transposed_result::ParamType>);
+    test_params_to_string<transposed_output::ParamType>);
 
-TEST_P(transposed_result, pipeline) {
+TEST_P(transposed_output, pipeline) {
   bool no_alias_buffers = std::get<0>(GetParam());
   std::vector<int> permutation = {std::get<1>(GetParam()), std::get<2>(GetParam()), std::get<3>(GetParam())};
 
@@ -371,7 +371,7 @@ TEST_P(transposed_result, pipeline) {
   }
 }
 
-TEST(stacked_result, pipeline) {
+TEST(stacked_output, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -552,6 +552,152 @@ TEST_P(broadcasted_elementwise, internal) {
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
+}
+
+class reshaped_input : public testing::TestWithParam<std::tuple<bool, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, reshaped_input, testing::Combine(testing::Values(true, false), testing::Values(0, 1)),
+    test_params_to_string<reshaped_input::ParamType>);
+
+TEST_P(reshaped_input, pipeline) {
+  const bool no_alias_buffers = std::get<0>(GetParam());
+  const int split = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(int));
+
+  // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
+  // prior dimensions).
+  for (auto i : {in, out}) {
+    i->dim(0).stride = sizeof(int);
+    i->dim(1).stride = i->dim(0).stride * i->dim(0).extent();
+    i->dim(2).stride = i->dim(1).stride * i->dim(1).extent();
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // Compute the "flat" index of the coordinates in the output.
+  expr flat_out = x + y * intm->dim(0).extent() + z * intm->dim(0).extent() * intm->dim(1).extent();
+
+  // Unpack the coordinates in the input from the flat index of the output.
+  box_expr bounds = {
+      point(flat_out % in->dim(0).extent()),
+      point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
+      point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
+  };
+  func reshape = func::make_copy({in, bounds}, {intm, {x, y, z}});
+  func add = func::make(
+      add_1<int>, {{intm, {point(x), point(y), point(z)}}}, {{out, {x, y, z}}}, call_stmt::attributes{.name = "add"});
+
+  if (split > 0) {
+    add.loops({{z, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+
+  // Run the pipeline.
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  // The output should be the same size as the input, but with permuted dimensions.
+  buffer<int, 3> out_buf({H, D, W});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // This should have been a "flat" copy.
+  for (int i = 0; i < W * H * D; ++i) {
+    ASSERT_EQ(in_buf.base()[i] + 1, out_buf.base()[i]);
+  }
+
+  // TODO: Try to alias reshapes.
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+}
+
+class reshaped_output : public testing::TestWithParam<std::tuple<bool, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, reshaped_output, testing::Combine(testing::Values(true, false), testing::Values(0, 1)),
+    test_params_to_string<reshaped_output::ParamType>);
+
+TEST_P(reshaped_output, pipeline) {
+  const bool no_alias_buffers = std::get<0>(GetParam());
+  const int split = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(int));
+
+  // To be a reshape that we can optimize, we need the buffers to be dense (strides equal to the product of extents of
+  // prior dimensions).
+  for (auto i : {in, out}) {
+    i->dim(0).stride = sizeof(int);
+    i->dim(1).stride = i->dim(0).stride * i->dim(0).extent();
+    i->dim(2).stride = i->dim(1).stride * i->dim(1).extent();
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // Compute the "flat" index of the coordinates in the output.
+  expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
+
+  // Unpack the coordinates in the input from the flat index of the output.
+  box_expr bounds = {
+      point(flat_out % in->dim(0).extent()),
+      point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
+      point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
+  };
+  func add = func::make(
+      add_1<int>, {{in, {point(x), point(y), point(z)}}}, {{intm, {x, y, z}}}, call_stmt::attributes{.name = "add"});
+  func reshape = func::make_copy({intm, bounds}, {out, {x, y, z}});
+
+  if (split > 0) {
+    reshape.loops({{z, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  const int W = 8;
+  const int H = 5;
+  const int D = 3;
+
+  // Run the pipeline.
+  buffer<int, 3> in_buf({W, H, D});
+  init_random(in_buf);
+
+  // The output should be the same size as the input, but with permuted dimensions.
+  buffer<int, 3> out_buf({H, D, W});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // This should have been a "flat" copy.
+  for (int i = 0; i < W * H * D; ++i) {
+    ASSERT_EQ(in_buf.base()[i] + 1, out_buf.base()[i]);
+  }
+
+  // TODO: Try to alias reshapes.
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
 }
 
 }  // namespace slinky

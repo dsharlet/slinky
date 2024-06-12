@@ -900,8 +900,8 @@ TEST_P(padded_stencil_separable, pipeline) {
   auto stencil_intm = buffer_expr::make(ctx, "stencil_intm", 2, sizeof(short));
 
   if (require_dense_x) {
-    padded_intm_t->dim(0).stride = static_cast<index_t>(sizeof(short));
-    padded_intm->dim(0).stride = static_cast<index_t>(sizeof(short));
+    padded_intm_t->dim(0).stride = sizeof(short);
+    padded_intm->dim(0).stride = sizeof(short);
   }
 
   var x(ctx, "x");
