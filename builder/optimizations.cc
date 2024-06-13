@@ -711,7 +711,7 @@ stmt implement_copies(const stmt& s, node_context& ctx) {
 namespace {
 
 class race_condition_fixer : public node_mutator {
-  symbol_map<bool> mutated;
+  symbol_map<var> mutated;
 
 public:
   void visit(const loop* op) override {
@@ -726,8 +726,8 @@ public:
     // be true in the mutated map. We need to make copies of these buffers upon entering the loop.
     stmt body = mutate(op->body);
     for (std::size_t i = 0; i < mutated.size(); ++i) {
-      if (mutated[i] && *mutated[i]) {
-        body = clone_buffer::make(var(i), var(i), body);
+      if (mutated[i] && mutated[i]->defined()) {
+        body = clone_buffer::make(var(i), *mutated[i], body);
       }
     }
     if (body.same_as(op->body)) {
@@ -739,8 +739,8 @@ public:
 
   template <typename T>
   void visit_buffer_allocator(const T* op) {
-    // Buffers start out not mutated.
-    auto s = set_value_in_scope(mutated, op->sym, false);
+    // Buffers start out not a mutated copy of another buffer.
+    auto s = set_value_in_scope(mutated, op->sym, var());
     node_mutator::visit(op);
   }
 
@@ -750,8 +750,8 @@ public:
 
   template <typename T>
   void visit_buffer_mutator(const T* op) {
-    mutated[op->sym] = true;
     node_mutator::visit(op);
+    mutated[op->sym] = op->src;
   }
 
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
