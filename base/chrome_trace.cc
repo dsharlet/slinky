@@ -8,8 +8,8 @@
 
 namespace slinky {
 
-chrome_trace::chrome_trace(std::ostream& os) : os_(os), event_written_(false) {
-  os_ << "[";
+chrome_trace::chrome_trace(std::ostream& os) : os_(os) {
+  os_ << "[{}";  // Put a dummy event in so the comma separator is not an error.
   t0_ = std::chrono::high_resolution_clock::now();
 }
 chrome_trace::~chrome_trace() { os_ << "]\n"; }
@@ -29,7 +29,7 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
   // The idea here is to assemble a buffer of what we want to write, then lock the mutex, and write our buffer.
   thread_local std::string buffer;
   buffer.clear();
-  buffer += "{\"name\":\"";
+  buffer += ",\n{\"name\":\"";
   buffer += name;
   buffer += "\",\"cat\":\"";
   buffer += cat;
@@ -42,11 +42,7 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
   buffer += '}';
 
   std::unique_lock l(mtx_);
-  if (event_written_) {
-    os_ << ",\n";
-  }
-  event_written_ = true;
-  os_ << buffer;
+  os_.write(buffer.data(), buffer.size());
 }
 
 void chrome_trace::begin(const char* name) { write_event(name, "stmt", 'B'); }
