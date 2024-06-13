@@ -186,8 +186,9 @@ public:
     interval_expr bounds;
     expr step;
     int max_workers;
-    std::unique_ptr<symbol_map<box_expr>> buffer_bounds;
-    std::unique_ptr<symbol_map<interval_expr>> expr_bounds;
+    bool data_parallel = true;
+    std::unique_ptr<symbol_map<box_expr>> buffer_bounds = std::make_unique<symbol_map<box_expr>>();
+    std::unique_ptr<symbol_map<interval_expr>> expr_bounds = std::make_unique<symbol_map<interval_expr>>();
 
     // The next few fields relate to implementing synchronization in pipelined loops. In a pipelined loop, we
     // treat a sequence of stmts as "stages" in the pipeline, where we add synchronization to cause the loop
@@ -218,9 +219,7 @@ public:
 
     loop_info(node_context& ctx, var sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
-          buffer_bounds(std::make_unique<symbol_map<box_expr>>()),
-          expr_bounds(std::make_unique<symbol_map<interval_expr>>()), semaphores(ctx, ctx.name(sym) + "_semaphores"),
-          worker_count(ctx, ctx.name(sym) + "_worker_count") {}
+          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count") {}
   };
   std::vector<loop_info> loops;
   symbol_map<std::size_t> allocation_loop_levels;
@@ -415,6 +414,9 @@ public:
           // effectively not slide while running before the original loop min.
           (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
         }
+
+        // This loop has a dependency between loop iterations, mark it as not data parallel.
+        loop.data_parallel = false;
       } else if (prove_true(is_monotonic_decreasing)) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
@@ -467,7 +469,6 @@ public:
           }
 
           expr fold_factor = (*fold_factors[output])[d].factor;
-          expr overlap = (*fold_factors[output])[d].overlap;
           if (!is_finite(fold_factor)) {
             continue;
           }
@@ -486,7 +487,7 @@ public:
             // doable by making the worker index available to the loop body, and using that to grab a slice of this
             // buffer, so each worker can get its own fold.
 
-            fold_factor += (loop.worker_count - 1) * overlap;
+            fold_factor += (loop.worker_count - 1) * (*fold_factors[output])[d].overlap;
             vector_at(fold_factors[output], d).factor = simplify(fold_factor);
           }
         }
@@ -631,7 +632,7 @@ public:
 
     const loop_info& l = loops.back();
     const int stage_count = l.sync_stages;
-    const int max_workers = stage_count > 0 ? stage_count : op->max_workers;
+    const int max_workers = l.data_parallel ? op->max_workers : std::max(1, stage_count);
     stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
 
     // Substitute the placeholder worker_count.
@@ -640,11 +641,23 @@ public:
     for (std::optional<std::vector<dim_fold_info>>& i : fold_factors) {
       if (!i) continue;
       for (dim_fold_info& j : *i) {
-        j.factor = substitute(j.factor, l.worker_count, max_workers);
+        if (!depends_on(j.factor, l.worker_count).any()) continue;
+
+        if (l.data_parallel && max_workers == loop::parallel) {
+          // This is a data parallel loop, remove the folding.
+          // TODO: We have other options that would be better:
+          // - Move the allocation into the loop.
+          // - Rewrite accesses to this dimension to be a function of a thread ID (and rewrite the fold factor to the
+          // max thread ID).
+          j.factor = expr();
+        } else {
+          // This is a serial or pipelined loop, we can still fold.
+          j.factor = substitute(j.factor, l.worker_count, max_workers);
+        }
       }
     }
 
-    if (stage_count > 1) {
+    if (!l.data_parallel && stage_count > 1) {
       // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
       interval_expr sem_bounds = {0, stage_count - 1};
 
