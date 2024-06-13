@@ -67,6 +67,9 @@ public:
   // We want to propagate undefined values when we hit them.
   bool undef;
 
+  std::mutex sync_mutex;
+  std::vector<std::function<bool()>> syncs;
+
   evaluator(eval_context& context) : context(context) {}
 
   // Assume `e` is defined, evaluate it and return the result.
@@ -368,7 +371,23 @@ public:
     }
   }
 
+  std::function<bool()> get_sync() { 
+    std::unique_lock l(sync_mutex);
+    if (syncs.empty()) return nullptr;
+
+    std::function<bool()> result = syncs.back();
+    syncs.pop_back();
+    return result;
+  }
+
+  void synchronize() {
+    while (std::function<bool()> sync = get_sync()) {
+      context.wait_for(std::move(sync));
+    }
+  }
+
   SLINKY_ALWAYS_INLINE index_t eval(const stmt& op) {
+    synchronize();
     // It helps a lot to inline this for common node types, but we don't want to do that for every node everywhere. So
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (op.type()) {
@@ -471,7 +490,7 @@ public:
       // It is safe to capture op even though it's a pointer, because we only access it after we know that we're still
       // in this scope.
       // TODO: Can we do this without capturing context by value?
-      auto worker = [state, context = this->context, op]() mutable {
+      auto worker = [state, context = this->context, op, this]() mutable {
         if (!state->begin_work()) {
           return;
         }
@@ -482,9 +501,14 @@ public:
 
           context[op->sym] = i;
           // Evaluate the parallel loop body with our copy of the context.
-          index_t result = evaluate(op->body, context);
+          evaluator ev(context);
+          index_t result = ev.eval(op->body);
           if (result != 0) {
             state->result = result;
+          }
+          if (!ev.syncs.empty()) {
+            std::unique_lock l(sync_mutex);
+            syncs.insert(syncs.end(), ev.syncs.begin(), ev.syncs.end());
           }
           state->done += state->step;
         }
@@ -499,9 +523,10 @@ public:
       }
       worker();
       // While the loop still isn't done, work on other tasks.
-      context.wait_for(
-          [&]() { return state->result != 0 || !(bounds.min <= state->done && state->done <= bounds.max); });
-      return state->result;
+      std::unique_lock l(sync_mutex);
+      syncs.push_back(
+          [=]() { return state->result != 0 || !(bounds.min <= state->done && state->done <= bounds.max); });
+      return 0;
     } else {
       // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
@@ -559,6 +584,8 @@ public:
 
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
     index_t result = eval(op->body);
+
+    synchronize();
 
     if (op->storage == memory_type::heap) {
       context.free(op->sym, &buffer, buffer.allocation);
@@ -794,7 +821,9 @@ index_t evaluate(const expr& e, eval_context& context) {
 
 index_t evaluate(const stmt& s, eval_context& context) {
   evaluator eval(context);
-  return eval.eval(s);
+  index_t result = eval.eval(s);
+  eval.synchronize();
+  return result;
 }
 
 index_t evaluate(const expr& e) {
