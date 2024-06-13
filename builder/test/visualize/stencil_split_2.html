@@ -371,10 +371,10 @@ function pipeline(__in, out) {
           produce(intm);
           __event_t++;
         }}
-        { let __out = crop_dim(out, 1, [y, (y + 1)]); {
-          let out = __out;
+        { let __out_y = crop_dim(out, 1, [y, (y + 1)]); {
+          let out_y = __out_y;
           consume(intm_uncropped);
-          produce(out);
+          produce(out_y);
           __event_t++;
         }}
       }
