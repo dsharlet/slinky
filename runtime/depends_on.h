@@ -41,6 +41,10 @@ depends_on_result depends_on(const stmt& s, var x);
 depends_on_result depends_on(const expr& e, span<const var> xs);
 depends_on_result depends_on(const stmt& s, span<const var> xs);
 
+// Find all dependencies.
+void depends_on(const expr& e, symbol_map<depends_on_result>& deps);
+void depends_on(const stmt& s, symbol_map<depends_on_result>& deps);
+
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_DEPENDS_ON_H

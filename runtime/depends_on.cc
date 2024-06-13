@@ -11,8 +11,10 @@ namespace {
 
 class dependencies : public recursive_node_visitor {
 public:
+  symbol_map<depends_on_result>* all_deps = nullptr;
   std::vector<std::pair<var, depends_on_result*>> var_deps;
 
+  dependencies(symbol_map<depends_on_result>* all_deps) : all_deps(all_deps) {}
   dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
   dependencies(span<const std::pair<var, depends_on_result&>> deps) {
     var_deps.reserve(deps.size());
@@ -29,6 +31,12 @@ public:
         fn(*i->second);
         return;
       }
+    }
+    // Not shadowed.
+    if (all_deps) {
+      std::optional<depends_on_result>& deps_s = (*all_deps)[s];
+      if (!deps_s) deps_s = depends_on_result();
+      fn(*deps_s);
     }
   }
 
@@ -264,6 +272,18 @@ depends_on_result depends_on(const stmt& s, span<const var> xs) {
   }
   depends_on(s, var_deps);
   return r;
+}
+
+void depends_on(const expr& e, symbol_map<depends_on_result>& deps) { 
+  if (!e.defined()) return;
+  dependencies v(&deps); 
+  e.accept(&v);
+}
+
+void depends_on(const stmt& s, symbol_map<depends_on_result>& deps) {
+  if (!s.defined()) return;
+  dependencies v(&deps);
+  s.accept(&v);
 }
 
 }  // namespace slinky
