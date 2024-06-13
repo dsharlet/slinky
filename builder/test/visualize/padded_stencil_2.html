@@ -385,10 +385,10 @@ function pipeline(__in, out) {
                   produce(padded_intm);
                   __event_t++;
                 }}
-                { let __out = crop_dim(out, 1, [y, y]); {
-                  let out = __out;
+                { let __out_y = crop_dim(out, 1, [y, y]); {
+                  let out_y = __out_y;
                   consume(padded_intm_uncropped);
-                  produce(out);
+                  produce(out_y);
                   __event_t++;
                 }}
               }

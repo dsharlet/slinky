@@ -12,7 +12,6 @@ namespace slinky {
 // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
 class chrome_trace {
   std::ostream& os_;
-  bool event_written_;
   // Note that using a mutex to avoid races in the output possibly distorts the tracing output.
   // Not easy to avoid this.
   std::mutex mtx_;

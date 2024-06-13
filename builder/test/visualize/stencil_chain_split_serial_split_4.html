@@ -396,12 +396,12 @@ function pipeline(__in, out) {
                       check(trace_end(__trace_token));
                     }
                   }}
-                  { let __out = crop_dim(out, 1, [y, (y + 3)]); {
-                    let out = __out;
+                  { let __out_y = crop_dim(out, 1, [y, (y + 3)]); {
+                    let out_y = __out_y;
                     {
                       let __trace_token = trace_begin(buffer_at(__trace_names, 30));
                       consume(stencil1_result_uncropped);
-                      produce(out);
+                      produce(out_y);
                       __event_t++;
                       check(trace_end(__trace_token));
                     }

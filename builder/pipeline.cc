@@ -959,8 +959,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   result = optimize_symbols(result, ctx);
 
-  result = fix_buffer_races(result);
-
   result = insert_early_free(result);
 
   if (options.trace) {

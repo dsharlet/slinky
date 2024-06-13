@@ -710,66 +710,6 @@ stmt implement_copies(const stmt& s, node_context& ctx) {
 
 namespace {
 
-class race_condition_fixer : public node_mutator {
-  symbol_map<var> mutated;
-
-public:
-  void visit(const loop* op) override {
-    // TODO: This inserts clone_buffer ops even for pipelined loops that don't need them, because we know that that
-    // particular stage of the pipeline will not be executed by more than one thread concurrently.
-    if (op->is_serial()) {
-      node_mutator::visit(op);
-      return;
-    }
-
-    // We've hit a parallel loop. The buffers that are allocated outside this loop, but mutated inside this loop, will
-    // be true in the mutated map. We need to make copies of these buffers upon entering the loop.
-    stmt body = mutate(op->body);
-    for (std::size_t i = 0; i < mutated.size(); ++i) {
-      if (mutated[i] && mutated[i]->defined()) {
-        body = clone_buffer::make(var(i), *mutated[i], body);
-      }
-    }
-    if (body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
-    }
-  }
-
-  template <typename T>
-  void visit_buffer_allocator(const T* op) {
-    // Buffers start out not a mutated copy of another buffer.
-    auto s = set_value_in_scope(mutated, op->sym, var());
-    node_mutator::visit(op);
-  }
-
-  void visit(const allocate* op) override { visit_buffer_allocator(op); }
-  void visit(const make_buffer* op) override { visit_buffer_allocator(op); }
-  void visit(const clone_buffer* op) override { visit_buffer_allocator(op); }
-
-  template <typename T>
-  void visit_buffer_mutator(const T* op) {
-    node_mutator::visit(op);
-    mutated[op->sym] = op->src;
-  }
-
-  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const transpose* op) override { visit_buffer_mutator(op); }
-};
-
-}  // namespace
-
-stmt fix_buffer_races(const stmt& s) {
-  scoped_trace trace("fix_buffer_races");
-  return race_condition_fixer().mutate(s);
-}
-
-namespace {
-
 class insert_free_into_allocate : public node_mutator {
   // Contains the sym of the allocate node + all other buffer nodes which reference it.
   std::vector<var> names;
@@ -975,17 +915,26 @@ public:
 // This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
 // efficient when performed in place.
 class reuse_shadows : public node_mutator {
+  // Buffers that can be mutated in place are true in this map.
+  symbol_map<bool> can_mutate;
+
 public:
   template <typename T>
   void visit_buffer_mutator(const T* op) {
     stmt body = op->body;
     var sym = op->sym;
+    // If we don't know about a buffer, we assume we cannot mutate it in place. This covers input and output buffers.
+    bool can_mutate_src = can_mutate[op->src] && *can_mutate[op->src];
     // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
-    if (!depends_on(body, op->src).any()) {
-      // We can re-use the src because the body doesn't use it.
+    if (can_mutate_src && !depends_on(body, op->src).any()) {
+      // We can re-use the src because the body doesn't use it, and it will not create a data race.
       sym = op->src;
       body = substitute(body, op->sym, sym);
     }
+
+    // Buffers start out mutable.
+    can_mutate[op->sym] = true;
+
     body = mutate(body);
 
     if (sym == op->sym && body.same_as(op->body)) {
@@ -994,6 +943,28 @@ public:
       set_result(clone_with(op, sym, std::move(body)));
     }
   }
+
+  template <typename T>
+  void visit_buffer_decl(const T* op) {
+    // Buffers start out mutable.
+    can_mutate[op->sym] = true;
+    node_mutator::visit(op);
+  }
+
+  void visit(const loop* op) override {
+    if (op->max_workers != loop::serial) {
+      // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
+      symbol_map<bool> old_can_mutate;
+      std::swap(can_mutate, old_can_mutate);
+      node_mutator::visit(op);
+      can_mutate = std::move(old_can_mutate);
+    } else {
+      node_mutator::visit(op);
+    }
+  }
+
+  void visit(const allocate* op) override { visit_buffer_decl(op); }
+  void visit(const make_buffer* op) override { visit_buffer_decl(op); }
 
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const crop_dim* op) override { visit_buffer_mutator(op); }

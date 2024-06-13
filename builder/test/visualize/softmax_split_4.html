@@ -416,10 +416,10 @@ function pipeline(__in, out) {
                             produce(softmax_out);
                             __event_t++;
                           }}
-                          { let __out = crop_dim(out, 1, [b, (b + 3)]); {
-                            let out = __out;
+                          { let __out_b = crop_dim(out, 1, [b, (b + 3)]); {
+                            let out_b = __out_b;
                             consume(softmax_out_uncropped);
-                            produce(out);
+                            produce(out_b);
                             __event_t++;
                           }}
                         }

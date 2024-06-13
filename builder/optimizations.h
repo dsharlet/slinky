@@ -19,10 +19,6 @@ stmt implement_copy(const copy_stmt* c, node_context& ctx);
 // Replace every `copy_stmt` with the result of `implement_copy`
 stmt implement_copies(const stmt& s, node_context& ctx);
 
-// We can't modify buffers allocated outside parallel loops inside parallel loops. To avoid this, this mutation will
-// insert `clone_buffer` operations that clone buffers inside parallel loops.
-stmt fix_buffer_races(const stmt& s);
-
 // Find allocate nodes and try to insert free into them.
 stmt insert_early_free(const stmt& s);
 
