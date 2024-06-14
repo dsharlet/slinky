@@ -25,6 +25,7 @@ MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
 TEST(substitute, basic) {
   ASSERT_THAT(substitute(x + y, x, z), matches(z + y));
+  ASSERT_THAT(substitute(check::make(x), x, expr()), matches(check::make(expr())));
   ASSERT_THAT(
       substitute(check::make(y == buffer_min(x, 3)), buffer_min(x, 3), z), matches(check::make(expr(y) == expr(z))));
   ASSERT_THAT(substitute(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {}, {x}, {})), y, z),

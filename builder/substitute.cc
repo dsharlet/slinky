@@ -681,9 +681,13 @@ public:
   using substitutor::visit;
 
   static var replacement_symbol(const expr& r) {
-    const var* s = as_variable(r);
-    assert(s);
-    return *s;
+    if (r.defined()) {
+      const var* s = as_variable(r);
+      assert(s);
+      return *s;
+    } else {
+      return var();
+    }
   }
 
   var visit_symbol(var x) override {
