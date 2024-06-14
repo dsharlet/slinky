@@ -9,6 +9,7 @@
 
 #include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
+#include "builder/optimizations.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"
@@ -203,6 +204,10 @@ public:
     // synchronization, and the value indicates which stage it is.
     std::optional<int> stage;
 
+    // We don't want to put an async block inside an allocation that is inside the loop we are parallelizing.
+    // TODO: This seems like a hack.
+    bool in_allocation = false;
+
     bool add_synchronization() {
       if (sync_stages + 1 >= max_workers) {
         // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
@@ -242,15 +247,11 @@ public:
     // The loop at the back of the loops vector is the immediately containing loop. So, we know there are no
     // intervening loops, and we can add any synchronization that has been requested. Doing so completes the current
     // pipeline stage.
+    // We also want to avoid making part of the body of an allocation async.
     loop_info& l = loops.back();
-    if (l.stage) {
-      result = block::make({
-          // Wait for the previous iteration of this stage to complete.
-          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}))),
-          result,
-          // Signal we've done this iteration.
-          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym}))),
-      });
+    if (!l.in_allocation && l.stage) {
+      result = make_async({buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}), expr()},
+          {buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym}), expr()}, result);
       l.stage = std::nullopt;
     }
 
@@ -283,7 +284,10 @@ public:
     auto set_fold_factors =
         set_value_in_scope(fold_factors, op->sym, std::vector<dim_fold_info>(op->dims.size(), dim_fold_info()));
     auto set_loop_level = set_value_in_scope(allocation_loop_levels, op->sym, loops.size());
+    bool was_in_allocation = loops.back().in_allocation;
+    loops.back().in_allocation = true;
     stmt body = mutate(op->body);
+    loops.back().in_allocation = was_in_allocation;
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
     // (This is a little janky because the buffers they are loading from don't exist where they are used.)
@@ -686,8 +690,10 @@ public:
           // TODO: We should just let dimensions like this have undefined bounds.
           {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
+      expr last_iter = loop_bounds.max; // + align_down(loop_bounds.extent(), op->step);
+      stmt wait = check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{stage_count - 1, last_iter})));
       result = allocate::make(
-          l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+          l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result, wait}));
     } else {
       // We only have one stage, there's no need for semaphores.
       result = substitute(result, l.semaphores, expr());

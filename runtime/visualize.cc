@@ -289,6 +289,12 @@ public:
     *this << indent() << "}}\n";
   }
 
+  void visit(const async* n) override {
+    *this << indent() << "{ // async\n";
+    *this << n->body;
+    *this << indent() << "}\n";
+  }
+
   void visit(const check* n) override { *this << indent() << "check(" << n->condition << ");\n"; }
 };
 

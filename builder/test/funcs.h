@@ -2,6 +2,9 @@
 #define SLINKY_BUILDER_TEST_FUNCS_H
 
 #include "runtime/buffer.h"
+#include "runtime/print.h"
+
+#include <thread>
 
 namespace slinky {
 

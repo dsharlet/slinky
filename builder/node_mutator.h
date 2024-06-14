@@ -83,6 +83,7 @@ public:
   void visit(const slice_buffer*) override;
   void visit(const slice_dim*) override;
   void visit(const transpose*) override;
+  void visit(const async*) override;
   void visit(const check*) override;
 };
 

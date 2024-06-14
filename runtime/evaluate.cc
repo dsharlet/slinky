@@ -275,14 +275,14 @@ public:
     return 1;
   }
 
-  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_signal(const call* op) {
-    assert(op->args.size() % 2 == 0);
-    std::size_t sem_count = op->args.size() / 2;
+  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_signal(span<const expr> args) {
+    assert(args.size() % 2 == 0);
+    std::size_t sem_count = args.size() / 2;
     index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
     index_t* counts = SLINKY_ALLOCA(index_t, sem_count);
     for (std::size_t i = 0; i < sem_count; ++i) {
-      sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
-      counts[i] = eval(op->args[i * 2 + 1], 1);
+      sems[i] = reinterpret_cast<index_t*>(eval(args[i * 2 + 0]));
+      counts[i] = eval(args[i * 2 + 1], 1);
     }
     context.thread_pool->atomic_call([=]() {
       for (std::size_t i = 0; i < sem_count; ++i) {
@@ -292,14 +292,14 @@ public:
     return 1;
   }
 
-  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_wait(const call* op) {
-    assert(op->args.size() % 2 == 0);
-    std::size_t sem_count = op->args.size() / 2;
+  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_wait(span<const expr> args) {
+    assert(args.size() % 2 == 0);
+    std::size_t sem_count = args.size() / 2;
     index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
     index_t* counts = SLINKY_ALLOCA(index_t, sem_count);
     for (std::size_t i = 0; i < sem_count; ++i) {
-      sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
-      counts[i] = eval(op->args[i * 2 + 1], 1);
+      sems[i] = reinterpret_cast<index_t*>(eval(args[i * 2 + 0]));
+      counts[i] = eval(args[i * 2 + 1], 1);
     }
     context.thread_pool->wait_for([=]() {
       // Check we can acquire all of the semaphores before acquiring any of them.
@@ -363,8 +363,8 @@ public:
     case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));
 
     case intrinsic::semaphore_init: return eval_semaphore_init(op);
-    case intrinsic::semaphore_signal: return eval_semaphore_signal(op);
-    case intrinsic::semaphore_wait: return eval_semaphore_wait(op);
+    case intrinsic::semaphore_signal: return eval_semaphore_signal(op->args);
+    case intrinsic::semaphore_wait: return eval_semaphore_wait(op->args);
 
     case intrinsic::trace_begin: return eval_trace_begin(op);
     case intrinsic::trace_end: return eval_trace_end(op);
@@ -398,6 +398,7 @@ public:
     case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()));
     case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
     case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()));
+    case stmt_node_type::async: return eval(reinterpret_cast<const async*>(op.get()));
     case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()));
     default: std::abort();
     }
@@ -430,18 +431,86 @@ public:
     return 0;
   }
 
+  struct closure {
+    const async* op;
+    eval_context ctx;
+    std::vector<char> buffer;
+
+    void update_pointers(const std::vector<char>& from) {
+      for (std::optional<index_t>& i : ctx) {
+        if (!i) continue;
+        char* ptr = reinterpret_cast<char*>(*i);
+        if (from.data() <= ptr && ptr < from.data() + from.size()) {
+          // This variable is a pointer to c's buffer. Update it to point to our buffer.
+          // TODO: This is gross.
+          i = reinterpret_cast<index_t>(&buffer[ptr - from.data()]);
+          raw_buffer* buf = reinterpret_cast<raw_buffer*>(*i);
+          buf->dims = reinterpret_cast<dim*>(buf + 1);
+        }
+      }
+    }
+
+    closure() : op(nullptr) {}
+    closure(const closure& c) : op(c.op), ctx(c.ctx), buffer(c.buffer) { update_pointers(c.buffer); }
+    closure& operator=(const closure& c) {
+      op = c.op;
+      ctx = c.ctx;
+      buffer = c.buffer;
+      update_pointers(c.buffer);
+      return *this;
+    }
+  };
+
+  closure eval_closure(const async* op) {
+    closure result;
+    result.op = op;
+
+    // Capture the buffers in our closure into a buffer that will live as long as the task below does.
+    // TODO: The "stack" for `eval_context`s should be owned by `eval_context`, and this should go there.
+    std::size_t total_dims = 0;
+    result.ctx = context;
+    for (var i : op->buffers) {
+      raw_buffer* buf = reinterpret_cast<raw_buffer*>(*result.ctx.lookup(i));
+      assert(buf);
+      total_dims += buf->rank;
+    }
+    result.buffer.resize(sizeof(raw_buffer) * op->buffers.size() + sizeof(dim) * total_dims);
+
+    char* w = result.buffer.data();
+    for (var i : op->buffers) {
+      raw_buffer* buf = reinterpret_cast<raw_buffer*>(*result.ctx.lookup(i));
+      assert(buf);
+      raw_buffer* captured_buf = reinterpret_cast<raw_buffer*>(w);
+      w += sizeof(raw_buffer);
+      memcpy(captured_buf, buf, sizeof(raw_buffer));
+      captured_buf->dims = reinterpret_cast<dim*>(w);
+      memcpy(captured_buf->dims, buf->dims, buf->rank * sizeof(dim));
+      w += buf->rank * sizeof(dim);
+
+      result.ctx[i] = reinterpret_cast<index_t>(captured_buf);
+    }
+
+    return result;
+  }
+
   index_t eval(const loop* op) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
-    if (op->max_workers > 1) {
+    if (const async* async_body = op->body.as<async>()) {
       std::atomic<index_t> result = 0;
       std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
       context.thread_pool->parallel_for(
           n,
-          [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
-            context[op->sym] = i * step + min;
+          [closure = eval_closure(async_body), step, min = bounds.min, sym = op->sym, &result](index_t i) mutable {
+            closure.ctx[sym] = i * step + min;
             // Evaluate the parallel loop body with our copy of the context.
-            index_t result_i = evaluate(op->body, context);
+            evaluator ev(closure.ctx);
+            ev.eval_semaphore_wait(closure.op->wait);
+
+            index_t result_i = ev.eval(closure.op->body);
+            assert(result == 0);
+
+            ev.eval_semaphore_signal(closure.op->signal);
             if (result_i != 0) {
               index_t zero = 0;
               result.compare_exchange_strong(zero, result_i);
@@ -723,6 +792,30 @@ public:
     } else {
       return 0;
     }
+  }
+
+  template <typename T>
+  std::vector<T> eval(const std::vector<expr>& v) {
+    std::vector<T> result;
+    result.reserve(v.size());
+    for (const expr& i : v) {
+      result.push_back(reinterpret_cast<T>(eval(i)));
+    }
+    return result;
+  }
+
+  index_t eval(const async* op) {
+    auto task = [closure = eval_closure(op)]() mutable {
+      evaluator ev(closure.ctx);
+      ev.eval_semaphore_wait(closure.op->wait);
+
+      index_t result = ev.eval(closure.op->body);
+      assert(result == 0);
+
+      ev.eval_semaphore_signal(closure.op->signal);
+    };
+    context.thread_pool->enqueue(std::move(task));
+    return 0;
   }
 };
 

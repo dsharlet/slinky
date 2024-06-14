@@ -1711,6 +1711,44 @@ public:
     set_result(mutate(substitute(op->body, op->sym, op->src)));
   }
 
+  void visit(const async* op) override {
+    bool changed = false;
+    std::vector<expr> wait;
+    std::vector<expr> signal;
+    wait.reserve(op->wait.size());
+    signal.reserve(op->signal.size());
+    for (const expr& i : op->wait) {
+      wait.push_back(mutate(i));
+      changed = changed || !wait.back().same_as(i);
+    }
+    for (const expr& i : op->signal) {
+      signal.push_back(mutate(i));
+      changed = changed || !signal.back().same_as(i);
+    }
+    auto simplify_semaphores = [&](std::vector<expr>& sems) {
+      assert(sems.size() % 2 == 0);
+      for (std::size_t i = 0; i < sems.size();) {
+        // Remove calls to undefined semaphores.
+        if (!sems[i].defined()) {
+          sems.erase(sems.begin() + i, sems.begin() + i + 2);
+          changed = true;
+        } else {
+          i += 2;
+        }
+      }
+    };
+    simplify_semaphores(wait);
+    simplify_semaphores(signal);
+
+    stmt body = mutate(op->body);
+
+    if (changed || !body.same_as(op->body)) {
+      set_result(async::make(op->vars, op->buffers, std::move(wait), std::move(signal), std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
+
   void visit(const check* op) override {
     interval_expr c_bounds;
     expr c = mutate_boolean(op->condition, &c_bounds);

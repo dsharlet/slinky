@@ -824,6 +824,7 @@ public:
   void visit(const loop* op) override { visit_terminal(op); }
   void visit(const call_stmt* op) override { visit_terminal(op); }
   void visit(const copy_stmt* op) override { visit_terminal(op); }
+  void visit(const check* op) override { visit_terminal(op); }
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
@@ -1034,6 +1035,13 @@ public:
   void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
   void visit(const transpose* op) override { visit_buffer_mutator(op); }
+
+  void visit(const async* op) override {
+    for (var i : op->buffers) {
+      can_mutate[i] = true;
+    }
+    node_mutator::visit(op);
+  }
 };
 
 }  // namespace
@@ -1045,6 +1053,137 @@ stmt deshadow(const stmt& s, node_context& ctx) {
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
   return reuse_shadows().mutate(s);
+}
+
+stmt make_async(std::vector<expr> wait, std::vector<expr> signal, stmt body) {
+  symbol_map<depends_on_result> deps;
+  for (const expr& i : wait) {
+    depends_on(i, deps);
+  }
+  depends_on(body, deps);
+  for (const expr& i : signal) {
+    depends_on(i, deps);
+  }
+  std::vector<var> vars;
+  std::vector<var> buffers;
+  for (std::size_t i = 0; i < deps.size(); ++i) {
+    if (!deps[i]) continue;
+    const depends_on_result& deps_i = *deps[i];
+    assert(deps_i.var != deps_i.buffer());
+    if (deps_i.var) vars.push_back(var(i));
+    if (deps_i.buffer()) buffers.push_back(var(i));
+  }
+  return async::make(std::move(vars), std::move(buffers), std::move(wait), std::move(signal), std::move(body));
+}
+
+namespace {
+
+// TODO: A proper algorithm. Maybe we need to keep these sorted.
+template <typename T>
+std::vector<T> vector_union(std::vector<T> a, const std::vector<T>& b) {
+  for (T i : b) {
+    if (std::find(a.begin(), a.end(), i) == a.end()) {
+      a.push_back(i);
+    }
+  }
+  return a;
+}
+
+class async_optimizer : public node_mutator {
+public:
+  template <typename T>
+  void visit_buffer_decl(const T* op, var src = var()) {
+    stmt body = mutate(op->body);
+    if (const async* a = body.template as<async>()) {
+      // Rewrite T { async { x } } -> async { T { x } }
+      set_result(make_async(a->wait, a->signal, clone_with(op, a->body)));
+    } else if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_with(op, std::move(body)));
+    }
+  }
+
+  void visit(const allocate* op) override { visit_buffer_decl(op); }
+  void visit(const make_buffer* op) override { visit_buffer_decl(op); }
+
+  void visit(const crop_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
+
+  void visit(const block* op) override {
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (const stmt& s : op->stmts) {
+      stmts.push_back(mutate(s));
+      changed = changed || !stmts.back().same_as(s);
+    }
+
+    auto subtract_wait_from_signal = [](std::vector<expr>& a, const std::vector<expr>& b) {
+      for (std::size_t i = 0; i < b.size(); i += 2) {
+        bool found = false;
+        for (std::size_t j = 0; j < a.size(); j += 2) {
+          if (match(a[j], b[i]) && match(a[j + 1], b[i + 1])) {
+            a.erase(a.begin() + j, a.begin() + j + 2);
+            found = true;
+            break;
+          }
+        }
+        if (!found) return false;
+      }
+      return true;
+    };
+
+    for (std::size_t i = 0; i + 1 < stmts.size();) {
+      if (const async* a = stmts[i].as<async>()) {
+        if (const async* b = stmts[i + 1].as<async>()) {
+          std::vector<expr> a_signal = a->signal;
+          if (subtract_wait_from_signal(a_signal, b->wait)) {
+            // a always unblocks b. Just run b as part of a.
+            std::vector<stmt> body = {a->body};
+            if (!a_signal.empty()) {
+              body.push_back(check::make(call::make(intrinsic::semaphore_signal, std::move(a_signal))));
+            }
+            body.push_back(b->body);
+            std::vector<var> vars = vector_union(a->vars, b->vars);
+            std::vector<var> buffers = vector_union(a->buffers, b->buffers);
+            stmts[i] = mutate(
+                async::make(std::move(vars), std::move(buffers), a->wait, b->signal, block::make(std::move(body))));
+            stmts.erase(stmts.begin() + i + 1);
+            changed = true;
+            continue;
+          }
+        }
+      }
+      ++i;
+    }
+
+    if (!changed) {
+      set_result(op);
+    } else {
+      set_result(block::make(std::move(stmts)));
+    }
+  }
+
+  void visit(const async* op) override {
+    // TODO: This is a pretty lazy way to maintain shallow equality if the async node doesn't change.
+    stmt result = make_async(op->wait, op->signal, mutate(op->body));
+    if (match(result, op)) {
+      set_result(op);
+    } else {
+      set_result(std::move(result));
+    }
+  }
+};
+
+}  // namespace
+
+stmt optimize_async(const stmt& s) {
+  scoped_trace trace("optimize_async");
+  return async_optimizer().mutate(s);
 }
 
 }  // namespace slinky

@@ -522,6 +522,17 @@ stmt check::make(expr condition) {
   return n;
 }
 
+stmt async::make(
+    std::vector<var> vars, std::vector<var> buffers, std::vector<expr> wait, std::vector<expr> signal, stmt body) {
+  auto n = new async();
+  n->vars = std::move(vars);
+  n->buffers = std::move(buffers);
+  n->wait = std::move(wait);
+  n->signal = std::move(signal);
+  n->body = std::move(body);
+  return n;
+}
+
 const expr& positive_infinity() {
   static expr e = call::make(intrinsic::positive_infinity, {});
   return e;
@@ -636,7 +647,6 @@ expr boolean(const expr& x) {
   }
 }
 bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
-
 
 expr semaphore_init(expr sem, expr count) {
   return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
@@ -791,6 +801,15 @@ void recursive_node_visitor::visit(const transpose* op) {
 }
 void recursive_node_visitor::visit(const check* op) {
   if (op->condition.defined()) op->condition.accept(this);
+}
+void recursive_node_visitor::visit(const async* op) {
+  for (const expr& i : op->wait) {
+    if (i.defined()) i.accept(this);
+  }
+  for (const expr& i : op->signal) {
+    if (i.defined()) i.accept(this);
+  }
+  if (op->body.defined()) op->body.accept(this);
 }
 
 }  // namespace slinky

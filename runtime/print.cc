@@ -305,6 +305,18 @@ public:
   }
 
   void visit(const check* n) override { *this << indent() << "check(" << n->condition << ")\n"; }
+
+  void visit(const async* n) override {
+    *this << indent() << "async({" << n->vars << "}, {" << n->buffers << "}) {\n";
+    if (!n->wait.empty()) {
+      *this << indent(1) << "semaphore_wait(" << n->wait << ")\n";
+    }
+    *this << n->body;
+    if (!n->signal.empty()) {
+      *this << indent(1) << "semaphore_signal(" << n->signal << ")\n";
+    }
+    *this << indent() << "}\n";
+  }
 };
 
 namespace {

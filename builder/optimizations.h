@@ -30,6 +30,15 @@ stmt deshadow(const stmt& s, node_context& ctx);
 // - Symbols are indexed such that there are no unused symbol indices.
 stmt optimize_symbols(const stmt& s, node_context& ctx);
 
+// Helper to make an async node, determines capture spec via `depends_on`.
+stmt make_async(std::vector<expr> wait, std::vector<expr> signal, stmt body);
+
+  // We can improve async code in various ways:
+// - Fuse contiguous asyncs a and b where a trivially unblocks b.
+// - Lift asyncs out of operations.
+// - Defer semaphore_wait calls associated with loops to an outer loop.
+stmt optimize_async(const stmt& s);
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

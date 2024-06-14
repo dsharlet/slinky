@@ -17,6 +17,9 @@ node_context symbols;
 var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
+var b0(symbols, "b0");
+var b1(symbols, "b1");
+var b2(symbols, "b2");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
@@ -52,6 +55,20 @@ TEST(optimizations, optimize_symbols) {
     ASSERT_THAT(optimize_symbols(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))), ctx),
         matches(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y)))));
   }
+}
+
+TEST(optimizations, optimize_async) {
+  ASSERT_THAT(
+      optimize_async(block::make({async::make({x, y, z}, {b0, b2}, {}, {y, expr(), z, 2}, check::make(buffer_rank(b0))),
+          async::make({y}, {b0, b1}, {y, expr()}, {}, check::make(buffer_rank(b0) + buffer_rank(b1)))})),
+      matches(async::make({z}, {b0, b1}, {}, {},
+          block::make({check::make(buffer_rank(b0)), check::make(semaphore_signal(z, 2)),
+              check::make(buffer_rank(b0) + buffer_rank(b1))}))));
+  ASSERT_THAT(
+      optimize_async(block::make({async::make({y, z}, {b0, b2}, {}, {y, expr(), z, 2}, check::make(buffer_rank(b0))),
+          async::make({z}, {b0, b1}, {y, expr(), z, 1}, {}, check::make(buffer_rank(b0) + buffer_rank(b1)))})),
+      matches(block::make({async::make({y, z}, {b0}, {}, {y, expr(), z, 2}, check::make(buffer_rank(b0))),
+          async::make({y, z}, {b0, b1}, {y, expr(), z, 1}, {}, check::make(buffer_rank(b0) + buffer_rank(b1)))})));
 }
 
 }  // namespace slinky

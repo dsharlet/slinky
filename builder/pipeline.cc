@@ -969,6 +969,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = deshadow(result, ctx);
   result = simplify(result);
 
+  result = optimize_async(result);
   result = optimize_symbols(result, ctx);
 
   result = insert_early_free(result);

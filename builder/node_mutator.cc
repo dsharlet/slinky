@@ -269,6 +269,30 @@ void node_mutator::visit(const transpose* op) {
   }
 }
 
+void node_mutator::visit(const async* op) {
+  bool changed = false;
+  std::vector<expr> wait;
+  wait.reserve(op->wait.size());
+  for (const expr& i : op->wait) {
+    wait.push_back(mutate(i));
+    changed = changed || !wait.back().same_as(i);
+  }
+  std::vector<expr> signal;
+  signal.reserve(op->signal.size());
+  for (const expr& i : op->signal) {
+    signal.push_back(mutate(i));
+    changed = changed || !signal.back().same_as(i);
+  }
+
+  stmt body = mutate(op->body);
+  changed = changed || !body.same_as(op->body);
+  if (changed) {
+    set_result(async::make(op->vars, op->buffers, std::move(wait), std::move(signal), std::move(body)));
+  } else {
+    set_result(op);
+  }
+}
+
 void node_mutator::visit(const check* op) {
   expr condition = mutate(op->condition);
   if (condition.same_as(op->condition)) {

@@ -117,6 +117,31 @@ TEST(evaluate, loop) {
   }
 }
 
+TEST(evaluate, loop_async) {
+  eval_context ctx;
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
+
+  index_t sem = 0;
+  auto make_wait = [&](index_t& sem, int n) { return check::make(semaphore_wait(reinterpret_cast<index_t>(&sem), n)); };
+
+  std::atomic<index_t> sum_x = 0;
+  stmt c = call_stmt::make(
+      [&](const call_stmt*, eval_context& ctx) -> index_t {
+        sum_x += *ctx[x];
+        return 0;
+      },
+      {}, {}, {});
+
+  stmt body = async::make({x}, {}, {}, {reinterpret_cast<index_t>(&sem), expr()}, c);
+
+  stmt l = loop::make(x, loop::serial, range(2, 12), 3, body);
+
+  int result = evaluate(block::make({l, make_wait(sem, 4)}), ctx);
+  ASSERT_EQ(result, 0);
+  ASSERT_EQ(sum_x, 2 + 5 + 8 + 11);
+}
+
 void assert_buffer_extents_are(const raw_buffer& buf, const std::vector<int>& extents) {
   ASSERT_EQ(buf.rank, extents.size());
   for (std::size_t d = 0; d < extents.size(); ++d) {
@@ -242,6 +267,78 @@ TEST(evaluate, semaphore) {
   ASSERT_EQ(state, 1);
   evaluate(make_signal(sem3), ctx);
   th.join();
+  ASSERT_EQ(state, 2);
+}
+
+class atomic_semaphore {
+  std::atomic<int> count_;
+
+public:
+  atomic_semaphore(int count) : count_(count) {}
+
+  void wait() {
+    while (--count_ < 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(0));
+      ++count_;
+    }
+  }
+
+  void signal() { count_++; }
+};
+
+TEST(evaluate, async) {
+  eval_context ctx;
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
+
+  // We can't use our built-in synchronization inside async tasks. It's also not safe in general to use any kind of
+  // synchronization, we're doing it here because we know it's safe if there are more worker threads than tasks.
+  atomic_semaphore sem1(0);
+  atomic_semaphore sem2(0);
+  atomic_semaphore sem3(0);
+  atomic_semaphore sem4(0);
+  auto make_wait = [&](atomic_semaphore& sem) {
+    return call_stmt::make(
+        [&](const call_stmt*, eval_context&) -> index_t {
+          sem.wait();
+          return 0;
+        },
+        {}, {}, {});
+  };
+  auto make_signal = [&](atomic_semaphore& sem) {
+    return call_stmt::make(
+        [&](const call_stmt*, eval_context&) -> index_t {
+          sem.signal();
+          return 0;
+        },
+        {}, {}, {});
+  };
+
+  std::atomic<int> state = 0;
+
+  stmt increment_state = call_stmt::make(
+      [&](const call_stmt*, eval_context&) -> index_t {
+        state++;
+        return 0;
+      },
+      {}, {}, {});
+  auto check_state = [&](int value) {
+    return call_stmt::make(
+        [&state, value](const call_stmt*, eval_context&) -> index_t {
+          EXPECT_EQ(state, value);
+          return state == value ? 0 : 1;
+        },
+        {}, {}, {});
+  };
+
+  stmt task1 = async::make({}, {}, {}, {},
+      block::make(
+          {make_wait(sem1), increment_state, make_signal(sem2), make_wait(sem3), increment_state, make_signal(sem4)}));
+  stmt task2 = async::make({}, {}, {}, {},
+      block::make({check_state(0), make_signal(sem1), make_wait(sem2), check_state(1), make_signal(sem3)}));
+
+  evaluate(block::make({task1, task2, make_wait(sem4)}), ctx);
+
   ASSERT_EQ(state, 2);
 }
 

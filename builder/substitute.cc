@@ -298,6 +298,16 @@ public:
     if (!try_match(trs->body, op->body)) return;
   }
 
+  void visit(const async* op) override {
+    const async* s = static_cast<const async*>(self);
+    assert(s);
+
+    if (!try_match(s->vars, op->vars)) return;
+    if (!try_match(s->buffers, op->buffers)) return;
+    if (!try_match(s->wait, op->wait)) return;
+    if (!try_match(s->signal, op->signal)) return;
+  }
+
   void visit(const check* op) override {
     const check* cs = static_cast<const check*>(self);
     assert(cs);
@@ -646,6 +656,43 @@ public:
     stmt body = mutate_decl_body(op->sym, op->body);
     if (src != op->src || !body.same_as(op->body)) {
       set_result(clone_buffer::make(op->sym, src, std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const async* op) override {
+    bool changed = false;
+    std::vector<var> vars;
+    vars.reserve(op->vars.size());
+    for (var i : op->vars) {
+      vars.push_back(visit_symbol(i));
+      changed = changed || vars.back() != i;
+    }
+    std::vector<var> buffers;
+    buffers.reserve(op->buffers.size());
+    for (var i : op->buffers) {
+      buffers.push_back(visit_symbol(i));
+      changed = changed || buffers.back() != i;
+    }
+
+    std::vector<expr> wait;
+    wait.reserve(op->wait.size());
+    for (const expr& i : op->wait) {
+      wait.push_back(mutate(i));
+      changed = changed || !wait.back().same_as(i);
+    }
+    std::vector<expr> signal;
+    signal.reserve(op->signal.size());
+    for (const expr& i : op->signal) {
+      signal.push_back(mutate(i));
+      changed = changed || !signal.back().same_as(i);
+    }
+
+    stmt body = mutate(op->body);
+    changed = changed || !body.same_as(op->body);
+    if (changed) {
+      set_result(async::make(std::move(vars), std::move(buffers), std::move(wait), std::move(signal), std::move(body)));
     } else {
       set_result(op);
     }

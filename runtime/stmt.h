@@ -28,6 +28,7 @@ enum class stmt_node_type {
   slice_dim,
   transpose,
   check,
+  async,
 };
 
 enum class memory_type {
@@ -346,6 +347,28 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::check;
 };
 
+class async : public stmt_node<async> {
+public:
+  stmt body;
+
+  // Variables and buffers captured by this closure.
+  std::vector<var> vars;
+  std::vector<var> buffers;
+
+  // Arguments to a semamphore_wait call prior to entering the body.
+  std::vector<expr> wait;
+
+  // Arguments to a semaphore_signal call upon exiting the body.
+  std::vector<expr> signal;
+
+  void accept(stmt_visitor* v) const override;
+
+  static stmt make(
+      std::vector<var> vars, std::vector<var> buffers, std::vector<expr> wait, std::vector<expr> signal, stmt body);
+
+  static constexpr stmt_node_type static_type = stmt_node_type::async;
+};
+
 class stmt_visitor {
 public:
   virtual ~stmt_visitor() = default;
@@ -364,6 +387,7 @@ public:
   virtual void visit(const slice_dim*) = 0;
   virtual void visit(const transpose*) = 0;
   virtual void visit(const check*) = 0;
+  virtual void visit(const async*) = 0;
 };
 
 class recursive_node_visitor : public expr_visitor, public stmt_visitor {
@@ -403,6 +427,7 @@ public:
   void visit(const slice_dim* op) override;
   void visit(const transpose* op) override;
   void visit(const check* op) override;
+  void visit(const async* op) override;
 };
 
 inline void let_stmt::accept(stmt_visitor* v) const { v->visit(this); }
@@ -419,6 +444,7 @@ inline void slice_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void slice_dim::accept(stmt_visitor* v) const { v->visit(this); }
 inline void transpose::accept(stmt_visitor* v) const { v->visit(this); }
 inline void check::accept(stmt_visitor* v) const { v->visit(this); }
+inline void async::accept(stmt_visitor* v) const { v->visit(this); }
 
 }  // namespace slinky
 
