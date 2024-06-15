@@ -852,6 +852,9 @@ public:
           return result;
         }
       }
+    } else if (fn == intrinsic::buffer_size_bytes) {
+      std::cerr << "substituting buffer_size_bytes not implemented" << std::endl;
+      std::abort();
     }
     return expr();
   }

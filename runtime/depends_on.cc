@@ -55,7 +55,9 @@ public:
         assert(buf);
         update_deps(*buf, [fn = op->intrinsic](depends_on_result& deps) {
           deps.buffer_meta = true;
-          if (fn == intrinsic::buffer_at) {
+          // TODO: Treating buffer_size_bytes as using the base is a hack to avoid needing to implement substituting a
+          // buffer into it.
+          if (fn == intrinsic::buffer_at || fn == intrinsic::buffer_size_bytes) {
             deps.buffer_base = true;
           }
         });
