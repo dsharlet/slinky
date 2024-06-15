@@ -50,6 +50,9 @@ public:
   std::function<void(index_t)> trace_end;
 
   const raw_buffer* lookup_buffer(var id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
+
+  void parallel_for(index_t begin, index_t end, index_t step, std::function<void(index_t)> body,
+      int max_workers = std::numeric_limits<int>::max());
 };
 
 index_t evaluate(const expr& e, eval_context& context);
