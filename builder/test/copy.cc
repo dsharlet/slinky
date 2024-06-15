@@ -384,7 +384,6 @@ TEST_P(upsample_y, copy) {
   ASSERT_EQ(eval_ctx.copy_elements, W * H);
 }
 
-
 class downsample_y : public testing::TestWithParam<int> {};
 
 INSTANTIATE_TEST_SUITE_P(split, downsample_y, testing::Range(0, 5));
@@ -786,7 +785,13 @@ TEST(stack, copy) {
   ASSERT_EQ(eval_ctx.copy_elements, W * H * 2);
 }
 
-TEST(reshape, copy) {
+class reshape : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(opaque, reshape, testing::Values(false, true));
+
+TEST_P(reshape, copy) {
+  const bool opaque = GetParam();
+
   // Make the pipeline
   node_context ctx;
 
@@ -814,7 +819,21 @@ TEST(reshape, copy) {
       point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
       point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
   };
-  func crop = func::make_copy({in, bounds}, {out, {x, y, z}});
+
+  func copy;
+  if (opaque) {
+    // Use a copy callback that does a flat memcpy
+    copy = func::make(
+        [](const buffer<const void>& in, const buffer<void>& out) -> index_t {
+          assert(in.size_bytes() == out.size_bytes());
+          memcpy(out.base(), in.base(), out.size_bytes());
+          return 0;
+        },
+        {{in, bounds}}, {{out, {x, y, z}}});
+  } else {
+    // Use a slinky copy
+    copy = func::make_copy({in, bounds}, {out, {x, y, z}});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -840,11 +859,19 @@ TEST(reshape, copy) {
     ASSERT_EQ(in_buf.base()[i], out_buf.base()[i]);
   }
 
-  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
+  if (!opaque) {
+    ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+    ASSERT_EQ(eval_ctx.copy_elements, W * H * D);
+  }
 }
 
-TEST(batch_reshape, copy) {
+class batch_reshape : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(opaque, batch_reshape, testing::Values(false, true));
+
+TEST_P(batch_reshape, copy) {
+  const bool opaque = GetParam();
+
   // Make the pipeline
   node_context ctx;
 
@@ -874,7 +901,20 @@ TEST(batch_reshape, copy) {
       point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
       point(w),
   };
-  func crop = func::make_copy({in, bounds}, {out, {x, y, z, w}});
+  func copy;
+  if (opaque) {
+    // Use a callback that does a flat memcpy
+    copy = func::make(
+        [](const buffer<const void>& in, const buffer<void>& out) -> index_t {
+          assert(in.size_bytes() == out.size_bytes());
+          memcpy(out.base(), in.base(), out.size_bytes());
+          return 0;
+        },
+        {{in, bounds}}, {{out, {x, y, z, w}}});
+  } else {
+    // Use a slinky copy
+    copy = func::make_copy({in, bounds}, {out, {x, y, z, w}});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -905,8 +945,10 @@ TEST(batch_reshape, copy) {
     }
   }
 
-  ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
-  ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
+  if (!opaque) {
+    ASSERT_EQ(eval_ctx.copy_calls, W * H * D);
+    ASSERT_EQ(eval_ctx.copy_elements, W * H * D * N);
+  }
 }
 
 }  // namespace slinky

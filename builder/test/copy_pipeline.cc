@@ -554,14 +554,16 @@ TEST_P(broadcasted_elementwise, internal) {
   }
 }
 
-class reshaped_input : public testing::TestWithParam<std::tuple<bool, int>> {};
+class reshaped_input : public testing::TestWithParam<std::tuple<bool, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(dim, reshaped_input, testing::Combine(testing::Values(true, false), testing::Values(0, 1)),
+INSTANTIATE_TEST_SUITE_P(dim, reshaped_input,
+    testing::Combine(testing::Values(true, false), testing::Values(0, 1), testing::Values(false, true)),
     test_params_to_string<reshaped_input::ParamType>);
 
 TEST_P(reshaped_input, pipeline) {
   const bool no_alias_buffers = std::get<0>(GetParam());
   const int split = std::get<1>(GetParam());
+  const bool opaque = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -591,11 +593,26 @@ TEST_P(reshaped_input, pipeline) {
       point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
       point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
   };
-  func reshape = func::make_copy({in, bounds}, {intm, {x, y, z}});
+  func reshape;
+  if (opaque) {
+    reshape = func::make(
+        [](const buffer<const void>& in, const buffer<void>& out) -> index_t {
+          assert(in.size_bytes() == out.size_bytes());
+          memcpy(out.base(), in.base(), out.size_bytes());
+          return 0;
+        },
+        {{in, bounds}}, {{intm, {x, y, z}}}, call_stmt::attributes{.name = "memcpy"});
+  } else {
+    reshape = func::make_copy({in, bounds}, {intm, {x, y, z}});
+  }
   func add = func::make(
       add_1<int>, {{intm, {point(x), point(y), point(z)}}}, {{out, {x, y, z}}}, call_stmt::attributes{.name = "add"});
 
   if (split > 0) {
+    if (opaque) {
+      // We can't do this.
+      return;
+    }
     add.loops({{z, split}});
   }
 
@@ -623,18 +640,20 @@ TEST_P(reshaped_input, pipeline) {
     ASSERT_EQ(in_buf.base()[i] + 1, out_buf.base()[i]);
   }
 
-  // TODO: Try to alias reshapes.
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  // TODO: Try to alias reshapes done with slinky copy.
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), opaque && !no_alias_buffers ? 0 : 1);
 }
 
-class reshaped_output : public testing::TestWithParam<std::tuple<bool, int>> {};
+class reshaped_output : public testing::TestWithParam<std::tuple<bool, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(dim, reshaped_output, testing::Combine(testing::Values(true, false), testing::Values(0, 1)),
+INSTANTIATE_TEST_SUITE_P(dim, reshaped_output,
+    testing::Combine(testing::Values(true, false), testing::Values(0, 1), testing::Values(false, true)),
     test_params_to_string<reshaped_output::ParamType>);
 
 TEST_P(reshaped_output, pipeline) {
   const bool no_alias_buffers = std::get<0>(GetParam());
   const int split = std::get<1>(GetParam());
+  const bool opaque = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -655,6 +674,9 @@ TEST_P(reshaped_output, pipeline) {
   var y(ctx, "y");
   var z(ctx, "z");
 
+  func add = func::make(
+      add_1<int>, {{in, {point(x), point(y), point(z)}}}, {{intm, {x, y, z}}}, call_stmt::attributes{.name = "add"});
+
   // Compute the "flat" index of the coordinates in the output.
   expr flat_out = x + y * out->dim(0).extent() + z * out->dim(0).extent() * out->dim(1).extent();
 
@@ -664,11 +686,25 @@ TEST_P(reshaped_output, pipeline) {
       point((flat_out / in->dim(0).extent()) % in->dim(1).extent()),
       point(flat_out / (in->dim(0).extent() * in->dim(1).extent()) % in->dim(2).extent()),
   };
-  func add = func::make(
-      add_1<int>, {{in, {point(x), point(y), point(z)}}}, {{intm, {x, y, z}}}, call_stmt::attributes{.name = "add"});
-  func reshape = func::make_copy({intm, bounds}, {out, {x, y, z}});
+
+  func reshape;
+  if (opaque) {
+    reshape = func::make(
+        [](const buffer<const void>& in, const buffer<void>& out) -> index_t {
+          assert(in.size_bytes() == out.size_bytes());
+          memcpy(out.base(), in.base(), out.size_bytes());
+          return 0;
+        },
+        {{intm, bounds}}, {{out, {x, y, z}}}, call_stmt::attributes{.name = "memcpy"});
+  } else {
+    reshape = func::make_copy({intm, bounds}, {out, {x, y, z}});
+  }
 
   if (split > 0) {
+    if (opaque) {
+      // We can't do this.
+      return;
+    }
     reshape.loops({{z, split}});
   }
 
@@ -696,8 +732,8 @@ TEST_P(reshaped_output, pipeline) {
     ASSERT_EQ(in_buf.base()[i] + 1, out_buf.base()[i]);
   }
 
-  // TODO: Try to alias reshapes.
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  // TODO: Try to alias reshapes done with slinky copy.
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), opaque && !no_alias_buffers ? 0 : 1);
 }
 
 }  // namespace slinky
