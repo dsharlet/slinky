@@ -3,8 +3,10 @@
 
 #include <chrono>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 
 namespace slinky {
 
@@ -12,8 +14,9 @@ namespace slinky {
 // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
 class chrome_trace {
   std::ostream& os_;
-  // Note that using a mutex to avoid races in the output possibly distorts the tracing output.
-  // Not easy to avoid this.
+  std::map<std::thread::id, std::string> buffers_;
+  // A unique identifier for chrome_trace instances.
+  int id_;
   std::mutex mtx_;
   using timestamp = std::chrono::high_resolution_clock::time_point;
   timestamp t0_;
