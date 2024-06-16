@@ -105,7 +105,15 @@ private:
   using queued_task = std::tuple<int, task, task_id>;
   std::deque<queued_task> task_queue_;
   std::mutex mutex_;
-  std::condition_variable cv_;
+  // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
+  // - cv_helper_ is waited on by threads that are helping the worker threads while waiting for a condition.
+  // - cv_worker_ is waited on by worker threads.
+  // Enqueuing a task wakes up a thread from each condition variable.
+  // cv_helper_ is only notified when the state of a condition may change (a task completes, or an `atomic_call` runs).
+  std::condition_variable cv_helper_;
+  std::condition_variable cv_worker_;
+
+  void wait_for(const predicate& condition, std::condition_variable& cv);
 
   bool dequeue(task& t, std::vector<task_id>& task_stack);
 
@@ -121,7 +129,7 @@ public:
   void enqueue(task t) override;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
-  void wait_for(const predicate& condition) override;
+  void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
   // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
   void atomic_call(const task& t) override;
 };

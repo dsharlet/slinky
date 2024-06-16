@@ -9,7 +9,7 @@
 namespace slinky {
 
 thread_pool_impl::thread_pool_impl(int workers) : stop_(false) {
-  auto worker = [this]() { wait_for([this]() -> bool { return stop_; }); };
+  auto worker = [this]() { wait_for([this]() -> bool { return stop_; }, cv_worker_); };
   for (int i = 0; i < workers; ++i) {
     workers_.push_back(std::thread(worker));
   }
@@ -17,6 +17,7 @@ thread_pool_impl::thread_pool_impl(int workers) : stop_(false) {
 
 thread_pool_impl::~thread_pool_impl() {
   atomic_call([this]() { stop_ = true; });
+  cv_worker_.notify_all();
   for (std::thread& i : workers_) {
     i.join();
   }
@@ -44,7 +45,7 @@ bool thread_pool_impl::dequeue(task& t, std::vector<thread_pool_impl::task_id>& 
   return false;
 }
 
-void thread_pool_impl::wait_for(const thread_pool::predicate& condition) {
+void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::condition_variable& cv) {
   thread_local std::vector<std::size_t> task_stack;
   std::unique_lock l(mutex_);
   while (!condition()) {
@@ -54,11 +55,10 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition) {
       t();
       task_stack.pop_back();
       l.lock();
-      // This is pretty inefficient. It is here to wake up threads that are waiting for a condition to become true,
-      // that may have become true due to the task completing. There may be a better way to do this.
-      cv_.notify_all();
+      // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
+      cv_helper_.notify_all();
     } else if (!stop_) {
-      cv_.wait(l);
+      cv.wait(l);
     }
   }
 }
@@ -66,7 +66,7 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition) {
 void thread_pool_impl::atomic_call(const task& t) {
   std::unique_lock l(mutex_);
   t();
-  cv_.notify_all();
+  cv_helper_.notify_all();
 }
 
 void thread_pool_impl::enqueue(int n, task t) {
@@ -74,14 +74,16 @@ void thread_pool_impl::enqueue(int n, task t) {
   std::unique_lock l(mutex_);
   task_id id = next_task_id_++;
   task_queue_.push_back({n, std::move(t), id});
-  cv_.notify_all();
+  cv_worker_.notify_all();
+  cv_helper_.notify_all();
 }
 
 void thread_pool_impl::enqueue(task t) {
   std::unique_lock l(mutex_);
   task_id id = next_task_id_++;
   task_queue_.push_back({1, std::move(t), id});
-  cv_.notify_one();
+  cv_worker_.notify_one();
+  cv_helper_.notify_one();
 }
 
 }  // namespace slinky
