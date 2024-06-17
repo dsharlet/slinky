@@ -200,13 +200,9 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
   }
   body = loop::make(x, workers, range(0, iterations), 1, body);
 
-  thread_pool t(workers);
-
   eval_context eval_ctx;
-  eval_ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
-  eval_ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
-  eval_ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  eval_ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  thread_pool_impl t(workers);
+  eval_ctx.thread_pool = &t;
 
   for (auto _ : state) {
     evaluate(body, eval_ctx);

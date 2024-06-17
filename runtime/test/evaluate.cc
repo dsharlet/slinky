@@ -82,13 +82,9 @@ TEST(evaluate, call) {
 }
 
 TEST(evaluate, loop) {
-  thread_pool t;
-
   eval_context ctx;
-  ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
-  ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
-  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
@@ -189,11 +185,9 @@ TEST(evaluate, clone_buffer) {
 }
 
 TEST(evaluate, semaphore) {
-  thread_pool t;
-
   eval_context ctx;
-  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
 
   index_t sem1 = 0;
   index_t sem2 = 0;

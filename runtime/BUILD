@@ -26,6 +26,7 @@ cc_library(
     deps = [
         "//base",
         "//base:chrome_trace",
+        "//base:thread_pool",
     ],
     visibility = ["//visibility:public"],
 )

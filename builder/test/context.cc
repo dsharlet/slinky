@@ -35,7 +35,7 @@ void setup_tracing(eval_context& ctx, const std::string& filename) {
 }
 
 test_context::test_context() {
-  static thread_pool threads;
+  static thread_pool_impl threads;
 
   allocate = [this](var, raw_buffer* b) {
     void* allocation = b->allocate();
@@ -47,10 +47,7 @@ test_context::test_context() {
     heap.track_free(b->size_bytes());
   };
 
-  enqueue_many = [&](thread_pool::task t) { threads.enqueue(threads.thread_count(), std::move(t)); };
-  enqueue = [&](int n, thread_pool::task t) { threads.enqueue(n, std::move(t)); };
-  wait_for = [&](const std::function<bool()>& condition) { return threads.wait_for(condition); };
-  atomic_call = [&](const thread_pool::task& t) { return threads.atomic_call(t); };
+  thread_pool = &threads;
 }
 
 }  // namespace slinky

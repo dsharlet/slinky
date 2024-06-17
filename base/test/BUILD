@@ -29,6 +29,16 @@ cc_test(
 )
 
 cc_test(
+    name = "thread_pool",
+    srcs = ["thread_pool.cc"],
+    deps = [
+        "//base:thread_pool",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "arithmetic_benchmark",
     srcs = ["arithmetic_benchmark.cc"],
     deps = [
