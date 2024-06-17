@@ -93,7 +93,10 @@ public:
     bool allow_in_place = false;
 
     // A name for the callable. This is only a tag that is passed through slinky and used for printing, it doesn't
-    // affect any slinky logic.
+    // affect any slinky logic, *except* for if this is named `memcpy`, slinky assumes that the implementation of this
+    // callback is:
+    // assert(inputs[0]->size_bytes() == outputs[0]->size_bytes());
+    // memcpy(outputs[0]->base(), inputs[0]->base(), outputs[0]->size_bytes());
     std::string name;
   };
 

@@ -139,14 +139,16 @@ class copy_replacer : public node_mutator {
   std::vector<var> bs;
   const std::vector<int>& permutation;
 
+  bool is_a_and_b(var x, var y) const {
+    return (std::find(as.begin(), as.end(), x) != as.end() && std::find(bs.begin(), bs.end(), y) != bs.end()) ||
+           (std::find(as.begin(), as.end(), y) != as.end() && std::find(bs.begin(), bs.end(), x) != bs.end());
+  }
+
 public:
   copy_replacer(var a, var b, const std::vector<int>& permutation) : as({a}), bs({b}), permutation(permutation) {}
 
   void visit(const copy_stmt* op) override {
-    if (!((std::find(as.begin(), as.end(), op->src) != as.end() &&
-              std::find(bs.begin(), bs.end(), op->dst) != bs.end()) ||
-            (std::find(as.begin(), as.end(), op->dst) != as.end() &&
-                std::find(bs.begin(), bs.end(), op->src) != bs.end()))) {
+    if (!is_a_and_b(op->src, op->dst)) {
       // Not this copy.
       set_result(op);
       return;
@@ -173,6 +175,17 @@ public:
 
     // The copy may have also be transposed.
     set_result(transpose::make(op->dst, op->dst, permutation, pad));
+  }
+
+  void visit(const call_stmt* op) override {
+    if (op->attrs.name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
+        is_a_and_b(op->inputs[0], op->outputs[0])) {
+      expr input_size = call::make(intrinsic::buffer_size_bytes, {op->inputs[0]});
+      expr output_size = call::make(intrinsic::buffer_size_bytes, {op->outputs[0]});
+      set_result(check::make(input_size == output_size));
+    } else {
+      set_result(op);
+    }
   }
 
   template <typename T>
@@ -215,6 +228,8 @@ class buffer_aliaser : public node_mutator {
 
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
+
+    bool is_contiguous_copy = false;
   };
 
   class buffer_info {
@@ -249,6 +264,11 @@ class buffer_aliaser : public node_mutator {
       const allocate* op, const alias_info& alias, var target, const buffer_info& target_info) {
     scoped_trace trace("alias_compatible");
     assert(op->dims.size() == alias.dims.size());
+
+    if (alias.is_contiguous_copy) {
+      // We just assume flat copies are OK.
+      return true;
+    }
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       const dim_expr& alias_dim = alias.dims[alias.permutation[d]];
       if (!alias.assume_in_bounds) {
@@ -331,7 +351,7 @@ public:
         i = substitute_bounds(i, op->sym, op_dims_bounds);
       }
 
-      if (!alias.assume_in_bounds) {
+      if (!alias.assume_in_bounds && !alias.is_contiguous_copy) {
         if (!target_info->is_output) {
           assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
@@ -351,6 +371,8 @@ public:
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
       stmt result = make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+      // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
+      result = make_buffer::make(op->sym, expr(), elem_size, op->dims, result);
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
@@ -388,30 +410,60 @@ public:
     }
   }
 
+  // Make dimensions that assign strides that are contiguous and ascending.
+  static std::vector<dim_expr> make_contiguous_dims(var buf, std::size_t rank) {
+    std::vector<dim_expr> dims(rank);
+    expr stride = buffer_elem_size(buf);
+    for (std::size_t i = 0; i < rank; ++i) {
+      dims[i].bounds = buffer_bounds(buf, i);
+      dims[i].stride = stride;
+      stride *= dims[i].bounds.extent();
+    }
+    return dims;
+  }
+
   void visit(const call_stmt* op) override {
     scoped_trace trace("visit(const call_stmt*)");
     set_result(op);
-    if (!op->attrs.allow_in_place) {
-      // This call does not allow aliasing an input to an output.
-      return;
-    }
-    for (var i : op->inputs) {
-      std::optional<buffer_info>& input_info = buffers[i];
-      if (input_info) {
-        if (input_info->is_input) {
-          // We can't write to this buffer.
-          continue;
-        }
-        for (var o : op->outputs) {
-          alias_info a;
-          a.dims = buffer_dims(o, input_info->dims.size());
-          a.at = buffer_mins(o, input_info->dims.size());
-          // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output, and the
-          // dimensions are not permuted.
-          a.assume_in_bounds = true;
-          a.permutation.resize(input_info->dims.size());
-          std::iota(a.permutation.begin(), a.permutation.end(), 0);
-          input_info->maybe_alias(o, std::move(a));
+    if (op->attrs.name == "memcpy") {
+      assert(op->inputs.size() == 1);
+      assert(op->outputs.size() == 1);
+      var in = op->inputs[0];
+      var out = op->outputs[0];
+      std::optional<buffer_info>& input_info = buffers[in];
+      std::optional<buffer_info>& output_info = buffers[out];
+      if (input_info && output_info) {
+        alias_info fwd;
+        fwd.dims = make_contiguous_dims(in, input_info->dims.size());
+        fwd.at = buffer_mins(out, output_info->dims.size());
+        fwd.is_contiguous_copy = true;
+        input_info->maybe_alias(out, std::move(fwd));
+
+        alias_info back;
+        back.dims = make_contiguous_dims(out, output_info->dims.size());
+        back.at = buffer_mins(in, input_info->dims.size());
+        back.is_contiguous_copy = true;
+        output_info->maybe_alias(in, std::move(back));
+      }
+    } else if (op->attrs.allow_in_place) {
+      for (var i : op->inputs) {
+        std::optional<buffer_info>& input_info = buffers[i];
+        if (input_info) {
+          if (input_info->is_input) {
+            // We can't write to this buffer.
+            continue;
+          }
+          for (var o : op->outputs) {
+            alias_info a;
+            a.dims = buffer_dims(o, input_info->dims.size());
+            a.at = buffer_mins(o, input_info->dims.size());
+            // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output, and the
+            // dimensions are not permuted.
+            a.assume_in_bounds = true;
+            a.permutation.resize(input_info->dims.size());
+            std::iota(a.permutation.begin(), a.permutation.end(), 0);
+            input_info->maybe_alias(o, std::move(a));
+          }
         }
       }
     }
