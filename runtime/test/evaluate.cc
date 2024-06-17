@@ -18,37 +18,6 @@ expr define_undef(const expr& a, const expr& def) { return call::make(intrinsic:
 
 }  // namespace
 
-TEST(eval_context, parallel_for) {
-  thread_pool t;
-
-  eval_context ctx;
-  ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
-  ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
-  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
-
-  std::atomic<index_t> count = 0;
-  std::atomic<index_t> sum = 0;
-  auto body = [&](index_t i) {
-    count++;
-    sum += i;
-  };
-  ctx.parallel_for(0, 0, 1, body);
-  ASSERT_EQ(count, 0);
-  ASSERT_EQ(sum, 0);
-  ctx.parallel_for(0, 1, 1, body);
-  ASSERT_EQ(count, 1);
-  ASSERT_EQ(sum, 0);
-  ctx.parallel_for(0, 10, 1, body);
-  ASSERT_EQ(count, 11);
-  ASSERT_EQ(sum, 5 * 9);
-
-  count = 0;
-  sum = 0;
-  ctx.parallel_for(0, 10, 1, [&](index_t i) { ctx.parallel_for(0, 8, 1, body); });
-  ASSERT_EQ(count, 10 * 8);
-}
-
 TEST(evaluate, arithmetic) {
   eval_context context;
   context[x] = 4;
@@ -113,13 +82,9 @@ TEST(evaluate, call) {
 }
 
 TEST(evaluate, loop) {
-  thread_pool t;
-
   eval_context ctx;
-  ctx.enqueue_many = [&](thread_pool::task f) { t.enqueue(t.thread_count(), std::move(f)); };
-  ctx.enqueue = [&](int n, thread_pool::task f) { t.enqueue(n, std::move(f)); };
-  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
@@ -220,11 +185,9 @@ TEST(evaluate, clone_buffer) {
 }
 
 TEST(evaluate, semaphore) {
-  thread_pool t;
-
   eval_context ctx;
-  ctx.wait_for = [&](const std::function<bool()>& f) { t.wait_for(f); };
-  ctx.atomic_call = [&](const thread_pool::task& f) { t.atomic_call(f); };
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
 
   index_t sem1 = 0;
   index_t sem2 = 0;

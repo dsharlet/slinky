@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "base/chrome_trace.h"
+#include "base/thread_pool.h"
 #include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
@@ -49,81 +50,6 @@ void dump_context_for_expr(
       }
     }
   }
-}
-
-void eval_context::parallel_for(
-    index_t begin, index_t end, index_t step, std::function<void(index_t)> body, int max_workers) {
-  scoped_trace trace("parallel_for");
-  if (begin >= end) {
-    return;
-  } else if (begin + step >= end) {
-    body(begin);
-    return;
-  }
-
-  assert(enqueue_many);
-  assert(enqueue);
-  assert(wait_for);
-  struct shared_state {
-    // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
-    // iterations completed. This allows us to check if the loop is done without relying on the workers actually
-    // running. If the thread pool is busy, then we might enqueue workers that never run until after the loop is
-    // done. Waiting for these to return (after doing nothing) would risk deadlock.
-    std::atomic<index_t> i, done;
-
-    // We want copies of these in the shared state so we can allow the worker to run after returning from this
-    // scope.
-    index_t begin, end;
-    index_t step;
-
-    // Which threads are working on this loop.
-    std::set<std::thread::id> working_threads;
-    std::mutex m;
-
-    // This should be called when entering a worker. If it returns false, we are already in the call stack of a
-    // worker on this loop, and should return to work on other tasks instead.
-    bool begin_work() {
-      std::unique_lock l(m);
-      std::thread::id tid = std::this_thread::get_id();
-      return working_threads.emplace(tid).second;
-    }
-
-    void end_work() {
-      std::unique_lock l(m);
-      auto i = working_threads.find(std::this_thread::get_id());
-      assert(i != working_threads.end());
-      working_threads.erase(i);
-    }
-
-    shared_state(index_t begin, index_t end, index_t step) : i(begin), done(begin), begin(begin), end(end), step(step) {}
-  };
-  auto state = std::make_shared<shared_state>(begin, end, step);
-  // It is safe to capture op even though it's a pointer, because we only access it after we know that we're still
-  // in this scope.
-  // TODO: Can we do this without capturing context by value?
-  auto worker = [state, body]() mutable {
-    if (!state->begin_work()) return;
-    scoped_trace trace("worker");
-
-    while (true) {
-      index_t i = state->i.fetch_add(state->step);
-      if (!(state->begin <= i && i < state->end)) break;
-      body(i);
-      state->done += state->step;
-    }
-
-    state->end_work();
-  };
-  if (max_workers == std::numeric_limits<int>::max()) {
-    // TODO: It's wasteful to enqueue a worker per thread if we have fewer tasks than workers.
-    enqueue_many(worker);
-  } else {
-    enqueue(max_workers - 1, worker);
-  }
-  worker();
-  scoped_trace trace_wait("wait_for");
-  // While the loop still isn't done, work on other tasks.
-  wait_for([&]() { return !(begin <= state->done && state->done < end); });
 }
 
 namespace {
@@ -340,7 +266,7 @@ public:
     assert(op->args.size() == 2);
     index_t* sem = reinterpret_cast<index_t*>(eval(op->args[0]));
     index_t count = eval(op->args[1], 0);
-    context.atomic_call([=]() { *sem = count; });
+    context.thread_pool->atomic_call([=]() { *sem = count; });
     return 1;
   }
 
@@ -353,7 +279,7 @@ public:
       sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
       counts[i] = eval(op->args[i * 2 + 1], 1);
     }
-    context.atomic_call([=]() {
+    context.thread_pool->atomic_call([=]() {
       for (std::size_t i = 0; i < sem_count; ++i) {
         *sems[i] += counts[i];
       }
@@ -370,7 +296,7 @@ public:
       sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
       counts[i] = eval(op->args[i * 2 + 1], 1);
     }
-    context.wait_for([=]() {
+    context.thread_pool->wait_for([=]() {
       // Check we can acquire all of the semaphores before acquiring any of them.
       for (std::size_t i = 0; i < sem_count; ++i) {
         if (*sems[i] < counts[i]) return false;
@@ -504,15 +430,19 @@ public:
     index_t step = eval(op->step, 1);
     if (op->max_workers > 1) {
       std::atomic<index_t> result = 0;
-      context.parallel_for(bounds.min, bounds.max + 1, step, [context = this->context, op, &result](index_t i) mutable {
-        context[op->sym] = i;
-        // Evaluate the parallel loop body with our copy of the context.
-        index_t result_i = evaluate(op->body, context);
-        if (result_i != 0) {
-          index_t zero = 0;
-          result.compare_exchange_strong(zero, result_i);
-        }
-      }, op->max_workers);
+      std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
+      context.thread_pool->parallel_for(
+          n,
+          [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
+            context[op->sym] = i * step + min;
+            // Evaluate the parallel loop body with our copy of the context.
+            index_t result_i = evaluate(op->body, context);
+            if (result_i != 0) {
+              index_t zero = 0;
+              result.compare_exchange_strong(zero, result_i);
+            }
+          },
+          op->max_workers);
       return result;
     } else {
       // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here

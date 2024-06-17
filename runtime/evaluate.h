@@ -6,6 +6,8 @@
 
 namespace slinky {
 
+class thread_pool;
+
 // TODO: Probably shouldn't inherit here.
 class eval_context : public symbol_map<index_t> {
 public:
@@ -24,20 +26,8 @@ public:
   std::function<void(const expr&)> check_failed;
   std::function<void(const call_stmt*)> call_failed;
 
-  // Functions implementing parallelism:
-  // - `enqueue_many` should enqueue the task N times for asynchronous execution, where N is the maximum number of
-  // instances that could be expected to run simultaneously.
-  // - `enqueue` should enqueue a task N times.
-  // - `wait_for` should wait until the given condition becomes true, executing tasks previously enqueued until it does.
-  // - `atomic_call` runs a task on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for`
-  //    conditions.
-  //
-  // These functions must be implemented if the statement being evaluated includes asynchronous nodes (parallel loops).
-  using task = std::function<void()>;
-  std::function<void(const task&)> enqueue_many;
-  std::function<void(int, const task&)> enqueue;
-  std::function<void(std::function<bool()>)> wait_for;
-  std::function<void(task)> atomic_call;
+  // A pointer to a thread pool, required for parallel
+  slinky::thread_pool* thread_pool = nullptr;
 
   // Functions implementing buffer data movement:
   // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.
@@ -50,9 +40,6 @@ public:
   std::function<void(index_t)> trace_end;
 
   const raw_buffer* lookup_buffer(var id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
-
-  void parallel_for(index_t begin, index_t end, index_t step, std::function<void(index_t)> body,
-      int max_workers = std::numeric_limits<int>::max());
 };
 
 index_t evaluate(const expr& e, eval_context& context);
