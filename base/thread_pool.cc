@@ -60,7 +60,7 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::co
       l.lock();
       // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
       cv_helper_.notify_all();
-    } else if (!stop_) {
+    } else {
       cv.wait(l);
     }
   }
