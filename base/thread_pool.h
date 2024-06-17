@@ -118,7 +118,9 @@ private:
   bool dequeue(task& t, std::vector<task_id>& task_stack);
 
 public:
-  thread_pool_impl(int workers = 3);
+  // `workers` indicates how many worker threads the thread pool will have.
+  // `init` is a task that is run on each newly created thread.
+  thread_pool_impl(int workers = 3, const task& init = nullptr);
   ~thread_pool_impl();
 
   int thread_count() const override { return workers_.size(); }

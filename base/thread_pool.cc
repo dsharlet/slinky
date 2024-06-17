@@ -8,8 +8,11 @@
 
 namespace slinky {
 
-thread_pool_impl::thread_pool_impl(int workers) : stop_(false) {
-  auto worker = [this]() { wait_for([this]() -> bool { return stop_; }, cv_worker_); };
+thread_pool_impl::thread_pool_impl(int workers, const task& init) : stop_(false) {
+  auto worker = [this, init]() {
+    if (init) init();
+    wait_for([this]() -> bool { return stop_; }, cv_worker_);
+  };
   for (int i = 0; i < workers; ++i) {
     workers_.push_back(std::thread(worker));
   }
