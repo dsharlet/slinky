@@ -1,5 +1,6 @@
 #include "base/chrome_trace.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -8,11 +9,23 @@
 
 namespace slinky {
 
-chrome_trace::chrome_trace(std::ostream& os) : os_(os) {
+namespace {
+
+std::atomic<int> next_id = 0;
+
+}  // namespace
+
+chrome_trace::chrome_trace(std::ostream& os) : os_(os), id_(next_id++) {
   os_ << "[{}";
   t0_ = std::chrono::high_resolution_clock::now();
 }
-chrome_trace::~chrome_trace() { os_ << "]\n"; }
+chrome_trace::~chrome_trace() {
+  // Flush any unwritten buffers.
+  for (const auto& i : buffers_) {
+    os_ << i.second;
+  }
+  os_ << "]\n";
+}
 
 void chrome_trace::write_event(const char* name, const char* cat, char type) {
   auto t = std::chrono::high_resolution_clock::now();
@@ -20,33 +33,44 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
 
   // The only way to convert a thread ID to a string is via operator<<, which is slow, so we do it as a thread_local
   // initializer.
-  thread_local std::string tid_str = []() {
-    auto tid = std::this_thread::get_id();
+  thread_local std::string pid_tid_str = []() {
     std::stringstream ss;
-    ss << tid;
+    ss << "\",\"pid\":0,\"tid\":" << std::this_thread::get_id();
     return ss.str();
   }();
 
-  // Assemble a buffer of what we want to write.
-  thread_local std::string buffer;
-  buffer.clear();
+  // To avoid overhead when multiple threads are writing traces, we try to keep a pointer to the buffer for this trace
+  // object and thread cached locally.
+  thread_local int current_buffer_owner = -1;
+  thread_local std::string* buffer = nullptr;
+
+  if (!buffer || current_buffer_owner != id_) {
+    // We should only need to pay the cost of this lookup if multiple different chrome_trace objects are writing traces
+    // on the same thread at the same time.
+    std::unique_lock l(mtx_);
+    buffer = &buffers_[std::this_thread::get_id()];
+    current_buffer_owner = id_;
+  }
+
   // It would be an error to put a comma here as the first item in the output, but we put a dummy {} object at the
   // beginning of the array.
-  buffer += ",\n{\"name\":\"";
-  buffer += name;
-  buffer += "\",\"cat\":\"";
-  buffer += cat;
-  buffer += "\",\"ph\":\"";
-  buffer += type;
-  buffer += "\",\"pid\":0,\"tid\":";
-  buffer += tid_str;
-  buffer += ",\"ts\":";
-  buffer += std::to_string(ts);
-  buffer += '}';
+  *buffer += ",\n{\"name\":\"";
+  *buffer += name;
+  *buffer += "\",\"cat\":\"";
+  *buffer += cat;
+  *buffer += "\",\"ph\":\"";
+  *buffer += type;
+  *buffer += pid_tid_str;
+  *buffer += ",\"ts\":";
+  *buffer += std::to_string(ts);
+  *buffer += '}';
 
-  // Write our buffer.
-  std::unique_lock l(mtx_);
-  os_.write(buffer.data(), buffer.size());
+  if (buffer->size() > 4096 * 16) {
+    // Flush our buffer.
+    std::unique_lock l(mtx_);
+    os_.write(buffer->data(), buffer->size());
+    buffer->clear();
+  }
 }
 
 void chrome_trace::begin(const char* name) { write_event(name, "slinky", 'B'); }
