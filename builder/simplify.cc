@@ -336,7 +336,8 @@ public:
 
   void visit(const constant* op) override { set_result(op, {op, op}); }
 
-  void visit(const class min* op) override {
+  template <typename T>
+  void visit_min_max(const T* op) {
     interval_expr a_bounds;
     expr a = mutate(op->a, &a_bounds);
     interval_expr b_bounds;
@@ -353,41 +354,26 @@ public:
     } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
                                    simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
                                    simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
-      set_result(std::move(a), std::move(a_bounds));
+      if (T::static_type == expr_node_type::min) {
+        set_result(std::move(a), std::move(a_bounds));
+      } else {
+        set_result(std::move(b), std::move(b_bounds));
+      }
     } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min) ||
                                    simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a) ||
                                    simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
-      set_result(std::move(b), std::move(b_bounds));
+      if (T::static_type == expr_node_type::min) {
+        set_result(std::move(b), std::move(b_bounds));
+      } else {
+        set_result(std::move(a), std::move(a_bounds));
+      }
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
   }
-  void visit(const class max* op) override {
-    interval_expr a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
-    expr b = mutate(op->b, &b_bounds);
 
-    if (!a.defined() || !b.defined()) {
-      set_result(expr(), interval_expr());
-      return;
-    }
-
-    expr result = simplify(op, a, b);
-    if (!result.same_as(op)) {
-      mutate_and_set_result(result);
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
-      set_result(std::move(b), std::move(b_bounds));
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
-      set_result(std::move(a), std::move(a_bounds));
-    } else {
-      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
-    }
-  }
+  void visit(const class min* op) override { visit_min_max(op); }
+  void visit(const class max* op) override { visit_min_max(op); }
 
   template <typename T>
   void visit_binary(const T* op) {
