@@ -347,19 +347,23 @@ public:
       set_result(expr(), interval_expr());
       return;
     }
-    
-    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
-                            simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
-                            simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+
+    // We need to check between the bounds and a/b themselves to avoid the possibility of something like:
+    // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
+    // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
+    // TODO: This is quite expensive, we should try to find a better way.
+    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min)) ||
+        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b)) ||
+        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(a), std::move(a_bounds));
       } else {
         set_result(std::move(b), std::move(b_bounds));
       }
       return;
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min)) ||
+               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a)) ||
+               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(b), std::move(b_bounds));
       } else {
