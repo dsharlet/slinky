@@ -347,18 +347,16 @@ public:
       set_result(expr(), interval_expr());
       return;
     }
-
-    expr result = simplify(op, a, b);
-    if (!result.same_as(op)) {
-      mutate_and_set_result(result);
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
-                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    
+    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
+                            simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
+                            simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(a), std::move(a_bounds));
       } else {
         set_result(std::move(b), std::move(b_bounds));
       }
+      return;
     } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min) ||
                                    simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a) ||
                                    simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
@@ -367,6 +365,12 @@ public:
       } else {
         set_result(std::move(a), std::move(a_bounds));
       }
+      return;
+    }
+
+    expr result = simplify(op, a, b);
+    if (!result.same_as(op)) {
+      mutate_and_set_result(result);
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
