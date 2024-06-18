@@ -1453,31 +1453,9 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    std::optional<buffer_info> info = buffers[op->src];
-    if (info) info->decl = op;
-    stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(info));
-
-    scoped_trace trace("visit(const clone_buffer*)");
-
-    auto make_clone = [&](const stmt& body) -> stmt {
-      if (!depends_on(body, op->src).any()) {
-        // We didn't use the original buffer. We can just use that instead.
-        return substitute(body, op->sym, op->src);
-      } else if (!body.same_as(op->body)) {
-        // We don't have any nested simplifications, no need to recursively mutate.
-        return clone_buffer::make(op->sym, op->src, body);
-      } else {
-        return op;
-      }
-    };
-
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym, make_clone));
-    } else if (!depends_on(body, op->sym).any()) {
-      set_result(std::move(body));
-    } else {
-      set_result(make_clone(body));
-    }
+    // Because we disallow shadowing (i.e. mutating buffers in place), clone_buffer can always be removed :)
+    // Essentially, every operation is also a clone here.
+    set_result(mutate(substitute(op->body, op->sym, op->src)));
   }
 
   void visit(const check* op) override {

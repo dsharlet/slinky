@@ -312,6 +312,17 @@ TEST(simplify, crop_not_needed) {
 }
 
 TEST(simplify, clone) {
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, check::make(b0))), matches(check::make(b0)));
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, check::make(b1))), matches(check::make(b0)));
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, check::make(b0 && b1))), matches(check::make(b0)));
+  ASSERT_THAT(
+      simplify(clone_buffer::make(b1, b0, clone_buffer::make(b2, b1, check::make(b2)))), matches(check::make(b0)));
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, clone_buffer::make(b2, b1, check::make(b0 && b2)))),
+      matches(check::make(b0)));
+
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, check::make(b0 && b2)))),
+      matches(transpose::make(b2, b0, {1, 0}, check::make(b0 && b2))));
+
   // Clone is shadowed
   ASSERT_THAT(
       simplify(clone_buffer::make(x, y, crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
@@ -664,4 +675,3 @@ TEST(simplify, fuzz_correlated_bounds) {
 }
 
 }  // namespace slinky
-
