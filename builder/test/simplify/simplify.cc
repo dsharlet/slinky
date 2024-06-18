@@ -276,6 +276,10 @@ TEST(simplify, bounds) {
 
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(y - 2, z), 2, check::make(y - 2 <= x))), matches(stmt()));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, min_extent(x, z), z, check::make(y))), matches(check::make(y)));
+
+  // Tricky case because want to use the bounds of x but the value of y.
+  symbol_map<interval_expr> xy_bounds = {{x, {0, y}}, {y, {z, w}}};
+  ASSERT_THAT(simplify(min(x, y + 1), xy_bounds), matches(x));
 }
 
 TEST(simplify, buffer_bounds) {
