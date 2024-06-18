@@ -467,6 +467,12 @@ public:
       x = substitute_true(x, l->b);
     } else if (const logical_not* l = c.as<logical_not>()) {
       x = substitute_false(x, l->a);
+    } else if (const equal* e = c.as<equal>()) {
+      if (e->b.as<constant>()) {
+        x = substitute(x, e->a, e->b);
+      } else if (e->a.as<constant>()) {
+        x = substitute(x, e->b, e->a);
+      }
     } else if (is_boolean(c) && !as_constant(c)) {
       x = substitute(x, c, true);
     }
@@ -481,6 +487,12 @@ public:
       x = substitute_false(x, l->b);
     } else if (const logical_not* l = c.as<logical_not>()) {
       x = substitute_true(x, l->a);
+    } else if (const not_equal* e = c.as<not_equal>()) {
+      if (e->b.as<constant>()) {
+        x = substitute(x, e->a, e->b);
+      } else if (e->a.as<constant>()) {
+        x = substitute(x, e->b, e->a);
+      }
     } else if (is_boolean(c) && !as_constant(c)) {
       x = substitute(x, c, false);
     }
@@ -507,6 +519,16 @@ public:
 
     t = substitute_true(t, c);
     f = substitute_false(f, c);
+
+    expr t_when_c_false = substitute_false(t, c);
+    expr f_when_c_true = substitute_true(f, c);
+    if (!t_when_c_false.same_as(t) && prove_true(t_when_c_false == f)) {
+      mutate_and_set_result(t);
+      return;
+    } else if (!f_when_c_true.same_as(f) && prove_true(f_when_c_true == t)) {
+      mutate_and_set_result(f);
+      return;
+    }
 
     interval_expr t_bounds;
     t = mutate(t, &t_bounds);
