@@ -350,9 +350,13 @@ public:
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       set_result(std::move(a), std::move(a_bounds));
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       set_result(std::move(b), std::move(b_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
@@ -372,9 +376,13 @@ public:
     expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
       set_result(std::move(b), std::move(b_bounds));
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a) ||
+                                   simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
       set_result(std::move(a), std::move(a_bounds));
     } else {
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
