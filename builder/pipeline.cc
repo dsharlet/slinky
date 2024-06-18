@@ -234,6 +234,7 @@ class sanitize_user_exprs : public node_mutator {
 public:
   node_context& ctx;
   std::map<expr, var, node_less> replacements;
+  std::set<var> external;
 
   sanitize_user_exprs(node_context& ctx) : ctx(ctx) {}
 
@@ -718,6 +719,8 @@ public:
     for (const buffer_expr_ptr& i : constants) {
       input_syms_.push_back(i->sym());
     }
+    sanitizer_.external.insert(input_syms_.begin(), input_syms_.end());
+    sanitizer_.external.insert(output_syms_.begin(), output_syms_.end());
 
     // Build a loop nest tree and computes compute_at locations when neccessary.
     compute_innermost_locations(order_, deps, compute_at_levels_);
@@ -811,30 +814,13 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
-    // These make_buffer expressions are safe without sanitization, because they
-    // are defined in the global scope outside of any crops. Moreover, later we
-    // may want to use their bounds to define sanitized values for global vars
-    // used in the inner crops, so it's more convenient to keep them without
-    // global variables (mostly to avoid ordering issues for global variables).
-    // We could keep track of unsanitized bounds separately, but it's easier to
-    // just substitute global variables back locally.
-    symbol_map<expr> global_vars;
-    for (const auto& r : sanitizer_.replacements) {
-      global_vars[r.second] = r.first;
-    }
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
-        if (!inferred_shapes_[b->sym()]) continue;
-        std::vector<dim_expr> dims = *inferred_shapes_[b->sym()];
-        for (dim_expr& d : dims) {
-          if (d.bounds.min.defined()) d.bounds.min = substitute(d.bounds.min, global_vars);
-          if (d.bounds.max.defined()) d.bounds.max = substitute(d.bounds.max, global_vars);
-          if (d.stride.defined()) d.stride = substitute(d.stride, global_vars);
-          if (d.fold_factor.defined()) d.fold_factor = substitute(d.fold_factor, global_vars);
-        }
-        body = make_buffer::make(b->sym(), expr(), expr(), dims, std::move(body));
+        const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
+        if (!maybe_dims) continue;
+        body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, std::move(body));
       }
     }
     return body;
