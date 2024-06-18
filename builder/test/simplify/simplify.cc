@@ -186,6 +186,7 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(select(x, 0, y) + 4, select(x, expr(), min(y, 113) + 4))),
       matches(select(x, expr(), min(y, 113) + 4)));
 
+  ASSERT_THAT(simplify(select(expr(x) == y, z, select(expr(x) == y, 2, w))), matches(select(expr(x) == y, z, w)));
   ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
   ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
 

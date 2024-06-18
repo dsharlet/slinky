@@ -467,14 +467,16 @@ public:
       x = substitute_true(x, l->b);
     } else if (const logical_not* l = c.as<logical_not>()) {
       x = substitute_false(x, l->a);
-    } else if (const equal* e = c.as<equal>()) {
+    } else if (is_boolean(c) && !as_constant(c)) {
+      x = substitute(x, c, true);
+    }
+    // Do this separately because we might be able to substitute c and one side of an equals too.
+    if (const equal* e = c.as<equal>()) {
       if (e->b.as<constant>()) {
         x = substitute(x, e->a, e->b);
       } else if (e->a.as<constant>()) {
         x = substitute(x, e->b, e->a);
       }
-    } else if (is_boolean(c) && !as_constant(c)) {
-      x = substitute(x, c, true);
     }
     return x;
   }
@@ -487,14 +489,16 @@ public:
       x = substitute_false(x, l->b);
     } else if (const logical_not* l = c.as<logical_not>()) {
       x = substitute_true(x, l->a);
-    } else if (const not_equal* e = c.as<not_equal>()) {
+    } else if (is_boolean(c) && !as_constant(c)) {
+      x = substitute(x, c, false);
+    }
+    // Do this separately because we might be able to substitute c and one side of an equals too.
+    if (const not_equal* e = c.as<not_equal>()) {
       if (e->b.as<constant>()) {
         x = substitute(x, e->a, e->b);
       } else if (e->a.as<constant>()) {
         x = substitute(x, e->b, e->a);
       }
-    } else if (is_boolean(c) && !as_constant(c)) {
-      x = substitute(x, c, false);
     }
     return x;
   }
