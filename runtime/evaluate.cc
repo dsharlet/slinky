@@ -536,6 +536,7 @@ public:
     return eval(op->body);
   }
 
+  // For these evaluators, it's easier to assume the op is always shadowed.
   SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const crop_buffer* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
@@ -583,112 +584,9 @@ public:
     return result;
   }
 
-  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const slice_buffer* op) {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
-    assert(buffer);
-    assert(op->at.size() <= buffer->rank);
-
-    // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
-    dim* dims = SLINKY_ALLOCA(dim, buffer->rank);
-
-    std::size_t rank = 0;
-    void* old_base = buffer->base;
-
-    for (std::size_t d = 0; d < buffer->rank; ++d) {
-      if (d < op->at.size() && op->at[d].defined()) {
-        if (buffer->base) {
-          index_t at_d = eval(op->at[d]);
-          if (buffer->dims[d].contains(at_d)) {
-            buffer->base = offset_bytes_non_null(buffer->base, buffer->dims[d].flat_offset_bytes(at_d));
-          } else {
-            buffer->base = nullptr;
-          }
-        }
-      } else {
-        dims[rank++] = buffer->dims[d];
-      }
-    }
-
-    std::swap(buffer->rank, rank);
-    std::swap(buffer->dims, dims);
-
-    index_t result = eval(op->body);
-
-    buffer->base = old_base;
-    buffer->rank = rank;
-    buffer->dims = dims;
-
-    return result;
-  }
-
-  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const slice_dim* op) {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
-    assert(buffer);
-    assert(op->dim < static_cast<int>(buffer->rank));
-
-    // The rank of the result is equal to the current rank, less any sliced dimensions.
-    dim* old_dims = buffer->dims;
-
-    buffer->dims = SLINKY_ALLOCA(dim, buffer->rank - 1);
-
-    void* old_base = buffer->base;
-    if (buffer->base) {
-      index_t at = eval(op->at);
-      if (old_dims[op->dim].contains(at)) {
-        buffer->base = offset_bytes_non_null(buffer->base, old_dims[op->dim].flat_offset_bytes(at));
-      } else {
-        buffer->base = nullptr;
-      }
-    }
-
-    for (int d = 0; d < op->dim; ++d) {
-      buffer->dims[d] = old_dims[d];
-    }
-    for (int d = op->dim + 1; d < static_cast<int>(buffer->rank); ++d) {
-      buffer->dims[d - 1] = old_dims[d];
-    }
-    buffer->rank -= 1;
-
-    index_t result = eval(op->body);
-
-    buffer->base = old_base;
-    buffer->rank += 1;
-    buffer->dims = old_dims;
-
-    return result;
-  }
-
-  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const transpose* op) {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
-    assert(buffer);
-
-    std::size_t old_rank = buffer->rank;
-    buffer->rank = op->dims.size();
-
-    index_t result;
-    if (op->is_truncate()) {
-      result = eval(op->body);
-    } else {
-      dim* dims = buffer->dims;
-      buffer->dims = SLINKY_ALLOCA(dim, buffer->rank);
-
-      for (std::size_t i = 0; i < op->dims.size(); ++i) {
-        buffer->dims[i] = dims[op->dims[i]];
-      }
-
-      result = eval(op->body);
-
-      buffer->dims = dims;
-    }
-    buffer->rank = old_rank;
-    return result;
-  }
-
   template <typename T>
   SLINKY_NO_STACK_PROTECTOR index_t eval_unshadowed(const T* op) {
-    // The operation is not shadowed. Make a clone and use eval_shadowed on the clone. This is not as efficient as it
-    // could be, but the shadowed case should be faster, so we'll optimize for that case, and prefer that case when
-    // constructing programs.
+    // The operation is not shadowed. Make a clone and use eval_shadowed on the clone.
     raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
     assert(src_buf);
 
@@ -707,9 +605,104 @@ public:
 
   index_t eval(const crop_buffer* op) { return eval_maybe_shadowed(op); }
   index_t eval(const crop_dim* op) { return eval_maybe_shadowed(op); }
-  index_t eval(const slice_buffer* op) { return eval_maybe_shadowed(op); }
-  index_t eval(const slice_dim* op) { return eval_maybe_shadowed(op); }
-  index_t eval(const transpose* op) { return eval_maybe_shadowed(op); }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const slice_buffer* op) {
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    assert(src_buf);
+    assert(op->at.size() <= src_buf->rank);
+
+    raw_buffer sym_buf;
+    sym_buf.base = src_buf->base;
+    sym_buf.elem_size = src_buf->elem_size;
+    // TODO: If we really care about stack usage here, we could find the number of dimensions we actually need first.
+    sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+    sym_buf.rank = 0;
+
+    for (std::size_t d = 0; d < src_buf->rank; ++d) {
+      if (d < op->at.size() && op->at[d].defined()) {
+        if (src_buf->base) {
+          index_t at_d = eval(op->at[d]);
+          if (src_buf->dims[d].contains(at_d)) {
+            sym_buf.base = offset_bytes_non_null(sym_buf.base, src_buf->dims[d].flat_offset_bytes(at_d));
+          } else {
+            sym_buf.base = nullptr;
+          }
+        }
+      } else {
+        sym_buf.dims[sym_buf.rank++] = src_buf->dims[d];
+      }
+    }
+
+    auto set_sym = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&sym_buf));
+    return eval(op->body);
+  }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const slice_dim* op) {
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    assert(src_buf);
+    assert(op->dim < static_cast<int>(src_buf->rank));
+
+    raw_buffer sym_buf;
+    sym_buf.base = nullptr;
+    sym_buf.elem_size = src_buf->elem_size;
+    sym_buf.rank = src_buf->rank - 1;
+    sym_buf.dims = SLINKY_ALLOCA(dim, sym_buf.rank);
+
+    if (src_buf->base) {
+      index_t at = eval(op->at);
+      if (src_buf->dims[op->dim].contains(at)) {
+        sym_buf.base = offset_bytes_non_null(src_buf->base, src_buf->dims[op->dim].flat_offset_bytes(at));
+      }
+    }
+    for (int d = 0; d < op->dim; ++d) {
+      sym_buf.dims[d] = src_buf->dims[d];
+    }
+    for (int d = op->dim; d < static_cast<int>(sym_buf.rank); ++d) {
+      sym_buf.dims[d] = src_buf->dims[d + 1];
+    }
+
+    auto set_sym = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&sym_buf));
+    return eval(op->body);
+  }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const transpose* op) {
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    assert(src_buf);
+
+    if (op->sym == op->src && op->is_truncate()) {
+      // In-place truncate, all we need to do is set the rank (and restore it).
+      std::size_t old_rank = src_buf->rank;
+      src_buf->rank = op->dims.size();
+      index_t result = eval(op->body);
+      src_buf->rank = old_rank;
+      return result;
+    } else {
+      // Make the transposed dims.
+      dim* dims = SLINKY_ALLOCA(dim, src_buf->rank);
+      for (std::size_t i = 0; i < op->dims.size(); ++i) {
+        dims[i] = src_buf->dims[op->dims[i]];
+      }
+
+      if (op->sym == op->src) {
+        // In-place, swap in the transposed dims and rank
+        std::size_t old_rank = src_buf->rank;
+        std::swap(src_buf->dims, dims);
+        src_buf->rank = op->dims.size();
+        index_t result = eval(op->body);
+        src_buf->rank = old_rank;
+        src_buf->dims = dims;
+        return result;
+      } else {
+        raw_buffer sym_buf;
+        sym_buf.base = src_buf->base;
+        sym_buf.elem_size = src_buf->elem_size;
+        sym_buf.rank = op->dims.size();
+        sym_buf.dims = dims;
+        auto set_sym = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&sym_buf));
+        return eval(op->body);
+      }
+    }
+  }
 
   index_t eval(const check* op) {
     if (!eval(op->condition, 0)) {
