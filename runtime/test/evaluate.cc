@@ -18,6 +18,20 @@ expr define_undef(const expr& a, const expr& def) { return call::make(intrinsic:
 
 }  // namespace
 
+bool operator!=(const dim& a, const dim& b) {
+  return a.min() != b.min() || a.max() != b.max() || a.stride() != b.stride() || a.fold_factor() != b.fold_factor();
+}
+
+bool operator==(const raw_buffer& a, const raw_buffer& b) {
+  if (a.base != b.base) return false;
+  if (a.elem_size != b.elem_size) return false;
+  if (a.rank != b.rank) return false;
+  for (std::size_t d = 0; d < a.rank; ++d) {
+    if (a.dim(d) != b.dim(d)) return false;
+  }
+  return true;
+}
+
 TEST(evaluate, arithmetic) {
   eval_context context;
   context[x] = 4;
@@ -122,66 +136,84 @@ stmt make_check(var buffer, std::vector<int> extents) {
 TEST(evaluate, crop_dim) {
   eval_context ctx;
   buffer<void, 2> buf({10, 20});
+  buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  auto buf_before = buf;
 
   evaluate(crop_dim::make(x, x, 0, {1, 3}, make_check(x, {3, 20})), ctx);
   evaluate(crop_dim::make(y, x, 0, {1, 3}, block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})), ctx);
-  assert_buffer_extents_are(buf, {10, 20});
+  ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, crop_buffer) {
   eval_context ctx;
   buffer<void, 4> buf({10, 20, 30, 40});
+  buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  auto buf_before = buf;
 
   evaluate(crop_buffer::make(x, x, {{1, 3}, {}, {2, 5}}, make_check(x, {3, 20, 4, 40})), ctx);
   evaluate(crop_buffer::make(y, x, {{1, 3}, {}, {2, 5}},
                block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {3, 20, 4, 40})})),
       ctx);
-  assert_buffer_extents_are(buf, {10, 20, 30, 40});
+  ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, slice_dim) {
   eval_context ctx;
   buffer<void, 3> buf({10, 20, 30});
+  buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  auto buf_before = buf;
 
   evaluate(slice_dim::make(x, x, 1, 2, make_check(x, {10, 30})), ctx);
   evaluate(slice_dim::make(y, x, 1, 2, block::make({make_check(x, {10, 20, 30}), make_check(y, {10, 30})})), ctx);
-  assert_buffer_extents_are(buf, {10, 20, 30});
+  ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, slice_buffer) {
   eval_context ctx;
   buffer<void, 4> buf({10, 20, 30, 40});
+  buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  auto buf_before = buf;
 
   evaluate(slice_buffer::make(x, x, {{}, 4, {}, 2}, make_check(x, {10, 30})), ctx);
   evaluate(
       slice_buffer::make(y, x, {{}, 4, {}, 2}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 30})})),
       ctx);
-  assert_buffer_extents_are(buf, {10, 20, 30, 40});
+  ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, transpose) {
   eval_context ctx;
   buffer<void, 4> buf({10, 20, 30, 40});
+  buf.allocate();
   ctx[x] = reinterpret_cast<index_t>(&buf);
+
+  auto buf_before = buf;
 
   evaluate(transpose::make(x, x, {0, 1}, make_check(x, {10, 20})), ctx);
   evaluate(transpose::make(x, x, {3, 1}, make_check(x, {40, 20})), ctx);
   evaluate(transpose::make(y, x, {0, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
   evaluate(transpose::make(y, x, {2, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {30, 20})})), ctx);
-  assert_buffer_extents_are(buf, {10, 20, 30, 40});
+  ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, clone_buffer) {
   eval_context ctx;
   buffer<void, 2> buf({10, 20});
+  buf.allocate();
   ctx[y] = reinterpret_cast<index_t>(&buf);
 
+  auto buf_before = buf;
+
   evaluate(clone_buffer::make(x, y, block::make({make_check(x, {10, 20}), make_check(y, {10, 20})})), ctx);
-  assert_buffer_extents_are(buf, {10, 20});
+  ASSERT_EQ(buf_before, buf);
 }
 
 TEST(evaluate, semaphore) {
