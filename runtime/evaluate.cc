@@ -218,7 +218,9 @@ public:
 
   index_t eval_buffer_metadata(const call* op) {
     assert(op->args.size() == 1);
-    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval(op->args[0]));
+    const var* sym = as_variable(op->args[0]);
+    assert(sym);
+    raw_buffer* buf = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
     assert(buf);
     switch (op->intrinsic) {
     case intrinsic::buffer_rank: return buf->rank;
@@ -230,11 +232,14 @@ public:
 
   index_t eval_dim_metadata(const call* op) {
     assert(op->args.size() == 2);
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(eval(op->args[0]));
+    const var* sym = as_variable(op->args[0]);
+    assert(sym);
+    const index_t* d = as_constant(op->args[1]);
+    assert(d);
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
     assert(buffer);
-    index_t d = eval(op->args[1]);
-    assert(d < static_cast<index_t>(buffer->rank));
-    const slinky::dim& dim = buffer->dim(d);
+    assert(*d < static_cast<index_t>(buffer->rank));
+    const slinky::dim& dim = buffer->dim(*d);
     switch (op->intrinsic) {
     case intrinsic::buffer_min: return dim.min();
     case intrinsic::buffer_max: return dim.max();
