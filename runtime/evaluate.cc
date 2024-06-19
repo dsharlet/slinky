@@ -658,7 +658,7 @@ public:
     return result;
   }
 
-  index_t eval_shadowed(const transpose* op) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const transpose* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
     assert(buffer);
 

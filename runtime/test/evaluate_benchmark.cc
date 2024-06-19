@@ -145,6 +145,21 @@ void BM_slice_buffer(benchmark::State& state) {
 
 BENCHMARK(BM_slice_buffer)->DenseRange(0, 1);
 
+void BM_transpose(benchmark::State& state) {
+  std::atomic<int> calls = 0;
+  stmt c = transpose::make(dst, state.range(0) ? src : dst, {2, 1, 0}, make_call_counter(calls));
+  stmt l = make_loop(c);
+  stmt body = make_buf(src, 3, make_buf(dst, 3, l));
+
+  for (auto _ : state) {
+    evaluate(body);
+  }
+
+  state.SetItemsProcessed(calls);
+}
+
+BENCHMARK(BM_transpose)->DenseRange(0, 1);
+
 void BM_allocate(benchmark::State& state) {
   std::atomic<int> calls = 0;
   stmt c = allocate::make(buf, memory_type::stack, 1, {{{0, 100}, 1, dim::unfolded}}, make_call_counter(calls));
