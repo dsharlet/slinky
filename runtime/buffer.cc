@@ -67,7 +67,7 @@ raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const c
   buf->elem_size = elem_size;
   buf->dims = reinterpret_cast<slinky::dim*>(mem);
   if (dims) {
-    memcpy(buf->dims, dims, sizeof(slinky::dim) * rank);
+    internal::copy_small_n(dims, rank, buf->dims);
     mem += sizeof(slinky::dim) * rank;
     buf->base = mem;
   } else {
@@ -303,10 +303,10 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   // Make (shallow) copies of the buffers and optimize the dimensions.
   raw_buffer src_opt = src;
   src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
-  std::copy_n(src.dims, src.rank, src_opt.dims);
+  internal::copy_small_n(src.dims, src.rank, src_opt.dims);
   raw_buffer dst_opt = dst;
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
-  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
+  internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
   copy_impl(src_opt, dst_opt, padding);
 }
@@ -315,14 +315,14 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
   // To implement pad, we'll make a buffer that looks like dst, but cropped to the bounds, and copy it with padding.
   raw_buffer src = dst;
   src.dims = SLINKY_ALLOCA(dim, dst.rank);
-  std::copy_n(dst.dims, dst.rank, src.dims);
+  internal::copy_small_n(dst.dims, dst.rank, src.dims);
   for (std::size_t d = 0; d < dst.rank; ++d) {
     src.crop(d, in_bounds[d].min(), in_bounds[d].max());
   }
 
   raw_buffer dst_opt = dst;
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
-  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
+  internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
   copy_impl(src, dst_opt, padding);
 }
@@ -340,7 +340,7 @@ SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   // Make a (shallow) copy of the buffer and optimize the dimensions.
   raw_buffer dst_opt = dst;
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
-  std::copy_n(dst.dims, dst.rank, dst_opt.dims);
+  internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
   optimize_dims(dst_opt);
   dim& dst_dim0 = dst_opt.dim(0);

@@ -362,6 +362,18 @@ struct default_elem_size<const void> {
   static constexpr std::size_t value = 0;
 };
 
+template <typename T>
+void copy_small_n(const T* src, std::size_t n, T* dst) {
+  switch (n) {
+  case 4: *dst++ = *src++;
+  case 3: *dst++ = *src++;
+  case 2: *dst++ = *src++;
+  case 1: *dst++ = *src++;
+  case 0: return;
+  default: std::copy_n(src, n, dst); return;
+  }
+}
+
 }  // namespace internal
 
 template <typename T, std::size_t DimsSize>
@@ -376,7 +388,7 @@ private:
     if (DimsSize > 0) {
       dims = dims_storage;
       if (src) {
-        memcpy(dims, src, rank * sizeof(slinky::dim));
+        internal::copy_small_n(src, rank, dims);
       } else {
         new (dims) slinky::dim[rank];
       }
@@ -536,7 +548,7 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   if (outer.max() == outer.min() && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
 
-  // Avoid asserts on overflow in extent.
+    // Avoid asserts on overflow in extent.
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
   // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
   index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner.extent();
@@ -959,7 +971,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw
   buf_.elem_size = buf.elem_size;
   buf_.rank = buf.rank;
   buf_.dims = SLINKY_ALLOCA(dim, buf.rank);
-  memcpy(buf_.dims, buf.dims, sizeof(dim) * buf.rank);
+  internal::copy_small_n(buf.dims, buf.rank, buf_.dims);
 
   internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
 }

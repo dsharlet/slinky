@@ -531,7 +531,7 @@ public:
 
     raw_buffer clone = *src_buf;
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
-    memcpy(clone.dims, src_buf->dims, sizeof(dim) * src_buf->rank);
+    internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
     auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
     return eval(op->body);
   }
@@ -685,23 +685,24 @@ public:
   }
 
   template <typename T>
-  index_t eval_maybe_shadowed(const T* op) {
-    if (op->sym == op->src) {
-      // The operation is shadowed, we can use eval_shadowed.
-      return eval_shadowed(op);
-    } else {
-      // The operation is not shadowed. Make a clone and use eval_shadowed on the clone. This is not as efficient as it
-      // could be, but the shadowed case should be faster, so we'll optimize for that case, and prefer that case when
-      // constructing programs.
-      raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
-      assert(src_buf);
+  SLINKY_NO_STACK_PROTECTOR index_t eval_unshadowed(const T* op) {
+    // The operation is not shadowed. Make a clone and use eval_shadowed on the clone. This is not as efficient as it
+    // could be, but the shadowed case should be faster, so we'll optimize for that case, and prefer that case when
+    // constructing programs.
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    assert(src_buf);
 
-      raw_buffer clone = *src_buf;
-      clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
-      memcpy(clone.dims, src_buf->dims, sizeof(dim) * src_buf->rank);
-      auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
-      return eval_shadowed(op);
-    }
+    raw_buffer clone = *src_buf;
+    clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+    internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
+
+    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
+    return eval_shadowed(op);
+  }
+
+  template <typename T>
+  index_t eval_maybe_shadowed(const T* op) {
+    return op->sym == op->src ? eval_shadowed(op) : eval_unshadowed(op);
   }
 
   index_t eval(const crop_buffer* op) { return eval_maybe_shadowed(op); }
