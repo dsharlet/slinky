@@ -250,8 +250,15 @@ public:
     // We also want to avoid making part of the body of an allocation async.
     loop_info& l = loops.back();
     if (!l.in_allocation && l.stage) {
-      result = make_async({buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}), expr()},
-          {buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym}), expr()}, result);
+      // We need to wait for the previous stage, and the previous iteration.
+      std::vector<expr> wait = {
+          buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}),
+          expr(),
+          buffer_at(l.semaphores, std::vector<expr>{*l.stage - 1, l.sym}),
+          expr(),
+      };
+
+      result = make_async(std::move(wait), {buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym}), 2}, result);
       l.stage = std::nullopt;
     }
 
@@ -679,6 +686,7 @@ public:
             // unblocking the first iteration.
             assert(sems.dim(0).stride() == sizeof(index_t));
             std::fill_n(&sems(0, sems.dim(1).min()), stage_count, 1);
+            std::fill_n(&sems(1, sems.dim(1).min()), stage_count, 1);
             return 0;
           },
           {}, {l.semaphores}, std::move(init_sems_attrs));
@@ -686,12 +694,13 @@ public:
       // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
       expr sem_fold_factor = stage_count * op->step;
       std::vector<dim_expr> sem_dims = {
-          {sem_bounds, sem_size},
+          {sem_bounds, sem_size, stage_count},
           // TODO: We should just let dimensions like this have undefined bounds.
           {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
-      expr last_iter = loop_bounds.max; // + align_down(loop_bounds.extent(), op->step);
-      stmt wait = check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{stage_count - 1, last_iter})));
+      expr last_iter = loop_bounds.max;  // + align_down(loop_bounds.extent(), op->step);
+      stmt wait =
+          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{stage_count - 1, last_iter}), 2));
       result = allocate::make(
           l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result, wait}));
     } else {
