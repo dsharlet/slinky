@@ -85,6 +85,29 @@ var find_buffer(const expr& e) {
   return finder.result;
 }
 
+template <typename T>
+bool match(const std::vector<T>& a, const std::vector<T>& b) {
+  if (a.size() != b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    if (!match(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+// Like the above, except `a` is represented by a single non-default value at index `idx`.
+template <typename T>
+bool match(int idx, const T& a, const std::vector<T>& b) {
+  if (idx >= static_cast<int>(b.size())) return false;
+  for (int i = 0; i < static_cast<int>(b.size()); ++i) {
+    if (i == idx) {
+      if (!match(a, b[idx])) return false;
+    } else {
+      if (!match(T(), b[i])) return false;
+    }
+  }
+  return true;
+}
+
 // Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
 // report the buffer as it is visible to the caller. So something like:
 //
@@ -930,27 +953,32 @@ public:
     return -1;
   }
 
+  bool is_buffer_meta(const expr& x, const expr& value, intrinsic fn, var sym, int dim) {
+    return (!x.defined() && !value.defined()) || match_call(x, fn, sym, dim) || prove_true(x == value);
+  }
+
+  // Returns true if d can be represented as buffer_dim(sym, dim)
+  bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
+    return is_buffer_meta(d.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, dim) &&
+           is_buffer_meta(d.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, dim) &&
+           is_buffer_meta(d.stride, src.stride, intrinsic::buffer_stride, sym, dim) &&
+           is_buffer_meta(d.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, dim);
+  }
+
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
   // when those references use the same values.
   void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym) {
     if (!match_call(x, fn, sym) && prove_true(x == value)) x = call::make(fn, {sym});
-  }
-  void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym, int dim) {
-    if (!match_call(x, fn, sym, dim) && prove_true(x == value)) x = call::make(fn, {sym, dim});
-  }
-  void canonicalize_dim(dim_expr& dim, const dim_expr& src, var sym, int src_d) {
-    canonicalize_buffer_meta(dim.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, src_d);
-    canonicalize_buffer_meta(dim.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, src_d);
-    canonicalize_buffer_meta(dim.stride, src.stride, intrinsic::buffer_stride, sym, src_d);
-    canonicalize_buffer_meta(dim.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, src_d);
   }
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
     for (dim_expr& d : buf.dims) {
       for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
-        if (is_buffer_dim(d, sym) >= 0) continue;
-        canonicalize_dim(d, src.dims[src_d], sym, src_d);
+        if (is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
+          d = buffer_dim(sym, src_d);
+          break;
+        }
       }
     }
   }
@@ -1233,7 +1261,14 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
       return;
-    } else if (!crop_needed(deps)) {
+    } 
+    
+    // Remove trailing undefined bounds.
+    while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
+      bounds.pop_back();
+    }
+
+    if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
         bounds[d] &= slinky::buffer_bounds(op->src, d);
@@ -1244,19 +1279,25 @@ public:
       return;
     }
 
-    // Rewrite nested crops to be one crop.
+    // Rewrite nested crops to be one crop where possible.
     var sym = op->sym;
     while (true) {
       if (const crop_buffer* c = body.as<crop_buffer>()) {
         if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
+          // Nested crops of the same buffer, and the crop isn't used.
           bounds.resize(std::max(bounds.size(), c->bounds.size()));
           bounds = bounds & c->bounds;
           sym = c->sym;
           body = c->body;
           continue;
+        } else if (op->src == c->src && match(c->bounds, bounds)) {
+          // Two crops producing the same buffer, we can just use one of them and discard the other.
+          body = substitute(c->body, c->sym, sym);
+          continue;
         }
       } else if (const crop_dim* c = body.as<crop_dim>()) {
         if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
+          // Nested crops of the same buffer, and the crop isn't used.
           if (c->dim < static_cast<int>(bounds.size())) {
             bounds[c->dim] &= c->bounds;
           } else {
@@ -1266,14 +1307,13 @@ public:
           sym = c->sym;
           body = c->body;
           continue;
+        } else if (c->src == op->src && match(c->dim, c->bounds, bounds)) {
+          // Two crops producing the same buffer, we can just use one of them and discard the other.
+          body = substitute(c->body, c->sym, sym);
+          continue;
         }
       }
       break;
-    }
-
-    // Remove trailing undefined bounds.
-    while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
-      bounds.pop_back();
     }
 
     // If this was a crop_buffer, and we only have one dim, we're going to change it to a crop_dim.
@@ -1366,6 +1406,23 @@ public:
     // Remove trailing undefined bounds.
     while (!at.empty() && !at.back().defined()) {
       at.pop_back();
+    }
+
+    while (true) {
+      if (const slice_buffer* s = body.as<slice_buffer>()) {
+        if (s->src == op->src && match(s->at, at)) {
+          // Two slices producing the same buffer, we can just use one of them and discard the other.
+          body = substitute(s->body, s->sym, op->sym);
+          continue;
+        }
+      } else if (const slice_dim* s = body.as<slice_dim>()) {
+        if (s->src == op->src && match(s->dim, s->at, at)) {
+          // Two slices producing the same buffer, we can just use one of them and discard the other.
+          body = substitute(s->body, s->sym, op->sym);
+          continue;
+        }
+      }
+      break;
     }
 
     changed = changed || at.size() != op_at.size() || !body.same_as(op->body);
