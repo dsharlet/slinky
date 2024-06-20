@@ -261,6 +261,8 @@ expr pow(expr x, int n) {
     return 1;
   } else if (n == 1) {
     return x;
+  } else if (n % 2 == 0) {
+    return pow(x, n / 2) * pow(x, n / 2);
   } else {
     return x * pow(x, n - 1);
   }
@@ -275,5 +277,16 @@ TEST(elementwise, exp1) { test_expr_pipeline<int, 1>(ctx, 1 + x); }
 TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2)); }
 TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3)); }
 TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
+TEST(elementwise, exp8) {
+  test_expr_pipeline<int, 1>(
+      ctx, 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4) + pow(x, 5) + pow(x, 6) + pow(x, 7) + pow(x, 8));
+}
+
+TEST(elementwise, exp2_horners) { test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x)); }
+TEST(elementwise, exp3_horners) { test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x * (1 + x))); }
+TEST(elementwise, exp4_horners) { test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x * (1 + x * (1 + x)))); }
+TEST(elementwise, exp8_horners) {
+  test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
+}
 
 }  // namespace slinky

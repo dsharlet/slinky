@@ -452,22 +452,29 @@ public:
     } else if (op->attrs.allow_in_place) {
       for (var i : op->inputs) {
         std::optional<buffer_info>& input_info = buffers[i];
-        if (input_info) {
-          if (input_info->is_input) {
-            // We can't write to this buffer.
-            continue;
-          }
-          for (var o : op->outputs) {
-            alias_info a;
-            a.dims = buffer_dims(o, input_info->dims.size());
-            a.at = buffer_mins(o, input_info->dims.size());
-            // We assume that op->attrs.allow_in_place means that the input is in bounds of the entire output, and the
-            // dimensions are not permuted.
-            a.assume_in_bounds = true;
-            a.permutation.resize(input_info->dims.size());
-            std::iota(a.permutation.begin(), a.permutation.end(), 0);
-            input_info->maybe_alias(o, std::move(a));
-          }
+        if (!input_info || input_info->is_input) {
+          // We can't write to this buffer.
+          continue;
+        }
+        for (var o : op->outputs) {
+          std::optional<buffer_info>& output_info = buffers[o];
+          if (!output_info) continue;
+          
+          alias_info fwd;
+          fwd.dims = buffer_dims(o, output_info->dims.size());
+          fwd.at = buffer_mins(i, input_info->dims.size());
+          fwd.assume_in_bounds = true;
+          fwd.permutation.resize(output_info->dims.size());
+          std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
+          input_info->maybe_alias(o, std::move(fwd));
+
+          alias_info back;
+          back.dims = buffer_dims(i, input_info->dims.size());
+          back.at = buffer_mins(o, output_info->dims.size());
+          back.assume_in_bounds = true;
+          back.permutation.resize(input_info->dims.size());
+          std::iota(back.permutation.begin(), back.permutation.end(), 0);
+          output_info->maybe_alias(i, std::move(back));
         }
       }
     }
