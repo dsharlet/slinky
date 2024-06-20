@@ -662,6 +662,10 @@ class symbol_map {
     }
   }
 
+  // Allow this to access values without calling `grow`.
+  template <typename T2>
+  friend class scoped_value_in_symbol_map;
+
 public:
   symbol_map() = default;
   symbol_map(std::size_t reserve) : values(reserve) {}
@@ -754,7 +758,8 @@ public:
 
   void exit_scope() {
     if (context_) {
-      (*context_)[sym_] = std::move(old_value_);
+      // We know this context is big enough because we got old_value_ from it.
+      context_->values[sym_.id] = std::move(old_value_);
       context_ = nullptr;
     }
   }
