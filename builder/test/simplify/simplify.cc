@@ -368,6 +368,52 @@ TEST(simplify, crop) {
   ASSERT_THAT(
       simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, crop_buffer::make(b2, b1, {{}, {z, w}, {u, v}}, body))),
       matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
+
+  // Duplicate crops that can share a symbol.
+  ASSERT_THAT(simplify(crop_dim::make(
+                  b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 1, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(crop_dim::make(b1, b0, 1, {x, y}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
+  ASSERT_THAT(simplify(crop_dim::make(
+                  b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 1, {x, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(crop_dim::make(
+          b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 1, {x, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+  ASSERT_THAT(simplify(crop_dim::make(
+                  b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 2, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(crop_dim::make(
+          b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 2, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
+                  crop_buffer::make(b2, b0, {{x, y}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
+                  crop_buffer::make(b2, b0, {{x, {}}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
+          crop_buffer::make(b2, b0, {{x, {}}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+}
+
+TEST(simplify, slice) {
+  stmt body = call_stmt::make(nullptr, {}, {b2}, {});
+
+  // Duplicate slices that can share a symbol.
+  ASSERT_THAT(simplify(slice_dim::make(
+                  b1, b0, 1, x, slice_dim::make(b2, b0, 1, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(slice_dim::make(b1, b0, 1, x, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
+  ASSERT_THAT(simplify(slice_dim::make(
+                  b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(slice_dim::make(
+          b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+  ASSERT_THAT(simplify(slice_dim::make(
+                  b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(slice_dim::make(
+          b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+
+  ASSERT_THAT(simplify(slice_buffer::make(b1, b0, {x, y},
+                  slice_buffer::make(b2, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(slice_buffer::make(b1, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
+  ASSERT_THAT(simplify(slice_buffer::make(b1, b0, {x, y, z},
+                  slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(slice_buffer::make(b1, b0, {x, y, z},
+          slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
 }
 
 TEST(simplify, make_buffer) {
