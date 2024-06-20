@@ -270,6 +270,10 @@ class buffer_aliaser : public node_mutator {
       return true;
     }
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
+      if (alias.permutation[d] < 0) {
+        // This dimension must be a broadcast.
+        continue;
+      }
       const dim_expr& alias_dim = alias.dims[alias.permutation[d]];
       if (!alias.assume_in_bounds) {
         assert(alias.permutation.size() == op->dims.size());
@@ -835,17 +839,17 @@ public:
 
   template <typename T>
   void visit_buffer_mutator(const T* op) {
-    auto n = std::find(names.begin(), names.end(), op->src);
-    found = found || n != names.end();
+    const bool found_src = std::find(names.begin(), names.end(), op->src) != names.end();
+    found = found || found_src;
     if (std::find(names.begin(), names.end(), op->sym) != names.end()) {
       // Don't look inside if shadowing names.
       set_result(op);
     } else {
-      if (n != names.end()) {
+      if (found_src) {
         names.push_back(op->sym);
       }
       node_mutator::visit(op);
-      if (n != names.end()) {
+      if (found_src) {
         names.pop_back();
       }
     }
