@@ -400,20 +400,20 @@ TEST(simplify, slice) {
       matches(slice_dim::make(b1, b0, 1, x, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
   ASSERT_THAT(simplify(slice_dim::make(
                   b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(slice_dim::make(
-          b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+      matches(
+          slice_dim::make(b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
   ASSERT_THAT(simplify(slice_dim::make(
                   b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(slice_dim::make(
-          b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+      matches(
+          slice_dim::make(b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
 
-  ASSERT_THAT(simplify(slice_buffer::make(b1, b0, {x, y},
-                  slice_buffer::make(b2, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+  ASSERT_THAT(simplify(slice_buffer::make(
+                  b1, b0, {x, y}, slice_buffer::make(b2, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
       matches(slice_buffer::make(b1, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
   ASSERT_THAT(simplify(slice_buffer::make(b1, b0, {x, y, z},
                   slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(slice_buffer::make(b1, b0, {x, y, z},
-          slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
+      matches(slice_buffer::make(
+          b1, b0, {x, y, z}, slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
 }
 
 TEST(simplify, make_buffer) {
@@ -487,6 +487,14 @@ TEST(simplify, make_buffer) {
   ASSERT_THAT(simplify(make_buffer::make(
                   b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 2)}, body)),
       matches(transpose::make(b1, b0, {0, 2}, body)));
+
+  ASSERT_THAT(
+      simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
+          make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
+              {{{0, 10}, buffer_stride(b0, 0), {}}, {{0, 20}, buffer_stride(b0, 1), {}}},
+              call_stmt::make(nullptr, {}, {b0, b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
+          transpose::make(b1, b0, {0, 1}, call_stmt::make(nullptr, {}, {b0, b1}, {})))));
 }
 
 TEST(simplify, transpose) {

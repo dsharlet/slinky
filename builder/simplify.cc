@@ -953,27 +953,32 @@ public:
     return -1;
   }
 
+  bool is_buffer_meta(const expr& x, const expr& value, intrinsic fn, var sym, int dim) {
+    return (!x.defined() && !value.defined()) || match_call(x, fn, sym, dim) || prove_true(x == value);
+  }
+
+  // Returns true if d can be represented as buffer_dim(sym, dim)
+  bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
+    return is_buffer_meta(d.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, dim) &&
+           is_buffer_meta(d.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, dim) &&
+           is_buffer_meta(d.stride, src.stride, intrinsic::buffer_stride, sym, dim) &&
+           is_buffer_meta(d.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, dim);
+  }
+
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
   // when those references use the same values.
   void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym) {
     if (!match_call(x, fn, sym) && prove_true(x == value)) x = call::make(fn, {sym});
-  }
-  void canonicalize_buffer_meta(expr& x, const expr& value, intrinsic fn, var sym, int dim) {
-    if (!match_call(x, fn, sym, dim) && prove_true(x == value)) x = call::make(fn, {sym, dim});
-  }
-  void canonicalize_dim(dim_expr& dim, const dim_expr& src, var sym, int src_d) {
-    canonicalize_buffer_meta(dim.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, src_d);
-    canonicalize_buffer_meta(dim.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, src_d);
-    canonicalize_buffer_meta(dim.stride, src.stride, intrinsic::buffer_stride, sym, src_d);
-    canonicalize_buffer_meta(dim.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, src_d);
   }
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
     for (dim_expr& d : buf.dims) {
       for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
-        if (is_buffer_dim(d, sym) >= 0) continue;
-        canonicalize_dim(d, src.dims[src_d], sym, src_d);
+        if (is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
+          d = buffer_dim(sym, src_d);
+          break;
+        }
       }
     }
   }
