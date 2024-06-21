@@ -87,6 +87,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
       apply(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
       apply(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
+      apply(min(max(v, select(x, y, z)), select(x, w, u)), select(x, min(w, max(v, y)), min(u, max(v, z)))) ||
       apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
@@ -99,7 +100,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
       apply(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
       apply(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
-    
+      apply(min(min(x, c0) + c1, min(y, c2)), min(min(y, x + c1), eval(min(c0 + c1, c2)))) ||
+
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
       apply(min(x*c0, c1), min(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0)) ||
       apply(min(x*c0, c1), max(x, eval(c1/c0))*c0, eval(c0 < 0 && c1%c0 == 0)) ||
@@ -141,6 +143,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, ((x + c0)/c1)*c1), ((x + c0)/c1)*c1, eval(c1 > 0 && c0 <= 0)) ||
 
       apply(min(x, (x/c0)*c0), (x/c0)*c0, eval(c0 > 0)) ||
+
+      apply(min(x, abs(x)), x) ||
 
       false;
 }
@@ -206,6 +210,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
       apply(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
       apply(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
+      apply(max(min(v, select(x, y, z)), select(x, w, u)), select(x, max(w, min(v, y)), max(u, min(v, z)))) ||
       apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
@@ -218,6 +223,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
       apply(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
       apply(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
+      apply(max(max(x, c0) + c1, max(y, c2)), max(max(y, x + c1), eval(max(c0 + c1, c2)))) ||
 
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
       apply(max(x*c0, c1), max(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0)) ||
@@ -260,6 +266,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, ((x + c0)/c1)*c1), x, eval(c1 > 0 && c0 <= 0)) ||
 
       apply(max(x, (x/c0)*c0), x, eval(c0 > 0)) ||
+        
+      apply(max(x, abs(x)), abs(x)) ||
 
       false;
 }
@@ -420,6 +428,10 @@ bool apply_mul_rules(Fn&& apply) {
       apply((x*c0)*c1, x*eval(c0*c1)) ||
       apply((x + c0)*c1, x*c1 + eval(c0*c1)) ||
       apply((c0 - x)*c1, x*eval(-c1) + eval(c0*c1)) ||
+    
+      apply(select(x, c0, c1)*c2, select(x, eval(c0*c2), eval(c1*c2))) ||
+      apply(select(x, y, c1)*c2, select(x, y*c2, eval(c1*c2))) ||
+      apply(select(x, c0, y)*c2, select(x, eval(c0*c2), y*c2)) ||
       false;
 }
 
@@ -446,6 +458,10 @@ bool apply_div_rules(Fn&& apply) {
       apply((x + c0)/c1, x/c1 + eval(c0/c1), eval(c0%c1 == 0)) ||
       apply((y*c0 - x)/c1, y*eval(c0/c1) + (-x/c1), eval(c0%c1 == 0 && c0 != 0)) ||
       apply((c0 - x)/c1, (-x/c1) + eval(c0/c1), eval(c0%c1 == 0 && c0 != 0)) ||
+    
+      apply(select(x, c0, c1)/c2, select(x, eval(c0/c2), eval(c1/c2))) ||
+      apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
+      apply(select(x, c0, y)/c2, select(x, eval(c0/c2), y/c2)) ||
 
       false;
 }
@@ -458,7 +474,10 @@ bool apply_mod_rules(Fn&& apply) {
       apply(x%x, 0) ||
 
       apply((x + c0)%c1, (x + eval(c0%c1))%c1, eval(c0%c1 != c0)) ||
-
+    
+      apply(select(x, c0, c1)%c2, select(x, eval(c0%c2), eval(c1%c2))) ||
+      apply(select(x, y, c1)%c2, select(x, y%c2, eval(c1%c2))) ||
+      apply(select(x, c0, y)%c2, select(x, eval(c0%c2), y%c2)) ||
       false;
 }
 
@@ -681,6 +700,8 @@ bool apply_equal_rules(Fn&& apply) {
       apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
       apply(y == select(x == y, x, z), x == y || y == z) ||
       apply(y == select(x == y, z, x), x == y && y == z) ||
+      apply(y == select(x, y, z), select(x, true, y == z)) ||
+      apply(z == select(x, y, z), select(x, z == y, true)) ||
 
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
@@ -749,6 +770,23 @@ bool apply_logical_and_rules(Fn&& apply) {
       apply(x < y && y < x + c1, false, eval(c1 < 2)) ||
       apply(x < y && y < x, false) ||
 
+      // Above, we have rules for combinations of < and <=, or == and !=. Here, we have a mix of both.
+      apply(x != c0 && x <= c1, x <= c1, eval(c0 > c1)) ||
+      apply(x != c0 && x <= c1, x < c1, eval(c0 == c1)) ||
+      apply(x != c0 && x < c1, x < c1, eval(c0 > c1)) ||
+      apply(x == c0 && x <= c1, x == c0, eval(c0 <= c1)) ||
+      apply(x == c0 && x < c1, x == c0, eval(c0 < c1)) ||
+      apply(x == c0 && x <= c1, false, eval(c0 > c1)) ||
+      apply(x == c0 && x < c1, false, eval(c0 >= c1)) ||
+
+      apply(x != c0 && c1 <= x, c1 <= x, eval(c0 < c1)) ||
+      apply(x != c0 && c1 <= x, c1 < x, eval(c0 == c1)) ||
+      apply(x != c0 && c1 < x, c1 < x, eval(c0 < c1)) ||
+      apply(x == c0 && c1 <= x, x == c0, eval(c0 >= c1)) ||
+      apply(x == c0 && c1 < x, x == c0, eval(c0 > c1)) ||
+      apply(x == c0 && c1 <= x, false, eval(c0 < c1)) ||
+      apply(x == c0 && c1 < x, false, eval(c0 <= c1)) ||
+
       false;
 }
 
@@ -805,6 +843,23 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x < y || y < x + c1, true, eval(1 < c1)) ||
       apply(x < y || y < x, x != y) ||
     
+      // Above, we have rules for combinations of < and <=, or == and !=. Here, we have a mix of both.
+      apply(x != c0 || x <= c1, true, eval(c0 <= c1)) ||
+      apply(x != c0 || x < c1, true, eval(c0 < c1)) ||
+      apply(x != c0 || x <= c1, x != c0, eval(c0 > c1)) ||
+      apply(x != c0 || x < c1, x != c0, eval(c0 >= c1)) ||
+      apply(x == c0 || x <= c1, x <= c1, eval(c0 <= c1)) ||
+      apply(x == c0 || x < c1, x < c1, eval(c0 < c1)) ||
+      apply(x == c0 || x < c1, x <= c1, eval(c0 == c1)) ||
+
+      apply(x != c0 || c1 <= x, true, eval(c0 >= c1)) ||
+      apply(x != c0 || c1 < x, true, eval(c0 > c1)) ||
+      apply(x != c0 || c1 <= x, x != c0, eval(c0 < c1)) ||
+      apply(x != c0 || c1 < x, x != c0, eval(c0 <= c1)) ||
+      apply(x == c0 || c1 <= x, c1 <= x, eval(c0 >= c1)) ||
+      apply(x == c0 || c1 < x, c1 < x, eval(c0 > c1)) ||
+      apply(x == c0 || c1 < x, c1 <= x, eval(c0 == c1)) ||
+
       // TODO: These rules are just a few of many similar possible rules. We should find a way to get at these
       // some other way.
       apply(y || x < y, y || x < 0, is_boolean(y)) ||
@@ -862,6 +917,9 @@ bool apply_call_rules(Fn&& apply) {
       apply(abs(x*c0), abs(x)*c0, c0 > 0) ||
       apply(abs(x*c0), abs(x)*eval(-c0), c0 < 0) ||
       apply(abs(c0 - x), abs(x + eval(-c0))) ||
+
+      apply(abs(select(x, y, c1)), select(x, abs(y), abs(c1))) ||
+      apply(abs(select(x, c0, y)), select(x, abs(c0), abs(y))) ||
 
       false;
 }

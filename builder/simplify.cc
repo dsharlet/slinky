@@ -297,6 +297,105 @@ public:
   }
   interval_expr mutate(const interval_expr& x) override { return mutate(x, nullptr, nullptr); }
 
+  // This class manages information learned from conditions that can be used to improve bounds.
+  class knowledge {
+    // This could be made a variant if we need to be able to update more than one kind of symbol_map.
+    std::vector<scoped_value_in_symbol_map<interval_expr>> k;
+
+    symbol_map<interval_expr>& bounds;
+
+  public:
+    knowledge(symbol_map<interval_expr>& bounds) : bounds(bounds) {}
+    knowledge(const knowledge&) = delete;
+    knowledge(knowledge&&) = default;
+    ~knowledge() {
+      // Destroy our knowledge in reverse order.
+      while (!k.empty()) {
+        k.pop_back();
+      }
+    }
+
+    void learn_from_equal(const expr& a, const expr& b) {
+      if (const variable* v = a.as<variable>()) {
+        // bounds of a are [b, b].
+        k.push_back(set_value_in_scope(bounds, v->sym, point(b)));
+      }
+      if (const variable* v = b.as<variable>()) {
+        // bounds of b are [a, a].
+        k.push_back(set_value_in_scope(bounds, v->sym, point(a)));
+      }
+    }
+
+    void learn_from_less(const expr& a, const expr& b) {
+      if (const variable* v = a.as<variable>()) {
+        // a has an upper bound of b - 1
+        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
+        const expr& lb = old_bounds ? old_bounds->min : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {lb, b - 1}));
+      }
+      if (const variable* v = b.as<variable>()) {
+        // b has a lower bound of a + 1
+        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
+        const expr& ub = old_bounds ? old_bounds->max : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {a + 1, ub}));
+      }
+    }
+    void learn_from_less_equal(const expr& a, const expr& b) {
+      if (const variable* v = a.as<variable>()) {
+        // a has an upper bound of b
+        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
+        const expr& lb = old_bounds ? old_bounds->min : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {lb, b}));
+      }
+      if (const variable* v = b.as<variable>()) {
+        // b has a lower bound of a
+        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
+        const expr& ub = old_bounds ? old_bounds->max : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {a, ub}));
+      }
+    }
+
+    void learn_from_true(const expr& c) {
+      if (const logical_and* a = c.as<logical_and>()) {
+        learn_from_true(a->a);
+        learn_from_true(a->b);
+      } else if (const logical_not* n = c.as<logical_not>()) {
+        learn_from_false(n->a);
+      } else if (const equal* eq = c.as<equal>()) {
+        learn_from_equal(eq->a, eq->b);
+      } else if (const less* lt = c.as<less>()) {
+        learn_from_less(lt->a, lt->b);
+      } else if (const less_equal* lt = c.as<less_equal>()) {
+        learn_from_less_equal(lt->a, lt->b);
+      }
+    }
+    void learn_from_false(const expr& c) {
+      if (const logical_or* a = c.as<logical_or>()) {
+        learn_from_false(a->a);
+        learn_from_false(a->b);
+      } else if (const logical_not* n = c.as<logical_not>()) {
+        learn_from_true(n->a);
+      } else if (const not_equal* ne = c.as<not_equal>()) {
+        learn_from_equal(ne->a, ne->b);
+      } else if (const less* lt = c.as<less>()) {
+        learn_from_less_equal(lt->b, lt->a);
+      } else if (const less_equal* lt = c.as<less_equal>()) {
+        learn_from_less(lt->b, lt->a);
+      }
+    }
+  };
+
+  knowledge learn_from_true(const expr& c) {
+    knowledge result(expr_bounds);
+    result.learn_from_true(c);
+    return result;
+  }
+  knowledge learn_from_false(const expr& c) {
+    knowledge result(expr_bounds);
+    result.learn_from_false(c);
+    return result;
+  }
+
   // When we attempt to prove things about bounds, we sometimes get constant expressions, but we can't recursively
   // simplify without a high risk of infinite recursion. We can evaluate these as constants instead.
   static bool prove_constant_true(const expr& e) {
@@ -560,9 +659,15 @@ public:
     }
 
     interval_expr t_bounds;
-    t = mutate(t, &t_bounds);
+    {
+      auto knowledge = learn_from_true(c);
+      t = mutate(t, &t_bounds);
+    }
     interval_expr f_bounds;
-    f = mutate(f, &f_bounds);
+    {
+      auto knowledge = learn_from_false(c);
+      f = mutate(f, &f_bounds);
+    }
 
     if (!t.defined() && !f.defined()) {
       set_result(expr(), interval_expr());
@@ -630,6 +735,16 @@ public:
             }
           }
         }
+      }
+    } else if (op->intrinsic == intrinsic::abs) {
+      assert(args.size() == 1);
+      assert(args_bounds.size() == 1);
+      if (prove_constant_true(args_bounds[0].min >= 0)) {
+        set_result(std::move(args[0]), std::move(args_bounds[0]));
+        return;
+      } else if (prove_constant_true(args_bounds[0].max <= 0)) {
+        mutate_and_set_result(-args[0]);
+        return;
       }
     }
 
@@ -1149,7 +1264,7 @@ public:
   }
 
   template <typename T>
-  static expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
+  expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
     if (bounds.count(x)) return expr();
     if (const T* t = x.as<T>()) {
       bool a_is_bound = bounds.count(t->a);
@@ -1162,19 +1277,13 @@ public:
         return remove_redundant_bounds<T>(t->a, bounds);
       }
     } else if (const add* xa = x.as<add>()) {
-      for (const expr& i : bounds) {
-        if (const add* bi = i.as<add>()) {
-          // Currently we only check the RHS of adds, looking for similar constants. We could also support non-constants
-          // and other ops here too, but that's starting to duplicate a lot of simplify_rules.h. It would be best to
-          // find a way to implement this reusing that (much more robust and complete) simplification instead of
-          // expanding this logic.
-          if (match(xa->b, bi->b)) {
-            // We have T(x + y, b + y). We can rewrite to T(x, b) + y, and if we can eliminate the bound, the whole
-            // bound is redundant.
-            expr removed = remove_redundant_bounds<T>(xa->a, {bi->a});
-            if (!removed.same_as(xa->a)) {
-              return removed + xa->b;
-            }
+      if (as_constant(xa->b)) {
+        // We have T(x + y, b). We can rewrite to T(x, b - y) + y, and if we can eliminate the bound, the whole
+        // bound is redundant.
+        for (const expr& i : bounds) {
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)});
+          if (!removed.same_as(xa->a)) {
+            return removed + xa->b;
           }
         }
       }
@@ -1261,8 +1370,8 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
       return;
-    } 
-    
+    }
+
     // Remove trailing undefined bounds.
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
       bounds.pop_back();
