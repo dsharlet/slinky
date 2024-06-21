@@ -16,7 +16,8 @@ std::atomic<int> next_id = 0;
 }  // namespace
 
 chrome_trace::chrome_trace(std::ostream& os) : os_(os), id_(next_id++) {
-  os_ << "[{}";
+  os_ << "[{\"name\":\"chrome_trace\",\"cat\":\"slinky\",\"ph\":\"B\",\"pid\":0,\"tid\":0,\"ts\":0}";
+  os_ << ",\n{\"name\":\"chrome_trace\",\"cat\":\"slinky\",\"ph\":\"E\",\"pid\":0,\"tid\":0,\"ts\":0}";
   t0_ = std::chrono::high_resolution_clock::now();
 }
 chrome_trace::~chrome_trace() {
@@ -33,9 +34,10 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
 
   // The only way to convert a thread ID to a string is via operator<<, which is slow, so we do it as a thread_local
   // initializer.
+  static std::atomic<int> next_thread_id = 0;
   thread_local std::string pid_tid_str = []() {
     std::stringstream ss;
-    ss << "\",\"pid\":0,\"tid\":" << std::this_thread::get_id();
+    ss << "\",\"pid\":0,\"tid\":" << next_thread_id++;
     return ss.str();
   }();
 
