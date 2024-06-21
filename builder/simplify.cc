@@ -1264,7 +1264,7 @@ public:
   }
 
   template <typename T>
-  static expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
+  expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
     if (bounds.count(x)) return expr();
     if (const T* t = x.as<T>()) {
       bool a_is_bound = bounds.count(t->a);
@@ -1277,19 +1277,13 @@ public:
         return remove_redundant_bounds<T>(t->a, bounds);
       }
     } else if (const add* xa = x.as<add>()) {
-      for (const expr& i : bounds) {
-        if (const add* bi = i.as<add>()) {
-          // Currently we only check the RHS of adds, looking for similar constants. We could also support non-constants
-          // and other ops here too, but that's starting to duplicate a lot of simplify_rules.h. It would be best to
-          // find a way to implement this reusing that (much more robust and complete) simplification instead of
-          // expanding this logic.
-          if (match(xa->b, bi->b)) {
-            // We have T(x + y, b + y). We can rewrite to T(x, b) + y, and if we can eliminate the bound, the whole
-            // bound is redundant.
-            expr removed = remove_redundant_bounds<T>(xa->a, {bi->a});
-            if (!removed.same_as(xa->a)) {
-              return removed + xa->b;
-            }
+      if (as_constant(xa->b)) {
+        // We have T(x + y, b). We can rewrite to T(x, b - y) + y, and if we can eliminate the bound, the whole
+        // bound is redundant.
+        for (const expr& i : bounds) {
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)});
+          if (!removed.same_as(xa->a)) {
+            return removed + xa->b;
           }
         }
       }
