@@ -143,6 +143,8 @@ bool apply_min_rules(Fn&& apply) {
 
       apply(min(x, (x/c0)*c0), (x/c0)*c0, eval(c0 > 0)) ||
 
+      apply(min(x, abs(x)), x) ||
+
       false;
 }
 
@@ -262,6 +264,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, ((x + c0)/c1)*c1), x, eval(c1 > 0 && c0 <= 0)) ||
 
       apply(max(x, (x/c0)*c0), x, eval(c0 > 0)) ||
+        
+      apply(max(x, abs(x)), abs(x)) ||
 
       false;
 }
@@ -694,6 +698,8 @@ bool apply_equal_rules(Fn&& apply) {
       apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
       apply(y == select(x == y, x, z), x == y || y == z) ||
       apply(y == select(x == y, z, x), x == y && y == z) ||
+      apply(y == select(x, y, z), select(x, true, y == z)) ||
+      apply(z == select(x, y, z), select(x, z == y, true)) ||
 
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
@@ -875,6 +881,9 @@ bool apply_call_rules(Fn&& apply) {
       apply(abs(x*c0), abs(x)*c0, c0 > 0) ||
       apply(abs(x*c0), abs(x)*eval(-c0), c0 < 0) ||
       apply(abs(c0 - x), abs(x + eval(-c0))) ||
+
+      apply(abs(select(x, y, c1)), select(x, abs(y), abs(c1))) ||
+      apply(abs(select(x, c0, y)), select(x, abs(c0), abs(y))) ||
 
       false;
 }

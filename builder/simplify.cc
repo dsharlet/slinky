@@ -736,6 +736,16 @@ public:
           }
         }
       }
+    } else if (op->intrinsic == intrinsic::abs) {
+      assert(args.size() == 1);
+      assert(args_bounds.size() == 1);
+      if (prove_constant_true(args_bounds[0].min >= 0)) {
+        set_result(std::move(args[0]), std::move(args_bounds[0]));
+        return;
+      } else if (prove_constant_true(args_bounds[0].max <= 0)) {
+        mutate_and_set_result(-args[0]);
+        return;
+      }
     }
 
     expr e = simplify(op, op->intrinsic, std::move(args));
