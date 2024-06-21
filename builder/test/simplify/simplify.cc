@@ -190,6 +190,9 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
   ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
 
+  ASSERT_THAT(simplify(select(x <= 1, y, min(x, 1))), matches(select(x <= 1, y, 1)));
+  ASSERT_THAT(simplify(select(x > 0 && x < 4, max(x, 1), y)), matches(select(x > 0 && x < 4, x, y)));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),

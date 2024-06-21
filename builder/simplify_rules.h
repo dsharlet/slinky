@@ -99,7 +99,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
       apply(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
       apply(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
-    
+      apply(min(min(x, c0) + c1, min(y, c2)), min(min(y, x + c1), eval(min(c0 + c1, c2)))) ||
+
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
       apply(min(x*c0, c1), min(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0)) ||
       apply(min(x*c0, c1), max(x, eval(c1/c0))*c0, eval(c0 < 0 && c1%c0 == 0)) ||
@@ -218,6 +219,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
       apply(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
       apply(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
+      apply(max(max(x, c0) + c1, max(y, c2)), max(max(y, x + c1), eval(max(c0 + c1, c2)))) ||
 
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
       apply(max(x*c0, c1), max(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0)) ||
@@ -420,6 +422,10 @@ bool apply_mul_rules(Fn&& apply) {
       apply((x*c0)*c1, x*eval(c0*c1)) ||
       apply((x + c0)*c1, x*c1 + eval(c0*c1)) ||
       apply((c0 - x)*c1, x*eval(-c1) + eval(c0*c1)) ||
+    
+      apply(select(x, c0, c1)*c2, select(x, eval(c0*c2), eval(c1*c2))) ||
+      apply(select(x, y, c1)*c2, select(x, y*c2, eval(c1*c2))) ||
+      apply(select(x, c0, y)*c2, select(x, eval(c0*c2), y*c2)) ||
       false;
 }
 
@@ -446,6 +452,10 @@ bool apply_div_rules(Fn&& apply) {
       apply((x + c0)/c1, x/c1 + eval(c0/c1), eval(c0%c1 == 0)) ||
       apply((y*c0 - x)/c1, y*eval(c0/c1) + (-x/c1), eval(c0%c1 == 0 && c0 != 0)) ||
       apply((c0 - x)/c1, (-x/c1) + eval(c0/c1), eval(c0%c1 == 0 && c0 != 0)) ||
+    
+      apply(select(x, c0, c1)/c2, select(x, eval(c0/c2), eval(c1/c2))) ||
+      apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
+      apply(select(x, c0, y)/c2, select(x, eval(c0/c2), y/c2)) ||
 
       false;
 }
@@ -458,7 +468,10 @@ bool apply_mod_rules(Fn&& apply) {
       apply(x%x, 0) ||
 
       apply((x + c0)%c1, (x + eval(c0%c1))%c1, eval(c0%c1 != c0)) ||
-
+    
+      apply(select(x, c0, c1)%c2, select(x, eval(c0%c2), eval(c1%c2))) ||
+      apply(select(x, y, c1)%c2, select(x, y%c2, eval(c1%c2))) ||
+      apply(select(x, c0, y)%c2, select(x, eval(c0%c2), y%c2)) ||
       false;
 }
 
