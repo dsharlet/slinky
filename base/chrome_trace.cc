@@ -34,9 +34,10 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
 
   // The only way to convert a thread ID to a string is via operator<<, which is slow, so we do it as a thread_local
   // initializer.
+  static std::atomic<int> next_thread_id = 0;
   thread_local std::string pid_tid_str = []() {
     std::stringstream ss;
-    ss << "\",\"pid\":0,\"tid\":\"" << std::this_thread::get_id() << "\"";
+    ss << "\",\"pid\":0,\"tid\":" << next_thread_id++;
     return ss.str();
   }();
 
