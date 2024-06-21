@@ -768,6 +768,23 @@ bool apply_logical_and_rules(Fn&& apply) {
       apply(x < y && y < x + c1, false, eval(c1 < 2)) ||
       apply(x < y && y < x, false) ||
 
+      // Above, we have rules for combinations of < and <=, or == and !=. Here, we have a mix of both.
+      apply(x != c0 && x <= c1, x <= c1, eval(c0 > c1)) ||
+      apply(x != c0 && x <= c1, x < c1, eval(c0 == c1)) ||
+      apply(x != c0 && x < c1, x < c1, eval(c0 > c1)) ||
+      apply(x == c0 && x <= c1, x == c0, eval(c0 <= c1)) ||
+      apply(x == c0 && x < c1, x == c0, eval(c0 < c1)) ||
+      apply(x == c0 && x <= c1, false, eval(c0 > c1)) ||
+      apply(x == c0 && x < c1, false, eval(c0 >= c1)) ||
+
+      apply(x != c0 && c1 <= x, c1 <= x, eval(c0 < c1)) ||
+      apply(x != c0 && c1 <= x, c1 < x, eval(c0 == c1)) ||
+      apply(x != c0 && c1 < x, c1 < x, eval(c0 < c1)) ||
+      apply(x == c0 && c1 <= x, x == c0, eval(c0 >= c1)) ||
+      apply(x == c0 && c1 < x, x == c0, eval(c0 > c1)) ||
+      apply(x == c0 && c1 <= x, false, eval(c0 < c1)) ||
+      apply(x == c0 && c1 < x, false, eval(c0 <= c1)) ||
+
       false;
 }
 
@@ -824,6 +841,23 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x < y || y < x + c1, true, eval(1 < c1)) ||
       apply(x < y || y < x, x != y) ||
     
+      // Above, we have rules for combinations of < and <=, or == and !=. Here, we have a mix of both.
+      apply(x != c0 || x <= c1, true, eval(c0 <= c1)) ||
+      apply(x != c0 || x < c1, true, eval(c0 < c1)) ||
+      apply(x != c0 || x <= c1, x != c0, eval(c0 > c1)) ||
+      apply(x != c0 || x < c1, x != c0, eval(c0 >= c1)) ||
+      apply(x == c0 || x <= c1, x <= c1, eval(c0 <= c1)) ||
+      apply(x == c0 || x < c1, x < c1, eval(c0 < c1)) ||
+      apply(x == c0 || x < c1, x <= c1, eval(c0 == c1)) ||
+
+      apply(x != c0 || c1 <= x, true, eval(c0 >= c1)) ||
+      apply(x != c0 || c1 < x, true, eval(c0 > c1)) ||
+      apply(x != c0 || c1 <= x, x != c0, eval(c0 < c1)) ||
+      apply(x != c0 || c1 < x, x != c0, eval(c0 <= c1)) ||
+      apply(x == c0 || c1 <= x, c1 <= x, eval(c0 >= c1)) ||
+      apply(x == c0 || c1 < x, c1 < x, eval(c0 > c1)) ||
+      apply(x == c0 || c1 < x, c1 <= x, eval(c0 == c1)) ||
+
       // TODO: These rules are just a few of many similar possible rules. We should find a way to get at these
       // some other way.
       apply(y || x < y, y || x < 0, is_boolean(y)) ||
