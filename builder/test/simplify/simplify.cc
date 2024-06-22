@@ -289,26 +289,38 @@ TEST(simplify, bounds) {
 }
 
 TEST(simplify, buffer_bounds) {
-  ASSERT_THAT(
-      simplify(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0)}},
-          crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))),
-      matches(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0)}},
-          crop_dim::make(b2, b0, 0, bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))));
+  auto decl_bounds = [](var buf, std::vector<interval_expr> bounds, stmt body) {
+    std::vector<dim_expr> dims;
+    for (auto i : bounds) {
+      dims.push_back({i});
+    }
+    return allocate::make(buf, memory_type::heap, 1, dims, body);
+  };
+  auto use_buffer = [](var b) { return call_stmt::make(nullptr, {}, {b}, {}); };
+  ASSERT_THAT(simplify(decl_bounds(b0, {buffer_bounds(b1, 0)},
+                  crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), use_buffer(b2)))),
+      matches(decl_bounds(b0, {{buffer_bounds(b1, 0)}}, crop_dim::make(b2, b0, 0, bounds(x, y), use_buffer(b2)))));
 
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}}, check::make(buffer_min(x, 0) == 2))),
+  ASSERT_THAT(simplify(decl_bounds(x, {bounds(2, 3)}, check::make(buffer_min(x, 0) == 2))), matches(stmt()));
+  ASSERT_THAT(simplify(decl_bounds(
+                  x, {bounds(2, 3)}, crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
       matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}},
-                  clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2)))),
-      matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}},
-                  crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
-      matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z)}},
+  ASSERT_THAT(simplify(decl_bounds(x, {{bounds(y, z)}},
                   crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == y && buffer_at(x))))),
-      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z)}}, check::make(buffer_at(x)))));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{buffer_bounds(b0, 0) + 2}},
-                  crop_dim::make(x, x, 0, bounds(expr(), min(z, buffer_max(b0, 0)) + 2), check::make(buffer_at(x))))),
-      matches(allocate::make(x, memory_type::heap, 1, {{buffer_bounds(b0, 0) + 2}}, check::make(buffer_at(x)))));
+      matches(decl_bounds(x, {{bounds(y, z)}}, check::make(buffer_at(x)))));
+  ASSERT_THAT(simplify(decl_bounds(x, {{buffer_bounds(b0, 0) + 2}},
+                  crop_dim::make(x, x, 0, bounds(expr(), min(z, buffer_max(b0, 0)) + 2), use_buffer(x)))),
+      matches(
+          decl_bounds(x, {{buffer_bounds(b0, 0) + 2}}, crop_dim::make(x, x, 0, bounds(expr(), z + 2), use_buffer(x)))));
+  ASSERT_THAT(simplify(decl_bounds(x, {{buffer_bounds(b0, 0) + 2}},
+                  crop_dim::make(x, x, 0, bounds(expr(), max(z, buffer_max(b0, 0)) + 2), use_buffer(x)))),
+      matches(decl_bounds(x, {{buffer_bounds(b0, 0) + 2}}, use_buffer(x))));
+
+  ASSERT_THAT(
+      simplify(decl_bounds(b0, {{x, y}}, crop_dim::make(b1, b0, 0, bounds(max(x, w), min(y, z)), use_buffer(b1)))),
+      matches(decl_bounds(b0, {{x, y}}, crop_dim::make(b1, b0, 0, bounds(w, z), use_buffer(b1)))));
+  ASSERT_THAT(simplify(decl_bounds(x, {{x, y}}, crop_dim::make(x, x, 0, bounds(min(x, w), max(y, z)), use_buffer(x)))),
+      matches(decl_bounds(x, {{x, y}}, use_buffer(x))));
 }
 
 TEST(simplify, crop_not_needed) {
