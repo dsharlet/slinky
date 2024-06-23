@@ -2,6 +2,7 @@
 #define SLINKY_BASE_CHROME_TRACE_H
 
 #include <chrono>
+#include <ctime>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -20,6 +21,7 @@ class chrome_trace {
   std::mutex mtx_;
   using timestamp = std::chrono::high_resolution_clock::time_point;
   timestamp t0_;
+  std::clock_t cpu_t0_;
 
   void write_event(const char* name, const char* cat, char type);
 
