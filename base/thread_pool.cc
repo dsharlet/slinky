@@ -50,6 +50,11 @@ bool thread_pool_impl::dequeue(task& t, std::vector<thread_pool_impl::task_id>& 
 
 void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::condition_variable& cv) {
   thread_local std::vector<std::size_t> task_stack;
+
+  // We want to spin a few times before letting the OS take over.
+  const int spin_count = 1000;
+  int spins = 0;
+
   std::unique_lock l(mutex_);
   while (!condition()) {
     task t;
@@ -60,6 +65,12 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::co
       l.lock();
       // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
       cv_helper_.notify_all();
+      // We did a task, reset the spin counter.
+      spins = spin_count;
+    } else if (spins-- > 0) {
+      l.unlock();
+      std::this_thread::yield();
+      l.lock();
     } else {
       cv.wait(l);
     }
