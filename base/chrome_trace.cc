@@ -19,6 +19,7 @@ chrome_trace::chrome_trace(std::ostream& os) : os_(os), id_(next_id++) {
   os_ << "[{\"name\":\"chrome_trace\",\"cat\":\"slinky\",\"ph\":\"B\",\"pid\":0,\"tid\":0,\"ts\":0}";
   os_ << ",\n{\"name\":\"chrome_trace\",\"cat\":\"slinky\",\"ph\":\"E\",\"pid\":0,\"tid\":0,\"ts\":0}";
   t0_ = std::chrono::high_resolution_clock::now();
+  cpu_t0_ = std::clock();
 }
 chrome_trace::~chrome_trace() {
   // Flush any unwritten buffers.
@@ -30,7 +31,9 @@ chrome_trace::~chrome_trace() {
 
 void chrome_trace::write_event(const char* name, const char* cat, char type) {
   auto t = std::chrono::high_resolution_clock::now();
+  std::clock_t cpu_t = std::clock();
   auto ts = std::chrono::duration_cast<std::chrono::microseconds>(t - t0_).count();
+  std::clock_t cpu_ts = (1000000 * (cpu_t - cpu_t0_)) / CLOCKS_PER_SEC;
 
   // The only way to convert a thread ID to a string is via operator<<, which is slow, so we do it as a thread_local
   // initializer.
@@ -65,6 +68,8 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
   *buffer += pid_tid_str;
   *buffer += ",\"ts\":";
   *buffer += std::to_string(ts);
+  *buffer += ",\"tts\":";
+  *buffer += std::to_string(cpu_ts);
   *buffer += '}';
 
   if (buffer->size() > 4096 * 16) {
