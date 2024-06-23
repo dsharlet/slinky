@@ -8,7 +8,6 @@
 #include <functional>
 #include <limits>
 #include <mutex>
-#include <set>
 #include <thread>
 
 namespace slinky {
@@ -48,39 +47,16 @@ public:
       // done. Waiting for these to return (after doing nothing) would risk deadlock.
       std::atomic<std::size_t> i = 0;
       std::atomic<std::size_t> done = 0;
-
-      // Which threads are working on this loop.
-      std::set<std::thread::id> working_threads;
-      std::mutex m;
-
-      // This should be called when entering a worker. If it returns false, we are already in the call stack of a
-      // worker on this loop, and should return to work on other tasks instead.
-      bool begin_work() {
-        std::unique_lock l(m);
-        std::thread::id tid = std::this_thread::get_id();
-        return working_threads.emplace(tid).second;
-      }
-
-      void end_work() {
-        std::unique_lock l(m);
-        auto i = working_threads.find(std::this_thread::get_id());
-        assert(i != working_threads.end());
-        working_threads.erase(i);
-      }
     };
     auto state = std::make_shared<shared_state>();
     // Capture n by value becuase this may run after the parallel_for call returns.
     auto worker = [state, n, body = std::move(body)]() mutable {
-      if (!state->begin_work()) return;
-
       while (true) {
         std::size_t i = state->i++;
         if (i >= n) break;
         body(i);
         ++state->done;
       }
-
-      state->end_work();
     };
     int workers = std::min<int>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
     if (workers > 1) {
