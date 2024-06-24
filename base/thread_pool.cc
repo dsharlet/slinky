@@ -26,31 +26,34 @@ thread_pool_impl::~thread_pool_impl() {
   }
 }
 
-bool thread_pool_impl::dequeue(task& t, std::vector<thread_pool_impl::task_id>& task_stack) {
+namespace {
+
+thread_local std::vector<const void*> task_stack;
+
+}
+
+const void* thread_pool_impl::dequeue(task& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
-    if (std::find(task_stack.begin(), task_stack.end(), std::get<2>(*i)) != task_stack.end()) {
+    const task_id id = std::get<2>(*i);
+    if (id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
       // Don't enqueue the same task multiple times on the same thread.
       continue;
     }
     if (std::get<0>(*i) == 1) {
       t = std::move(std::get<1>(*i));
       task_queue_.erase(i);
-      task_stack.push_back(0);
-      return true;
+      return id;
     } else {
       assert(std::get<0>(*i) > 1);
       std::get<0>(*i) -= 1;
-      task_stack.push_back(std::get<2>(*i));
       t = std::get<1>(*i);
-      return true;
+      return id;
     }
   }
-  return false;
+  return nullptr;
 }
 
 void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::condition_variable& cv) {
-  thread_local std::vector<task_id> task_stack;
-
   // We want to spin a few times before letting the OS take over.
   const int spin_count = 1000;
   int spins = 0;
@@ -58,8 +61,9 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::co
   std::unique_lock l(mutex_);
   while (!condition()) {
     task t;
-    if (dequeue(t, task_stack)) {
+    if (task_id id = dequeue(t)) {
       l.unlock();
+      task_stack.push_back(id);
       t();
       task_stack.pop_back();
       l.lock();
@@ -83,21 +87,26 @@ void thread_pool_impl::atomic_call(const task& t) {
   cv_helper_.notify_all();
 }
 
-void thread_pool_impl::enqueue(int n, task t) {
+void thread_pool_impl::enqueue(int n, const task& t) {
   if (n <= 0) return;
   std::unique_lock l(mutex_);
-  task_id id = next_task_id_++;
-  task_queue_.push_back({n, std::move(t), id});
+  task_queue_.push_back({n, t, &t});
   cv_worker_.notify_all();
   cv_helper_.notify_all();
 }
 
 void thread_pool_impl::enqueue(task t) {
   std::unique_lock l(mutex_);
-  task_id id = next_task_id_++;
-  task_queue_.push_back({1, std::move(t), id});
+  task_queue_.push_back({1, std::move(t), nullptr});
   cv_worker_.notify_one();
   cv_helper_.notify_one();
+}
+
+void thread_pool_impl::run(const task& t) {
+  assert(std::find(task_stack.begin(), task_stack.end(), &t) == task_stack.end());
+  task_stack.push_back(&t);
+  t();
+  task_stack.pop_back();
 }
 
 }  // namespace slinky

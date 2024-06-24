@@ -23,8 +23,10 @@ public:
 
   // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
   // be run recursively on the same thread while in `wait_for`.
-  virtual void enqueue(int n, task t) = 0;
+  virtual void enqueue(int n, const task& t) = 0;
   virtual void enqueue(task t) = 0;
+  // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
+  virtual void run(const task& t) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(const predicate& condition) = 0;
@@ -62,7 +64,9 @@ public:
     if (workers > 1) {
       enqueue(workers - 1, worker);
     }
-    worker();
+    // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
+    // available.
+    run(worker);
     // While the loop still isn't done, work on other tasks.
     wait_for([&]() { return state->done >= n; });
   }
@@ -72,12 +76,11 @@ public:
 // It is not directly used by anything except for testing.
 class thread_pool_impl : public thread_pool {
 private:
-  using task_id = std::size_t;
+  using task_id = const void*;
 
   std::vector<std::thread> workers_;
   std::atomic<bool> stop_;
 
-  task_id next_task_id_ = 1;
   using queued_task = std::tuple<int, task, task_id>;
   std::deque<queued_task> task_queue_;
   std::mutex mutex_;
@@ -91,7 +94,7 @@ private:
 
   void wait_for(const predicate& condition, std::condition_variable& cv);
 
-  bool dequeue(task& t, std::vector<task_id>& task_stack);
+  task_id dequeue(task& t);
 
 public:
   // `workers` indicates how many worker threads the thread pool will have.
@@ -101,14 +104,10 @@ public:
 
   int thread_count() const override { return workers_.size(); }
 
-  // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
-  // be run recursively on the same thread while in `wait_for`.
-  void enqueue(int n, task t) override;
+  void enqueue(int n, const task& t) override;
   void enqueue(task t) override;
-  // Waits for `condition` to become true. While waiting, executes tasks on the queue.
-  // The condition is executed atomically.
+  void run(const task& t) override;
   void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
-  // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
   void atomic_call(const task& t) override;
 };
 
