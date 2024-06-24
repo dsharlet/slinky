@@ -60,9 +60,11 @@ public:
       while (true) {
         std::size_t i = state->i++;
         if (i >= n) {
-          // There are no more iterations to run. We can cancel any in-flight workers that haven't started yet to save
-          // ourselves some work.
-          cancel(state.get());
+          // There are no more iterations to run.
+          if (i == n) {
+            // We hit the end of the loop, cancel any queued workers to save ourselves some work.
+            cancel(state.get());
+          }
           break;
         }
         body(i);
