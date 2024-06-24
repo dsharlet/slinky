@@ -120,7 +120,7 @@ chrome_trace* chrome_trace::global() {
   static const char* path = getenv("SLINKY_TRACE");
   if (!path) return nullptr;
 
-  static auto file = std::make_unique<std::ofstream>(path);
+  static auto file = std::make_unique<std::ofstream>(path, std::ios::out | std::ios::binary);
   static auto trace = std::make_unique<chrome_trace>(*file);
   return trace.get();
 }
