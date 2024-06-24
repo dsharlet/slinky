@@ -935,6 +935,7 @@ public:
       // This LICM is more aggressive than the typical compiler. Because we can freely add or remove loops around calls,
       // if we find a loop invariant stmt that consumes a loop variant stmt, we can try to force the loop varying stmt
       // to be loop invariant, and remove both from the loop.
+      // These accumulate results in reverse order.
       std::vector<stmt> result;
       std::vector<stmt> loop_body;
       loop_body.reserve(b->stmts.size());

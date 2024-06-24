@@ -315,7 +315,7 @@ TEST(simplify, licm) {
               make_crop_x(b2, 0, make_call(b1, b2)),
               make_call(b2, b3),
           })))));
-  // Same as above, but with another loop invariant stmt
+  // Same as above, but with another loop invariant stmt that does get lifted.
   ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
                   make_loop_x(block::make({
                       make_crop_x(b1, 0, make_call(b0, b1)),
