@@ -3,6 +3,8 @@
 
 #include <chrono>
 #include <ctime>
+#include <condition_variable>
+#include <deque>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -18,7 +20,17 @@ class chrome_trace {
   std::map<std::thread::id, std::string> buffers_;
   // A unique identifier for chrome_trace instances.
   int id_;
+
+  // To avoid writing interfering with tracing performance, we are going to have a queue of buffers, and pass them to a
+  // worker thread to write them to `os_`.
   std::mutex mtx_;
+  std::condition_variable cv_;
+  bool done_ = false;
+  std::deque<std::string> write_queue_;
+  std::thread writer_;
+
+  void background_writer();
+
   using timestamp = std::chrono::high_resolution_clock::time_point;
   timestamp t0_;
   std::clock_t cpu_t0_;

@@ -27,13 +27,38 @@ chrome_trace::chrome_trace(std::ostream& os) : os_(os), id_(next_id++) {
   os_ << ",\n{\"name\":\"chrome_trace\",\"cat\":\"slinky\",\"ph\":\"E\",\"pid\":0,\"tid\":0,\"ts\":0}";
   t0_ = std::chrono::high_resolution_clock::now();
   cpu_t0_ = clock_per_thread_us();
+
+  writer_ = std::thread([this]() { background_writer(); });
 }
 chrome_trace::~chrome_trace() {
+  {
+    std::unique_lock l(mtx_);
+    done_ = true;
+    cv_.notify_one();
+  }
+  writer_.join();
   // Flush any unwritten buffers.
   for (const auto& i : buffers_) {
     os_ << i.second;
   }
   os_ << "]\n";
+}
+
+void chrome_trace::background_writer() {
+  std::deque<std::string> local_buffer;
+  std::unique_lock l(mtx_);
+  while (!done_ || !write_queue_.empty()) {
+    if (!write_queue_.empty()) {
+      std::swap(local_buffer, write_queue_);
+      l.unlock();
+      for (const std::string& i : local_buffer) {
+        os_.write(i.data(), i.size());
+      }
+      local_buffer.clear();
+      l.lock();
+    }
+    cv_.wait(l);
+  }
 }
 
 void chrome_trace::write_event(const char* name, const char* cat, char type) {
@@ -82,8 +107,9 @@ void chrome_trace::write_event(const char* name, const char* cat, char type) {
   if (buffer->size() > 4096 * 16) {
     // Flush our buffer.
     std::unique_lock l(mtx_);
-    os_.write(buffer->data(), buffer->size());
+    write_queue_.push_back(*buffer);
     buffer->clear();
+    cv_.notify_one();
   }
 }
 
