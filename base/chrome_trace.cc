@@ -91,16 +91,11 @@ void chrome_trace::begin(const char* name) { write_event(name, "slinky", 'B'); }
 void chrome_trace::end(const char* name) { write_event(name, "slinky", 'E'); }
 
 chrome_trace* chrome_trace::global() {
-  static std::unique_ptr<std::ofstream> file;
-  static std::unique_ptr<chrome_trace> trace;
-  if (!trace) {
-    const char* path = getenv("SLINKY_TRACE");
-    if (path) {
-      std::cout << "Tracing to: " << path << std::endl;
-      file = std::make_unique<std::ofstream>(path);
-      trace = std::make_unique<chrome_trace>(*file);
-    }
-  }
+  static const char* path = getenv("SLINKY_TRACE");
+  if (!path) return nullptr;
+
+  static auto file = std::make_unique<std::ofstream>(path);
+  static auto trace = std::make_unique<chrome_trace>(*file);
   return trace.get();
 }
 
