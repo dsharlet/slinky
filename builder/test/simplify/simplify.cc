@@ -32,6 +32,7 @@ var b0(symbols, "b0");
 var b1(symbols, "b1");
 var b2(symbols, "b2");
 var b3(symbols, "b3");
+var b4(symbols, "b4");
 
 MATCHER_P(matches, x, "") { return match(arg, x); }
 
@@ -245,25 +246,115 @@ TEST(simplify, licm) {
   // One call doesn't depend on the loop.
   ASSERT_THAT(simplify(make_loop_x(make_call(b0, b1))), matches(make_call(b0, b1)));
   // Two calls don't depend on the loop.
-  ASSERT_THAT(simplify(make_loop_x(block::make({make_call(b0, b1), make_call(b0, b2)}))),
-      matches(block::make({make_call(b0, b1), make_call(b0, b2)})));
+  ASSERT_THAT(simplify(make_loop_x(block::make({
+                  make_call(b0, b1),
+                  make_call(b0, b2),
+              }))),
+      matches(block::make({
+          make_call(b0, b1),
+          make_call(b0, b2),
+      })));
   // Last call depends on the loop, first call does not.
-  ASSERT_THAT(simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))}))),
-      matches(block::make({make_call(b0, b1), make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))})));
+  ASSERT_THAT(simplify(make_loop_x(block::make({
+                  make_call(b0, b1),
+                  make_crop_x(b2, 0, make_call(b0, b2)),
+              }))),
+      matches(block::make({
+          make_call(b0, b1),
+          make_loop_x(make_crop_x(b2, 0, make_call(b0, b2))),
+      })));
   // A call in the middle of the loop depends on the loop.
-  ASSERT_THAT(
-      simplify(make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2)), make_call(b0, b3)}))),
-      matches(block::make({make_call(b0, b1), make_call(b0, b3), make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))})));
+  ASSERT_THAT(simplify(make_loop_x(block::make({
+                  make_call(b0, b1),
+                  make_crop_x(b2, 0, make_call(b0, b2)),
+                  make_call(b0, b3),
+              }))),
+      matches(block::make({
+          make_call(b0, b1),
+          make_call(b0, b3),
+          make_loop_x(make_crop_x(b2, 0, make_call(b0, b2))),
+      })));
   // A call in the middle of the loop does not depend on the loop, but does depend on the first call.
-  ASSERT_THAT(simplify(make_loop_x(block::make(
-                  {make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2), make_crop_x(b3, 0, make_call(b0, b3))}))),
-      matches(make_loop_x(block::make(
-          {make_crop_x(b1, 0, make_call(b0, b1)), make_call(b1, b2), make_crop_x(b3, 0, make_call(b0, b3))}))));
+  ASSERT_THAT(simplify(make_loop_x(block::make({
+                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_call(b1, b2),
+                  make_crop_x(b3, 0, make_call(b0, b3)),
+              }))),
+      matches(make_loop_x(block::make({
+          make_crop_x(b1, 0, make_call(b0, b1)),
+          make_call(b1, b2),
+          make_crop_x(b3, 0, make_call(b0, b3)),
+      }))));
+  // A call in the middle of the loop does not depend on the loop, but does depend on the first call, and we know that
+  // the first call doesn't write a folded buffer.
+  ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
+                  make_loop_x(block::make({
+                      make_crop_x(b1, 0, make_call(b0, b1)),
+                      make_call(b1, b2),
+                      make_crop_x(b3, 0, make_call(b0, b3)),
+                  })))),
+      matches(block::make({
+          allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
+              block::make({
+                  make_call(b0, b1),
+                  make_call(b1, b2),
+              })),
+          make_loop_x(make_crop_x(b3, 0, make_call(b0, b3))),
+      })));
+  // A call at the end of the loop does not depend on the loop, but each call depends on the previous, and the first
+  // call writes a folded buffer.
+  ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
+                  make_loop_x(block::make({
+                      make_crop_x(b1, 0, make_call(b0, b1)),
+                      make_crop_x(b2, 0, make_call(b1, b2)),
+                      make_call(b2, b3),
+                  })))),
+      matches(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
+          make_loop_x(block::make({
+              make_crop_x(b1, 0, make_call(b0, b1)),
+              make_crop_x(b2, 0, make_call(b1, b2)),
+              make_call(b2, b3),
+          })))));
+  // Same as above, but with another loop invariant stmt that does get lifted.
+  ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
+                  make_loop_x(block::make({
+                      make_crop_x(b1, 0, make_call(b0, b1)),
+                      make_crop_x(b2, 0, make_call(b1, b2)),
+                      make_call(b0, b4),
+                      make_call(b2, b3),
+                  })))),
+      matches(block::make({
+          make_call(b0, b4),
+          allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
+              make_loop_x(block::make({
+                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_crop_x(b2, 0, make_call(b1, b2)),
+                  make_call(b2, b3),
+              }))),
+      })));
+  // A call at the end of the loop that is loop invariant.
+  ASSERT_THAT(simplify(make_loop_x(block::make({
+                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_crop_x(b2, 0, make_call(b1, b2)),
+                  make_call(b0, b3),
+              }))),
+      matches(block::make({
+          make_call(b0, b3),
+          make_loop_x(block::make({
+              make_crop_x(b1, 0, make_call(b0, b1)),
+              make_crop_x(b2, 0, make_call(b1, b2)),
+          })),
+      })));
   // A nested loop.
-  ASSERT_THAT(simplify(make_loop_y(make_crop_y(
-                  b2, 1, make_loop_x(block::make({make_call(b0, b1), make_crop_x(b2, 0, make_call(b0, b2))}))))),
-      matches(block::make(
-          {make_call(b0, b1), make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2)))))})));
+  ASSERT_THAT(simplify(make_loop_y(make_crop_y(b2, 1,
+                  make_loop_x(block::make({
+                      make_call(b0, b1),
+                      make_crop_x(b2, 0, make_call(b0, b2)),
+                  }))))),
+      matches(block::make({
+          make_call(b0, b1),
+          make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2))))),
+      })));
 }
 
 TEST(simplify, bounds) {
@@ -289,26 +380,38 @@ TEST(simplify, bounds) {
 }
 
 TEST(simplify, buffer_bounds) {
-  ASSERT_THAT(
-      simplify(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0)}},
-          crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))),
-      matches(allocate::make(b0, memory_type::heap, 1, {{buffer_bounds(b1, 0)}},
-          crop_dim::make(b2, b0, 0, bounds(x, y), call_stmt::make(nullptr, {}, {b2}, {})))));
+  auto decl_bounds = [](var buf, std::vector<interval_expr> bounds, stmt body) {
+    std::vector<dim_expr> dims;
+    for (auto i : bounds) {
+      dims.push_back({i});
+    }
+    return allocate::make(buf, memory_type::heap, 1, dims, body);
+  };
+  auto use_buffer = [](var b) { return call_stmt::make(nullptr, {}, {b}, {}); };
+  ASSERT_THAT(simplify(decl_bounds(b0, {buffer_bounds(b1, 0)},
+                  crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), use_buffer(b2)))),
+      matches(decl_bounds(b0, {{buffer_bounds(b1, 0)}}, crop_dim::make(b2, b0, 0, bounds(x, y), use_buffer(b2)))));
 
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}}, check::make(buffer_min(x, 0) == 2))),
+  ASSERT_THAT(simplify(decl_bounds(x, {bounds(2, 3)}, check::make(buffer_min(x, 0) == 2))), matches(stmt()));
+  ASSERT_THAT(simplify(decl_bounds(
+                  x, {bounds(2, 3)}, crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
       matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}},
-                  clone_buffer::make(y, x, check::make(buffer_min(y, 0) == 2)))),
-      matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3)}},
-                  crop_dim::make(x, x, 0, bounds(1, 4), check::make(buffer_min(x, 0) == 2)))),
-      matches(stmt()));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(y, z)}},
+  ASSERT_THAT(simplify(decl_bounds(x, {{bounds(y, z)}},
                   crop_dim::make(x, x, 0, bounds(y - 1, z + 1), check::make(buffer_min(x, 0) == y && buffer_at(x))))),
-      matches(allocate::make(x, memory_type::heap, 1, {{bounds(y, z)}}, check::make(buffer_at(x)))));
-  ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{buffer_bounds(b0, 0) + 2}},
-                  crop_dim::make(x, x, 0, bounds(expr(), min(z, buffer_max(b0, 0)) + 2), check::make(buffer_at(x))))),
-      matches(allocate::make(x, memory_type::heap, 1, {{buffer_bounds(b0, 0) + 2}}, check::make(buffer_at(x)))));
+      matches(decl_bounds(x, {{bounds(y, z)}}, check::make(buffer_at(x)))));
+  ASSERT_THAT(simplify(decl_bounds(x, {{buffer_bounds(b0, 0) + 2}},
+                  crop_dim::make(x, x, 0, bounds(expr(), min(z, buffer_max(b0, 0)) + 2), use_buffer(x)))),
+      matches(
+          decl_bounds(x, {{buffer_bounds(b0, 0) + 2}}, crop_dim::make(x, x, 0, bounds(expr(), z + 2), use_buffer(x)))));
+  ASSERT_THAT(simplify(decl_bounds(x, {{buffer_bounds(b0, 0) + 2}},
+                  crop_dim::make(x, x, 0, bounds(expr(), max(z, buffer_max(b0, 0)) + 2), use_buffer(x)))),
+      matches(decl_bounds(x, {{buffer_bounds(b0, 0) + 2}}, use_buffer(x))));
+
+  ASSERT_THAT(
+      simplify(decl_bounds(b0, {{x, y}}, crop_dim::make(b1, b0, 0, bounds(max(x, w), min(y, z)), use_buffer(b1)))),
+      matches(decl_bounds(b0, {{x, y}}, crop_dim::make(b1, b0, 0, bounds(w, z), use_buffer(b1)))));
+  ASSERT_THAT(simplify(decl_bounds(x, {{x, y}}, crop_dim::make(x, x, 0, bounds(min(x, w), max(y, z)), use_buffer(x)))),
+      matches(decl_bounds(x, {{x, y}}, use_buffer(x))));
 }
 
 TEST(simplify, crop_not_needed) {

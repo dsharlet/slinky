@@ -856,6 +856,56 @@ public:
     }
   }
 
+  // Substitute expr() in for loop_var only in crop bounds within s, and only if those crop bounds do not crop a folded
+  // dimension.
+  stmt remove_loop_var_in_crop_bounds(const stmt& s, var loop_var) {
+    class m : public node_mutator {
+      symbol_map<buffer_info>& buffers;
+      var loop_var;
+
+    public:
+      m(symbol_map<buffer_info>& buffers, var loop_var) : buffers(buffers), loop_var(loop_var) {}
+
+      interval_expr mutate_crop_bounds(var src, int dim, const interval_expr& bounds) {
+        std::optional<buffer_info>& src_info = buffers[src];
+        if (!src_info || dim >= static_cast<int>(src_info->dims.size())) {
+          // We don't know about this buffer or dimension, it might be folded.
+          return bounds;
+        }
+        if (src_info->dims[dim].fold_factor.defined() && !is_constant(src_info->dims[dim].fold_factor, dim::unfolded)) {
+          // This dimension is folded, don't drop crops.
+          return bounds;
+        }
+        return substitute(bounds, loop_var, expr());
+      }
+
+      void visit(const crop_dim* op) override {
+        interval_expr bounds = mutate_crop_bounds(op->src, op->dim, op->bounds);
+        stmt body = mutate(op->body);
+        if (!bounds.same_as(op->bounds) || !body.same_as(op->body)) {
+          set_result(crop_dim::make(op->sym, op->src, op->dim, std::move(bounds), std::move(body)));
+        } else {
+          set_result(op);
+        }
+      }
+      void visit(const crop_buffer* op) override {
+        box_expr bounds(op->bounds.size());
+        bool changed = false;
+        for (std::size_t d = 0; d < op->bounds.size(); ++d) {
+          bounds[d] = mutate_crop_bounds(op->src, d, op->bounds[d]);
+          changed = changed || !bounds[d].same_as(op->bounds[d]);
+        }
+        stmt body = mutate(op->body);
+        if (changed || !body.same_as(op->body)) {
+          set_result(crop_buffer::make(op->sym, op->src, std::move(bounds), std::move(body)));
+        } else {
+          set_result(op);
+        }
+      }
+    };
+    return m(buffers, loop_var).mutate(s);
+  }
+
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
@@ -882,33 +932,70 @@ public:
       return;
     } else if (const block* b = body.as<block>()) {
       scoped_trace trace("licm");
-      // Put the stmts that actually depend on the loop inside the loop.
-      std::vector<stmt> result;
+      // This LICM is more aggressive than the typical compiler. Because we can freely add or remove loops around calls,
+      // if we find a loop invariant stmt that consumes a loop variant stmt, we can try to force the loop varying stmt
+      // to be loop invariant, and remove both from the loop.
+      // These accumulate results in reverse order.
+      // Here, we keep the original stmt, in case we need to put it back in the loop.
+      std::vector<std::pair<stmt, stmt>> lifted;
       std::vector<stmt> loop_body;
-      std::set<var> produced_by_loop;
       loop_body.reserve(b->stmts.size());
-      for (const stmt& i : b->stmts) {
-        if (!depends_on(i, op->sym).any()) {
-          // This stmt does not depend on the loop variable. Find out which buffers are consumed by it.
-          std::set<var> consumed_by_i;
-          buffers_accessed_via_aliases(i, /*consumed=*/true, consumed_by_i);
 
-          if (empty_intersection(consumed_by_i, produced_by_loop)) {
-            // This doesn't depend on the loop and doesn't consume anything produced in the loop, lift it out.
-            if (i.defined()) result.push_back(i);
-          } else {
-            // This stmt consumes something produced by the loop we have so far, we can't lift it out of the loop.
-            buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_loop);
-            loop_body.push_back(i);
-          }
+      // Find out if i produces something consumed by a loop invariant.
+      for (auto ri = b->stmts.rbegin(); ri != b->stmts.rend(); ++ri) {
+        stmt i = *ri;
+
+        if (!depends_on(i, op->sym).var) {
+          // i is loop invariant. Add it to the lifted result.
+          lifted.push_back({i, i});
         } else {
-          // This stmt depends on the loop.
-          buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_loop);
-          loop_body.push_back(i);
+          // i depends on the loop. We are effectively reordering result ahead of i, we need to make sure we can do
+          // that.
+          std::set<var> produced_by_i;
+          buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_i);
+
+          // The loop invariants might depend on i. If so, we need to figure out what to do.
+          for (auto j = lifted.begin(); j != lifted.end();) {
+            std::set<var> consumed_by_j;
+            buffers_accessed_via_aliases(j->first, /*consumed=*/true, consumed_by_j);
+
+            if (empty_intersection(produced_by_i, consumed_by_j)) {
+              // This loop invariant is independent of i.
+              ++j;
+              continue;
+            }
+
+            // j depends on i, so j is not loop invariant. Can we make i loop invariant? We can if we can delete the
+            // references to the loop variable.
+            stmt i_lifted = remove_loop_var_in_crop_bounds(i, op->sym);
+            if (!depends_on(i_lifted, op->sym).var) {
+              // We made i loop invariant, add it to the loop invariant result before it is used.
+              ++j;
+              lifted.insert(j, {mutate(i_lifted), i});
+              i = stmt();
+              break;
+            } else {
+              // We can't delete the references to the loop variable here, so j is not loop invariant. Put the original
+              // stmt back in the loop.
+              loop_body.push_back(j->second);
+              j = lifted.erase(j);
+            }
+          }
+
+          if (i.defined()) {
+            // We didn't lift i, put it in the loop.
+            loop_body.push_back(std::move(i));
+          }
         }
       }
-      if (!result.empty()) {
+      if (!lifted.empty()) {
         // We found something to lift out of the loop.
+        std::vector<stmt> result;
+        result.reserve(lifted.size() + 1);
+        for (auto i = lifted.rbegin(); i != lifted.rend(); ++i) {
+          result.push_back(i->first);
+        }
+        std::reverse(loop_body.begin(), loop_body.end());
         result.push_back(mutate(loop::make(op->sym, op->max_workers, bounds, step, block::make(std::move(loop_body)))));
         set_result(block::make(std::move(result)));
         return;
