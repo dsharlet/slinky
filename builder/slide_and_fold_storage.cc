@@ -175,11 +175,17 @@ public:
     // Overlap between iteration i and i + 1.
     expr overlap;
 
-    // Which loop this fold is for.
+    // Depths of the loop this fold is for.
     std::size_t loop;
+    
+    // Unique ID of the loop this fold is for.
+    std::size_t loop_id;
   };
   symbol_map<std::vector<dim_fold_info>> fold_factors;
 
+  // Counter for the number of loops we've seen.
+  int loop_counter = 0;
+  
   struct loop_info {
     var sym;
     expr orig_min;
@@ -202,6 +208,9 @@ public:
     // We only track the stage we're currently working on. This optional being present indicates the current stage needs
     // synchronization, and the value indicates which stage it is.
     std::optional<int> stage;
+    
+    // Unique loop ID.
+    std::size_t loop_id = -1;
 
     bool add_synchronization() {
       if (sync_stages + 1 >= max_workers) {
@@ -217,9 +226,9 @@ public:
       return true;
     }
 
-    loop_info(node_context& ctx, var sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+    loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step, int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
-          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count") {}
+          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"), loop_id(loop_id) {}
   };
   std::vector<loop_info> loops;
   symbol_map<std::size_t> allocation_loop_levels;
@@ -233,7 +242,7 @@ public:
   symbol_map<interval_expr>& current_expr_bounds() { return *loops.back().expr_bounds; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(ctx, var(), expr(), interval_expr::none(), expr(), loop::serial);
+    loops.emplace_back(ctx, var(), loop_counter++, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   stmt mutate(const stmt& s) override {
@@ -366,7 +375,7 @@ public:
         expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
         fold_factor = simplify(constant_upper_bound(fold_factor));
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.size() - 1};
+          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.size() - 1, loops.back().loop_id};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
         }
@@ -391,6 +400,7 @@ public:
                 simplify(fold_factor),
                 simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max)),
                 loops.size() - 1,
+                loops.back().loop_id
             };
             did_overlapped_fold = true;
           } else {
@@ -436,7 +446,11 @@ public:
       while (true) {
         if (fold_factors[a]) {
           for (dim_fold_info& i : *fold_factors[a]) {
-            if (i.loop >= loops.size()) {
+            bool is_correct_fold = false;
+            for (const loop_info& loop : loops) {
+              is_correct_fold = is_correct_fold || loop.loop_id == i.loop_id;
+            }
+            if (!is_correct_fold) {
               // We found a consumer of a buffer outside the loop it was folded in, remove the folding.
               i = dim_fold_info();
             }
@@ -612,7 +626,7 @@ public:
     // we substitute current buffer bounds into loop bounds.
     substitute_bounds(loop_bounds, current_buffer_bounds());
 
-    loops.emplace_back(ctx, op->sym, orig_min, loop_bounds, op->step, op->max_workers);
+    loops.emplace_back(ctx, op->sym, loop_counter++, orig_min, loop_bounds, op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
     current_expr_bounds() = last_expr_bounds;
 
