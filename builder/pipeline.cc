@@ -311,8 +311,16 @@ bool operator==(const loop_id& a, const loop_id& b) {
   }
 }
 
-void topological_sort_impl(const func* f, std::set<const func*>& visited, std::vector<const func*>& order,
-    std::map<const func*, std::vector<const func*>>& deps, std::set<buffer_expr_ptr>& constants) {
+void topological_sort_impl(const func* f, std::set<const func*>& processing,
+                          std::set<const func*>& visited, std::vector<const func*>& order,
+                          std::map<const func*, std::vector<const func*>>& deps,
+                          std::set<buffer_expr_ptr>& constants) {
+  if (visited.count(f) > 0) {
+    return ;
+  }
+
+  assert(processing.count(f) == 0);
+  processing.insert(f);
   for (const auto& i : f->inputs()) {
     const auto& input = i.buffer;
     if (input->constant()) {
@@ -325,20 +333,19 @@ void topological_sort_impl(const func* f, std::set<const func*>& visited, std::v
     // Record that f is consumer of input->producer.
     deps[input->producer()].push_back(f);
 
-    if (visited.count(input->producer()) > 0) {
-      continue;
-    }
-    topological_sort_impl(input->producer(), visited, order, deps, constants);
+    topological_sort_impl(input->producer(), processing, visited, order, deps, constants);
   }
+  processing.erase(f);
   visited.insert(f);
   order.push_back(f);
 }
 
 void topological_sort(const std::vector<buffer_expr_ptr>& outputs, std::vector<const func*>& order,
     std::map<const func*, std::vector<const func*>>& deps, std::set<buffer_expr_ptr>& constants) {
+  std::set<const func*> processing;
   std::set<const func*> visited;
   for (const auto& i : outputs) {
-    topological_sort_impl(i->producer(), visited, order, deps, constants);
+    topological_sort_impl(i->producer(), processing, visited, order, deps, constants);
   }
 
   // Reverse the order, so outputs go first.
