@@ -17,7 +17,7 @@ namespace slinky {
 class thread_pool {
 public:
   using task_id = const void*;
-  static const task_id unique_task_id;
+  static task_id unique_task_id;
   using task = std::function<void()>;
   using predicate = std::function<bool()>;
 
@@ -25,10 +25,10 @@ public:
 
   // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
   // be run recursively on the same thread while in `wait_for`.
-  virtual void enqueue(int n, task t, const task_id id = unique_task_id) = 0;
-  virtual void enqueue(task t, const task_id id = unique_task_id) = 0;
+  virtual void enqueue(int n, task t, task_id id = unique_task_id) = 0;
+  virtual void enqueue(task t, task_id id = unique_task_id) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  virtual void run(const task& t, const task_id id = unique_task_id) = 0;
+  virtual void run(const task& t, task_id id = unique_task_id) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(const predicate& condition) = 0;
@@ -104,9 +104,9 @@ public:
 
   int thread_count() const override { return workers_.size(); }
 
-  void enqueue(int n, task t, const task_id id) override;
-  void enqueue(task t, const task_id id) override;
-  void run(const task& t, const task_id id) override;
+  void enqueue(int n, task t, task_id id) override;
+  void enqueue(task t, task_id id) override;
+  void run(const task& t, task_id id) override;
   void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(const task& t) override;
 };

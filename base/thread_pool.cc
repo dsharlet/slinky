@@ -8,7 +8,7 @@
 
 namespace slinky {
 
-const thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
+thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
 
 thread_pool_impl::thread_pool_impl(int workers, const task& init) : stop_(false) {
   auto worker = [this, init]() {
@@ -36,18 +36,19 @@ thread_local std::vector<thread_pool::task_id> task_stack;
 
 thread_pool::task_id thread_pool_impl::dequeue(task& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
-    const task_id id = std::get<2>(*i);
+    task_id id = std::get<2>(*i);
     if (id != unique_task_id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
       // Don't enqueue the same task multiple times on the same thread.
       continue;
     }
-    if (std::get<0>(*i) == 1) {
+    int& task_count = std::get<0>(*i);
+    if (task_count == 1) {
       t = std::move(std::get<1>(*i));
       task_queue_.erase(i);
       return id;
     } else {
-      assert(std::get<0>(*i) > 1);
-      std::get<0>(*i) -= 1;
+      assert(task_count > 1);
+      task_count -= 1;
       t = std::get<1>(*i);
       return id;
     }
@@ -89,7 +90,7 @@ void thread_pool_impl::atomic_call(const task& t) {
   cv_helper_.notify_all();
 }
 
-void thread_pool_impl::enqueue(int n, task t, const task_id id) {
+void thread_pool_impl::enqueue(int n, task t, task_id id) {
   if (n <= 0) return;
   std::unique_lock l(mutex_);
   task_queue_.push_back({n, std::move(t), id});
@@ -97,14 +98,14 @@ void thread_pool_impl::enqueue(int n, task t, const task_id id) {
   cv_helper_.notify_all();
 }
 
-void thread_pool_impl::enqueue(task t, const task_id id) {
+void thread_pool_impl::enqueue(task t, task_id id) {
   std::unique_lock l(mutex_);
   task_queue_.push_back({1, std::move(t), id});
   cv_worker_.notify_one();
   cv_helper_.notify_one();
 }
 
-void thread_pool_impl::run(const task& t, const task_id id) {
+void thread_pool_impl::run(const task& t, task_id id) {
   assert(id == unique_task_id || std::find(task_stack.begin(), task_stack.end(), id) == task_stack.end());
   task_stack.push_back(id);
   t();
