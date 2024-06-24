@@ -936,7 +936,8 @@ public:
       // if we find a loop invariant stmt that consumes a loop variant stmt, we can try to force the loop varying stmt
       // to be loop invariant, and remove both from the loop.
       // These accumulate results in reverse order.
-      std::vector<stmt> result;
+      // Here, we keep the original stmt, in case we need to put it back in the loop.
+      std::vector<std::pair<stmt, stmt>> lifted;
       std::vector<stmt> loop_body;
       loop_body.reserve(b->stmts.size());
 
@@ -946,7 +947,7 @@ public:
 
         if (!depends_on(i, op->sym).var) {
           // i is loop invariant. Add it to the lifted result.
-          result.push_back(std::move(i));
+          lifted.push_back({i, i});
         } else {
           // i depends on the loop. We are effectively reordering result ahead of i, we need to make sure we can do
           // that.
@@ -954,9 +955,9 @@ public:
           buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_i);
 
           // The loop invariants might depend on i. If so, we need to figure out what to do.
-          for (auto j = result.begin(); j != result.end();) {
+          for (auto j = lifted.begin(); j != lifted.end();) {
             std::set<var> consumed_by_j;
-            buffers_accessed_via_aliases(*j, /*consumed=*/true, consumed_by_j);
+            buffers_accessed_via_aliases(j->first, /*consumed=*/true, consumed_by_j);
 
             if (empty_intersection(produced_by_i, consumed_by_j)) {
               // This loop invariant is independent of i.
@@ -970,14 +971,14 @@ public:
             if (!depends_on(i_lifted, op->sym).var) {
               // We made i loop invariant, add it to the loop invariant result before it is used.
               ++j;
-              result.insert(j, mutate(i_lifted));
+              lifted.insert(j, {mutate(i_lifted), i});
               i = stmt();
               break;
             } else {
-              // We can't delete the references to the loop variable here, so j is not loop invariant. Put it back in
-              // the loop.
-              loop_body.push_back(*j);
-              j = result.erase(j);
+              // We can't delete the references to the loop variable here, so j is not loop invariant. Put the original
+              // stmt back in the loop.
+              loop_body.push_back(j->second);
+              j = lifted.erase(j);
             }
           }
 
@@ -987,9 +988,13 @@ public:
           }
         }
       }
-      if (!result.empty()) {
+      if (!lifted.empty()) {
         // We found something to lift out of the loop.
-        std::reverse(result.begin(), result.end());
+        std::vector<stmt> result;
+        result.reserve(lifted.size() + 1);
+        for (auto i = lifted.rbegin(); i != lifted.rend(); ++i) {
+          result.push_back(i->first);
+        }
         std::reverse(loop_body.begin(), loop_body.end());
         result.push_back(mutate(loop::make(op->sym, op->max_workers, bounds, step, block::make(std::move(loop_body)))));
         set_result(block::make(std::move(result)));
