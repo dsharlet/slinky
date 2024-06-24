@@ -48,3 +48,15 @@ cc_test(
     args=["--benchmark_min_time=0.1s"],
     size = "small",
 )
+
+
+cc_test(
+    name = "thread_pool_benchmark",
+    srcs = ["thread_pool_benchmark.cc"],
+    deps = [
+        "//base:thread_pool",
+        "@google_benchmark//:benchmark_main",
+    ],
+    args=["--benchmark_min_time=0.1s"],
+    size = "small",
+)
