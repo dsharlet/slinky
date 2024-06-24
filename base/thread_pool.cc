@@ -49,7 +49,7 @@ bool thread_pool_impl::dequeue(task& t, std::vector<thread_pool_impl::task_id>& 
 }
 
 void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::condition_variable& cv) {
-  thread_local std::vector<std::size_t> task_stack;
+  thread_local std::vector<task_id> task_stack;
 
   // We want to spin a few times before letting the OS take over.
   const int spin_count = 1000;
