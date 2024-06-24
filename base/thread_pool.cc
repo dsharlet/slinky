@@ -30,11 +30,11 @@ thread_pool_impl::~thread_pool_impl() {
 
 namespace {
 
-thread_local std::vector<const void*> task_stack;
+thread_local std::vector<thread_pool::task_id> task_stack;
 
 }  // namespace
 
-const void* thread_pool_impl::dequeue(task& t) {
+thread_pool::task_id thread_pool_impl::dequeue(task& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
     const task_id id = std::get<2>(*i);
     if (id != unique_task_id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
