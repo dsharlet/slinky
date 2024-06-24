@@ -112,4 +112,15 @@ void thread_pool_impl::run(const task& t, task_id id) {
   task_stack.pop_back();
 }
 
+void thread_pool_impl::cancel(task_id id) {
+  std::unique_lock l(mutex_);
+  for (auto i = task_queue_.begin(); i != task_queue_.end();) {
+    if (std::get<2>(*i) == id) {
+      i = task_queue_.erase(i);
+    } else {
+      ++i;
+    }
+  }
+}
+
 }  // namespace slinky
