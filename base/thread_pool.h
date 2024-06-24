@@ -29,6 +29,8 @@ public:
   virtual void enqueue(task t, task_id id = unique_task_id) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
   virtual void run(const task& t, task_id id = unique_task_id) = 0;
+  // Cancel tasks previously enqueued with the given `id`.
+  virtual void cancel(task_id id) {}
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(const predicate& condition) = 0;
@@ -54,10 +56,15 @@ public:
     };
     auto state = std::make_shared<shared_state>();
     // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [state, n, body = std::move(body)]() mutable {
+    auto worker = [this, state, n, body = std::move(body)]() mutable {
       while (true) {
         std::size_t i = state->i++;
-        if (i >= n) break;
+        if (i >= n) {
+          // There are no more iterations to run. We can cancel any in-flight workers that haven't started yet to save
+          // ourselves some work.
+          cancel(state.get());
+          break;
+        }
         body(i);
         ++state->done;
       }
@@ -107,6 +114,7 @@ public:
   void enqueue(int n, task t, task_id id) override;
   void enqueue(task t, task_id id) override;
   void run(const task& t, task_id id) override;
+  void cancel(task_id id) override;
   void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(const task& t) override;
 };
