@@ -8,6 +8,8 @@
 
 namespace slinky {
 
+const thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
+
 thread_pool_impl::thread_pool_impl(int workers, const task& init) : stop_(false) {
   auto worker = [this, init]() {
     if (init) init();
@@ -30,12 +32,12 @@ namespace {
 
 thread_local std::vector<const void*> task_stack;
 
-}
+}  // namespace
 
 const void* thread_pool_impl::dequeue(task& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
     const task_id id = std::get<2>(*i);
-    if (id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
+    if (id != unique_task_id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
       // Don't enqueue the same task multiple times on the same thread.
       continue;
     }
@@ -87,24 +89,24 @@ void thread_pool_impl::atomic_call(const task& t) {
   cv_helper_.notify_all();
 }
 
-void thread_pool_impl::enqueue(int n, const task& t) {
+void thread_pool_impl::enqueue(int n, task t, const task_id id) {
   if (n <= 0) return;
   std::unique_lock l(mutex_);
-  task_queue_.push_back({n, t, &t});
+  task_queue_.push_back({n, std::move(t), id});
   cv_worker_.notify_all();
   cv_helper_.notify_all();
 }
 
-void thread_pool_impl::enqueue(task t) {
+void thread_pool_impl::enqueue(task t, const task_id id) {
   std::unique_lock l(mutex_);
-  task_queue_.push_back({1, std::move(t), nullptr});
+  task_queue_.push_back({1, std::move(t), id});
   cv_worker_.notify_one();
   cv_helper_.notify_one();
 }
 
-void thread_pool_impl::run(const task& t) {
-  assert(std::find(task_stack.begin(), task_stack.end(), &t) == task_stack.end());
-  task_stack.push_back(&t);
+void thread_pool_impl::run(const task& t, const task_id id) {
+  assert(id == unique_task_id || std::find(task_stack.begin(), task_stack.end(), id) == task_stack.end());
+  task_stack.push_back(id);
   t();
   task_stack.pop_back();
 }
