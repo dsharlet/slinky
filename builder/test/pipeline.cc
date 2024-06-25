@@ -90,14 +90,10 @@ TEST_P(trivial, pipeline) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
 }
 
-class elementwise : public testing::TestWithParam<std::tuple<int, int, bool, int>> {};
+class elementwise : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_schedule_mode, elementwise,
-    testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true), testing::Values(0)),
-    test_params_to_string<elementwise::ParamType>);
-
-INSTANTIATE_TEST_SUITE_P(with_outside_fold, elementwise,
-    testing::Combine(testing::Values(loop::serial), testing::Values(0), testing::Values(false), testing::Values(1)),
+    testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true)),
     test_params_to_string<elementwise::ParamType>);
 
 // An example of two 1D elementwise operations in sequence.
@@ -105,7 +101,6 @@ TEST_P(elementwise, pipeline_1d) {
   int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   bool schedule_storage = std::get<2>(GetParam());
-  int special_schedule = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -127,19 +122,11 @@ TEST_P(elementwise, pipeline_1d) {
   func add = func::make(
       std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "add"});
 
-  if (special_schedule == 1) {
-    // Two separate loops where intermediate buffer can be folded in theory, but shouldn't
-    // because consumer is in a different loop.
-    mul.loops({{x, 1}});
-    mul.compute_root();
-    add.loops({{x, 1}});
-  } else {
-    if (split > 0) {
-      add.loops({{x, split, max_workers}});
-      if (schedule_storage) {
-        intm->store_at({&add, x});
-        intm->store_in(memory_type::stack);
-      }
+  if (split > 0) {
+    add.loops({{x, split, max_workers}});
+    if (schedule_storage) {
+      intm->store_at({&add, x});
+      intm->store_in(memory_type::stack);
     }
   }
 
@@ -177,7 +164,6 @@ TEST_P(elementwise, pipeline_2d) {
   int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   bool schedule_storage = std::get<2>(GetParam());
-  int special_schedule = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -199,19 +185,11 @@ TEST_P(elementwise, pipeline_2d) {
   func add = func::make(
       std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
 
-  if (special_schedule == 1) {
-    // Two separate loops where intermediate buffer can be folded in theory, but shouldn't
-    // because consumer is in a different loop.
-    mul.loops({{y, 1}});
-    mul.compute_root();
-    add.loops({{y, 1}});
-  } else {
-    if (split > 0) {
-      add.loops({{x, split, max_workers}, {y, split, max_workers}});
-      if (schedule_storage) {
-        intm->store_at({&add, x});
-        intm->store_in(memory_type::stack);
-      }
+  if (split > 0) {
+    add.loops({{x, split, max_workers}, {y, split, max_workers}});
+    if (schedule_storage) {
+      intm->store_at({&add, x});
+      intm->store_in(memory_type::stack);
     }
   }
 
@@ -246,6 +224,63 @@ TEST_P(elementwise, pipeline_2d) {
 
   if (schedule_storage) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);  // The intermediate only needs stack.
+  }
+}
+
+// Two separate loops where intermediate buffer can be folded in theory, but shouldn't
+// because consumer is in a different loop.
+TEST(elementwise, outside_fold) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  // Here we explicitly use lambdas to wrap the local calls,
+  // purely to verify that the relevant func::make calls work correctly.
+  auto m2 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return multiply_2<int>(a, b); };
+  auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
+
+  func mul = func::make(
+      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+  func add = func::make(
+      std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+
+  mul.loops({{y, 1}});
+  mul.compute_root();
+  add.loops({{y, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline
+  const int W = 15;
+  const int H = 10;
+
+  buffer<int, 2> in_buf({W, H});
+  in_buf.allocate();
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      in_buf(x, y) = y * W + x;
+    }
+  }
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
+    }
   }
 }
 
