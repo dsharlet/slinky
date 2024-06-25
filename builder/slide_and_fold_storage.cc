@@ -174,9 +174,6 @@ public:
 
     // Overlap between iteration i and i + 1.
     expr overlap;
-
-    // Depths of the loop this fold is for.
-    std::size_t loop;
     
     // Unique ID of the loop this fold is for.
     std::size_t loop_id;
@@ -231,7 +228,6 @@ public:
           semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"), loop_id(loop_id) {}
   };
   std::vector<loop_info> loops;
-  symbol_map<std::size_t> allocation_loop_levels;
 
   symbol_map<var> aliases;
 
@@ -291,7 +287,6 @@ public:
     // Initialize the fold factors to infinity.
     auto set_fold_factors =
         set_value_in_scope(fold_factors, op->sym, std::vector<dim_fold_info>(op->dims.size(), dim_fold_info()));
-    auto set_loop_level = set_value_in_scope(allocation_loop_levels, op->sym, loops.size());
     stmt body = mutate(op->body);
 
     // When we constructed the pipeline, the buffer dimensions were set to buffer_* calls.
@@ -334,11 +329,6 @@ public:
       }
     }
 
-    // Only consider loops that are there the allocation of this output for folding.
-    // TODO: It seems like there's probably a more elegant way to do this.
-    std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
-    if (!alloc_loop_level) alloc_loop_level = 1;
-
     loop_info& loop = loops.back();
     std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
     if (!bounds) return;
@@ -375,7 +365,7 @@ public:
         expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
         fold_factor = simplify(constant_upper_bound(fold_factor));
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.size() - 1, loops.back().loop_id};
+          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.back().loop_id};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
         }
@@ -399,7 +389,6 @@ public:
             vector_at(fold_factors[output], d) = {
                 simplify(fold_factor),
                 simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max)),
-                loops.size() - 1,
                 loops.back().loop_id
             };
             did_overlapped_fold = true;
@@ -463,21 +452,13 @@ public:
     }
 
     for (var output : outputs) {
-      // Start from 1 to skip the 'outermost' loop.
-      // Only consider loops that are inside the allocation of this output for folding.
-      // TODO: It seems like there's probably a more elegant way to do this.
-      std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
-      if (!alloc_loop_level) alloc_loop_level = 1;
-
-      for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
-        loop_info& loop = loops[loop_index];
-        loop.add_synchronization();
-
+      for (loop_info& loop: loops) {
         if (!fold_factors[output]) continue;
+        loop.add_synchronization();
 
         expr loop_var = variable::make(loop.sym);
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
-          if ((*fold_factors[output])[d].loop != loop_index) {
+          if ((*fold_factors[output])[d].loop_id != loop.loop_id) {
             // This is a fold factor for a different loop.
             continue;
           }
