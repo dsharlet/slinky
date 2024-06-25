@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
-#include <iostream>
+#include <numeric>
+#include <list>
 
 #include "base/thread_pool.h"
 
@@ -60,6 +61,38 @@ TEST(wait_for, barriers) {
   t.wait_for([&]() -> bool { return barrier2; });
 
   th.join();
+}
+
+TEST(parallel_for, sum_vector) {
+  thread_pool_impl t;
+  std::vector<int> values;
+  for (int n = 0; n < 100; ++n) {
+    std::atomic<int> count = 0;
+    std::atomic<int> sum = 0;
+    t.parallel_for(values.begin(), values.end(), [&](int i) {
+      count++;
+      sum += i;
+    });
+    ASSERT_EQ(count, n);
+    ASSERT_EQ(sum, sum_arithmetic_sequence(n));
+    values.push_back(n);
+  }
+}
+
+TEST(parallel_for, sum_list) {
+  thread_pool_impl t;
+  std::list<int> values;
+  for (int n = 0; n < 100; ++n) {
+    std::atomic<int> count = 0;
+    std::atomic<int> sum = 0;
+    t.parallel_for(values.begin(), values.end(), [&](int i) {
+      count++;
+      sum += i;
+    });
+    ASSERT_EQ(count, n);
+    ASSERT_EQ(sum, sum_arithmetic_sequence(n));
+    values.push_back(n);
+  }
 }
 
 }  // namespace slinky

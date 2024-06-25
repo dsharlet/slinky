@@ -81,6 +81,54 @@ public:
     // While the loop still isn't done, work on other tasks.
     wait_for([&]() { return state->done >= n; });
   }
+
+  template <typename Iterator, typename Fn>
+  void parallel_for(Iterator begin, Iterator end, Fn&& body, int max_workers = std::numeric_limits<int>::max()) {
+    using size_type = typename std::iterator_traits<Iterator>::difference_type;
+    size_type n = std::distance(begin, end);
+    if (n == 0) {
+      return;
+    } else if (n == 1) {
+      body(*begin);
+      return;
+    }
+
+    struct shared_state {
+      // Similar to the above, but we can't track the iterator atomically.
+      std::mutex m;
+      Iterator i;
+      Iterator end;
+      std::atomic<size_type> done = 0;
+
+      shared_state(Iterator begin, Iterator end) : i(begin), end(end) {}
+    };
+    auto state = std::make_shared<shared_state>(begin, end);
+    // Capture n by value becuase this may run after the parallel_for call returns.
+    auto worker = [this, state, n, body = std::move(body)]() mutable {
+      while (true) {
+        std::unique_lock l(state->m);
+        if (state->i == state->end) break;
+        Iterator i = state->i++;
+        bool done = state->i == state->end;
+        l.unlock();
+        if (done) {
+          // We hit the end of the loop, cancel any queued workers to save ourselves some work.
+          cancel(state.get());
+        }
+        body(*i);
+        ++state->done;
+      }
+    };
+    int workers = std::min<int>(max_workers, std::min<size_type>(thread_count() + 1, n));
+    if (workers > 1) {
+      enqueue(workers - 1, worker, state.get());
+    }
+    // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
+    // available.
+    run(worker, state.get());
+    // While the loop still isn't done, work on other tasks.
+    wait_for([&]() { return state->done >= n; });
+  }
 };
 
 // This implements a simple thread pool that maps easily to the eval_context thread pool interface.
