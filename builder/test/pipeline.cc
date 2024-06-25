@@ -90,10 +90,14 @@ TEST_P(trivial, pipeline) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
 }
 
-class elementwise : public testing::TestWithParam<std::tuple<int, int, bool>> {};
+class elementwise : public testing::TestWithParam<std::tuple<int, int, bool, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_schedule_mode, elementwise,
-    testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true)),
+    testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true), testing::Values(0)),
+    test_params_to_string<elementwise::ParamType>);
+
+INSTANTIATE_TEST_SUITE_P(with_outside_fold, elementwise,
+    testing::Combine(testing::Values(loop::serial), testing::Values(0), testing::Values(false), testing::Values(1)),
     test_params_to_string<elementwise::ParamType>);
 
 // An example of two 1D elementwise operations in sequence.
@@ -101,6 +105,7 @@ TEST_P(elementwise, pipeline_1d) {
   int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   bool schedule_storage = std::get<2>(GetParam());
+  int special_schedule = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -122,11 +127,19 @@ TEST_P(elementwise, pipeline_1d) {
   func add = func::make(
       std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "add"});
 
-  if (split > 0) {
-    add.loops({{x, split, max_workers}});
-    if (schedule_storage) {
-      intm->store_at({&add, x});
-      intm->store_in(memory_type::stack);
+  if (special_schedule == 1) {
+    // Two separate loops where intermediate buffer can be folded in theory, but shouldn't
+    // because consumer is in a different loop.
+    mul.loops({{x, 1}});
+    mul.compute_root();
+    add.loops({{x, 1}});
+  } else {
+    if (split > 0) {
+      add.loops({{x, split, max_workers}});
+      if (schedule_storage) {
+        intm->store_at({&add, x});
+        intm->store_in(memory_type::stack);
+      }
     }
   }
 
@@ -164,6 +177,7 @@ TEST_P(elementwise, pipeline_2d) {
   int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
   bool schedule_storage = std::get<2>(GetParam());
+  int special_schedule = std::get<3>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -185,11 +199,19 @@ TEST_P(elementwise, pipeline_2d) {
   func add = func::make(
       std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
 
-  if (split > 0) {
-    add.loops({{x, split, max_workers}, {y, split, max_workers}});
-    if (schedule_storage) {
-      intm->store_at({&add, x});
-      intm->store_in(memory_type::stack);
+  if (special_schedule == 1) {
+    // Two separate loops where intermediate buffer can be folded in theory, but shouldn't
+    // because consumer is in a different loop.
+    mul.loops({{y, 1}});
+    mul.compute_root();
+    add.loops({{y, 1}});
+  } else {
+    if (split > 0) {
+      add.loops({{x, split, max_workers}, {y, split, max_workers}});
+      if (schedule_storage) {
+        intm->store_at({&add, x});
+        intm->store_in(memory_type::stack);
+      }
     }
   }
 
