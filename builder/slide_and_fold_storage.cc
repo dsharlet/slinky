@@ -184,7 +184,7 @@ public:
   symbol_map<std::vector<dim_fold_info>> fold_factors;
 
   // Counter for the number of loops we've seen.
-  int loop_counter = 0;
+  std::size_t loop_counter = 0;
   
   struct loop_info {
     var sym;
