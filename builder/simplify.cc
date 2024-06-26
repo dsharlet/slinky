@@ -729,7 +729,7 @@ public:
           }
         } else if (op->intrinsic == intrinsic::buffer_at) {
           for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {
-            if (prove_true(args[d + 1] == info->dims[d].bounds.min)) {
+            if (prove_true(args[d + 1] == info->dims[d].bounds.min) && !info->dims[d].fold_factor.defined()) {
               // This argument is equal to the default value, and we know it is in bounds.
               args[d + 1] = expr();
             }
