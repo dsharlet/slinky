@@ -302,9 +302,10 @@ class buffer_aliaser : public node_mutator {
           // The fold factor of this allocation does not evenly divide the target fold factor.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
+        } else if (!prove_true((target_info.dims[alias.permutation[d]].bounds.min % target_fold_factor) == (op->dims[d].bounds.min % op->dims[d].fold_factor))) {
+          // The mins of folded buffers are not aligned.
+          return false;
         }
-        // It's surprising we don't need to check the mins are aligned here. I have tried very hard to write a test that
-        // fails without such a check, but I cannot.
       }
     }
     return true;
@@ -342,6 +343,7 @@ public:
       var alloc_var = target_var;
       std::optional<buffer_info>& target_info = buffers[target_var];
       assert(target_info);
+
       if (!alias_compatible(op, alias, target_var, *target_info)) {
         continue;
       }
