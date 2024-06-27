@@ -198,6 +198,7 @@ auto p = []() -> ::slinky::pipeline {
   auto _fn_0 = func::make(std::move(_replica_fn_3), {{intm1, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out1, {x, y}}}, {});
   _fn_0.loops({{y, 2, loop::serial}});
   auto out2 = buffer_expr::make(ctx, "out2", /*rank=*/1, /*elem_size=*/4);
+  out2->dim(0).fold_factor = 9223372036854775807;
   auto intm2 = buffer_expr::make(ctx, "intm2", /*rank=*/1, /*elem_size=*/4);
   auto _replica_fn_6 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
