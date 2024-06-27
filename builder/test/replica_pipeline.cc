@@ -315,6 +315,9 @@ auto p = []() -> ::slinky::pipeline {
   auto in1 = buffer_expr::make(ctx, "in1", /*rank=*/2, /*elem_size=*/2);
   auto in2 = buffer_expr::make(ctx, "in2", /*rank=*/2, /*elem_size=*/2);
   auto out = buffer_expr::make(ctx, "out", /*rank=*/3, /*elem_size=*/2);
+  out->dim(0).fold_factor = 9223372036854775807;
+  out->dim(1).fold_factor = 9223372036854775807;
+  out->dim(2).fold_factor = 9223372036854775807;
   auto x = var(ctx, "x");
   auto y = var(ctx, "y");
   auto intm1 = buffer_expr::make(ctx, "intm1", /*rank=*/2, /*elem_size=*/2);

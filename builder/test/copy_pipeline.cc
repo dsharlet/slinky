@@ -402,6 +402,12 @@ TEST(stacked_output, pipeline) {
   var y(ctx, "y");
   var z(ctx, "z");
 
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+  out->dim(2).fold_factor = dim::unfolded;
+
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});
   func add2 = func::make(add_1<short>, {{{in2, {point(x), point(y)}}}}, {{{intm2, {x, y}}}});
