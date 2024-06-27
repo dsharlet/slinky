@@ -192,42 +192,47 @@ public:
   }
 
   template <typename... Indices>
+  std::ptrdiff_t flat_offset_bytes(Indices... indices, span<const index_t> rest) const {
+    assert(sizeof...(indices) + rest.size() <= rank);
+    index_t offset = flat_offset_bytes(indices...);
+    for (std::size_t i = 0; i < rest.size(); ++i) {
+      offset += dims[i + sizeof...(indices)].flat_offset_bytes(rest[i]);
+    }
+    return offset;
+  }
+  template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return flat_offset_bytes_impl(dims, i0, indices...);
+  }
+  std::ptrdiff_t flat_offset_bytes() const { return 0; }
+
+  template <typename... Indices>
+  void* address_at(Indices... indices, span<const index_t> rest) const {
+    return offset_bytes(base, flat_offset_bytes(indices..., rest));
   }
   template <typename... Indices>
   void* address_at(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
-  std::ptrdiff_t flat_offset_bytes() const { return 0; }
   void* address_at() const { return base; }
 
+  template <typename... Indices>
+  bool contains(Indices... indices, span<const index_t> rest) const {
+    assert(sizeof...(indices) + rest.size() <= rank);
+    bool result = contains(indices...);
+    for (std::size_t i = 0; i < rest.size(); ++i) {
+      result = result && dims[i + sizeof...(indices)].contains(rest[i]);
+    }
+    return result;
+  }
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return contains_impl(dims, i0, indices...);
   }
   bool contains() const { return true; }
-
-  std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
-    assert(indices.size() <= rank);
-    index_t offset = 0;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
-      offset += dims[i].flat_offset_bytes(indices[i]);
-    }
-    return offset;
-  }
-  void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
-  bool contains(span<const index_t> indices) const {
-    assert(indices.size() <= rank);
-    bool result = true;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
-      result = result && dims[i].contains(indices[i]);
-    }
-    return result;
-  }
 
   template <typename... Offsets>
   raw_buffer& translate(index_t o0, Offsets... offsets) {
@@ -304,6 +309,13 @@ public:
     }
     return slice(d);
   }
+  // Equivalent to `slice(d + i, at[i])` for i = at.size() - 1... 0
+  raw_buffer& slice(std::size_t d, span<const index_t> at) {
+    for (std::size_t i = at.size(); i > 0; --i) {
+      slice(d + i - 1, at[i - 1]);
+    }
+    return *this;
+  }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
   // Updates the base pointer to point to the new min.
@@ -371,6 +383,19 @@ void copy_small_n(const T* src, std::size_t n, T* dst) {
   case 1: *dst++ = *src++;
   case 0: return;
   default: std::copy_n(src, n, dst); return;
+  }
+}
+
+template <typename T>
+bool equal_small_n(const T* a, const T* b, std::size_t n) {
+  bool equal = true;
+  switch (n) {
+  case 4: equal = equal && *a++ == *b++;
+  case 3: equal = equal && *a++ == *b++;
+  case 2: equal = equal && *a++ == *b++;
+  case 1: equal = equal && *a++ == *b++;
+  case 0: return equal;
+  default: return std::equal(a, a + n, b, b + n);
   }
 }
 
@@ -487,8 +512,16 @@ public:
   // These accessors are not designed to be fast. They exist to facilitate testing,
   // and maybe they are useful to compute addresses.
   template <typename... Indices>
+  auto& at(index_t i0, Indices... indices, span<const index_t> rest) const {
+    return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices..., rest));
+  }
+  template <typename... Indices>
   auto& at(index_t i0, Indices... indices) const {
     return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
+  }
+  template <typename... Indices>
+  auto& operator()(index_t i0, Indices... indices, span<const index_t> rest) const {
+    return at(i0, indices..., rest);
   }
   template <typename... Indices>
   auto& operator()(index_t i0, Indices... indices) const {
@@ -978,6 +1011,63 @@ SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw
 
 // Value for use in tile tuples indicating the dimension should be passed unmodified.
 static constexpr index_t all = std::numeric_limits<index_t>::max();
+
+namespace internal {
+
+inline void increment(std::size_t rank, index_t* index, const index_t* min, const index_t* max) {
+  index_t& i = *index;
+  ++i;
+  if (i > *max && rank > 1) {
+    i = *min;
+    increment(rank - 1, index + 1, min + 1, max + 1);
+  }
+}
+
+template <typename It>
+class iterator_range {
+  It begin_, end_;
+
+public:
+  iterator_range(It begin, It end) : begin_(std::move(begin)), end_(std::move(end)) {}
+
+  const It& begin() const { return begin_; }
+  const It& end() const { return end_; }
+};
+
+class index_iterator {
+  std::vector<index_t> index;
+  std::vector<index_t> min;
+  std::vector<index_t> max;
+
+public:
+  index_iterator() {}
+  index_iterator(std::vector<index_t> index, std::vector<index_t> min, std::vector<index_t> max)
+      : index(std::move(index)), min(std::move(min)), max(std::move(max)) {}
+
+  bool operator==(const index_iterator& r) const {
+    return index.size() == r.index.size() && internal::equal_small_n(index.data(), r.index.data(), index.size());
+  }
+  bool operator!=(const index_iterator& r) const { return !operator==(r); }
+
+  const std::vector<index_t>& operator*() const { return index; }
+
+  index_iterator operator++(int) {
+    index_iterator result(*this);
+    ++*this;
+    return result;
+  }
+  index_iterator& operator++() {
+    internal::increment(index.size(), index.data(), min.data(), max.data());
+    return *this;
+  }
+};
+
+}  // namespace internal
+
+// Return an iterator_range that iterators indices of a buffer, starting at dimension `min_dim`. This is not an
+// efficient way to iterate over buffers, but may be useful in some circumstances, e.g. parallelism libraries based on
+// iterators.
+internal::iterator_range<internal::index_iterator> index_range(const raw_buffer& buf, std::size_t min_dim = 0);
 
 }  // namespace slinky
 

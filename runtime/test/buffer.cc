@@ -7,6 +7,7 @@
 #include <numeric>
 #include <random>
 
+#include "base/thread_pool.h"
 #include "base/test/seeded_test.h"
 #include "runtime/buffer.h"
 
@@ -564,6 +565,44 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
   ASSERT_TRUE(is_filled_buffer(buf9, 9));
 }
 
+template <typename Src, typename Dst, typename Rng>
+void test_iterator_copy(Rng& rng) {
+  buffer<Src, 4> src;
+  buffer<Dst, 4> dst;
+  dst.rank = rng() % 4 + 1;
+  src.rank = dst.rank;
+  for (std::size_t d = 0; d < dst.rank; ++d) {
+    src.dim(d).set_min_extent(0, 3);
+    dst.dim(d).set_min_extent(0, 3);
+  }
+  randomize_strides_and_padding(rng, src, {0, 1, true, true});
+  randomize_strides_and_padding(rng, dst, {-1, 0, false, false});
+  init_random(rng, src);
+  dst.allocate();
+
+  for (const auto& i : index_range(dst)) {
+    dst(i) = src(i);
+  }
+
+  for_each_index(dst, [&](const auto i) {
+    auto src_i = i.subspan(0, src.rank);
+    if (src.contains(src_i)) {
+      ASSERT_EQ(dst(i), src(src_i));
+    } else {
+      ASSERT_EQ(dst(i), 0);
+    }
+  });
+}
+
+TEST(buffer, iterator_copy) {
+  gtest_seeded_mt19937 rng;
+  for (int cases = 0; cases < 10000; ++cases) {
+    test_iterator_copy<char, char>(rng);
+    test_iterator_copy<short, int>(rng);
+    test_iterator_copy<int, int>(rng);
+  }
+}
+
 TEST(buffer, for_each_tile_1x1) {
   buffer<int, 2> buf({10, 20});
   buf.allocate();
@@ -960,6 +999,21 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   fuse_contiguous_dims(dims_sets, a, b);
   ASSERT_EQ(a.rank, 4);
   ASSERT_EQ(b.rank, 4);
+}
+
+TEST(parallel_for, buffer) { 
+  thread_pool_impl tp;
+  buffer<int, 4> buf({10, 20, 3, 4}); 
+  buf.allocate();
+  auto r = index_range(buf, 2);
+  tp.parallel_for(r.begin(), r.end(), [&](const auto& i) {
+    buffer<int, 4> buf_i = buf;
+    buf_i.slice(2, i);
+    int three = 3;
+    fill(buf_i, &three);
+  });
+
+  ASSERT_TRUE(is_filled_buffer(buf, 3));
 }
 
 }  // namespace slinky
