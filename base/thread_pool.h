@@ -101,9 +101,6 @@ public:
   void parallel_for(Iterator begin, Iterator end, Fn&& body, int max_workers = std::numeric_limits<int>::max()) {
     if (begin == end) {
       return;
-    } else if (std::next(begin) == end) {
-      body(*begin);
-      return;
     }
 
     struct shared_state {
@@ -119,11 +116,12 @@ public:
     auto state = std::make_shared<shared_state>(begin, end);
     // Capture n by value becuase this may run after the parallel_for call returns.
     auto worker = [this, state, body = std::move(body)]() mutable {
+      Iterator i;
       while (true) {
         std::unique_lock l(state->m);
         if (state->i == state->end) break;
         ++state->started;
-        Iterator i = state->i++;
+        i = state->i++;
         bool done = state->i == state->end;
         l.unlock();
         if (done) {

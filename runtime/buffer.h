@@ -234,7 +234,6 @@ public:
   }
   bool contains() const { return true; }
 
-
   template <typename... Offsets>
   raw_buffer& translate(index_t o0, Offsets... offsets) {
     assert(sizeof...(offsets) + 1 <= rank);
@@ -309,6 +308,13 @@ public:
       }
     }
     return slice(d);
+  }
+  // Equivalent to `slice(d + i, at[i])` for i = at.size() - 1... 0
+  raw_buffer& slice(std::size_t d, span<const index_t> at) {
+    for (std::size_t i = at.size(); i > 0; --i) {
+      slice(d + i - 1, at[i - 1]);
+    }
+    return *this;
   }
 
   // Crop the buffer in dimension `d` to the bounds `[min, max]`. The bounds will be clamped to the existing bounds.
@@ -1034,6 +1040,7 @@ class index_iterator {
   std::vector<index_t> max;
 
 public:
+  index_iterator() {}
   index_iterator(std::vector<index_t> index, std::vector<index_t> min, std::vector<index_t> max)
       : index(std::move(index)), min(std::move(min)), max(std::move(max)) {}
 
@@ -1057,9 +1064,10 @@ public:
 
 }  // namespace internal
 
-// Return an iterator_range that iterators indices of a buffer. This is not an efficient way to iterate over buffers,
-// but may be useful in some circumstances, e.g. parallelism libraries based on iterators.
-internal::iterator_range<internal::index_iterator> index_range(const raw_buffer& buf);
+// Return an iterator_range that iterators indices of a buffer, starting at dimension `min_dim`. This is not an
+// efficient way to iterate over buffers, but may be useful in some circumstances, e.g. parallelism libraries based on
+// iterators.
+internal::iterator_range<internal::index_iterator> index_range(const raw_buffer& buf, std::size_t min_dim = 0);
 
 }  // namespace slinky
 

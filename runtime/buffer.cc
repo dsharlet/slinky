@@ -582,12 +582,12 @@ void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan)
 
 }  // namespace internal
 
-internal::iterator_range<internal::index_iterator> index_range(const raw_buffer& buf) {
-  std::vector<index_t> min(buf.rank);
-  std::vector<index_t> max(buf.rank);
-  for (std::size_t d = 0; d < buf.rank; ++d) {
-    min[d] = buf.dim(d).min();
-    max[d] = buf.dim(d).max();
+internal::iterator_range<internal::index_iterator> index_range(const raw_buffer& buf, std::size_t min_dim) {
+  std::vector<index_t> min(buf.rank - min_dim);
+  std::vector<index_t> max(buf.rank - min_dim);
+  for (std::size_t d = min_dim; d < buf.rank; ++d) {
+    min[d - min_dim] = buf.dim(d).min();
+    max[d - min_dim] = buf.dim(d).max();
   }
   internal::index_iterator begin(min, min, max);
   std::vector<index_t> end_i = min;
