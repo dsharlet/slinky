@@ -754,7 +754,6 @@ struct for_each_loop {
     // Loop types are combinations of
     call_f = 0x1,
     folded = 0x2,  // Uses dim, extent
-    linear = 0,    // Uses stride, extent
   };
   int impl;
   index_t extent;
@@ -821,14 +820,74 @@ void for_each_impl_folded(const std::array<void*, NumBufs>& bases, index_t exten
 template <typename F, std::size_t NumBufs>
 SLINKY_ALWAYS_INLINE inline void for_each_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
   const for_each_loop* loop = read_plan<for_each_loop>(plan);
-  if (loop->impl == (for_each_loop::linear | for_each_loop::call_f)) {
+  assert((loop->impl & ~(for_each_loop::call_f | for_each_loop::folded)) == 0);
+  if (loop->impl == for_each_loop::call_f) {
     for_each_impl_linear<true>(bases, loop->extent, plan, f);
-  } else if (loop->impl == for_each_loop::linear) {
+  } else if (loop->impl == 0) {
     for_each_impl_linear<false>(bases, loop->extent, plan, f);
   } else if (loop->impl == (for_each_loop::folded | for_each_loop::call_f)) {
     for_each_impl_folded<true>(bases, loop->extent, plan, f);
   } else {
     for_each_impl_folded<false>(bases, loop->extent, plan, f);
+  }
+}
+
+// TODO: There's a lot templated here that probably shouldn't be, overhead from parallel_for makes it pointless, and
+// code size/compile time might be excessive.
+template <typename F, std::size_t NumBufs, typename ThreadPool>
+SLINKY_ALWAYS_INLINE inline void for_each_impl(
+    ThreadPool& thread_pool, const std::array<void*, NumBufs>& bases, const void* plan, const F& f);
+
+template <typename F, std::size_t NumBufs, typename ThreadPool>
+void for_each_impl_linear(
+    ThreadPool& thread_pool, const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
+  const for_each_loop* loop = read_plan<for_each_loop>(plan);
+  const bool call_f = (loop->impl & for_each_loop::call_f) != 0;
+  const index_t* strides = read_plan<index_t>(plan, NumBufs);
+  // If the next step is to call f, do that eagerly here to avoid an extra call.
+  thread_pool.parallel_for(loop->extent, [&](index_t i) {
+    std::array<void*, NumBufs> bases_i;
+    for (std::size_t n = 0; n < NumBufs; n++) {
+      bases_i[n] = offset_bytes(bases[n], strides[n] * i);
+    }
+    if (call_f) {
+      f(bases_i);
+    } else {
+      for_each_impl(thread_pool, bases_i, plan, f);
+    }
+  });
+}
+
+template <typename F, std::size_t NumBufs, typename ThreadPool>
+void for_each_impl_folded(
+    ThreadPool& thread_pool, const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
+  const for_each_loop* loop = read_plan<for_each_loop>(plan);
+  const bool call_f = (loop->impl & for_each_loop::call_f) != 0;
+  dim* const* dims = read_plan<dim*>(plan, NumBufs);
+  index_t begin = dims[0]->begin();
+  // If the next step is to call f, do that eagerly here to avoid an extra call.
+  thread_pool.parallel_for(loop->extent, [&](index_t i) {
+    std::array<void*, NumBufs> bases_i;
+    bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(begin + i));
+    for (std::size_t n = 1; n < NumBufs; n++) {
+      bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(begin + i)) : nullptr;
+    }
+    if (call_f) {
+      f(bases_i);
+    } else {
+      for_each_impl(thread_pool, bases_i, plan, f);
+    }
+  });
+}
+
+template <typename F, std::size_t NumBufs, typename ThreadPool>
+SLINKY_ALWAYS_INLINE inline void for_each_impl(
+    ThreadPool& thread_pool, const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
+  const for_each_loop* loop = static_cast<const for_each_loop*>(plan);
+  if ((loop->impl & for_each_loop::folded) != 0) {
+    for_each_impl_folded(thread_pool, bases, plan, f);
+  } else {
+    for_each_impl_linear(thread_pool, bases, plan, f);
   }
 }
 
@@ -952,6 +1011,24 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
 
   internal::for_each_impl(bases, plan, [&](const std::array<void*, BufsSize>& bases) {
+    std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
+                      bases, std::make_index_sequence<BufsSize>()));
+  });
+}
+
+// Similar to `for_each_element`, but calls `f` in parallel.
+template <typename F, typename Buf, typename... Bufs, typename ThreadPool>
+SLINKY_NO_STACK_PROTECTOR void parallel_for_each_element(
+    ThreadPool& thread_pool, const F& f, const Buf& buf, const Bufs&... bufs) {
+  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
+  std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
+
+  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
+  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
+  std::array<void*, BufsSize> bases;
+  internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
+
+  internal::for_each_impl(thread_pool, bases, plan, [&](const std::array<void*, BufsSize>& bases) {
     std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
                       bases, std::make_index_sequence<BufsSize>()));
   });

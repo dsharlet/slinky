@@ -451,7 +451,7 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
 // Helper function to write a plan that does nothing when interpreted by for_each_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
   for_each_loop* next = increment_plan<for_each_loop>(plan);
-  next->impl = for_each_loop::linear | for_each_loop::call_f;
+  next->impl = for_each_loop::call_f;
   next->extent = 0;
 }
 
@@ -467,7 +467,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
   for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan_base);
-  prev_loop->impl = for_each_loop::linear;
+  prev_loop->impl = 0;
   prev_loop->extent = 1;
 
   void* plan = plan_base;
@@ -537,7 +537,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       assert(!buf_dim.is_folded());
 
       for_each_loop* loop = increment_plan<for_each_loop>(plan);
-      loop->impl = for_each_loop::linear;
+      loop->impl = 0;
       loop->extent = extent;
       prev_loop = loop;
       extent = 1;

@@ -7,6 +7,7 @@ cc_test(
     name = "buffer",
     srcs = ["buffer.cc"],
     deps = [
+        "//base:thread_pool",
         "//base/test:util",
         "//runtime",
         "@googletest//:gtest_main",

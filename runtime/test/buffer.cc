@@ -7,6 +7,7 @@
 #include <numeric>
 #include <random>
 
+#include "base/thread_pool.h"
 #include "base/test/seeded_test.h"
 #include "runtime/buffer.h"
 
@@ -962,6 +963,15 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   fuse_contiguous_dims(dims_sets, a, b);
   ASSERT_EQ(a.rank, 4);
   ASSERT_EQ(b.rank, 4);
+}
+
+TEST(parallel_for, buffer) {
+  thread_pool_impl tp;
+  buffer<int, 4> buf({10, 20, 30, 40});
+  buf.allocate();
+  parallel_for_each_element(tp, [&](int* i) { *i = 3; }, buf);
+
+  ASSERT_TRUE(is_filled_buffer(buf, 3));
 }
 
 }  // namespace slinky
