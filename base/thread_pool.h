@@ -12,6 +12,21 @@
 
 namespace slinky {
 
+namespace internal {
+
+// Like std::distance, but stops after reaching an upper bound.
+template <typename It>
+std::ptrdiff_t distance(It begin, It end, std::ptrdiff_t max) {
+  std::ptrdiff_t result = 0;
+  while (result < max && begin != end) {
+    ++begin;
+    ++result;
+  }
+  return result;
+}
+
+}  // namespace internal
+
 // This implements a simple thread pool that maps easily to the eval_context thread pool interface.
 // It is not directly used by anything except for testing.
 class thread_pool {
@@ -84,11 +99,9 @@ public:
 
   template <typename Iterator, typename Fn>
   void parallel_for(Iterator begin, Iterator end, Fn&& body, int max_workers = std::numeric_limits<int>::max()) {
-    using size_type = typename std::iterator_traits<Iterator>::difference_type;
-    size_type n = std::distance(begin, end);
-    if (n == 0) {
+    if (begin == end) {
       return;
-    } else if (n == 1) {
+    } else if (std::next(begin) == end) {
       body(*begin);
       return;
     }
@@ -98,16 +111,18 @@ public:
       std::mutex m;
       Iterator i;
       Iterator end;
-      std::atomic<size_type> done = 0;
+      std::atomic<std::ptrdiff_t> started = 0;
+      std::atomic<std::ptrdiff_t> done = 0;
 
       shared_state(Iterator begin, Iterator end) : i(begin), end(end) {}
     };
     auto state = std::make_shared<shared_state>(begin, end);
     // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [this, state, n, body = std::move(body)]() mutable {
+    auto worker = [this, state, body = std::move(body)]() mutable {
       while (true) {
         std::unique_lock l(state->m);
         if (state->i == state->end) break;
+        ++state->started;
         Iterator i = state->i++;
         bool done = state->i == state->end;
         l.unlock();
@@ -119,7 +134,8 @@ public:
         ++state->done;
       }
     };
-    int workers = std::min<int>(max_workers, std::min<size_type>(thread_count() + 1, n));
+    max_workers = std::min(max_workers, thread_count() + 1);
+    int workers = internal::distance(begin, end, max_workers);
     if (workers > 1) {
       enqueue(workers - 1, worker, state.get());
     }
@@ -127,7 +143,7 @@ public:
     // available.
     run(worker, state.get());
     // While the loop still isn't done, work on other tasks.
-    wait_for([&]() { return state->done >= n; });
+    wait_for([&]() { return state->started == state->done; });
   }
 };
 
