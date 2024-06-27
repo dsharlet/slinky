@@ -15,7 +15,9 @@ namespace slinky {
 bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
 
 template <typename Rng>
-int random(Rng& rng, int min, int max) { return rng() % (max - min + 1) + min; }
+int random(Rng& rng, int min, int max) {
+  return rng() % (max - min + 1) + min;
+}
 
 template <typename T, std::size_t N, typename Rng>
 void init_random(Rng& rng, buffer<T, N>& buf) {
@@ -370,10 +372,8 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
   ASSERT_EQ(slices, buf.dim(0).extent() * buf.dim(2).extent());
 }
 
-template <typename T>
-void test_for_each_contiguous_slice_fill() {
-  gtest_seeded_mt19937 rng;
-
+template <typename T, typename Rng>
+void test_for_each_contiguous_slice_fill(Rng& rng) {
   buffer<T, 4> dst;
   for (std::size_t d = 0; d < dst.rank; ++d) {
     dst.dim(d).set_min_extent(0, 5);
@@ -387,16 +387,15 @@ void test_for_each_contiguous_slice_fill() {
 }
 
 TEST(buffer, for_each_contiguous_slice_fill) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 1000; ++cases) {
-    test_for_each_contiguous_slice_fill<char>();
-    test_for_each_contiguous_slice_fill<int>();
+    test_for_each_contiguous_slice_fill<char>(rng);
+    test_for_each_contiguous_slice_fill<int>(rng);
   }
 }
 
-template <typename Src, typename Dst>
-void test_for_each_contiguous_slice_copy() {
-  gtest_seeded_mt19937 rng;
-
+template <typename Src, typename Dst, typename Rng>
+void test_for_each_contiguous_slice_copy(Rng& rng) {
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
@@ -430,17 +429,16 @@ void test_for_each_contiguous_slice_copy() {
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 10000; ++cases) {
-    test_for_each_contiguous_slice_copy<char, char>();
-    test_for_each_contiguous_slice_copy<short, int>();
-    test_for_each_contiguous_slice_copy<int, int>();
+    test_for_each_contiguous_slice_copy<char, char>(rng);
+    test_for_each_contiguous_slice_copy<short, int>(rng);
+    test_for_each_contiguous_slice_copy<int, int>(rng);
   }
 }
 
-template <typename Src, typename Dst>
-void test_for_each_element_copy() {
-  gtest_seeded_mt19937 rng;
-
+template <typename Src, typename Dst, typename Rng>
+void test_for_each_element_copy(Rng& rng) {
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
@@ -465,17 +463,16 @@ void test_for_each_element_copy() {
 }
 
 TEST(buffer, for_each_element_copy) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 10000; ++cases) {
-    test_for_each_element_copy<char, char>();
-    test_for_each_element_copy<short, int>();
-    test_for_each_element_copy<int, int>();
+    test_for_each_element_copy<char, char>(rng);
+    test_for_each_element_copy<short, int>(rng);
+    test_for_each_element_copy<int, int>(rng);
   }
 }
 
-template <typename A, typename B, typename Dst>
-void test_for_each_contiguous_slice_add() {
-  gtest_seeded_mt19937 rng;
-
+template <typename A, typename B, typename Dst, typename Rng>
+void test_for_each_contiguous_slice_add(Rng& rng) {
   buffer<A, 4> a;
   buffer<B, 4> b;
   for (std::size_t d = 0; d < a.rank; ++d) {
@@ -509,10 +506,11 @@ void test_for_each_contiguous_slice_add() {
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 1000; ++cases) {
-    test_for_each_contiguous_slice_add<int, int, int>();
-    test_for_each_contiguous_slice_add<short, int, int>();
-    test_for_each_contiguous_slice_add<short, short, int>();
+    test_for_each_contiguous_slice_add<int, int, int>(rng);
+    test_for_each_contiguous_slice_add<short, int, int>(rng);
+    test_for_each_contiguous_slice_add<short, short, int>(rng);
   }
 }
 
