@@ -192,18 +192,41 @@ public:
   }
 
   template <typename... Indices>
+  std::ptrdiff_t flat_offset_bytes(Indices... indices, span<const index_t> rest) const {
+    assert(sizeof...(indices) + rest.size() <= rank);
+    index_t offset = flat_offset_bytes(indices...);
+    for (std::size_t i = 0; i < rest.size(); ++i) {
+      offset += dims[i + sizeof...(indices)].flat_offset_bytes(rest[i]);
+    }
+    return offset;
+  }
+  template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return flat_offset_bytes_impl(dims, i0, indices...);
+  }
+  std::ptrdiff_t flat_offset_bytes() const { return 0; }
+
+  template <typename... Indices>
+  void* address_at(Indices... indices, span<const index_t> rest) const {
+    return offset_bytes(base, flat_offset_bytes(indices..., rest));
   }
   template <typename... Indices>
   void* address_at(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
-  std::ptrdiff_t flat_offset_bytes() const { return 0; }
   void* address_at() const { return base; }
 
+  template <typename... Indices>
+  bool contains(Indices... indices, span<const index_t> rest) const {
+    assert(sizeof...(indices) + rest.size() <= rank);
+    bool result = contains(indices...);
+    for (std::size_t i = 0; i < rest.size(); ++i) {
+      result = result && dims[i + sizeof...(indices)].contains(rest[i]);
+    }
+    return result;
+  }
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
@@ -211,23 +234,6 @@ public:
   }
   bool contains() const { return true; }
 
-  std::ptrdiff_t flat_offset_bytes(span<const index_t> indices) const {
-    assert(indices.size() <= rank);
-    index_t offset = 0;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
-      offset += dims[i].flat_offset_bytes(indices[i]);
-    }
-    return offset;
-  }
-  void* address_at(span<const index_t> indices) const { return offset_bytes(base, flat_offset_bytes(indices)); }
-  bool contains(span<const index_t> indices) const {
-    assert(indices.size() <= rank);
-    bool result = true;
-    for (std::size_t i = 0; i < indices.size(); ++i) {
-      result = result && dims[i].contains(indices[i]);
-    }
-    return result;
-  }
 
   template <typename... Offsets>
   raw_buffer& translate(index_t o0, Offsets... offsets) {
@@ -500,8 +506,16 @@ public:
   // These accessors are not designed to be fast. They exist to facilitate testing,
   // and maybe they are useful to compute addresses.
   template <typename... Indices>
+  auto& at(index_t i0, Indices... indices, span<const index_t> rest) const {
+    return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices..., rest));
+  }
+  template <typename... Indices>
   auto& at(index_t i0, Indices... indices) const {
     return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
+  }
+  template <typename... Indices>
+  auto& operator()(index_t i0, Indices... indices, span<const index_t> rest) const {
+    return at(i0, indices..., rest);
   }
   template <typename... Indices>
   auto& operator()(index_t i0, Indices... indices) const {
