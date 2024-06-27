@@ -158,6 +158,38 @@ void BM_copy_padded(benchmark::State& state) {
 BENCHMARK(BM_copy_padded)->Args({256, 4, -1});
 BENCHMARK(BM_copy_padded)->Args({64, 4, 4});
 
+void BM_copy_iterator(benchmark::State& state) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> src;
+  buffer<char, 3> dst;
+  allocate_buffer(src, extents);
+  allocate_buffer(dst, extents);
+
+  for (auto _ : state) {
+    for (const auto& i : index_range(dst)) {
+      dst(i) = src(i);
+    }
+  }
+}
+
+BENCHMARK(BM_copy_iterator)->Args({256, 4, -1});
+BENCHMARK(BM_copy_iterator)->Args({64, 4, 4});
+
+void BM_fill_iterator(benchmark::State& state) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> dst;
+  allocate_buffer(dst, extents);
+
+  for (auto _ : state) {
+    for (const auto& i : index_range(dst)) {
+      dst(i) = 0;
+    }
+  }
+}
+
+BENCHMARK(BM_fill_iterator)->Args({256, 4, -1});
+BENCHMARK(BM_fill_iterator)->Args({64, 4, 4});
+
 constexpr index_t slice_extent = 64;
 
 void memset_slice(index_t extent, void* base) { memset(base, 0, extent); }

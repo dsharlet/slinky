@@ -374,6 +374,19 @@ void copy_small_n(const T* src, std::size_t n, T* dst) {
   }
 }
 
+template <typename T>
+bool equal_small_n(const T* a, const T* b, std::size_t n) {
+  bool equal = true;
+  switch (n) {
+  case 4: equal = equal && *a++ == *b++;
+  case 3: equal = equal && *a++ == *b++;
+  case 2: equal = equal && *a++ == *b++;
+  case 1: equal = equal && *a++ == *b++;
+  case 0: return equal;
+  default: return std::equal(a, a + n, b, b + n);
+  }
+}
+
 }  // namespace internal
 
 template <typename T, std::size_t DimsSize>
@@ -978,6 +991,61 @@ SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw
 
 // Value for use in tile tuples indicating the dimension should be passed unmodified.
 static constexpr index_t all = std::numeric_limits<index_t>::max();
+
+namespace internal {
+
+inline void increment(std::size_t rank, index_t* index, const index_t* min, const index_t* max) {
+  index_t& i = *index;
+  ++i;
+  if (i > *max && rank > 1) {
+    i = *min;
+    increment(rank - 1, index + 1, min + 1, max + 1);
+  }
+}
+
+template <typename It>
+class iterator_range {
+  It begin_, end_;
+
+public:
+  iterator_range(It begin, It end) : begin_(std::move(begin)), end_(std::move(end)) {}
+
+  const It& begin() const { return begin_; }
+  const It& end() const { return end_; }
+};
+
+class index_iterator {
+  std::vector<index_t> index;
+  std::vector<index_t> min;
+  std::vector<index_t> max;
+
+public:
+  index_iterator(std::vector<index_t> index, std::vector<index_t> min, std::vector<index_t> max)
+      : index(std::move(index)), min(std::move(min)), max(std::move(max)) {}
+
+  bool operator==(const index_iterator& r) const {
+    return index.size() == r.index.size() && internal::equal_small_n(index.data(), r.index.data(), index.size());
+  }
+  bool operator!=(const index_iterator& r) const { return !operator==(r); }
+
+  const std::vector<index_t>& operator*() const { return index; }
+
+  index_iterator operator++(int) {
+    index_iterator result(*this);
+    ++*this;
+    return result;
+  }
+  index_iterator& operator++() {
+    internal::increment(index.size(), index.data(), min.data(), max.data());
+    return *this;
+  }
+};
+
+}  // namespace internal
+
+// Return an iterator_range that iterators indices of a buffer. This is not an efficient way to iterate over buffers,
+// but may be useful in some circumstances, e.g. parallelism libraries based on iterators.
+internal::iterator_range<internal::index_iterator> index_range(const raw_buffer& buf);
 
 }  // namespace slinky
 
