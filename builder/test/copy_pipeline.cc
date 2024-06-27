@@ -199,6 +199,11 @@ TEST_P(copied_input, pipeline) {
 
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
+  // If we want to alias intermediate buffer to the input buffer,
+  // we need to tell aliaser that input is unfolded and it's safe to alias.
+  in->dim(0).fold_factor = dim::unfolded;
+  in->dim(1).fold_factor = dim::unfolded;
+
   var x(ctx, "x");
   var y(ctx, "y");
 
@@ -263,6 +268,11 @@ TEST_P(concatenated_output, pipeline) {
 
   auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
   auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -329,6 +339,12 @@ TEST_P(transposed_output, pipeline) {
 
   auto intm = buffer_expr::make(ctx, "intm", 3, sizeof(short));
 
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+  out->dim(2).fold_factor = dim::unfolded;
+
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
@@ -385,6 +401,12 @@ TEST(stacked_output, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
   var z(ctx, "z");
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+  out->dim(2).fold_factor = dim::unfolded;
 
   // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
   func add1 = func::make(add_1<short>, {{{in1, {point(x), point(y)}}}}, {{{intm1, {x, y}}}});

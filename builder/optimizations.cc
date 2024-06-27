@@ -293,8 +293,9 @@ class buffer_aliaser : public node_mutator {
           return false;
         }
       }
+
+      const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
       if (op->dims[d].fold_factor.defined()) {
-        const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
         if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
@@ -306,6 +307,10 @@ class buffer_aliaser : public node_mutator {
           // The mins of folded buffers are not aligned.
           return false;
         }
+     } else if ((target_fold_factor.defined() && !is_constant(target_fold_factor, dim::unfolded)) && !prove_true(op->dims[d].extent() <= target_fold_factor)) {
+        // If the target is folded, but the op is not, we can only alias it if the extent of this dimension
+        // is less than the fold factor.
+        return false;
       }
     }
     return true;

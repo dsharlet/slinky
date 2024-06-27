@@ -111,6 +111,12 @@ TEST_P(elementwise, pipeline_1d) {
 
   var x(ctx, "x");
 
+  if (split == 0) {
+    // If we want to alias intermediate buffer to the output buffer,
+    // we need to tell aliaser that output is unfolded and it's safe to alias.
+    out->dim(0).fold_factor = dim::unfolded;
+  }
+
   // Here we explicitly use std::functions (in the form of a
   // func::callable typedef) to wrap the local calls
   // purely to verify that the relevant func::make calls work correctly.
@@ -171,6 +177,13 @@ TEST_P(elementwise, pipeline_2d) {
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+
+  if (split == 0) {
+    // If we want to alias intermediate buffer to the output buffer,
+    // we need to tell aliaser that output is unfolded and it's safe to alias.
+    out->dim(0).fold_factor = dim::unfolded;
+    out->dim(1).fold_factor = dim::unfolded;
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -783,6 +796,10 @@ TEST(unrelated, pipeline) {
     auto in2 = buffer_expr::make(ctx, "in2", 1, sizeof(int));
     auto out2 = buffer_expr::make(ctx, "out2", 1, sizeof(int));
     auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
+
+    // If we want to alias intermediate buffer to the output buffer,
+    // we need to tell aliaser that output is unfolded and it's safe to alias.
+    out2->dim(0).fold_factor = dim::unfolded;
 
     var x(ctx, "x");
     var y(ctx, "y");
