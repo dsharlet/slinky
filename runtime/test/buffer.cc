@@ -548,15 +548,15 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
       buf1,
       [&](index_t slice_extent, char* slice1, char* slice2, char* slice3, char* slice4, char* slice5, char* slice6,
           char* slice7, char* slice8, char* slice9) {
-        memset(slice1, 1, slice_extent);
-        memset(slice2, 2, slice_extent);
-        memset(slice3, 3, slice_extent);
-        memset(slice4, 4, slice_extent);
-        memset(slice5, 5, slice_extent);
-        memset(slice6, 6, slice_extent);
-        memset(slice7, 7, slice_extent);
-        memset(slice8, 8, slice_extent);
-        memset(slice9, 9, slice_extent);
+        std::fill_n(slice1, slice_extent, 1);
+        std::fill_n(slice2, slice_extent, 2);
+        std::fill_n(slice3, slice_extent, 3);
+        std::fill_n(slice4, slice_extent, 4);
+        std::fill_n(slice5, slice_extent, 5);
+        std::fill_n(slice6, slice_extent, 6);
+        std::fill_n(slice7, slice_extent, 7);
+        std::fill_n(slice8, slice_extent, 8);
+        std::fill_n(slice9, slice_extent, 9);
         slices++;
       },
       buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);
