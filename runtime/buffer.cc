@@ -580,5 +580,41 @@ void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan)
   }
 }
 
+void make_parallel(void* plan, span<const bool> allow_races) {
+  const std::size_t buf_count = allow_races.size();
+  for_each_loop* final_parallel = nullptr;
+  while (true) {
+    for_each_loop* loop = increment_plan<for_each_loop>(plan);
+    bool parallel = true;
+    if (loop->impl & for_each_loop::folded) {
+      const dim* const* dims = increment_plan<const dim*>(plan, buf_count);
+      for (std::size_t i = 0; i < buf_count; ++i) {
+        if (dims[i]->stride() == 0 && !allow_races[i]) {
+          parallel = false;
+          break;
+        }
+      }
+    } else {
+      const index_t* strides = increment_plan<index_t>(plan, buf_count);
+      for (std::size_t i = 0; i < buf_count; ++i) {
+        if (strides[i] == 0 && !allow_races[i]) {
+          parallel = false;
+          break;
+        }
+      }
+    }
+    if (parallel) {
+      loop->impl |= for_each_loop::parallel;
+      final_parallel = loop;
+    }
+    if ((loop->impl & for_each_loop::call_f) != 0) {
+      break;
+    }
+  }
+  if (final_parallel) {
+    final_parallel->impl |= for_each_loop::final_parallel;
+  }
+}
+
 }  // namespace internal
 }  // namespace slinky

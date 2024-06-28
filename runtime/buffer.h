@@ -754,6 +754,8 @@ struct for_each_loop {
     // Loop types are combinations of
     call_f = 0x1,
     folded = 0x2,  // Uses dim, extent
+    parallel = 0x4,  // The loop should be a parallel loop
+    final_parallel = 0x8,  // This is the last parallel loop
   };
   int impl;
   index_t extent;
@@ -765,6 +767,7 @@ inline std::size_t size_of_plan(std::size_t rank, std::size_t bufs) {
 
 index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
 void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
+void make_parallel(void* plan, span<const bool> allow_races);
 
 template <typename T>
 SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1) {
@@ -844,18 +847,26 @@ void for_each_impl_linear(
   const for_each_loop* loop = read_plan<for_each_loop>(plan);
   const bool call_f = (loop->impl & for_each_loop::call_f) != 0;
   const index_t* strides = read_plan<index_t>(plan, NumBufs);
-  // If the next step is to call f, do that eagerly here to avoid an extra call.
-  thread_pool.parallel_for(loop->extent, [&](index_t i) {
+  auto body = [&](index_t i) {
     std::array<void*, NumBufs> bases_i;
     for (std::size_t n = 0; n < NumBufs; n++) {
       bases_i[n] = offset_bytes(bases[n], strides[n] * i);
     }
     if (call_f) {
       f(bases_i);
+    } else if ((loop->impl & for_each_loop::final_parallel) != 0) {
+      for_each_impl(bases_i, plan, f);
     } else {
       for_each_impl(thread_pool, bases_i, plan, f);
     }
-  });
+  };
+  if ((loop->impl & for_each_loop::parallel) != 0) {
+    thread_pool.parallel_for(loop->extent, body);
+  } else {
+    for (index_t i = 0; i < loop->extent; ++i) {
+      body(i);
+    }
+  }
 }
 
 template <typename F, std::size_t NumBufs, typename ThreadPool>
@@ -866,7 +877,7 @@ void for_each_impl_folded(
   dim* const* dims = read_plan<dim*>(plan, NumBufs);
   index_t begin = dims[0]->begin();
   // If the next step is to call f, do that eagerly here to avoid an extra call.
-  thread_pool.parallel_for(loop->extent, [&](index_t i) {
+  auto body = [&](index_t i) {
     std::array<void*, NumBufs> bases_i;
     bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(begin + i));
     for (std::size_t n = 1; n < NumBufs; n++) {
@@ -874,10 +885,19 @@ void for_each_impl_folded(
     }
     if (call_f) {
       f(bases_i);
+    } else if ((loop->impl & for_each_loop::final_parallel) != 0) {
+      for_each_impl(bases_i, plan, f);
     } else {
       for_each_impl(thread_pool, bases_i, plan, f);
     }
-  });
+  };
+  if ((loop->impl & for_each_loop::parallel) != 0) {
+    thread_pool.parallel_for(loop->extent, body);
+  } else {
+    for (index_t i = 0; i < loop->extent; ++i) {
+      body(i);
+    }
+  }
 }
 
 template <typename F, std::size_t NumBufs, typename ThreadPool>
@@ -947,7 +967,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
   auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
   std::array<void*, BufsSize> bases;
   index_t slice_extent = internal::make_for_each_contiguous_slice_loops(buf_ptrs, bases.data(), plan);
@@ -977,7 +996,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_slice(
     buf_ptrs[i] = &sliced_bufs[i];
   }
 
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
   auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank - slice_rank, BufsSize));
   std::array<void*, BufsSize> bases;
   internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
@@ -1005,7 +1023,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
   auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
   std::array<void*, BufsSize> bases;
   internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
@@ -1016,17 +1033,22 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   });
 }
 
-// Similar to `for_each_element`, but calls `f` in parallel.
+// Similar to `for_each_element`, but calls `f` in parallel. Each loop will be parallelized, unless the stride of a
+// buffer accessed by that loop is 0, or the argument is buffer<const T>, i.e. the pointer is known to be const.
+// TODO: This API is super janky.
 template <typename F, typename Buf, typename... Bufs, typename ThreadPool>
 SLINKY_NO_STACK_PROTECTOR void parallel_for_each_element(
     ThreadPool& thread_pool, const F& f, const Buf& buf, const Bufs&... bufs) {
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
   auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
   std::array<void*, BufsSize> bases;
   internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
+
+  std::array<bool, BufsSize> allow_races = {
+      std::is_const<typename Buf::pointer>::value, std::is_const<typename Bufs::pointer>::value...};
+  internal::make_parallel(plan, allow_races);
 
   internal::for_each_impl(thread_pool, bases, plan, [&](const std::array<void*, BufsSize>& bases) {
     std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(

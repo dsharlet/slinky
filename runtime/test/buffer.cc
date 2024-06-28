@@ -7,8 +7,8 @@
 #include <numeric>
 #include <random>
 
-#include "base/thread_pool.h"
 #include "base/test/seeded_test.h"
+#include "base/thread_pool.h"
 #include "runtime/buffer.h"
 
 namespace slinky {
@@ -16,7 +16,9 @@ namespace slinky {
 bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
 
 template <typename Rng>
-int random(Rng& rng, int min, int max) { return rng() % (max - min + 1) + min; }
+int random(Rng& rng, int min, int max) {
+  return rng() % (max - min + 1) + min;
+}
 
 template <typename T, std::size_t N, typename Rng>
 void init_random(Rng& rng, buffer<T, N>& buf) {
@@ -965,13 +967,39 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   ASSERT_EQ(b.rank, 4);
 }
 
-TEST(parallel_for, buffer) {
+TEST(parallel_for, fill) {
   thread_pool_impl tp;
   buffer<int, 4> buf({10, 20, 30, 40});
   buf.allocate();
-  parallel_for_each_element(tp, [&](int* i) { *i = 3; }, buf);
+  parallel_for_each_element(
+      tp, [&](int* i) { *i = 3; }, buf);
 
   ASSERT_TRUE(is_filled_buffer(buf, 3));
+}
+
+TEST(parallel_for, sum) {
+  gtest_seeded_mt19937 rng;
+  thread_pool_impl tp;
+  buffer<int, 4> buf({10, 20, 30, 40});
+  buf.dim(3).set_fold_factor(20);
+  init_random(rng, buf);
+
+  for (std::size_t rd = 0; rd < buf.rank; ++rd) {
+    buffer<int, 4> sum_parallel = buf;
+    buffer<int, 4> sum_serial = buf;
+    sum_parallel.dim(rd).set_stride(0);
+    sum_serial.dim(rd).set_stride(0);
+    sum_parallel.allocate();
+    sum_serial.allocate();
+
+    parallel_for_each_element(
+        tp, [&](int* sum_i, const int* buf_i) { *sum_i += *buf_i; }, sum_parallel, buf.cast<const int>());
+    for_each_element([&](int* sum_i, const int* buf_i) { *sum_i += *buf_i; }, sum_serial, buf);
+
+    sum_parallel.slice(rd);
+    sum_serial.slice(rd);
+    for_each_index(sum_serial, [&](const auto& i) { ASSERT_EQ(sum_parallel(i), sum_serial(i)); });
+  }
 }
 
 }  // namespace slinky
