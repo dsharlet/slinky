@@ -74,33 +74,48 @@ public:
     return min_ == std::numeric_limits<index_t>::min() && max_ == std::numeric_limits<index_t>::max();
   }
 
-  void set_extent(index_t extent) { max_ = min_ + extent - 1; }
-  void set_point(index_t x) {
+  dim& set_extent(index_t extent) {
+    max_ = min_ + extent - 1;
+    return *this;
+  }
+  dim& set_point(index_t x) {
     min_ = x;
     max_ = x;
+    return *this;
   }
-  void set_bounds(index_t min, index_t max) {
+  dim& set_bounds(index_t min, index_t max) {
     min_ = min;
     max_ = max;
+    return *this;
   }
-  void set_range(index_t begin, index_t end) {
+  dim& set_range(index_t begin, index_t end) {
     min_ = begin;
     max_ = end - 1;
+    return *this;
   }
-  void set_unbounded() {
+  dim& set_unbounded() {
     min_ = std::numeric_limits<index_t>::min();
     max_ = std::numeric_limits<index_t>::max();
+    return *this;
   }
-  void set_min_extent(index_t min, index_t extent) {
+  dim& set_min_extent(index_t min, index_t extent) {
     min_ = min;
     max_ = min + extent - 1;
+    return *this;
   }
-  void set_stride(index_t stride) { stride_ = stride; }
-  void set_fold_factor(index_t fold_factor) { fold_factor_ = fold_factor; }
+  dim& set_stride(index_t stride) {
+    stride_ = stride;
+    return *this;
+  }
+  dim& set_fold_factor(index_t fold_factor) {
+    fold_factor_ = fold_factor;
+    return *this;
+  }
 
-  void translate(index_t offset) {
+  dim& translate(index_t offset) {
     min_ += offset;
     max_ += offset;
+    return *this;
   }
 
   // Returns true if the interval [a, b] is in bounds of this dimension.
@@ -878,10 +893,11 @@ void for_each_impl_folded(
   index_t begin = dims[0]->begin();
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   auto body = [&](index_t i) {
+    i += begin;
     std::array<void*, NumBufs> bases_i;
-    bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(begin + i));
+    bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
     for (std::size_t n = 1; n < NumBufs; n++) {
-      bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(begin + i)) : nullptr;
+      bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
     }
     if (call_f) {
       f(bases_i);

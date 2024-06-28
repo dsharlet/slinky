@@ -589,7 +589,7 @@ void make_parallel(void* plan, span<const bool> allow_races) {
     if (loop->impl & for_each_loop::folded) {
       const dim* const* dims = increment_plan<const dim*>(plan, buf_count);
       for (std::size_t i = 0; i < buf_count; ++i) {
-        if (dims[i]->stride() == 0 && !allow_races[i]) {
+        if ((dims[i]->stride() == 0 || dims[i]->is_folded()) && !allow_races[i]) {
           parallel = false;
           break;
         }

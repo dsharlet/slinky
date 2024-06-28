@@ -977,7 +977,7 @@ TEST(parallel_for, sum) {
   gtest_seeded_mt19937 rng;
   thread_pool_impl tp;
   buffer<int, 4> buf({10, 20, 30, 40});
-  buf.dim(3).set_fold_factor(20);
+  buf.dim(3).set_fold_factor(12);
   init_random(rng, buf);
 
   for (std::size_t rd = 0; rd < buf.rank; ++rd) {
