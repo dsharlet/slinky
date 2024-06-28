@@ -987,6 +987,9 @@ TEST(parallel_for, sum) {
     sum_serial.dim(rd).set_stride(0);
     sum_parallel.allocate();
     sum_serial.allocate();
+    const int zero = 0;
+    fill(sum_parallel, &zero);
+    fill(sum_serial, &zero);
 
     parallel_for_each_element(
         tp, [&](int* sum_i, const int* buf_i) { *sum_i += *buf_i; }, sum_parallel, buf.cast<const int>());
