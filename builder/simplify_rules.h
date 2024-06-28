@@ -94,6 +94,7 @@ bool apply_min_rules(Fn&& apply) {
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
+      apply(min(x, min(y, c0)), min(min(x, y), c0)) ||
       apply(min(x + c0, (y + c1)/c2), min(x, (y + eval(c1 - c0*c2))/c2) + c0, eval(c2 != 0)) ||
       apply(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
       apply(min(x + c0, c1 - y), c1 - max(y, eval(c1 - c0) - x)) ||
@@ -101,6 +102,11 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
       apply(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
       apply(min(min(x, c0) + c1, min(y, c2)), min(min(y, x + c1), eval(min(c0 + c1, c2)))) ||
+      apply(min(min(x, c0), min(y, c2)), min(min(y, x), eval(min(c0, c2)))) ||
+      apply(min(max(x, c0) + c1, max(y, c2)), max(min(y, max(x, c0) + c1), c2), eval(c2 < c0 + c1)) ||
+      apply(min(max(x, c0) + c1, max(y, c2)), max(min(x + c1, max(y, c2)), eval(c0 + c1)), eval(c2 > c0 + c1)) ||
+      apply(min(max(x, c0), max(y, c1)), max(min(x, max(y, c1)), c0), eval(c0 < c1)) ||
+      apply(min(max(x, c0), max(y, c1)), max(min(y, max(x, c0)), c1), eval(c0 > c1)) ||
 
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
       apply(min(x*c0, c1), min(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0)) ||
@@ -217,6 +223,7 @@ bool apply_max_rules(Fn&& apply) {
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
+      apply(max(x, max(y, c0)), max(max(x, y), c0)) ||
       apply(max(x + c0, (y + c1)/c2), max(x, (y + eval(c1 - c0*c2))/c2) + c0, eval(c2 != 0)) ||
       apply(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
       apply(max(x + c0, c1 - y), c1 - min(y, eval(c1 - c0) - x)) ||
@@ -224,6 +231,11 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
       apply(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
       apply(max(max(x, c0) + c1, max(y, c2)), max(max(y, x + c1), eval(max(c0 + c1, c2)))) ||
+      apply(max(max(x, c0), max(y, c2)), max(max(y, x), eval(max(c0, c2)))) ||
+      apply(max(min(x, c0) + c1, min(y, c2)), min(max(y, min(x, c0) + c1), c2), eval(c2 > c0 + c1)) ||
+      apply(max(min(x, c0) + c1, min(y, c2)), min(max(x + c1, min(y, c2)), eval(c0 + c1)), eval(c2 < c0 + c1)) ||
+      apply(max(min(x, c0), min(y, c1)), min(max(x, min(y, c1)), c0), eval(c0 > c1)) ||
+      apply(max(min(x, c0), min(y, c1)), min(max(y, min(x, c0)), c1), eval(c0 < c1)) ||
 
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
       apply(max(x*c0, c1), max(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0)) ||

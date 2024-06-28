@@ -197,6 +197,9 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x < 5, y, abs(x))), matches(select(x < 5, y, x)));
   ASSERT_THAT(simplify(select(x < -3, abs(x), y)), matches(select(x < -3, -x, y)));
 
+  ASSERT_THAT(simplify(min(x + 64, max(min(x, 113) + 5, min(y, 128)))),
+      matches(min(min(x + 64, max(y, min(x, 113) + 5)), 128)));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
