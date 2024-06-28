@@ -314,7 +314,7 @@ TEST(buffer, for_each_contiguous_slice) {
   buf.allocate();
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-    memset(slice, 7, slice_extent);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, 1);
@@ -327,7 +327,7 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
   buf.translate(1, 2, 3);
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-    memset(slice, 7, slice_extent);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, 1);
@@ -342,12 +342,21 @@ TEST(buffer, for_each_contiguous_folded) {
     buf.dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
     for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-      memset(slice, 7, slice_extent);
+      std::fill_n(slice, slice_extent, 7);
       slices++;
     });
-    ASSERT_EQ(slices, crop_extent * 30);
+    ASSERT_EQ(slices, 30);
     ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
+  // Also check an unaligned crop with the fold.
+  buf.dim(1).set_min_extent(6, 4);
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
+    std::fill_n(slice, slice_extent, 7);
+    slices++;
+  });
+  ASSERT_EQ(slices, 120);
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
 TEST(buffer, for_each_contiguous_slice_padded) {
@@ -355,7 +364,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
     buffer<char, 3> buf({10, 20, 30});
     buf.allocate();
     buf.dim(padded_dim).set_bounds(0, 8);
-    for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { memset(slice, 7, slice_extent); });
+    for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { std::fill_n(slice, slice_extent, 7); });
     ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
 }
