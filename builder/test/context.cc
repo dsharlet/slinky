@@ -29,9 +29,9 @@ void setup_tracing(eval_context& ctx, const std::string& filename) {
     // chrome_trace expects trace_begin and trace_end to pass the string, while slinky's API expects to pass a token to
     // trace_end returned by trace_begin. Because `index_t` must be able to hold a pointer, we'll just use the token to
     // store the pointer.
-    return reinterpret_cast<index_t>(op);
+    return 0;
   };
-  ctx.trace_end = [t](index_t token) { t->trace.end(reinterpret_cast<const char*>(token)); };
+  ctx.trace_end = [t](index_t token) { t->trace.end(); };
 }
 
 test_context::test_context() {
