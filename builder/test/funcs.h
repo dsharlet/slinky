@@ -30,15 +30,14 @@ void init_random(buffer<T, N>& x) {
 // TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
 index_t copy_2d(const buffer<const T>& in, const buffer<T>& out) {
-  copy(in, out, nullptr);
+  copy(in, out);
   return 0;
 }
 
 template <typename T>
 index_t zero_padded_copy(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  T zero = 0;
-  slinky::copy(in, out, &zero);
+  slinky::copy(in, out, static_cast<T>(0));
   return 0;
 }
 
