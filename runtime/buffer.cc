@@ -422,7 +422,8 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
 }
 
 SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, int d) {
-  if (bufs[0]->dim(d).fold_factor() != dim::unfolded) {
+  const dim& buf_dim = bufs[0]->dim(d);
+  if (buf_dim.is_folded()) {
     // The main buffer is folded.
     return true;
   }
@@ -430,10 +431,10 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
     if (d >= static_cast<int>(bufs[i]->rank)) {
       // Broadcast dimension.
       continue;
-    } else if (bufs[i]->dim(d).fold_factor() != dim::unfolded) {
+    } else if (bufs[i]->dim(d).is_folded(buf_dim)) {
       // There's a folded buffer, we need a folded loop.
       return true;
-    } else if (!bufs[i]->dim(d).contains(bufs[0]->dim(d))) {
+    } else if (!bufs[i]->dim(d).contains(buf_dim)) {
       // One of the extra buffers is out of bounds, use a folded loop.
       return true;
     }
