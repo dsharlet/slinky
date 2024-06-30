@@ -54,10 +54,13 @@ bool apply_min_rules(Fn&& apply) {
       // Similar rules but with added constants.
       apply(min(x, min(y, x + c0) + c1), min(x, y + c1), eval(c0 + c1 >= 0)) ||
       apply(min(x, min(y, x + c0) + c1), min(y, x + c0) + c1, eval(c0 + c1 < 0)) ||
+      apply(min(x + c0, max(y, min(x, z) + c1)), min(x + c0, max(y, z + c1)), eval(c1 > c0)) ||
+      apply(min(x, max(y, min(x, z) + c1)), min(x, max(y, z + c1)), eval(c1 > 0)) ||
       apply(min(x, min(y, x + c0)), min(x, y), eval(c0 > 0)) ||
       apply(min(x, min(y, x + c0)), min(y, x + c0), eval(c0 < 0)) ||
       apply(min(x, min(x, y) + c1), min(x, y + c1), eval(c1 > 0)) ||
       apply(min(x, min(x, y) + c1), min(x, y) + c1, eval(c1 < 0)) ||
+      apply(min(max(x, min(y, c0)), c1), min(max(x, y), c1), eval(c0 >= c1)) ||
 
       apply(min(x, max(y, x + c0)), x, eval(c0 > 0)) ||
       apply(min(x, max(x, y) + c1), x, eval(c1 > 0)) ||
@@ -185,10 +188,13 @@ bool apply_max_rules(Fn&& apply) {
       // Similar rules but with added constants.
       apply(max(x, max(y, x + c0) + c1), max(x, y + c1), eval(c0 + c1 <= 0)) ||
       apply(max(x, max(y, x + c0) + c1), max(y, x + c0) + c1, eval(c0 + c1 > 0)) ||
+      apply(max(x + c0, min(y, max(x, z) + c1)), max(x + c0, min(y, z + c1)), eval(c1 < c0)) ||
+      apply(max(x, min(y, max(x, z) + c1)), max(x, min(y, z + c1)), eval(c1 < 0)) ||
       apply(max(x, max(y, x + c0)), max(x, y), eval(c0 < 0)) ||
       apply(max(x, max(y, x + c0)), max(y, x + c0), eval(c0 > 0)) ||
       apply(max(x, max(x, y) + c1), max(x, y + c1), eval(c1 < 0)) ||
       apply(max(x, max(x, y) + c1), max(x, y) + c1, eval(c1 > 0)) ||
+      apply(max(min(x, max(y, c0)), c1), max(min(x, y), c1), eval(c0 <= c1)) ||
 
       apply(max(x, min(y, x + c0)), x, eval(c0 < 0)) ||
       apply(max(x, min(x, y) + c1), x, eval(c1 < 0)) ||
