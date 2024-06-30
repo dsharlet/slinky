@@ -333,10 +333,10 @@ bool apply_sub_rules(Fn&& apply) {
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x - x, 0) ||
       apply(x - 0, x) ||
-      apply(x - y*c0, x + y*(-c0)) ||
-      apply(x - (c0 - y), (x + y) - c0) ||
+      apply(x - y*c0, x + y*eval(-c0)) ||
+      apply(x - (c0 - y), (x + y) + eval(-c0)) ||
       apply(c0 - (x - y), (y - x) + c0) ||
-      apply(x - (y + c0), (x - y) - c0) ||
+      apply(x - (y + c0), (x - y) + eval(-c0)) ||
       apply((c0 - x) - y, c0 - (x + y)) ||
       apply((x + c0) - y, (x - y) + c0) ||
       apply((x + y) - x, y) ||
