@@ -215,6 +215,97 @@ bool empty_intersection(const std::set<T>& a, const std::set<T>& b) {
   return empty_intersection(a.begin(), a.end(), b.begin(), b.end());
 }
 
+// If a constant can be added to an expression without creating new nodes, this helper produces that expression,
+// otherwise expr().
+class constant_adder : public node_mutator {
+public:
+  index_t c;
+
+  constant_adder(index_t c) : c(c) {}
+
+  void visit(const constant* op) override { set_result(op->value + c); };
+  void visit(const variable* op) override { set_result(expr()); }
+
+  void visit(const let* op) override {
+    expr body = mutate(op->body);
+    if (body.defined()) {
+      set_result(let::make(op->lets, std::move(body)));
+    } else {
+      set_result(expr());
+    }
+  }
+
+  template <typename T>
+  void visit_add_sub(const T* op, int sign_b) {
+    expr a = mutate(op->a);
+    if (a.defined()) {
+      set_result(T::make(std::move(a), op->b));
+      return;
+    }
+    c *= sign_b;
+    expr b = mutate(op->b);
+    c *= sign_b;
+    if (b.defined()) {
+      set_result(T::make(op->a, std::move(b)));
+      return;
+    }
+    set_result(expr());
+  }
+
+  void visit(const add* op) override { visit_add_sub(op, /*sign_b=*/1); }
+  void visit(const sub* op) override { visit_add_sub(op, /*sign_b=*/-1); }
+
+  template <typename T>
+  void visit_min_max(const T* op) {
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
+    if (a.defined() && b.defined()) {
+      set_result(T::make(std::move(a), std::move(b)));
+    } else {
+      set_result(expr());
+    }
+  }
+  void visit(const class min* op) override { visit_min_max(op); }
+  void visit(const class max* op) override { visit_min_max(op); }
+  void visit(const class select* op) override {
+    expr t = mutate(op->true_value);
+    expr f = mutate(op->false_value);
+    if (t.defined() && f.defined()) {
+      set_result(select::make(op->condition, std::move(t), std::move(f)));
+    } else {
+      set_result(expr());
+    }
+  }
+
+  void visit(const mul* op) override {
+    if (const index_t* b = as_constant(op->b)) {
+      // a*b + c == (a + c/b)*b if c%b == 0
+      if (*b != 0 && euclidean_mod(c, *b) == 0) {
+        c = euclidean_div(c, *b);
+        expr a = mutate(op->a);
+        c *= *b;
+        if (a.defined()) {
+          set_result(mul::make(std::move(a), op->b));
+          return;
+        }
+      }
+    }
+    set_result(expr());
+  }
+  void visit(const div* op) override { set_result(expr()); }
+  void visit(const mod* op) override { set_result(expr()); }
+  void visit(const equal*) override { set_result(expr()); }
+  void visit(const not_equal*) override { set_result(expr()); }
+  void visit(const less*) override { set_result(expr()); }
+  void visit(const less_equal*) override { set_result(expr()); }
+  void visit(const logical_and*) override { set_result(expr()); }
+  void visit(const logical_or*) override { set_result(expr()); }
+  void visit(const logical_not*) override { set_result(expr()); }
+  void visit(const call*) override { set_result(expr()); }
+};
+
+expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a); }
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   struct buffer_info {
@@ -524,7 +615,19 @@ public:
       set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
     }
   }
-  void visit(const add* op) override { visit_binary(op); }
+  void visit(const add* op) override {
+    if (const index_t* bc = as_constant(op->b)) {
+      // We have a lot of rules that pull constants out of expressions. Sometimes we end up with complicated expressions
+      // that add a constant, e.g. select(x, max(2, y + 3), 4) - 1 and we could put that constant back inside. However,
+      // writing rules for all of these rewrites would be very tedious, so we handle it here instead.
+      expr result = add_constant(op->a, *bc);
+      if (result.defined()) {
+        mutate_and_set_result(result);
+        return;
+      }
+    }
+    visit_binary(op);
+  }
   void visit(const sub* op) override { visit_binary(op); }
   void visit(const mul* op) override { visit_binary(op); }
   void visit(const div* op) override { visit_binary(op); }

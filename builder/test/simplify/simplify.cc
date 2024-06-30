@@ -200,6 +200,10 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(x + 64, max(min(x, 113) + 5, min(y, 128)))),
       matches(min(min(x + 64, max(y, min(x, 113) + 5)), 128)));
 
+  ASSERT_THAT(simplify(select(x, (y - 4), 2) + 4), matches(select(x, y, 6)));
+  ASSERT_THAT(simplify(select(x, y + 3, 5) - 1), matches(select(x, y + 2, 4)));
+  ASSERT_THAT(simplify(min(x + 2, select(y, 3, z + 4)) - 1), matches(min(x + 1, select(y, 2, z + 3))));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),

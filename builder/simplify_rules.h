@@ -306,37 +306,19 @@ bool apply_add_rules(Fn&& apply) {
       apply((x - y) + (z - x), z - y) ||
       apply((y - x) + (z - x), (y + z) + x*-2) ||
 
-      apply((x + c0) + c1, x + eval(c0 + c1)) ||
-      apply((c0 - x) + c1, eval(c0 + c1) - x) ||
       apply(x + (c0 - y), (x - y) + c0) ||
       apply(x + (y + c0), (x + y) + c0) ||
       apply((x + c0) + (y + c1), (x + y) + eval(c0 + c1)) ||
 
       apply(((x + c0)/c1)*c2 + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, eval(c1 != 0 && c2 != 0 && c3%c2 == 0)) ||
-      apply((x + c0)*c2 + c3, (x + eval(c3/c2 + c0))*c2, eval(c2 != 0 && c3%c2 == 0)) ||
       apply((x + c0)/c1 + c3, (x + eval(c3*c1 + c0))/c1, eval(c1 != 0)) ||
 
-      apply(min(x + c0, y + c1) + c2, min(x + eval(c0 + c2), y + eval(c1 + c2))) ||
-      apply(max(x + c0, y + c1) + c2, max(x + eval(c0 + c2), y + eval(c1 + c2))) ||
-      apply(min(x + c0, c1 - y) + c2, min(x + eval(c0 + c2), eval(c1 + c2) - y)) ||
-      apply(max(x + c0, c1 - y) + c2, max(x + eval(c0 + c2), eval(c1 + c2) - y)) ||
       apply(min(x, y + c1) + c2, min(y, x + c2), eval(c1 == -c2)) ||
       apply(max(x, y + c1) + c2, max(y, x + c2), eval(c1 == -c2)) ||
-
       apply(z + min(x, y - (z - w)), min(x + z, y + w)) ||
       apply(z + max(x, y - (z - w)), max(x + z, y + w)) ||
       apply(z + min(x, y - z), min(y, x + z)) ||
       apply(z + max(x, y - z), max(y, x + z)) ||
-
-      apply(select(x, c0, c1) + c2, select(x, eval(c0 + c2), eval(c1 + c2))) ||
-      apply(select(x, y + c0, c1) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2))) ||
-      apply(select(x, c0 - y, c1) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2))) ||
-      apply(select(x, c0, y + c1) + c2, select(x, eval(c0 + c2), y + eval(c1 + c2))) ||
-      apply(select(x, c0, c1 - y) + c2, select(x, eval(c0 + c2), eval(c1 + c2) - y)) ||
-      apply(select(x, y + c0, z + c1) + c2, select(x, y + eval(c0 + c2), z + eval(c1 + c2))) ||
-      apply(select(x, c0 - y, z + c1) + c2, select(x, eval(c0 + c2) - y, z + eval(c1 + c2))) ||
-      apply(select(x, y + c0, c1 - z) + c2, select(x, y + eval(c0 + c2), eval(c1 + c2) - z)) ||
-      apply(select(x, c0 - y, c1 - z) + c2, select(x, eval(c0 + c2) - y, eval(c1 + c2) - z)) ||
     
       apply(w + select(x, y, z - w), select(x, y + w, z)) ||
       apply(w + select(x, y - w, z), select(x, y, z + w)) ||
