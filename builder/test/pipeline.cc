@@ -1159,12 +1159,16 @@ TEST_P(parallel_stencils, pipeline) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  func mul2 = func::make(multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}});
-  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}});
-  func diff =
-      func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+  func add1 =
+      func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}}, call_stmt::attributes{.name = "add1"});
+  func mul2 = func::make(
+      multiply_2<short>, {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}}, call_stmt::attributes{.name = "mul2"});
+  func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{intm3, {x, y}}},
+      call_stmt::attributes{.name = "sum3x3"});
+  func stencil2 = func::make(sum5x5<short>, {{intm2, {bounds(-2, 2) + x, bounds(-2, 2) + y}}}, {{intm4, {x, y}}},
+      call_stmt::attributes{.name = "sum5x5"});
+  func diff = func::make(subtract<short>, {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}},
+      {{out, {x, y}}}, call_stmt::attributes{.name = "subtract"});
 
   if (schedule == 0) {
     diff.loops({{y, 1}});
