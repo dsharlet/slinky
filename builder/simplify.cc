@@ -1585,10 +1585,22 @@ public:
     var sym = op->sym;
     while (true) {
       if (const crop_buffer* c = body.as<crop_buffer>()) {
+        // The inner crop might use the outer buffer's bounds, substitute them.
+        box_expr c_bounds;
+        c_bounds.reserve(c->bounds.size());
+        for (const interval_expr& i : c->bounds) {
+          c_bounds.push_back({
+              substitute_bounds(i.min, op->sym, bounds),
+              substitute_bounds(i.max, op->sym, bounds),
+          });
+        }
         if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
           // Nested crops of the same buffer, and the crop isn't used.
-          bounds.resize(std::max(bounds.size(), c->bounds.size()));
-          bounds = bounds & c->bounds;
+          bounds.resize(std::max(bounds.size(), c_bounds.size()));
+          bounds = bounds & c_bounds;
+          for (interval_expr& i : bounds) {
+            i = mutate(i);
+          }
           sym = c->sym;
           body = c->body;
           continue;
@@ -1598,13 +1610,18 @@ public:
           continue;
         }
       } else if (const crop_dim* c = body.as<crop_dim>()) {
+        // The inner crop might use the outer buffer's bounds, substitute them.
+        interval_expr c_bounds = {
+            substitute_bounds(c->bounds.min, op->sym, bounds),
+            substitute_bounds(c->bounds.max, op->sym, bounds),
+        };
         if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
           // Nested crops of the same buffer, and the crop isn't used.
           if (c->dim < static_cast<int>(bounds.size())) {
-            bounds[c->dim] &= c->bounds;
+            bounds[c->dim] = mutate(bounds[c->dim] & c_bounds);
           } else {
             bounds.resize(c->dim + 1);
-            bounds[c->dim] = c->bounds;
+            bounds[c->dim] = mutate(c_bounds);
           }
           sym = c->sym;
           body = c->body;
