@@ -609,6 +609,12 @@ bool apply_less_rules(Fn&& apply) {
       apply(min(x, min(y, z)) < y, min(x, z) < y) ||
       apply(min(x, y) < max(x, y), x != y) ||
       apply(max(x, y) < min(x, y), false) ||
+        
+      apply(min(x, y + c0) < max(z, y + c1), true, eval(c0 < c1)) ||
+      apply(min(x, y + c0) < max(z, y), true, eval(c0 < 0)) ||
+      apply(min(x, y) < max(z, y + c1), true, eval(0 < c1)) ||
+      apply(min(x, y + c0) < max(z, y) + c1, true, eval(c0 < c1)) ||
+      apply(min(x, y) < max(z, y) + c1, true, eval(0 < c1)) ||
 
       // Subtract terms from both sides within a min/max.
       // These are only enabled for non-constants because they loop with rules that pull constants out of min/max.
