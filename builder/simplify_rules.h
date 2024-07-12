@@ -706,6 +706,9 @@ bool apply_equal_rules(Fn&& apply) {
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
 
+      apply(max(x, c0) == max(x, c1), x >= eval(max(c0, c1)), eval(c0 != c1)) ||
+      apply(min(x, c0) == min(x, c1), x <= eval(min(c0, c1)), eval(c0 != c1)) ||
+
       apply(max(x, c0) == c1, false, eval(c0 > c1)) ||
       apply(min(x, c0) == c1, false, eval(c0 < c1)) ||
       apply(max(x, c0) == c1, x == c1, eval(c0 < c1)) ||
@@ -907,6 +910,16 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, y, false), x && y, is_boolean(y)) ||
       apply(select(x, true, y), x || y, is_boolean(y)) ||
       apply(select(x, false, y), y && !x, is_boolean(y)) ||
+
+      // Equivalents with min/max
+      apply(select(x <= y, x, y), min(x, y)) ||
+      apply(select(x <= y, y, x), max(x, y)) ||
+      apply(select(x < y, x, y), min(x, y)) ||
+      apply(select(x < y, y, x), max(x, y)) ||
+      apply(select(x < c0, c1, x), max(x, c1), eval(c0 == c1 + 1)) ||
+      apply(select(x < c0, x, c1), min(x, c1), eval(c0 == c1 + 1)) ||
+      apply(select(c0 < x, x, c1), max(x, c1), eval(c0 + 1 == c1)) ||
+      apply(select(c0 < x, c1, x), min(x, c1), eval(c0 + 1 == c1)) ||
 
       false;
 }
