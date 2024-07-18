@@ -578,7 +578,7 @@ public:
 
         expr result = mutate_buffer_intrinsic(op->intrinsic, *buf, span<const expr>(args).subspan(1));
         if (result.defined()) {
-          set_result(result);
+          set_result(std::move(result));
           return;
         }
       }
@@ -670,7 +670,7 @@ public:
       set_result(replacement);
       return;
     } else if (replacements) {
-      std::optional<expr> r = replacements->lookup(v->sym);
+      const std::optional<expr>& r = replacements->lookup(v->sym);
       if (r && !depends_on(*r, shadowed).any()) {
         set_result(*r);
         return;
