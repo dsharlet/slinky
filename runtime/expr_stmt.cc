@@ -38,7 +38,7 @@ var node_context::insert(const std::string& name) {
 var node_context::insert_unique(const std::string& prefix) {
   std::string name = prefix;
   for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
-    if (!lookup(name)) break;
+    if (name_to_sym.find(name) == name_to_sym.end()) break;
     name = prefix + "#" + std::to_string(i);
   }
   return insert(name);
