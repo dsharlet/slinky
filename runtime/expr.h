@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -46,6 +47,7 @@ public:
 // uniquely maps strings to var.
 class node_context {
   std::vector<std::string> sym_to_name;
+  std::map<std::string, var> name_to_sym;
 
 public:
   // Get the name of a var.

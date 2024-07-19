@@ -31,25 +31,21 @@ var node_context::insert(const std::string& name) {
   if (!sym) {
     sym = var(sym_to_name.size());
     sym_to_name.push_back(name);
+    name_to_sym[name] = *sym;
   }
   return *sym;
 }
 var node_context::insert_unique(const std::string& prefix) {
   std::string name = prefix;
   for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
-    if (!lookup(name)) break;
+    if (name_to_sym.find(name) == name_to_sym.end()) break;
     name = prefix + "#" + std::to_string(i);
   }
   return insert(name);
 }
 std::optional<var> node_context::lookup(const std::string& name) const {
-  // TODO: At some point we might need a better data structure than doing this linear search.
-  for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
-    if (sym_to_name[i] == name) {
-      return var(i);
-    }
-  }
-  return std::nullopt;
+  auto i = name_to_sym.find(name);
+  return i != name_to_sym.end() ? std::optional<var>(i->second) : std::nullopt;
 }
 
 template <typename T>

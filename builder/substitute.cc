@@ -369,12 +369,6 @@ expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
 // This base class helps substitute implementations handle shadowing correctly.
 class substitutor : public node_mutator {
 public:
-  // Track newly declared variables that might shadow the variables we want to replace.
-  std::vector<var> shadowed;
-
-public:
-  bool is_shadowed(var x) const { return std::find(shadowed.begin(), shadowed.end(), x) != shadowed.end(); }
-
   // Implementation of substitution for vars.
   virtual var visit_symbol(var x) { return x; }
 
@@ -387,12 +381,16 @@ public:
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }
 
+  // Allow substitution inside a declaration of `x`.
+  virtual bool allow_substitute(const var& x) const { return true; }
+
   template <typename T>
   T mutate_decl_body(var sym, const T& x) {
-    shadowed.push_back(sym);
-    T result = mutate(x);
-    shadowed.pop_back();
-    return result;
+    if (allow_substitute(sym)) {
+      return mutate(x);
+    } else {
+      return x;
+    }
   }
 
   template <typename T>
@@ -402,16 +400,17 @@ public:
     bool changed = false;
     for (const auto& s : op->lets) {
       lets.emplace_back(s.first, mutate(s.second));
-      shadowed.push_back(s.first);
+      if (!allow_substitute(s.first)) {
+        return decltype(op->body){op};
+      }
       changed = changed || !lets.back().second.same_as(s.second);
     }
 
     auto body = mutate(op->body);
-    shadowed.resize(shadowed.size() - lets.size());
     changed = changed || !body.same_as(op->body);
 
     if (!changed) {
-      return decltype(body){op};
+      return decltype(op->body){op};
     } else {
       return T::make(std::move(lets), std::move(body));
     }
@@ -559,28 +558,26 @@ public:
     if (is_buffer_intrinsic(op->intrinsic) && !args.empty() && args.front().defined()) {
       const var* buf = as_variable(args[0]);
       assert(buf);
-      if (!is_shadowed(*buf)) {
-        if (op->intrinsic == intrinsic::buffer_at) {
-          const std::size_t buf_rank = get_target_buffer_rank(*buf);
-          for (std::size_t d = 0; d < buf_rank; ++d) {
-            if (d + 1 >= args.size() || !args[d + 1].defined()) {
-              // buffer_at has an implicit buffer_min if it is not defined.
-              expr min_args[] = {d};
-              expr min = mutate_buffer_intrinsic(intrinsic::buffer_min, *buf, min_args);
-              if (min.defined()) {
-                args.resize(std::max(args.size(), d + 2));
-                args[d + 1] = min;
-                changed = true;
-              }
+      if (op->intrinsic == intrinsic::buffer_at) {
+        const std::size_t buf_rank = get_target_buffer_rank(*buf);
+        for (std::size_t d = 0; d < buf_rank; ++d) {
+          if (d + 1 >= args.size() || !args[d + 1].defined()) {
+            // buffer_at has an implicit buffer_min if it is not defined.
+            expr min_args[] = {d};
+            expr min = mutate_buffer_intrinsic(intrinsic::buffer_min, *buf, min_args);
+            if (min.defined()) {
+              args.resize(std::max(args.size(), d + 2));
+              args[d + 1] = min;
+              changed = true;
             }
           }
         }
+      }
 
-        expr result = mutate_buffer_intrinsic(op->intrinsic, *buf, span<const expr>(args).subspan(1));
-        if (result.defined()) {
-          set_result(result);
-          return;
-        }
+      expr result = mutate_buffer_intrinsic(op->intrinsic, *buf, span<const expr>(args).subspan(1));
+      if (result.defined()) {
+        set_result(std::move(result));
+        return;
       }
     }
     if (changed) {
@@ -626,14 +623,18 @@ public:
     var dst = visit_symbol(op->dst);
 
     // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
-    shadowed.insert(shadowed.end(), op->dst_x.begin(), op->dst_x.end());
+    for (const var& i : op->dst_x) {
+      if (!allow_substitute(i)) {
+        set_result(op);
+        return;
+      }
+    }
     std::vector<expr> src_x(op->src_x.size());
     bool changed = false;
     for (std::size_t i = 0; i < op->src_x.size(); ++i) {
       src_x[i] = mutate(op->src_x[i]);
       changed = changed || !src_x[i].same_as(op->src_x[i]);
     }
-    shadowed.resize(shadowed.size() - op->dst_x.size());
     if (changed || src != op->src || dst != op->dst) {
       set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->padding));
     } else {
@@ -655,28 +656,20 @@ public:
 // A substutitor implementation for target vars
 class var_substitutor : public substitutor {
 public:
-  const symbol_map<expr>* replacements = nullptr;
   var target;
   expr replacement;
 
 public:
-  var_substitutor(const symbol_map<expr>& replacements) : replacements(&replacements) {}
   var_substitutor(var target, const expr& replacement) : target(target), replacement(replacement) {}
 
+  bool allow_substitute(const var& x) const override { return x != target && !depends_on(replacement, x).any(); }
+
   void visit(const variable* v) override {
-    if (is_shadowed(v->sym)) {
-      // This variable has been shadowed, don't substitute it.
-    } else if (v->sym == target && !depends_on(replacement, shadowed).any()) {
+    if (v->sym == target) {
       set_result(replacement);
-      return;
-    } else if (replacements) {
-      std::optional<expr> r = replacements->lookup(v->sym);
-      if (r && !depends_on(*r, shadowed).any()) {
-        set_result(*r);
-        return;
-      }
+    } else {
+      set_result(v);
     }
-    set_result(v);
   }
   using substitutor::visit;
 
@@ -687,44 +680,26 @@ public:
   }
 
   var visit_symbol(var x) override {
-    if (is_shadowed(x)) {
-      // This variable has been shadowed, don't substitute it.
-      return x;
-    } else if (x == target && !depends_on(replacement, shadowed).any()) {
+    if (x == target) {
       return replacement_symbol(replacement);
-    } else if (replacements) {
-      std::optional<expr> r = replacements->lookup(x);
-      if (r && !depends_on(*r, shadowed).any()) {
-        return replacement_symbol(*r);
-      }
+    } else {
+      return x;
     }
-    return x;
   }
 
   stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
     // Remember the replacements from before the slice.
-    const symbol_map<expr>* old_replacements = replacements;
     expr old_replacement = replacement;
 
     // Update the replacements for slices.
-    symbol_map<expr> new_replacements;
-    if (replacements) {
-      new_replacements = *replacements;
-      for (std::optional<expr>& i : new_replacements) {
-        if (i) i = update_sliced_buffer_metadata(*i, sym, slices);
-      }
-      replacements = &new_replacements;
-    }
-
     replacement = update_sliced_buffer_metadata(replacement, sym, slices);
 
     // Mutate the slice
-    if (sym != src) shadowed.push_back(sym);
-    body = mutate(body);
-    if (sym != src) shadowed.pop_back();
+    if (sym == src || allow_substitute(sym)) {
+      body = mutate(body);
+    }
 
     // Restore the old replacements.
-    replacements = old_replacements;
     replacement = old_replacement;
 
     return body;
@@ -742,8 +717,10 @@ public:
     assert(!as_variable(target));
   }
 
+  bool allow_substitute(const var& x) const override { return !depends_on(target, x).any() && !depends_on(replacement, x).any(); }
+
   expr mutate(const expr& op) override {
-    if (!depends_on(target, shadowed).any() && match(op, target) && !depends_on(replacement, shadowed).any()) {
+    if (match(op, target)) {
       return replacement;
     }
     return node_mutator::mutate(op);
@@ -760,9 +737,9 @@ public:
     replacement = update_sliced_buffer_metadata(replacement, sym, slices);
 
     // Mutate the slice
-    if (sym != src) shadowed.push_back(sym);
-    body = mutate(body);
-    if (sym != src) shadowed.pop_back();
+    if (sym == src || allow_substitute(sym)) {
+      body = mutate(body);
+    }
 
     // Restore the old replacements.
     target = old_target;
@@ -805,6 +782,8 @@ public:
   buffer_substitutor(var target, expr elem_size, span<const dim_expr> dims)
       : target(target), elem_size(elem_size), dims(dims) {}
 
+  bool allow_substitute(const var& x) const override { return x != target; }
+
   stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
     // Remember the replacements from before the slice.
     expr old_elem_size = elem_size;
@@ -822,9 +801,9 @@ public:
     dims = span<const dim_expr>(new_dims);
 
     // Mutate the slice
-    if (sym != src) shadowed.push_back(sym);
-    body = mutate(body);
-    if (sym != src) shadowed.pop_back();
+    if (sym == src || allow_substitute(sym)) {
+      body = mutate(body);
+    }
 
     // Restore the old replacements.
     elem_size = old_elem_size;
@@ -877,12 +856,6 @@ T substitute_bounds_impl(const T& op, var buffer, const box_expr& bounds) {
 }
 
 }  // namespace
-
-expr substitute(const expr& e, const symbol_map<expr>& replacements) { return var_substitutor(replacements).mutate(e); }
-stmt substitute(const stmt& s, const symbol_map<expr>& replacements) {
-  scoped_trace trace("substitute");
-  return var_substitutor(replacements).mutate(s);
-}
 
 expr substitute(const expr& e, var target, const expr& replacement) {
   return var_substitutor(target, replacement).mutate(e);
