@@ -452,7 +452,7 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
 // Helper function to write a plan that does nothing when interpreted by for_each_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
   for_each_loop* next = increment_plan<for_each_loop>(plan);
-  next->impl = for_each_loop::linear | for_each_loop::call_f;
+  next->impl = for_each_loop::call_f;
   next->extent = 0;
 }
 
@@ -468,7 +468,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
   for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan_base);
-  prev_loop->impl = for_each_loop::linear;
+  prev_loop->impl = 0;
   prev_loop->extent = 1;
 
   void* plan = plan_base;
@@ -538,7 +538,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       assert(!buf_dim.is_folded());
 
       for_each_loop* loop = increment_plan<for_each_loop>(plan);
-      loop->impl = for_each_loop::linear;
+      loop->impl = 0;
       loop->extent = extent;
       prev_loop = loop;
       extent = 1;
@@ -578,6 +578,42 @@ void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan)
   case 2: make_for_each_loops_impl<false, 2>(bufs.data(), bases, 0, plan); return;
   case 3: make_for_each_loops_impl<false, 3>(bufs.data(), bases, 0, plan); return;
   default: make_for_each_loops_impl<false, 0>(bufs.data(), bases, bufs.size(), plan); return;
+  }
+}
+
+void make_parallel(void* plan, span<const bool> allow_races) {
+  const std::size_t buf_count = allow_races.size();
+  for_each_loop* final_parallel = nullptr;
+  while (true) {
+    for_each_loop* loop = increment_plan<for_each_loop>(plan);
+    bool parallel = true;
+    if (loop->impl & for_each_loop::folded) {
+      const dim* const* dims = increment_plan<const dim*>(plan, buf_count);
+      for (std::size_t i = 0; i < buf_count; ++i) {
+        if ((dims[i]->stride() == 0 || dims[i]->is_folded()) && !allow_races[i]) {
+          parallel = false;
+          break;
+        }
+      }
+    } else {
+      const index_t* strides = increment_plan<index_t>(plan, buf_count);
+      for (std::size_t i = 0; i < buf_count; ++i) {
+        if (strides[i] == 0 && !allow_races[i]) {
+          parallel = false;
+          break;
+        }
+      }
+    }
+    if (parallel) {
+      loop->impl |= for_each_loop::parallel;
+      final_parallel = loop;
+    }
+    if ((loop->impl & for_each_loop::call_f) != 0) {
+      break;
+    }
+  }
+  if (final_parallel) {
+    final_parallel->impl |= for_each_loop::final_parallel;
   }
 }
 

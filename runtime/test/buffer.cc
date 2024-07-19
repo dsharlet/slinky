@@ -8,6 +8,7 @@
 #include <random>
 
 #include "base/test/seeded_test.h"
+#include "base/thread_pool.h"
 #include "runtime/buffer.h"
 
 namespace slinky {
@@ -969,6 +970,44 @@ TEST(fuse_contiguous_dims, cant_fuse_sets) {
   fuse_contiguous_dims(dims_sets, a, b);
   ASSERT_EQ(a.rank, 4);
   ASSERT_EQ(b.rank, 4);
+}
+
+TEST(parallel_for, fill) {
+  thread_pool_impl tp;
+  buffer<int, 4> buf({10, 20, 30, 40});
+  buf.allocate();
+  parallel_for_each_element(
+      tp, [&](int* i) { *i = 3; }, buf);
+
+  ASSERT_TRUE(is_filled_buffer(buf, 3));
+}
+
+TEST(parallel_for, sum) {
+  gtest_seeded_mt19937 rng;
+  thread_pool_impl tp;
+  buffer<int, 4> buf({10, 20, 30, 40});
+  buf.dim(3).set_fold_factor(12);
+  init_random(rng, buf);
+
+  for (std::size_t rd = 0; rd < buf.rank; ++rd) {
+    buffer<int, 4> sum_parallel = buf;
+    buffer<int, 4> sum_serial = buf;
+    sum_parallel.dim(rd).set_stride(0);
+    sum_serial.dim(rd).set_stride(0);
+    sum_parallel.allocate();
+    sum_serial.allocate();
+    const int zero = 0;
+    fill(sum_parallel, &zero);
+    fill(sum_serial, &zero);
+
+    parallel_for_each_element(
+        tp, [&](int* sum_i, const int* buf_i) { *sum_i += *buf_i; }, sum_parallel, buf.cast<const int>());
+    for_each_element([&](int* sum_i, const int* buf_i) { *sum_i += *buf_i; }, sum_serial, buf);
+
+    sum_parallel.slice(rd);
+    sum_serial.slice(rd);
+    for_each_index(sum_serial, [&](const auto& i) { ASSERT_EQ(sum_parallel(i), sum_serial(i)); });
+  }
 }
 
 }  // namespace slinky
