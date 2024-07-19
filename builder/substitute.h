@@ -13,8 +13,6 @@ bool match(const dim_expr& a, const dim_expr& b);
 const call* match_call(const expr& x, intrinsic fn, var a);
 const call* match_call(const expr& x, intrinsic fn, var a, index_t b);
 
-expr substitute(const expr& e, const symbol_map<expr>& replacements);
-stmt substitute(const stmt& s, const symbol_map<expr>& replacements);
 expr substitute(const expr& e, var target, const expr& replacement);
 stmt substitute(const stmt& s, var target, const expr& replacement);
 interval_expr substitute(const interval_expr& x, var target, const expr& replacement);

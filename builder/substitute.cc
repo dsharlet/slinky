@@ -655,12 +655,10 @@ public:
 // A substutitor implementation for target vars
 class var_substitutor : public substitutor {
 public:
-  const symbol_map<expr>* replacements = nullptr;
   var target;
   expr replacement;
 
 public:
-  var_substitutor(const symbol_map<expr>& replacements) : replacements(&replacements) {}
   var_substitutor(var target, const expr& replacement) : target(target), replacement(replacement) {}
 
   void visit(const variable* v) override {
@@ -669,12 +667,6 @@ public:
     } else if (v->sym == target && !depends_on(replacement, shadowed).any()) {
       set_result(replacement);
       return;
-    } else if (replacements) {
-      const std::optional<expr>& r = replacements->lookup(v->sym);
-      if (r && !depends_on(*r, shadowed).any()) {
-        set_result(*r);
-        return;
-      }
     }
     set_result(v);
   }
@@ -692,30 +684,15 @@ public:
       return x;
     } else if (x == target && !depends_on(replacement, shadowed).any()) {
       return replacement_symbol(replacement);
-    } else if (replacements) {
-      std::optional<expr> r = replacements->lookup(x);
-      if (r && !depends_on(*r, shadowed).any()) {
-        return replacement_symbol(*r);
-      }
     }
     return x;
   }
 
   stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
-    // Remember the replacements from before the slice.
-    const symbol_map<expr>* old_replacements = replacements;
+    // Remember the replacement from before the slice.
     expr old_replacement = replacement;
 
-    // Update the replacements for slices.
-    symbol_map<expr> new_replacements;
-    if (replacements) {
-      new_replacements = *replacements;
-      for (std::optional<expr>& i : new_replacements) {
-        if (i) i = update_sliced_buffer_metadata(*i, sym, slices);
-      }
-      replacements = &new_replacements;
-    }
-
+    // Update the replacement for slices.
     replacement = update_sliced_buffer_metadata(replacement, sym, slices);
 
     // Mutate the slice
@@ -723,8 +700,7 @@ public:
     body = mutate(body);
     if (sym != src) shadowed.pop_back();
 
-    // Restore the old replacements.
-    replacements = old_replacements;
+    // Restore the old replacement.
     replacement = old_replacement;
 
     return body;
@@ -877,12 +853,6 @@ T substitute_bounds_impl(const T& op, var buffer, const box_expr& bounds) {
 }
 
 }  // namespace
-
-expr substitute(const expr& e, const symbol_map<expr>& replacements) { return var_substitutor(replacements).mutate(e); }
-stmt substitute(const stmt& s, const symbol_map<expr>& replacements) {
-  scoped_trace trace("substitute");
-  return var_substitutor(replacements).mutate(s);
-}
 
 expr substitute(const expr& e, var target, const expr& replacement) {
   return var_substitutor(target, replacement).mutate(e);
