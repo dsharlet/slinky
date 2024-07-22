@@ -380,22 +380,22 @@ function pipeline(__in, out) {
               let __loop_min = buffer_min(out, 1);
               let __loop_max = buffer_max(out, 1);
               let __loop_step = 4;
-              for(let b = __loop_min; b <= __loop_max; b += __loop_step) {
-                { let __softmax_in = crop_dim(softmax_in, 1, [b, (b + 3)]); {
+              for(let b_1 = __loop_min; b_1 <= __loop_max; b_1 += __loop_step) {
+                { let __softmax_in = crop_dim(softmax_in, 1, [b_1, (b_1 + 3)]); {
                   let softmax_in = __softmax_in;
                   consume(__in);
                   produce(softmax_in);
                   __event_t++;
                 }}
-                { let __max_in = crop_dim(max_in, 0, [b, (b + 3)]); {
+                { let __max_in = crop_dim(max_in, 0, [b_1, (b_1 + 3)]); {
                   let max_in = __max_in;
                   consume(softmax_in);
                   produce(max_in);
                   __event_t++;
                 }}
-                { let __sum_exp_in = crop_dim(sum_exp_in, 0, [b, (b + 3)]); {
+                { let __sum_exp_in = crop_dim(sum_exp_in, 0, [b_1, (b_1 + 3)]); {
                   let sum_exp_in = __sum_exp_in;
-                  { let __exp_in = crop_dim(exp_in, 1, [b, (b + 3)]); {
+                  { let __exp_in = crop_dim(exp_in, 1, [b_1, (b_1 + 3)]); {
                     let exp_in = __exp_in;
                     consume(__in);
                     consume(max_in);
@@ -404,17 +404,17 @@ function pipeline(__in, out) {
                     __event_t++;
                   }}
                 }}
-                { let __softmax_out = crop_dim(softmax_out, 1, [b, (b + 3)]); {
+                { let __softmax_out = crop_dim(softmax_out, 1, [b_1, (b_1 + 3)]); {
                   let softmax_out = __softmax_out;
                   consume(exp_in);
                   consume(sum_exp_in);
                   produce(softmax_out);
                   __event_t++;
                 }}
-                { let __out_b = crop_dim(out, 1, [b, (b + 3)]); {
-                  let out_b = __out_b;
+                { let __out_b_1 = crop_dim(out, 1, [b_1, (b_1 + 3)]); {
+                  let out_b_1 = __out_b_1;
                   consume(softmax_out);
-                  produce(out_b);
+                  produce(out_b_1);
                   __event_t++;
                 }}
               }
