@@ -680,7 +680,15 @@ class pipeline_builder {
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
       interval_expr loop_bounds = get_loop_bounds(base_f, loop);
-      body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop_step, body);
+      // Make sure that a loop variable is unique.
+      std::string loop_var_name;
+      if (base_f->outputs().size() == 1) {
+        loop_var_name = ctx.name(base_f->outputs()[0].sym()) + ".";
+      }
+      loop_var_name += ctx.name(loop.sym());
+      var loop_var = ctx.insert_unique(loop_var_name);
+      body = substitute(body, loop.sym(), loop_var);
+      body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body);
     }
 
     return body;
