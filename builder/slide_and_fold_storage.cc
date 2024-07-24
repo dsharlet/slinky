@@ -251,10 +251,10 @@ public:
     if (l.stage) {
       result = block::make({
           // Wait for the previous iteration of this stage to complete.
-          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}))),
+          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(l.sym - l.step, l.step)}))),
           result,
           // Signal we've done this iteration.
-          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym}))),
+          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step)}))),
       });
       l.stage = std::nullopt;
     }
@@ -675,11 +675,11 @@ public:
           {}, {l.semaphores}, std::move(init_sems_attrs));
       // We can fold the semaphores array by the number of threads we'll use.
       // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
-      expr sem_fold_factor = stage_count * op->step;
+      expr sem_fold_factor = stage_count;
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size},
           // TODO: We should just let dimensions like this have undefined bounds.
-          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
+          {{floor_div(loop_bounds.min - op->step, op->step), floor_div(loop_bounds.max, op->step)}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
       result = allocate::make(
           l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));

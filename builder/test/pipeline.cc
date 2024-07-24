@@ -1140,7 +1140,7 @@ TEST(constant, pipeline) {
 
 class parallel_stencils : public testing::TestWithParam<int> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 4));
+INSTANTIATE_TEST_SUITE_P(schedule, parallel_stencils, testing::Range(0, 5));
 
 TEST_P(parallel_stencils, pipeline) {
   int schedule = GetParam();
@@ -1184,6 +1184,8 @@ TEST_P(parallel_stencils, pipeline) {
     stencil2.loops({{y, 2}});
   } else if (schedule == 3) {
     diff.loops({{y, 1, loop::parallel}});
+  } else if (schedule == 4) {
+    diff.loops({{y, 1234567, loop::parallel}});
   }
 
   pipeline p = build_pipeline(ctx, {in1, in2}, {out});
