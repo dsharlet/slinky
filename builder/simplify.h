@@ -1,30 +1,33 @@
 #ifndef SLINKY_BUILDER_SIMPLIFY_H
 #define SLINKY_BUILDER_SIMPLIFY_H
 
+#include "builder/modulus_remainder.h"
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
 
 namespace slinky {
 
 using bounds_map = symbol_map<interval_expr>;
+using alignment_map = symbol_map<modulus_remainder>;
 
 // Try to simplify an expr or stmt.
-expr simplify(const expr& e, const bounds_map& bounds = bounds_map());
-stmt simplify(const stmt& s, const bounds_map& bounds = bounds_map());
-interval_expr simplify(const interval_expr& e, const bounds_map& bounds = bounds_map());
+expr simplify(const expr& e, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
+stmt simplify(const stmt& s, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
+
+interval_expr simplify(const interval_expr& e, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
 
 // Determine an interval such that x is always inside the interval.
-interval_expr bounds_of(const expr& x, const bounds_map& bounds = bounds_map());
-interval_expr bounds_of(const interval_expr& x, const bounds_map& bounds = bounds_map());
+interval_expr bounds_of(const expr& x, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
+interval_expr bounds_of(const interval_expr& x, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
 
 // Determine a lower or upper bound of x that is conservative if the bound can be made constant.
 expr constant_lower_bound(const expr& x);
 expr constant_upper_bound(const expr& x);
 
 // Attempts to determine if e can be proven to be always true or false.
-std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& bounds = bounds_map());
-bool prove_true(const expr& condition, const bounds_map& bounds = bounds_map());
-bool prove_false(const expr& condition, const bounds_map& bounds = bounds_map());
+std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
+bool prove_true(const expr& condition, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
+bool prove_false(const expr& condition, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());
 
 // Helpers for producing simplified versions of ops. These do not recursively simplify their
 // operands. `op` is an existing node that may be returned if op is equivalent. `op` may be null.

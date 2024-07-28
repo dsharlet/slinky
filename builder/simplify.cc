@@ -346,12 +346,13 @@ class simplifier : public node_mutator {
 
 public:
   simplifier() {}
-  simplifier(const bounds_map& bounds) {
-    // TODO: copy the object here.
+  simplifier(const bounds_map& bounds, const alignment_map& alignment) {
     for (size_t ix = 0; ix < bounds.size(); ix++) {
       var id = var(ix);
       if (!bounds[id]) continue ;
       expr_bounds[id] = {*bounds[id], modulus_remainder()};
+      if (!alignment[id]) continue;
+      expr_bounds[id]->alignment = *alignment[id];
     }
   }
 
@@ -560,7 +561,7 @@ public:
     }
   }
 
-  void visit(const constant* op) override { set_result(op, {{op, op}, modulus_remainder()}); }
+  void visit(const constant* op) override { set_result(op, {{op, op}, {0, op->value}}); }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -602,12 +603,18 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_remainder()});
+      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_remainder::unify(a_bounds.alignment, b_bounds.alignment)});
     }
   }
 
   void visit(const class min* op) override { visit_min_max(op); }
   void visit(const class max* op) override { visit_min_max(op); }
+
+  modulus_remainder modulus_of(const add* op, const modulus_remainder& a, const modulus_remainder& b) { return a + b; }
+  modulus_remainder modulus_of(const sub* op, const modulus_remainder& a, const modulus_remainder& b) { return a - b; }
+  modulus_remainder modulus_of(const mul* op, const modulus_remainder& a, const modulus_remainder& b) { return a * b; }
+  modulus_remainder modulus_of(const div* op, const modulus_remainder& a, const modulus_remainder& b) { return a / b; }
+  modulus_remainder modulus_of(const mod* op, const modulus_remainder& a, const modulus_remainder& b) { return a * b; }
 
   template <typename T>
   void visit_binary(const T* op) {
@@ -625,7 +632,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_remainder()});
+      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_of(op, a_bounds.alignment, b_bounds.alignment)});
     }
   }
   void visit(const add* op) override {
@@ -792,7 +799,7 @@ public:
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      set_result(e, {bounds_of(op, std::move(c_bounds.bounds), std::move(t_bounds.bounds), std::move(f_bounds.bounds)), modulus_remainder()});
+      set_result(e, {bounds_of(op, std::move(c_bounds.bounds), std::move(t_bounds.bounds), std::move(f_bounds.bounds)), modulus_remainder::unify(t_bounds.alignment, f_bounds.alignment)});
     } else {
       mutate_and_set_result(e);
     }
@@ -1869,30 +1876,34 @@ public:
 
 }  // namespace
 
-expr simplify(const expr& e, const bounds_map& bounds) { return simplifier(bounds).mutate(e, nullptr); }
-stmt simplify(const stmt& s, const bounds_map& bounds) {
-  scoped_trace trace("simplify");
-  return simplifier(bounds).mutate(s);
+expr simplify(const expr& e, const bounds_map& bounds, const alignment_map& alignment) { 
+  return simplifier(bounds, alignment).mutate(e, nullptr); 
 }
-interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
-  simplifier s(bounds);
+
+stmt simplify(const stmt& s, const bounds_map& bounds, const alignment_map& alignment) {
+  scoped_trace trace("simplify");
+  return simplifier(bounds, alignment).mutate(s);
+}
+
+interval_expr simplify(const interval_expr& e, const bounds_map& bounds, const alignment_map& alignment) {
+  simplifier s(bounds, alignment);
   return s.mutate(e);
 }
 
-interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
+interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds, const alignment_map& alignment) {
   scoped_trace trace("bounds_of");
-  simplifier s(expr_bounds);
+  simplifier s(expr_bounds, alignment);
   expr_info result;
   s.mutate(x, &result);
   return result.bounds;
 }
 
-interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
+interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, const alignment_map& alignment) {
   if (deep_is_point(x)) {
     return bounds_of(x.min, expr_bounds);
   } else {
     scoped_trace trace("bounds_of");
-    simplifier s(expr_bounds);
+    simplifier s(expr_bounds, alignment);
     expr_info bounds_of_min, bounds_of_max;
     s.mutate(x, &bounds_of_min, &bounds_of_max);
     return {
@@ -2113,18 +2124,18 @@ public:
 expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mutate(x); }
 expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
 
-std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds) {
-  simplifier s(expr_bounds);
+std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
+  simplifier s(expr_bounds, alignment);
   return s.attempt_to_prove(condition);
 }
 
-bool prove_true(const expr& condition, const bounds_map& expr_bounds) {
-  simplifier s(expr_bounds);
+bool prove_true(const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
+  simplifier s(expr_bounds, alignment);
   return s.prove_true(condition);
 }
 
-bool prove_false(const expr& condition, const bounds_map& expr_bounds) {
-  simplifier s(expr_bounds);
+bool prove_false(const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
+  simplifier s(expr_bounds, alignment);
   return s.prove_false(condition);
 }
 
