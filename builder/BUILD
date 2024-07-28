@@ -8,6 +8,7 @@ package(
 cc_library(
     name = "builder",
     srcs = [
+        "modulus_remainder.cc",
         "pipeline.cc",
         "node_mutator.cc",
         "optimizations.cc",
@@ -18,6 +19,7 @@ cc_library(
         "substitute.cc",
     ],
     hdrs = [
+        "modulus_remainder.h",
         "pipeline.h",
         "node_mutator.h",
         "optimizations.h",
