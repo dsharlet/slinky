@@ -744,6 +744,11 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
 }
 
+TEST(simplify, modulus_remainder) {
+  symbol_map<modulus_remainder> alignment = {{x, {16, 0}}};
+  ASSERT_THAT(simplify((x + 15) / 16, {}, alignment), matches(x / 16));
+}
+
 TEST(simplify, fuzz) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);

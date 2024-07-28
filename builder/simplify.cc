@@ -351,8 +351,16 @@ public:
       var id = var(ix);
       if (!bounds[id]) continue ;
       expr_bounds[id] = {*bounds[id], modulus_remainder()};
+    }
+
+    for (size_t ix = 0; ix < bounds.size(); ix++) {
+      var id = var(ix);
       if (!alignment[id]) continue;
-      expr_bounds[id]->alignment = *alignment[id];
+      if (expr_bounds[id]) {
+        expr_bounds[id]->alignment = *alignment[id];
+      } else {
+        expr_bounds[id] = {interval_expr(), *alignment[id]};
+      }
     }
   }
 
