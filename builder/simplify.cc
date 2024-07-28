@@ -24,6 +24,39 @@ namespace slinky {
 
 namespace {
 
+int64_t div_imp(int64_t a, int64_t b) {
+  int64_t ia = a;
+  int64_t ib = b;
+  int64_t a_neg = ia >> 63;
+  int64_t b_neg = ib >> 63;
+  int64_t b_zero = (ib == 0) ? -1 : 0;
+  ib -= b_zero;
+  ia -= a_neg;
+  int64_t q = ia / ib;
+  q += a_neg & (~b_neg - b_neg);
+  q &= ~b_zero;
+  return q;
+}
+
+// A version of mod where a % 0 == a
+int64_t mod_imp(int64_t a, int64_t b) {
+    if (b == 0) {
+        return a;
+    } else {
+      int64_t ia = a;
+      int64_t ib = b;
+      int64_t a_neg = ia >> 63;
+      int64_t b_neg = ib >> 63;
+      int64_t b_zero = (ib == 0) ? -1 : 0;
+      ia -= a_neg;
+      int64_t r = ia % (ib | b_zero);
+      r += (a_neg & ((ib ^ b_neg) + ~b_neg));
+      r &= ~b_zero;
+
+      return r;
+    }
+}
+
 int64_t gcd(int64_t a, int64_t b) {
     if (a < b) {
         std::swap(a, b);
@@ -36,31 +69,23 @@ int64_t gcd(int64_t a, int64_t b) {
     return a;
 }
 
-int64_t lcm(int64_t a, int64_t b) {
-    // Remove all of the common factors from one of the operands
-    b /= gcd(a, b);
-
-    // Then multiply. On overflow this will return zero, so ignore the overflow
-    // flag.
-    int64_t result = a * b;
-    return result;
-}
+} // namespace
 
 modulus_remainder operator+(const modulus_remainder &a, const modulus_remainder &b) {
-    int64_t m = 1, r = 0;
-    if (add_with_overflow(64, a.remainder, b.remainder, &r)) {
-        m = gcd(a.modulus, b.modulus);
-        r = mod(r, m);
-    }
+    int64_t m = 1, r = a.remainder + b.remainder;
+  
+    m = gcd(a.modulus, b.modulus);
+    r = mod_imp(r, m);
+
     return {m, r};
 }
 
 modulus_remainder operator-(const modulus_remainder &a, const modulus_remainder &b) {
-    int64_t m = 1, r = 0;
-    if (sub_with_overflow(64, a.remainder, b.remainder, &r)) {
-        m = gcd(a.modulus, b.modulus);
-        r = mod(r, m);
-    }
+    int64_t m = 1, r = a.remainder - b.remainder;
+
+    m = gcd(a.modulus, b.modulus);
+    r = mod_imp(r, m);
+
     return {m, r};
 }
 
@@ -68,38 +93,32 @@ modulus_remainder operator*(const modulus_remainder &a, const modulus_remainder 
     int64_t m, r;
     if (a.modulus == 0) {
         // a is constant
-        if (mul_with_overflow(64, a.remainder, b.modulus, &m) &&
-            mul_with_overflow(64, a.remainder, b.remainder, &r)) {
-            return {m, r};
-        }
+        m = a.remainder * b.modulus;
+        r = a.remainder * b.remainder;
+        return {m, r};
     } else if (b.modulus == 0) {
         // b is constant
-        if (mul_with_overflow(64, a.modulus, b.remainder, &m) &&
-            mul_with_overflow(64, a.remainder, b.remainder, &r)) {
-            return {m, r};
-        }
+        m = a.modulus * b.remainder;
+        r = a.remainder * b.remainder;
+        return {m, r};
     } else if (a.remainder == 0 && b.remainder == 0) {
         // multiple times multiple
-        if (mul_with_overflow(64, a.modulus, b.modulus, &m)) {
-            return {m, 0};
-        }
+        m = a.modulus * b.modulus;
+        return {m, 0};
     } else if (a.remainder == 0) {
         int64_t g = gcd(b.modulus, b.remainder);
-        if (mul_with_overflow(64, a.modulus, g, &m)) {
-            return {m, 0};
-        }
+        m = a.modulus * g;
+        return {m, 0};
     } else if (b.remainder == 0) {
         int64_t g = gcd(a.modulus, a.remainder);
-        if (mul_with_overflow(64, b.modulus, g, &m)) {
-            return {m, 0};
-        }
+        m = b.modulus * g;
+        return {m, 0};
     } else {
         // Convert them to the same modulus and multiply
-        if (mul_with_overflow(64, a.remainder, b.remainder, &r)) {
-            m = gcd(a.modulus, b.modulus);
-            r = mod(r, m);
-            return {m, r};
-        }
+        r = a.remainder * b.remainder;
+        m = gcd(a.modulus, b.modulus);
+        r = mod_imp(r, m);
+        return {m, r};
     }
 
     return modulus_remainder{};
@@ -116,9 +135,9 @@ modulus_remainder operator/(const modulus_remainder &a, const modulus_remainder 
     // E.g. (8x + 3) / 2 -> (4x + 1)
 
     if (b.modulus == 0 && b.remainder != 0) {
-        if (mod(a.modulus, b.remainder) == 0) {
+        if (mod_imp(a.modulus, b.remainder) == 0) {
             int64_t m = a.modulus / b.remainder;
-            int64_t r = mod(div_imp(a.remainder, b.remainder), m);
+            int64_t r = mod_imp(div_imp(a.remainder, b.remainder), m);
             return {m, r};
         }
     }
@@ -143,27 +162,13 @@ modulus_remainder modulus_remainder::unify(const modulus_remainder &a, const mod
     // Reduce them to the same modulus and the same remainder
     int64_t modulus = gcd(a.modulus, b.modulus);
 
-    int64_t r;
-    if (!sub_with_overflow(64, a.remainder, b.remainder, &r)) {
-        // The modulus is not representable as an int64.
-        return modulus_remainder{};
-    }
-
     int64_t diff = a.remainder - b.remainder;
 
     modulus = gcd(diff, modulus);
 
-    int64_t ra = mod(a.remainder, modulus);
+    int64_t ra = mod_imp(a.remainder, modulus);
 
-    internal_assert(ra == mod(b.remainder, modulus))
-        << "There's a bug inside modulus_remainder in unify_alternatives:\n"
-        << "a.modulus         = " << a.modulus << "\n"
-        << "a.remainder       = " << a.remainder << "\n"
-        << "b.modulus         = " << b.modulus << "\n"
-        << "b.remainder       = " << b.remainder << "\n"
-        << "diff              = " << diff << "\n"
-        << "unified modulus   = " << modulus << "\n"
-        << "unified remainder = " << ra << "\n";
+    assert(ra == mod_imp(b.remainder, modulus));
 
     return {modulus, ra};
 }
@@ -207,7 +212,7 @@ modulus_remainder operator%(const modulus_remainder &a, const modulus_remainder 
     // 2w + 1
     int64_t modulus = gcd(a.modulus, b.modulus);
     modulus = gcd(modulus, b.remainder);
-    int64_t remainder = mod(a.remainder, modulus);
+    int64_t remainder = mod_imp(a.remainder, modulus);
 
     if (b.remainder == 0 && remainder != 0) {
         // b could be zero, so the result could also just be zero.
@@ -242,6 +247,8 @@ modulus_remainder operator/(const modulus_remainder &a, int64_t b) {
 modulus_remainder operator%(const modulus_remainder &a, int64_t b) {
     return a % modulus_remainder(0, b);
 }
+
+namespace {
 
 expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
