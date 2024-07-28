@@ -67,6 +67,10 @@ std::ostream& operator<<(std::ostream& os, const box_expr& b) {
   return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const modulus_remainder& i) {
+  return os << "(" << i.modulus << ", " << i.remainder << ")";
+}
+
 class printer : public expr_visitor, public stmt_visitor {
 public:
   int depth = -1;

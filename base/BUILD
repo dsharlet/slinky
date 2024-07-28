@@ -5,9 +5,11 @@ package(
 
 cc_library(
     name = "base",
+    srcs = ["modulus_remainder.cc"],
     hdrs = [
         "arithmetic.h",
         "ref_count.h",
+        "modulus_remainder.h",
         "span.h",
         "util.h",
     ],

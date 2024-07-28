@@ -1,8 +1,10 @@
 #ifndef SLINKY_BUILDER_MODULUS_REMAINDER_H
 #define SLINKY_BUILDER_MODULUS_REMAINDER_H
 
-#include "runtime/expr.h"
-#include "runtime/stmt.h"
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+
 
 namespace slinky {
 

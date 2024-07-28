@@ -23,6 +23,7 @@ std::ostream& operator<<(std::ostream& os, const interval_expr& i);
 std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, memory_type type);
+std::ostream& operator<<(std::ostream& os, modulus_remainder& type);
 
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);
 std::ostream& operator<<(std::ostream& os, const dim& d);

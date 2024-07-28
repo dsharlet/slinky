@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "base/chrome_trace.h"
-#include "builder/modulus_remainder.h"
 #include "builder/node_mutator.h"
 #include "builder/substitute.h"
 #include "runtime/depends_on.h"

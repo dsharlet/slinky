@@ -1,7 +1,6 @@
 #ifndef SLINKY_BUILDER_SIMPLIFY_H
 #define SLINKY_BUILDER_SIMPLIFY_H
 
-#include "builder/modulus_remainder.h"
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
 
