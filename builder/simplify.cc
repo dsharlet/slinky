@@ -24,6 +24,225 @@ namespace slinky {
 
 namespace {
 
+int64_t gcd(int64_t a, int64_t b) {
+    if (a < b) {
+        std::swap(a, b);
+    }
+    while (b != 0) {
+        int64_t tmp = b;
+        b = a % b;
+        a = tmp;
+    }
+    return a;
+}
+
+int64_t lcm(int64_t a, int64_t b) {
+    // Remove all of the common factors from one of the operands
+    b /= gcd(a, b);
+
+    // Then multiply. On overflow this will return zero, so ignore the overflow
+    // flag.
+    int64_t result = a * b;
+    return result;
+}
+
+modulus_remainder operator+(const modulus_remainder &a, const modulus_remainder &b) {
+    int64_t m = 1, r = 0;
+    if (add_with_overflow(64, a.remainder, b.remainder, &r)) {
+        m = gcd(a.modulus, b.modulus);
+        r = mod(r, m);
+    }
+    return {m, r};
+}
+
+modulus_remainder operator-(const modulus_remainder &a, const modulus_remainder &b) {
+    int64_t m = 1, r = 0;
+    if (sub_with_overflow(64, a.remainder, b.remainder, &r)) {
+        m = gcd(a.modulus, b.modulus);
+        r = mod(r, m);
+    }
+    return {m, r};
+}
+
+modulus_remainder operator*(const modulus_remainder &a, const modulus_remainder &b) {
+    int64_t m, r;
+    if (a.modulus == 0) {
+        // a is constant
+        if (mul_with_overflow(64, a.remainder, b.modulus, &m) &&
+            mul_with_overflow(64, a.remainder, b.remainder, &r)) {
+            return {m, r};
+        }
+    } else if (b.modulus == 0) {
+        // b is constant
+        if (mul_with_overflow(64, a.modulus, b.remainder, &m) &&
+            mul_with_overflow(64, a.remainder, b.remainder, &r)) {
+            return {m, r};
+        }
+    } else if (a.remainder == 0 && b.remainder == 0) {
+        // multiple times multiple
+        if (mul_with_overflow(64, a.modulus, b.modulus, &m)) {
+            return {m, 0};
+        }
+    } else if (a.remainder == 0) {
+        int64_t g = gcd(b.modulus, b.remainder);
+        if (mul_with_overflow(64, a.modulus, g, &m)) {
+            return {m, 0};
+        }
+    } else if (b.remainder == 0) {
+        int64_t g = gcd(a.modulus, a.remainder);
+        if (mul_with_overflow(64, b.modulus, g, &m)) {
+            return {m, 0};
+        }
+    } else {
+        // Convert them to the same modulus and multiply
+        if (mul_with_overflow(64, a.remainder, b.remainder, &r)) {
+            m = gcd(a.modulus, b.modulus);
+            r = mod(r, m);
+            return {m, r};
+        }
+    }
+
+    return modulus_remainder{};
+}
+
+modulus_remainder operator/(const modulus_remainder &a, const modulus_remainder &b) {
+    // What can we say about:
+    // floor((m1 * x + r1) / (m2 * y + r2))
+
+    // If m2 is zero and m1 is a multiple of r2, then we can pull the
+    // varying term out of the floor div and the expression simplifies
+    // to:
+    // (m1 / r2) * x + floor(r1 / r2)
+    // E.g. (8x + 3) / 2 -> (4x + 1)
+
+    if (b.modulus == 0 && b.remainder != 0) {
+        if (mod(a.modulus, b.remainder) == 0) {
+            int64_t m = a.modulus / b.remainder;
+            int64_t r = mod(div_imp(a.remainder, b.remainder), m);
+            return {m, r};
+        }
+    }
+
+    return modulus_remainder{};
+}
+
+modulus_remainder modulus_remainder::unify(const modulus_remainder &a, const modulus_remainder &b) {
+    // We don't know if we're going to get a or b, so we'd better find
+    // a single modulus remainder that works for both.
+
+    // For example:
+    // max(30*_ + 13, 40*_ + 27) ->
+    // max(10*_ + 3, 10*_ + 7) ->
+    // max(2*_ + 1, 2*_ + 1) ->
+    // 2*_ + 1
+
+    if (b.remainder > a.remainder) {
+        return unify(b, a);
+    }
+
+    // Reduce them to the same modulus and the same remainder
+    int64_t modulus = gcd(a.modulus, b.modulus);
+
+    int64_t r;
+    if (!sub_with_overflow(64, a.remainder, b.remainder, &r)) {
+        // The modulus is not representable as an int64.
+        return modulus_remainder{};
+    }
+
+    int64_t diff = a.remainder - b.remainder;
+
+    modulus = gcd(diff, modulus);
+
+    int64_t ra = mod(a.remainder, modulus);
+
+    internal_assert(ra == mod(b.remainder, modulus))
+        << "There's a bug inside modulus_remainder in unify_alternatives:\n"
+        << "a.modulus         = " << a.modulus << "\n"
+        << "a.remainder       = " << a.remainder << "\n"
+        << "b.modulus         = " << b.modulus << "\n"
+        << "b.remainder       = " << b.remainder << "\n"
+        << "diff              = " << diff << "\n"
+        << "unified modulus   = " << modulus << "\n"
+        << "unified remainder = " << ra << "\n";
+
+    return {modulus, ra};
+}
+
+modulus_remainder modulus_remainder::intersect(const modulus_remainder &a, const modulus_remainder &b) {
+    // We have x == ma * y + ra == mb * z + rb
+
+    // We want to synthesize these two facts into one modulus
+    // remainder relationship. We are permitted to be
+    // conservatively-large, so it's OK if some elements of the result
+    // only satisfy one of the two constraints.
+
+    // For coprime ma and mb you want to use the Chinese remainder
+    // theorem. In our case, the moduli will almost always be
+    // powers of two, so we should just return the smaller of the two
+    // sets (usually the one with the larger modulus).
+    if (a.modulus == 0) {
+        return a;
+    }
+    if (b.modulus == 0) {
+        return b;
+    }
+    if (a.modulus > b.modulus) {
+        return a;
+    }
+    return b;
+}
+
+modulus_remainder operator%(const modulus_remainder &a, const modulus_remainder &b) {
+    // For non-zero y, we can treat x mod y as x + z*y, where we know
+    // nothing about z.
+    // (ax + b) + z (cx + d) ->
+    // ax + b + zcx + dz ->
+    // gcd(a, c, d) * w + b
+
+    // E.g:
+    // (8x + 5) mod (6x + 2) ->
+    // (8x + 5) + z (6x + 2) ->
+    // (8x + 6zx + 2x) + 5 ->
+    // 2(4x + 3zx + x) + 5 ->
+    // 2w + 1
+    int64_t modulus = gcd(a.modulus, b.modulus);
+    modulus = gcd(modulus, b.remainder);
+    int64_t remainder = mod(a.remainder, modulus);
+
+    if (b.remainder == 0 && remainder != 0) {
+        // b could be zero, so the result could also just be zero.
+        if (modulus == 0) {
+            remainder = 0;
+        } else {
+            // This can no longer be expressed as ax + b
+            remainder = 0;
+            modulus = 1;
+        }
+    }
+
+    return {modulus, remainder};
+}
+
+modulus_remainder operator+(const modulus_remainder &a, int64_t b) {
+    return a + modulus_remainder(0, b);
+}
+
+modulus_remainder operator-(const modulus_remainder &a, int64_t b) {
+    return a - modulus_remainder(0, b);
+}
+
+modulus_remainder operator*(const modulus_remainder &a, int64_t b) {
+    return a * modulus_remainder(0, b);
+}
+
+modulus_remainder operator/(const modulus_remainder &a, int64_t b) {
+    return a / modulus_remainder(0, b);
+}
+
+modulus_remainder operator%(const modulus_remainder &a, int64_t b) {
+    return a % modulus_remainder(0, b);
+}
+
 expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
     if (is_zero(ne->b)) {
@@ -306,6 +525,11 @@ public:
 
 expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a); }
 
+struct expr_info {
+  interval_expr bounds;
+  modulus_remainder alignment;
+};
+
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
   struct buffer_info {
@@ -321,59 +545,66 @@ class simplifier : public node_mutator {
     var src;
   };
   symbol_map<buffer_info> buffers;
-  bounds_map expr_bounds;
+  symbol_map<expr_info> expr_bounds;
 
-  interval_expr result_bounds;
+  expr_info result_bounds;
 
-  void set_result(expr e, interval_expr bounds) {
-    assert(!result_bounds.min.defined() && !result_bounds.max.defined());
+  void set_result(expr e, expr_info bounds) {
+    assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
     result_bounds = std::move(bounds);
     node_mutator::set_result(std::move(e));
   }
   void set_result(stmt s) {
-    assert(!result_bounds.min.defined() && !result_bounds.max.defined());
-    result_bounds = interval_expr();
+    assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
+    result_bounds = {interval_expr()};
     node_mutator::set_result(std::move(s));
   }
   // Dummy for template code.
-  void set_result(stmt s, interval_expr) { set_result(std::move(s)); }
+  void set_result(stmt s, expr_info) { set_result(std::move(s)); }
 
 public:
   simplifier() {}
-  simplifier(const bounds_map& expr_bounds) : expr_bounds(expr_bounds) {}
+  simplifier(const bounds_map& bounds) {
+    // TODO: copy the object here.
+    for (size_t ix = 0; ix < bounds.size(); ix++) {
+      var id = var(ix);
+      if (!bounds[id]) continue ;
+      expr_bounds[id] = {*bounds[id], modulus_remainder()};
+    }
+  }
 
-  expr mutate(const expr& e, interval_expr* bounds) {
+  expr mutate(const expr& e, expr_info* bounds) {
     expr result = node_mutator::mutate(e);
     if (bounds) {
-      result_bounds = ensure_is_point(result_bounds);
+      result_bounds.bounds = ensure_is_point(result_bounds.bounds);
       if (bounds != &result_bounds) {
         *bounds = std::move(result_bounds);
       }
     } else {
-      result_bounds = {expr(), expr()};
+      result_bounds = {{expr(), expr()}, modulus_remainder()};
     }
     return result;
   }
   // Dummy for template code.
-  stmt mutate(const stmt& s, interval_expr* bounds) { return node_mutator::mutate(s); }
+  stmt mutate(const stmt& s, expr_info* bounds) { return node_mutator::mutate(s); }
   expr mutate(const expr& e) override { return mutate(e, nullptr); }
   stmt mutate(const stmt& s) override { return mutate(s, nullptr); }
 
   // When mutating a value x interpreted as boolean, we need to effectively mutate x != 0, but we can't do that directly
   // because it risks breaking the simplifiers ability to check if an expression has not changed. This helper emulates
   // this.
-  expr mutate_boolean(const expr& e, interval_expr* bounds) {
+  expr mutate_boolean(const expr& e, expr_info* bounds) {
     expr result = strip_boolean(mutate(e, bounds));
-    if (bounds) *bounds = bounds_of(static_cast<const not_equal*>(nullptr), *bounds, point(0));
+    if (bounds) bounds->bounds = bounds_of(static_cast<const not_equal*>(nullptr), bounds->bounds, point(0));
     return result;
   }
 
   void mutate_and_set_result(const expr& e) {
-    assert(!result_bounds.min.defined() && !result_bounds.max.defined());
+    assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
     node_mutator::set_result(mutate(e, &result_bounds));
   }
 
-  interval_expr mutate(const interval_expr& x, interval_expr* min_bounds, interval_expr* max_bounds) {
+  interval_expr mutate(const interval_expr& x, expr_info* min_bounds, expr_info* max_bounds) {
     if (deep_is_point(x)) {
       expr result = mutate(x.min, min_bounds);
       if (min_bounds && max_bounds) {
@@ -391,12 +622,12 @@ public:
   // This class manages information learned from conditions that can be used to improve bounds.
   class knowledge {
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
-    std::vector<scoped_value_in_symbol_map<interval_expr>> k;
+    std::vector<scoped_value_in_symbol_map<expr_info>> k;
 
-    symbol_map<interval_expr>& bounds;
+    symbol_map<expr_info>& bounds;
 
   public:
-    knowledge(symbol_map<interval_expr>& bounds) : bounds(bounds) {}
+    knowledge(symbol_map<expr_info>& bounds) : bounds(bounds) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() {
@@ -409,40 +640,40 @@ public:
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(bounds, v->sym, point(b)));
+        k.push_back(set_value_in_scope(bounds, v->sym, {point(b), modulus_remainder()}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(bounds, v->sym, point(a)));
+        k.push_back(set_value_in_scope(bounds, v->sym, {point(a),  modulus_remainder()}));
       }
     }
 
     void learn_from_less(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b - 1
-        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
-        const expr& lb = old_bounds ? old_bounds->min : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {lb, b - 1}));
+        const std::optional<expr_info>& old_bounds = bounds[v->sym];
+        const expr& lb = old_bounds ? old_bounds->bounds.min : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {{lb, b - 1}, modulus_remainder()}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
-        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
-        const expr& ub = old_bounds ? old_bounds->max : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {a + 1, ub}));
+        const std::optional<expr_info>& old_bounds = bounds[v->sym];
+        const expr& ub = old_bounds ? old_bounds->bounds.max : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {{a + 1, ub}, modulus_remainder()}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b
-        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
-        const expr& lb = old_bounds ? old_bounds->min : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {lb, b}));
+        const std::optional<expr_info>& old_bounds = bounds[v->sym];
+        const expr& lb = old_bounds ? old_bounds->bounds.min : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {{lb, b}, modulus_remainder()}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
-        const std::optional<interval_expr>& old_bounds = bounds[v->sym];
-        const expr& ub = old_bounds ? old_bounds->max : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {a, ub}));
+        const std::optional<expr_info>& old_bounds = bounds[v->sym];
+        const expr& ub = old_bounds ? old_bounds->bounds.max : expr();
+        k.push_back(set_value_in_scope(bounds, v->sym, {{a, ub}, modulus_remainder()}));
       }
     }
 
@@ -515,11 +746,11 @@ public:
 
   std::optional<bool> attempt_to_prove(const expr& e) {
     scoped_trace trace("attempt_to_prove");
-    interval_expr bounds;
+    expr_info bounds;
     mutate_boolean(e, &bounds);
-    if (prove_constant_true(bounds.min)) {
+    if (prove_constant_true(bounds.bounds.min)) {
       return true;
-    } else if (prove_constant_false(bounds.max)) {
+    } else if (prove_constant_false(bounds.bounds.max)) {
       return false;
     } else {
       return {};
@@ -537,27 +768,27 @@ public:
   }
 
   void visit(const variable* op) override {
-    std::optional<interval_expr> bounds = expr_bounds[op->sym];
+    std::optional<expr_info> bounds = expr_bounds[op->sym];
     if (bounds) {
-      if (!bounds->min.defined()) bounds->min = op;
-      if (!bounds->max.defined()) bounds->max = op;
+      if (!bounds->bounds.min.defined()) bounds->bounds.min = op;
+      if (!bounds->bounds.max.defined()) bounds->bounds.max = op;
       set_result(op, std::move(*bounds));
     } else {
-      set_result(op, {op, op});
+      set_result(op, {{op, op}, modulus_remainder()});
     }
   }
 
-  void visit(const constant* op) override { set_result(op, {op, op}); }
+  void visit(const constant* op) override { set_result(op, {{op, op}, modulus_remainder()}); }
 
   template <typename T>
   void visit_min_max(const T* op) {
-    interval_expr a_bounds;
+    expr_info a_bounds;
     expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
+    expr_info b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
     if (!a.defined() || !b.defined()) {
-      set_result(expr(), interval_expr());
+      set_result(expr(), expr_info());
       return;
     }
 
@@ -565,18 +796,18 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.min)) ||
-        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b)) ||
-        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.max, b_bounds.min))) {
+    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.bounds.min)) ||
+        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.bounds.max, b)) ||
+        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.bounds.max, b_bounds.bounds.min))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(a), std::move(a_bounds));
       } else {
         set_result(std::move(b), std::move(b_bounds));
       }
       return;
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.min)) ||
-               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a)) ||
-               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.max, a_bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.bounds.min)) ||
+               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.bounds.max, a)) ||
+               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.bounds.max, a_bounds.bounds.min))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(b), std::move(b_bounds));
       } else {
@@ -589,7 +820,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
+      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_remainder()});
     }
   }
 
@@ -598,13 +829,13 @@ public:
 
   template <typename T>
   void visit_binary(const T* op) {
-    interval_expr a_bounds;
+    expr_info a_bounds;
     expr a = mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
+    expr_info b_bounds;
     expr b = mutate(op->b, &b_bounds);
 
     if (!a.defined() || !b.defined()) {
-      set_result(expr(), interval_expr());
+      set_result(expr(), expr_info());
       return;
     }
 
@@ -612,7 +843,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, bounds_of(op, std::move(a_bounds), std::move(b_bounds)));
+      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_remainder()});
     }
   }
   void visit(const add* op) override {
@@ -635,13 +866,13 @@ public:
 
   template <typename T>
   void visit_logical(const T* op, bool coerce_boolean = false) {
-    interval_expr a_bounds;
+    expr_info a_bounds;
     expr a = coerce_boolean ? mutate_boolean(op->a, &a_bounds) : mutate(op->a, &a_bounds);
-    interval_expr b_bounds;
+    expr_info b_bounds;
     expr b = coerce_boolean ? mutate_boolean(op->b, &b_bounds) : mutate(op->b, &b_bounds);
 
     if (!a.defined() || !b.defined()) {
-      set_result(expr(), interval_expr());
+      set_result(expr(), expr_info());
       return;
     }
 
@@ -649,13 +880,13 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      interval_expr result_bounds = bounds_of(op, std::move(a_bounds), std::move(b_bounds));
+      interval_expr result_bounds = bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds));
       if (prove_constant_true(result_bounds.min)) {
-        set_result(true, {1, 1});
+        set_result(true, {{1, 1}, modulus_remainder()});
       } else if (prove_constant_false(result_bounds.max)) {
-        set_result(false, {0, 0});
+        set_result(false, {{0, 0}, modulus_remainder()});
       } else {
-        set_result(result, std::move(result_bounds));
+        set_result(result, {std::move(result_bounds), modulus_remainder()});
       }
     }
   }
@@ -667,19 +898,19 @@ public:
   void visit(const logical_or* op) override { visit_logical(op, /*coerce_boolean=*/true); }
 
   void visit(const logical_not* op) override {
-    interval_expr bounds;
+    expr_info bounds;
     expr a = mutate_boolean(op->a, &bounds);
 
     if (!a.defined()) {
-      set_result(expr(), interval_expr());
-    } else if (prove_constant_true(bounds.min)) {
-      set_result(false, {0, 0});
-    } else if (prove_constant_false(bounds.max)) {
-      set_result(true, {1, 1});
+      set_result(expr(), expr_info());
+    } else if (prove_constant_true(bounds.bounds.min)) {
+      set_result(false, {{0, 0}, modulus_remainder()});
+    } else if (prove_constant_false(bounds.bounds.max)) {
+      set_result(true, {{1, 1}, modulus_remainder()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
-        set_result(result, bounds_of(op, std::move(bounds)));
+        set_result(result, {bounds_of(op, std::move(bounds.bounds)), modulus_remainder()});
       } else {
         mutate_and_set_result(result);
       }
@@ -731,16 +962,16 @@ public:
   }
 
   void visit(const class select* op) override {
-    interval_expr c_bounds;
+    expr_info c_bounds;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
     expr c = mutate_boolean(op->condition, &c_bounds);
     if (!c.defined()) {
-      set_result(expr(), interval_expr());
+      set_result(expr(), expr_info());
       return;
-    } else if (prove_constant_true(c_bounds.min)) {
+    } else if (prove_constant_true(c_bounds.bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
-    } else if (prove_constant_false(c_bounds.max)) {
+    } else if (prove_constant_false(c_bounds.bounds.max)) {
       mutate_and_set_result(op->false_value);
       return;
     }
@@ -761,25 +992,25 @@ public:
       return;
     }
 
-    interval_expr t_bounds;
+    expr_info t_bounds;
     {
       auto knowledge = learn_from_true(c);
       t = mutate(t, &t_bounds);
     }
-    interval_expr f_bounds;
+    expr_info f_bounds;
     {
       auto knowledge = learn_from_false(c);
       f = mutate(f, &f_bounds);
     }
 
     if (!t.defined() && !f.defined()) {
-      set_result(expr(), interval_expr());
+      set_result(expr(), expr_info());
       return;
     }
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      set_result(e, bounds_of(op, std::move(c_bounds), std::move(t_bounds), std::move(f_bounds)));
+      set_result(e, {bounds_of(op, std::move(c_bounds.bounds), std::move(t_bounds.bounds), std::move(f_bounds.bounds)), modulus_remainder()});
     } else {
       mutate_and_set_result(e);
     }
@@ -793,15 +1024,15 @@ public:
     args.reserve(op->args.size());
     args_bounds.reserve(op->args.size());
     for (const expr& i : op->args) {
-      interval_expr i_bounds;
+      expr_info i_bounds;
       args.push_back(mutate(i, &i_bounds));
-      args_bounds.push_back(std::move(i_bounds));
+      args_bounds.push_back(std::move(i_bounds.bounds));
     }
 
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(args.size() >= 1);
       if (!args[0].defined()) {
-        set_result(expr(), interval_expr());
+        set_result(expr(), expr_info());
         return;
       }
       const var* buf = as_variable(op->args[0]);
@@ -813,9 +1044,9 @@ public:
         if (op->intrinsic == intrinsic::buffer_elem_size) {
           expr value = info->elem_size;
           if (should_substitute(value) || value.as<call>()) {
-            set_result(value, point(value));
+            set_result(value, {point(value), modulus_remainder()});
           } else {
-            set_result(op, point(value));
+            set_result(op, {point(value), modulus_remainder()});
           }
           return;
         } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
@@ -824,9 +1055,9 @@ public:
           if (*dim < static_cast<index_t>(info->dims.size())) {
             expr value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
             if (should_substitute(value) || value.as<call>()) {
-              set_result(value, point(value));
+              set_result(value, {point(value), modulus_remainder()});
             } else {
-              set_result(op, point(value));
+              set_result(op, {point(value), modulus_remainder()});
             }
             return;
           }
@@ -846,7 +1077,8 @@ public:
       assert(args.size() == 1);
       assert(args_bounds.size() == 1);
       if (prove_constant_true(args_bounds[0].min >= 0)) {
-        set_result(std::move(args[0]), std::move(args_bounds[0]));
+        // TODO: Check module here.
+        set_result(std::move(args[0]), {std::move(args_bounds[0]), modulus_remainder()});
         return;
       } else if (prove_constant_true(args_bounds[0].max <= 0)) {
         mutate_and_set_result(-args[0]);
@@ -856,7 +1088,7 @@ public:
 
     expr e = simplify(op, op->intrinsic, std::move(args));
     if (e.same_as(op)) {
-      set_result(e, bounds_of(op, std::move(args_bounds)));
+      set_result(e, {bounds_of(op, std::move(args_bounds)), modulus_remainder()});
     } else {
       mutate_and_set_result(e);
     }
@@ -867,13 +1099,13 @@ public:
     std::vector<std::pair<var, expr>> lets;
     lets.reserve(op->lets.size());
 
-    using sv_type = scoped_value_in_symbol_map<interval_expr>;
+    using sv_type = scoped_value_in_symbol_map<expr_info>;
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
     bool values_changed = false;
     for (const auto& s : op->lets) {
-      interval_expr value_bounds;
+      expr_info value_bounds;
       lets.emplace_back(s.first, mutate(s.second, &value_bounds));
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
@@ -881,7 +1113,7 @@ public:
       scoped_values.push_back(set_value_in_scope(expr_bounds, s.first, value_bounds));
     }
 
-    interval_expr body_bounds;
+    expr_info body_bounds;
     auto body = mutate(op->body, &body_bounds);
 
     bool substituted = false;
@@ -942,7 +1174,7 @@ public:
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
     assert(!expr_bounds.contains(v));
-    auto set_bounds = set_value_in_scope(expr_bounds, v, std::move(bounds));
+    auto set_bounds = set_value_in_scope(expr_bounds, v, {std::move(bounds), modulus_remainder()});
     return mutate(body);
   }
 
@@ -1125,10 +1357,10 @@ public:
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            auto set_bounds_of_sym = set_value_in_scope(expr_bounds, op->sym, bounds);
-            interval_expr bounds_of_min, bounds_of_max;
+            auto set_bounds_of_sym = set_value_in_scope(expr_bounds, op->sym, {bounds, modulus_remainder()});
+            expr_info bounds_of_min, bounds_of_max;
             mutate(crop->bounds, &bounds_of_min, &bounds_of_max);
-            new_crops.emplace_back(crop->sym, crop->src, crop->dim, bounds_of_min | bounds_of_max);
+            new_crops.emplace_back(crop->sym, crop->src, crop->dim, bounds_of_min.bounds | bounds_of_max.bounds);
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
@@ -1671,10 +1903,10 @@ public:
     visit_crop(op, bounds);
   }
 
-  static void update_sliced_buffer_metadata(bounds_map& bounds, var sym, span<const int> sliced) {
-    for (std::optional<interval_expr>& i : bounds) {
+  static void update_sliced_buffer_metadata(symbol_map<expr_info>& bounds, var sym, span<const int> sliced) {
+    for (std::optional<expr_info>& i : bounds) {
       if (!i) continue;
-      *i = slinky::update_sliced_buffer_metadata(*i, sym, sliced);
+      i->bounds = slinky::update_sliced_buffer_metadata(i->bounds, sym, sliced);
     }
   }
   static void update_sliced_buffer_metadata(symbol_map<buffer_info>& buffers, var sym, span<const int> sliced) {
@@ -1702,7 +1934,7 @@ public:
     }
 
     symbol_map<buffer_info> old_buffers = buffers;
-    bounds_map old_expr_bounds = expr_bounds;
+    symbol_map<expr_info> old_expr_bounds = expr_bounds;
     std::optional<buffer_info> info = buffers[op->src];
 
     if (info) {
@@ -1835,14 +2067,14 @@ public:
   }
 
   void visit(const check* op) override {
-    interval_expr c_bounds;
+    expr_info c_bounds;
     expr c = mutate_boolean(op->condition, &c_bounds);
 
     if (!c.defined()) {
       set_result(stmt());
-    } else if (prove_constant_true(c_bounds.min)) {
+    } else if (prove_constant_true(c_bounds.bounds.min)) {
       set_result(stmt());
-    } else if (prove_constant_false(c_bounds.max)) {
+    } else if (prove_constant_false(c_bounds.bounds.max)) {
       std::cerr << op->condition << " is statically false." << std::endl;
       std::abort();
     } else if (c.same_as(op->condition)) {
@@ -1868,9 +2100,9 @@ interval_expr simplify(const interval_expr& e, const bounds_map& bounds) {
 interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds) {
   scoped_trace trace("bounds_of");
   simplifier s(expr_bounds);
-  interval_expr result;
+  expr_info result;
   s.mutate(x, &result);
-  return result;
+  return result.bounds;
 }
 
 interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
@@ -1879,11 +2111,11 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds) {
   } else {
     scoped_trace trace("bounds_of");
     simplifier s(expr_bounds);
-    interval_expr bounds_of_min, bounds_of_max;
+    expr_info bounds_of_min, bounds_of_max;
     s.mutate(x, &bounds_of_min, &bounds_of_max);
     return {
-        simplify(static_cast<const class min*>(nullptr), bounds_of_min.min, bounds_of_max.min),
-        simplify(static_cast<const class max*>(nullptr), bounds_of_min.max, bounds_of_max.max),
+        simplify(static_cast<const class min*>(nullptr), bounds_of_min.bounds.min, bounds_of_max.bounds.min),
+        simplify(static_cast<const class max*>(nullptr), bounds_of_min.bounds.max, bounds_of_max.bounds.max),
     };
   }
 }
