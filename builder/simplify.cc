@@ -352,9 +352,11 @@ public:
       expr_bounds[id] = {*bounds[id], modulus_remainder()};
     }
 
-    for (size_t ix = 0; ix < bounds.size(); ix++) {
+    for (size_t ix = 0; ix < alignment.size(); ix++) {
       var id = var(ix);
+      std::cout << "looking for alignment " << id << "\nn";
       if (!alignment[id]) continue;
+      std::cout << "alignment for: " << id << " " << *alignment[id] << "\n"; 
       if (expr_bounds[id]) {
         expr_bounds[id]->alignment = *alignment[id];
       } else {
