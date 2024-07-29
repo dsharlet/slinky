@@ -355,9 +355,7 @@ public:
 
     for (size_t ix = 0; ix < alignment.size(); ix++) {
       var id = var(ix);
-      std::cout << "looking for alignment " << id << "\nn";
       if (!alignment[id]) continue;
-      std::cout << "alignment for: " << id << " " << *alignment[id] << "\n"; 
       if (expr_bounds[id]) {
         expr_bounds[id]->alignment = *alignment[id];
       } else {
@@ -646,11 +644,11 @@ public:
     rewrite::pattern_constant<0> c0;
     rewrite::pattern_constant<1> c1;
 
+    // It's a bit ugly to have rules here instead of simplify_rules, but pliumbing bounds and alignment seems difficult.
     auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
     if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), a_mod % c1 == 0) ||
         r((c0 - x)/c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, a_mod % c1 == 0) ||
-        false
-    ) {
+        false) {
       mutate_and_set_result(r.result);
       return ;
     } 
@@ -659,7 +657,6 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      std::cout << expr(op) << " " << modulus_of(op, a_bounds.alignment, b_bounds.alignment) << "\n";
       set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_of(op, a_bounds.alignment, b_bounds.alignment)});
     }
   }
