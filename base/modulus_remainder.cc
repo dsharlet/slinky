@@ -1,6 +1,8 @@
 #include "base/modulus_remainder.h"
 
-// Based on https://github.com/halide/Halide/blob/main/src/ModulusRemainder.cpp.
+#include "base/arithmetic.h"
+
+// Based on https://github.com/halide/Halide/blob/main/src/modulus_remainder.cpp.
 namespace slinky {
 
 namespace {
@@ -38,6 +40,13 @@ int64_t mod_imp(int64_t a, int64_t b) {
     }
 }
 
+int64_t mod_with_zero(int64_t a, int64_t b) {
+    if (b == 0) {
+        return a;
+    } else {
+        return mod_imp(a, b);
+    }
+}
 int64_t gcd(int64_t a, int64_t b) {
     if (a < b) {
         std::swap(a, b);
@@ -53,20 +62,20 @@ int64_t gcd(int64_t a, int64_t b) {
 } // namespace
 
 modulus_remainder operator+(const modulus_remainder &a, const modulus_remainder &b) {
-    int64_t m = 1, r = a.remainder + b.remainder;
-  
-    m = gcd(a.modulus, b.modulus);
-    r = mod_imp(r, m);
-
+    int64_t m = 1, r = 0;
+    if (add_with_overflow(a.remainder, b.remainder, &r)) {
+        m = gcd(a.modulus, b.modulus);
+        r = mod_with_zero(r, m);
+    }
     return {m, r};
 }
 
 modulus_remainder operator-(const modulus_remainder &a, const modulus_remainder &b) {
-    int64_t m = 1, r = a.remainder - b.remainder;
-
-    m = gcd(a.modulus, b.modulus);
-    r = mod_imp(r, m);
-
+    int64_t m = 1, r = 0;
+    if (sub_with_overflow(a.remainder, b.remainder, &r)) {
+        m = gcd(a.modulus, b.modulus);
+        r = mod_with_zero(r, m);
+    }
     return {m, r};
 }
 
@@ -74,32 +83,38 @@ modulus_remainder operator*(const modulus_remainder &a, const modulus_remainder 
     int64_t m, r;
     if (a.modulus == 0) {
         // a is constant
-        m = a.remainder * b.modulus;
-        r = a.remainder * b.remainder;
-        return {m, r};
+        if (mul_with_overflow(a.remainder, b.modulus, &m) &&
+            mul_with_overflow(a.remainder, b.remainder, &r)) {
+            return {m, r};
+        }
     } else if (b.modulus == 0) {
         // b is constant
-        m = a.modulus * b.remainder;
-        r = a.remainder * b.remainder;
-        return {m, r};
+        if (mul_with_overflow(a.modulus, b.remainder, &m) &&
+            mul_with_overflow(a.remainder, b.remainder, &r)) {
+            return {m, r};
+        }
     } else if (a.remainder == 0 && b.remainder == 0) {
         // multiple times multiple
-        m = a.modulus * b.modulus;
-        return {m, 0};
+        if (mul_with_overflow(a.modulus, b.modulus, &m)) {
+            return {m, 0};
+        }
     } else if (a.remainder == 0) {
         int64_t g = gcd(b.modulus, b.remainder);
-        m = a.modulus * g;
-        return {m, 0};
+        if (mul_with_overflow(a.modulus, g, &m)) {
+            return {m, 0};
+        }
     } else if (b.remainder == 0) {
         int64_t g = gcd(a.modulus, a.remainder);
-        m = b.modulus * g;
-        return {m, 0};
+        if (mul_with_overflow(b.modulus, g, &m)) {
+            return {m, 0};
+        }
     } else {
         // Convert them to the same modulus and multiply
-        r = a.remainder * b.remainder;
-        m = gcd(a.modulus, b.modulus);
-        r = mod_imp(r, m);
-        return {m, r};
+        if (mul_with_overflow(a.remainder, b.remainder, &r)) {
+            m = gcd(a.modulus, b.modulus);
+            r = mod_with_zero(r, m);
+            return {m, r};
+        }
     }
 
     return modulus_remainder{};
@@ -116,9 +131,9 @@ modulus_remainder operator/(const modulus_remainder &a, const modulus_remainder 
     // E.g. (8x + 3) / 2 -> (4x + 1)
 
     if (b.modulus == 0 && b.remainder != 0) {
-        if (mod_imp(a.modulus, b.remainder) == 0) {
+        if (mod_with_zero(a.modulus, b.remainder) == 0) {
             int64_t m = a.modulus / b.remainder;
-            int64_t r = mod_imp(div_imp(a.remainder, b.remainder), m);
+            int64_t r = mod_with_zero(div_imp(a.remainder, b.remainder), m);
             return {m, r};
         }
     }
@@ -143,13 +158,19 @@ modulus_remainder modulus_remainder::unify(const modulus_remainder &a, const mod
     // Reduce them to the same modulus and the same remainder
     int64_t modulus = gcd(a.modulus, b.modulus);
 
+    int64_t r;
+    if (!sub_with_overflow(a.remainder, b.remainder, &r)) {
+        // The modulus is not representable as an int64.
+        return modulus_remainder{};
+    }
+
     int64_t diff = a.remainder - b.remainder;
 
     modulus = gcd(diff, modulus);
 
-    int64_t ra = mod_imp(a.remainder, modulus);
+    int64_t ra = mod_with_zero(a.remainder, modulus);
 
-    assert(ra == mod_imp(b.remainder, modulus));
+    assert(ra == mod_with_zero(b.remainder, modulus));
 
     return {modulus, ra};
 }
@@ -193,7 +214,7 @@ modulus_remainder operator%(const modulus_remainder &a, const modulus_remainder 
     // 2w + 1
     int64_t modulus = gcd(a.modulus, b.modulus);
     modulus = gcd(modulus, b.remainder);
-    int64_t remainder = mod_imp(a.remainder, modulus);
+    int64_t remainder = mod_with_zero(a.remainder, modulus);
 
     if (b.remainder == 0 && remainder != 0) {
         // b could be zero, so the result could also just be zero.
