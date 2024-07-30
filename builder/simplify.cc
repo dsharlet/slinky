@@ -573,10 +573,10 @@ public:
 
   template <typename T>
   void visit_min_max(const T* op) {
-    expr_info a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    expr_info b_bounds;
-    expr b = mutate(op->b, &b_bounds);
+    expr_info a_info;
+    expr a = mutate(op->a, &a_info);
+    expr_info b_info;
+    expr b = mutate(op->b, &b_info);
 
     if (!a.defined() || !b.defined()) {
       set_result(expr(), expr_info());
@@ -587,22 +587,22 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_bounds.bounds.min)) ||
-        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.bounds.max, b)) ||
-        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_bounds.bounds.max, b_bounds.bounds.min))) {
+    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_info.bounds.min)) ||
+        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_info.bounds.max, b)) ||
+        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_info.bounds.max, b_info.bounds.min))) {
       if (T::static_type == expr_node_type::min) {
-        set_result(std::move(a), std::move(a_bounds));
+        set_result(std::move(a), std::move(a_info));
       } else {
-        set_result(std::move(b), std::move(b_bounds));
+        set_result(std::move(b), std::move(b_info));
       }
       return;
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_bounds.bounds.min)) ||
-               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.bounds.max, a)) ||
-               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_bounds.bounds.max, a_bounds.bounds.min))) {
+    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_info.bounds.min)) ||
+               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a)) ||
+               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a_info.bounds.min))) {
       if (T::static_type == expr_node_type::min) {
-        set_result(std::move(b), std::move(b_bounds));
+        set_result(std::move(b), std::move(b_info));
       } else {
-        set_result(std::move(a), std::move(a_bounds));
+        set_result(std::move(a), std::move(a_info));
       }
       return;
     }
@@ -611,7 +611,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_remainder::unify(a_bounds.alignment, b_bounds.alignment)});
+      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_remainder::unify(a_info.alignment, b_info.alignment)});
     }
   }
 
@@ -626,18 +626,18 @@ public:
 
   template <typename T>
   void visit_binary(const T* op) {
-    expr_info a_bounds;
-    expr a = mutate(op->a, &a_bounds);
-    expr_info b_bounds;
-    expr b = mutate(op->b, &b_bounds);
+    expr_info a_info;
+    expr a = mutate(op->a, &a_info);
+    expr_info b_info;
+    expr b = mutate(op->b, &b_info);
 
     if (!a.defined() || !b.defined()) {
       set_result(expr(), expr_info());
       return;
     }
 
-    int a_mod = a_bounds.alignment.modulus;
-    int a_rem = a_bounds.alignment.remainder;
+    int a_mod = a_info.alignment.modulus;
+    int a_rem = a_info.alignment.remainder;
 
     rewrite::pattern_wildcard<0> x;
 
@@ -659,7 +659,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds)), modulus_of(op, a_bounds.alignment, b_bounds.alignment)});
+      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_of(op, a_info.alignment, b_info.alignment)});
     }
   }
   void visit(const add* op) override {
@@ -682,10 +682,10 @@ public:
 
   template <typename T>
   void visit_logical(const T* op, bool coerce_boolean = false) {
-    expr_info a_bounds;
-    expr a = coerce_boolean ? mutate_boolean(op->a, &a_bounds) : mutate(op->a, &a_bounds);
-    expr_info b_bounds;
-    expr b = coerce_boolean ? mutate_boolean(op->b, &b_bounds) : mutate(op->b, &b_bounds);
+    expr_info a_info;
+    expr a = coerce_boolean ? mutate_boolean(op->a, &a_info) : mutate(op->a, &a_info);
+    expr_info b_info;
+    expr b = coerce_boolean ? mutate_boolean(op->b, &b_info) : mutate(op->b, &b_info);
 
     if (!a.defined() || !b.defined()) {
       set_result(expr(), expr_info());
@@ -696,7 +696,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      interval_expr result_bounds = bounds_of(op, std::move(a_bounds.bounds), std::move(b_bounds.bounds));
+      interval_expr result_bounds = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
       if (prove_constant_true(result_bounds.min)) {
         set_result(true, {{1, 1}, modulus_remainder()});
       } else if (prove_constant_false(result_bounds.max)) {
