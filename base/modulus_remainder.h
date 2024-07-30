@@ -8,6 +8,18 @@
 
 namespace slinky {
 
+// Taken from https://github.com/halide/Halide/blob/main/src/ModulusRemainder.h
+/** The result of modulus_remainder analysis. These represent strided
+ * subsets of the integers. A ModulusRemainder object m represents all
+ * integers x such that there exists y such that x == m.modulus * y +
+ * m.remainder. Note that under this definition a set containing a
+ * single integer (a constant) is represented using a modulus of
+ * zero. These sets can be combined with several mathematical
+ * operators in the obvious way. E.g. m1 + m2 contains (at least) all
+ * integers x1 + x2 such that x1 belongs to m1 and x2 belongs to
+ * m2. These combinations are conservative. If some internal math
+ * would overflow, it defaults to all of the integers (modulus == 1,
+ * remainder == 0). */
 struct modulus_remainder {
     modulus_remainder() = default;
     modulus_remainder(int64_t m, int64_t r)
