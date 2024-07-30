@@ -251,7 +251,9 @@ public:
     if (l.stage) {
       result = block::make({
           // Wait for the previous iteration of this stage to complete.
-          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(l.sym - l.step, l.step)}))),
+          // The l.sym here is equal to l.min + x * l.step, so dividing l.sym by l.step we  get floor_div(l.min) + x.
+          // This works even if l.min is not divisible by l.step, because it remains constant w.r.t to the loop index.
+          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step) - 1}))),
           result,
           // Signal we've done this iteration.
           check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step)}))),
