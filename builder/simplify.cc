@@ -338,7 +338,7 @@ class simplifier : public node_mutator {
   }
   void set_result(stmt s) {
     assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
-    result_bounds = {interval_expr()};
+    result_bounds = {interval_expr(), modulus_remainder()};
     node_mutator::set_result(std::move(s));
   }
   // Dummy for template code.
@@ -644,7 +644,7 @@ public:
     rewrite::pattern_constant<0> c0;
     rewrite::pattern_constant<1> c1;
 
-    // It's really ugly to have rules here instead of simplify_rules, but pliumbing bounds and alignment seems difficult.
+    // It's really ugly to have rules here instead of simplify_rules, but plumbing bounds and alignment seems difficult.
     if (op->type == expr_node_type::div) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
@@ -894,7 +894,6 @@ public:
       assert(args.size() == 1);
       assert(args_bounds.size() == 1);
       if (prove_constant_true(args_bounds[0].min >= 0)) {
-        // TODO: Check module here.
         set_result(std::move(args[0]), {std::move(args_bounds[0]), modulus_remainder()});
         return;
       } else if (prove_constant_true(args_bounds[0].max <= 0)) {
