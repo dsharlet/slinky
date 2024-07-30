@@ -622,7 +622,7 @@ public:
   modulus_remainder modulus_of(const sub* op, const modulus_remainder& a, const modulus_remainder& b) { return a - b; }
   modulus_remainder modulus_of(const mul* op, const modulus_remainder& a, const modulus_remainder& b) { return a * b; }
   modulus_remainder modulus_of(const div* op, const modulus_remainder& a, const modulus_remainder& b) { return a / b; }
-  modulus_remainder modulus_of(const mod* op, const modulus_remainder& a, const modulus_remainder& b) { return a * b; }
+  modulus_remainder modulus_of(const mod* op, const modulus_remainder& a, const modulus_remainder& b) { return a % b; }
 
   template <typename T>
   void visit_binary(const T* op) {
@@ -645,13 +645,15 @@ public:
     rewrite::pattern_constant<1> c1;
 
     // It's a bit ugly to have rules here instead of simplify_rules, but pliumbing bounds and alignment seems difficult.
-    auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
-    if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), a_mod % c1 == 0) ||
-        r((c0 - x)/c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, a_mod % c1 == 0) ||
-        false) {
-      mutate_and_set_result(r.result);
-      return ;
-    } 
+    if (op->type == expr_node_type::div) {
+      auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
+      if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), eval(a_mod % c1 == 0)) ||
+          r((c0 - x) / c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, eval(a_mod % c1 == 0)) ||
+          false) {
+        mutate_and_set_result(r.result);
+        return ;
+      }
+    }
 
     expr result = simplify(op, std::move(a), std::move(b));
     if (!result.same_as(op)) {
