@@ -1,5 +1,6 @@
 #include "base/modulus_remainder.h"
 
+// Based on https://github.com/halide/Halide/blob/main/src/ModulusRemainder.cpp.
 namespace slinky {
 
 namespace {
