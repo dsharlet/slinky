@@ -681,7 +681,7 @@ public:
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size},
           // TODO: We should just let dimensions like this have undefined bounds.
-          {{floor_div(loop_bounds.min - op->step, op->step), floor_div(loop_bounds.max, op->step)}, sem_size * sem_bounds.extent(), sem_fold_factor},
+          {{floor_div(loop_bounds.min, op->step) - 1, floor_div(loop_bounds.max, op->step)}, sem_size * sem_bounds.extent(), sem_fold_factor},
       };
       result = allocate::make(
           l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
