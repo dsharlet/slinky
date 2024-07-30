@@ -327,18 +327,18 @@ class simplifier : public node_mutator {
     var src;
   };
   symbol_map<buffer_info> buffers;
-  symbol_map<expr_info> expr_bounds;
+  symbol_map<expr_info> info_map;
 
-  expr_info result_bounds;
+  expr_info result_info;
 
-  void set_result(expr e, expr_info bounds) {
-    assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
-    result_bounds = std::move(bounds);
+  void set_result(expr e, expr_info info) {
+    assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
+    result_info = std::move(info);
     node_mutator::set_result(std::move(e));
   }
   void set_result(stmt s) {
-    assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
-    result_bounds = {interval_expr(), modulus_remainder()};
+    assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
+    result_info = {interval_expr(), modulus_remainder()};
     node_mutator::set_result(std::move(s));
   }
   // Dummy for template code.
@@ -350,60 +350,60 @@ public:
     for (size_t ix = 0; ix < bounds.size(); ix++) {
       var id = var(ix);
       if (!bounds[id]) continue ;
-      expr_bounds[id] = {*bounds[id], modulus_remainder()};
+      info_map[id] = {*bounds[id], modulus_remainder()};
     }
 
     for (size_t ix = 0; ix < alignment.size(); ix++) {
       var id = var(ix);
       if (!alignment[id]) continue;
-      if (expr_bounds[id]) {
-        expr_bounds[id]->alignment = *alignment[id];
+      if (info_map[id]) {
+        info_map[id]->alignment = *alignment[id];
       } else {
-        expr_bounds[id] = {interval_expr(), *alignment[id]};
+        info_map[id] = {interval_expr(), *alignment[id]};
       }
     }
   }
 
-  expr mutate(const expr& e, expr_info* bounds) {
+  expr mutate(const expr& e, expr_info* info) {
     expr result = node_mutator::mutate(e);
-    if (bounds) {
-      result_bounds.bounds = ensure_is_point(result_bounds.bounds);
-      if (bounds != &result_bounds) {
-        *bounds = std::move(result_bounds);
+    if (info) {
+      result_info.bounds = ensure_is_point(result_info.bounds);
+      if (info != &result_info) {
+        *info = std::move(result_info);
       }
     } else {
-      result_bounds = {{expr(), expr()}, modulus_remainder()};
+      result_info = {{expr(), expr()}, modulus_remainder()};
     }
     return result;
   }
   // Dummy for template code.
-  stmt mutate(const stmt& s, expr_info* bounds) { return node_mutator::mutate(s); }
+  stmt mutate(const stmt& s, expr_info* info) { return node_mutator::mutate(s); }
   expr mutate(const expr& e) override { return mutate(e, nullptr); }
   stmt mutate(const stmt& s) override { return mutate(s, nullptr); }
 
   // When mutating a value x interpreted as boolean, we need to effectively mutate x != 0, but we can't do that directly
   // because it risks breaking the simplifiers ability to check if an expression has not changed. This helper emulates
   // this.
-  expr mutate_boolean(const expr& e, expr_info* bounds) {
-    expr result = strip_boolean(mutate(e, bounds));
-    if (bounds) bounds->bounds = bounds_of(static_cast<const not_equal*>(nullptr), bounds->bounds, point(0));
+  expr mutate_boolean(const expr& e, expr_info* info) {
+    expr result = strip_boolean(mutate(e, info));
+    if (info) info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), info->bounds, point(0));
     return result;
   }
 
   void mutate_and_set_result(const expr& e) {
-    assert(!result_bounds.bounds.min.defined() && !result_bounds.bounds.max.defined());
-    node_mutator::set_result(mutate(e, &result_bounds));
+    assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
+    node_mutator::set_result(mutate(e, &result_info));
   }
 
-  interval_expr mutate(const interval_expr& x, expr_info* min_bounds, expr_info* max_bounds) {
+  interval_expr mutate(const interval_expr& x, expr_info* min_info, expr_info* max_info) {
     if (deep_is_point(x)) {
-      expr result = mutate(x.min, min_bounds);
-      if (min_bounds && max_bounds) {
-        *max_bounds = *min_bounds;
+      expr result = mutate(x.min, min_info);
+      if (min_info && max_info) {
+        *max_info = *min_info;
       }
       return point(result);
     } else {
-      interval_expr result = {mutate(x.min, min_bounds), mutate(x.max, max_bounds)};
+      interval_expr result = {mutate(x.min, min_info), mutate(x.max, max_info)};
       result = ensure_is_point(result);
       return result;
     }
@@ -415,10 +415,10 @@ public:
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
     std::vector<scoped_value_in_symbol_map<expr_info>> k;
 
-    symbol_map<expr_info>& bounds;
+    symbol_map<expr_info>& info_map;
 
   public:
-    knowledge(symbol_map<expr_info>& bounds) : bounds(bounds) {}
+    knowledge(symbol_map<expr_info>& info_map) : info_map(info_map) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() {
@@ -431,40 +431,40 @@ public:
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(bounds, v->sym, {point(b), modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), modulus_remainder()}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(bounds, v->sym, {point(a),  modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  modulus_remainder()}));
       }
     }
 
     void learn_from_less(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b - 1
-        const std::optional<expr_info>& old_bounds = bounds[v->sym];
-        const expr& lb = old_bounds ? old_bounds->bounds.min : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {{lb, b - 1}, modulus_remainder()}));
+        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const expr& lb = old_info ? old_info->bounds.min : expr();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, modulus_remainder()}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
-        const std::optional<expr_info>& old_bounds = bounds[v->sym];
-        const expr& ub = old_bounds ? old_bounds->bounds.max : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {{a + 1, ub}, modulus_remainder()}));
+        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const expr& ub = old_info ? old_info->bounds.max : expr();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, modulus_remainder()}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b
-        const std::optional<expr_info>& old_bounds = bounds[v->sym];
-        const expr& lb = old_bounds ? old_bounds->bounds.min : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {{lb, b}, modulus_remainder()}));
+        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const expr& lb = old_info ? old_info->bounds.min : expr();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, modulus_remainder()}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
-        const std::optional<expr_info>& old_bounds = bounds[v->sym];
-        const expr& ub = old_bounds ? old_bounds->bounds.max : expr();
-        k.push_back(set_value_in_scope(bounds, v->sym, {{a, ub}, modulus_remainder()}));
+        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const expr& ub = old_info ? old_info->bounds.max : expr();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, modulus_remainder()}));
       }
     }
 
@@ -499,12 +499,12 @@ public:
   };
 
   knowledge learn_from_true(const expr& c) {
-    knowledge result(expr_bounds);
+    knowledge result(info_map);
     result.learn_from_true(c);
     return result;
   }
   knowledge learn_from_false(const expr& c) {
-    knowledge result(expr_bounds);
+    knowledge result(info_map);
     result.learn_from_false(c);
     return result;
   }
@@ -537,11 +537,11 @@ public:
 
   std::optional<bool> attempt_to_prove(const expr& e) {
     scoped_trace trace("attempt_to_prove");
-    expr_info bounds;
-    mutate_boolean(e, &bounds);
-    if (prove_constant_true(bounds.bounds.min)) {
+    expr_info info;
+    mutate_boolean(e, &info);
+    if (prove_constant_true(info.bounds.min)) {
       return true;
-    } else if (prove_constant_false(bounds.bounds.max)) {
+    } else if (prove_constant_false(info.bounds.max)) {
       return false;
     } else {
       return {};
@@ -559,11 +559,11 @@ public:
   }
 
   void visit(const variable* op) override {
-    std::optional<expr_info> bounds = expr_bounds[op->sym];
-    if (bounds) {
-      if (!bounds->bounds.min.defined()) bounds->bounds.min = op;
-      if (!bounds->bounds.max.defined()) bounds->bounds.max = op;
-      set_result(op, std::move(*bounds));
+    std::optional<expr_info> info = info_map[op->sym];
+    if (info) {
+      if (!info->bounds.min.defined()) info->bounds.min = op;
+      if (!info->bounds.max.defined()) info->bounds.max = op;
+      set_result(op, std::move(*info));
     } else {
       set_result(op, {{op, op}, modulus_remainder()});
     }
@@ -697,13 +697,13 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      interval_expr result_bounds = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
-      if (prove_constant_true(result_bounds.min)) {
+      interval_expr result_info = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
+      if (prove_constant_true(result_info.min)) {
         set_result(true, {{1, 1}, modulus_remainder()});
-      } else if (prove_constant_false(result_bounds.max)) {
+      } else if (prove_constant_false(result_info.max)) {
         set_result(false, {{0, 0}, modulus_remainder()});
       } else {
-        set_result(result, {std::move(result_bounds), modulus_remainder()});
+        set_result(result, {std::move(result_info), modulus_remainder()});
       }
     }
   }
@@ -715,19 +715,19 @@ public:
   void visit(const logical_or* op) override { visit_logical(op, /*coerce_boolean=*/true); }
 
   void visit(const logical_not* op) override {
-    expr_info bounds;
-    expr a = mutate_boolean(op->a, &bounds);
+    expr_info info;
+    expr a = mutate_boolean(op->a, &info);
 
     if (!a.defined()) {
       set_result(expr(), expr_info());
-    } else if (prove_constant_true(bounds.bounds.min)) {
+    } else if (prove_constant_true(info.bounds.min)) {
       set_result(false, {{0, 0}, modulus_remainder()});
-    } else if (prove_constant_false(bounds.bounds.max)) {
+    } else if (prove_constant_false(info.bounds.max)) {
       set_result(true, {{1, 1}, modulus_remainder()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
-        set_result(result, {bounds_of(op, std::move(bounds.bounds)), modulus_remainder()});
+        set_result(result, {bounds_of(op, std::move(info.bounds)), modulus_remainder()});
       } else {
         mutate_and_set_result(result);
       }
@@ -779,16 +779,16 @@ public:
   }
 
   void visit(const class select* op) override {
-    expr_info c_bounds;
+    expr_info c_info;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
-    expr c = mutate_boolean(op->condition, &c_bounds);
+    expr c = mutate_boolean(op->condition, &c_info);
     if (!c.defined()) {
       set_result(expr(), expr_info());
       return;
-    } else if (prove_constant_true(c_bounds.bounds.min)) {
+    } else if (prove_constant_true(c_info.bounds.min)) {
       mutate_and_set_result(op->true_value);
       return;
-    } else if (prove_constant_false(c_bounds.bounds.max)) {
+    } else if (prove_constant_false(c_info.bounds.max)) {
       mutate_and_set_result(op->false_value);
       return;
     }
@@ -809,15 +809,15 @@ public:
       return;
     }
 
-    expr_info t_bounds;
+    expr_info t_info;
     {
       auto knowledge = learn_from_true(c);
-      t = mutate(t, &t_bounds);
+      t = mutate(t, &t_info);
     }
-    expr_info f_bounds;
+    expr_info f_info;
     {
       auto knowledge = learn_from_false(c);
-      f = mutate(f, &f_bounds);
+      f = mutate(f, &f_info);
     }
 
     if (!t.defined() && !f.defined()) {
@@ -827,7 +827,7 @@ public:
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      set_result(e, {bounds_of(op, std::move(c_bounds.bounds), std::move(t_bounds.bounds), std::move(f_bounds.bounds)), modulus_remainder::unify(t_bounds.alignment, f_bounds.alignment)});
+      set_result(e, {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), modulus_remainder::unify(t_info.alignment, f_info.alignment)});
     } else {
       mutate_and_set_result(e);
     }
@@ -841,9 +841,9 @@ public:
     args.reserve(op->args.size());
     args_bounds.reserve(op->args.size());
     for (const expr& i : op->args) {
-      expr_info i_bounds;
-      args.push_back(mutate(i, &i_bounds));
-      args_bounds.push_back(std::move(i_bounds.bounds));
+      expr_info i_info;
+      args.push_back(mutate(i, &i_info));
+      args_bounds.push_back(std::move(i_info.bounds));
     }
 
     if (is_buffer_intrinsic(op->intrinsic)) {
@@ -921,16 +921,16 @@ public:
 
     bool values_changed = false;
     for (const auto& s : op->lets) {
-      expr_info value_bounds;
-      lets.emplace_back(s.first, mutate(s.second, &value_bounds));
+      expr_info value_info;
+      lets.emplace_back(s.first, mutate(s.second, &value_info));
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
-      assert(!expr_bounds.contains(s.first));
-      scoped_values.push_back(set_value_in_scope(expr_bounds, s.first, value_bounds));
+      assert(!info_map.contains(s.first));
+      scoped_values.push_back(set_value_in_scope(info_map, s.first, value_info));
     }
 
-    expr_info body_bounds;
-    auto body = mutate(op->body, &body_bounds);
+    expr_info body_info;
+    auto body = mutate(op->body, &body_info);
 
     bool substituted = false;
     for (auto it = lets.rbegin(); it != lets.rend();) {
@@ -958,16 +958,16 @@ public:
       }
     }
     if (substituted) {
-      body = mutate(body, &body_bounds);
+      body = mutate(body, &body_info);
     }
 
     if (lets.empty()) {
       // All lets were removed.
-      set_result(body, std::move(body_bounds));
+      set_result(body, std::move(body_info));
     } else if (!values_changed && body.same_as(op->body)) {
-      set_result(op, std::move(body_bounds));
+      set_result(op, std::move(body_info));
     } else {
-      set_result(T::make(std::move(lets), std::move(body)), std::move(body_bounds));
+      set_result(T::make(std::move(lets), std::move(body)), std::move(body_info));
     }
   }
 
@@ -989,8 +989,8 @@ public:
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
-    assert(!expr_bounds.contains(v));
-    auto set_bounds = set_value_in_scope(expr_bounds, v, {std::move(bounds), modulus_remainder()});
+    assert(!info_map.contains(v));
+    auto set_bounds = set_value_in_scope(info_map, v, {std::move(bounds), modulus_remainder()});
     return mutate(body);
   }
 
@@ -1173,10 +1173,10 @@ public:
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            auto set_bounds_of_sym = set_value_in_scope(expr_bounds, op->sym, {bounds, modulus_remainder()});
-            expr_info bounds_of_min, bounds_of_max;
-            mutate(crop->bounds, &bounds_of_min, &bounds_of_max);
-            new_crops.emplace_back(crop->sym, crop->src, crop->dim, bounds_of_min.bounds | bounds_of_max.bounds);
+            auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, modulus_remainder()});
+            expr_info info_of_min, info_of_max;
+            mutate(crop->bounds, &info_of_min, &info_of_max);
+            new_crops.emplace_back(crop->sym, crop->src, crop->dim, info_of_min.bounds | info_of_max.bounds);
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
@@ -1719,8 +1719,8 @@ public:
     visit_crop(op, bounds);
   }
 
-  static void update_sliced_buffer_metadata(symbol_map<expr_info>& bounds, var sym, span<const int> sliced) {
-    for (std::optional<expr_info>& i : bounds) {
+  static void update_sliced_buffer_metadata(symbol_map<expr_info>& info_map, var sym, span<const int> sliced) {
+    for (std::optional<expr_info>& i : info_map) {
       if (!i) continue;
       i->bounds = slinky::update_sliced_buffer_metadata(i->bounds, sym, sliced);
     }
@@ -1750,7 +1750,7 @@ public:
     }
 
     symbol_map<buffer_info> old_buffers = buffers;
-    symbol_map<expr_info> old_expr_bounds = expr_bounds;
+    symbol_map<expr_info> old_info_map = info_map;
     std::optional<buffer_info> info = buffers[op->src];
 
     if (info) {
@@ -1760,10 +1760,10 @@ public:
       buffers[op->sym] = std::nullopt;
     }
     update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
-    update_sliced_buffer_metadata(expr_bounds, op->sym, sliced_dims);
+    update_sliced_buffer_metadata(info_map, op->sym, sliced_dims);
     stmt body = mutate(op->body);
     buffers = std::move(old_buffers);
-    expr_bounds = std::move(old_expr_bounds);
+    info_map = std::move(old_info_map);
 
     if (!depends_on(body, op->sym).any()) {
       set_result(std::move(body));
@@ -1883,14 +1883,14 @@ public:
   }
 
   void visit(const check* op) override {
-    expr_info c_bounds;
-    expr c = mutate_boolean(op->condition, &c_bounds);
+    expr_info c_info;
+    expr c = mutate_boolean(op->condition, &c_info);
 
     if (!c.defined()) {
       set_result(stmt());
-    } else if (prove_constant_true(c_bounds.bounds.min)) {
+    } else if (prove_constant_true(c_info.bounds.min)) {
       set_result(stmt());
-    } else if (prove_constant_false(c_bounds.bounds.max)) {
+    } else if (prove_constant_false(c_info.bounds.max)) {
       std::cerr << op->condition << " is statically false." << std::endl;
       std::abort();
     } else if (c.same_as(op->condition)) {
@@ -1931,11 +1931,11 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, c
   } else {
     scoped_trace trace("bounds_of");
     simplifier s(expr_bounds, alignment);
-    expr_info bounds_of_min, bounds_of_max;
-    s.mutate(x, &bounds_of_min, &bounds_of_max);
+    expr_info info_of_min, info_of_max;
+    s.mutate(x, &info_of_min, &info_of_max);
     return {
-        simplify(static_cast<const class min*>(nullptr), bounds_of_min.bounds.min, bounds_of_max.bounds.min),
-        simplify(static_cast<const class max*>(nullptr), bounds_of_min.bounds.max, bounds_of_max.bounds.max),
+        simplify(static_cast<const class min*>(nullptr), info_of_min.bounds.min, info_of_max.bounds.min),
+        simplify(static_cast<const class max*>(nullptr), info_of_min.bounds.max, info_of_max.bounds.max),
     };
   }
 }
