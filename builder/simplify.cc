@@ -678,8 +678,8 @@ public:
       return;
     }
 
-    int a_mod = a_info.alignment.modulus;
-    int a_rem = a_info.alignment.remainder;
+    auto a_mod = a_info.alignment.modulus;
+    auto a_rem = a_info.alignment.remainder;
 
     rewrite::pattern_wildcard<0> x;
 
@@ -704,7 +704,7 @@ public:
     } else {
       expr_info info = {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_of(op, a_info.alignment, b_info.alignment)};
       info.trim_bounds_using_alignment();
-      set_result(result, info);
+      set_result(result, std::move(info));
     }
   }
   void visit(const add* op) override {
@@ -873,7 +873,7 @@ public:
     if (e.same_as(op)) {
       expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), alignment_type::unify(t_info.alignment, f_info.alignment)};
       info.trim_bounds_using_alignment();
-      set_result(e, info);
+      set_result(e, std::move(info));
     } else {
       mutate_and_set_result(e);
     }
@@ -972,7 +972,7 @@ public:
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
       assert(!info_map.contains(s.first));
-      scoped_values.push_back(set_value_in_scope(info_map, s.first, value_info));
+      scoped_values.push_back(set_value_in_scope(info_map, s.first, std::move(value_info)));
     }
 
     expr_info body_info;
