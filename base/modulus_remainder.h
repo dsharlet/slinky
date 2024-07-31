@@ -9,7 +9,7 @@
 
 namespace slinky {
 
-// Based on https://github.com/halide/Halide/blob/main/src/ModulusRemainder.h
+// Based on https://github.com/halide/Halide/blob/423df3c50b4b5c9b05b6b2cae16aff535dcf81c0/src/ModulusRemainder.cpp#L390-L589
 /** The result of modulus_remainder analysis. These represent strided
  * subsets of the integers. A ModulusRemainder object m represents all
  * integers x such that there exists y such that x == m.modulus * y +
