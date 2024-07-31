@@ -30,16 +30,12 @@ struct modulus_remainder {
 
     T modulus = 1, remainder = 0;
 
-    // Take a conservatively-large union of two sets. Contains all
-    // elements from both sets, and maybe some more stuff.
-    static modulus_remainder<T> unify(const modulus_remainder<T> &a, const modulus_remainder<T> &b);
-
     bool operator==(const modulus_remainder<T> &other) const {
         return (modulus == other.modulus) && (remainder == other.remainder);
     }
 };
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator+(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     int64_t m = 1, r = 0;
     if (add_with_overflow(a.remainder, b.remainder, &r)) {
@@ -49,7 +45,7 @@ modulus_remainder<T> operator+(const modulus_remainder<T> &a, const modulus_rema
     return {m, r};
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator-(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     int64_t m = 1, r = 0;
     if (sub_with_overflow(a.remainder, b.remainder, &r)) {
@@ -59,7 +55,7 @@ modulus_remainder<T> operator-(const modulus_remainder<T> &a, const modulus_rema
     return {m, r};
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator*(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     int64_t m, r;
     if (a.modulus == 0) {
@@ -101,7 +97,7 @@ modulus_remainder<T> operator*(const modulus_remainder<T> &a, const modulus_rema
     return modulus_remainder<T>{};
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator/(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     // What can we say about:
     // floor((m1 * x + r1) / (m2 * y + r2))
@@ -123,8 +119,8 @@ modulus_remainder<T> operator/(const modulus_remainder<T> &a, const modulus_rema
     return modulus_remainder<T>{};
 }
 
-template<typename T>
-modulus_remainder<T> modulus_remainder<T>::unify(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
+template <typename T>
+modulus_remainder<T> operator|(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     // We don't know if we're going to get a or b, so we'd better find
     // a single modulus remainder that works for both.
 
@@ -135,7 +131,7 @@ modulus_remainder<T> modulus_remainder<T>::unify(const modulus_remainder<T> &a, 
     // 2*_ + 1
 
     if (b.remainder > a.remainder) {
-        return unify(b, a);
+        return b | a;
     }
 
     // Reduce them to the same modulus and the same remainder
@@ -158,7 +154,7 @@ modulus_remainder<T> modulus_remainder<T>::unify(const modulus_remainder<T> &a, 
     return {modulus, ra};
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator%(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     // For non-zero y, we can treat x mod y as x + z*y, where we know
     // nothing about z.
@@ -190,27 +186,27 @@ modulus_remainder<T> operator%(const modulus_remainder<T> &a, const modulus_rema
     return {modulus, remainder};
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator+(const modulus_remainder<T> &a, int64_t b) {
     return a + modulus_remainder<T>(0, b);
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator-(const modulus_remainder<T> &a, int64_t b) {
     return a - modulus_remainder<T>(0, b);
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator*(const modulus_remainder<T> &a, int64_t b) {
     return a * modulus_remainder<T>(0, b);
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator/(const modulus_remainder<T> &a, int64_t b) {
     return a / modulus_remainder<T>(0, b);
 }
 
-template<typename T>
+template <typename T>
 modulus_remainder<T> operator%(const modulus_remainder<T> &a, int64_t b) {
     return a % modulus_remainder<T>(0, b);
 }

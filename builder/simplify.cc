@@ -653,7 +653,7 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), alignment_type::unify(a_info.alignment, b_info.alignment)});
+      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), a_info.alignment | b_info.alignment});
     }
   }
 
@@ -871,7 +871,7 @@ public:
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), alignment_type::unify(t_info.alignment, f_info.alignment)};
+      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), t_info.alignment | f_info.alignment};
       info.trim_bounds_using_alignment();
       set_result(e, std::move(info));
     } else {
