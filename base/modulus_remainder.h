@@ -1,5 +1,5 @@
-#ifndef SLINKY_BUILDER_MODULUS_REMAINDER_H
-#define SLINKY_BUILDER_MODULUS_REMAINDER_H
+#ifndef SLINKY_BASE_MODULUS_REMAINDER_H
+#define SLINKY_BASE_MODULUS_REMAINDER_H
 
 #include <algorithm>
 #include <cassert>
@@ -55,4 +55,4 @@ modulus_remainder operator%(const modulus_remainder &a, int64_t b);
 
 }  // namespace slinky
 
-#endif  // SLINKY_BUILDER_MODULUS_REMAINDER_H
+#endif  // SLINKY_BASE_MODULUS_REMAINDER_H
