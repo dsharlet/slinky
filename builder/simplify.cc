@@ -308,52 +308,9 @@ public:
 
 expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a); }
 
-struct expr_info {
-  interval_expr bounds;
-  modulus_remainder alignment;
-
-  void trim_bounds_using_alignment() {
-      if (alignment.modulus == 0) {
-          // TODO(vksnk): for some reason this fails simplifier test for expressions
-          // with _ % -1 in them,.
-          // bounds = point(alignment.remainder);
-      } else if (alignment.modulus > 1) {
-          const index_t* bounds_min = as_constant(bounds.min);
-          if (bounds_min) {
-              int64_t adjustment;
-              bool no_overflow = sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), &adjustment);
-              adjustment = euclidean_mod(adjustment, alignment.modulus);
-              int64_t new_min;
-              no_overflow &= add_with_overflow(*bounds_min, adjustment, &new_min);
-              if (no_overflow) {
-                  bounds.min = new_min;
-              }
-          }
-          const index_t* bounds_max = as_constant(bounds.max);
-          if (bounds_max) {
-              int64_t adjustment;
-              bool no_overflow = sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, &adjustment);
-              adjustment = euclidean_mod(adjustment, alignment.modulus);
-              int64_t new_max;
-              no_overflow &= sub_with_overflow(*bounds_max, adjustment, &new_max);
-              if (no_overflow) {
-                  bounds.max = new_max;
-              }
-          }
-      }
-
-      if (bounds.is_point()) {
-          const auto* c = as_constant(bounds.min);
-          if (c) {
-            alignment.modulus = 0;
-            alignment.remainder = *c;
-          }
-      }
-  }
-};
-
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
+public:
   struct buffer_info {
     expr elem_size;
 
@@ -366,6 +323,51 @@ class simplifier : public node_mutator {
     // Identifies the buffer this buffer is a descendent of, if any.
     var src;
   };
+
+  struct expr_info {
+    interval_expr bounds;
+    modulus_remainder alignment;
+
+    void trim_bounds_using_alignment() {
+        if (alignment.modulus == 0) {
+            // TODO(vksnk): for some reason this fails simplifier test for expressions
+            // with _ % -1 in them,.
+            // bounds = point(alignment.remainder);
+        } else if (alignment.modulus > 1) {
+            const index_t* bounds_min = as_constant(bounds.min);
+            if (bounds_min) {
+                int64_t adjustment;
+                bool no_overflow = sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), &adjustment);
+                adjustment = euclidean_mod(adjustment, alignment.modulus);
+                int64_t new_min;
+                no_overflow &= add_with_overflow(*bounds_min, adjustment, &new_min);
+                if (no_overflow) {
+                    bounds.min = new_min;
+                }
+            }
+            const index_t* bounds_max = as_constant(bounds.max);
+            if (bounds_max) {
+                int64_t adjustment;
+                bool no_overflow = sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, &adjustment);
+                adjustment = euclidean_mod(adjustment, alignment.modulus);
+                int64_t new_max;
+                no_overflow &= sub_with_overflow(*bounds_max, adjustment, &new_max);
+                if (no_overflow) {
+                    bounds.max = new_max;
+                }
+            }
+        }
+
+        if (bounds.is_point()) {
+            const auto* c = as_constant(bounds.min);
+            if (c) {
+              alignment.modulus = 0;
+              alignment.remainder = *c;
+            }
+        }
+    }
+  };
+private:
   symbol_map<buffer_info> buffers;
   symbol_map<expr_info> info_map;
 
@@ -1964,7 +1966,7 @@ interval_expr simplify(const interval_expr& e, const bounds_map& bounds, const a
 interval_expr bounds_of(const expr& x, const bounds_map& expr_bounds, const alignment_map& alignment) {
   scoped_trace trace("bounds_of");
   simplifier s(expr_bounds, alignment);
-  expr_info result;
+  simplifier::expr_info result;
   s.mutate(x, &result);
   return result.bounds;
 }
@@ -1975,7 +1977,7 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, c
   } else {
     scoped_trace trace("bounds_of");
     simplifier s(expr_bounds, alignment);
-    expr_info info_of_min, info_of_max;
+    simplifier::expr_info info_of_min, info_of_max;
     s.mutate(x, &info_of_min, &info_of_max);
     return {
         simplify(static_cast<const class min*>(nullptr), info_of_min.bounds.min, info_of_max.bounds.min),
