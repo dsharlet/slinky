@@ -326,7 +326,7 @@ public:
 
   struct expr_info {
     interval_expr bounds;
-    modulus_remainder alignment;
+    alignment_type alignment;
 
     void trim_bounds_using_alignment() {
         if (alignment.modulus == 0) {
@@ -380,7 +380,7 @@ private:
   }
   void set_result(stmt s) {
     assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
-    result_info = {interval_expr(), modulus_remainder()};
+    result_info = {interval_expr(), alignment_type()};
     node_mutator::set_result(std::move(s));
   }
   // Dummy for template code.
@@ -392,7 +392,7 @@ public:
     for (size_t ix = 0; ix < bounds.size(); ix++) {
       var id = var(ix);
       if (!bounds[id]) continue ;
-      info_map[id] = {*bounds[id], modulus_remainder()};
+      info_map[id] = {*bounds[id], alignment_type()};
     }
 
     for (size_t ix = 0; ix < alignment.size(); ix++) {
@@ -414,7 +414,7 @@ public:
         *info = std::move(result_info);
       }
     } else {
-      result_info = {{expr(), expr()}, modulus_remainder()};
+      result_info = {{expr(), expr()}, alignment_type()};
     }
     return result;
   }
@@ -473,11 +473,11 @@ public:
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), alignment_type()}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  alignment_type()}));
       }
     }
 
@@ -486,13 +486,13 @@ public:
         // a has an upper bound of b - 1
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, alignment_type()}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, alignment_type()}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
@@ -500,13 +500,13 @@ public:
         // a has an upper bound of b
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, alignment_type()}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, modulus_remainder()}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, alignment_type()}));
       }
     }
 
@@ -607,7 +607,7 @@ public:
       if (!info->bounds.max.defined()) info->bounds.max = op;
       set_result(op, std::move(*info));
     } else {
-      set_result(op, {{op, op}, modulus_remainder()});
+      set_result(op, {{op, op}, alignment_type()});
     }
   }
 
@@ -653,18 +653,18 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_remainder::unify(a_info.alignment, b_info.alignment)});
+      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), alignment_type::unify(a_info.alignment, b_info.alignment)});
     }
   }
 
   void visit(const class min* op) override { visit_min_max(op); }
   void visit(const class max* op) override { visit_min_max(op); }
 
-  modulus_remainder modulus_of(const add* op, const modulus_remainder& a, const modulus_remainder& b) { return a + b; }
-  modulus_remainder modulus_of(const sub* op, const modulus_remainder& a, const modulus_remainder& b) { return a - b; }
-  modulus_remainder modulus_of(const mul* op, const modulus_remainder& a, const modulus_remainder& b) { return a * b; }
-  modulus_remainder modulus_of(const div* op, const modulus_remainder& a, const modulus_remainder& b) { return a / b; }
-  modulus_remainder modulus_of(const mod* op, const modulus_remainder& a, const modulus_remainder& b) { return a % b; }
+  alignment_type modulus_of(const add* op, const alignment_type& a, const alignment_type& b) { return a + b; }
+  alignment_type modulus_of(const sub* op, const alignment_type& a, const alignment_type& b) { return a - b; }
+  alignment_type modulus_of(const mul* op, const alignment_type& a, const alignment_type& b) { return a * b; }
+  alignment_type modulus_of(const div* op, const alignment_type& a, const alignment_type& b) { return a / b; }
+  alignment_type modulus_of(const mod* op, const alignment_type& a, const alignment_type& b) { return a % b; }
 
   template <typename T>
   void visit_binary(const T* op) {
@@ -743,11 +743,11 @@ public:
     } else {
       interval_expr result_info = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
       if (prove_constant_true(result_info.min)) {
-        set_result(true, {{1, 1}, modulus_remainder()});
+        set_result(true, {{1, 1}, alignment_type()});
       } else if (prove_constant_false(result_info.max)) {
-        set_result(false, {{0, 0}, modulus_remainder()});
+        set_result(false, {{0, 0}, alignment_type()});
       } else {
-        set_result(result, {std::move(result_info), modulus_remainder()});
+        set_result(result, {std::move(result_info), alignment_type()});
       }
     }
   }
@@ -765,13 +765,13 @@ public:
     if (!a.defined()) {
       set_result(expr(), expr_info());
     } else if (prove_constant_true(info.bounds.min)) {
-      set_result(false, {{0, 0}, modulus_remainder()});
+      set_result(false, {{0, 0}, alignment_type()});
     } else if (prove_constant_false(info.bounds.max)) {
-      set_result(true, {{1, 1}, modulus_remainder()});
+      set_result(true, {{1, 1}, alignment_type()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
-        set_result(result, {bounds_of(op, std::move(info.bounds)), modulus_remainder()});
+        set_result(result, {bounds_of(op, std::move(info.bounds)), alignment_type()});
       } else {
         mutate_and_set_result(result);
       }
@@ -871,7 +871,7 @@ public:
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), modulus_remainder::unify(t_info.alignment, f_info.alignment)};
+      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), alignment_type::unify(t_info.alignment, f_info.alignment)};
       info.trim_bounds_using_alignment();
       set_result(e, info);
     } else {
@@ -907,9 +907,9 @@ public:
         if (op->intrinsic == intrinsic::buffer_elem_size) {
           expr value = info->elem_size;
           if (should_substitute(value) || value.as<call>()) {
-            set_result(value, {point(value), modulus_remainder()});
+            set_result(value, {point(value), alignment_type()});
           } else {
-            set_result(op, {point(value), modulus_remainder()});
+            set_result(op, {point(value), alignment_type()});
           }
           return;
         } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
@@ -918,9 +918,9 @@ public:
           if (*dim < static_cast<index_t>(info->dims.size())) {
             expr value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
             if (should_substitute(value) || value.as<call>()) {
-              set_result(value, {point(value), modulus_remainder()});
+              set_result(value, {point(value), alignment_type()});
             } else {
-              set_result(op, {point(value), modulus_remainder()});
+              set_result(op, {point(value), alignment_type()});
             }
             return;
           }
@@ -940,7 +940,7 @@ public:
       assert(args.size() == 1);
       assert(args_bounds.size() == 1);
       if (prove_constant_true(args_bounds[0].min >= 0)) {
-        set_result(std::move(args[0]), {std::move(args_bounds[0]), modulus_remainder()});
+        set_result(std::move(args[0]), {std::move(args_bounds[0]), alignment_type()});
         return;
       } else if (prove_constant_true(args_bounds[0].max <= 0)) {
         mutate_and_set_result(-args[0]);
@@ -950,7 +950,7 @@ public:
 
     expr e = simplify(op, op->intrinsic, std::move(args));
     if (e.same_as(op)) {
-      set_result(e, {bounds_of(op, std::move(args_bounds)), modulus_remainder()});
+      set_result(e, {bounds_of(op, std::move(args_bounds)), alignment_type()});
     } else {
       mutate_and_set_result(e);
     }
@@ -1036,7 +1036,7 @@ public:
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
     assert(!info_map.contains(v));
-    auto set_bounds = set_value_in_scope(info_map, v, {std::move(bounds), modulus_remainder()});
+    auto set_bounds = set_value_in_scope(info_map, v, {std::move(bounds), alignment_type()});
     return mutate(body);
   }
 
@@ -1219,7 +1219,7 @@ public:
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, modulus_remainder()});
+            auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
             expr_info info_of_min, info_of_max;
             mutate(crop->bounds, &info_of_min, &info_of_max);
             new_crops.emplace_back(crop->sym, crop->src, crop->dim, info_of_min.bounds | info_of_max.bounds);

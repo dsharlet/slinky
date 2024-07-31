@@ -7,7 +7,8 @@
 namespace slinky {
 
 using bounds_map = symbol_map<interval_expr>;
-using alignment_map = symbol_map<modulus_remainder>;
+using alignment_type = modulus_remainder<index_t>;
+using alignment_map = symbol_map<alignment_type>;
 
 // Try to simplify an expr or stmt.
 expr simplify(const expr& e, const bounds_map& bounds = bounds_map(), const alignment_map& alignment = alignment_map());

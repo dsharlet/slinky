@@ -1,7 +1,6 @@
 #include "runtime/print.h"
 
 #include <cassert>
-#include <iostream>
 #include <string>
 
 #include "runtime/expr.h"
@@ -65,10 +64,6 @@ std::ostream& operator<<(std::ostream& os, const box_expr& b) {
   os << "}";
 
   return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const modulus_remainder& i) {
-  return os << "(" << i.modulus << ", " << i.remainder << ")";
 }
 
 class printer : public expr_visitor, public stmt_visitor {
