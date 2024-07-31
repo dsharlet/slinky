@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/arithmetic.h"
 #include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
 #include "builder/rewrite.h"
@@ -310,6 +311,43 @@ expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a)
 struct expr_info {
   interval_expr bounds;
   modulus_remainder alignment;
+
+  void trim_bounds_using_alignment() {
+      if (alignment.modulus == 0) {
+          bounds = point(alignment.remainder);
+      } else if (alignment.modulus > 1) {
+          const index_t* bounds_min = as_constant(bounds.min);
+          if (bounds_min) {
+              int64_t adjustment;
+              bool no_overflow = sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), &adjustment);
+              adjustment = euclidean_mod(adjustment, alignment.modulus);
+              int64_t new_min;
+              no_overflow &= add_with_overflow(*bounds_min, adjustment, &new_min);
+              if (no_overflow) {
+                  bounds.min = new_min;
+              }
+          }
+          const index_t* bounds_max = as_constant(bounds.max);
+          if (bounds_max) {
+              int64_t adjustment;
+              bool no_overflow = sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, &adjustment);
+              adjustment = euclidean_mod(adjustment, alignment.modulus);
+              int64_t new_max;
+              no_overflow &= sub_with_overflow(*bounds_max, adjustment, &new_max);
+              if (no_overflow) {
+                  bounds.max = new_max;
+              }
+          }
+      }
+
+      if (bounds.is_point()) {
+          const auto* c = as_constant(bounds.min);
+          if (c) {
+            alignment.modulus = 0;
+            alignment.remainder = *c;
+          }
+      }
+  }
 };
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
