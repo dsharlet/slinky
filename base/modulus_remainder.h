@@ -32,10 +32,6 @@ struct modulus_remainder {
     // elements from both sets, and maybe some more stuff.
     static modulus_remainder unify(const modulus_remainder &a, const modulus_remainder &b);
 
-    // Take a conservatively-large intersection. Everything in the
-    // result is in at least one of the two sets, but not always both.
-    static modulus_remainder intersect(const modulus_remainder &a, const modulus_remainder &b);
-
     bool operator==(const modulus_remainder &other) const {
         return (modulus == other.modulus) && (remainder == other.remainder);
     }
