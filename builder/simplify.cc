@@ -314,7 +314,9 @@ struct expr_info {
 
   void trim_bounds_using_alignment() {
       if (alignment.modulus == 0) {
-          bounds = point(alignment.remainder);
+          // TODO(vksnk): for some reason this fails simplifier test for expressions
+          // with _ % -1 in them,.
+          // bounds = point(alignment.remainder);
       } else if (alignment.modulus > 1) {
           const index_t* bounds_min = as_constant(bounds.min);
           if (bounds_min) {
@@ -698,7 +700,9 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_of(op, a_info.alignment, b_info.alignment)});
+      expr_info info = {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_of(op, a_info.alignment, b_info.alignment)};
+      info.trim_bounds_using_alignment();
+      set_result(result, info);
     }
   }
   void visit(const add* op) override {
@@ -865,7 +869,9 @@ public:
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      set_result(e, {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), modulus_remainder::unify(t_info.alignment, f_info.alignment)});
+      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), modulus_remainder::unify(t_info.alignment, f_info.alignment)};
+      info.trim_bounds_using_alignment();
+      set_result(e, info);
     } else {
       mutate_and_set_result(e);
     }
