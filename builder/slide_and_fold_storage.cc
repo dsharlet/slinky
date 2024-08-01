@@ -615,6 +615,7 @@ public:
 
     stmt body;
     {
+      // We can use narrower bounds for the loop var, because the loop var not necessarily will reach max if step > 1.
       auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
       body = mutate(op->body);
     }
