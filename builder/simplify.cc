@@ -473,11 +473,15 @@ public:
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), alignment_type()}));
+        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const alignment_type& al = old_info ? old_info->alignment :  alignment_type();
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), al}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  alignment_type()}));
+        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const alignment_type& al = old_info ? old_info->alignment :  alignment_type();
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  al}));
       }
     }
 
@@ -486,13 +490,15 @@ public:
         // a has an upper bound of b - 1
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, alignment_type()}));
+        const alignment_type& al = old_info ? old_info->alignment :  alignment_type();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, al}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, alignment_type()}));
+        const alignment_type& al = old_info ? old_info->alignment :  alignment_type();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, al}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
@@ -500,13 +506,15 @@ public:
         // a has an upper bound of b
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, alignment_type()}));
+        const alignment_type& al = old_info ? old_info->alignment :  alignment_type();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, al}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, alignment_type()}));
+        const alignment_type& al = old_info ? old_info->alignment :  alignment_type();
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, al}));
       }
     }
 
