@@ -615,7 +615,7 @@ public:
 
     stmt body;
     {
-      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, loop_bounds);
+      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
       body = mutate(op->body);
     }
 
