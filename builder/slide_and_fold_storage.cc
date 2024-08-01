@@ -142,7 +142,7 @@ bool is_produced_by(var v, const stmt& body) {
 
 // Find a maximum value of x which makes `condition` expression true. The search goes
 // backwards from initial_guess up to some fixed depth.
-expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess) {
+expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess, const bounds_map& expr_bounds) {
   scoped_trace trace("where_true_upper_bound");
   expr result = negative_infinity();
 
@@ -152,8 +152,8 @@ expr where_true_upper_bound(const expr& condition, var x, const expr& initial_gu
 
   for (int ix = 0; ix < max_search_depth; ix++) {
     expr shifted = substitute(condition, x, (initial_guess - ix));
-    if (prove_true(shifted)) {
-      result = simplify(initial_guess - ix);
+    if (prove_true(shifted, expr_bounds)) {
+      result = simplify(initial_guess - ix, expr_bounds);
       break;
     }
   }
@@ -361,11 +361,11 @@ public:
       };
 
       interval_expr overlap = prev_bounds_d & cur_bounds_d;
-      if (prove_true(overlap.empty())) {
+      if (prove_true(overlap.empty(), *loop.expr_bounds)) {
         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
         // can fold the storage.
-        expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
-        fold_factor = simplify(constant_upper_bound(fold_factor));
+        expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds);
+        fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
           vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.back().loop_id};
         } else {
@@ -377,20 +377,20 @@ public:
       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
       expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
-      if (prove_true(is_monotonic_increasing)) {
+      if (prove_true(is_monotonic_increasing, *loop.expr_bounds)) {
         // The bounds for each loop iteration overlap and are monotonically increasing,
         // so we can incrementally compute only the newly required bounds.
         expr old_min = cur_bounds_d.min;
-        expr new_min = simplify(prev_bounds_d.max + 1);
+        expr new_min = simplify(prev_bounds_d.max + 1, *loop.expr_bounds);
 
         if (!did_overlapped_fold) {
-          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
-          fold_factor = simplify(constant_upper_bound(fold_factor));
+          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds);
+          fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds);
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
             vector_at(fold_factors[output], d) = {
-                simplify(fold_factor),
-                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max)),
+                simplify(fold_factor, *loop.expr_bounds),
+                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max), *loop.expr_bounds),
                 loops.back().loop_id
             };
             did_overlapped_fold = true;
@@ -403,7 +403,7 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min = where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min);
+        expr new_loop_min = where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, *loop.expr_bounds);
 
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
@@ -418,7 +418,7 @@ public:
 
         // This loop has a dependency between loop iterations, mark it as not data parallel.
         loop.data_parallel = false;
-      } else if (prove_true(is_monotonic_decreasing)) {
+      } else if (prove_true(is_monotonic_decreasing, *loop.expr_bounds)) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
       }
