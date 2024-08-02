@@ -1,7 +1,6 @@
 #include "runtime/print.h"
 
 #include <cassert>
-#include <iostream>
 #include <string>
 
 #include "runtime/expr.h"

@@ -714,6 +714,16 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
 }
 
+TEST(simplify, modulus_remainder) {
+  ASSERT_THAT(simplify((x + 15) / 16), matches((x  + 15) / 16));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {16, 0}}}), matches(x / 16));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {16, 1}}}), matches(x / 16 + 1));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {32, 0}}}), matches(x / 16));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {32, 1}}}), matches(x / 16 + 1));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {32, 2}}}), matches(x / 16 + 1));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {8, 0}}}), matches((x  + 15) / 16));
+}
+
 TEST(simplify, fuzz) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);

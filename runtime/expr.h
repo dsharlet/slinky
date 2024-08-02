@@ -2,6 +2,7 @@
 #define SLINKY_RUNTIME_EXPR_H
 
 #include "base/arithmetic.h"
+#include "base/modulus_remainder.h"
 #include "base/ref_count.h"
 #include "base/span.h"
 #include "runtime/buffer.h"
