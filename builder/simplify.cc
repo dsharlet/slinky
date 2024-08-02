@@ -459,6 +459,10 @@ public:
 
     symbol_map<expr_info>& info_map;
 
+    alignment_type get_alignment(const var& v) {
+      return info_map[v] ? info_map[v]->alignment :  alignment_type();
+    }
+
   public:
     knowledge(symbol_map<expr_info>& info_map) : info_map(info_map) {}
     knowledge(const knowledge&) = delete;
@@ -470,20 +474,14 @@ public:
       }
     }
 
-    alignment_type get_alignment(const std::optional<expr_info>& info) {
-      return info ? info->alignment :  alignment_type();
-    }
-
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        const std::optional<expr_info>& old_info = info_map[v->sym];
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), get_alignment(old_info)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        const std::optional<expr_info>& old_info = info_map[v->sym];
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  get_alignment(old_info)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  get_alignment(v->sym)}));
       }
     }
 
@@ -492,13 +490,13 @@ public:
         // a has an upper bound of b - 1
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, get_alignment(old_info)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, get_alignment(old_info)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, get_alignment(v->sym)}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
@@ -506,13 +504,13 @@ public:
         // a has an upper bound of b
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, get_alignment(old_info)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
         const std::optional<expr_info>& old_info = info_map[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, get_alignment(old_info)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, get_alignment(v->sym)}));
       }
     }
 
