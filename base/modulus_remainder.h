@@ -37,7 +37,7 @@ struct modulus_remainder {
 template <typename T>
 modulus_remainder<T> operator+(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     int64_t m = 1, r = 0;
-    if (add_with_overflow(a.remainder, b.remainder, &r)) {
+    if (!add_with_overflow(a.remainder, b.remainder, r)) {
         m = gcd(a.modulus, b.modulus);
         r = euclidean_mod(r, m);
     }
@@ -47,7 +47,7 @@ modulus_remainder<T> operator+(const modulus_remainder<T> &a, const modulus_rema
 template <typename T>
 modulus_remainder<T> operator-(const modulus_remainder<T> &a, const modulus_remainder<T> &b) {
     int64_t m = 1, r = 0;
-    if (sub_with_overflow(a.remainder, b.remainder, &r)) {
+    if (!sub_with_overflow(a.remainder, b.remainder, r)) {
         m = gcd(a.modulus, b.modulus);
         r = euclidean_mod(r, m);
     }
@@ -59,34 +59,34 @@ modulus_remainder<T> operator*(const modulus_remainder<T> &a, const modulus_rema
     int64_t m, r;
     if (a.modulus == 0) {
         // a is constant
-        if (mul_with_overflow(a.remainder, b.modulus, &m) &&
-            mul_with_overflow(a.remainder, b.remainder, &r)) {
+        if (!mul_with_overflow(a.remainder, b.modulus, m) &&
+            !mul_with_overflow(a.remainder, b.remainder, r)) {
             return {m, r};
         }
     } else if (b.modulus == 0) {
         // b is constant
-        if (mul_with_overflow(a.modulus, b.remainder, &m) &&
-            mul_with_overflow(a.remainder, b.remainder, &r)) {
+        if (!mul_with_overflow(a.modulus, b.remainder, m) &&
+            !mul_with_overflow(a.remainder, b.remainder, r)) {
             return {m, r};
         }
     } else if (a.remainder == 0 && b.remainder == 0) {
         // multiple times multiple
-        if (mul_with_overflow(a.modulus, b.modulus, &m)) {
+        if (!mul_with_overflow(a.modulus, b.modulus, m)) {
             return {m, 0};
         }
     } else if (a.remainder == 0) {
         int64_t g = gcd(b.modulus, b.remainder);
-        if (mul_with_overflow(a.modulus, g, &m)) {
+        if (!mul_with_overflow(a.modulus, g, m)) {
             return {m, 0};
         }
     } else if (b.remainder == 0) {
         int64_t g = gcd(a.modulus, a.remainder);
-        if (mul_with_overflow(b.modulus, g, &m)) {
+        if (!mul_with_overflow(b.modulus, g, m)) {
             return {m, 0};
         }
     } else {
         // Convert them to the same modulus and multiply
-        if (mul_with_overflow(a.remainder, b.remainder, &r)) {
+        if (!mul_with_overflow(a.remainder, b.remainder, r)) {
             m = gcd(a.modulus, b.modulus);
             r = euclidean_mod(r, m);
             return {m, r};
@@ -137,7 +137,7 @@ modulus_remainder<T> operator|(const modulus_remainder<T> &a, const modulus_rema
     int64_t modulus = gcd(a.modulus, b.modulus);
 
     int64_t r;
-    if (!sub_with_overflow(a.remainder, b.remainder, &r)) {
+    if (sub_with_overflow(a.remainder, b.remainder, r)) {
         // The modulus is not representable as an int64.
         return modulus_remainder<T>{};
     }

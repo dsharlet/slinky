@@ -154,32 +154,32 @@ bool mul_overflows(T a, T b) {
 
 /** Routines to perform arithmetic on signed types without triggering signed
  * overflow. If overflow would occur, sets result to zero, and returns
- * false. Otherwise set result to the correct value, and returns true. */
+ * true. Otherwise set result to the correct value, and returns false. */
 template <class T>
-bool add_with_overflow(T a, T b, T* result) {
-  bool overflows = __builtin_add_overflow(a, b, result);
+bool add_with_overflow(T a, T b, T& result) {
+  bool overflows = __builtin_add_overflow(a, b, &result);
   if (overflows) {
-    *result = 0;
+    result = 0;
   }
-  return !overflows;
+  return overflows;
 }
 
 template <class T>
-bool sub_with_overflow(T a, T b, T* result) {
-  bool overflows = __builtin_sub_overflow(a, b, result);
+bool sub_with_overflow(T a, T b, T& result) {
+  bool overflows = __builtin_sub_overflow(a, b, &result);
   if (overflows) {
-    *result = 0;
+    result = 0;
   }
-  return !overflows;
+  return overflows;
 }
 
 template <class T>
-bool mul_with_overflow(T a, T b, T* result) {
-  bool overflows = __builtin_mul_overflow(a, b, result);
+bool mul_with_overflow(T a, T b, T& result) {
+  bool overflows = __builtin_mul_overflow(a, b, &result);
   if (overflows) {
-    *result = 0;
+    result = 0;
   }
-  return !overflows;
+  return overflows;
 }
 
 template <typename T>
