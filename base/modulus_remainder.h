@@ -1,7 +1,6 @@
 #ifndef SLINKY_BASE_MODULUS_REMAINDER_H
 #define SLINKY_BASE_MODULUS_REMAINDER_H
 
-#include <algorithm>
 #include <cassert>
 #include <cstdint>
 
