@@ -188,7 +188,7 @@ inline T gcd(T a, T b) {
       std::swap(a, b);
   }
   while (b != 0) {
-      int64_t tmp = b;
+      T tmp = b;
       b = a % b;
       a = tmp;
   }
