@@ -41,8 +41,7 @@ buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
 }
 
 buffer_expr::buffer_expr(var sym, const_raw_buffer_ptr constant_buffer)
-    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr),
-      constant_(std::move(constant_buffer)) {
+    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr), constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
   dims_.reserve(constant_->rank);
 
@@ -311,12 +310,11 @@ bool operator==(const loop_id& a, const loop_id& b) {
   }
 }
 
-void topological_sort_impl(const func* f, std::set<const func*>& processing,
-                          std::set<const func*>& visited, std::vector<const func*>& order,
-                          std::map<const func*, std::vector<const func*>>& deps,
-                          std::set<buffer_expr_ptr>& constants) {
+void topological_sort_impl(const func* f, std::set<const func*>& processing, std::set<const func*>& visited,
+    std::vector<const func*>& order, std::map<const func*, std::vector<const func*>>& deps,
+    std::set<buffer_expr_ptr>& constants) {
   if (visited.count(f) > 0) {
-    return ;
+    return;
   }
 
   assert(processing.count(f) == 0);

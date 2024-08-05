@@ -303,11 +303,13 @@ class buffer_aliaser : public node_mutator {
           // The fold factor of this allocation does not evenly divide the target fold factor.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
-        } else if (!prove_true((target_info.dims[alias.permutation[d]].bounds.min % target_fold_factor) == (op->dims[d].bounds.min % op->dims[d].fold_factor))) {
+        } else if (!prove_true((target_info.dims[alias.permutation[d]].bounds.min % target_fold_factor) ==
+                               (op->dims[d].bounds.min % op->dims[d].fold_factor))) {
           // The mins of folded buffers are not aligned.
           return false;
         }
-     } else if ((target_fold_factor.defined() && !is_constant(target_fold_factor, dim::unfolded)) && !prove_true(op->dims[d].extent() <= target_fold_factor)) {
+      } else if ((target_fold_factor.defined() && !is_constant(target_fold_factor, dim::unfolded)) &&
+                 !prove_true(op->dims[d].extent() <= target_fold_factor)) {
         // If the target is folded, but the op is not, we can only alias it if the extent of this dimension
         // is less than the fold factor.
         return false;
@@ -466,7 +468,7 @@ public:
         for (var o : op->outputs) {
           std::optional<buffer_info>& output_info = buffers[o];
           if (!output_info) continue;
-          
+
           alias_info fwd;
           fwd.dims = buffer_dims(o, output_info->dims.size());
           fwd.at = buffer_mins(i, input_info->dims.size());

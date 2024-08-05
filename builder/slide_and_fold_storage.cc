@@ -174,7 +174,7 @@ public:
 
     // Overlap between iteration i and i + 1.
     expr overlap;
-    
+
     // Unique ID of the loop this fold is for.
     std::size_t loop_id;
   };
@@ -182,7 +182,7 @@ public:
 
   // Counter for the number of loops we've seen.
   std::size_t loop_counter = 0;
-  
+
   struct loop_info {
     var sym;
     expr orig_min;
@@ -205,7 +205,7 @@ public:
     // We only track the stage we're currently working on. This optional being present indicates the current stage needs
     // synchronization, and the value indicates which stage it is.
     std::optional<int> stage;
-    
+
     // Unique loop ID.
     std::size_t loop_id = -1;
 
@@ -223,9 +223,11 @@ public:
       return true;
     }
 
-    loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step, int max_workers)
+    loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step,
+        int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
-          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"), loop_id(loop_id) {}
+          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"),
+          loop_id(loop_id) {}
   };
   std::vector<loop_info> loops;
 
@@ -253,10 +255,12 @@ public:
           // Wait for the previous iteration of this stage to complete.
           // The l.sym here is equal to l.min + x * l.step, so dividing l.sym by l.step we  get floor_div(l.min) + x.
           // This works even if l.min is not divisible by l.step, because it remains constant w.r.t to the loop index.
-          check::make(semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step) - 1}))),
+          check::make(
+              semaphore_wait(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step) - 1}))),
           result,
           // Signal we've done this iteration.
-          check::make(semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step)}))),
+          check::make(
+              semaphore_signal(buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step)}))),
       });
       l.stage = std::nullopt;
     }
@@ -388,11 +392,10 @@ public:
           fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds);
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d) = {
-                simplify(fold_factor, *loop.expr_bounds),
-                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max), *loop.expr_bounds),
-                loops.back().loop_id
-            };
+            vector_at(fold_factors[output], d) = {simplify(fold_factor, *loop.expr_bounds),
+                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max),
+                    *loop.expr_bounds),
+                loops.back().loop_id};
             did_overlapped_fold = true;
           } else {
             // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -403,7 +406,8 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min = where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, *loop.expr_bounds);
+        expr new_loop_min =
+            where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, *loop.expr_bounds);
 
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
@@ -454,7 +458,7 @@ public:
     }
 
     for (var output : outputs) {
-      for (loop_info& loop: loops) {
+      for (loop_info& loop : loops) {
         if (!fold_factors[output]) continue;
         loop.add_synchronization();
 
@@ -616,7 +620,8 @@ public:
     stmt body;
     {
       // We can use narrower bounds for the loop var, because the loop var not necessarily will reach max if step > 1.
-      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
+      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym,
+          {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
       body = mutate(op->body);
     }
 
@@ -682,7 +687,8 @@ public:
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size},
           // TODO: We should just let dimensions like this have undefined bounds.
-          {{floor_div(loop_bounds.min, op->step) - 1, floor_div(loop_bounds.max, op->step)}, sem_size * sem_bounds.extent(), sem_fold_factor},
+          {{floor_div(loop_bounds.min, op->step) - 1, floor_div(loop_bounds.max, op->step)},
+              sem_size * sem_bounds.extent(), sem_fold_factor},
       };
       result = allocate::make(
           l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));

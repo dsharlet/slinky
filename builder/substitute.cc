@@ -717,7 +717,9 @@ public:
     assert(!as_variable(target));
   }
 
-  bool allow_substitute(const var& x) const override { return !depends_on(target, x).any() && !depends_on(replacement, x).any(); }
+  bool allow_substitute(const var& x) const override {
+    return !depends_on(target, x).any() && !depends_on(replacement, x).any();
+  }
 
   expr mutate(const expr& op) override {
     if (match(op, target)) {

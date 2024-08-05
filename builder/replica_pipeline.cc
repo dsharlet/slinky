@@ -309,7 +309,8 @@ public:
       if (f.padding()) {
         std::string func_inputs = print(f.inputs()[0]);
         std::string padding = print_vector(*f.padding());
-        (void)print_assignment_explicit(fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ", ", padding, ")");
+        (void)print_assignment_explicit(
+            fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ", ", padding, ")");
       } else {
         std::string func_inputs = print(f.inputs());
         (void)print_assignment_explicit(fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ")");
