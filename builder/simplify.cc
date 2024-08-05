@@ -330,9 +330,7 @@ public:
 
     void trim_bounds_using_alignment() {
       if (alignment.modulus == 0) {
-        // TODO(vksnk): for some reason this fails simplifier test for expressions
-        // with _ % -1 in them,.
-        // bounds = point(alignment.remainder);
+        bounds = point(alignment.remainder);
       } else if (alignment.modulus > 1) {
         const index_t* bounds_min = as_constant(bounds.min);
         if (bounds_min) {
