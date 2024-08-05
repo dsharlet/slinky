@@ -47,15 +47,11 @@ void BM_parallel_for_nested(benchmark::State& state) {
 
   std::vector<unshared> values(workers * workers);
   while (state.KeepRunningBatch(values.size())) {
-    t.parallel_for(n, [&](int i) { 
-      t.parallel_for(n, [&](int j) { 
-        values[(i % workers) * workers + j % workers].value++; 
-      });
-    });
+    t.parallel_for(
+        n, [&](int i) { t.parallel_for(n, [&](int j) { values[(i % workers) * workers + j % workers].value++; }); });
   }
 }
 
 BENCHMARK(BM_parallel_for_nested)->Arg(2)->Arg(4)->Arg(8);
-
 
 }  // namespace slinky

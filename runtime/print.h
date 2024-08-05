@@ -27,7 +27,7 @@ std::ostream& operator<<(std::ostream& os, memory_type type);
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const modulus_remainder<T>& i) {
-    return os << "(" << i.modulus << ", " << i.remainder << ")";
+  return os << "(" << i.modulus << ", " << i.remainder << ")";
 }
 
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);

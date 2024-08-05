@@ -329,44 +329,47 @@ public:
     alignment_type alignment;
 
     void trim_bounds_using_alignment() {
-        if (alignment.modulus == 0) {
-            // TODO(vksnk): for some reason this fails simplifier test for expressions
-            // with _ % -1 in them,.
-            // bounds = point(alignment.remainder);
-        } else if (alignment.modulus > 1) {
-            const index_t* bounds_min = as_constant(bounds.min);
-            if (bounds_min) {
-                int64_t adjustment;
-                bool no_overflow = !sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), adjustment);
-                adjustment = euclidean_mod(adjustment, alignment.modulus);
-                int64_t new_min;
-                no_overflow &= !add_with_overflow(*bounds_min, adjustment, new_min);
-                if (no_overflow) {
-                    bounds.min = new_min;
-                }
-            }
-            const index_t* bounds_max = as_constant(bounds.max);
-            if (bounds_max) {
-                int64_t adjustment;
-                bool no_overflow = !sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, adjustment);
-                adjustment = euclidean_mod(adjustment, alignment.modulus);
-                int64_t new_max;
-                no_overflow &= !sub_with_overflow(*bounds_max, adjustment, new_max);
-                if (no_overflow) {
-                    bounds.max = new_max;
-                }
-            }
+      if (alignment.modulus == 0) {
+        // TODO(vksnk): for some reason this fails simplifier test for expressions
+        // with _ % -1 in them,.
+        // bounds = point(alignment.remainder);
+      } else if (alignment.modulus > 1) {
+        const index_t* bounds_min = as_constant(bounds.min);
+        if (bounds_min) {
+          int64_t adjustment;
+          bool no_overflow =
+              !sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), adjustment);
+          adjustment = euclidean_mod(adjustment, alignment.modulus);
+          int64_t new_min;
+          no_overflow &= !add_with_overflow(*bounds_min, adjustment, new_min);
+          if (no_overflow) {
+            bounds.min = new_min;
+          }
         }
+        const index_t* bounds_max = as_constant(bounds.max);
+        if (bounds_max) {
+          int64_t adjustment;
+          bool no_overflow =
+              !sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, adjustment);
+          adjustment = euclidean_mod(adjustment, alignment.modulus);
+          int64_t new_max;
+          no_overflow &= !sub_with_overflow(*bounds_max, adjustment, new_max);
+          if (no_overflow) {
+            bounds.max = new_max;
+          }
+        }
+      }
 
-        if (bounds.is_point()) {
-            const auto* c = as_constant(bounds.min);
-            if (c) {
-              alignment.modulus = 0;
-              alignment.remainder = *c;
-            }
+      if (bounds.is_point()) {
+        const auto* c = as_constant(bounds.min);
+        if (c) {
+          alignment.modulus = 0;
+          alignment.remainder = *c;
         }
+      }
     }
   };
+
 private:
   symbol_map<buffer_info> buffers;
   symbol_map<expr_info> info_map;
@@ -391,7 +394,7 @@ public:
   simplifier(const bounds_map& bounds, const alignment_map& alignment) {
     for (size_t ix = 0; ix < bounds.size(); ix++) {
       var id = var(ix);
-      if (!bounds[id]) continue ;
+      if (!bounds[id]) continue;
       info_map[id] = {*bounds[id], alignment_type()};
     }
 
@@ -459,9 +462,7 @@ public:
 
     symbol_map<expr_info>& info_map;
 
-    alignment_type get_alignment(const var& v) {
-      return info_map[v] ? info_map[v]->alignment :  alignment_type();
-    }
+    alignment_type get_alignment(const var& v) { return info_map[v] ? info_map[v]->alignment : alignment_type(); }
 
   public:
     knowledge(symbol_map<expr_info>& info_map) : info_map(info_map) {}
@@ -481,7 +482,7 @@ public:
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(a),  get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(info_map, v->sym, {point(a), get_alignment(v->sym)}));
       }
     }
 
@@ -644,7 +645,8 @@ public:
       return;
     } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_info.bounds.min)) ||
                prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a)) ||
-               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a_info.bounds.min))) {
+               prove_constant_true(
+                   simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a_info.bounds.min))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(b), std::move(b_info));
       } else {
@@ -657,7 +659,8 @@ public:
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result, {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), a_info.alignment | b_info.alignment});
+      set_result(result,
+          {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), a_info.alignment | b_info.alignment});
     }
   }
 
@@ -694,19 +697,22 @@ public:
     if (op->type == expr_node_type::div) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
+      // clang-format off
       if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), eval(a_mod % c1 == 0)) ||
           r((c0 - x) / c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, eval(a_mod % c1 == 0)) ||
           false) {
         mutate_and_set_result(r.result);
-        return ;
+        return;
       }
+      // clang-format on
     }
 
     expr result = simplify(op, std::move(a), std::move(b));
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      expr_info info = {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), modulus_of(op, a_info.alignment, b_info.alignment)};
+      expr_info info = {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)),
+          modulus_of(op, a_info.alignment, b_info.alignment)};
       info.trim_bounds_using_alignment();
       set_result(result, std::move(info));
     }
@@ -875,7 +881,8 @@ public:
 
     expr e = simplify(op, std::move(c), std::move(t), std::move(f));
     if (e.same_as(op)) {
-      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)), t_info.alignment | f_info.alignment};
+      expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)),
+          t_info.alignment | f_info.alignment};
       info.trim_bounds_using_alignment();
       set_result(e, std::move(info));
     } else {
@@ -1953,8 +1960,8 @@ public:
 
 }  // namespace
 
-expr simplify(const expr& e, const bounds_map& bounds, const alignment_map& alignment) { 
-  return simplifier(bounds, alignment).mutate(e, nullptr); 
+expr simplify(const expr& e, const bounds_map& bounds, const alignment_map& alignment) {
+  return simplifier(bounds, alignment).mutate(e, nullptr);
 }
 
 stmt simplify(const stmt& s, const bounds_map& bounds, const alignment_map& alignment) {
@@ -2201,7 +2208,8 @@ public:
 expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mutate(x); }
 expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
 
-std::optional<bool> attempt_to_prove(const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
+std::optional<bool> attempt_to_prove(
+    const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
   simplifier s(expr_bounds, alignment);
   return s.attempt_to_prove(condition);
 }

@@ -232,7 +232,8 @@ public:
       *this << "\n";
     }
     *this << indent() << "];\n";
-    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym) << "', __base, __elem_size, __dims);\n";
+    *this << indent() << "{ let " << n->sym << " = make_buffer('" << name(n->sym)
+          << "', __base, __elem_size, __dims);\n";
     *this << n->body;
     *this << indent() << "}\n";
     --depth;
@@ -276,7 +277,8 @@ public:
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << "{ let __" << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << "); {\n";
+    *this << indent() << "{ let __" << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at
+          << "); {\n";
     *this << indent(1) << "let " << n->sym << " = __" << n->sym << ";\n";
     *this << n->body;
     *this << indent() << "}}\n";

@@ -633,7 +633,6 @@ expr boolean(const expr& x) {
 }
 bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
 
-
 expr semaphore_init(expr sem, expr count) {
   return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
 }

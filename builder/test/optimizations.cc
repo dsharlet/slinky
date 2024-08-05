@@ -54,7 +54,7 @@ TEST(optimizations, optimize_symbols) {
   }
 }
 
-TEST(optimizations, deshadow_speed) { 
+TEST(optimizations, deshadow_speed) {
   node_context ctx = symbols;
   stmt s = call_stmt::make(nullptr, {x}, {y}, {});
   for (int i = 0; i < 1000; ++i) {

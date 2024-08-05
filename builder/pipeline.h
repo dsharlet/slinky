@@ -209,8 +209,8 @@ private:
 public:
   // Version for std::function
   template <typename... T>
-  static func make(callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs,
-      call_stmt::attributes attrs = {}) {
+  static func make(
+      callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs = {}) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
 

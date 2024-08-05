@@ -185,12 +185,12 @@ bool mul_with_overflow(T a, T b, T& result) {
 template <typename T>
 inline T gcd(T a, T b) {
   if (a < b) {
-      std::swap(a, b);
+    std::swap(a, b);
   }
   while (b != 0) {
-      T tmp = b;
-      b = a % b;
-      a = tmp;
+    T tmp = b;
+    b = a % b;
+    a = tmp;
   }
   return a;
 }

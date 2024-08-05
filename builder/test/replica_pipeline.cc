@@ -4,8 +4,8 @@
 #include <string>
 
 #include "builder/pipeline.h"
-#include "builder/test/funcs.h"
 #include "builder/replica_pipeline.h"
+#include "builder/test/funcs.h"
 
 namespace slinky {
 
