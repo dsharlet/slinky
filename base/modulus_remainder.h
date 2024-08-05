@@ -38,7 +38,7 @@ modulus_remainder<T> operator+(const modulus_remainder<T>& a, const modulus_rema
   int64_t m = 1, r = 0;
   if (!add_with_overflow(a.remainder, b.remainder, r)) {
     m = gcd(a.modulus, b.modulus);
-    r = euclidean_mod(r, m);
+    r = m == 0 ? r : euclidean_mod(r, m);
   }
   return {m, r};
 }
@@ -48,7 +48,7 @@ modulus_remainder<T> operator-(const modulus_remainder<T>& a, const modulus_rema
   int64_t m = 1, r = 0;
   if (!sub_with_overflow(a.remainder, b.remainder, r)) {
     m = gcd(a.modulus, b.modulus);
-    r = euclidean_mod(r, m);
+    r = m == 0 ? r : euclidean_mod(r, m);
   }
   return {m, r};
 }
@@ -85,7 +85,7 @@ modulus_remainder<T> operator*(const modulus_remainder<T>& a, const modulus_rema
     // Convert them to the same modulus and multiply
     if (!mul_with_overflow(a.remainder, b.remainder, r)) {
       m = gcd(a.modulus, b.modulus);
-      r = euclidean_mod(r, m);
+      r = m == 0 ? r : euclidean_mod(r, m);
       return {m, r};
     }
   }
@@ -105,9 +105,10 @@ modulus_remainder<T> operator/(const modulus_remainder<T>& a, const modulus_rema
   // E.g. (8x + 3) / 2 -> (4x + 1)
 
   if (b.modulus == 0 && b.remainder != 0) {
-    if (euclidean_mod(a.modulus, b.remainder) == 0) {
+    if ((b.remainder == 0 ? a.modulus : euclidean_mod(a.modulus, b.remainder)) == 0) {
       int64_t m = a.modulus / b.remainder;
-      int64_t r = euclidean_mod(euclidean_div(a.remainder, b.remainder), m);
+      int64_t r = euclidean_div(a.remainder, b.remainder);
+      r = m == 0 ? r : euclidean_mod(r, m);
       return {m, r};
     }
   }
@@ -143,9 +144,9 @@ modulus_remainder<T> operator|(const modulus_remainder<T>& a, const modulus_rema
 
   modulus = gcd(diff, modulus);
 
-  int64_t ra = euclidean_mod(a.remainder, modulus);
+  int64_t ra = modulus == 0 ? a.remainder : euclidean_mod(a.remainder, modulus);
 
-  assert(ra == euclidean_mod(b.remainder, modulus));
+  assert(ra == (modulus == 0 ? b.remainder : euclidean_mod(b.remainder, modulus)));
 
   return {modulus, ra};
 }
@@ -166,7 +167,7 @@ modulus_remainder<T> operator%(const modulus_remainder<T>& a, const modulus_rema
   // 2w + 1
   int64_t modulus = gcd(a.modulus, b.modulus);
   modulus = gcd(modulus, b.remainder);
-  int64_t remainder = euclidean_mod(a.remainder, modulus);
+  int64_t remainder = modulus == 0 ? a.remainder : euclidean_mod(a.remainder, modulus);
 
   if (b.remainder == 0 && remainder != 0) {
     // b could be zero, so the result could also just be zero.
