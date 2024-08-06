@@ -142,7 +142,8 @@ bool is_produced_by(var v, const stmt& body) {
 
 // Find a maximum value of x which makes `condition` expression true. The search goes
 // backwards from initial_guess up to some fixed depth.
-expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess, const bounds_map& expr_bounds) {
+expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess, const bounds_map& expr_bounds,
+    const symbol_map<modulus_remainder<index_t>>& expr_alignment) {
   scoped_trace trace("where_true_upper_bound");
   expr result = negative_infinity();
 
@@ -152,8 +153,8 @@ expr where_true_upper_bound(const expr& condition, var x, const expr& initial_gu
 
   for (int ix = 0; ix < max_search_depth; ix++) {
     expr shifted = substitute(condition, x, (initial_guess - ix));
-    if (prove_true(shifted, expr_bounds)) {
-      result = simplify(initial_guess - ix, expr_bounds);
+    if (prove_true(shifted, expr_bounds, expr_alignment)) {
+      result = simplify(initial_guess - ix, expr_bounds, expr_alignment);
       break;
     }
   }
@@ -192,6 +193,8 @@ public:
     bool data_parallel = true;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds = std::make_unique<symbol_map<box_expr>>();
     std::unique_ptr<symbol_map<interval_expr>> expr_bounds = std::make_unique<symbol_map<interval_expr>>();
+    std::unique_ptr<symbol_map<modulus_remainder<index_t>>> expr_alignment =
+        std::make_unique<symbol_map<modulus_remainder<index_t>>>();
 
     // The next few fields relate to implementing synchronization in pipelined loops. In a pipelined loop, we
     // treat a sequence of stmts as "stages" in the pipeline, where we add synchronization to cause the loop
@@ -238,6 +241,7 @@ public:
 
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
   symbol_map<interval_expr>& current_expr_bounds() { return *loops.back().expr_bounds; }
+  symbol_map<modulus_remainder<index_t>>& current_expr_alignment() { return *loops.back().expr_alignment; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
     loops.emplace_back(ctx, var(), loop_counter++, expr(), interval_expr::none(), expr(), loop::serial);
@@ -356,8 +360,8 @@ public:
       }
 
       // Some expressions which involve loop bounds are difficult to simplify, so let's try to do that using the latest
-      // loop bounds.
-      cur_bounds_d = simplify(cur_bounds_d, {{loop.sym, loop.bounds}});
+      // loop bounds.;
+      cur_bounds_d = simplify(cur_bounds_d, *loop.expr_bounds, *loop.expr_alignment);
 
       interval_expr prev_bounds_d = {
           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
@@ -365,11 +369,12 @@ public:
       };
 
       interval_expr overlap = prev_bounds_d & cur_bounds_d;
-      if (prove_true(overlap.empty(), *loop.expr_bounds)) {
+      if (prove_true(overlap.empty(), *loop.expr_bounds, *loop.expr_alignment)) {
         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
         // can fold the storage.
-        expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds);
-        fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds);
+        expr fold_factor =
+            simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds, *loop.expr_alignment);
+        fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
           vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.back().loop_id};
         } else {
@@ -381,19 +386,21 @@ public:
       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
       expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
-      if (prove_true(is_monotonic_increasing, *loop.expr_bounds)) {
+      if (prove_true(is_monotonic_increasing, *loop.expr_bounds, *loop.expr_alignment)) {
         // The bounds for each loop iteration overlap and are monotonically increasing,
         // so we can incrementally compute only the newly required bounds.
         expr old_min = cur_bounds_d.min;
-        expr new_min = simplify(prev_bounds_d.max + 1, *loop.expr_bounds);
+        expr new_min = simplify(prev_bounds_d.max + 1, *loop.expr_bounds, *loop.expr_alignment);
 
         if (!did_overlapped_fold) {
-          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds);
-          fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds);
+          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds, *loop.expr_alignment).max,
+              *loop.expr_bounds, *loop.expr_alignment);
+          fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d) = {simplify(fold_factor, *loop.expr_bounds),
-                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max),
+            vector_at(fold_factors[output], d) = {simplify(fold_factor, *loop.expr_bounds, *loop.expr_alignment),
+                simplify(constant_upper_bound(
+                             bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds, *loop.expr_alignment).max),
                     *loop.expr_bounds),
                 loops.back().loop_id};
             did_overlapped_fold = true;
@@ -406,8 +413,8 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min =
-            where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, *loop.expr_bounds);
+        expr new_loop_min = where_true_upper_bound(
+            new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, *loop.expr_bounds, *loop.expr_alignment);
 
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
@@ -422,7 +429,7 @@ public:
 
         // This loop has a dependency between loop iterations, mark it as not data parallel.
         loop.data_parallel = false;
-      } else if (prove_true(is_monotonic_decreasing, *loop.expr_bounds)) {
+      } else if (prove_true(is_monotonic_decreasing, *loop.expr_bounds, *loop.expr_alignment)) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
       }
@@ -604,6 +611,7 @@ public:
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
     symbol_map<interval_expr> last_expr_bounds = current_expr_bounds();
+    symbol_map<modulus_remainder<index_t>> last_expr_alignment = current_expr_alignment();
 
     interval_expr loop_bounds = op->bounds;
     // It's possible that after sliding some of the buffers the bounds of the
@@ -616,12 +624,20 @@ public:
     loops.emplace_back(ctx, op->sym, loop_counter++, orig_min, loop_bounds, op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
     current_expr_bounds() = last_expr_bounds;
+    current_expr_alignment() = last_expr_alignment;
 
     stmt body;
     {
       // We can use narrower bounds for the loop var, because the loop var not necessarily will reach max if step > 1.
       auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym,
           {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
+
+      const index_t* maybe_min = as_constant(loop_bounds.min);
+      const index_t* maybe_step = as_constant(op->step);
+      index_t modulus = maybe_step ? *maybe_step : 1;
+      index_t remainder = (maybe_min && maybe_step) ? *maybe_min % *maybe_step : 0;
+
+      auto set_expr_alignment = set_value_in_scope(current_expr_alignment(), op->sym, {modulus, remainder});
       body = mutate(op->body);
     }
 
