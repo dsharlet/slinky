@@ -833,6 +833,9 @@ public:
   void visit(const loop* op) override { visit_terminal(op); }
   void visit(const call_stmt* op) override { visit_terminal(op); }
   void visit(const copy_stmt* op) override { visit_terminal(op); }
+  void visit(const check* op) override { visit_terminal(op); }
+  void visit(const let_stmt* op) override { visit_terminal(op); }
+
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
