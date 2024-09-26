@@ -950,6 +950,59 @@ TEST_P(padded_stencil, pipeline) {
   }
 }
 
+TEST(padded_with_shift, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func padded = func::make_copy({intm, {point(x), point(y - 1)}, in->bounds()}, {padded_intm, {x, y}}, {0, 0});
+  func mul2 = func::make(multiply_2<short>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  // func mul = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in_buf({W, H});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  // for (int y = 0; y < H; ++y) {
+  //   for (int x = 0; x < W; ++x) {
+  //     int correct = 0;
+  //     for (int dy = -1; dy <= 1; ++dy) {
+  //       for (int dx = -1; dx <= 1; ++dx) {
+  //         if (0 <= x + dx && x + dx < W && 0 <= y + dy && y + dy < H) {
+  //           correct += in_buf(x + dx, y + dy) + 1;
+  //         } else {
+  //           correct += 6;
+  //         }
+  //       }
+  //     }
+  //     ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+  //   }
+  // }
+}
+
 interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx}; }
 
 class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
