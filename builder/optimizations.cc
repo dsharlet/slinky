@@ -132,86 +132,6 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
   return result;
 }
 
-// Replace copies between buffers a and b with calls to pad.
-class copy_replacer : public node_mutator {
-  // Track all names of a and b as we go.
-  std::vector<var> as;
-  std::vector<var> bs;
-  const std::vector<int>& permutation;
-
-  bool is_a_and_b(var x, var y) const {
-    return (std::find(as.begin(), as.end(), x) != as.end() && std::find(bs.begin(), bs.end(), y) != bs.end()) ||
-           (std::find(as.begin(), as.end(), y) != as.end() && std::find(bs.begin(), bs.end(), x) != bs.end());
-  }
-
-public:
-  copy_replacer(var a, var b, const std::vector<int>& permutation) : as({a}), bs({b}), permutation(permutation) {}
-
-  void visit(const copy_stmt* op) override {
-    if (!is_a_and_b(op->src, op->dst)) {
-      // Not this copy.
-      set_result(op);
-      return;
-    }
-    if (!op->padding || op->padding->empty()) {
-      // No padding, this copy is now a no-op.
-      set_result(stmt());
-      return;
-    }
-
-    // Make a call to `pad`.
-    call_stmt::attributes pad_attrs;
-    pad_attrs.name = "pad";
-    stmt pad = call_stmt::make(
-        [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
-          // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
-          // don't matter. But in this case, they do...
-          const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
-          const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-          ctx.pad(src_buf->dims, *dst_buf, padding.data());
-          return 0;
-        },
-        {}, {op->src, op->dst}, std::move(pad_attrs));
-
-    // The copy may have also be transposed.
-    set_result(transpose::make(op->dst, op->dst, permutation, pad));
-  }
-
-  void visit(const call_stmt* op) override {
-    if (op->attrs.name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
-        is_a_and_b(op->inputs[0], op->outputs[0])) {
-      expr input_size = call::make(intrinsic::buffer_size_bytes, {op->inputs[0]});
-      expr output_size = call::make(intrinsic::buffer_size_bytes, {op->outputs[0]});
-      set_result(check::make(input_size == output_size));
-    } else {
-      set_result(op);
-    }
-  }
-
-  template <typename T>
-  void visit_buffer_mutator(const T* op) {
-    bool a_contains = std::find(as.begin(), as.end(), op->src) != as.end();
-    bool b_contains = std::find(bs.begin(), bs.end(), op->src) != bs.end();
-    if (a_contains) as.push_back(op->sym);
-    if (b_contains) bs.push_back(op->sym);
-    node_mutator::visit(op);
-    if (a_contains) as.pop_back();
-    if (b_contains) bs.pop_back();
-  }
-
-  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const clone_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const transpose* op) override { visit_buffer_mutator(op); }
-};
-
-stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& permutation) {
-  scoped_trace trace("replace_copy_with_pad");
-  return copy_replacer(a, b, permutation).mutate(s);
-}
-
 class buffer_aliaser : public node_mutator {
   node_context& ctx;
 
@@ -228,6 +148,8 @@ class buffer_aliaser : public node_mutator {
 
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
+
+    bool is_copy = false;
 
     bool is_contiguous_copy = false;
   };
@@ -390,9 +312,7 @@ public:
         result = block::make({check::make(elem_size == op->elem_size), result});
       }
 
-      // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = replace_copy_with_pad(result, op->sym, target_var, alias.permutation);
-      if (pad_result.same_as(result)) {
+      if (!alias.is_copy) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
         // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
@@ -403,7 +323,7 @@ public:
           i->do_not_alias(target_var);
         }
       }
-      set_result(pad_result);
+      set_result(std::move(result));
       return;
     }
     if (!body.same_as(op->body)) {
@@ -526,6 +446,7 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
+    a.is_copy = true;
 
     a.elem_size = buffer_elem_size(op->src);
 
@@ -585,6 +506,7 @@ public:
     a.permutation.resize(op->dst_x.size());
     std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
+    a.is_copy = true;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->maybe_alias(op->dst, std::move(a));
