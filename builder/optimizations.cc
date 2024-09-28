@@ -280,9 +280,8 @@ class buffer_aliaser : public node_mutator {
         if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
             !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
-          assert(!target_info.is_input);
-          if (target_info.is_output) {
-            // We can't reallocate this output buffer.
+          if (target_info.is_input || target_info.is_output) {
+            // We can't reallocate this buffer.
             return false;
           }
         }

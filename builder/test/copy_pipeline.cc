@@ -51,7 +51,7 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-TEST(padded_copy, pipeline) {
+TEST(padded_copy_bounds, pipeline) {
   // Make the pipeline
   node_context ctx;
 
@@ -108,9 +108,70 @@ TEST(padded_copy, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};
+class padded_copy : public testing::TestWithParam<std::tuple<bool, int, int, bool>> {};
 
-auto offsets = testing::Values(0, 3);
+auto offsets = testing::Values(0);
+auto add_stage = testing::Values(false, true);
+
+INSTANTIATE_TEST_SUITE_P(offsets, padded_copy, testing::Combine(add_stage, offsets, offsets, add_stage),
+    test_params_to_string<padded_copy::ParamType>);
+
+TEST_P(padded_copy, pipeline) {
+  bool in_stage = std::get<0>(GetParam());
+  int offset_x = std::get<1>(GetParam());
+  int offset_y = std::get<2>(GetParam());
+  bool out_stage = std::get<3>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(char));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func copy_in, copy_out;
+  if (in_stage) {
+    copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  }
+  func crop =
+      func::make_copy({in_stage ? intm : in, {point(x + offset_x), point(y + offset_y)}, in->bounds()}, {out_stage ? padded_intm : out, {x, y}}, {3});
+  if (out_stage) {
+    copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  const int W = 8;
+  const int H = 5;
+
+  // Run the pipeline.
+  buffer<char, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  buffer<char, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      if (0 <= x + offset_x && x + offset_x < W && 0 <= y + offset_y && y + offset_y < H) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x + offset_x, y + offset_y));
+      } else {
+        ASSERT_EQ(out_buf(x, y), 3);
+      }
+    }
+  }
+}
+
+class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(schedule, copied_output, testing::Combine(testing::Range(0, 3), offsets, offsets),
     test_params_to_string<copied_output::ParamType>);
