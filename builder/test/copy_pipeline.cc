@@ -51,63 +51,6 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-TEST(padded_copy_bounds, pipeline) {
-  // Make the pipeline
-  node_context ctx;
-
-  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
-  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
-  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
-
-  var x(ctx, "x");
-  var y(ctx, "y");
-
-  // We could just clamp using the bounds directly below, but that would hardcode the bounds we clamp
-  // in the pipeline. This way, the bounds can vary at eval-time.
-  var w(ctx, "w");
-  var h(ctx, "h");
-
-  // Copy the input so we can measure the size of the buffer we think we need internally.
-  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  // This is elementwise, but with a clamp to limit the bounds required of the input.
-  func crop = func::make(
-      zero_padded_copy<char>, {{intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}}, {{out, {x, y}}});
-
-  crop.loops({y});
-
-  pipeline p = build_pipeline(ctx, {w, h}, {in}, {out});
-
-  const int W = 8;
-  const int H = 5;
-
-  // Run the pipeline.
-  buffer<char, 2> in_buf({W, H});
-  init_random(in_buf);
-
-  // Ask for an output padded in every direction.
-  buffer<char, 2> out_buf({W * 3, H * 3});
-  out_buf.translate(-W, -H);
-  out_buf.allocate();
-
-  index_t args[] = {W, H};
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(args, inputs, outputs, eval_ctx);
-
-  for (int y = -H; y < 2 * H; ++y) {
-    for (int x = -W; x < 2 * W; ++x) {
-      if (0 <= x && x < W && 0 <= y && y < H) {
-        ASSERT_EQ(out_buf(x, y), in_buf(x, y));
-      } else {
-        ASSERT_EQ(out_buf(x, y), 0);
-      }
-    }
-  }
-
-  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
-}
-
 class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 auto offsets = testing::Values(0, 1, -1, 10, -10);
