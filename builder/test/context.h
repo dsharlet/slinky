@@ -33,6 +33,9 @@ struct memory_info {
 class test_context : public eval_context {
 public:
   memory_info heap;
+  int copy_calls = 0;
+  int copy_elements = 0;
+  int pad_calls = 0;
 
   test_context();
 };

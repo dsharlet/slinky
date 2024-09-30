@@ -5,6 +5,7 @@
 
 #include "base/chrome_trace.h"
 #include "base/thread_pool.h"
+#include "runtime/buffer.h"
 
 namespace slinky {
 
@@ -45,6 +46,16 @@ test_context::test_context() {
   free = [this](var, raw_buffer* b, void* allocation) {
     ::free(allocation);
     heap.track_free(b->size_bytes());
+  };
+
+  copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+    ++copy_calls;
+    copy_elements += dst.elem_count();
+    slinky::copy(src, dst, padding);
+  };
+  pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
+    ++pad_calls;
+    slinky::pad(in_bounds, dst, padding);
   };
 
   thread_pool = &threads;
