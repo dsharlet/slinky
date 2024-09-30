@@ -14,9 +14,9 @@ namespace slinky {
 // and mod are taken from:
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408
 template <typename T>
-T euclidean_div(T a, T b) {
+T euclidean_div(T a, T b, T define_b_zero = 0) {
   if (b == 0) {
-    return 0;
+    return define_b_zero;
   }
   T q = a / b;
   T r = a - q * b;
@@ -33,9 +33,9 @@ T euclidean_mod_positive_modulus(T a, T b) {
 }
 
 template <typename T>
-T euclidean_mod(T a, T b) {
+T euclidean_mod(T a, T b, T define_b_zero = 0) {
   if (b == 0) {
-    return 0;
+    return define_b_zero;
   }
   T r = a % b;
   return r >= 0 ? r : (b < 0 ? r - b : r + b);
