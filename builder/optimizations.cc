@@ -295,7 +295,10 @@ public:
           }
           for (std::size_t d = 0; d < op->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
-            target_info->dims[d].bounds |= alias.dims[alias.permutation[d]].bounds;
+            // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
+            // starts.
+            target_info->dims[d].bounds |=
+                alias.at[alias.permutation[d]] + min_extent(0, alias.dims[alias.permutation[d]].bounds.extent());
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.
@@ -756,7 +759,6 @@ public:
   void visit(const copy_stmt* op) override { visit_terminal(op); }
   void visit(const check* op) override { visit_terminal(op); }
   void visit(const let_stmt* op) override { visit_terminal(op); }
-
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
