@@ -352,10 +352,10 @@ public:
         if (!target_info->is_output) {
           assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
-          if (!target_info->shared_alloc_sym.defined()) {
-            target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));
-            alloc_var = target_info->shared_alloc_sym;
-          }
+          std::string old_name =
+              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
+          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(op->sym));
+          alloc_var = target_info->shared_alloc_sym;
           for (std::size_t d = 0; d < op->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
@@ -370,9 +370,13 @@ public:
 
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      stmt result = make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+      var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
+      if (sym != op->sym) {
+        body = clone_buffer::make(op->sym, sym, std::move(body));
+      }
+      stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
-      result = make_buffer::make(op->sym, expr(), elem_size, op->dims, result);
+      result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
