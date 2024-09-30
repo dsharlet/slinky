@@ -224,7 +224,6 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
 void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
-  assert(dst.base);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
@@ -332,7 +331,6 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   assert(value);
-  assert(dst.base);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
