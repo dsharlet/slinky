@@ -110,6 +110,7 @@ TEST_P(padded_copy, pipeline) {
   }
 
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};
@@ -181,6 +182,7 @@ TEST_P(copied_output, pipeline) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
 class copied_input : public testing::TestWithParam<std::tuple<int, int, int>> {};
@@ -253,6 +255,7 @@ TEST_P(copied_input, pipeline) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
 class concatenated_output : public testing::TestWithParam<bool> {};
@@ -313,6 +316,7 @@ TEST_P(concatenated_output, pipeline) {
 
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
 
   if (no_alias_buffers == true) {
@@ -384,6 +388,7 @@ TEST_P(transposed_output, pipeline) {
 
   if (is_permutation(permutation) && !no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
@@ -442,6 +447,7 @@ TEST(stacked_output, pipeline) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
@@ -575,6 +581,7 @@ TEST_P(broadcasted_elementwise, internal) {
 
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
 }
 

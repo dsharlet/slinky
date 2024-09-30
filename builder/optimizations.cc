@@ -132,6 +132,69 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
   return result;
 }
 
+// Replace copies between buffers a and b with calls to pad.
+class copy_remover : public node_mutator {
+  // Track all names of a and b as we go.
+  std::vector<var> as;
+  std::vector<var> bs;
+
+  bool is_a_and_b(var x, var y) const {
+    return (std::find(as.begin(), as.end(), x) != as.end() && std::find(bs.begin(), bs.end(), y) != bs.end()) ||
+           (std::find(as.begin(), as.end(), y) != as.end() && std::find(bs.begin(), bs.end(), x) != bs.end());
+  }
+
+public:
+  copy_remover(var a, var b) : as({a}), bs({b}) {}
+
+  void visit(const copy_stmt* op) override {
+    if (!is_a_and_b(op->src, op->dst)) {
+      // Not this copy.
+      set_result(op);
+      return;
+    }
+    if (!op->padding || op->padding->empty()) {
+      // No padding, this copy is now a no-op.
+      set_result(stmt());
+      return;
+    }
+    set_result(op);
+  }
+
+  void visit(const call_stmt* op) override {
+    if (op->attrs.name == "memcpy" && op->inputs.size() == 1 && op->outputs.size() == 1 &&
+        is_a_and_b(op->inputs[0], op->outputs[0])) {
+      expr input_size = call::make(intrinsic::buffer_size_bytes, {op->inputs[0]});
+      expr output_size = call::make(intrinsic::buffer_size_bytes, {op->outputs[0]});
+      set_result(check::make(input_size == output_size));
+    } else {
+      set_result(op);
+    }
+  }
+
+  template <typename T>
+  void visit_buffer_mutator(const T* op) {
+    bool a_contains = std::find(as.begin(), as.end(), op->src) != as.end();
+    bool b_contains = std::find(bs.begin(), bs.end(), op->src) != bs.end();
+    if (a_contains) as.push_back(op->sym);
+    if (b_contains) bs.push_back(op->sym);
+    node_mutator::visit(op);
+    if (a_contains) as.pop_back();
+    if (b_contains) bs.pop_back();
+  }
+
+  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const clone_buffer* op) override { visit_buffer_mutator(op); }
+  void visit(const transpose* op) override { visit_buffer_mutator(op); }
+};
+
+stmt remove_copy(const stmt& s, var a, var b) {
+  scoped_trace trace("remove_copy");
+  return copy_remover(a, b).mutate(s);
+}
+
 class buffer_aliaser : public node_mutator {
   node_context& ctx;
 
@@ -315,6 +378,8 @@ public:
         result = block::make({check::make(elem_size == op->elem_size), result});
       }
 
+      // If we aliased the source and destination of a copy with no padding, the copy can be removed.
+      result = remove_copy(result, op->sym, target_var);
       if (!alias.is_copy) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
