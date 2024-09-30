@@ -380,6 +380,7 @@ public:
 
       // If we aliased the source and destination of a copy with no padding, the copy can be removed.
       result = remove_copy(result, op->sym, target_var);
+
       if (!alias.is_copy) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
@@ -391,6 +392,7 @@ public:
           i->do_not_alias(target_var);
         }
       }
+
       set_result(std::move(result));
       return;
     }
