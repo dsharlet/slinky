@@ -212,6 +212,9 @@ class buffer_aliaser : public node_mutator {
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
 
+    // If true, we want to write to this alias. This will prevent aliasing an input.
+    bool may_mutate = true;
+
     bool is_copy = false;
 
     bool is_contiguous_copy = false;
@@ -253,6 +256,11 @@ class buffer_aliaser : public node_mutator {
     if (alias.is_contiguous_copy) {
       // We just assume flat copies are OK.
       return true;
+    }
+    if (alias.may_mutate && target_info.is_input) {
+      // We can't write to the input.
+      // TODO: Maybe having an option that allows writing to the input would be useful.
+      return false;
     }
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (alias.permutation[d] < 0) {
@@ -378,6 +386,11 @@ public:
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
       result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
 
+      for (auto& i : target_info->aliases) {
+        i.second.may_mutate = i.second.may_mutate || alias.may_mutate;
+        i.second.assume_in_bounds = i.second.assume_in_bounds && alias.assume_in_bounds;
+      }
+
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
       }
@@ -466,6 +479,7 @@ public:
           fwd.dims = buffer_dims(o, output_info->dims.size());
           fwd.at = buffer_mins(i, input_info->dims.size());
           fwd.assume_in_bounds = true;
+          fwd.may_mutate = false;
           fwd.permutation.resize(output_info->dims.size());
           std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
           input_info->maybe_alias(o, std::move(fwd));
@@ -474,6 +488,7 @@ public:
           back.dims = buffer_dims(i, input_info->dims.size());
           back.at = buffer_mins(o, output_info->dims.size());
           back.assume_in_bounds = true;
+          back.may_mutate = true;
           back.permutation.resize(input_info->dims.size());
           std::iota(back.permutation.begin(), back.permutation.end(), 0);
           output_info->maybe_alias(i, std::move(back));
@@ -520,6 +535,8 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
+    // If we can't assume the input is in bounds, we might write padding.
+    a.may_mutate = !a.assume_in_bounds;
     a.is_copy = true;
 
     a.elem_size = buffer_elem_size(op->src);
@@ -581,6 +598,7 @@ public:
     std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
     a.is_copy = true;
+    a.may_mutate = false;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->maybe_alias(op->dst, std::move(a));

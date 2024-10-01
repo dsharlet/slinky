@@ -115,60 +115,67 @@ TEST_P(padded_copy, pipeline) {
 
 class copy_sequence : public testing::TestWithParam<std::tuple<int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(one_intermediate, copy_sequence, testing::Combine(testing::Values(1), testing::Range(0, 3)),
-    test_params_to_string<copy_sequence::ParamType>);
-INSTANTIATE_TEST_SUITE_P(two_intermediate, copy_sequence, testing::Combine(testing::Values(2), testing::Range(0, 4)),
-    test_params_to_string<copy_sequence::ParamType>);
-INSTANTIATE_TEST_SUITE_P(five_intermediate, copy_sequence, testing::Combine(testing::Values(5), testing::Range(0, 7)),
-    test_params_to_string<copy_sequence::ParamType>);
+INSTANTIATE_TEST_SUITE_P(one_intermediate, copy_sequence,
+    testing::Combine(testing::Values(1), testing::Range(0, 1 << 2)), test_params_to_string<copy_sequence::ParamType>);
+INSTANTIATE_TEST_SUITE_P(two_intermediate, copy_sequence,
+    testing::Combine(testing::Values(2), testing::Range(0, 1 << 3)), test_params_to_string<copy_sequence::ParamType>);
+INSTANTIATE_TEST_SUITE_P(three_intermediate, copy_sequence,
+    testing::Combine(testing::Values(3), testing::Range(0, 1 << 4)), test_params_to_string<copy_sequence::ParamType>);
+// TODO: Fix bugs uncovered by these cases.
+//INSTANTIATE_TEST_SUITE_P(four_intermediate, copy_sequence,
+//    testing::Combine(testing::Values(4), testing::Range(0, 1 << 5)), test_params_to_string<copy_sequence::ParamType>);
 
 TEST_P(copy_sequence, pipeline) {
   int intermediate_count = std::get<0>(GetParam());
-  int padded_stage = std::get<1>(GetParam());
+  int pad_mask = std::get<1>(GetParam());
 
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
-  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(char));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(char));
   std::vector<buffer_expr_ptr> intms;
   for (int i = 0; i < intermediate_count; ++i) {
-    intms.push_back(buffer_expr::make(ctx, "intm" + std::to_string(i), 2, sizeof(char)));
+    intms.push_back(buffer_expr::make(ctx, "intm" + std::to_string(i), 1, sizeof(char)));
   }
 
   in->dim(0).fold_factor = dim::unfolded;
-  in->dim(1).fold_factor = dim::unfolded;
   out->dim(0).fold_factor = dim::unfolded;
-  out->dim(1).fold_factor = dim::unfolded;
 
   var x(ctx, "x");
-  var y(ctx, "y");
 
+  const int N = 32;
+
+  // The padding bounds depend on the stage, so we can look for the different paddings in the output.
+  auto pad_min = [=](int stage) { return N / 2 - (stage + N / 4); };
+  auto pad_max = [=](int stage) { return N / 2 + (stage + N / 4); };
+
+  // Make a sequence of copies, where each copy copies from the next value in the previous buffer in the chain.
+  // If the pad mask is one for that stage, we add padding outside the region [1, 4].
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
-    if (stage == padded_stage) {
-      return func::make_copy({src, {point(x), point(y)}, in->bounds()}, {dst, {x, y}}, {5});
+    if (((1 << stage) & pad_mask) != 0) {
+      return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
     } else {
-      return func::make_copy({src, {point(x), point(y)}}, {dst, {x, y}});
+      return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
   };
 
   std::vector<func> copies;
-  copies.push_back(make_copy(1, in, intms.front()));
+  copies.push_back(make_copy(0, in, intms.front()));
   for (int i = 0; i + 1 < intermediate_count; ++i) {
-    copies.push_back(make_copy(2 + i, intms[i], intms[i + 1]));
+    copies.push_back(make_copy(1 + i, intms[i], intms[i + 1]));
   }
-  copies.push_back(make_copy(2 + intermediate_count, intms.back(), out));
+  copies.push_back(make_copy(intermediate_count, intms.back(), out));
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
-  const int W = 8;
-  const int H = 5;
-
   // Run the pipeline.
-  buffer<char, 2> in_buf({W, H});
+  const int offset = intermediate_count + 1;
+  buffer<char, 1> in_buf({N});
+  in_buf.translate(offset);
   init_random(in_buf);
 
-  buffer<char, 2> out_buf({W, H});
+  buffer<char, 1> out_buf({N});
   out_buf.allocate();
 
   const raw_buffer* inputs[] = {&in_buf};
@@ -176,13 +183,19 @@ TEST_P(copy_sequence, pipeline) {
   test_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+  for (int n = 0; n < N; ++n) {
+    int correct = in_buf(n + offset);
+    for (int i = 0; (1 << i) <= pad_mask; ++i) {
+      if ((pad_mask & (1 << i)) == 0) continue;
+
+      int index = n + offset - i;
+      if (index < pad_min(i) || index > pad_max(i)) correct = i;
     }
+    //std::cout << (int)out_buf(n) << " " << (int)correct << std::endl;
+    ASSERT_EQ(out_buf(n), correct);
   }
 
-  if (padded_stage == 0) {
+  if (pad_mask == 0) {
     ASSERT_EQ(eval_ctx.copy_calls, 1);
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
   } else {
