@@ -133,11 +133,10 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
 }
 
 // Replace copies between buffers a and b with calls to pad.
-class copy_replacer : public node_mutator {
+class copy_remover : public node_mutator {
   // Track all names of a and b as we go.
   std::vector<var> as;
   std::vector<var> bs;
-  const std::vector<int>& permutation;
 
   bool is_a_and_b(var x, var y) const {
     return (std::find(as.begin(), as.end(), x) != as.end() && std::find(bs.begin(), bs.end(), y) != bs.end()) ||
@@ -145,7 +144,7 @@ class copy_replacer : public node_mutator {
   }
 
 public:
-  copy_replacer(var a, var b, const std::vector<int>& permutation) : as({a}), bs({b}), permutation(permutation) {}
+  copy_remover(var a, var b) : as({a}), bs({b}) {}
 
   void visit(const copy_stmt* op) override {
     if (!is_a_and_b(op->src, op->dst)) {
@@ -158,23 +157,7 @@ public:
       set_result(stmt());
       return;
     }
-
-    // Make a call to `pad`.
-    call_stmt::attributes pad_attrs;
-    pad_attrs.name = "pad";
-    stmt pad = call_stmt::make(
-        [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
-          // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
-          // don't matter. But in this case, they do...
-          const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
-          const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-          ctx.pad(src_buf->dims, *dst_buf, padding.data());
-          return 0;
-        },
-        {}, {op->src, op->dst}, std::move(pad_attrs));
-
-    // The copy may have also be transposed.
-    set_result(transpose::make(op->dst, op->dst, permutation, pad));
+    set_result(op);
   }
 
   void visit(const call_stmt* op) override {
@@ -207,9 +190,9 @@ public:
   void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
-stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& permutation) {
-  scoped_trace trace("replace_copy_with_pad");
-  return copy_replacer(a, b, permutation).mutate(s);
+stmt remove_copy(const stmt& s, var a, var b) {
+  scoped_trace trace("remove_copy");
+  return copy_remover(a, b).mutate(s);
 }
 
 class buffer_aliaser : public node_mutator {
@@ -228,6 +211,8 @@ class buffer_aliaser : public node_mutator {
 
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
+
+    bool is_copy = false;
 
     bool is_contiguous_copy = false;
   };
@@ -280,9 +265,8 @@ class buffer_aliaser : public node_mutator {
         if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
             !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
-          assert(!target_info.is_input);
-          if (target_info.is_output) {
-            // We can't reallocate this output buffer.
+          if (target_info.is_input || target_info.is_output) {
+            // We can't reallocate this buffer.
             return false;
           }
         }
@@ -368,13 +352,16 @@ public:
         if (!target_info->is_output) {
           assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
-          if (!target_info->shared_alloc_sym.defined()) {
-            target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));
-            alloc_var = target_info->shared_alloc_sym;
-          }
+          std::string old_name =
+              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
+          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(op->sym));
+          alloc_var = target_info->shared_alloc_sym;
           for (std::size_t d = 0; d < op->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
-            target_info->dims[d].bounds |= alias.dims[alias.permutation[d]].bounds;
+            // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
+            // starts.
+            target_info->dims[d].bounds |=
+                alias.at[alias.permutation[d]] + min_extent(0, alias.dims[alias.permutation[d]].bounds.extent());
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.
@@ -383,17 +370,22 @@ public:
 
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      stmt result = make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+      var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
+      if (sym != op->sym) {
+        body = clone_buffer::make(op->sym, sym, std::move(body));
+      }
+      stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
-      result = make_buffer::make(op->sym, expr(), elem_size, op->dims, result);
+      result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
       }
 
-      // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = replace_copy_with_pad(result, op->sym, target_var, alias.permutation);
-      if (pad_result.same_as(result)) {
+      // If we aliased the source and destination of a copy with no padding, the copy can be removed.
+      result = remove_copy(result, op->sym, target_var);
+
+      if (!alias.is_copy) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
         // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
@@ -404,7 +396,8 @@ public:
           i->do_not_alias(target_var);
         }
       }
-      set_result(pad_result);
+
+      set_result(std::move(result));
       return;
     }
     if (!body.same_as(op->body)) {
@@ -527,6 +520,7 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
+    a.is_copy = true;
 
     a.elem_size = buffer_elem_size(op->src);
 
@@ -586,6 +580,7 @@ public:
     a.permutation.resize(op->dst_x.size());
     std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
+    a.is_copy = true;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->maybe_alias(op->dst, std::move(a));
@@ -835,7 +830,6 @@ public:
   void visit(const copy_stmt* op) override { visit_terminal(op); }
   void visit(const check* op) override { visit_terminal(op); }
   void visit(const let_stmt* op) override { visit_terminal(op); }
-
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.

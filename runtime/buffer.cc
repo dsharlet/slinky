@@ -37,6 +37,8 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
   for (std::size_t i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
     index_t extent = alloc_extent(dims[i]);
+    assert(extent >= 0);
+    if (extent == 0) return 0;
     flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
     flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
   }
@@ -222,7 +224,7 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
 void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
-  assert(dst.base);
+  assert(dst.base || dst.elem_count() == 0);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
@@ -330,7 +332,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   assert(value);
-  assert(dst.base);
+  assert(dst.base || dst.elem_count() == 0);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 

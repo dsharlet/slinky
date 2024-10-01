@@ -160,6 +160,14 @@ TEST(buffer, buffer) {
   }
 }
 
+TEST(buffer, empty_buffer) {
+  buffer<int, 3> buf({1, 0, 2});
+
+  ASSERT_EQ(buf.rank, 3);
+
+  buf.allocate();
+}
+
 bool test_fill(int elem_size, int size) {
   buffer<void, 1> buf({size}, elem_size);
   buf.allocate();

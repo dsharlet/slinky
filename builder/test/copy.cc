@@ -4,30 +4,12 @@
 #include <vector>
 
 #include "builder/pipeline.h"
+#include "builder/test/context.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
 namespace slinky {
-
-class test_context : public eval_context {
-public:
-  int copy_calls = 0;
-  int copy_elements = 0;
-  int pad_calls = 0;
-
-  test_context() {
-    copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
-      ++copy_calls;
-      copy_elements += dst.elem_count();
-      slinky::copy(src, dst, padding);
-    };
-    pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
-      ++pad_calls;
-      slinky::pad(in_bounds, dst, padding);
-    };
-  }
-};
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {

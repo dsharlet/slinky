@@ -1,6 +1,7 @@
 #ifndef SLINKY_BUILDER_TEST_UTIL_H
 #define SLINKY_BUILDER_TEST_UTIL_H
 
+#include <algorithm>
 #include <numeric>
 #include <string>
 
@@ -30,7 +31,9 @@ std::string test_params_to_string_impl(const T& t, std::index_sequence<Is...>) {
 template <typename T>
 std::string test_params_to_string(const testing::TestParamInfo<T>& info) {
   constexpr std::size_t n = std::tuple_size<T>();
-  return test_params_to_string_impl(info.param, std::make_index_sequence<n>());
+  std::string result = test_params_to_string_impl(info.param, std::make_index_sequence<n>());
+  std::replace(result.begin(), result.end(), '-', '_');
+  return result;
 }
 
 std::string remove_windows_newlines(std::string s);

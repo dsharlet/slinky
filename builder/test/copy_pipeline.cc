@@ -51,31 +51,115 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-TEST(padded_copy, pipeline) {
+class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool>> {};
+
+auto offsets = testing::Values(0, 1, -1, 10, -10);
+
+INSTANTIATE_TEST_SUITE_P(offsets, padded_copy, testing::Combine(offsets, offsets, testing::Values(true, false)),
+    test_params_to_string<padded_copy::ParamType>);
+
+TEST_P(padded_copy, pipeline) {
+  int offset_x = std::get<0>(GetParam());
+  int offset_y = std::get<1>(GetParam());
+  bool in_bounds = std::get<2>(GetParam());
+
   // Make the pipeline
   node_context ctx;
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
+  auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(char));
 
   var x(ctx, "x");
   var y(ctx, "y");
 
-  // We could just clamp using the bounds directly below, but that would hardcode the bounds we clamp
-  // in the pipeline. This way, the bounds can vary at eval-time.
-  var w(ctx, "w");
-  var h(ctx, "h");
+  func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func crop =
+      func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}, in->bounds()}, {padded_intm, {x, y}}, {3});
+  func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
-  // Copy the input so we can measure the size of the buffer we think we need internally.
-  func copy = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  // This is elementwise, but with a clamp to limit the bounds required of the input.
-  func crop = func::make(
-      zero_padded_copy<char>, {{intm, {point(clamp(x, 0, w - 1)), point(clamp(y, 0, h - 1))}}}, {{out, {x, y}}});
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
-  crop.loops({y});
+  const int W = 8;
+  const int H = 5;
 
-  pipeline p = build_pipeline(ctx, {w, h}, {in}, {out});
+  // Run the pipeline.
+  buffer<char, 2> in_buf({W, H});
+  if (in_bounds) {
+    in_buf.translate(offset_x, offset_y);
+  }
+  init_random(in_buf);
+
+  buffer<char, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      if (in_buf.contains(x + offset_x, y + offset_y)) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x + offset_x, y + offset_y));
+      } else {
+        ASSERT_EQ(out_buf(x, y), 3);
+      }
+    }
+  }
+
+  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+}
+
+class copy_sequence : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(one_intermediate, copy_sequence, testing::Combine(testing::Values(1), testing::Range(0, 3)),
+    test_params_to_string<copy_sequence::ParamType>);
+INSTANTIATE_TEST_SUITE_P(two_intermediate, copy_sequence, testing::Combine(testing::Values(2), testing::Range(0, 4)),
+    test_params_to_string<copy_sequence::ParamType>);
+INSTANTIATE_TEST_SUITE_P(five_intermediate, copy_sequence, testing::Combine(testing::Values(5), testing::Range(0, 7)),
+    test_params_to_string<copy_sequence::ParamType>);
+
+TEST_P(copy_sequence, pipeline) {
+  int intermediate_count = std::get<0>(GetParam());
+  int padded_stage = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  std::vector<buffer_expr_ptr> intms;
+  for (int i = 0; i < intermediate_count; ++i) {
+    intms.push_back(buffer_expr::make(ctx, "intm" + std::to_string(i), 2, sizeof(char)));
+  }
+
+  in->dim(0).fold_factor = dim::unfolded;
+  in->dim(1).fold_factor = dim::unfolded;
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
+    if (stage == padded_stage) {
+      return func::make_copy({src, {point(x), point(y)}, in->bounds()}, {dst, {x, y}}, {5});
+    } else {
+      return func::make_copy({src, {point(x), point(y)}}, {dst, {x, y}});
+    }
+  };
+
+  std::vector<func> copies;
+  copies.push_back(make_copy(1, in, intms.front()));
+  for (int i = 0; i + 1 < intermediate_count; ++i) {
+    copies.push_back(make_copy(2 + i, intms[i], intms[i + 1]));
+  }
+  copies.push_back(make_copy(2 + intermediate_count, intms.back(), out));
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
 
   const int W = 8;
   const int H = 5;
@@ -84,33 +168,29 @@ TEST(padded_copy, pipeline) {
   buffer<char, 2> in_buf({W, H});
   init_random(in_buf);
 
-  // Ask for an output padded in every direction.
-  buffer<char, 2> out_buf({W * 3, H * 3});
-  out_buf.translate(-W, -H);
+  buffer<char, 2> out_buf({W, H});
   out_buf.allocate();
 
-  index_t args[] = {W, H};
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
-  p.evaluate(args, inputs, outputs, eval_ctx);
+  p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int y = -H; y < 2 * H; ++y) {
-    for (int x = -W; x < 2 * W; ++x) {
-      if (0 <= x && x < W && 0 <= y && y < H) {
-        ASSERT_EQ(out_buf(x, y), in_buf(x, y));
-      } else {
-        ASSERT_EQ(out_buf(x, y), 0);
-      }
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y));
     }
   }
 
-  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
+  if (padded_stage == 0) {
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  } else {
+    // TODO: Try to eliminate more copies when the padding appears between other copies.
+  }
 }
 
 class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};
-
-auto offsets = testing::Values(0, 3);
 
 INSTANTIATE_TEST_SUITE_P(schedule, copied_output, testing::Combine(testing::Range(0, 3), offsets, offsets),
     test_params_to_string<copied_output::ParamType>);
@@ -179,6 +259,7 @@ TEST_P(copied_output, pipeline) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
 class copied_input : public testing::TestWithParam<std::tuple<int, int, int>> {};
@@ -251,6 +332,7 @@ TEST_P(copied_input, pipeline) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
 class concatenated_output : public testing::TestWithParam<bool> {};
@@ -311,6 +393,7 @@ TEST_P(concatenated_output, pipeline) {
 
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
 
   if (no_alias_buffers == true) {
@@ -382,6 +465,7 @@ TEST_P(transposed_output, pipeline) {
 
   if (is_permutation(permutation) && !no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
@@ -440,6 +524,7 @@ TEST(stacked_output, pipeline) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 
   check_replica_pipeline(define_replica_pipeline(ctx, {in1, in2}, {out}));
 }
@@ -573,6 +658,7 @@ TEST_P(broadcasted_elementwise, internal) {
 
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+    ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
 }
 
