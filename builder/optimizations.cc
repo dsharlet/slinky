@@ -452,7 +452,9 @@ public:
         output_info->maybe_alias(in, std::move(back));
       }
     } else if (op->attrs.allow_in_place) {
-      for (var i : op->inputs) {
+      // If input is repeated, we don't want to add into the alias info again.
+      std::set<var> unique_inputs(op->inputs.begin(), op->inputs.end());
+      for (var i : unique_inputs) {
         std::optional<buffer_info>& input_info = buffers[i];
         if (!input_info || input_info->is_input) {
           // We can't write to this buffer.
