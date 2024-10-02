@@ -452,7 +452,15 @@ public:
         output_info->maybe_alias(in, std::move(back));
       }
     } else if (op->attrs.allow_in_place) {
-      for (var i : op->inputs) {
+      for (int ix = 0; ix < op->inputs.size(); ++ix) {
+        var i = op->inputs[ix];
+        bool same_input = false;
+        for (int iy = 0; iy < ix; ++iy) {
+          same_input = same_input || (op->inputs[iy] == i);
+        }
+        // If input is repeated, we don't want to add it to the alias info.
+        if (same_input) continue;
+
         std::optional<buffer_info>& input_info = buffers[i];
         if (!input_info || input_info->is_input) {
           // We can't write to this buffer.
