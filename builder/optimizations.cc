@@ -458,7 +458,7 @@ public:
         for (int iy = 0; iy < ix; ++iy) {
           same_input = same_input || (op->inputs[iy] == i);
         }
-        // If input is repeated, we don't want to add it to the alias info.
+        // If input is repeated, we don't want to add into the alias info again.
         if (same_input) continue;
 
         std::optional<buffer_info>& input_info = buffers[i];
