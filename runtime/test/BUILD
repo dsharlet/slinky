@@ -36,6 +36,16 @@ cc_test(
 )
 
 cc_test(
+    name = "validate",
+    srcs = ["validate.cc"],
+    deps = [
+        "//runtime:validate",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "buffer_benchmark",
     srcs = ["buffer_benchmark.cc"],
     deps = [

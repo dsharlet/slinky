@@ -23,6 +23,7 @@
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
+#include "runtime/validate.h"
 
 namespace slinky {
 
@@ -1027,6 +1028,19 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   if (is_verbose()) {
     std::cout << result << std::endl;
   }
+
+  std::vector<var> external;
+  external.reserve(inputs.size() + outputs.size() + constants.size());
+  for (const buffer_expr_ptr& i : inputs) {
+    external.push_back(i->sym());
+  }
+  for (const buffer_expr_ptr& i : outputs) {
+    external.push_back(i->sym());
+  }
+  for (const buffer_expr_ptr& i : constants) {
+    external.push_back(i->sym());
+  }
+  assert(is_valid(result, external, &ctx));
 
   set_default_print_context(old_context);
 

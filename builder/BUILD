@@ -31,6 +31,7 @@ cc_library(
         "//base",
         "//base:chrome_trace",
         "//runtime",
+        "//runtime:validate",
     ],
     visibility = ["//visibility:public"],
 )
