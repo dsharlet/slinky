@@ -475,21 +475,31 @@ public:
           std::optional<buffer_info>& output_info = buffers[o];
           if (!output_info) continue;
 
+          if (input_info->dims.size() != output_info->dims.size()) {
+            // This is allow_in_place, but appears to not be elementwise?
+            continue;
+          }
+          size_t rank = input_info->dims.size();
+
           alias_info fwd;
-          fwd.dims = buffer_dims(o, output_info->dims.size());
-          fwd.at = buffer_mins(i, input_info->dims.size());
+          fwd.dims = buffer_dims(o, rank);
+          fwd.at = buffer_mins(i, rank);
           fwd.assume_in_bounds = true;
           fwd.may_mutate = false;
-          fwd.permutation.resize(output_info->dims.size());
+          fwd.permutation.resize(rank);
           std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
           input_info->maybe_alias(o, std::move(fwd));
 
           alias_info back;
-          back.dims = buffer_dims(i, input_info->dims.size());
-          back.at = buffer_mins(o, output_info->dims.size());
+          // Use the bounds of the output, but the memory layout of the input.
+          back.dims.resize(rank);
+          for (size_t d = 0; d < rank; ++d) {
+            back.dims[d] = {buffer_bounds(o, d), buffer_stride(i, d), buffer_fold_factor(i, d)};
+          }
+          back.at = buffer_mins(o, rank);
           back.assume_in_bounds = true;
           back.may_mutate = true;
-          back.permutation.resize(input_info->dims.size());
+          back.permutation.resize(rank);
           std::iota(back.permutation.begin(), back.permutation.end(), 0);
           output_info->maybe_alias(i, std::move(back));
         }
