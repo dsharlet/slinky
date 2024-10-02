@@ -38,3 +38,11 @@ cc_library(
     deps = [":runtime"],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "validate",
+    srcs = ["validate.cc"],
+    hdrs = ["validate.h"],
+    deps = [":runtime"],
+    visibility = ["//visibility:public"],
+)
