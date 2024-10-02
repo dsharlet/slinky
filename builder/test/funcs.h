@@ -10,10 +10,7 @@ namespace slinky {
 // init_random() for raw_buffer requires allocation be done by caller
 template <typename T, std::size_t N>
 void fill_random(const buffer<T, N>& buf) {
-  std::size_t flat_size = buf.size_bytes();
-  for (size_t i = 0; i < flat_size; ++i) {
-    reinterpret_cast<char*>(buf.base())[i] = (rand() & 15) - 8;
-  }
+  for_each_element([](T* v) { *v = (rand() & 15) - 8; }, buf);
 }
 
 template <typename T, std::size_t N>
