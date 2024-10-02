@@ -1377,11 +1377,11 @@ TEST(split, pipeline) {
   // Make the pipeline
   node_context ctx;
 
-  auto in = buffer_expr::make(ctx, "in", 2, sizeof(char));
-  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
-  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(char));
-  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(char));
-  auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
 
   const int W = 16;
   const int H = 32;
@@ -1391,11 +1391,11 @@ TEST(split, pipeline) {
 
   // This test is designed to check that if we alias an elementwise output to an input, that we use the memory layout of
   // the input, but the bounds of the output.
-  func add_in = func::make(add_1<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func add_in = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func add1 = func::make(
-      add_1<char>, {{intm, {point(x), point(y)}}}, {{intm1, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      add_1<short>, {{intm, {point(x), point(y)}}}, {{intm1, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
   func add2 = func::make(
-      [](const buffer<const char>& in, const buffer<char>& out) -> index_t {
+      [](const buffer<const short>& in, const buffer<short>& out) -> index_t {
         for (index_t y = out.dim(1).min(); y <= out.dim(1).max(); ++y) {
           for (index_t x = out.dim(0).min(); x <= out.dim(0).max(); ++x) {
             out(x, y) = in(x + W, y) + 1;
@@ -1406,13 +1406,13 @@ TEST(split, pipeline) {
       {{intm, {point(x + W), point(y)}}}, {{intm2, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
 
   func sum_out =
-      func::make(subtract<char>, {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}}, {{out, {x, y}}});
+      func::make(subtract<short>, {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
   // Run the pipeline.
-  buffer<char, 2> in_buf({W * 2, H});
-  buffer<char, 2> out_buf({W, H});
+  buffer<short, 2> in_buf({W * 2, H});
+  buffer<short, 2> out_buf({W, H});
 
   init_random(in_buf);
   out_buf.allocate();
@@ -1425,7 +1425,7 @@ TEST(split, pipeline) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ((int)out_buf(x, y), (int)in_buf(x, y) - (int)in_buf(x + W, y));
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y) - in_buf(x + W, y));
     }
   }
 }
