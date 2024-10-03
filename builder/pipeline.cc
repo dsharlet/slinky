@@ -148,6 +148,9 @@ stmt func::make_call() const {
         dst_x.push_back(i);
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+      if (!input.input_crop.empty()) {
+        copy = crop_buffer::make(inputs_[0].sym(), inputs_[0].sym(), input.input_crop, copy);
+      }
       if (!input.output_crop.empty()) {
         copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
       }

@@ -212,6 +212,9 @@ class buffer_aliaser : public node_mutator {
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
 
+    // If true, we want to write to this alias. This will prevent aliasing an input.
+    bool may_mutate = true;
+
     bool is_copy = false;
 
     bool is_contiguous_copy = false;
@@ -253,6 +256,11 @@ class buffer_aliaser : public node_mutator {
     if (alias.is_contiguous_copy) {
       // We just assume flat copies are OK.
       return true;
+    }
+    if (alias.may_mutate && target_info.is_input) {
+      // We can't write to the input.
+      // TODO: Maybe having an option that allows writing to the input would be useful.
+      return false;
     }
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (alias.permutation[d] < 0) {
@@ -320,13 +328,14 @@ public:
 
     scoped_trace trace("visit(const allocate*)");
     buffer_info info = std::move(*buffers[op->sym]);
+    var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
     for (std::optional<buffer_info>& i : buffers) {
       if (i) i->do_not_alias(op->sym);
     }
 
-    box_expr op_dims_bounds = dims_bounds(op->dims);
+    box_expr op_dims_bounds = dims_bounds(info.dims);
     for (auto& target : info.aliases) {
       var target_var = target.first;
       alias_info& alias = target.second;
@@ -354,14 +363,14 @@ public:
           // We allocated this buffer, make it big enough to share with this buffer.
           std::string old_name =
               ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
-          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(op->sym));
+          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
           alloc_var = target_info->shared_alloc_sym;
           for (std::size_t d = 0; d < op->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
             // starts.
-            target_info->dims[d].bounds |=
-                alias.at[alias.permutation[d]] + min_extent(0, alias.dims[alias.permutation[d]].bounds.extent());
+            size_t alias_d = alias.permutation[d];
+            target_info->dims[d].bounds |= alias.at[alias_d] + min_extent(0, alias.dims[alias_d].bounds.extent());
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.
@@ -370,13 +379,17 @@ public:
 
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
       if (sym != op->sym) {
-        body = clone_buffer::make(op->sym, sym, std::move(body));
+        body = crop_buffer::make(op->sym, sym, dims_bounds(op->dims), std::move(body));
       }
       stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
       result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
+
+      for (auto& i : target_info->aliases) {
+        i.second.may_mutate = i.second.may_mutate || alias.may_mutate;
+        i.second.assume_in_bounds = i.second.assume_in_bounds && alias.assume_in_bounds;
+      }
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
@@ -404,7 +417,7 @@ public:
       if (info.shared_alloc_sym.defined()) {
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
-        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, std::move(op_dims_bounds), std::move(body));
+        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
         result =
             allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
         set_result(result);
@@ -474,6 +487,7 @@ public:
           fwd.dims = buffer_dims(o, rank);
           fwd.at = buffer_mins(i, rank);
           fwd.assume_in_bounds = true;
+          fwd.may_mutate = false;
           fwd.permutation.resize(rank);
           std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
           input_info->maybe_alias(o, std::move(fwd));
@@ -486,6 +500,7 @@ public:
           }
           back.at = buffer_mins(o, rank);
           back.assume_in_bounds = true;
+          back.may_mutate = true;
           back.permutation.resize(rank);
           std::iota(back.permutation.begin(), back.permutation.end(), 0);
           output_info->maybe_alias(i, std::move(back));
@@ -532,6 +547,8 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
+    // If we can't assume the input is in bounds, we might write padding.
+    a.may_mutate = !a.assume_in_bounds;
     a.is_copy = true;
 
     a.elem_size = buffer_elem_size(op->src);
@@ -593,6 +610,7 @@ public:
     std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
     a.is_copy = true;
+    a.may_mutate = false;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->maybe_alias(op->dst, std::move(a));
