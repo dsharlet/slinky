@@ -121,9 +121,8 @@ INSTANTIATE_TEST_SUITE_P(two_intermediate, copy_sequence,
     testing::Combine(testing::Values(2), testing::Range(0, 1 << 3)), test_params_to_string<copy_sequence::ParamType>);
 INSTANTIATE_TEST_SUITE_P(three_intermediate, copy_sequence,
     testing::Combine(testing::Values(3), testing::Range(0, 1 << 4)), test_params_to_string<copy_sequence::ParamType>);
-// TODO: Fix bugs uncovered by these cases.
-//INSTANTIATE_TEST_SUITE_P(four_intermediate, copy_sequence,
-//    testing::Combine(testing::Values(4), testing::Range(0, 1 << 5)), test_params_to_string<copy_sequence::ParamType>);
+INSTANTIATE_TEST_SUITE_P(four_intermediate, copy_sequence,
+    testing::Combine(testing::Values(4), testing::Range(0, 1 << 5)), test_params_to_string<copy_sequence::ParamType>);
 
 TEST_P(copy_sequence, pipeline) {
   int intermediate_count = std::get<0>(GetParam());
@@ -147,8 +146,8 @@ TEST_P(copy_sequence, pipeline) {
   const int N = 32;
 
   // The padding bounds depend on the stage, so we can look for the different paddings in the output.
-  auto pad_min = [=](int stage) { return N / 2 - (stage + N / 4); };
-  auto pad_max = [=](int stage) { return N / 2 + (stage + N / 4); };
+  auto pad_min = [=](int stage) { return N / 2 + 4 - (stage * 2 + N / 4); };
+  auto pad_max = [=](int stage) { return N / 2 + 4 + N / 4; };
 
   // Make a sequence of copies, where each copy copies from the next value in the previous buffer in the chain.
   // If the pad mask is one for that stage, we add padding outside the region [1, 4].
@@ -191,7 +190,6 @@ TEST_P(copy_sequence, pipeline) {
       int index = n + offset - i;
       if (index < pad_min(i) || index > pad_max(i)) correct = i;
     }
-    //std::cout << (int)out_buf(n) << " " << (int)correct << std::endl;
     ASSERT_EQ(out_buf(n), correct);
   }
 

@@ -328,13 +328,14 @@ public:
 
     scoped_trace trace("visit(const allocate*)");
     buffer_info info = std::move(*buffers[op->sym]);
+    var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
     for (std::optional<buffer_info>& i : buffers) {
       if (i) i->do_not_alias(op->sym);
     }
 
-    box_expr op_dims_bounds = dims_bounds(op->dims);
+    box_expr op_dims_bounds = dims_bounds(info.dims);
     for (auto& target : info.aliases) {
       var target_var = target.first;
       alias_info& alias = target.second;
@@ -362,14 +363,14 @@ public:
           // We allocated this buffer, make it big enough to share with this buffer.
           std::string old_name =
               ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
-          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(op->sym));
+          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
           alloc_var = target_info->shared_alloc_sym;
           for (std::size_t d = 0; d < op->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
             // starts.
-            target_info->dims[d].bounds |=
-                alias.at[alias.permutation[d]] + min_extent(0, alias.dims[alias.permutation[d]].bounds.extent());
+            size_t alias_d = alias.permutation[d];
+            target_info->dims[d].bounds |= alias.at[alias_d] + min_extent(0, alias.dims[alias_d].bounds.extent());
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.
@@ -378,9 +379,8 @@ public:
 
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
       if (sym != op->sym) {
-        body = clone_buffer::make(op->sym, sym, std::move(body));
+        body = crop_buffer::make(op->sym, sym, dims_bounds(op->dims), std::move(body));
       }
       stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
@@ -417,7 +417,7 @@ public:
       if (info.shared_alloc_sym.defined()) {
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
-        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, std::move(op_dims_bounds), std::move(body));
+        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
         result =
             allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
         set_result(result);
