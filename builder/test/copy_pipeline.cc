@@ -197,6 +197,7 @@ TEST_P(copy_sequence, pipeline) {
     ASSERT_EQ(eval_ctx.copy_calls, 1);
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
   } else {
+    ASSERT_LE(eval_ctx.heap.allocs.size(), 1);
     // TODO: Try to eliminate more copies when the padding appears between other copies.
   }
 }
