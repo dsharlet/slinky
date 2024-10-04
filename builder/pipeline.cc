@@ -674,7 +674,7 @@ class pipeline_builder {
 
       if (permutation.size() != output.dims.size()) continue;
 
-      // Propogate strides based on the permutation of dims.
+      // Propagate strides based on the permutation of dims.
       for (int ix = 0; ix < static_cast<int>(output_dims.size()); ++ix) {
         input_dims[permutation[ix]].stride = output_dims[ix].stride;
       }
