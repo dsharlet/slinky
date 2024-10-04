@@ -952,14 +952,15 @@ TEST_P(padded_stencil, pipeline) {
 
 interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx}; }
 
-class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
+class padded_stencil_separable : public testing::TestWithParam<std::tuple<int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
-    testing::Combine(testing::Values(true, false), testing::Range(0, 3)),
+    testing::Combine(testing::Range(0, 3), testing::Range(0, 3)),
     test_params_to_string<padded_stencil_separable::ParamType>);
 
 TEST_P(padded_stencil_separable, pipeline) {
-  bool require_dense_x = std::get<0>(GetParam());
+  bool require_dense_x = std::get<0>(GetParam()) > 1;
+  bool has_explicit_stride = std::get<0>(GetParam()) > 0;
   int split_y = std::get<1>(GetParam());
 
   // Make the pipeline
@@ -973,9 +974,14 @@ TEST_P(padded_stencil_separable, pipeline) {
   auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(short));
   auto stencil_intm = buffer_expr::make(ctx, "stencil_intm", 2, sizeof(short));
 
-  if (require_dense_x) {
+  if (has_explicit_stride) {
     padded_intm_t->dim(0).stride = sizeof(short);
     padded_intm->dim(0).stride = sizeof(short);
+
+    if (require_dense_x) {
+      intm->dim(0).stride = sizeof(short);
+      stencil_intm->dim(0).stride = sizeof(short);
+    }
   }
 
   var x(ctx, "x");
@@ -1067,7 +1073,7 @@ TEST_P(padded_stencil_separable, pipeline) {
     const index_t stencil_intm_size = W * split_y * sizeof(short);
     const index_t padded_intm_size = W * (split_y + 2) * sizeof(short);
 
-    if (!require_dense_x) {
+    if (!require_dense_x && !has_explicit_stride) {
       // We can't alias stencil_intm and padded_intm like we can without splitting because of fold factor constraints.
       ASSERT_THAT(eval_ctx.heap.allocs,
           testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), stencil_intm_size, padded_intm_size));
@@ -1082,9 +1088,13 @@ TEST_P(padded_stencil_separable, pipeline) {
     const index_t stencil_intm_size = W * (H + 2) * sizeof(short);
     const index_t padded_intm_size = W * (H + 2) * sizeof(short);
 
-    if (!require_dense_x) {
+    if (!require_dense_x && !has_explicit_stride) {
       ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size),
                                             std::max(stencil_intm_size, padded_intm_size)));
+    } else if (has_explicit_stride && !require_dense_x) {
+      // We can only alias one buffer.
+      ASSERT_THAT(eval_ctx.heap.allocs,
+          testing::UnorderedElementsAre(intm_size, padded_intm_t_size, stencil_intm_size));
     } else {
       // We can't alias anything when we require the strides to be dense.
       ASSERT_THAT(eval_ctx.heap.allocs,

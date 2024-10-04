@@ -280,7 +280,7 @@ class buffer_aliaser : public node_mutator {
         }
       }
       if (op->dims[d].stride.defined()) {
-        if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
+        if (!prove_true(op->dims[d].stride == alias_dim.stride) && !prove_true(op->dims[d].stride == target_info.dims[alias.permutation[d]].stride)) {
           // This alias would violate a constraint on the stride of the buffer.
           return false;
         }

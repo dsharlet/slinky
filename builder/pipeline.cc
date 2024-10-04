@@ -612,6 +612,75 @@ class pipeline_builder {
     }
   }
 
+  // Looks for simple copies (no padding, no offsets, just permutation of dims)
+  // and propagates strides from the output buffer to the input. This is done
+  // to simplify aliasing later on.
+  void propagate_strides() {
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
+      // Only handle very simple copies.
+      if (f->impl()) continue;
+      if (f->outputs().size() != 1) continue;
+      if (f->inputs().size() != 1) continue;
+      if (f->padding()) continue;
+      // Two conditions below are to avoid folding case.
+      if (!(compute_at_levels_.find(f)->second == loop_id())) continue;
+      if (!f->loops().empty()) continue;
+
+      const func::input& input = f->inputs()[0];
+      const func::output& output = f->outputs()[0];
+      if (std::find(input_syms_.begin(), input_syms_.end(), input.sym()) != input_syms_.end()) continue;
+      if (output_syms_.count(output.sym())) continue;
+
+      const buffer_expr_ptr& input_b = input.buffer;
+      auto& input_dims = *inferred_dims_[input_b->sym()];
+
+      const buffer_expr_ptr& output_b = output.buffer;
+      auto& output_dims = *inferred_dims_[output_b->sym()];
+
+      // Check if the output has strides, but the input doesn't.
+      bool is_output_strideless = true;
+      for (const dim_expr& d: output_dims) {
+        is_output_strideless = is_output_strideless && !d.stride.defined();
+      }
+      if (is_output_strideless) continue;
+
+      bool is_input_strideless = true;
+      for (const dim_expr& d: input_dims) {
+        is_input_strideless = is_input_strideless && !d.stride.defined();
+      }
+      if (!is_input_strideless) continue;
+
+      std::vector<interval_expr> dim_points;
+
+      // Find a permutation of the dims.
+      std::vector<bool> taken(input_dims.size(), false);
+      std::vector<int> permutation;
+
+      for (int ix = 0; ix < static_cast<int>(output.dims.size()); ++ix) {
+        for (int iy = 0; iy < static_cast<int>(input.bounds.size()); ++iy) {
+          if (taken[iy]) continue;
+          const variable* min_input = input.bounds[iy].min.as<variable>();
+          const variable* max_input = input.bounds[iy].max.as<variable>();
+          if (!min_input || !max_input) continue;
+          if (min_input->sym != max_input->sym) continue;
+          if (min_input->sym == output.dims[ix]) {
+            permutation.push_back(iy);
+            taken[iy] = true;
+            break;
+          }
+        }
+      }
+
+      if (permutation.size() != output.dims.size()) continue;
+
+      // Propogate strides based on the permutation of dims.
+      for (int ix = 0; ix < static_cast<int>(output_dims.size()); ++ix) {
+        input_dims[permutation[ix]].stride = output_dims[ix].stride;
+      }
+    }
+  }
+
   stmt crop_for_loop(stmt body, const func* f, const func::loop_info& loop) {
     // Crop all the outputs of this func for this loop.
     for (const func::output& o : f->outputs()) {
@@ -751,6 +820,9 @@ public:
 
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
+
+    // Propagate strides from the output of the copies to the input.
+    propagate_strides();
   }
 
   // This function works together with the produce() function to
