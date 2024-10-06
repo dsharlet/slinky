@@ -262,16 +262,23 @@ class buffer_aliaser : public node_mutator {
       // TODO: Maybe having an option that allows writing to the input would be useful.
       return false;
     }
+    bool target_has_stride = std::any_of(
+        target_info.dims.begin(), target_info.dims.end(), [](const dim_expr& i) { return i.stride.defined(); });
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (alias.permutation[d] < 0) {
         // This dimension must be a broadcast.
         continue;
       }
+
+      // In the checks below, we can learn from either the alias info, or the target buffer info.
       const dim_expr& alias_dim = alias.dims[alias.permutation[d]];
+      const dim_expr& target_dim = target_info.dims[alias.permutation[d]];
       if (!alias.assume_in_bounds) {
         assert(alias.permutation.size() == op->dims.size());
-        if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
-            !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
+        if (!(prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
+                prove_true(op->dims[d].bounds.min >= target_dim.bounds.min)) ||
+            !(prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max) ||
+                prove_true(op->dims[d].bounds.max <= target_dim.bounds.max))) {
           // We don't know if this target is big enough for this allocation.
           if (target_info.is_input || target_info.is_output) {
             // We can't reallocate this buffer.
@@ -279,14 +286,19 @@ class buffer_aliaser : public node_mutator {
           }
         }
       }
-      if (op->dims[d].stride.defined()) {
-        if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
-          // This alias would violate a constraint on the stride of the buffer.
-          return false;
+      if (target_has_stride) {
+        // The target buffer has a stride defined, so we can't propagate any strides to it. Make sure the strides are
+        // compatible. We can learn if a stride is compatible from either the original allocation, or the target dims.
+        if (op->dims[d].stride.defined()) {
+          if (!prove_true(op->dims[d].stride == alias_dim.stride) &&
+              !(target_dim.stride.defined() && prove_true(op->dims[d].stride == target_dim.stride))) {
+            // This alias would violate a constraint on the stride of the buffer.
+            return false;
+          }
         }
       }
 
-      const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
+      const expr& target_fold_factor = target_dim.fold_factor;
       if (op->dims[d].fold_factor.defined()) {
         if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
@@ -377,6 +389,13 @@ public:
         }
       }
 
+      // Propagate strides to the target allocation from the source allocation.
+      for (size_t d = 0; d < info.dims.size(); ++d) {
+        if (!target_info->dims[d].stride.defined() && op->dims[alias.permutation[d]].stride.defined()) {
+          target_info->dims[d].stride = op->dims[alias.permutation[d]].stride;
+        }
+      }
+
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
       if (sym != op->sym) {
@@ -422,7 +441,7 @@ public:
             allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
         set_result(result);
       } else {
-        set_result(clone_with(op, std::move(body)));
+        set_result(allocate::make(op->sym, op->storage, op->elem_size, std::move(info.dims), std::move(body)));
       }
     } else {
       set_result(op);

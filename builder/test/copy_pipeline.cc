@@ -153,7 +153,8 @@ TEST_P(copy_sequence, pipeline) {
   // If the pad mask is one for that stage, we add padding outside the region [1, 4].
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
-      return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
+      return func::make_copy(
+          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
@@ -481,6 +482,65 @@ TEST_P(transposed_output, pipeline) {
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
   }
+}
+
+class constrained_transpose : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(output_constrained, constrained_transpose, testing::Values(false, true));
+
+TEST_P(constrained_transpose, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", 3, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 3, sizeof(short));
+
+  if (GetParam()) {
+    intm2->dim(0).stride = sizeof(short);
+  } else {
+    intm1->dim(0).stride = sizeof(short);
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // In this pipeline, we have a transpose that we can alias, if we propagate strides to another allocation.
+  func add1 = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm1, {x, y, z}}}});
+  func transpose = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}});
+  func add2 = func::make(add_1<short>, {{{intm2, {point(x), point(y), point(z)}}}}, {{{out, {x, y, z}}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  const int D = 7;
+  buffer<short, 3> in_buf({W, D, H});
+  init_random(in_buf);
+
+  buffer<short, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x, z, y) + 2);
+      }
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  ASSERT_EQ(eval_ctx.copy_calls, 0);
 }
 
 TEST(stacked_output, pipeline) {
