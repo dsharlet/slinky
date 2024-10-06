@@ -976,6 +976,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   if (require_dense_x) {
     padded_intm_t->dim(0).stride = sizeof(short);
     padded_intm->dim(0).stride = sizeof(short);
+    stencil_intm->dim(0).stride = sizeof(short);
   }
 
   var x(ctx, "x");
@@ -1067,15 +1068,8 @@ TEST_P(padded_stencil_separable, pipeline) {
     const index_t stencil_intm_size = W * split_y * sizeof(short);
     const index_t padded_intm_size = W * (split_y + 2) * sizeof(short);
 
-    if (!require_dense_x) {
-      // We can't alias stencil_intm and padded_intm like we can without splitting because of fold factor constraints.
-      ASSERT_THAT(eval_ctx.heap.allocs,
-          testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), stencil_intm_size, padded_intm_size));
-    } else {
-      // We can't alias anything when we require the strides to be dense.
-      ASSERT_THAT(eval_ctx.heap.allocs,
-          testing::UnorderedElementsAre(intm_size, padded_intm_t_size, stencil_intm_size, padded_intm_size));
-    }
+    ASSERT_THAT(eval_ctx.heap.allocs,
+        testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), stencil_intm_size, padded_intm_size));
   } else if (split_y == 0) {
     const index_t intm_size = W * H * sizeof(short);
     const index_t padded_intm_t_size = (W + 2) * (H + 2) * sizeof(short);
@@ -1086,9 +1080,8 @@ TEST_P(padded_stencil_separable, pipeline) {
       ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size),
                                             std::max(stencil_intm_size, padded_intm_size)));
     } else {
-      // We can't alias anything when we require the strides to be dense.
       ASSERT_THAT(eval_ctx.heap.allocs,
-          testing::UnorderedElementsAre(intm_size, padded_intm_t_size, stencil_intm_size, padded_intm_size));
+          testing::UnorderedElementsAre(std::max(intm_size, padded_intm_t_size), stencil_intm_size, padded_intm_size));
     }
   } else if (split_y == 2) {
     // TODO(vksnk): aliasing is not happening with split_y == 2, because of the misagligned mins of the folded buffers.
