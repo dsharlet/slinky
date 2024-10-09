@@ -53,8 +53,8 @@ TEST(depends_on, basic) {
   stmt call = call_stmt::make(nullptr, {xc}, {yc}, {});
   // Everything here should be transparent to clones.
   call = clone_buffer::make(xc, x, clone_buffer::make(yc, y, call));
-  ASSERT_EQ(depends_on(call, x), (depends_on_result{.buffer_input = true}));
-  ASSERT_EQ(depends_on(call, y), (depends_on_result{.buffer_output = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(call, x), (depends_on_result{.var = true, .buffer_input = true}));
+  ASSERT_EQ(depends_on(call, y), (depends_on_result{.var = true, .buffer_output = true, .buffer_meta = true}));
 
   stmt crop = crop_dim::make(x, w, 1, {y, z}, check::make(y));
   ASSERT_EQ(depends_on(crop, x), (depends_on_result{}));
@@ -68,17 +68,17 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(make_buffer, z), (depends_on_result{.var = true}));
 
   stmt cropped_output = crop_dim::make(y, z, 0, {w, w}, call);
-  ASSERT_EQ(depends_on(cropped_output, z), (depends_on_result{.buffer_output = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(cropped_output, z), (depends_on_result{.var = true, .buffer_output = true, .buffer_meta = true}));
 
   stmt cropped_input = crop_dim::make(x, z, 0, {w, w}, call);
-  ASSERT_EQ(depends_on(cropped_input, z), (depends_on_result{.buffer_input = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(cropped_input, z), (depends_on_result{.var = true, .buffer_input = true, .buffer_meta = true}));
 }
 
 TEST(depends_on, copy) {
   ASSERT_EQ(
-      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x), (depends_on_result{.buffer_src = true, .buffer_meta = true}));
+      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x), (depends_on_result{.var = true, .buffer_src = true, .buffer_meta = true}));
   ASSERT_EQ(
-      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y), (depends_on_result{.buffer_dst = true, .buffer_meta = true}));
+      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y), (depends_on_result{.var = true, .buffer_dst = true, .buffer_meta = true}));
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
