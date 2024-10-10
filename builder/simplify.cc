@@ -1309,8 +1309,6 @@ public:
     return false;
   }
 
-  bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data() || r.var); }
-
   void visit(const allocate* op) override {
     buffer_info info = mutate_buffer(op);
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);

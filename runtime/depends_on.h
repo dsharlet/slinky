@@ -41,6 +41,9 @@ depends_on_result depends_on(const stmt& s, var x);
 depends_on_result depends_on(const expr& e, span<const var> xs);
 depends_on_result depends_on(const stmt& s, span<const var> xs);
 
+// Check if buffer can be safely substituted.
+bool can_substitute_buffer(const depends_on_result& r);
+
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_DEPENDS_ON_H

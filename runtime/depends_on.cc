@@ -273,4 +273,6 @@ depends_on_result depends_on(const stmt& s, span<const var> xs) {
   return r;
 }
 
+bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data() || r.var); }
+
 }  // namespace slinky
