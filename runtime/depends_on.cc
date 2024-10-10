@@ -55,10 +55,11 @@ public:
         assert(buf);
         update_deps(*buf, [fn = op->intrinsic](depends_on_result& deps) {
           deps.buffer_meta = true;
-          // TODO: Treating buffer_size_bytes as using the base is a hack to avoid needing to implement substituting a
-          // buffer into it.
-          if (fn == intrinsic::buffer_at || fn == intrinsic::buffer_size_bytes) {
+          if (fn == intrinsic::buffer_at) {
             deps.buffer_base = true;
+          }
+          if (fn == intrinsic::buffer_size_bytes) {
+            deps.var = true;
           }
         });
 
@@ -106,10 +107,14 @@ public:
 
   void visit(const call_stmt* op) override {
     for (var i : op->inputs) {
-      update_deps(i, [](depends_on_result& deps) { deps.buffer_input = true; });
+      update_deps(i, [](depends_on_result& deps) {
+        deps.var = true;
+        deps.buffer_input = true;
+      });
     }
     for (var i : op->outputs) {
       update_deps(i, [](depends_on_result& deps) {
+        deps.var = true;
         deps.buffer_output = true;
         deps.buffer_meta = true;
       });
@@ -118,10 +123,12 @@ public:
 
   void visit(const copy_stmt* op) override {
     update_deps(op->src, [](depends_on_result& deps) {
+      deps.var = true;
       deps.buffer_src = true;
       deps.buffer_meta = true;
     });
     update_deps(op->dst, [](depends_on_result& deps) {
+      deps.var = true;
       deps.buffer_dst = true;
       deps.buffer_meta = true;
     });
@@ -265,5 +272,7 @@ depends_on_result depends_on(const stmt& s, span<const var> xs) {
   depends_on(s, var_deps);
   return r;
 }
+
+bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data() || r.var); }
 
 }  // namespace slinky

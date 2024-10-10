@@ -1401,7 +1401,7 @@ public:
     // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
     // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
     // check below could be unnecessary.
-    if (!depends_on(op->body, op->sym).buffer_data()) {
+    if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
       set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
       return;
@@ -1413,7 +1413,7 @@ public:
       // This make_buffer is unused.
       set_result(std::move(body));
       return;
-    } else if (!deps.buffer_data()) {
+    } else if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
       set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
       return;
@@ -1646,7 +1646,7 @@ public:
   static bool crop_needed(const depends_on_result& deps) {
     // We don't need a crop if the buffer is only used as an input to a call. But we do need the crop if it is used as
     // an input to a copy, which uses the bounds of the input for padding.
-    return deps.buffer_output || deps.buffer_src || deps.buffer_dst;
+    return deps.buffer_output || deps.buffer_src || deps.buffer_dst || deps.buffer_meta;
   }
 
   template <typename T>
