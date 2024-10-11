@@ -111,6 +111,16 @@ index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
   return sum_stencil<T, -2, -2, 2, 2>(in, out);
 }
 
+template <typename T>
+index_t upsample_nn_2x(const buffer<const T>& in, const buffer<T>& out) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+      out(x, y) = in((x + 0) >> 1, (y + 0) >> 1);
+    }
+  }
+  return 0;
+}
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_TEST_FUNCS_H

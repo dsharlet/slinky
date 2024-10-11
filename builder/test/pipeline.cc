@@ -1430,4 +1430,65 @@ TEST(split, pipeline) {
   }
 }
 
+class upsample : public testing::TestWithParam<std::tuple<int, int>> {};
+
+INSTANTIATE_TEST_SUITE_P(split_mode, upsample,
+    testing::Combine(loop_modes, testing::Range(0, 2)),
+    test_params_to_string<upsample::ParamType>);
+
+TEST_P(upsample, pipeline) {
+  int max_workers = std::get<0>(GetParam());
+  int split = std::get<1>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+
+  func add = func::make(add_1<short>, {{in, {point(x), point(x)}}}, {{intm, {x, y}}});
+  func upsample = func::make(upsample_nn_2x<short>, {{intm, {point(x) / 2, point(y) / 2}}}, {{out, {x, y}}});
+
+  if (split > 0) {
+    upsample.loops({{y, split, max_workers}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 30;
+  buffer<short, 2> in_buf({W / 2, H / 2});
+  buffer<short, 2> out_buf({W, H});
+
+  init_random(in_buf);
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int correct = in_buf(x / 2, y / 2) + 1;
+      ASSERT_EQ(correct, out_buf(x, y)) << x << " " << y;
+    }
+  }
+
+  if (split > 0 && max_workers == loop::serial) {
+    const int intm_size = W / 2 * sizeof(short);
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size));
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  }
+}
+
 }  // namespace slinky
