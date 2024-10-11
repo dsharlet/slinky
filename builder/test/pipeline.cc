@@ -1474,7 +1474,6 @@ TEST_P(upsample, pipeline) {
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
   test_context eval_ctx;
-  std::cout << p.body << "\n";
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {
@@ -1485,7 +1484,7 @@ TEST_P(upsample, pipeline) {
   }
 
   if (split > 0 && max_workers == loop::serial) {
-    const int intm_size = W;
+    const int intm_size = W / 2 * sizeof(short);
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size));
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
