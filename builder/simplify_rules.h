@@ -910,6 +910,10 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, select(y, z, w), select(y, z + c0, u) + c1), select(y, z, select(x, w, u + c1)), eval(c0 + c1 == 0)) ||
       apply(select(x, select(y, z, w), select(y, u, w)), select(y, select(x, z, u), w)) ||
       apply(select(x, select(y, z, w), select(y, z, u)), select(y, z, select(x, w, u))) ||
+      apply(select(x, select(y, z, w), w), select(x && y, z, w)) ||
+      apply(select(x, select(y, z, w), z), select(x && !y, w, z)) ||
+      apply(select(x, z, select(y, z, w)), select(x || y, z, w)) ||
+      apply(select(x, w, select(y, z, w)), select(y && !x, z, w)) ||
       apply(select(x, false, true), !x) ||
       apply(select(x, true, false), boolean(x)) ||
       apply(select(x, y, true), y || !x, is_boolean(y)) ||
