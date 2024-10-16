@@ -390,6 +390,7 @@ public:
         // The bounds for each loop iteration overlap and are monotonically increasing,
         // so we can incrementally compute only the newly required bounds.
         expr old_min = cur_bounds_d.min;
+        expr old_max = cur_bounds_d.max;
         expr new_min = simplify(prev_bounds_d.max + 1, *loop.expr_bounds, *loop.expr_alignment);
 
         if (!did_overlapped_fold) {
@@ -427,8 +428,11 @@ public:
           (*bounds)[d].min = select(loop_var <= loop.orig_min, old_min, new_min);
         }
 
-        // This loop has a dependency between loop iterations, mark it as not data parallel.
-        loop.data_parallel = false;
+        // Mark loop as non-data-parallel unless the new_min is outside of the current bounds.
+        if (!prove_true(new_min > old_max)) {
+          // This loop has a dependency between loop iterations, mark it as not data parallel.
+          loop.data_parallel = false;
+        }
       } else if (prove_true(is_monotonic_decreasing, *loop.expr_bounds, *loop.expr_alignment)) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
