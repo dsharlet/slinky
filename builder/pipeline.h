@@ -140,6 +140,9 @@ public:
 private:
   call_stmt::callable impl_;
   call_stmt::attributes attrs_;
+  // A pointer to the optional user data.
+  void* user_data_;
+
   std::vector<input> inputs_;
   std::vector<output> outputs_;
 
@@ -263,6 +266,8 @@ public:
   const std::vector<input>& inputs() const { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
   const call_stmt::attributes& attrs() const { return attrs_; }
+  const void* user_data() const { return user_data_; }
+  void*& user_data() { return user_data_; }
   const std::optional<std::vector<char>>& padding() const { return padding_; }
 
   stmt make_call() const;
