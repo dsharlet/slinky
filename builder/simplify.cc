@@ -317,6 +317,10 @@ public:
     // The dimension metadata for this buffer.
     std::vector<dim_expr> dims;
 
+    // If true, we know that all the dimensions in the buffer are in the `dims` vector above. If not, there may be more
+    // dimensions we don't know about.
+    bool all_dims_known = false;
+
     // The op that defined this buffer.
     stmt decl;
 
@@ -1296,6 +1300,7 @@ public:
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       info.dims.push_back(mutate(op->dims[d]));
     }
+    info.all_dims_known = true;
     info.decl = op;
     return info;
   }
@@ -1904,7 +1909,7 @@ public:
 
     buffer_info sym_info;
     if (src_info && *src_info) {
-      if (transpose::is_truncate(dims) && (*src_info)->dims.size() <= dims.size()) {
+      if (transpose::is_truncate(dims) && (*src_info)->all_dims_known && (*src_info)->dims.size() <= dims.size()) {
         // transpose can't add dimensions.
         assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
@@ -1913,7 +1918,17 @@ public:
       }
 
       sym_info.elem_size = (*src_info)->elem_size;
-      sym_info.dims = permute(op->dims, (*src_info)->dims);
+      // This is like `permute`, but we can't guarantee that we know all the dimensions of src_info (it could be a
+      // buffer external to the pipeline).
+      sym_info.dims.resize(op->dims.size());
+      sym_info.all_dims_known = true;
+      for (size_t i = 0; i < op->dims.size(); ++i) {
+        if (op->dims[i] < static_cast<int>((*src_info)->dims.size())) {
+          sym_info.dims[i] = (*src_info)->dims[i];
+        } else {
+          sym_info.dims[i] = buffer_dim(op->src, op->dims[i]);
+        }
+      }
     }
     sym_info.decl = op;
 
