@@ -622,6 +622,11 @@ TEST(simplify, transpose) {
   ASSERT_THAT(simplify(transpose::make(
                   b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, call_stmt::make(nullptr, {}, {b2}, {})))),
       matches(transpose::make(b2, b0, {2, 3}, call_stmt::make(nullptr, {}, {b2}, {}))));
+
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
+                  transpose::make_truncate(b2, b1, 3, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(crop_buffer::make(
+          b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, call_stmt::make(nullptr, {}, {b2}, {})))));
 }
 
 TEST(simplify, bounds_of) {
