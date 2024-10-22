@@ -141,7 +141,7 @@ private:
   call_stmt::callable impl_;
   call_stmt::attributes attrs_;
   // A pointer to the optional user data.
-  void* user_data_;
+  void* user_data_ = nullptr;
 
   std::vector<input> inputs_;
   std::vector<output> outputs_;

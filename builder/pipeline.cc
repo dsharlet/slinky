@@ -106,6 +106,7 @@ func& func::operator=(func&& m) noexcept {
   compute_at_ = std::move(m.compute_at_);
   padding_ = std::move(m.padding_);
   attrs_ = std::move(m.attrs_);
+  user_data_ = m.user_data_;
   add_this_to_buffers();
   return *this;
 }
