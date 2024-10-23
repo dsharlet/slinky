@@ -1924,7 +1924,7 @@ public:
       sym_info.all_dims_known = true;
       for (size_t i = 0; i < op->dims.size(); ++i) {
         if (op->dims[i] < static_cast<int>((*src_info)->dims.size())) {
-          sym_info.dims[i] = (*src_info)->dims[i];
+          sym_info.dims[i] = (*src_info)->dims[op->dims[i]];
         } else {
           sym_info.dims[i] = buffer_dim(op->src, op->dims[i]);
         }

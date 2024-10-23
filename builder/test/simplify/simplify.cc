@@ -627,6 +627,14 @@ TEST(simplify, transpose) {
                   transpose::make_truncate(b2, b1, 3, call_stmt::make(nullptr, {}, {b2}, {})))),
       matches(crop_buffer::make(
           b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, call_stmt::make(nullptr, {}, {b2}, {})))));
+
+  ASSERT_THAT(simplify(crop_buffer::make(
+                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 0) <= w)))),
+      matches(stmt()));
+  ASSERT_THAT(simplify(crop_buffer::make(
+                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))),
+      matches(crop_buffer::make(
+          b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))));
 }
 
 TEST(simplify, bounds_of) {
