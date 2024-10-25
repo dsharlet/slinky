@@ -111,7 +111,7 @@ public:
   // `workers` indicates how many worker threads the thread pool will have.
   // `init` is a task that is run on each newly created thread.
   thread_pool_impl(int workers = 3, const task& init = nullptr);
-  virtual ~thread_pool_impl();
+  ~thread_pool_impl() override;
 
   int thread_count() const override { return workers_.size(); }
 
