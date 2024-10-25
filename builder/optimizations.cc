@@ -436,8 +436,8 @@ public:
   static std::vector<dim_expr> make_contiguous_dims(var buf, std::size_t rank) {
     std::vector<dim_expr> dims(rank);
     expr stride = buffer_elem_size(buf);
-    for (std::size_t i = 0; i < rank; ++i) {
-      dims[i].bounds = buffer_bounds(buf, (int32_t)i);
+    for (int i = 0; i < static_cast<int>(rank); ++i) {
+      dims[i].bounds = buffer_bounds(buf, i);
       dims[i].stride = stride;
       stride *= dims[i].bounds.extent();
     }
