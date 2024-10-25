@@ -21,6 +21,8 @@ public:
   using task = std::function<void()>;
   using predicate = std::function<bool()>;
 
+  virtual ~thread_pool() = default;
+
   virtual int thread_count() const = 0;
 
   // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
@@ -109,7 +111,7 @@ public:
   // `workers` indicates how many worker threads the thread pool will have.
   // `init` is a task that is run on each newly created thread.
   thread_pool_impl(int workers = 3, const task& init = nullptr);
-  ~thread_pool_impl();
+  virtual ~thread_pool_impl();
 
   int thread_count() const override { return workers_.size(); }
 

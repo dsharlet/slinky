@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <utility>
@@ -563,7 +564,7 @@ public:
         for (std::size_t d = 0; d < buf_rank; ++d) {
           if (d + 1 >= args.size() || !args[d + 1].defined()) {
             // buffer_at has an implicit buffer_min if it is not defined.
-            expr min_args[] = {d};
+            expr min_args[] = {(int32_t)d};
             expr min = mutate_buffer_intrinsic(intrinsic::buffer_min, *buf, min_args);
             if (min.defined()) {
               args.resize(std::max(args.size(), d + 2));

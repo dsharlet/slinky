@@ -1,24 +1,27 @@
 #include "builder/optimizations.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 #include <numeric>
 #include <optional>
 #include <set>
-#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
+#include "builder/pipeline.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 
@@ -434,7 +437,7 @@ public:
     std::vector<dim_expr> dims(rank);
     expr stride = buffer_elem_size(buf);
     for (std::size_t i = 0; i < rank; ++i) {
-      dims[i].bounds = buffer_bounds(buf, i);
+      dims[i].bounds = buffer_bounds(buf, (int32_t)i);
       dims[i].stride = stride;
       stride *= dims[i].bounds.extent();
     }
@@ -496,7 +499,7 @@ public:
           // Use the bounds of the output, but the memory layout of the input.
           back.dims.resize(rank);
           for (size_t d = 0; d < rank; ++d) {
-            back.dims[d] = {buffer_bounds(o, d), buffer_stride(i, d), buffer_fold_factor(i, d)};
+            back.dims[d] = {buffer_bounds(o, (int32_t)d), buffer_stride(i, (int32_t)d), buffer_fold_factor(i, (int32_t)d)};
           }
           back.at = buffer_mins(o, rank);
           back.assume_in_bounds = true;
