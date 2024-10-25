@@ -498,8 +498,8 @@ public:
           alias_info back;
           // Use the bounds of the output, but the memory layout of the input.
           back.dims.resize(rank);
-          for (size_t d = 0; d < rank; ++d) {
-            back.dims[d] = {buffer_bounds(o, (int32_t)d), buffer_stride(i, (int32_t)d), buffer_fold_factor(i, (int32_t)d)};
+          for (int d = 0; d < static_cast<int>(rank); ++d) {
+            back.dims[d] = {buffer_bounds(o, d), buffer_stride(i, d), buffer_fold_factor(i, d)};
           }
           back.at = buffer_mins(o, rank);
           back.assume_in_bounds = true;
