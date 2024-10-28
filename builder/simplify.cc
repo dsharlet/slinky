@@ -338,11 +338,11 @@ public:
       } else if (alignment.modulus > 1) {
         const index_t* bounds_min = as_constant(bounds.min);
         if (bounds_min) {
-          int64_t adjustment;
+          index_t adjustment;
           bool no_overflow =
               !sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), adjustment);
           adjustment = euclidean_mod(adjustment, alignment.modulus);
-          int64_t new_min;
+          index_t new_min;
           no_overflow &= !add_with_overflow(*bounds_min, adjustment, new_min);
           if (no_overflow) {
             bounds.min = new_min;
@@ -350,11 +350,11 @@ public:
         }
         const index_t* bounds_max = as_constant(bounds.max);
         if (bounds_max) {
-          int64_t adjustment;
+          index_t adjustment;
           bool no_overflow =
               !sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, adjustment);
           adjustment = euclidean_mod(adjustment, alignment.modulus);
-          int64_t new_max;
+          index_t new_max;
           no_overflow &= !sub_with_overflow(*bounds_max, adjustment, new_max);
           if (no_overflow) {
             bounds.max = new_max;

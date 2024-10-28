@@ -194,7 +194,12 @@ public:
   // Make a new constant expression.
   expr(std::int64_t x);
   expr(std::int32_t x) : expr(static_cast<std::int64_t>(x)) {}
+  expr(std::uint32_t x) : expr(static_cast<std::int64_t>(x)) {}
   expr(std::uint64_t x) : expr(static_cast<std::int64_t>(x)) {}
+#ifdef __EMSCRIPTEN__
+  expr(std::size_t x) : expr(static_cast<std::int64_t>(x)) {}
+  expr(long x) : expr(static_cast<std::int64_t>(x)) {}
+#endif
   expr(var sym);
 
   // Make an `expr` referencing an existing node.

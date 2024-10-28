@@ -35,7 +35,7 @@ struct modulus_remainder {
 
 template <typename T>
 modulus_remainder<T> operator+(const modulus_remainder<T>& a, const modulus_remainder<T>& b) {
-  int64_t m = 1, r = 0;
+  T m = 1, r = 0;
   if (!add_with_overflow(a.remainder, b.remainder, r)) {
     m = gcd(a.modulus, b.modulus);
     r = euclidean_mod(r, m, r);
@@ -45,7 +45,7 @@ modulus_remainder<T> operator+(const modulus_remainder<T>& a, const modulus_rema
 
 template <typename T>
 modulus_remainder<T> operator-(const modulus_remainder<T>& a, const modulus_remainder<T>& b) {
-  int64_t m = 1, r = 0;
+  T m = 1, r = 0;
   if (!sub_with_overflow(a.remainder, b.remainder, r)) {
     m = gcd(a.modulus, b.modulus);
     r = euclidean_mod(r, m, r);
@@ -55,7 +55,7 @@ modulus_remainder<T> operator-(const modulus_remainder<T>& a, const modulus_rema
 
 template <typename T>
 modulus_remainder<T> operator*(const modulus_remainder<T>& a, const modulus_remainder<T>& b) {
-  int64_t m, r;
+  T m, r;
   if (a.modulus == 0) {
     // a is constant
     if (!mul_with_overflow(a.remainder, b.modulus, m) && !mul_with_overflow(a.remainder, b.remainder, r)) {
@@ -72,12 +72,12 @@ modulus_remainder<T> operator*(const modulus_remainder<T>& a, const modulus_rema
       return {m, 0};
     }
   } else if (a.remainder == 0) {
-    int64_t g = gcd(b.modulus, b.remainder);
+    T g = gcd(b.modulus, b.remainder);
     if (!mul_with_overflow(a.modulus, g, m)) {
       return {m, 0};
     }
   } else if (b.remainder == 0) {
-    int64_t g = gcd(a.modulus, a.remainder);
+    T g = gcd(a.modulus, a.remainder);
     if (!mul_with_overflow(b.modulus, g, m)) {
       return {m, 0};
     }
@@ -106,8 +106,8 @@ modulus_remainder<T> operator/(const modulus_remainder<T>& a, const modulus_rema
 
   if (b.modulus == 0 && b.remainder != 0) {
     if ((euclidean_mod(a.modulus, b.remainder, a.modulus)) == 0) {
-      int64_t m = a.modulus / b.remainder;
-      int64_t r = euclidean_div(a.remainder, b.remainder);
+      T m = a.modulus / b.remainder;
+      T r = euclidean_div(a.remainder, b.remainder);
       r = euclidean_mod(r, m, r);
       return {m, r};
     }
@@ -132,19 +132,19 @@ modulus_remainder<T> operator|(const modulus_remainder<T>& a, const modulus_rema
   }
 
   // Reduce them to the same modulus and the same remainder
-  int64_t modulus = gcd(a.modulus, b.modulus);
+  T modulus = gcd(a.modulus, b.modulus);
 
-  int64_t r;
+  T r;
   if (sub_with_overflow(a.remainder, b.remainder, r)) {
     // The modulus is not representable as an int64.
     return modulus_remainder<T>{};
   }
 
-  int64_t diff = a.remainder - b.remainder;
+  T diff = a.remainder - b.remainder;
 
   modulus = gcd(diff, modulus);
 
-  int64_t ra = euclidean_mod(a.remainder, modulus, a.remainder);
+  T ra = euclidean_mod(a.remainder, modulus, a.remainder);
 
   assert(ra == (euclidean_mod(b.remainder, modulus, b.remainder)));
 
@@ -165,9 +165,9 @@ modulus_remainder<T> operator%(const modulus_remainder<T>& a, const modulus_rema
   // (8x + 6zx + 2x) + 5 ->
   // 2(4x + 3zx + x) + 5 ->
   // 2w + 1
-  int64_t modulus = gcd(a.modulus, b.modulus);
+  T modulus = gcd(a.modulus, b.modulus);
   modulus = gcd(modulus, b.remainder);
-  int64_t remainder = euclidean_mod(a.remainder, modulus, a.remainder);
+  T remainder = euclidean_mod(a.remainder, modulus, a.remainder);
 
   if (b.remainder == 0 && remainder != 0) {
     // b could be zero, so the result could also just be zero.
@@ -184,27 +184,27 @@ modulus_remainder<T> operator%(const modulus_remainder<T>& a, const modulus_rema
 }
 
 template <typename T>
-modulus_remainder<T> operator+(const modulus_remainder<T>& a, int64_t b) {
+modulus_remainder<T> operator+(const modulus_remainder<T>& a, T b) {
   return a + modulus_remainder<T>(0, b);
 }
 
 template <typename T>
-modulus_remainder<T> operator-(const modulus_remainder<T>& a, int64_t b) {
+modulus_remainder<T> operator-(const modulus_remainder<T>& a, T b) {
   return a - modulus_remainder<T>(0, b);
 }
 
 template <typename T>
-modulus_remainder<T> operator*(const modulus_remainder<T>& a, int64_t b) {
+modulus_remainder<T> operator*(const modulus_remainder<T>& a, T b) {
   return a * modulus_remainder<T>(0, b);
 }
 
 template <typename T>
-modulus_remainder<T> operator/(const modulus_remainder<T>& a, int64_t b) {
+modulus_remainder<T> operator/(const modulus_remainder<T>& a, T b) {
   return a / modulus_remainder<T>(0, b);
 }
 
 template <typename T>
-modulus_remainder<T> operator%(const modulus_remainder<T>& a, int64_t b) {
+modulus_remainder<T> operator%(const modulus_remainder<T>& a, T b) {
   return a % modulus_remainder<T>(0, b);
 }
 
