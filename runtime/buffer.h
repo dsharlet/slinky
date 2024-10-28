@@ -16,9 +16,6 @@ namespace slinky {
 #ifdef __APPLE__
 using index_t = std::int64_t;
 static_assert(sizeof(index_t) == sizeof(std::size_t));
-#elif defined __EMSCRIPTEN__
-using index_t = std::int64_t;
-// Note that size_t and ptrdiff_t are sizeof(int32_t) under Emscripten
 #else
 using index_t = std::ptrdiff_t;
 #endif
