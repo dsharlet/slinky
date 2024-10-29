@@ -338,11 +338,11 @@ public:
       } else if (alignment.modulus > 1) {
         const index_t* bounds_min = as_constant(bounds.min);
         if (bounds_min) {
-          int64_t adjustment;
+          index_t adjustment;
           bool no_overflow =
               !sub_with_overflow(alignment.remainder, euclidean_mod(*bounds_min, alignment.modulus), adjustment);
           adjustment = euclidean_mod(adjustment, alignment.modulus);
-          int64_t new_min;
+          index_t new_min;
           no_overflow &= !add_with_overflow(*bounds_min, adjustment, new_min);
           if (no_overflow) {
             bounds.min = new_min;
@@ -350,11 +350,11 @@ public:
         }
         const index_t* bounds_max = as_constant(bounds.max);
         if (bounds_max) {
-          int64_t adjustment;
+          index_t adjustment;
           bool no_overflow =
               !sub_with_overflow(euclidean_mod(*bounds_max, alignment.modulus), alignment.remainder, adjustment);
           adjustment = euclidean_mod(adjustment, alignment.modulus);
-          int64_t new_max;
+          index_t new_max;
           no_overflow &= !sub_with_overflow(*bounds_max, adjustment, new_max);
           if (no_overflow) {
             bounds.max = new_max;
@@ -755,9 +755,9 @@ public:
     } else {
       interval_expr result_info = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
       if (prove_constant_true(result_info.min)) {
-        set_result(true, {{1, 1}, alignment_type()});
+        set_result(expr(true), {{1, 1}, alignment_type()});
       } else if (prove_constant_false(result_info.max)) {
-        set_result(false, {{0, 0}, alignment_type()});
+        set_result(expr(false), {{0, 0}, alignment_type()});
       } else {
         set_result(result, {std::move(result_info), alignment_type()});
       }
@@ -777,9 +777,9 @@ public:
     if (!a.defined()) {
       set_result(expr(), expr_info());
     } else if (prove_constant_true(info.bounds.min)) {
-      set_result(false, {{0, 0}, alignment_type()});
+      set_result(expr(false), {{0, 0}, alignment_type()});
     } else if (prove_constant_false(info.bounds.max)) {
-      set_result(true, {{1, 1}, alignment_type()});
+      set_result(expr(true), {{1, 1}, alignment_type()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {

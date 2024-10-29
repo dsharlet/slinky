@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -13,12 +14,13 @@
 
 namespace slinky {
 
-#ifdef __APPLE__
-using index_t = std::int64_t;
-static_assert(sizeof(index_t) == sizeof(std::size_t));
-#else
-using index_t = std::ptrdiff_t;
-#endif
+// index_t needs to at least be as big as a pointer and must be signed.
+// Using ptrdiff_t or intptr_t here seems tempting, but those can
+// alias to `long` under some compilers which can cause some not so fun
+// overloading issues with expr(), so let's use std::conditional
+// instead to make it an exact alias of either int32_t or int64_t.
+using index_t =
+    std::conditional<sizeof(void*) == 4, std::int32_t, std::int64_t>::type;
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>

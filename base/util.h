@@ -3,7 +3,7 @@
 
 namespace slinky {
 
-#define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(alloca((N) * sizeof(T)))
+#define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(__builtin_alloca((N) * sizeof(T)))
 #define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
 #define SLINKY_NO_INLINE __attribute__((noinline))
 

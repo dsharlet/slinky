@@ -65,6 +65,14 @@ struct pattern_info<bool> {
   static constexpr bool is_boolean = true;
   static constexpr bool is_canonical = true;
 };
+#ifdef __EMSCRIPTEN__
+template <>
+struct pattern_info<long> {
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = true;
+};
+#endif
 
 class pattern_expr {
 public:
