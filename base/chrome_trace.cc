@@ -15,9 +15,14 @@ std::atomic<int> next_id = 0;
 
 // Unfortunately, std::clock returns the CPU time for the whole process, not the current thread.
 std::clock_t clock_per_thread_us() {
+  #ifdef _MSC_VER
+  // CLOCK_THREAD_CPUTIME_ID not defined under MSVC
+  return 0;
+  #else
   timespec t;
   clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t);
   return t.tv_sec * 1000000 + t.tv_nsec / 1000;
+  #endif
 }
 
 }  // namespace

@@ -497,7 +497,7 @@ public:
 
     if (op->storage == memory_type::stack) {
       buffer.init_strides();
-      buffer.base = alloca(buffer.size_bytes());
+      buffer.base = __builtin_alloca(buffer.size_bytes());
       buffer.allocation = nullptr;
     } else {
       assert(op->storage == memory_type::heap);

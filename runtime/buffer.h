@@ -13,8 +13,13 @@
 
 namespace slinky {
 
-// index_t needs to at least be as big as a pointer and must be signed
-using index_t = std::ptrdiff_t;
+// index_t needs to at least be as big as a pointer and must be signed.
+// Using ptrdiff_t or intptr_t here seems tempting, but those can
+// alias to `long` under some compilers which can cause some not so fun
+// overloading issues with expr(), so let's use std::conditional
+// instead to make it an exact alias of either int32_t or int64_t.
+using index_t =
+    std::conditional<sizeof(void*) == 4, std::int32_t, std::int64_t>::type;
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>

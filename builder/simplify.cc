@@ -755,9 +755,9 @@ public:
     } else {
       interval_expr result_info = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
       if (prove_constant_true(result_info.min)) {
-        set_result(true, {{1, 1}, alignment_type()});
+        set_result(expr(true), {{1, 1}, alignment_type()});
       } else if (prove_constant_false(result_info.max)) {
-        set_result(false, {{0, 0}, alignment_type()});
+        set_result(expr(false), {{0, 0}, alignment_type()});
       } else {
         set_result(result, {std::move(result_info), alignment_type()});
       }
@@ -777,9 +777,9 @@ public:
     if (!a.defined()) {
       set_result(expr(), expr_info());
     } else if (prove_constant_true(info.bounds.min)) {
-      set_result(false, {{0, 0}, alignment_type()});
+      set_result(expr(false), {{0, 0}, alignment_type()});
     } else if (prove_constant_false(info.bounds.max)) {
-      set_result(true, {{1, 1}, alignment_type()});
+      set_result(expr(true), {{1, 1}, alignment_type()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
