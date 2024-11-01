@@ -209,10 +209,8 @@ private:
     using std_function_type = std::function<ReturnType(Args...)>;
   };
 
-public:
-  // Version for std::function
   template <typename... T>
-  static func make(
+  static func make_impl(
       callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs = {}) {
     callable<T...> impl = std::move(fn);
     assert(sizeof...(T) == inputs.size() + outputs.size());
@@ -222,6 +220,14 @@ public:
     };
 
     return func(std::move(wrapper), std::move(inputs), std::move(outputs), std::move(attrs));
+  }
+
+public:
+  // Version for std::function
+  template <typename... T>
+  static func make(
+      callable<T...>&& fn, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs = {}) {
+    return make_impl(std::move(fn), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Version for lambdas
@@ -235,7 +241,7 @@ public:
 
     using std_function_type = typename sig::std_function_type;
     std_function_type impl = std::move(lambda);
-    return make(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
+    return make_impl(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Version for plain old function ptrs
@@ -243,7 +249,7 @@ public:
   static func make(index_t (*fn)(const buffer<T>&...), std::vector<input> inputs, std::vector<output> outputs,
       call_stmt::attributes attrs = {}) {
     callable<T...> impl = fn;
-    return make(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
+    return make_impl(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Make a copy from a single input to a single output.
