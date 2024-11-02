@@ -102,7 +102,7 @@ template <int N>
 inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
   if (ctx.vars_mask & (1 << N)) {
     // Try pointer comparison first to short circuit the full match.
-    return x.get() == ctx.vars[N] || slinky::compare(x.get(), ctx.vars[N]) == 0;
+    return x.get() == ctx.vars[N] || slinky::match(x.get(), ctx.vars[N]);
   } else {
     ctx.vars_mask |= (1 << N);
     ctx.vars[N] = x.get();
@@ -526,11 +526,11 @@ template <int N1, int N2>
 using buffer_dim_meta = pattern_call<pattern_wildcard<N1>, pattern_wildcard<N2>>;
 
 template <int N1, int N2>
-inline auto buffer_min(const pattern_wildcard<N1>& buf, const pattern_wildcard<N2>& dim) {
+inline auto buffer_min(pattern_wildcard<N1> buf, pattern_wildcard<N2> dim) {
   return buffer_dim_meta<N1, N2>{intrinsic::buffer_min, {buf, dim}};
 }
 template <int N1, int N2>
-inline auto buffer_max(const pattern_wildcard<N1>& buf, const pattern_wildcard<N2>& dim) {
+inline auto buffer_max(pattern_wildcard<N1> buf, pattern_wildcard<N2> dim) {
   return buffer_dim_meta<N1, N2>{intrinsic::buffer_max, {buf, dim}};
 }
 
@@ -539,47 +539,47 @@ auto eval(const T& x) {
   return replacement_eval<T>{x};
 }
 
-template <typename Pattern, typename T>
-bool match_any_variant(const Pattern& p, const T& x, match_context& ctx) {
+template <typename Pattern, typename Target>
+bool match_any_variant(Pattern p, const Target& x, match_context& ctx) {
   static_assert(pattern_info<Pattern>::is_canonical);
 
-  // We'll find out how many variant bits we have when we try to match.
+  // We'll find out how many variants we have when we try to match.
   // This can grow if we fail early due to a commutative variant that doesn't match near the root
   // of the expression, so we track the max we've seen.
-  int max_variant_bits = 0;
-  for (int variant = 0; variant < (1 << max_variant_bits); ++variant) {
+  int variant_count = 1;
+  for (int variant = 0; variant < variant_count; ++variant) {
     memset(&ctx, 0, sizeof(ctx));
     ctx.variant = variant;
     if (match(p, x, ctx)) {
       return true;
     }
-    max_variant_bits = std::max(max_variant_bits, ctx.variant_bits);
+    variant_count = std::max(variant_count, 1 << ctx.variant_bits);
   }
   return false;
 }
 
-template <typename Pattern, typename T, typename Predicate>
-bool match(match_context& ctx, const Pattern& p, const T& x, const Predicate& pr) {
+template <typename Pattern, typename Target, typename Predicate>
+bool match(match_context& ctx, Pattern p, const Target& x, Predicate pr) {
   return match_any_variant(p, x, ctx) && substitute(pr, ctx);
 }
 
-template <typename Pattern, typename T>
-bool match(match_context& ctx, const Pattern& p, const T& x) {
+template <typename Pattern, typename Target>
+bool match(match_context& ctx, Pattern p, const Target& x) {
   return match_any_variant(p, x, ctx);
 }
 
-template <typename T>
+template <typename Target>
 class base_rewriter {
-  T x;
+  Target x;
 
 public:
   expr result;
 
-  base_rewriter(T x) : x(std::move(x)) {}
+  base_rewriter(Target x) : x(std::move(x)) {}
   base_rewriter(const base_rewriter&) = delete;
 
   template <typename Pattern, typename Replacement>
-  SLINKY_ALWAYS_INLINE bool operator()(const Pattern& p, const Replacement& r) {
+  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r) {
     static_assert(pattern_info<Pattern>::is_canonical);
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
@@ -592,7 +592,7 @@ public:
   }
 
   template <typename Pattern, typename Replacement, typename Predicate>
-  SLINKY_ALWAYS_INLINE bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
+  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r, Predicate pr) {
     static_assert(pattern_info<Pattern>::is_canonical);
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
@@ -613,9 +613,9 @@ public:
   using base_rewriter::operator();
 };
 
-template <typename T>
-base_rewriter<T> make_rewriter(T x) {
-  return base_rewriter<T>(std::move(x));
+template <typename Target>
+base_rewriter<Target> make_rewriter(Target x) {
+  return base_rewriter<Target>(std::move(x));
 }
 
 }  // namespace rewrite

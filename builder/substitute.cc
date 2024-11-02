@@ -307,6 +307,7 @@ public:
 };
 
 bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
+bool match(const base_expr_node* a, const base_expr_node* b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
 bool match(const interval_expr& a, const interval_expr& b) { return match(a.min, b.min) && match(a.max, b.max); }
 bool match(const dim_expr& a, const dim_expr& b) {
