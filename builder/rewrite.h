@@ -39,7 +39,7 @@ struct match_context {
 };
 
 template <int matched>
-SLINKY_UNIQUE bool match(index_t p, const expr& x, match_context&) {
+SLINKY_UNIQUE bool match(index_t p, expr_ref x, match_context&) {
   return is_constant(x, p);
 }
 SLINKY_UNIQUE index_t substitute(index_t p, const match_context&) { return p; }
@@ -84,7 +84,7 @@ struct pattern_info<long> {
 
 class pattern_expr {
 public:
-  const expr& e;
+  expr_ref e;
 };
 
 template <>
@@ -107,7 +107,7 @@ public:
 };
 
 template <int matched, int N>
-SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
+SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, expr_ref x, match_context& ctx) {
   if (matched & (1 << N)) {
     return slinky::match(x.get(), ctx.vars[N]);
   } else {
@@ -137,7 +137,7 @@ public:
 };
 
 template <int matched, int N>
-SLINKY_UNIQUE bool match(const pattern_constant<N>& p, const expr& x, match_context& ctx) {
+SLINKY_UNIQUE bool match(const pattern_constant<N>& p, expr_ref x, match_context& ctx) {
   if (const constant* c = x.as<constant>()) {
     if (matched & (1 << (symbol_count + N))) {
       return ctx.constants[N] == c->value;
@@ -183,7 +183,7 @@ struct pattern_info<pattern_binary<T, A, B>> {
 };
 
 template <int matched, typename T, typename A, typename B>
-SLINKY_UNIQUE bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
+SLINKY_UNIQUE bool match_binary(const pattern_binary<T, A, B>& p, expr_ref a, expr_ref b, match_context& ctx) {
   if (pattern_info<pattern_binary<T, A, B>>::could_commute) {
     // This is a commutative operation and we can't canonicalize the ordering.
     // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
@@ -197,7 +197,7 @@ SLINKY_UNIQUE bool match_binary(const pattern_binary<T, A, B>& p, const expr& a,
 }
 
 template <int matched, typename T, typename A, typename B>
-SLINKY_UNIQUE bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
+SLINKY_UNIQUE bool match(const pattern_binary<T, A, B>& p, expr_ref x, match_context& ctx) {
   if (const T* t = x.as<T>()) {
     return match_binary<matched>(p, t->a, t->b, ctx);
   } else {
@@ -247,7 +247,7 @@ public:
 };
 
 template <int matched, typename T, typename A>
-SLINKY_UNIQUE bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
+SLINKY_UNIQUE bool match(const pattern_unary<T, A>& p, expr_ref x, match_context& ctx) {
   if (const T* t = x.as<T>()) {
     return match<matched>(p.a, t->a, ctx);
   } else {
@@ -271,6 +271,10 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_unary<T, 
 template <typename T>
 SLINKY_UNIQUE expr make_unary(expr a) {
   return T::make(std::move(a));
+}
+template <typename T>
+SLINKY_UNIQUE expr make_unary(expr_ref a) {
+  return T::make(expr(a));
 }
 // clang-format off
 template <typename T> SLINKY_UNIQUE index_t make_unary(index_t a);
@@ -296,7 +300,7 @@ public:
 };
 
 template <int matched, typename C, typename T, typename F>
-SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) {
+SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p, expr_ref x, match_context& ctx) {
   if (const class select* s = x.as<class select>()) {
     return match<matched>(p.c, s->condition, ctx) &&
            match<matched | pattern_info<C>::matched>(p.t, s->true_value, ctx) &&
@@ -315,7 +319,7 @@ SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p,
 
 template <typename C, typename T, typename F>
 SLINKY_UNIQUE expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
-  return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
+  return select::make(expr(substitute(p.c, ctx)), expr(substitute(p.t, ctx)), expr(substitute(p.f, ctx)));
 }
 
 template <typename C, typename T, typename F>
@@ -349,7 +353,7 @@ SLINKY_UNIQUE bool match_tuple(const std::tuple<A, B>& t, const std::vector<expr
 }
 
 template <int matched, typename... Args>
-SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, const expr& x, match_context& ctx) {
+SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, expr_ref x, match_context& ctx) {
   if (const call* c = x.as<call>()) {
     if (c->intrinsic == p.fn) {
       assert(c->args.size() == sizeof...(Args));
@@ -362,11 +366,11 @@ SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, const expr& x, match_co
 SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) { return call::make(p.fn, {}); }
 template <typename A>
 SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
-  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
+  return call::make(p.fn, {expr(substitute(std::get<0>(p.args), ctx))});
 }
 template <typename A, typename B>
 SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx) {
-  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx), substitute(std::get<1>(p.args), ctx)});
+  return call::make(p.fn, {expr(substitute(std::get<0>(p.args), ctx)), expr(substitute(std::get<1>(p.args), ctx))});
 }
 
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
@@ -433,7 +437,7 @@ public:
 
 template <typename T>
 SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
-  return boolean(substitute(r.a, ctx));
+  return boolean(expr(substitute(r.a, ctx)));
 }
 
 template <typename T>
@@ -619,7 +623,7 @@ public:
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
-    result = substitute(r, ctx);
+    result = expr(substitute(r, ctx));
     return true;
   }
 
@@ -637,9 +641,10 @@ public:
   }
 };
 
-class rewriter : public base_rewriter<const expr&> {
+class rewriter : public base_rewriter<expr_ref> {
 public:
   rewriter(const expr& x) : base_rewriter(x) {}
+  rewriter(expr_ref x) : base_rewriter(x) {}
   using base_rewriter::operator();
 };
 

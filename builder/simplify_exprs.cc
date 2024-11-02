@@ -29,7 +29,7 @@ expr simplify(const class min* op, expr a, expr b) {
   if (apply_min_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return min::make(std::move(a), std::move(b));
   }
@@ -53,7 +53,7 @@ expr simplify(const class max* op, expr a, expr b) {
   if (apply_max_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return max::make(std::move(a), std::move(b));
   }
@@ -80,7 +80,7 @@ expr simplify(const add* op, expr a, expr b) {
   if (apply_add_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return add::make(std::move(a), std::move(b));
   }
@@ -106,7 +106,7 @@ expr simplify(const sub* op, expr a, expr b) {
   if (apply_sub_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return sub::make(std::move(a), std::move(b));
   }
@@ -133,7 +133,7 @@ expr simplify(const mul* op, expr a, expr b) {
   if (apply_mul_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return mul::make(std::move(a), std::move(b));
   }
@@ -154,7 +154,7 @@ expr simplify(const div* op, expr a, expr b) {
   if (apply_div_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return div::make(std::move(a), std::move(b));
   }
@@ -171,7 +171,7 @@ expr simplify(const mod* op, expr a, expr b) {
   if (apply_mod_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return mod::make(std::move(a), std::move(b));
   }
@@ -188,7 +188,7 @@ expr simplify(const less* op, expr a, expr b) {
   if (apply_less_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return less::make(std::move(a), std::move(b));
   }
@@ -201,7 +201,7 @@ expr simplify(const less_equal* op, expr a, expr b) {
   if (op) {
     if (const less_equal* le = result.as<less_equal>()) {
       if (le->a.same_as(op->a) && le->b.same_as(op->b)) {
-        return op;
+        return expr(op);
       }
     }
   }
@@ -223,7 +223,7 @@ expr simplify(const equal* op, expr a, expr b) {
   if (apply_equal_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return equal::make(std::move(a), std::move(b));
   }
@@ -236,7 +236,7 @@ expr simplify(const not_equal* op, expr a, expr b) {
   if (op) {
     if (const not_equal* ne = result.as<not_equal>()) {
       if (ne->a.same_as(op->a) && ne->b.same_as(op->b)) {
-        return op;
+        return expr(op);
       }
     }
   }
@@ -260,7 +260,7 @@ expr simplify(const logical_and* op, expr a, expr b) {
   if (apply_logical_and_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return logical_and::make(std::move(a), std::move(b));
   }
@@ -283,7 +283,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
   if (apply_logical_or_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return logical_or::make(std::move(a), std::move(b));
   }
@@ -299,7 +299,7 @@ expr simplify(const class logical_not* op, expr a) {
   if (apply_logical_not_rules(r)) {
     return r.result;
   } else if (op && a.same_as(op->a)) {
-    return op;
+    return expr(op);
   } else {
     return logical_not::make(std::move(a));
   }
@@ -316,7 +316,7 @@ expr simplify(const class select* op, expr c, expr t, expr f) {
   if (apply_select_rules(r)) {
     return r.result;
   } else if (op && c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
-    return op;
+    return expr(op);
   } else {
     return select::make(std::move(c), std::move(t), std::move(f));
   }
@@ -396,7 +396,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   expr e;
   if (!changed) {
     assert(op);
-    e = op;
+    e = expr(op);
   } else {
     e = call::make(fn, std::move(args));
   }

@@ -49,7 +49,7 @@ std::optional<var> node_context::lookup(const std::string& name) const {
 }
 
 template <typename T>
-const T* make_bin_op(expr a, expr b) {
+expr make_bin_op(expr a, expr b) {
   auto n = new T();
   if (T::commutative && should_commute(a, b)) {
     // Aggressively canonicalizing the order is a big speedup by avoiding unnecessary simplifier rewrites.
@@ -57,11 +57,11 @@ const T* make_bin_op(expr a, expr b) {
   }
   n->a = std::move(a);
   n->b = std::move(b);
-  return n;
+  return expr(n);
 }
 
 template <typename T, typename Body>
-const T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
+Body make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   auto n = new T();
   n->lets = std::move(lets);
   if (const T* l = body.template as<T>()) {
@@ -70,7 +70,7 @@ const T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   } else {
     n->body = std::move(body);
   }
-  return n;
+  return Body(n);
 }
 
 expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
@@ -123,9 +123,9 @@ const constant* make_constant(std::int64_t value) {
 expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
-expr variable::make(var sym) { return make_variable(sym); }
+expr variable::make(var sym) { return expr(make_variable(sym)); }
 
-expr constant::make(index_t value) { return make_constant(value); }
+expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
 expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
@@ -144,7 +144,7 @@ expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move
 expr logical_not::make(expr a) {
   logical_not* n = new logical_not();
   n->a = std::move(a);
-  return n;
+  return expr(n);
 }
 
 expr operator+(expr a, expr b) { return add::make(std::move(a), std::move(b)); }
@@ -386,14 +386,14 @@ expr select::make(expr condition, expr true_value, expr false_value) {
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
   n->false_value = std::move(false_value);
-  return n;
+  return expr(n);
 }
 
 expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   auto n = new call();
   n->intrinsic = i;
   n->args = std::move(args);
-  return n;
+  return expr(n);
 }
 
 stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, attributes attrs) {
@@ -402,7 +402,7 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   n->inputs = std::move(inputs);
   n->outputs = std::move(outputs);
   n->attrs = std::move(attrs);
-  return n;
+  return stmt(n);
 }
 
 stmt copy_stmt::make(
@@ -413,7 +413,7 @@ stmt copy_stmt::make(
   n->dst = dst;
   n->dst_x = std::move(dst_x);
   n->padding = std::move(padding);
-  return n;
+  return stmt(n);
 }
 
 namespace {
@@ -459,7 +459,7 @@ stmt block::make(std::vector<stmt> stmts) {
   } else {
     auto n = new block();
     n->stmts = std::move(stmts);
-    return n;
+    return stmt(n);
   }
 }
 
@@ -475,7 +475,7 @@ stmt loop::make(var sym, int max_workers, interval_expr bounds, expr step, stmt 
   l->bounds = std::move(bounds);
   l->step = std::move(step);
   l->body = std::move(body);
-  return l;
+  return stmt(l);
 }
 
 stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
@@ -485,7 +485,7 @@ stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<di
   n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
@@ -495,7 +495,7 @@ stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr>
   n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt clone_buffer::make(var sym, var src, stmt body) {
@@ -503,7 +503,7 @@ stmt clone_buffer::make(var sym, var src, stmt body) {
   n->sym = sym;
   n->src = src;
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt body) {
@@ -512,7 +512,7 @@ stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt
   n->src = src;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) {
@@ -522,7 +522,7 @@ stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) 
   n->dim = dim;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
@@ -531,7 +531,7 @@ stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
   n->src = src;
   n->at = std::move(at);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
@@ -541,7 +541,7 @@ stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
   n->dim = dim;
   n->at = std::move(at);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
@@ -550,7 +550,7 @@ stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
   n->src = src;
   n->dims = dims;
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
@@ -570,7 +570,7 @@ bool transpose::is_truncate() const { return is_truncate(dims); }
 stmt check::make(expr condition) {
   auto n = new check();
   n->condition = std::move(condition);
-  return n;
+  return stmt(n);
 }
 
 const expr& positive_infinity() {
@@ -590,7 +590,7 @@ const expr& indeterminate() {
   return e;
 }
 
-bool is_positive(const expr& x) {
+bool is_positive(expr_ref x) {
   if (is_positive_infinity(x)) return true;
   if (const call* c = as_intrinsic(x, intrinsic::abs)) {
     assert(c->args.size() == 1);
@@ -600,20 +600,20 @@ bool is_positive(const expr& x) {
   return c ? *c > 0 : false;
 }
 
-bool is_non_negative(const expr& x) {
+bool is_non_negative(expr_ref x) {
   if (is_positive_infinity(x)) return true;
   if (as_intrinsic(x, intrinsic::abs)) return true;
   const index_t* c = as_constant(x);
   return c ? *c >= 0 : false;
 }
 
-bool is_negative(const expr& x) {
+bool is_negative(expr_ref x) {
   if (is_negative_infinity(x)) return true;
   const index_t* c = as_constant(x);
   return c ? *c < 0 : false;
 }
 
-bool is_non_positive(const expr& x) {
+bool is_non_positive(expr_ref x) {
   if (is_negative_infinity(x)) return true;
   const index_t* c = as_constant(x);
   return c ? *c <= 0 : false;
@@ -702,16 +702,16 @@ bool is_buffer_dim_intrinsic(intrinsic fn) {
   }
 }
 
-bool is_positive_infinity(const expr& x) { return as_intrinsic(x, intrinsic::positive_infinity); }
-bool is_negative_infinity(const expr& x) { return as_intrinsic(x, intrinsic::negative_infinity); }
-bool is_indeterminate(const expr& x) { return as_intrinsic(x, intrinsic::indeterminate); }
-int is_infinity(const expr& x) {
+bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }
+bool is_negative_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::negative_infinity); }
+bool is_indeterminate(expr_ref x) { return as_intrinsic(x, intrinsic::indeterminate); }
+int is_infinity(expr_ref x) {
   if (is_positive_infinity(x)) return 1;
   if (is_negative_infinity(x)) return -1;
   return 0;
 }
 
-bool is_finite(const expr& x) {
+bool is_finite(expr_ref x) {
   if (x.as<constant>()) return true;
   if (const call* c = x.as<call>()) {
     return is_buffer_intrinsic(c->intrinsic);
@@ -728,7 +728,7 @@ expr boolean(const expr& x) {
     return not_equal::make(x, 0);
   }
 }
-bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
+bool is_boolean(expr_ref x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
 
 expr semaphore_init(expr sem, expr count) {
   return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
