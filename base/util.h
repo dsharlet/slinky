@@ -3,6 +3,10 @@
 
 namespace slinky {
 
+// Some functions are templates that are usually unique specializations, which are beneficial to inline. The compiler
+// will inline functions it knows are used only once, but it can't know this unless the functions have internal linkage.
+#define SLINKY_UNIQUE static inline
+
 #define SLINKY_ALLOCA(T, N) reinterpret_cast<T*>(__builtin_alloca((N) * sizeof(T)))
 #define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
 #define SLINKY_NO_INLINE __attribute__((noinline))
