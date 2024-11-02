@@ -547,14 +547,10 @@ inline const call* as_intrinsic(const expr& x, intrinsic fn) {
 bool is_buffer_intrinsic(intrinsic fn);
 bool is_buffer_dim_intrinsic(intrinsic fn);
 
-inline bool is_positive_infinity(const expr& x) { return as_intrinsic(x, intrinsic::positive_infinity); }
-inline bool is_negative_infinity(const expr& x) { return as_intrinsic(x, intrinsic::negative_infinity); }
-inline bool is_indeterminate(const expr& x) { return as_intrinsic(x, intrinsic::indeterminate); }
-inline int is_infinity(const expr& x) {
-  if (is_positive_infinity(x)) return 1;
-  if (is_negative_infinity(x)) return -1;
-  return 0;
-}
+bool is_positive_infinity(const expr& x);
+bool is_negative_infinity(const expr& x);
+bool is_indeterminate(const expr& x);
+int is_infinity(const expr& x);
 bool is_finite(const expr& x);
 
 expr boolean(const expr& x);

@@ -77,9 +77,7 @@ expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
   return make_let<let>(std::move(lets), std::move(body));
 }
 
-expr let::make(var sym, expr value, expr body) { 
-  return make({{sym, std::move(value)}}, std::move(body)); 
-}
+expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
 stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
@@ -673,6 +671,15 @@ bool is_buffer_dim_intrinsic(intrinsic fn) {
   case intrinsic::buffer_fold_factor: return true;
   default: return false;
   }
+}
+
+bool is_positive_infinity(const expr& x) { return as_intrinsic(x, intrinsic::positive_infinity); }
+bool is_negative_infinity(const expr& x) { return as_intrinsic(x, intrinsic::negative_infinity); }
+bool is_indeterminate(const expr& x) { return as_intrinsic(x, intrinsic::indeterminate); }
+int is_infinity(const expr& x) {
+  if (is_positive_infinity(x)) return 1;
+  if (is_negative_infinity(x)) return -1;
+  return 0;
 }
 
 bool is_finite(const expr& x) {
