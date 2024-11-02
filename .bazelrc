@@ -4,6 +4,8 @@ common --copt=-fdiagnostics-color=always
 common --copt=-g --strip=never
 # Without --force_pic, bazel compiles a lot of cc files twice, if they are used by PIC and non-PIC targets.
 common --force_pic
+# Reduces code size and build time a little, and prevents accidentally relying on these features.
+common --copt=-fno-rtti --copt=-fno-exceptions
 
 # Allow us to run with --config=asan
 common:asan --copt -fsanitize=address
