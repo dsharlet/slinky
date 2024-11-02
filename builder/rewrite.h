@@ -101,8 +101,7 @@ public:
 template <int N>
 inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
   if (ctx.vars_mask & (1 << N)) {
-    // Try pointer comparison first to short circuit the full match.
-    return x.get() == ctx.vars[N] || slinky::match(x.get(), ctx.vars[N]);
+    return slinky::match(x.get(), ctx.vars[N]);
   } else {
     ctx.vars_mask |= (1 << N);
     ctx.vars[N] = x.get();

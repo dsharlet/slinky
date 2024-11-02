@@ -51,7 +51,7 @@ public:
 
   bool try_match(const base_expr_node* e, const base_expr_node* op) {
     assert(match == 0);
-    if (!e && !op) {
+    if (e == op) {
     } else if (!e) {
       match = -1;
     } else if (!op) {
@@ -70,7 +70,7 @@ public:
 
   bool try_match(const base_stmt_node* s, const base_stmt_node* op) {
     assert(match == 0);
-    if (!s && !op) {
+    if (s == op) {
     } else if (!s) {
       match = -1;
     } else if (!op) {
