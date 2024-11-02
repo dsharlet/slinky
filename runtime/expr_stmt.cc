@@ -77,6 +77,10 @@ expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
   return make_let<let>(std::move(lets), std::move(body));
 }
 
+expr let::make(var sym, expr value, expr body) { 
+  return make({{sym, std::move(value)}}, std::move(body)); 
+}
+
 stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
@@ -168,6 +172,29 @@ expr operator&&(expr a, expr b) { return logical_and::make(std::move(a), std::mo
 expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::move(b)); }
 expr operator!(expr x) { return logical_not::make(std::move(x)); }
 
+expr expr::operator-() const { return 0 - *this; }
+
+expr& expr::operator+=(const expr& r) {
+  *this = *this + r;
+  return *this;
+}
+expr& expr::operator-=(const expr& r) {
+  *this = *this - r;
+  return *this;
+}
+expr& expr::operator*=(const expr& r) {
+  *this = *this * r;
+  return *this;
+}
+expr& expr::operator/=(const expr& r) {
+  *this = *this / r;
+  return *this;
+}
+expr& expr::operator%=(const expr& r) {
+  *this = *this % r;
+  return *this;
+}
+
 expr min(span<expr> x) {
   if (x.empty()) {
     return expr();
@@ -198,6 +225,11 @@ const interval_expr& interval_expr::none() {
 }
 const interval_expr& interval_expr::union_identity() { return none(); }
 const interval_expr& interval_expr::intersection_identity() { return all(); }
+
+const expr& interval_expr::begin() const { return min; }
+expr interval_expr::end() const { return max + 1; }
+expr interval_expr::extent() const { return max - min + 1; }
+expr interval_expr::empty() const { return min > max; }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_point()) {
@@ -533,6 +565,35 @@ const expr& infinity(int sign) {
 const expr& indeterminate() {
   static expr e = call::make(intrinsic::indeterminate, {});
   return e;
+}
+
+bool is_positive(const expr& x) {
+  if (is_positive_infinity(x)) return true;
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return is_positive(c->args[0]);
+  }
+  const index_t* c = as_constant(x);
+  return c ? *c > 0 : false;
+}
+
+bool is_non_negative(const expr& x) {
+  if (is_positive_infinity(x)) return true;
+  if (as_intrinsic(x, intrinsic::abs)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c >= 0 : false;
+}
+
+bool is_negative(const expr& x) {
+  if (is_negative_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c < 0 : false;
+}
+
+bool is_non_positive(const expr& x) {
+  if (is_negative_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c <= 0 : false;
 }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }

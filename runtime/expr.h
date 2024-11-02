@@ -220,28 +220,13 @@ public:
     }
   }
 
-  expr operator-() const { return 0 - *this; }
+  expr operator-() const;
 
-  expr& operator+=(const expr& r) {
-    *this = *this + r;
-    return *this;
-  }
-  expr& operator-=(const expr& r) {
-    *this = *this - r;
-    return *this;
-  }
-  expr& operator*=(const expr& r) {
-    *this = *this * r;
-    return *this;
-  }
-  expr& operator/=(const expr& r) {
-    *this = *this / r;
-    return *this;
-  }
-  expr& operator%=(const expr& r) {
-    *this = *this % r;
-    return *this;
-  }
+  expr& operator+=(const expr& r);
+  expr& operator-=(const expr& r);
+  expr& operator*=(const expr& r);
+  expr& operator/=(const expr& r);
+  expr& operator%=(const expr& r);
 };
 
 expr operator==(expr a, expr b);
@@ -283,10 +268,10 @@ struct interval_expr {
   // An interval_expr x such that x & y == y
   static const interval_expr& intersection_identity();
 
-  const expr& begin() const { return min; }
-  expr end() const { return max + 1; }
-  expr extent() const { return max - min + 1; }
-  expr empty() const { return min > max; }
+  const expr& begin() const;
+  expr end() const;
+  expr extent() const;
+  expr empty() const;
 
   interval_expr& operator*=(const expr& scale);
   interval_expr& operator/=(const expr& scale);
@@ -341,7 +326,7 @@ public:
 
   static expr make(std::vector<std::pair<var, expr>> lets, expr body);
 
-  static expr make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
+  static expr make(var sym, expr value, expr body);
 
   static constexpr expr_node_type static_type = expr_node_type::let;
 };
@@ -594,34 +579,10 @@ const expr& negative_infinity();
 const expr& infinity(int sign = 1);
 const expr& indeterminate();
 
-inline bool is_positive(const expr& x) {
-  if (is_positive_infinity(x)) return true;
-  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
-    assert(c->args.size() == 1);
-    return is_positive(c->args[0]);
-  }
-  const index_t* c = as_constant(x);
-  return c ? *c > 0 : false;
-}
-
-inline bool is_non_negative(const expr& x) {
-  if (is_positive_infinity(x)) return true;
-  if (as_intrinsic(x, intrinsic::abs)) return true;
-  const index_t* c = as_constant(x);
-  return c ? *c >= 0 : false;
-}
-
-inline bool is_negative(const expr& x) {
-  if (is_negative_infinity(x)) return true;
-  const index_t* c = as_constant(x);
-  return c ? *c < 0 : false;
-}
-
-inline bool is_non_positive(const expr& x) {
-  if (is_negative_infinity(x)) return true;
-  const index_t* c = as_constant(x);
-  return c ? *c <= 0 : false;
-}
+bool is_positive(const expr& x);
+bool is_non_negative(const expr& x);
+bool is_negative(const expr& x);
+bool is_non_positive(const expr& x);
 
 expr abs(expr x);
 expr align_down(expr x, expr a);
