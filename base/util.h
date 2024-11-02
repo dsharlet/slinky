@@ -7,6 +7,18 @@ namespace slinky {
 #define SLINKY_ALWAYS_INLINE __attribute__((always_inline))
 #define SLINKY_NO_INLINE __attribute__((noinline))
 
+#if !defined(__has_attribute)
+#define SLINKY_HAS_ATTRIBUTE(x) 0
+#else
+#define SLINKY_HAS_ATTRIBUTE(x) __has_attribute(x)
+#endif
+
+#if SLINKY_HAS_ATTRIBUTE(trivial_abi)
+#define SLINKY_TRIVIAL_ABI __attribute__((trivial_abi))
+#else
+#define SLINKY_TRIVIAL_ABI
+#endif
+
 #ifdef NDEBUG
 // alloca() will cause stack-smashing code to be inserted;
 // while laudable, we use alloca() in time-critical code
