@@ -181,26 +181,26 @@ struct pattern_info<pattern_binary<T, A, B>> {
   static constexpr bool is_canonical =
       pattern_info<A>::is_canonical && pattern_info<B>::is_canonical &&
       (!T::commutative || !should_commute(pattern_info<A>::type, pattern_info<B>::type));
+
+  static constexpr expr_node_type A_type = pattern_info<A>::type;
+  static constexpr expr_node_type B_type = pattern_info<B>::type;
+
+  static constexpr bool could_commute =
+      T::commutative && (A_type == expr_node_type::none || B_type == expr_node_type::none || A_type == B_type);
 };
 
 template <typename T, typename A, typename B>
 bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
-  int this_bit = -1;
-  if (T::commutative) {
-    constexpr expr_node_type ta = pattern_info<A>::type;
-    constexpr expr_node_type tb = pattern_info<B>::type;
-    if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
-      // This is a commutative operation and we can't canonicalize the ordering.
-      // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
-      this_bit = ctx.variant_bits++;
+  if (pattern_info<pattern_binary<T, A, B>>::could_commute) {
+    // This is a commutative operation and we can't canonicalize the ordering.
+    // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
+    const int this_bit = ctx.variant_bits++;
+    if ((ctx.variant & (1 << this_bit)) != 0) {
+      // We should commute in this variant.
+      return match(p.a, b, ctx) && match(p.b, a, ctx);
     }
   }
-  if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
-    // We should commute in this variant.
-    return match(p.a, b, ctx) && match(p.b, a, ctx);
-  } else {
-    return match(p.a, a, ctx) && match(p.b, b, ctx);
-  }
+  return match(p.a, a, ctx) && match(p.b, b, ctx);
 }
 
 template <typename T, typename A, typename B>
@@ -579,7 +579,7 @@ public:
   base_rewriter(const base_rewriter&) = delete;
 
   template <typename Pattern, typename Replacement>
-  bool operator()(const Pattern& p, const Replacement& r) {
+  SLINKY_ALWAYS_INLINE bool operator()(const Pattern& p, const Replacement& r) {
     static_assert(pattern_info<Pattern>::is_canonical);
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
@@ -592,7 +592,7 @@ public:
   }
 
   template <typename Pattern, typename Replacement, typename Predicate>
-  bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
+  SLINKY_ALWAYS_INLINE bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
     static_assert(pattern_info<Pattern>::is_canonical);
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
