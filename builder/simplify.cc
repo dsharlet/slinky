@@ -566,8 +566,8 @@ public:
     std::optional<index_t> ec = evaluate_constant(e);
     if (ec) return *ec != 0;
 
-    // This might have a constant bound we can use.
-    expr predicate = constant_lower_bound(e) > 0 || constant_upper_bound(e) < 0;
+    // e is constant true if we know it has a bounds that don't include zero.
+    expr predicate = logical_or::make(less::make(0, constant_lower_bound(e)), less::make(constant_upper_bound(e), 0));
     std::optional<index_t> result = evaluate_constant(predicate);
     return result && *result != 0;
   }
@@ -578,10 +578,10 @@ public:
     std::optional<index_t> ec = evaluate_constant(e);
     if (ec) return *ec == 0;
 
-    // This might have a constant bound we can use.
-    expr predicate = constant_lower_bound(e) == 0 && constant_upper_bound(e) == 0;
+    // e is constant false if we know its bounds are [0, 0].
+    expr predicate = logical_or::make(constant_lower_bound(e), constant_upper_bound(e));
     std::optional<index_t> result = evaluate_constant(predicate);
-    return result && *result != 0;
+    return result && *result == 0;
   }
 
   std::optional<bool> attempt_to_prove(const expr& e) {
