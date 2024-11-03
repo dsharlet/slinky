@@ -50,11 +50,9 @@ expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
 bool deep_is_point(const interval_expr& x) { return x.is_point() || match(x.min, x.max); }
 
 // Ensure that an interval that is a point in a deep equality sense is also a point in a shallow equality sense.
-interval_expr ensure_is_point(const interval_expr& x) {
-  if (deep_is_point(x)) {
-    return point(x.min);
-  } else {
-    return x;
+void ensure_is_point(interval_expr& x) {
+  if (!x.is_point() && match(x.min, x.max)) {
+    x.max = x.min;
   }
 }
 
@@ -414,7 +412,7 @@ public:
   expr mutate(const expr& e, expr_info* info) {
     expr result = node_mutator::mutate(e);
     if (info) {
-      result_info.bounds = ensure_is_point(result_info.bounds);
+      ensure_is_point(result_info.bounds);
       if (info != &result_info) {
         *info = std::move(result_info);
       }
@@ -433,7 +431,7 @@ public:
   // this.
   expr mutate_boolean(const expr& e, expr_info* info) {
     expr result = strip_boolean(mutate(e, info));
-    if (info) info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), info->bounds, point(0));
+    if (info) info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), std::move(info->bounds), point(0));
     return result;
   }
 
@@ -451,7 +449,7 @@ public:
       return point(result);
     } else {
       interval_expr result = {mutate(x.min, min_info), mutate(x.max, max_info)};
-      result = ensure_is_point(result);
+      ensure_is_point(result);
       return result;
     }
   }
