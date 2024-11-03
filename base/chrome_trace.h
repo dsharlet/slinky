@@ -5,7 +5,6 @@
 #include <ctime>
 #include <iostream>
 #include <mutex>
-#include <string>
 #include <thread>
 
 namespace slinky {
