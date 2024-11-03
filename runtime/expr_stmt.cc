@@ -172,24 +172,24 @@ expr operator!(expr x) { return logical_not::make(std::move(x)); }
 
 expr expr::operator-() const { return 0 - *this; }
 
-expr& expr::operator+=(const expr& r) {
-  *this = *this + r;
+expr& expr::operator+=(expr r) {
+  *this = *this + std::move(r);
   return *this;
 }
-expr& expr::operator-=(const expr& r) {
-  *this = *this - r;
+expr& expr::operator-=(expr r) {
+  *this = *this - std::move(r);
   return *this;
 }
-expr& expr::operator*=(const expr& r) {
-  *this = *this * r;
+expr& expr::operator*=(expr r) {
+  *this = *this * std::move(r);
   return *this;
 }
-expr& expr::operator/=(const expr& r) {
-  *this = *this / r;
+expr& expr::operator/=(expr r) {
+  *this = *this / std::move(r);
   return *this;
 }
-expr& expr::operator%=(const expr& r) {
-  *this = *this % r;
+expr& expr::operator%=(expr r) {
+  *this = *this % std::move(r);
   return *this;
 }
 
@@ -313,34 +313,42 @@ interval_expr interval_expr::operator-() const {
   return {max.defined() ? -max : expr(), min.defined() ? -min : expr()};
 }
 
-interval_expr& interval_expr::operator|=(const interval_expr& r) {
-  min = (min.defined() && r.min.defined()) ? slinky::min(min, r.min) : expr();
-  max = (max.defined() && r.max.defined()) ? slinky::max(max, r.max) : expr();
+interval_expr& interval_expr::operator|=(interval_expr r) {
+  min = (min.defined() && r.min.defined()) ? slinky::min(std::move(min), std::move(r.min)) : expr();
+  max = (max.defined() && r.max.defined()) ? slinky::max(std::move(max), std::move(r.max)) : expr();
   return *this;
 }
 
-interval_expr& interval_expr::operator&=(const interval_expr& r) {
-  min = (min.defined() && r.min.defined()) ? slinky::max(min, r.min) : min.defined() ? min : r.min;
-  max = (max.defined() && r.max.defined()) ? slinky::min(max, r.max) : max.defined() ? max : r.max;
+interval_expr& interval_expr::operator&=(interval_expr r) {
+  if (min.defined() && r.min.defined()) {
+    min = slinky::max(std::move(min), std::move(r.min));
+  } else if (!min.defined()) {
+    min = std::move(r.min);
+  }
+  if (max.defined() && r.max.defined()) {
+    max = slinky::min(std::move(max), std::move(r.max));
+  } else if (!max.defined()) {
+    max = std::move(r.max);
+  }
   return *this;
 }
 
-interval_expr interval_expr::operator|(const interval_expr& r) const {
+interval_expr interval_expr::operator|(interval_expr r) const {
   interval_expr result(*this);
-  result |= r;
+  result |= std::move(r);
   return result;
 }
 
-interval_expr interval_expr::operator&(const interval_expr& r) const {
+interval_expr interval_expr::operator&(interval_expr r) const {
   interval_expr result(*this);
-  result &= r;
+  result &= std::move(r);
   return result;
 }
 
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
   if (t.is_point() && f.is_point()) {
-    return point(select(std::move(c), std::move(t.min), std::move(f.min)));
+    return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
         select(c, std::move(t.min), std::move(f.min)),
@@ -696,7 +704,7 @@ expr boolean(const expr& x) {
   } else if (const index_t* c = as_constant(x)) {
     return *c != 0;
   } else {
-    return x != 0;
+    return not_equal::make(x, 0);
   }
 }
 bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }

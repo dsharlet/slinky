@@ -37,7 +37,7 @@ expr strip_boolean(expr x) {
   return x;
 }
 
-expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
+const expr& eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   switch (fn) {
   case intrinsic::buffer_min: return d.bounds.min;
   case intrinsic::buffer_max: return d.bounds.max;
@@ -446,7 +446,7 @@ public:
       if (min_info && max_info) {
         *max_info = *min_info;
       }
-      return point(result);
+      return point(std::move(result));
     } else {
       interval_expr result = {mutate(x.min, min_info), mutate(x.max, max_info)};
       ensure_is_point(result);
@@ -655,11 +655,11 @@ public:
       return;
     }
 
-    expr result = simplify(op, a, b);
+    expr result = simplify(op, std::move(a), std::move(b));
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      set_result(result,
+      set_result(std::move(result),
           {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)), a_info.alignment | b_info.alignment});
     }
   }
@@ -714,7 +714,7 @@ public:
       expr_info info = {bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds)),
           modulus_of(op, a_info.alignment, b_info.alignment)};
       info.trim_bounds_using_alignment();
-      set_result(result, std::move(info));
+      set_result(std::move(result), std::move(info));
     }
   }
   void visit(const add* op) override {
@@ -753,11 +753,11 @@ public:
     } else {
       interval_expr result_info = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
       if (prove_constant_true(result_info.min)) {
-        set_result(expr(true), {{1, 1}, alignment_type()});
+        set_result(expr(true), {point(true), alignment_type()});
       } else if (prove_constant_false(result_info.max)) {
-        set_result(expr(false), {{0, 0}, alignment_type()});
+        set_result(expr(false), {point(false), alignment_type()});
       } else {
-        set_result(result, {std::move(result_info), alignment_type()});
+        set_result(std::move(result), {std::move(result_info), alignment_type()});
       }
     }
   }
@@ -775,13 +775,13 @@ public:
     if (!a.defined()) {
       set_result(expr(), expr_info());
     } else if (prove_constant_true(info.bounds.min)) {
-      set_result(expr(false), {{0, 0}, alignment_type()});
+      set_result(expr(false), {point(false), alignment_type()});
     } else if (prove_constant_false(info.bounds.max)) {
-      set_result(expr(true), {{1, 1}, alignment_type()});
+      set_result(expr(true), {point(true), alignment_type()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
-        set_result(result, {bounds_of(op, std::move(info.bounds)), alignment_type()});
+        set_result(std::move(result), {bounds_of(op, std::move(info.bounds)), alignment_type()});
       } else {
         mutate_and_set_result(result);
       }
@@ -884,13 +884,13 @@ public:
       expr_info info = {bounds_of(op, std::move(c_info.bounds), std::move(t_info.bounds), std::move(f_info.bounds)),
           t_info.alignment | f_info.alignment};
       info.trim_bounds_using_alignment();
-      set_result(e, std::move(info));
+      set_result(std::move(e), std::move(info));
     } else {
       mutate_and_set_result(e);
     }
   }
 
-  static bool should_substitute(expr& e) { return e.as<constant>() || e.as<variable>(); }
+  static bool should_substitute(const expr& e) { return e.as<constant>() || e.as<variable>(); }
 
   void visit(const call* op) override {
     std::vector<expr> args;
@@ -916,7 +916,7 @@ public:
         // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
         // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
         if (op->intrinsic == intrinsic::buffer_elem_size) {
-          expr value = info->elem_size;
+          const expr& value = info->elem_size;
           if (should_substitute(value) || value.as<call>()) {
             set_result(value, {point(value), alignment_type()});
           } else {
@@ -927,7 +927,7 @@ public:
           const index_t* dim = as_constant(op->args[1]);
           assert(dim);
           if (*dim < static_cast<index_t>(info->dims.size())) {
-            expr value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
+            const expr& value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
             if (should_substitute(value) || value.as<call>()) {
               set_result(value, {point(value), alignment_type()});
             } else {
@@ -961,7 +961,7 @@ public:
 
     expr e = simplify(op, op->intrinsic, std::move(args));
     if (e.same_as(op)) {
-      set_result(e, {bounds_of(op, std::move(args_bounds)), alignment_type()});
+      set_result(std::move(e), {bounds_of(op, std::move(args_bounds)), alignment_type()});
     } else {
       mutate_and_set_result(e);
     }
@@ -1020,7 +1020,7 @@ public:
 
     if (lets.empty()) {
       // All lets were removed.
-      set_result(body, std::move(body_info));
+      set_result(std::move(body), std::move(body_info));
     } else if (!values_changed && body.same_as(op->body)) {
       set_result(op, std::move(body_info));
     } else {
@@ -1582,7 +1582,7 @@ public:
         for (const expr& i : bounds) {
           expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)});
           if (!removed.same_as(xa->a)) {
-            return removed + xa->b;
+            return std::move(removed) + xa->b;
           }
         }
       }

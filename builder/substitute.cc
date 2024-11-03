@@ -357,7 +357,7 @@ int compare(const stmt& a, const stmt& b) {
 
 namespace {
 
-expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
+const expr& eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   switch (fn) {
   case intrinsic::buffer_min: return d.bounds.min;
   case intrinsic::buffer_max: return d.bounds.max;

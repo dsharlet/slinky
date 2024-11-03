@@ -10,7 +10,7 @@ namespace slinky {
 
 std::string to_string(var sym) { return "<" + std::to_string(sym.id) + ">"; }
 
-std::string to_string(memory_type type) {
+const char* to_string(memory_type type) {
   switch (type) {
   case memory_type::stack: return "stack";
   case memory_type::heap: return "heap";
@@ -18,7 +18,7 @@ std::string to_string(memory_type type) {
   }
 }
 
-std::string to_string(intrinsic fn) {
+const char* to_string(intrinsic fn) {
   switch (fn) {
   case intrinsic::positive_infinity: return "oo";
   case intrinsic::negative_infinity: return "-oo";

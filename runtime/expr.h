@@ -222,11 +222,11 @@ public:
 
   expr operator-() const;
 
-  expr& operator+=(const expr& r);
-  expr& operator-=(const expr& r);
-  expr& operator*=(const expr& r);
-  expr& operator/=(const expr& r);
-  expr& operator%=(const expr& r);
+  expr& operator+=(expr r);
+  expr& operator-=(expr r);
+  expr& operator*=(expr r);
+  expr& operator/=(expr r);
+  expr& operator%=(expr r);
 };
 
 expr operator==(expr a, expr b);
@@ -253,13 +253,13 @@ struct interval_expr {
   expr min, max;
 
   interval_expr() = default;
-  explicit interval_expr(const expr& point) : min(point), max(point) {}
+  explicit interval_expr(expr point) : min(std::move(point)), max(min) {}
   interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
   bool same_as(const interval_expr& r) const { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_point() const { return min.defined() && min.same_as(max); }
-  bool is_point(const expr& x) const { return x.same_as(min) && x.same_as(max); }
+  bool is_point(const expr& x) const { return min.same_as(x) && max.same_as(x); }
 
   static const interval_expr& all();
   static const interval_expr& none();
@@ -286,21 +286,21 @@ struct interval_expr {
   // This is the union operator. I don't really like this, but
   // I also don't like that I can't name a function `union`.
   // It does kinda make sense...
-  interval_expr& operator|=(const interval_expr& r);
+  interval_expr& operator|=(interval_expr r);
   // This is intersection, just to be consistent with union.
-  interval_expr& operator&=(const interval_expr& r);
-  interval_expr operator|(const interval_expr& r) const;
-  interval_expr operator&(const interval_expr& r) const;
+  interval_expr& operator&=(interval_expr r);
+  interval_expr operator|(interval_expr r) const;
+  interval_expr operator&(interval_expr r) const;
 };
 
 // Make an interval of the region [begin, end) (like python's range).
-inline interval_expr range(expr begin, const expr& end) { return {std::move(begin), end - 1}; }
+inline interval_expr range(expr begin, expr end) { return {std::move(begin), std::move(end) - 1}; }
 // Make an interval of the region [min, max].
 inline interval_expr bounds(expr min, expr max) { return {std::move(min), std::move(max)}; }
 // Make an interval of the region [min, min + extent).
-inline interval_expr min_extent(const expr& min, const expr& extent) { return {min, min + extent - 1}; }
+inline interval_expr min_extent(const expr& min, expr extent) { return {min, min + std::move(extent) - 1}; }
 // Make a interval of the region [x, x].
-inline interval_expr point(const expr& x) { return {x, x}; }
+inline interval_expr point(expr x) { return interval_expr(std::move(x)); }
 
 inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
 inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }

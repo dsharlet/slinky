@@ -37,8 +37,8 @@ std::ostream& operator<<(std::ostream& os, const dim& d);
 // intended usage here is to do `using std::to_string;` followed by naked
 // to_string() calls.
 std::string to_string(var sym);
-std::string to_string(intrinsic fn);
-std::string to_string(memory_type type);
+const char* to_string(intrinsic fn);
+const char* to_string(memory_type type);
 
 }  // namespace slinky
 
