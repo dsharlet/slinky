@@ -603,9 +603,9 @@ bool is_non_positive(const expr& x) {
 }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
-expr align_down(expr x, expr a) { return (x / a) * a; }
-expr align_up(expr x, expr a) { return ((x + a - 1) / a) * a; }
-interval_expr align(interval_expr x, expr a) { return {align_down(x.min, a), align_up(x.max + 1, a) - 1}; }
+expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
+expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
+interval_expr align(interval_expr x, const expr& a) { return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1}; }
 
 expr and_then(std::vector<expr> args) { return call::make(intrinsic::and_then, std::move(args)); }
 expr or_else(std::vector<expr> args) { return call::make(intrinsic::or_else, std::move(args)); }
@@ -614,7 +614,7 @@ expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::mov
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
 expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
-expr buffer_extent(expr buf, expr dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
+expr buffer_extent(const expr& buf, const expr& dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
 expr buffer_stride(expr buf, expr dim) {
   return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)});
 }
@@ -623,13 +623,17 @@ expr buffer_fold_factor(expr buf, expr dim) {
 }
 
 expr buffer_at(expr buf, span<const expr> at) {
-  std::vector<expr> args = {buf};
+  std::vector<expr> args;
+  args.reserve(at.size() + 1);
+  args.push_back(std::move(buf));
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
 
 expr buffer_at(expr buf, span<const var> at) {
-  std::vector<expr> args = {buf};
+  std::vector<expr> args;
+  args.reserve(at.size() + 1);
+  args.push_back(std::move(buf));
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }

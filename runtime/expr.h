@@ -582,10 +582,10 @@ bool is_negative(const expr& x);
 bool is_non_positive(const expr& x);
 
 expr abs(expr x);
-expr align_down(expr x, expr a);
-expr align_up(expr x, expr a);
+expr align_down(expr x, const expr& a);
+expr align_up(expr x, const expr& a);
 // Expand the interval to have a min and extent aligned to a multiple of a.
-interval_expr align(interval_expr x, expr a);
+interval_expr align(interval_expr x, const expr& a);
 
 expr and_then(std::vector<expr> args);
 expr or_else(std::vector<expr> args);
@@ -594,7 +594,7 @@ expr buffer_rank(expr buf);
 expr buffer_elem_size(expr buf);
 expr buffer_min(expr buf, expr dim);
 expr buffer_max(expr buf, expr dim);
-expr buffer_extent(expr buf, expr dim);
+expr buffer_extent(const expr& buf, const expr& dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 expr buffer_at(expr buf, span<const expr> at);
