@@ -83,6 +83,8 @@ stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
 
+stmt let_stmt::make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
+
 namespace {
 
 template <std::int64_t value>
@@ -556,6 +558,14 @@ stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
   std::iota(dims.begin(), dims.end(), 0);
   return make(sym, src, std::move(dims), std::move(body));
 }
+
+bool transpose::is_truncate(span<const int> dims) {
+  for (std::size_t i = 0; i < dims.size(); ++i) {
+    if (dims[i] != static_cast<int>(i)) return false;
+  }
+  return true;
+}
+bool transpose::is_truncate() const { return is_truncate(dims); }
 
 stmt check::make(expr condition) {
   auto n = new check();

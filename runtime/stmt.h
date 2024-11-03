@@ -146,7 +146,7 @@ public:
 
   static stmt make(std::vector<std::pair<var, expr>> lets, stmt body);
 
-  static stmt make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
+  static stmt make(var sym, expr value, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::let_stmt;
 };
@@ -318,13 +318,8 @@ public:
   std::vector<int> dims;
   stmt body;
 
-  static bool is_truncate(span<const int> dims) {
-    for (std::size_t i = 0; i < dims.size(); ++i) {
-      if (dims[i] != static_cast<int>(i)) return false;
-    }
-    return true;
-  }
-  bool is_truncate() const { return is_truncate(dims); }
+  static bool is_truncate(span<const int> dims);
+  bool is_truncate() const;
 
   void accept(stmt_visitor* v) const override;
 
