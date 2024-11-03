@@ -338,25 +338,14 @@ template <int matched>
 SLINKY_UNIQUE bool match_tuple(const std::tuple<>& t, const std::vector<expr>& x, match_context& ctx) {
   return true;
 }
-template <int matched, typename T0>
-SLINKY_UNIQUE bool match_tuple(const std::tuple<T0>& t, const std::vector<expr>& x, match_context& ctx) {
+template <int matched, typename A>
+SLINKY_UNIQUE bool match_tuple(const std::tuple<A>& t, const std::vector<expr>& x, match_context& ctx) {
   return match<matched>(std::get<0>(t), x[0], ctx);
 }
-template <int matched, typename T0, typename T1>
-SLINKY_UNIQUE bool match_tuple(const std::tuple<T0, T1>& t, const std::vector<expr>& x, match_context& ctx) {
+template <int matched, typename A, typename B>
+SLINKY_UNIQUE bool match_tuple(const std::tuple<A, B>& t, const std::vector<expr>& x, match_context& ctx) {
   return match<matched>(std::get<0>(t), x[0], ctx) &&
-         match<matched | pattern_info<T0>::matched>(std::get<1>(t), x[1], ctx);
-}
-template <int matched, typename T0, typename T1, typename T2>
-SLINKY_UNIQUE bool match_tuple(const std::tuple<T0, T1, T2>& t, const std::vector<expr>& x, match_context& ctx) {
-  return match<matched>(std::get<0>(t), x[0], ctx) &&
-         match<matched | pattern_info<T0>::matched>(std::get<1>(t), x[1], ctx) &&
-         match<matched | pattern_info<T0>::matched | pattern_info<T1>::matched>(std::get<2>(t), x[2], ctx);
-}
-
-template <typename T, std::size_t... Is>
-SLINKY_UNIQUE std::vector<expr> substitute_tuple(const T& t, const match_context& ctx, std::index_sequence<Is...>) {
-  return {substitute(std::get<Is>(t), ctx)...};
+         match<matched | pattern_info<A>::matched>(std::get<1>(t), x[1], ctx);
 }
 
 template <int matched, typename... Args>
@@ -370,10 +359,16 @@ SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, const expr& x, match_co
   return false;
 }
 
-template <typename... Args>
-SLINKY_UNIQUE expr substitute(const pattern_call<Args...>& p, const match_context& ctx) {
-  constexpr std::size_t ArgsSize = sizeof...(Args);
-  return call::make(p.fn, substitute_tuple(p.args, ctx, std::make_index_sequence<ArgsSize>()));
+SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) {
+  return call::make(p.fn, {});
+}
+template <typename A>
+SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
+}
+template <typename A, typename B>
+SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx), substitute(std::get<1>(p.args), ctx)});
 }
 
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
