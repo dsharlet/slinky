@@ -70,8 +70,6 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
       apply(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
       apply(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      apply(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
-      apply(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
       apply(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
       apply(min(x + z, y + z), z + min(x, y)) ||
       apply(min(x - z, y - z), min(x, y) - z) ||
