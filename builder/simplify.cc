@@ -1652,20 +1652,19 @@ public:
     return deps.buffer_output || deps.buffer_src || deps.buffer_dst || deps.buffer_meta;
   }
 
-  template <typename T>
-  void visit_crop(const T* op, const box_expr& op_bounds) {
-    std::optional<buffer_info> info = get_buffer_info(op->src, op_bounds.size());
+  void visit_crop(const base_stmt_node* op, var op_sym, var op_src, const box_expr& op_bounds, stmt op_body) {
+    std::optional<buffer_info> info = get_buffer_info(op_src, op_bounds.size());
     box_expr bounds(op_bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
     bool changed = false;
     for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
-      bounds[i] = mutate_crop_bounds(op_bounds[i], op->src, i, info->dims[i].bounds);
+      bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dims[i].bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
-    stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(info));
+    stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));
     scoped_trace trace("visit_crop");
-    auto deps = depends_on(body, op->sym);
+    auto deps = depends_on(body, op_sym);
     if (!deps.any()) {
       set_result(std::move(body));
       return;
@@ -1679,16 +1678,16 @@ public:
     if (!crop_needed(deps)) {
       // Add clamps for the implicit bounds like crop would have done.
       for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-        bounds[d] &= slinky::buffer_bounds(op->src, d);
+        bounds[d] &= slinky::buffer_bounds(op_src, d);
       }
-      body = substitute_bounds(body, op->sym, bounds);
-      body = substitute(body, op->sym, op->src);
+      body = substitute_bounds(body, op_sym, bounds);
+      body = substitute(body, op_sym, op_src);
       set_result(mutate(body));
       return;
     }
 
     // Rewrite nested crops to be one crop where possible.
-    var sym = op->sym;
+    var sym = op_sym;
     while (true) {
       if (const crop_buffer* c = body.as<crop_buffer>()) {
         // The inner crop might use the outer buffer's bounds, substitute them.
@@ -1696,11 +1695,11 @@ public:
         c_bounds.reserve(c->bounds.size());
         for (const interval_expr& i : c->bounds) {
           c_bounds.push_back({
-              substitute_bounds(i.min, op->sym, bounds),
-              substitute_bounds(i.max, op->sym, bounds),
+              substitute_bounds(i.min, op_sym, bounds),
+              substitute_bounds(i.max, op_sym, bounds),
           });
         }
-        if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
+        if (op_sym == c->src && !depends_on(c->body, op_sym).any()) {
           // Nested crops of the same buffer, and the crop isn't used.
           bounds.resize(std::max(bounds.size(), c_bounds.size()));
           bounds = bounds & c_bounds;
@@ -1710,7 +1709,7 @@ public:
           sym = c->sym;
           body = c->body;
           continue;
-        } else if (op->src == c->src && match(c->bounds, bounds)) {
+        } else if (op_src == c->src && match(c->bounds, bounds)) {
           // Two crops producing the same buffer, we can just use one of them and discard the other.
           body = substitute(c->body, c->sym, sym);
           continue;
@@ -1718,10 +1717,10 @@ public:
       } else if (const crop_dim* c = body.as<crop_dim>()) {
         // The inner crop might use the outer buffer's bounds, substitute them.
         interval_expr c_bounds = {
-            substitute_bounds(c->bounds.min, op->sym, bounds),
-            substitute_bounds(c->bounds.max, op->sym, bounds),
+            substitute_bounds(c->bounds.min, op_sym, bounds),
+            substitute_bounds(c->bounds.max, op_sym, bounds),
         };
-        if (op->sym == c->src && !depends_on(c->body, op->sym).any()) {
+        if (op_sym == c->src && !depends_on(c->body, op_sym).any()) {
           // Nested crops of the same buffer, and the crop isn't used.
           if (c->dim < static_cast<int>(bounds.size())) {
             bounds[c->dim] = mutate(bounds[c->dim] & c_bounds);
@@ -1732,7 +1731,7 @@ public:
           sym = c->sym;
           body = c->body;
           continue;
-        } else if (c->src == op->src && match(c->dim, c->bounds, bounds)) {
+        } else if (c->src == op_src && match(c->dim, c->bounds, bounds)) {
           // Two crops producing the same buffer, we can just use one of them and discard the other.
           body = substitute(c->body, c->sym, sym);
           continue;
@@ -1744,24 +1743,24 @@ public:
     // If this was a crop_buffer, and we only have one dim, we're going to change it to a crop_dim.
     const int dims_count = std::count_if(
         bounds.begin(), bounds.end(), [](const interval_expr& i) { return i.min.defined() || i.max.defined(); });
-    changed = changed || (dims_count == 1 && std::is_same_v<T, crop_buffer>) || !body.same_as(op->body);
+    changed = changed || (dims_count == 1 && op->type != crop_dim::static_type) || !body.same_as(op_body);
 
     auto make_crop = [&](const stmt& body) -> stmt {
-      if (!changed && body.same_as(op->body)) {
+      if (!changed && body.same_as(op_body)) {
         return op;
       } else if (dims_count == 1) {
         // This crop is of one dimension, replace it with crop_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
         int d = static_cast<int>(bounds.size()) - 1;
-        return crop_dim::make(sym, op->src, d, bounds[d], body);
+        return crop_dim::make(sym, op_src, d, bounds[d], body);
       } else {
-        return crop_buffer::make(sym, op->src, bounds, body);
+        return crop_buffer::make(sym, op_src, bounds, body);
       }
     };
 
     if (bounds.empty()) {
       // This crop was a no-op.
-      set_result(substitute(body, sym, op->src));
+      set_result(substitute(body, sym, op_src));
     } else if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(b->stmts, sym, make_crop));
     } else {
@@ -1769,12 +1768,12 @@ public:
     }
   }
 
-  void visit(const crop_buffer* op) override { visit_crop(op, op->bounds); }
+  void visit(const crop_buffer* op) override { visit_crop(op, op->sym, op->src, op->bounds, op->body); }
 
   void visit(const crop_dim* op) override {
     box_expr bounds(op->dim + 1);
     bounds[op->dim] = op->bounds;
-    visit_crop(op, bounds);
+    visit_crop(op, op->sym, op->src, bounds, op->body);
   }
 
   static void update_sliced_buffer_metadata(symbol_map<expr_info>& info_map, var sym, span<const int> sliced) {
@@ -1794,8 +1793,7 @@ public:
     }
   }
 
-  template <typename T>
-  void visit_slice(const T* op, const std::vector<expr>& op_at) {
+  void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
     std::vector<expr> at(op_at.size());
     std::vector<int> sliced_dims;
     bool changed = false;
@@ -1809,21 +1807,21 @@ public:
 
     symbol_map<buffer_info> old_buffers = buffers;
     symbol_map<expr_info> old_info_map = info_map;
-    std::optional<buffer_info> info = buffers[op->src];
+    std::optional<buffer_info> info = buffers[op_src];
 
     if (info) {
       info->decl = op;
-      buffers[op->sym] = std::move(info);
+      buffers[op_sym] = std::move(info);
     } else {
-      buffers[op->sym] = std::nullopt;
+      buffers[op_sym] = std::nullopt;
     }
-    update_sliced_buffer_metadata(buffers, op->sym, sliced_dims);
-    update_sliced_buffer_metadata(info_map, op->sym, sliced_dims);
-    stmt body = mutate(op->body);
+    update_sliced_buffer_metadata(buffers, op_sym, sliced_dims);
+    update_sliced_buffer_metadata(info_map, op_sym, sliced_dims);
+    stmt body = mutate(op_body);
     buffers = std::move(old_buffers);
     info_map = std::move(old_info_map);
 
-    if (!depends_on(body, op->sym).any()) {
+    if (!depends_on(body, op_sym).any()) {
       set_result(std::move(body));
       return;
     }
@@ -1835,26 +1833,26 @@ public:
 
     while (true) {
       if (const slice_buffer* s = body.as<slice_buffer>()) {
-        if (s->src == op->src && match(s->at, at)) {
+        if (s->src == op_src && match(s->at, at)) {
           // Two slices producing the same buffer, we can just use one of them and discard the other.
-          body = substitute(s->body, s->sym, op->sym);
+          body = substitute(s->body, s->sym, op_sym);
           continue;
         }
       } else if (const slice_dim* s = body.as<slice_dim>()) {
-        if (s->src == op->src && match(s->dim, s->at, at)) {
+        if (s->src == op_src && match(s->dim, s->at, at)) {
           // Two slices producing the same buffer, we can just use one of them and discard the other.
-          body = substitute(s->body, s->sym, op->sym);
+          body = substitute(s->body, s->sym, op_sym);
           continue;
         }
       }
       break;
     }
 
-    changed = changed || at.size() != op_at.size() || !body.same_as(op->body);
+    changed = changed || at.size() != op_at.size() || !body.same_as(op_body);
 
     // If this was a slice_buffer, and we only have one dimension, we're going to change it to a slice_dim.
     const int at_count = std::count_if(at.begin(), at.end(), [](const expr& i) { return i.defined(); });
-    changed = changed || (at_count == 1 && std::is_same_v<T, slice_buffer>);
+    changed = changed || (at_count == 1 && op->type != slice_dim::static_type);
 
     auto make_slice = [&](const stmt& body) -> stmt {
       if (!changed && body.same_as(op)) {
@@ -1863,28 +1861,28 @@ public:
         // This slice is of one dimension, replace it with slice_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
         int d = static_cast<int>(at.size()) - 1;
-        return slice_dim::make(op->sym, op->src, d, at[d], body);
+        return slice_dim::make(op_sym, op_src, d, at[d], body);
       } else {
-        return slice_buffer::make(op->sym, op->src, at, body);
+        return slice_buffer::make(op_sym, op_src, at, body);
       }
     };
 
     if (at.empty()) {
       // This slice was a no-op.
-      set_result(substitute(body, op->sym, op->src));
+      set_result(substitute(body, op_sym, op_src));
     } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym, make_slice));
+      set_result(lift_decl_invariants(b->stmts, op_sym, make_slice));
     } else {
       set_result(make_slice(body));
     }
   }
 
-  void visit(const slice_buffer* op) override { visit_slice(op, op->at); }
+  void visit(const slice_buffer* op) override { visit_slice(op, op->sym, op->src, op->at, op->body); }
 
   void visit(const slice_dim* op) override {
     std::vector<expr> at(op->dim + 1);
     at[op->dim] = op->at;
-    visit_slice(op, at);
+    visit_slice(op, op->sym, op->src, at, op->body);
   }
 
   void visit(const transpose* op) override {
@@ -2070,12 +2068,12 @@ public:
   }
 
   template <typename T>
-  void visit_mul_div(const T* op, bool is_mul) {
+  void visit_mul_div(const T* op) {
     // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
     int sign_a = sign_of(op->a);
     int sign_b = sign_of(op->b);
     // TODO: We should be able to handle the numerator of div too, it's just tricky.
-    if (is_mul && sign_a != 0) {
+    if (std::is_same<T, mul>::value && sign_a != 0) {
       int old_sign = sign;
       sign *= sign_a;
       expr b = mutate(op->b);
@@ -2100,13 +2098,12 @@ public:
     }
   }
 
-  void visit(const mul* op) override { visit_mul_div(op, /*is_mul=*/true); }
-  void visit(const div* op) override { visit_mul_div(op, /*is_mul=*/false); }
+  void visit(const mul* op) override { visit_mul_div(op); }
+  void visit(const div* op) override { visit_mul_div(op); }
 
   void visit(const mod* op) override { set_result(op); }
 
-  template <typename T>
-  void visit_equal(const T* op) {
+  void visit_equal() {
     // Can we tighten this? I'm not sure. We need both upper and lower bounds to say anything here.
     if (sign < 0) {
       set_result(expr(0));
@@ -2114,8 +2111,8 @@ public:
       set_result(expr(1));
     }
   }
-  void visit(const equal* op) override { visit_equal(op); }
-  void visit(const not_equal* op) override { visit_equal(op); }
+  void visit(const equal* op) override { visit_equal(); }
+  void visit(const not_equal* op) override { visit_equal(); }
 
   template <typename T>
   void visit_less(const T* op) {
