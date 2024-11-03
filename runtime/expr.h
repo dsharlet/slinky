@@ -294,16 +294,16 @@ struct interval_expr {
 };
 
 // Make an interval of the region [begin, end) (like python's range).
-inline interval_expr range(expr begin, expr end) { return {std::move(begin), std::move(end) - 1}; }
+interval_expr range(expr begin, expr end);
 // Make an interval of the region [min, max].
-inline interval_expr bounds(expr min, expr max) { return {std::move(min), std::move(max)}; }
+interval_expr bounds(expr min, expr max);
 // Make an interval of the region [min, min + extent).
-inline interval_expr min_extent(const expr& min, expr extent) { return {min, min + std::move(extent) - 1}; }
+interval_expr min_extent(const expr& min, expr extent);
 // Make a interval of the region [x, x].
 inline interval_expr point(expr x) { return interval_expr(std::move(x)); }
 
-inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
-inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
+interval_expr operator*(const expr& a, const interval_expr& b);
+interval_expr operator+(const expr& a, const interval_expr& b);
 
 expr clamp(expr x, interval_expr b);
 interval_expr select(const expr& c, interval_expr t, interval_expr f);

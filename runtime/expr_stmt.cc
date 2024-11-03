@@ -345,6 +345,13 @@ interval_expr interval_expr::operator&(interval_expr r) const {
   return result;
 }
 
+interval_expr range(expr begin, expr end) { return {std::move(begin), std::move(end) - 1}; }
+interval_expr bounds(expr min, expr max) { return {std::move(min), std::move(max)}; }
+interval_expr min_extent(const expr& min, expr extent) { return {min, min + std::move(extent) - 1}; }
+
+interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
+interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
+
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
   if (t.is_point() && f.is_point()) {
