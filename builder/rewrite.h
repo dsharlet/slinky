@@ -434,10 +434,8 @@ public:
 };
 
 template <typename T>
-SLINKY_UNIQUE expr substitute(const replacement_boolean<T>& r, const match_context& ctx) {
-  expr result = substitute(r.a, ctx);
-  if (!is_boolean(result)) result = not_equal::make(std::move(result), 0);
-  return result;
+SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
+  return boolean(substitute(r.a, ctx));
 }
 
 template <typename T>

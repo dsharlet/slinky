@@ -553,6 +553,7 @@ bool is_indeterminate(const expr& x);
 int is_infinity(const expr& x);
 bool is_finite(const expr& x);
 
+SLINKY_ALWAYS_INLINE inline index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
 expr boolean(const expr& x);
 bool is_boolean(const expr& x);
 
