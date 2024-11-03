@@ -674,7 +674,16 @@ public:
   template <typename T>
   void visit_buffer_mutator(const T* op, std::function<void(alias_info&)> handler) {
     // We need to know which alias candidates are added inside this mutator.
-    symbol_map<buffer_info> old_buffers(buffers);
+    symbol_map<buffer_info> old_buffers(buffers.size());
+    std::swap(old_buffers, buffers);
+    // Copy the buffer info, but not alias candidates, we'll copy those back later below.
+    for (std::size_t i = 0; i < old_buffers.size(); ++i) {
+      if (old_buffers[i]) {
+        buffers[i] = buffer_info(
+            old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
+        buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
+      }
+    }
 
     auto set_info_sym = set_value_in_scope(buffers, op->sym, buffers[op->src]);
     node_mutator::visit(op);
