@@ -694,7 +694,7 @@ public:
     rewrite::pattern_constant<1> c1;
 
     // It's really ugly to have rules here instead of simplify_rules, but plumbing bounds and alignment seems difficult.
-    if (op->type == expr_node_type::div) {
+    if (T::static_type == expr_node_type::div) {
       auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} / rewrite::pattern_expr{b});
       // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
       // clang-format off
