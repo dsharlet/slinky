@@ -196,7 +196,8 @@ expr simplify(const less* op, expr a, expr b) {
 
 expr simplify(const less_equal* op, expr a, expr b) {
   // Rewrite to !(b < a) and simplify that instead.
-  expr result = simplify(static_cast<const logical_not*>(nullptr), simplify(static_cast<const less*>(nullptr), b, a));
+  expr result = simplify(static_cast<const logical_not*>(nullptr),
+      simplify(static_cast<const less*>(nullptr), std::move(b), std::move(a)));
   if (op) {
     if (const less_equal* le = result.as<less_equal>()) {
       if (le->a.same_as(op->a) && le->b.same_as(op->b)) {
@@ -230,7 +231,8 @@ expr simplify(const equal* op, expr a, expr b) {
 
 expr simplify(const not_equal* op, expr a, expr b) {
   // Rewrite to !(a == b) and simplify that instead.
-  expr result = simplify(static_cast<const logical_not*>(nullptr), simplify(static_cast<const equal*>(nullptr), a, b));
+  expr result = simplify(static_cast<const logical_not*>(nullptr),
+      simplify(static_cast<const equal*>(nullptr), std::move(a), std::move(b)));
   if (op) {
     if (const not_equal* ne = result.as<not_equal>()) {
       if (ne->a.same_as(op->a) && ne->b.same_as(op->b)) {
