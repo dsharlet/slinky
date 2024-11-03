@@ -50,10 +50,10 @@ dim_expr select(const expr& c, dim_expr t, dim_expr f) {
 bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
-    expr at_t = at;
-    expr at_f = at;
-    dim_expr src_dim_t = src_dim;
-    dim_expr src_dim_f = src_dim;
+    expr at_t;
+    expr at_f;
+    dim_expr src_dim_t;
+    dim_expr src_dim_f;
     if (is_copy(src, s->true_value, src_d, dst, dst_x, dst_d, at_t, src_dim_t) &&
         is_copy(src, s->false_value, src_d, dst, dst_x, dst_d, at_f, src_dim_f)) {
       at = select(s->condition, at_t, at_f);
