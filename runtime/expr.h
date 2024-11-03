@@ -708,11 +708,10 @@ public:
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) noexcept {
-    context_ = other.context_;
-    sym_ = other.sym_;
-    old_value_ = std::move(other.old_value_);
-    // Don't let other.~scoped_value_in_symbol_map() unset this value.
-    other.context_ = nullptr;
+    std::swap(context_, other.context_);
+    std::swap(sym_, other.sym_);
+    std::swap(old_value_, other.old_value_);
+    return *this;
   }
 
   const std::optional<T>& old_value() const { return old_value_; }
