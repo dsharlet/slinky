@@ -626,40 +626,24 @@ public:
     alias_copy_src(op);
   }
 
-  template <typename T, typename Fn>
-  void visit_buffer_mutator(const T* op, Fn&& handler) {
-    // We need to know which alias candidates are added inside this mutator.
-    symbol_map<buffer_info> old_buffers(buffers.size());
-    std::swap(old_buffers, buffers);
-    for (std::size_t i = 0; i < old_buffers.size(); ++i) {
-      if (old_buffers[i]) {
-        buffers[i] = buffer_info(
-            old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
-        buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
-      }
-    }
-
-    auto set_info_sym = set_value_in_scope(buffers, op->sym, buffers[op->src]);
-    node_mutator::visit(op);
-
-    scoped_trace trace("visit_buffer_mutator");
-
+  void merge_buffer_info(
+      symbol_map<buffer_info>& old_buffers, var sym, var src, std::function<void(alias_info&)> handler) {
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
-      auto j = i->aliases.find(op->sym);
+      auto j = i->aliases.find(sym);
       if (j != i->aliases.end()) {
         handler(j->second);
       }
       for (auto& a : i->aliases) {
         // We need to substitute uses of sym with uses of src in the aliases we added here.
         for (dim_expr& d : a.second.dims) {
-          d.bounds = substitute(d.bounds, op->sym, op->src);
-          d.stride = substitute(d.stride, op->sym, op->src);
-          d.fold_factor = substitute(d.fold_factor, op->sym, op->src);
+          d.bounds = substitute(d.bounds, sym, src);
+          d.stride = substitute(d.stride, sym, src);
+          d.fold_factor = substitute(d.fold_factor, sym, src);
         }
-        a.second.elem_size = substitute(a.second.elem_size, op->sym, op->src);
+        a.second.elem_size = substitute(a.second.elem_size, sym, src);
         for (expr& i : a.second.at) {
-          i = substitute(i, op->sym, op->src);
+          i = substitute(i, sym, src);
         }
       }
     }
@@ -669,7 +653,7 @@ public:
     for (std::size_t i = 0; i < buffers.size(); ++i) {
       if (!buffers[i]) continue;
       std::optional<buffer_info> info = std::move(buffers[i]);
-      std::optional<buffer_info>& old_info = old_buffers[var(i) != op->sym ? var(i) : op->src];
+      std::optional<buffer_info>& old_info = old_buffers[var(i) != sym ? var(i) : src];
       if (!old_info) {
         old_info = buffer_info(info->dims, info->elem_size, info->is_input, info->is_output);
       } else {
@@ -681,10 +665,22 @@ public:
         old_info->shared_alloc_sym = info->shared_alloc_sym;
       }
       for (auto& j : info->aliases) {
-        old_info->maybe_alias(j.first == op->sym ? op->src : j.first, std::move(j.second));
+        old_info->maybe_alias(j.first == sym ? src : j.first, std::move(j.second));
       }
     }
     std::swap(old_buffers, buffers);
+  }
+
+  template <typename T>
+  void visit_buffer_mutator(const T* op, std::function<void(alias_info&)> handler) {
+    // We need to know which alias candidates are added inside this mutator.
+    symbol_map<buffer_info> old_buffers(buffers);
+
+    auto set_info_sym = set_value_in_scope(buffers, op->sym, buffers[op->src]);
+    node_mutator::visit(op);
+
+    scoped_trace trace("visit_buffer_mutator");
+    merge_buffer_info(old_buffers, op->sym, op->src, handler);
   }
 
   void visit(const slice_buffer* op) override {
