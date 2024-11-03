@@ -426,7 +426,7 @@ public:
 template <typename T>
 SLINKY_UNIQUE expr substitute(const replacement_boolean<T>& r, const match_context& ctx) {
   expr result = substitute(r.a, ctx);
-  if (!is_boolean(result)) result = result != 0;
+  if (!is_boolean(result)) result = not_equal::make(std::move(result), 0);
   return result;
 }
 
