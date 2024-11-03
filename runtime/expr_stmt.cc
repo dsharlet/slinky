@@ -774,27 +774,26 @@ void recursive_node_visitor::visit(const let* op) {
 
 namespace {
 
-template <typename T>
-void visit_binary(recursive_node_visitor* _this, const T* op) {
-  if (op->a.defined()) op->a.accept(_this);
-  if (op->b.defined()) op->b.accept(_this);
+void visit_binary(recursive_node_visitor* _this, const expr& a, const expr& b) {
+  if (a.defined()) a.accept(_this);
+  if (b.defined()) b.accept(_this);
 }
 
 }  // namespace
 
-void recursive_node_visitor::visit(const add* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const sub* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const mul* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const div* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const mod* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const class min* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const class max* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const equal* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const not_equal* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const less* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const less_equal* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const logical_and* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const logical_or* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const add* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const sub* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const mul* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const div* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const mod* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const class min* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const class max* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const equal* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const not_equal* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const less* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const less_equal* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const logical_and* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const logical_or* op) { visit_binary(this, op->a, op->b); }
 void recursive_node_visitor::visit(const logical_not* op) {
   if (op->a.defined()) op->a.accept(this);
 }

@@ -436,10 +436,8 @@ public:
     }
   }
 
-  template <typename T>
-  void visit_call_or_copy(const T* op, span<const var> inputs, span<const var> outputs) {
+  void visit_call_or_copy(span<const var> inputs, span<const var> outputs) {
     scoped_trace trace("visit_call_or_copy");
-    set_result(op);
 
     for (var input : inputs) {
       // Remove folding for an input that was folded in a more deeply nested loop than the current loop.
@@ -503,8 +501,14 @@ public:
     }
   }
 
-  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->inputs, op->outputs); }
-  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->src, 1}, {&op->dst, 1}); }
+  void visit(const call_stmt* op) override {
+    set_result(op);
+    visit_call_or_copy(op->inputs, op->outputs);
+  }
+  void visit(const copy_stmt* op) override {
+    set_result(op);
+    visit_call_or_copy({&op->src, 1}, {&op->dst, 1});
+  }
 
   void visit(const crop_buffer* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->src];

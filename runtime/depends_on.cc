@@ -87,12 +87,11 @@ public:
     }
   }
 
-  template <typename T>
-  depends_on_result visit_sym_body(const T* op) {
-    if (!op->body.defined()) return depends_on_result{};
+  depends_on_result visit_sym_body(var sym, const stmt& body) {
+    if (!body.defined()) return depends_on_result{};
     depends_on_result sym_deps;
-    var_deps.push_back({op->sym, &sym_deps});
-    op->body.accept(this);
+    var_deps.push_back({sym, &sym_deps});
+    body.accept(this);
     var_deps.pop_back();
     return sym_deps;
   }
@@ -102,7 +101,7 @@ public:
     op->bounds.max.accept(this);
     if (op->step.defined()) op->step.accept(this);
 
-    visit_sym_body(op);
+    visit_sym_body(op->sym, op->body);
   }
 
   void visit(const call_stmt* op) override {
@@ -147,7 +146,7 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
 
@@ -159,7 +158,7 @@ public:
       if (i.stride.defined()) i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    visit_sym_body(op);
+    visit_sym_body(op->sym, op->body);
   }
   void visit(const make_buffer* op) override {
     if (op->base.defined()) op->base.accept(this);
@@ -170,7 +169,7 @@ public:
       if (i.stride.defined()) i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    visit_sym_body(op);
+    visit_sym_body(op->sym, op->body);
   }
   void visit(const crop_buffer* op) override {
     for (const interval_expr& i : op->bounds) {
@@ -178,14 +177,14 @@ public:
       if (i.max.defined()) i.max.accept(this);
     }
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const crop_dim* op) override {
     if (op->bounds.min.defined()) op->bounds.min.accept(this);
     if (op->bounds.max.defined()) op->bounds.max.accept(this);
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const slice_buffer* op) override {
@@ -193,18 +192,18 @@ public:
       if (i.defined()) i.accept(this);
     }
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const slice_dim* op) override {
     op->at.accept(this);
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const transpose* op) override {
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
 };
