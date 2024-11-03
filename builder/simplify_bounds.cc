@@ -45,6 +45,10 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
 // like ((x + c0) / c1) * c2.
 void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
+  lhs.constants[1] = 1;
+  rhs.constants[1] = 1;
+  lhs.constants[2] = 0;
+  rhs.constants[2] = 0;
   // Match the LHS and RHS both to the form ((x + a) / b) * c
   // clang-format off
   if (!(match(lhs, ((x + c2) / c0) * c1, a, eval(c0 > 0)) ||
@@ -67,17 +71,17 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   }
 
   // We have a sum of two such rational expressions.
-  index_t l_c0 = *lhs.matched(c0);
-  index_t l_c1 = lhs.matched(c1, 1);
-  index_t r_c0 = *rhs.matched(c0);
-  index_t r_c1 = rhs.matched(c1, 1) * sign_b;
+  index_t l_c0 = lhs.matched(c0);
+  index_t l_c1 = lhs.matched(c1);
+  index_t r_c0 = rhs.matched(c0);
+  index_t r_c1 = rhs.matched(c1) * sign_b;
   if (l_c1 * r_c0 != -r_c1 * l_c0) {
     // The ratios of the two sides aren't the same, we can't tighten the bounds.
     return;
   }
 
-  index_t l_c2 = lhs.matched(c2, 0);
-  index_t r_c2 = rhs.matched(c2, 0);
+  index_t l_c2 = lhs.matched(c2);
+  index_t r_c2 = rhs.matched(c2);
 
   // The ratios of the two sides are equal. The value of this expression is a periodic pattern.
   // We need to search the period for the min and max.
