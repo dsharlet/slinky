@@ -220,28 +220,13 @@ public:
     }
   }
 
-  expr operator-() const { return 0 - *this; }
+  expr operator-() const;
 
-  expr& operator+=(const expr& r) {
-    *this = *this + r;
-    return *this;
-  }
-  expr& operator-=(const expr& r) {
-    *this = *this - r;
-    return *this;
-  }
-  expr& operator*=(const expr& r) {
-    *this = *this * r;
-    return *this;
-  }
-  expr& operator/=(const expr& r) {
-    *this = *this / r;
-    return *this;
-  }
-  expr& operator%=(const expr& r) {
-    *this = *this % r;
-    return *this;
-  }
+  expr& operator+=(expr r);
+  expr& operator-=(expr r);
+  expr& operator*=(expr r);
+  expr& operator/=(expr r);
+  expr& operator%=(expr r);
 };
 
 expr operator==(expr a, expr b);
@@ -268,13 +253,14 @@ struct interval_expr {
   expr min, max;
 
   interval_expr() = default;
-  explicit interval_expr(const expr& point) : min(point), max(point) {}
+  explicit interval_expr(expr point) : min(std::move(point)), max(min) {}
   interval_expr(expr min, expr max) : min(std::move(min)), max(std::move(max)) {}
 
   bool same_as(const interval_expr& r) const { return min.same_as(r.min) && max.same_as(r.max); }
 
   bool is_point() const { return min.defined() && min.same_as(max); }
-  bool is_point(const expr& x) const { return x.same_as(min) && x.same_as(max); }
+  bool is_point(const expr& x) const { return min.same_as(x) && max.same_as(x); }
+  bool is_point(const base_expr_node* x) const { return min.same_as(x) && max.same_as(x); }
 
   static const interval_expr& all();
   static const interval_expr& none();
@@ -283,10 +269,10 @@ struct interval_expr {
   // An interval_expr x such that x & y == y
   static const interval_expr& intersection_identity();
 
-  const expr& begin() const { return min; }
-  expr end() const { return max + 1; }
-  expr extent() const { return max - min + 1; }
-  expr empty() const { return min > max; }
+  const expr& begin() const;
+  expr end() const;
+  expr extent() const;
+  expr empty() const;
 
   interval_expr& operator*=(const expr& scale);
   interval_expr& operator/=(const expr& scale);
@@ -301,24 +287,24 @@ struct interval_expr {
   // This is the union operator. I don't really like this, but
   // I also don't like that I can't name a function `union`.
   // It does kinda make sense...
-  interval_expr& operator|=(const interval_expr& r);
+  interval_expr& operator|=(interval_expr r);
   // This is intersection, just to be consistent with union.
-  interval_expr& operator&=(const interval_expr& r);
-  interval_expr operator|(const interval_expr& r) const;
-  interval_expr operator&(const interval_expr& r) const;
+  interval_expr& operator&=(interval_expr r);
+  interval_expr operator|(interval_expr r) const;
+  interval_expr operator&(interval_expr r) const;
 };
 
 // Make an interval of the region [begin, end) (like python's range).
-inline interval_expr range(expr begin, const expr& end) { return {std::move(begin), end - 1}; }
+interval_expr range(expr begin, expr end);
 // Make an interval of the region [min, max].
-inline interval_expr bounds(expr min, expr max) { return {std::move(min), std::move(max)}; }
+interval_expr bounds(expr min, expr max);
 // Make an interval of the region [min, min + extent).
-inline interval_expr min_extent(const expr& min, const expr& extent) { return {min, min + extent - 1}; }
+interval_expr min_extent(const expr& min, expr extent);
 // Make a interval of the region [x, x].
-inline interval_expr point(const expr& x) { return {x, x}; }
+inline interval_expr point(expr x) { return interval_expr(std::move(x)); }
 
-inline interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
-inline interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
+interval_expr operator*(const expr& a, const interval_expr& b);
+interval_expr operator+(const expr& a, const interval_expr& b);
 
 expr clamp(expr x, interval_expr b);
 interval_expr select(const expr& c, interval_expr t, interval_expr f);
@@ -341,7 +327,7 @@ public:
 
   static expr make(std::vector<std::pair<var, expr>> lets, expr body);
 
-  static expr make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
+  static expr make(var sym, expr value, expr body);
 
   static constexpr expr_node_type static_type = expr_node_type::let;
 };
@@ -562,16 +548,13 @@ inline const call* as_intrinsic(const expr& x, intrinsic fn) {
 bool is_buffer_intrinsic(intrinsic fn);
 bool is_buffer_dim_intrinsic(intrinsic fn);
 
-inline bool is_positive_infinity(const expr& x) { return as_intrinsic(x, intrinsic::positive_infinity); }
-inline bool is_negative_infinity(const expr& x) { return as_intrinsic(x, intrinsic::negative_infinity); }
-inline bool is_indeterminate(const expr& x) { return as_intrinsic(x, intrinsic::indeterminate); }
-inline int is_infinity(const expr& x) {
-  if (is_positive_infinity(x)) return 1;
-  if (is_negative_infinity(x)) return -1;
-  return 0;
-}
+bool is_positive_infinity(const expr& x);
+bool is_negative_infinity(const expr& x);
+bool is_indeterminate(const expr& x);
+int is_infinity(const expr& x);
 bool is_finite(const expr& x);
 
+SLINKY_ALWAYS_INLINE inline index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
 expr boolean(const expr& x);
 bool is_boolean(const expr& x);
 
@@ -594,40 +577,16 @@ const expr& negative_infinity();
 const expr& infinity(int sign = 1);
 const expr& indeterminate();
 
-inline bool is_positive(const expr& x) {
-  if (is_positive_infinity(x)) return true;
-  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
-    assert(c->args.size() == 1);
-    return is_positive(c->args[0]);
-  }
-  const index_t* c = as_constant(x);
-  return c ? *c > 0 : false;
-}
-
-inline bool is_non_negative(const expr& x) {
-  if (is_positive_infinity(x)) return true;
-  if (as_intrinsic(x, intrinsic::abs)) return true;
-  const index_t* c = as_constant(x);
-  return c ? *c >= 0 : false;
-}
-
-inline bool is_negative(const expr& x) {
-  if (is_negative_infinity(x)) return true;
-  const index_t* c = as_constant(x);
-  return c ? *c < 0 : false;
-}
-
-inline bool is_non_positive(const expr& x) {
-  if (is_negative_infinity(x)) return true;
-  const index_t* c = as_constant(x);
-  return c ? *c <= 0 : false;
-}
+bool is_positive(const expr& x);
+bool is_non_negative(const expr& x);
+bool is_negative(const expr& x);
+bool is_non_positive(const expr& x);
 
 expr abs(expr x);
-expr align_down(expr x, expr a);
-expr align_up(expr x, expr a);
+expr align_down(expr x, const expr& a);
+expr align_up(expr x, const expr& a);
 // Expand the interval to have a min and extent aligned to a multiple of a.
-interval_expr align(interval_expr x, expr a);
+interval_expr align(interval_expr x, const expr& a);
 
 expr and_then(std::vector<expr> args);
 expr or_else(std::vector<expr> args);
@@ -636,7 +595,7 @@ expr buffer_rank(expr buf);
 expr buffer_elem_size(expr buf);
 expr buffer_min(expr buf, expr dim);
 expr buffer_max(expr buf, expr dim);
-expr buffer_extent(expr buf, expr dim);
+expr buffer_extent(const expr& buf, const expr& dim);
 expr buffer_stride(expr buf, expr dim);
 expr buffer_fold_factor(expr buf, expr dim);
 expr buffer_at(expr buf, span<const expr> at);
@@ -750,11 +709,10 @@ public:
   scoped_value_in_symbol_map(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(const scoped_value_in_symbol_map&) = delete;
   scoped_value_in_symbol_map& operator=(scoped_value_in_symbol_map&& other) noexcept {
-    context_ = other.context_;
-    sym_ = other.sym_;
-    old_value_ = std::move(other.old_value_);
-    // Don't let other.~scoped_value_in_symbol_map() unset this value.
-    other.context_ = nullptr;
+    std::swap(context_, other.context_);
+    std::swap(sym_, other.sym_);
+    std::swap(old_value_, other.old_value_);
+    return *this;
   }
 
   const std::optional<T>& old_value() const { return old_value_; }
@@ -772,11 +730,11 @@ public:
 
 template <typename T>
 scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym, T value) {
-  return scoped_value_in_symbol_map<T>(context, sym, value);
+  return scoped_value_in_symbol_map<T>(context, sym, std::move(value));
 }
 template <typename T>
 scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym, std::optional<T> value) {
-  return scoped_value_in_symbol_map<T>(context, sym, value);
+  return scoped_value_in_symbol_map<T>(context, sym, std::move(value));
 }
 
 }  // namespace slinky

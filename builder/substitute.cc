@@ -51,7 +51,7 @@ public:
 
   bool try_match(const base_expr_node* e, const base_expr_node* op) {
     assert(match == 0);
-    if (!e && !op) {
+    if (e == op) {
     } else if (!e) {
       match = -1;
     } else if (!op) {
@@ -70,7 +70,7 @@ public:
 
   bool try_match(const base_stmt_node* s, const base_stmt_node* op) {
     assert(match == 0);
-    if (!s && !op) {
+    if (s == op) {
     } else if (!s) {
       match = -1;
     } else if (!op) {
@@ -307,6 +307,7 @@ public:
 };
 
 bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
+bool match(const base_expr_node* a, const base_expr_node* b) { return compare(a, b) == 0; }
 bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
 bool match(const interval_expr& a, const interval_expr& b) { return match(a.min, b.min) && match(a.max, b.max); }
 bool match(const dim_expr& a, const dim_expr& b) {
@@ -356,7 +357,7 @@ int compare(const stmt& a, const stmt& b) {
 
 namespace {
 
-expr eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
+const expr& eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   switch (fn) {
   case intrinsic::buffer_min: return d.bounds.min;
   case intrinsic::buffer_max: return d.bounds.max;

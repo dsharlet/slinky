@@ -35,18 +35,15 @@ class rule_tester {
   expr_generator<gtest_seeded_mt19937> expr_gen_;
 
   std::array<expr, rewrite::symbol_count> exprs;
-  std::array<index_t, rewrite::constant_count> constants;
   rewrite::match_context m;
 
   void init_match_context() {
     for (std::size_t i = 0; i < m.constants.size(); ++i) {
-      constants[i] = expr_gen_.random_constant();
-      m.constants[i] = &constants[i];
+      m.constants[i] = expr_gen_.random_constant();
     }
     for (std::size_t i = 0; i < rewrite::symbol_count; ++i) {
       exprs[i] = expr_gen_.random_expr(0);
       m.vars[i] = exprs[i].get();
-      m.vars_mask |= 1 << i;
     }
   }
 

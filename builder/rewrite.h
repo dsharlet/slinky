@@ -24,46 +24,53 @@ class pattern_constant;
 
 struct match_context {
   std::array<const base_expr_node*, symbol_count> vars;
-  std::array<const index_t*, constant_count> constants;
-  // A bitset indicating which vars have been matched.
-  int vars_mask;
+  std::array<index_t, constant_count> constants;
   int variant;
   int variant_bits;
 
   template <int N>
-  const base_expr_node* matched(const pattern_wildcard<N>&) const;
+  const base_expr_node* matched(const pattern_wildcard<N>&) const {
+    return vars[N];
+  }
   template <int N>
-  const index_t* matched(const pattern_constant<N>&) const;
-  template <int N>
-  index_t matched(const pattern_constant<N>& p, index_t def) const;
+  index_t matched(const pattern_constant<N>& p) const {
+    return constants[N];
+  }
 };
 
-SLINKY_ALWAYS_INLINE inline bool match(index_t p, const expr& x, match_context&) { return is_constant(x, p); }
-SLINKY_ALWAYS_INLINE inline index_t substitute(index_t p, const match_context&) { return p; }
+template <int matched>
+SLINKY_UNIQUE bool match(index_t p, const expr& x, match_context&) {
+  return is_constant(x, p);
+}
+SLINKY_UNIQUE index_t substitute(index_t p, const match_context&) { return p; }
 
 template <typename T>
 struct pattern_info {
   static constexpr expr_node_type type = T::type;
   static constexpr bool is_boolean = T::is_boolean;
   static constexpr bool is_canonical = T::is_canonical;
+  static constexpr int matched = T::matched;
 };
 template <>
 struct pattern_info<std::int32_t> {
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
 };
 template <>
 struct pattern_info<std::int64_t> {
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
 };
 template <>
 struct pattern_info<bool> {
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = true;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
 };
 #ifdef __EMSCRIPTEN__
 template <>
@@ -71,6 +78,7 @@ struct pattern_info<long> {
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
 };
 #endif
 
@@ -84,11 +92,10 @@ struct pattern_info<pattern_expr> {
   static constexpr expr_node_type type = expr_node_type::none;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 0;
 };
 
-inline std::ostream& operator<<(std::ostream& os, const pattern_expr& e) { return os << e.e; }
-
-SLINKY_ALWAYS_INLINE inline const expr& substitute(const pattern_expr& p, const match_context& ctx) { return p.e; }
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_expr& e) { return os << e.e; }
 
 template <int N>
 class pattern_wildcard {
@@ -96,28 +103,26 @@ public:
   static constexpr expr_node_type type = expr_node_type::none;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 1 << N;
 };
 
-template <int N>
-inline bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
-  if (ctx.vars_mask & (1 << N)) {
-    // Try pointer comparison first to short circuit the full match.
-    return x.get() == ctx.vars[N] || slinky::compare(x.get(), ctx.vars[N]) == 0;
+template <int matched, int N>
+SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, const expr& x, match_context& ctx) {
+  if (matched & (1 << N)) {
+    return slinky::match(x.get(), ctx.vars[N]);
   } else {
-    ctx.vars_mask |= (1 << N);
     ctx.vars[N] = x.get();
     return true;
   }
 }
 
 template <int N>
-inline const base_expr_node* substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
-  assert(ctx.vars_mask & (1 << N));
+SLINKY_UNIQUE const base_expr_node* substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
   return ctx.vars[N];
 }
 
 template <int N>
-std::ostream& operator<<(std::ostream& os, const pattern_wildcard<N>&) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_wildcard<N>&) {
   static constexpr char names[] = "xyzwuv";
   return os << names[N];
 }
@@ -128,15 +133,16 @@ public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = true;
+  static constexpr int matched = 1 << (symbol_count + N);
 };
 
-template <int N>
-inline bool match(const pattern_constant<N>& p, const expr& x, match_context& ctx) {
+template <int matched, int N>
+SLINKY_UNIQUE bool match(const pattern_constant<N>& p, const expr& x, match_context& ctx) {
   if (const constant* c = x.as<constant>()) {
-    if (ctx.constants[N]) {
-      return *ctx.constants[N] == c->value;
+    if (matched & (1 << (symbol_count + N))) {
+      return ctx.constants[N] == c->value;
     } else {
-      ctx.constants[N] = &c->value;
+      ctx.constants[N] = c->value;
       return true;
     }
   }
@@ -144,27 +150,13 @@ inline bool match(const pattern_constant<N>& p, const expr& x, match_context& ct
 }
 
 template <int N>
-inline index_t substitute(const pattern_constant<N>& p, const match_context& ctx) {
-  assert(ctx.constants[N]);
-  return *ctx.constants[N];
+SLINKY_UNIQUE index_t substitute(const pattern_constant<N>& p, const match_context& ctx) {
+  return ctx.constants[N];
 }
 
 template <int N>
-std::ostream& operator<<(std::ostream& os, const pattern_constant<N>&) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_constant<N>&) {
   return os << 'c' << N;
-}
-
-template <int N>
-inline const base_expr_node* match_context::matched(const pattern_wildcard<N>& p) const {
-  return vars[N];
-}
-template <int N>
-inline const index_t* match_context::matched(const pattern_constant<N>& p) const {
-  return constants[N];
-}
-template <int N>
-inline index_t match_context::matched(const pattern_constant<N>& p, index_t def) const {
-  return constants[N] ? *constants[N] : def;
 }
 
 template <typename T, typename A, typename B>
@@ -181,45 +173,46 @@ struct pattern_info<pattern_binary<T, A, B>> {
   static constexpr bool is_canonical =
       pattern_info<A>::is_canonical && pattern_info<B>::is_canonical &&
       (!T::commutative || !should_commute(pattern_info<A>::type, pattern_info<B>::type));
+  static constexpr int matched = pattern_info<A>::matched | pattern_info<B>::matched;
+
+  static constexpr expr_node_type A_type = pattern_info<A>::type;
+  static constexpr expr_node_type B_type = pattern_info<B>::type;
+
+  static constexpr bool could_commute =
+      T::commutative && (A_type == expr_node_type::none || B_type == expr_node_type::none || A_type == B_type);
 };
 
-template <typename T, typename A, typename B>
-bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
-  int this_bit = -1;
-  if (T::commutative) {
-    constexpr expr_node_type ta = pattern_info<A>::type;
-    constexpr expr_node_type tb = pattern_info<B>::type;
-    if (ta == expr_node_type::none || tb == expr_node_type::none || ta == tb) {
-      // This is a commutative operation and we can't canonicalize the ordering.
-      // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
-      this_bit = ctx.variant_bits++;
+template <int matched, typename T, typename A, typename B>
+SLINKY_UNIQUE bool match_binary(const pattern_binary<T, A, B>& p, const expr& a, const expr& b, match_context& ctx) {
+  if (pattern_info<pattern_binary<T, A, B>>::could_commute) {
+    // This is a commutative operation and we can't canonicalize the ordering.
+    // Remember which bit in the variant index is ours, and increment the bit for the next commutative node.
+    const int this_bit = ctx.variant_bits++;
+    if ((ctx.variant & (1 << this_bit)) != 0) {
+      // We should commute in this variant.
+      return match<matched>(p.a, b, ctx) && match<matched | pattern_info<A>::matched>(p.b, a, ctx);
     }
   }
-  if (this_bit >= 0 && (ctx.variant & (1 << this_bit)) != 0) {
-    // We should commute in this variant.
-    return match(p.a, b, ctx) && match(p.b, a, ctx);
-  } else {
-    return match(p.a, a, ctx) && match(p.b, b, ctx);
-  }
+  return match<matched>(p.a, a, ctx) && match<matched | pattern_info<A>::matched>(p.b, b, ctx);
 }
 
-template <typename T, typename A, typename B>
-bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
+template <int matched, typename T, typename A, typename B>
+SLINKY_UNIQUE bool match(const pattern_binary<T, A, B>& p, const expr& x, match_context& ctx) {
   if (const T* t = x.as<T>()) {
-    return match_binary(p, t->a, t->b, ctx);
+    return match_binary<matched>(p, t->a, t->b, ctx);
   } else {
     return false;
   }
 }
 
-template <typename T, typename A, typename B>
-bool match(
+template <int matched, typename T, typename A, typename B>
+SLINKY_UNIQUE bool match(
     const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
-  return match_binary(p, x.a.e, x.b.e, ctx);
+  return match_binary<matched>(p, x.a.e, x.b.e, ctx);
 }
 
 template <typename T, typename A, typename B>
-auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
+SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
   return make_binary<T>(substitute(p.a, ctx), substitute(p.b, ctx));
 }
 
@@ -249,25 +242,26 @@ public:
   static constexpr expr_node_type type = T::static_type;
   static constexpr bool is_boolean = is_boolean_node(T::static_type);
   static constexpr bool is_canonical = pattern_info<A>::is_canonical;
+  static constexpr int matched = pattern_info<A>::matched;
   A a;
 };
 
-template <typename T, typename A>
-bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
+template <int matched, typename T, typename A>
+SLINKY_UNIQUE bool match(const pattern_unary<T, A>& p, const expr& x, match_context& ctx) {
   if (const T* t = x.as<T>()) {
-    return match(p.a, t->a, ctx);
+    return match<matched>(p.a, t->a, ctx);
   } else {
     return false;
   }
 }
 
-template <typename T, typename A>
-bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x, match_context& ctx) {
-  return match(p.a, x.a.e, ctx);
+template <int matched, typename T, typename A>
+SLINKY_UNIQUE bool match(const pattern_unary<T, A>& p, const pattern_unary<T, pattern_expr>& x, match_context& ctx) {
+  return match<matched>(p.a, x.a.e, ctx);
 }
 
 template <typename T, typename A>
-std::ostream& operator<<(std::ostream& os, const pattern_unary<T, A>& p) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_unary<T, A>& p) {
   switch (T::static_type) {
   case logical_not::static_type: return os << '!' << p.a;
   default: std::abort();
@@ -275,16 +269,16 @@ std::ostream& operator<<(std::ostream& os, const pattern_unary<T, A>& p) {
 }
 
 template <typename T>
-expr make_unary(expr a) {
+SLINKY_UNIQUE expr make_unary(expr a) {
   return T::make(std::move(a));
 }
 // clang-format off
-template <typename T> index_t make_unary(index_t a);
+template <typename T> SLINKY_UNIQUE index_t make_unary(index_t a);
 template <> inline index_t make_unary<logical_not>(index_t a) { return a == 0 ? 1 : 0; }
 // clang-format on
 
 template <typename T, typename A>
-auto substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
+SLINKY_UNIQUE auto substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
   return make_unary<T>(substitute(p.a, ctx));
 }
 
@@ -295,33 +289,37 @@ public:
   static constexpr bool is_boolean = pattern_info<T>::is_boolean && pattern_info<F>::is_boolean;
   static constexpr bool is_canonical =
       pattern_info<C>::is_canonical && pattern_info<T>::is_canonical && pattern_info<F>::is_canonical;
+  static constexpr int matched = pattern_info<C>::matched | pattern_info<T>::matched | pattern_info<F>::matched;
   C c;
   T t;
   F f;
 };
 
-template <typename C, typename T, typename F>
-bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) {
+template <int matched, typename C, typename T, typename F>
+SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p, const expr& x, match_context& ctx) {
   if (const class select* s = x.as<class select>()) {
-    return match(p.c, s->condition, ctx) && match(p.t, s->true_value, ctx) && match(p.f, s->false_value, ctx);
+    return match<matched>(p.c, s->condition, ctx) &&
+           match<matched | pattern_info<C>::matched>(p.t, s->true_value, ctx) &&
+           match<matched | pattern_info<C>::matched | pattern_info<T>::matched>(p.f, s->false_value, ctx);
   } else {
     return false;
   }
 }
 
-template <typename C, typename T, typename F>
-bool match(const pattern_select<C, T, F>& p, const pattern_select<pattern_expr, pattern_expr, pattern_expr>& x,
-    match_context& ctx) {
-  return match(p.c, x.c.e, ctx) && match(p.t, x.t.e, ctx) && match(p.f, x.f.e, ctx);
+template <int matched, typename C, typename T, typename F>
+SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p,
+    const pattern_select<pattern_expr, pattern_expr, pattern_expr>& x, match_context& ctx) {
+  return match<matched>(p.c, x.c.e, ctx) && match<matched | pattern_info<C>::matched>(p.t, x.t.e, ctx) &&
+         match<matched | pattern_info<C>::matched | pattern_info<T>::matched>(p.f, x.f.e, ctx);
 }
 
 template <typename C, typename T, typename F>
-expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
+SLINKY_UNIQUE expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
   return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
 }
 
 template <typename C, typename T, typename F>
-std::ostream& operator<<(std::ostream& os, const pattern_select<C, T, F>& p) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_select<C, T, F>& p) {
   return os << "select(" << p.c << ", " << p.t << ", " << p.f << ")";
 }
 
@@ -331,45 +329,55 @@ public:
   static constexpr expr_node_type type = expr_node_type::call;
   static constexpr bool is_boolean = false;
   static constexpr bool is_canonical = (... && pattern_info<Args>::is_canonical);
+  static constexpr int matched = (0 | ... | pattern_info<Args>::matched);
   slinky::intrinsic fn;
   std::tuple<Args...> args;
 };
 
-template <typename T, std::size_t... Is>
-bool match_tuple(const T& t, const std::vector<expr>& x, match_context& ctx, std::index_sequence<Is...>) {
-  return (... && match(std::get<Is>(t), x[Is], ctx));
+template <int matched>
+SLINKY_UNIQUE bool match_tuple(const std::tuple<>& t, const std::vector<expr>& x, match_context& ctx) {
+  return true;
+}
+template <int matched, typename A>
+SLINKY_UNIQUE bool match_tuple(const std::tuple<A>& t, const std::vector<expr>& x, match_context& ctx) {
+  return match<matched>(std::get<0>(t), x[0], ctx);
+}
+template <int matched, typename A, typename B>
+SLINKY_UNIQUE bool match_tuple(const std::tuple<A, B>& t, const std::vector<expr>& x, match_context& ctx) {
+  return match<matched>(std::get<0>(t), x[0], ctx) &&
+         match<matched | pattern_info<A>::matched>(std::get<1>(t), x[1], ctx);
 }
 
-template <typename T, std::size_t... Is>
-std::vector<expr> substitute_tuple(const T& t, const match_context& ctx, std::index_sequence<Is...>) {
-  return {substitute(std::get<Is>(t), ctx)...};
-}
-
-template <typename... Args>
-bool match(const pattern_call<Args...>& p, const expr& x, match_context& ctx) {
+template <int matched, typename... Args>
+SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, const expr& x, match_context& ctx) {
   if (const call* c = x.as<call>()) {
     if (c->intrinsic == p.fn) {
-      constexpr std::size_t ArgsSize = sizeof...(Args);
-      assert(c->args.size() == ArgsSize);
-      return match_tuple(p.args, c->args, ctx, std::make_index_sequence<ArgsSize>());
+      assert(c->args.size() == sizeof...(Args));
+      return match_tuple<matched>(p.args, c->args, ctx);
     }
   }
   return false;
 }
 
-template <typename... Args>
-expr substitute(const pattern_call<Args...>& p, const match_context& ctx) {
-  constexpr std::size_t ArgsSize = sizeof...(Args);
-  return call::make(p.fn, substitute_tuple(p.args, ctx, std::make_index_sequence<ArgsSize>()));
+SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) {
+  return call::make(p.fn, {});
+}
+template <typename A>
+SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
+}
+template <typename A, typename B>
+SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx), substitute(std::get<1>(p.args), ctx)});
 }
 
-inline std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
 template <typename A>
-std::ostream& operator<<(std::ostream& os, const pattern_call<A>& p) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<A>& p) {
   return os << p.fn << "(" << std::get<0>(p.args) << ")";
 }
 template <typename A, typename B>
-std::ostream& operator<<(std::ostream& os, const pattern_call<A, B>& p) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<A, B>& p) {
   return os << p.fn << "(" << std::get<0>(p.args) << ", " << std::get<1>(p.args) << ")";
 }
 
@@ -383,17 +391,17 @@ public:
 };
 
 template <typename T, typename Fn>
-bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
+SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
   return r.fn(substitute(r.a, ctx));
 }
 
 template <typename T, typename Fn>
-replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
+SLINKY_UNIQUE replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
   return {t, fn};
 }
 
 template <typename T, typename Fn>
-std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>&) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>&) {
   return os << "<unknown predicate>";
 }
 
@@ -407,12 +415,12 @@ public:
 };
 
 template <typename T>
-index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
+SLINKY_UNIQUE index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
   return substitute(r.a, ctx);
 }
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const replacement_eval<T>& r) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_eval<T>& r) {
   return os << r.a;
 }
 
@@ -426,14 +434,12 @@ public:
 };
 
 template <typename T>
-expr substitute(const replacement_boolean<T>& r, const match_context& ctx) {
-  expr result = substitute(r.a, ctx);
-  if (!is_boolean(result)) result = result != 0;
-  return result;
+SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
+  return boolean(substitute(r.a, ctx));
 }
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const replacement_boolean<T>& r) {
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_boolean<T>& r) {
   return os << "boolean(" << r.a << ")";
 }
 
@@ -469,117 +475,116 @@ template <typename T, typename Fn, typename... Ts>
 struct enable_pattern_ops<replacement_predicate<T, Fn>, Ts...> { using type = std::true_type; };
 
 template <typename A, bool = typename enable_pattern_ops<A>::type()>
-auto operator!(const A& a) { return pattern_unary<logical_not, A>{a}; }
+SLINKY_UNIQUE auto operator!(const A& a) { return pattern_unary<logical_not, A>{a}; }
 template <typename A, bool = typename enable_pattern_ops<A>::type()>
-auto operator-(const A& a) { return pattern_binary<sub, index_t, A>{0, a}; }
+SLINKY_UNIQUE auto operator-(const A& a) { return pattern_binary<sub, index_t, A>{0, a}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator+(const A& a, const B& b) { return pattern_binary<add, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator+(const A& a, const B& b) { return pattern_binary<add, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator-(const A& a, const B& b) { return pattern_binary<sub, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator-(const A& a, const B& b) { return pattern_binary<sub, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator*(const A& a, const B& b) { return pattern_binary<mul, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator*(const A& a, const B& b) { return pattern_binary<mul, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator/(const A& a, const B& b) { return pattern_binary<div, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator/(const A& a, const B& b) { return pattern_binary<div, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator%(const A& a, const B& b) { return pattern_binary<mod, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator%(const A& a, const B& b) { return pattern_binary<mod, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator==(const A& a, const B& b) { return pattern_binary<equal, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator==(const A& a, const B& b) { return pattern_binary<equal, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator!=(const A& a, const B& b) { return pattern_binary<not_equal, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator!=(const A& a, const B& b) { return pattern_binary<not_equal, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator<(const A& a, const B& b) { return pattern_binary<less, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator<(const A& a, const B& b) { return pattern_binary<less, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator<=(const A& a, const B& b) { return pattern_binary<less_equal, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator<=(const A& a, const B& b) { return pattern_binary<less_equal, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator>(const A& a, const B& b) { return pattern_binary<less, B, A>{b, a}; }
+SLINKY_UNIQUE auto operator>(const A& a, const B& b) { return pattern_binary<less, B, A>{b, a}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator>=(const A& a, const B& b) { return pattern_binary<less_equal, B, A>{b, a}; }
+SLINKY_UNIQUE auto operator>=(const A& a, const B& b) { return pattern_binary<less_equal, B, A>{b, a}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator&&(const A& a, const B& b) { return pattern_binary<logical_and, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator&&(const A& a, const B& b) { return pattern_binary<logical_and, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto operator||(const A& a, const B& b) { return pattern_binary<logical_or, A, B>{a, b}; }
+SLINKY_UNIQUE auto operator||(const A& a, const B& b) { return pattern_binary<logical_or, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto min(const A& a, const B& b) { return pattern_binary<class min, A, B>{a, b}; }
+SLINKY_UNIQUE auto min(const A& a, const B& b) { return pattern_binary<class min, A, B>{a, b}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
-auto max(const A& a, const B& b) { return pattern_binary<class max, A, B>{a, b}; }
+SLINKY_UNIQUE auto max(const A& a, const B& b) { return pattern_binary<class max, A, B>{a, b}; }
 template <typename C, typename T, typename F, bool = typename enable_pattern_ops<C, T, F>::type()>
-auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>{c, t, f}; }
+SLINKY_UNIQUE auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>{c, t, f}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
+SLINKY_UNIQUE auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-auto boolean(const T& x) { return replacement_boolean<T>{x}; }
-inline auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
-inline auto negative_infinity() { return pattern_call<>{intrinsic::negative_infinity, {}}; }
-inline auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
+SLINKY_UNIQUE auto boolean(const T& x) { return replacement_boolean<T>{x}; }
+SLINKY_UNIQUE auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
+SLINKY_UNIQUE auto negative_infinity() { return pattern_call<>{intrinsic::negative_infinity, {}}; }
+SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
 
-template <typename T>
-auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
-template <typename T>
-auto is_constant(const T& x) { return make_predicate(x, slinky::as_constant); }
-template <typename T>
-auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
-template <typename T>
-auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, slinky::as_constant); }
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
 // clang-format on
 
 template <int N1, int N2>
 using buffer_dim_meta = pattern_call<pattern_wildcard<N1>, pattern_wildcard<N2>>;
 
 template <int N1, int N2>
-inline auto buffer_min(const pattern_wildcard<N1>& buf, const pattern_wildcard<N2>& dim) {
+SLINKY_UNIQUE auto buffer_min(pattern_wildcard<N1> buf, pattern_wildcard<N2> dim) {
   return buffer_dim_meta<N1, N2>{intrinsic::buffer_min, {buf, dim}};
 }
 template <int N1, int N2>
-inline auto buffer_max(const pattern_wildcard<N1>& buf, const pattern_wildcard<N2>& dim) {
+SLINKY_UNIQUE auto buffer_max(pattern_wildcard<N1> buf, pattern_wildcard<N2> dim) {
   return buffer_dim_meta<N1, N2>{intrinsic::buffer_max, {buf, dim}};
 }
 
 template <typename T>
-auto eval(const T& x) {
+SLINKY_UNIQUE auto eval(const T& x) {
   return replacement_eval<T>{x};
 }
 
-template <typename Pattern, typename T>
-bool match_any_variant(const Pattern& p, const T& x, match_context& ctx) {
+template <typename Pattern, typename Target>
+SLINKY_UNIQUE bool match_any_variant(Pattern p, const Target& x, match_context& ctx) {
   static_assert(pattern_info<Pattern>::is_canonical);
 
-  // We'll find out how many variant bits we have when we try to match.
+  // We'll find out how many variants we have when we try to match.
   // This can grow if we fail early due to a commutative variant that doesn't match near the root
   // of the expression, so we track the max we've seen.
-  int max_variant_bits = 0;
-  for (int variant = 0; variant < (1 << max_variant_bits); ++variant) {
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.variant = variant;
-    if (match(p, x, ctx)) {
+  int variant_count = 1;
+  for (ctx.variant = 0; ctx.variant < variant_count; ++ctx.variant) {
+    ctx.variant_bits = 0;
+    if (match<0>(p, x, ctx)) {
       return true;
     }
-    max_variant_bits = std::max(max_variant_bits, ctx.variant_bits);
+    variant_count = std::max(variant_count, 1 << ctx.variant_bits);
   }
   return false;
 }
 
-template <typename Pattern, typename T, typename Predicate>
-bool match(match_context& ctx, const Pattern& p, const T& x, const Predicate& pr) {
+template <typename Pattern, typename Target, typename Predicate>
+SLINKY_UNIQUE bool match(match_context& ctx, Pattern p, const Target& x, Predicate pr) {
   return match_any_variant(p, x, ctx) && substitute(pr, ctx);
 }
 
-template <typename Pattern, typename T>
-bool match(match_context& ctx, const Pattern& p, const T& x) {
+template <typename Pattern, typename Target>
+SLINKY_UNIQUE bool match(match_context& ctx, Pattern p, const Target& x) {
   return match_any_variant(p, x, ctx);
 }
 
-template <typename T>
+template <typename Target>
 class base_rewriter {
-  T x;
+  Target x;
 
 public:
   expr result;
 
-  base_rewriter(T x) : x(std::move(x)) {}
+  base_rewriter(Target x) : x(std::move(x)) {}
   base_rewriter(const base_rewriter&) = delete;
 
   template <typename Pattern, typename Replacement>
-  bool operator()(const Pattern& p, const Replacement& r) {
+  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r) {
     static_assert(pattern_info<Pattern>::is_canonical);
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
@@ -592,7 +597,7 @@ public:
   }
 
   template <typename Pattern, typename Replacement, typename Predicate>
-  bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr) {
+  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r, Predicate pr) {
     static_assert(pattern_info<Pattern>::is_canonical);
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
@@ -613,9 +618,9 @@ public:
   using base_rewriter::operator();
 };
 
-template <typename T>
-base_rewriter<T> make_rewriter(T x) {
-  return base_rewriter<T>(std::move(x));
+template <typename Target>
+SLINKY_UNIQUE base_rewriter<Target> make_rewriter(Target x) {
+  return base_rewriter<Target>(std::move(x));
 }
 
 }  // namespace rewrite

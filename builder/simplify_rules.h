@@ -70,8 +70,6 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
       apply(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
       apply(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      apply(min(x, min(y, x + z)), min(y, min(x, x + z))) ||
-      apply(min(x, min(y, x - z)), min(y, min(x, x - z))) ||
       apply(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
       apply(min(x + z, y + z), z + min(x, y)) ||
       apply(min(x - z, y - z), min(x, y) - z) ||
@@ -374,8 +372,8 @@ bool apply_sub_rules(Fn&& apply) {
       apply(c2 - max(x + c0, y + c1), min(eval(c2 - c0) - x, eval(c2 - c1) - y)) ||
       apply(c2 - min(x + c0, c1 - y), max(y + eval(c2 - c1), eval(c2 - c0) - x)) ||
       apply(c2 - max(x + c0, c1 - y), min(y + eval(c2 - c1), eval(c2 - c0) - x)) ||
-      apply(c2 - min(x, c1 - y), max(y, c2 - x), eval(c1 == c2)) ||
-      apply(c2 - max(x, c1 - y), min(y, c2 - x), eval(c1 == c2)) ||
+      apply(z - min(x, z - y), max(y, z - x)) ||
+      apply(z - max(x, z - y), min(y, z - x)) ||
 
       apply(min(x, y + z) - z, min(y, x - z)) ||
       apply(max(x, y + z) - z, max(y, x - z)) ||
@@ -522,12 +520,12 @@ bool apply_less_rules(Fn&& apply) {
       apply(x + y < z + (x/c0)*c0, y + x%c0 < z, eval(c0 > 0)) ||
       apply(x + y < (x/c0)*c0, y + x%c0 < 0, eval(c0 > 0)) ||
       apply(x < z + (x/c0)*c0, x%c0 < z, eval(c0 > 0)) ||
-      apply(x < (x/c0)*c0, x%c0 < 0, eval(c0 > 0)) ||
+      apply(x < (x/c0)*c0, false, eval(c0 > 0)) ||
     
       apply(y + (x/c0)*c0 < x + z, y < z + x%c0, eval(c0 > 0)) ||
       apply((x/c0)*c0 < x + z, 0 < z + x%c0, eval(c0 > 0)) ||
       apply(y + (x/c0)*c0 < x, y < x%c0, eval(c0 > 0)) ||
-      apply((x/c0)*c0 < x, 0 < x%c0, eval(c0 > 0)) ||
+      apply((x/c0)*c0 < x, boolean(x%c0), eval(c0 > 0)) ||
 
       apply(x%c0 < c1, true, eval(c0 > 0 && c0 <= c1)) ||
       apply(x%c0 < c1, false, eval(c0 > 0 && c1 <= 0)) ||
@@ -719,8 +717,6 @@ bool apply_equal_rules(Fn&& apply) {
       apply(min(x, c0) == c1, false, eval(c0 < c1)) ||
       apply(max(x, c0) == c1, x == c1, eval(c0 < c1)) ||
       apply(min(x, c0) == c1, x == c1, eval(c0 > c1)) ||
-      apply(max(x, c0) == c1, x <= c0, eval(c0 == c1)) ||
-      apply(min(x, c0) == c1, c0 <= x, eval(c0 == c1)) ||
 
       false;
 }
@@ -745,7 +741,11 @@ bool apply_logical_and_rules(Fn&& apply) {
 
       apply(x && !x, false) ||
       apply(x == y && x != y, false) ||
+      apply(x == y && x < y, false) ||
+      apply(x == y && x <= y, x == y) ||
       apply(x == y && (z && x != y), false) ||
+      apply(x != y && x < y, x < y) ||
+      apply(x != y && x <= y, x < y) ||
       apply(x != y && (z && x == y), false) ||
       apply(x == c1 && x != c0, x == c1, eval(c0 != c1)) ||
       apply(x == c0 && x == c1, false, eval(c0 != c1)) ||
@@ -781,7 +781,6 @@ bool apply_logical_and_rules(Fn&& apply) {
 
       // Above, we have rules for combinations of < and <=, or == and !=. Here, we have a mix of both.
       apply(x != c0 && x <= c1, x <= c1, eval(c0 > c1)) ||
-      apply(x != c0 && x <= c1, x < c1, eval(c0 == c1)) ||
       apply(x != c0 && x < c1, x < c1, eval(c0 > c1)) ||
       apply(x == c0 && x <= c1, x == c0, eval(c0 <= c1)) ||
       apply(x == c0 && x < c1, x == c0, eval(c0 < c1)) ||
@@ -789,7 +788,6 @@ bool apply_logical_and_rules(Fn&& apply) {
       apply(x == c0 && x < c1, false, eval(c0 >= c1)) ||
 
       apply(x != c0 && c1 <= x, c1 <= x, eval(c0 < c1)) ||
-      apply(x != c0 && c1 <= x, c1 < x, eval(c0 == c1)) ||
       apply(x != c0 && c1 < x, c1 < x, eval(c0 < c1)) ||
       apply(x == c0 && c1 <= x, x == c0, eval(c0 >= c1)) ||
       apply(x == c0 && c1 < x, x == c0, eval(c0 > c1)) ||
@@ -822,6 +820,8 @@ bool apply_logical_or_rules(Fn&& apply) {
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_Or.cpp#L59-L68
       apply(x || !x, true) ||
       apply(x == y || x != y, true) ||
+      apply(x == y || x < y, x <= y) ||
+      apply(x == y || x <= y, x <= y) ||
       apply(x == y || (z || x != y), true) ||
       apply(x != y || (z || x == y), true) ||
       apply(x == c1 || x != c0, x != c0, eval(c0 != c1)) ||
@@ -859,7 +859,6 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x != c0 || x < c1, x != c0, eval(c0 >= c1)) ||
       apply(x == c0 || x <= c1, x <= c1, eval(c0 <= c1)) ||
       apply(x == c0 || x < c1, x < c1, eval(c0 < c1)) ||
-      apply(x == c0 || x < c1, x <= c1, eval(c0 == c1)) ||
 
       apply(x != c0 || c1 <= x, true, eval(c0 >= c1)) ||
       apply(x != c0 || c1 < x, true, eval(c0 > c1)) ||
@@ -867,7 +866,6 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x != c0 || c1 < x, x != c0, eval(c0 <= c1)) ||
       apply(x == c0 || c1 <= x, c1 <= x, eval(c0 >= c1)) ||
       apply(x == c0 || c1 < x, c1 < x, eval(c0 > c1)) ||
-      apply(x == c0 || c1 < x, c1 <= x, eval(c0 == c1)) ||
 
       // TODO: These rules are just a few of many similar possible rules. We should find a way to get at these
       // some other way.

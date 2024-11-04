@@ -10,7 +10,7 @@ namespace slinky {
 
 std::string to_string(var sym) { return "<" + std::to_string(sym.id) + ">"; }
 
-std::string to_string(memory_type type) {
+const char* to_string(memory_type type) {
   switch (type) {
   case memory_type::stack: return "stack";
   case memory_type::heap: return "heap";
@@ -18,7 +18,7 @@ std::string to_string(memory_type type) {
   }
 }
 
-std::string to_string(intrinsic fn) {
+const char* to_string(intrinsic fn) {
   switch (fn) {
   case intrinsic::positive_infinity: return "oo";
   case intrinsic::negative_infinity: return "-oo";
@@ -166,22 +166,21 @@ public:
     *this << indent() << "}\n";
   }
 
-  template <typename T>
-  void visit_bin_op(const T* op, const char* s) {
-    *this << "(" << op->a << s << op->b << ")";
+  void visit_bin_op(const expr& a, const char* s, const expr& b) {
+    *this << "(" << a << s << b << ")";
   }
 
-  void visit(const add* op) override { visit_bin_op(op, " + "); }
-  void visit(const sub* op) override { visit_bin_op(op, " - "); }
-  void visit(const mul* op) override { visit_bin_op(op, " * "); }
-  void visit(const div* op) override { visit_bin_op(op, " / "); }
-  void visit(const mod* op) override { visit_bin_op(op, " % "); }
-  void visit(const equal* op) override { visit_bin_op(op, " == "); }
-  void visit(const not_equal* op) override { visit_bin_op(op, " != "); }
-  void visit(const less* op) override { visit_bin_op(op, " < "); }
-  void visit(const less_equal* op) override { visit_bin_op(op, " <= "); }
-  void visit(const logical_and* op) override { visit_bin_op(op, " && "); }
-  void visit(const logical_or* op) override { visit_bin_op(op, " || "); }
+  void visit(const add* op) override { visit_bin_op(op->a, " + ", op->b); }
+  void visit(const sub* op) override { visit_bin_op(op->a, " - ", op->b); }
+  void visit(const mul* op) override { visit_bin_op(op->a, " * ", op->b); }
+  void visit(const div* op) override { visit_bin_op(op->a, " / ", op->b); }
+  void visit(const mod* op) override { visit_bin_op(op->a, " % ", op->b); }
+  void visit(const equal* op) override { visit_bin_op(op->a, " == ", op->b); }
+  void visit(const not_equal* op) override { visit_bin_op(op->a, " != ", op->b); }
+  void visit(const less* op) override { visit_bin_op(op->a, " < ", op->b); }
+  void visit(const less_equal* op) override { visit_bin_op(op->a, " <= ", op->b); }
+  void visit(const logical_and* op) override { visit_bin_op(op->a, " && ", op->b); }
+  void visit(const logical_or* op) override { visit_bin_op(op->a, " || ", op->b); }
   void visit(const logical_not* op) override { *this << "!" << op->a; }
 
   void visit(const class min* op) override { *this << "min(" << op->a << ", " << op->b << ")"; }
