@@ -14,7 +14,7 @@ namespace slinky {
 // and mod are taken from:
 // https://github.com/halide/Halide/blob/1a0552bb6101273a0e007782c07e8dafe9bc5366/src/CodeGen_Internal.cpp#L358-L408
 template <typename T>
-static T euclidean_div(T a, T b, T define_b_zero = 0) {
+T euclidean_div(T a, T b, T define_b_zero = 0) {
   if (b == 0) {
     return define_b_zero;
   }
@@ -26,14 +26,14 @@ static T euclidean_div(T a, T b, T define_b_zero = 0) {
 }
 
 template <typename T>
-static T euclidean_mod_positive_modulus(T a, T b) {
+T euclidean_mod_positive_modulus(T a, T b) {
   assert(b > 0);
   T r = a % b;
   return r >= 0 ? r : r + b;
 }
 
 template <typename T>
-static T euclidean_mod(T a, T b, T define_b_zero = 0) {
+T euclidean_mod(T a, T b, T define_b_zero = 0) {
   if (b == 0) {
     return define_b_zero;
   }
@@ -43,36 +43,36 @@ static T euclidean_mod(T a, T b, T define_b_zero = 0) {
 
 // Compute a / b, rounding down.
 template <typename T>
-static T floor_div(T a, T b) {
+T floor_div(T a, T b) {
   return euclidean_div(a, b);
 }
 
 // Compute a / b, rounding to nearest.
 template <typename T>
-static T round_div(T a, T b) {
+T round_div(T a, T b) {
   return floor_div(a + (b >> 1), b);
 }
 
 // Compute a / b, rounding upwards.
 template <typename T>
-static T ceil_div(T a, T b) {
+T ceil_div(T a, T b) {
   return floor_div(a + b - 1, b);
 }
 
 // Align x up to the next multiplie of n.
 template <typename T>
-static T align_up(T x, T n) {
+T align_up(T x, T n) {
   return ceil_div(x, n) * n;
 }
 
 // Align x down to the next multiplie of n.
 template <typename T>
-static T align_down(T x, T n) {
+T align_down(T x, T n) {
   return floor_div(x, n) * n;
 }
 
 template <typename T>
-static T saturate_add(T a, T b) {
+T saturate_add(T a, T b) {
   T result;
   if (!__builtin_add_overflow(a, b, &result)) {
     return result;
@@ -82,7 +82,7 @@ static T saturate_add(T a, T b) {
 }
 
 template <typename T>
-static T saturate_sub(T a, T b) {
+T saturate_sub(T a, T b) {
   T result;
   if (!__builtin_sub_overflow(a, b, &result)) {
     return result;
@@ -91,7 +91,7 @@ static T saturate_sub(T a, T b) {
   }
 }
 template <typename T>
-static T saturate_negate(T x) {
+T saturate_negate(T x) {
   if (x == std::numeric_limits<T>::min()) {
     return std::numeric_limits<T>::max();
   } else {
@@ -100,12 +100,12 @@ static T saturate_negate(T x) {
 }
 
 template <typename T>
-static int sign(T x) {
+int sign(T x) {
   return x >= 0 ? 1 : -1;
 }
 
 template <typename T>
-static T saturate_mul(T a, T b) {
+T saturate_mul(T a, T b) {
   T result;
   if (!__builtin_mul_overflow(a, b, &result)) {
     return result;
@@ -115,7 +115,7 @@ static T saturate_mul(T a, T b) {
 }
 
 template <typename T>
-static T saturate_div(T a, T b) {
+T saturate_div(T a, T b) {
   // This is safe from overflow unless a is max and b is -1.
   if (b == -1 && a == std::numeric_limits<T>::min()) {
     return std::numeric_limits<T>::max();
@@ -125,7 +125,7 @@ static T saturate_div(T a, T b) {
 }
 
 template <typename T>
-static T saturate_mod(T a, T b) {
+T saturate_mod(T a, T b) {
   // Can this overflow...?
   if (b == -1) {
     return 0;
@@ -135,19 +135,19 @@ static T saturate_mod(T a, T b) {
 }
 
 template <class T>
-static bool add_overflows(T a, T b) {
+bool add_overflows(T a, T b) {
   T dummy;
   return __builtin_add_overflow(a, b, &dummy);
 }
 
 template <class T>
-static bool sub_overflows(T a, T b) {
+bool sub_overflows(T a, T b) {
   T dummy;
   return __builtin_sub_overflow(a, b, &dummy);
 }
 
 template <class T>
-static bool mul_overflows(T a, T b) {
+bool mul_overflows(T a, T b) {
   T dummy;
   return __builtin_mul_overflow(a, b, &dummy);
 }
@@ -156,7 +156,7 @@ static bool mul_overflows(T a, T b) {
  * overflow. If overflow would occur, sets result to zero, and returns
  * true. Otherwise set result to the correct value, and returns false. */
 template <class T>
-static bool add_with_overflow(T a, T b, T& result) {
+bool add_with_overflow(T a, T b, T& result) {
   bool overflows = __builtin_add_overflow(a, b, &result);
   if (overflows) {
     result = 0;
@@ -165,7 +165,7 @@ static bool add_with_overflow(T a, T b, T& result) {
 }
 
 template <class T>
-static bool sub_with_overflow(T a, T b, T& result) {
+bool sub_with_overflow(T a, T b, T& result) {
   bool overflows = __builtin_sub_overflow(a, b, &result);
   if (overflows) {
     result = 0;
@@ -174,7 +174,7 @@ static bool sub_with_overflow(T a, T b, T& result) {
 }
 
 template <class T>
-static bool mul_with_overflow(T a, T b, T& result) {
+bool mul_with_overflow(T a, T b, T& result) {
   bool overflows = __builtin_mul_overflow(a, b, &result);
   if (overflows) {
     result = 0;
@@ -183,7 +183,7 @@ static bool mul_with_overflow(T a, T b, T& result) {
 }
 
 template <typename T>
-static T gcd(T a, T b) {
+T gcd(T a, T b) {
   if (a < b) {
     std::swap(a, b);
   }
@@ -196,7 +196,7 @@ static T gcd(T a, T b) {
 }
 
 template <typename T>
-static T lcm(T a, T b) {
+T lcm(T a, T b) {
   return (a * b) / gcd(a, b);
 }
 
