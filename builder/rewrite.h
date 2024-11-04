@@ -190,7 +190,7 @@ SLINKY_UNIQUE bool match_binary(const pattern_binary<T, A, B>& p, expr_ref a, ex
     const int this_bit = ctx.variant_bits++;
     if ((ctx.variant & (1 << this_bit)) != 0) {
       // We should commute in this variant.
-      return match<matched>(p.a, b, ctx) && match<matched | pattern_info<A>::matched>(p.b, a, ctx);
+      std::swap(a, b);
     }
   }
   return match<matched>(p.a, a, ctx) && match<matched | pattern_info<A>::matched>(p.b, b, ctx);
