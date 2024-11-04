@@ -440,20 +440,20 @@ expr make_binary(expr_ref a, expr_ref b) {
 }
 
 // clang-format off
-template <typename T> index_t make_binary(index_t a, index_t b);
-template <> inline index_t make_binary<add>(index_t a, index_t b) { return a + b; }
-template <> inline index_t make_binary<sub>(index_t a, index_t b) { return a - b; }
-template <> inline index_t make_binary<mul>(index_t a, index_t b) { return a * b; }
-template <> inline index_t make_binary<div>(index_t a, index_t b) { return euclidean_div(a, b); }
-template <> inline index_t make_binary<mod>(index_t a, index_t b) { return euclidean_mod(a, b); }
-template <> inline index_t make_binary<class min>(index_t a, index_t b) { return std::min(a, b); }
-template <> inline index_t make_binary<class max>(index_t a, index_t b) { return std::max(a, b); }
-template <> inline index_t make_binary<equal>(index_t a, index_t b) { return a == b ? 1 : 0; }
-template <> inline index_t make_binary<not_equal>(index_t a, index_t b) { return a != b ? 1 : 0; }
-template <> inline index_t make_binary<less>(index_t a, index_t b) { return a < b ? 1 : 0; }
-template <> inline index_t make_binary<less_equal>(index_t a, index_t b) { return a <= b ? 1 : 0; }
-template <> inline index_t make_binary<logical_and>(index_t a, index_t b) { return a && b ? 1 : 0; }
-template <> inline index_t make_binary<logical_or>(index_t a, index_t b) { return a || b ? 1 : 0; }
+template <typename T> SLINKY_ALWAYS_INLINE SLINKY_UNIQUE index_t make_binary(index_t a, index_t b);
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<add>(index_t a, index_t b) { return a + b; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<sub>(index_t a, index_t b) { return a - b; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<mul>(index_t a, index_t b) { return a * b; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<div>(index_t a, index_t b) { return euclidean_div(a, b); }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<mod>(index_t a, index_t b) { return euclidean_mod(a, b); }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<class min>(index_t a, index_t b) { return std::min(a, b); }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<class max>(index_t a, index_t b) { return std::max(a, b); }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<equal>(index_t a, index_t b) { return a == b ? 1 : 0; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<not_equal>(index_t a, index_t b) { return a != b ? 1 : 0; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<less>(index_t a, index_t b) { return a < b ? 1 : 0; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<less_equal>(index_t a, index_t b) { return a <= b ? 1 : 0; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<logical_and>(index_t a, index_t b) { return a && b ? 1 : 0; }
+template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<logical_or>(index_t a, index_t b) { return a || b ? 1 : 0; }
 // clang-format on
 
 class logical_not : public expr_node<logical_not> {
@@ -555,35 +555,35 @@ inline void select::accept(expr_visitor* v) const { v->visit(this); }
 inline void call::accept(expr_visitor* v) const { v->visit(this); }
 
 // If `x` is a constant, returns the value of the constant, otherwise `nullptr`.
-SLINKY_ALWAYS_INLINE inline const index_t* as_constant(expr_ref x) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const index_t* as_constant(expr_ref x) {
   const constant* cx = x.as<constant>();
   return cx ? &cx->value : nullptr;
 }
 
 // If `x` is a variable, returns the `var` of the variable, otherwise `nullptr`.
-SLINKY_ALWAYS_INLINE inline const var* as_variable(expr_ref x) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const var* as_variable(expr_ref x) {
   const variable* vx = x.as<variable>();
   return vx ? &vx->sym : nullptr;
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-SLINKY_ALWAYS_INLINE inline bool is_variable(expr_ref x, var sym) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym) {
   const variable* vx = x.as<variable>();
   return vx ? vx->sym == sym : false;
 }
 
 // Check if `x` is equal to the constant `value`.
-SLINKY_ALWAYS_INLINE inline bool is_constant(expr_ref x, index_t value) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_constant(expr_ref x, index_t value) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value == value : false;
 }
-SLINKY_ALWAYS_INLINE inline bool is_zero(expr_ref x) { return is_constant(x, 0); }
-SLINKY_ALWAYS_INLINE inline bool is_one(expr_ref x) { return is_constant(x, 1); }
-inline bool is_true(expr_ref x) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_zero(expr_ref x) { return is_constant(x, 0); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_one(expr_ref x) { return is_constant(x, 1); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_true(expr_ref x) {
   const constant* cx = x.as<constant>();
   return cx ? cx->value != 0 : false;
 }
-SLINKY_ALWAYS_INLINE inline bool is_false(expr_ref x) { return is_zero(x); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_false(expr_ref x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
 inline const call* as_intrinsic(expr_ref x, intrinsic fn) {
@@ -599,7 +599,7 @@ bool is_indeterminate(expr_ref x);
 int is_infinity(expr_ref x);
 bool is_finite(expr_ref x);
 
-SLINKY_ALWAYS_INLINE inline index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE index_t boolean(index_t x) { return x != 0 ? 1 : 0; }
 expr boolean(const expr& x);
 bool is_boolean(expr_ref x);
 

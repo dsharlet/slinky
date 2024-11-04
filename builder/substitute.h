@@ -7,13 +7,13 @@
 namespace slinky {
 
 bool match(expr_ref a, expr_ref b);
-SLINKY_ALWAYS_INLINE inline bool match(var a, var b) { return a == b; }
-SLINKY_ALWAYS_INLINE inline bool match(var a, expr_ref b) { return is_variable(b, a); }
-SLINKY_ALWAYS_INLINE inline bool match(var a, index_t b) { return false; }
-SLINKY_ALWAYS_INLINE inline bool match(expr_ref a, var b) { return is_variable(a, b); }
-SLINKY_ALWAYS_INLINE inline bool match(expr_ref a, index_t b) { return is_constant(a, b); }
-SLINKY_ALWAYS_INLINE inline bool match(index_t a, expr_ref b) { return is_constant(b, a); }
-SLINKY_ALWAYS_INLINE inline bool match(index_t a, var b) { return false; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(var a, var b) { return a == b; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(var a, expr_ref b) { return is_variable(b, a); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(var a, index_t b) { return false; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(expr_ref a, var b) { return is_variable(a, b); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(expr_ref a, index_t b) { return is_constant(a, b); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(index_t a, expr_ref b) { return is_constant(b, a); }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(index_t a, var b) { return false; }
 bool match(stmt_ref a, stmt_ref b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
