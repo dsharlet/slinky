@@ -258,23 +258,27 @@ public:
   template <typename T>
   void visit_min_max(const T* op) {
     expr a = mutate(op->a);
-    expr b = mutate(op->b);
-    if (a.defined() && b.defined()) {
-      set_result(T::make(std::move(a), std::move(b)));
-    } else {
-      set_result(expr());
+    if (a.defined()) {
+      expr b = mutate(op->b);
+      if (b.defined()) {
+        set_result(T::make(std::move(a), std::move(b)));
+        return;
+      }
     }
+    set_result(expr());
   }
   void visit(const class min* op) override { visit_min_max(op); }
   void visit(const class max* op) override { visit_min_max(op); }
   void visit(const class select* op) override {
     expr t = mutate(op->true_value);
-    expr f = mutate(op->false_value);
-    if (t.defined() && f.defined()) {
-      set_result(select::make(op->condition, std::move(t), std::move(f)));
-    } else {
-      set_result(expr());
+    if (t.defined()) {
+      expr f = mutate(op->false_value);
+      if (f.defined()) {
+        set_result(select::make(op->condition, std::move(t), std::move(f)));
+        return;
+      }
     }
+    set_result(expr());
   }
 
   void visit(const mul* op) override {
