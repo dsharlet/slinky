@@ -42,7 +42,7 @@ public:
   void visit(const base_expr_node* op) {
     switch (op->type) {
     case expr_node_type::variable: visit(reinterpret_cast<const variable*>(op)); return;
-    case expr_node_type::add: visit(reinterpret_cast<const add*>(op)); return;
+    case expr_node_type::constant: visit(reinterpret_cast<const constant*>(op)); return;
     case expr_node_type::min: visit(reinterpret_cast<const class min*>(op)); return;
     case expr_node_type::max: visit(reinterpret_cast<const class max*>(op)); return;
     default: op->accept(this);

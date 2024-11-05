@@ -401,7 +401,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     e = call::make(fn, std::move(args));
   }
 
-  if (can_evaluate(fn) && constant) {
+  if (constant && can_evaluate(fn)) {
     return evaluate(e);
   }
 

@@ -30,9 +30,9 @@ expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
     if (is_zero(ne->b)) {
       return strip_boolean(ne->a);
-    } else if (is_zero(ne->a)) {
-      return strip_boolean(ne->b);
-    }
+    } 
+    // This should be canonicalized to the RHS.
+    assert(!is_zero(ne->a));
   }
   return x;
 }
@@ -258,23 +258,27 @@ public:
   template <typename T>
   void visit_min_max(const T* op) {
     expr a = mutate(op->a);
-    expr b = mutate(op->b);
-    if (a.defined() && b.defined()) {
-      set_result(T::make(std::move(a), std::move(b)));
-    } else {
-      set_result(expr());
+    if (a.defined()) {
+      expr b = mutate(op->b);
+      if (b.defined()) {
+        set_result(T::make(std::move(a), std::move(b)));
+        return;
+      }
     }
+    set_result(expr());
   }
   void visit(const class min* op) override { visit_min_max(op); }
   void visit(const class max* op) override { visit_min_max(op); }
   void visit(const class select* op) override {
     expr t = mutate(op->true_value);
-    expr f = mutate(op->false_value);
-    if (t.defined() && f.defined()) {
-      set_result(select::make(op->condition, std::move(t), std::move(f)));
-    } else {
-      set_result(expr());
+    if (t.defined()) {
+      expr f = mutate(op->false_value);
+      if (f.defined()) {
+        set_result(select::make(op->condition, std::move(t), std::move(f)));
+        return;
+      }
     }
+    set_result(expr());
   }
 
   void visit(const mul* op) override {
@@ -385,14 +389,12 @@ private:
     set_result(expr(e), std::move(info));
   }
   void set_result(stmt s) {
-    assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
-    result_info = {interval_expr(), alignment_type()};
     node_mutator::set_result(std::move(s));
   }
   void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
   // Dummy for template code.
-  void set_result(stmt s, expr_info) { set_result(std::move(s)); }
-  void set_result(const base_stmt_node* s, expr_info) { set_result(stmt(s)); }
+  void set_result(stmt s, const expr_info&) { set_result(std::move(s)); }
+  void set_result(const base_stmt_node* s, const expr_info&) { set_result(stmt(s)); }
 
 public:
   simplifier() {}
@@ -436,7 +438,9 @@ public:
   // this.
   expr mutate_boolean(const expr& e, expr_info* info) {
     expr result = strip_boolean(mutate(e, info));
-    if (info) info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), std::move(info->bounds), point(0));
+    if (info && !is_boolean(result)) {
+      info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), std::move(info->bounds), point(0));
+    }
     return result;
   }
 
@@ -569,10 +573,11 @@ public:
     std::optional<index_t> ec = evaluate_constant(e);
     if (ec) return *ec != 0;
 
-    // e is constant true if we know it has a bounds that don't include zero.
-    expr predicate = logical_or::make(less::make(0, constant_lower_bound(e)), less::make(constant_upper_bound(e), 0));
-    std::optional<index_t> result = evaluate_constant(predicate);
-    return result && *result != 0;
+    // e is constant true if we know it has bounds that don't include zero.
+    std::optional<index_t> a = evaluate_constant(constant_lower_bound(e));
+    if (a && *a > 0) return true;
+    std::optional<index_t> b = evaluate_constant(constant_upper_bound(e));
+    return b && *b < 0;
   }
 
   static bool prove_constant_false(const expr& e) {
@@ -582,9 +587,11 @@ public:
     if (ec) return *ec == 0;
 
     // e is constant false if we know its bounds are [0, 0].
-    expr predicate = logical_or::make(constant_lower_bound(e), constant_upper_bound(e));
-    std::optional<index_t> result = evaluate_constant(predicate);
-    return result && *result == 0;
+    std::optional<index_t> a = evaluate_constant(constant_lower_bound(e));
+    if (!a) return false;
+    std::optional<index_t> b = evaluate_constant(constant_upper_bound(e));
+    if (!b) return false;
+    return *a == 0 && *b == 0;
   }
 
   std::optional<bool> attempt_to_prove(const expr& e) {
@@ -1308,7 +1315,8 @@ public:
   }
 
   template <typename T>
-  bool buffer_changed(const T* op, const buffer_info& info) {
+  static bool buffer_changed(const T* op, const buffer_info& info) {
+    if (op->dims.size() != info.dims.size()) return true;
     if (!info.elem_size.same_as(op->elem_size)) return true;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (!info.dims[d].same_as(op->dims[d])) return true;
@@ -2120,16 +2128,15 @@ public:
 
   template <typename T>
   void visit_less(const T* op) {
-    expr a, b;
     // This is a constant version of that found in bounds_of_less:
     // - For a lower bound, we want to know if this can ever be false, so we want the upper bound of the lhs and the
     // lower bound of the rhs.
     // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
     // upper bound of the rhs.
     sign = -sign;
-    a = mutate(op->a);
+    expr a = mutate(op->a);
     sign = -sign;
-    b = mutate(op->b);
+    expr b = mutate(op->b);
 
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
@@ -2149,15 +2156,14 @@ public:
     // We can recursively mutate if:
     // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
     // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-    // Whenever we mutate an expression implicitly converted to bool, we need to force it to have the value 0 or 1.
-    expr a = recurse ? mutate(boolean(op->a)) : op->a;
-    expr b = recurse ? mutate(boolean(op->b)) : op->b;
+    expr a = recurse ? mutate(op->a) : op->a;
+    expr b = recurse ? mutate(op->b) : op->b;
 
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
 
     if (ca && cb) {
-      set_result(make_binary<T>(*ca, *cb));
+      set_result(make_binary<T>(*ca != 0, *cb != 0));
     } else if (sign < 0) {
       set_result(expr(0));
     } else {
@@ -2169,8 +2175,7 @@ public:
 
   void visit(const logical_not* op) override {
     sign = -sign;
-    // Whenever we mutate an expression implicitly converted to bool, we need to force it to have the value 0 or 1.
-    expr a = mutate(boolean(op->a));
+    expr a = mutate(op->a);
     sign = -sign;
     const index_t* ca = as_constant(a);
     if (ca) {
