@@ -29,7 +29,7 @@ struct match_context {
   int variant_bits;
 
   template <int N>
-  const base_expr_node* matched(const pattern_wildcard<N>&) const {
+  expr_ref matched(const pattern_wildcard<N>&) const {
     return vars[N];
   }
   template <int N>
@@ -117,7 +117,7 @@ SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, expr_ref x, match_context
 }
 
 template <int N>
-SLINKY_UNIQUE const base_expr_node* substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
+SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
   return ctx.vars[N];
 }
 
@@ -271,10 +271,6 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_unary<T, 
 template <typename T>
 SLINKY_UNIQUE expr make_unary(expr a) {
   return T::make(std::move(a));
-}
-template <typename T>
-SLINKY_UNIQUE expr make_unary(expr_ref a) {
-  return T::make(expr(a));
 }
 // clang-format off
 template <typename T> SLINKY_UNIQUE index_t make_unary(index_t a);

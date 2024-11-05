@@ -423,18 +423,6 @@ template <typename T>
 expr make_binary(expr a, expr b) {
   return T::make(std::move(a), std::move(b));
 }
-template <typename T>
-expr make_binary(expr a, expr_ref b) {
-  return T::make(std::move(a), expr(b));
-}
-template <typename T>
-expr make_binary(expr_ref a, expr b) {
-  return T::make(expr(a), std::move(b));
-}
-template <typename T>
-expr make_binary(expr_ref a, expr_ref b) {
-  return T::make(expr(a), expr(b));
-}
 
 // clang-format off
 template <typename T> SLINKY_ALWAYS_INLINE SLINKY_UNIQUE index_t make_binary(index_t a, index_t b);
