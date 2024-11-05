@@ -609,31 +609,17 @@ public:
   base_rewriter(Target x) : x(std::move(x)) {}
   base_rewriter(const base_rewriter&) = delete;
 
-  // If the pattern p matches the target, substitute with the replacement r.
-  template <typename Pattern, typename Replacement>
-  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r) {
-    static_assert(pattern_info<Pattern>::is_canonical);
-    static_assert(pattern_info<Replacement>::is_canonical);
-    static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
-
-    match_context ctx;
-    if (!match_any_variant(p, x, ctx)) return false;
-
-    result = substitute(r, ctx);
-    return true;
-  }
-
   // If the pattern p matches the target, substitute with the replacement r if the predicate pr is true.
   // If the predicate is false, consider the next replacement and predicate.
   // The last predicate is optional and defaults to true.
-  template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
-  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r, Predicate pr, ReplacementPredicates... r_pr) {
+  template <typename Pattern, typename... ReplacementPredicate>
+  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, ReplacementPredicate... r_pr) {
     static_assert(pattern_info<Pattern>::is_canonical);
 
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
-    return find_replacement<Pattern>(ctx, r, pr, r_pr...);
+    return find_replacement<Pattern>(ctx, r_pr...);
   }
 };
 
