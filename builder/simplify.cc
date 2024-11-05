@@ -2128,16 +2128,15 @@ public:
 
   template <typename T>
   void visit_less(const T* op) {
-    expr a, b;
     // This is a constant version of that found in bounds_of_less:
     // - For a lower bound, we want to know if this can ever be false, so we want the upper bound of the lhs and the
     // lower bound of the rhs.
     // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
     // upper bound of the rhs.
     sign = -sign;
-    a = mutate(op->a);
+    expr a = mutate(op->a);
     sign = -sign;
-    b = mutate(op->b);
+    expr b = mutate(op->b);
 
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
