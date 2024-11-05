@@ -315,7 +315,7 @@ SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p,
 
 template <typename C, typename T, typename F>
 SLINKY_UNIQUE expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
-  return select::make(expr(substitute(p.c, ctx)), expr(substitute(p.t, ctx)), expr(substitute(p.f, ctx)));
+  return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
 }
 
 template <typename C, typename T, typename F>
@@ -362,11 +362,11 @@ SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, expr_ref x, match_conte
 SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) { return call::make(p.fn, {}); }
 template <typename A>
 SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
-  return call::make(p.fn, {expr(substitute(std::get<0>(p.args), ctx))});
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
 }
 template <typename A, typename B>
 SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx) {
-  return call::make(p.fn, {expr(substitute(std::get<0>(p.args), ctx)), expr(substitute(std::get<1>(p.args), ctx))});
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx), substitute(std::get<1>(p.args), ctx)});
 }
 
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
@@ -433,7 +433,7 @@ public:
 
 template <typename T>
 SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
-  return boolean(expr(substitute(r.a, ctx)));
+  return boolean(substitute(r.a, ctx));
 }
 
 template <typename T>
@@ -584,7 +584,7 @@ class base_rewriter {
   SLINKY_ALWAYS_INLINE bool find_replacement(const match_context& ctx, Replacement r) {
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
-    result = expr(substitute(r, ctx));
+    result = substitute(r, ctx);
     return true;
   }
 
@@ -595,7 +595,7 @@ class base_rewriter {
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
     if (substitute(pr, ctx)) {
-      result = expr(substitute(r, ctx));
+      result = substitute(r, ctx);
       return true;
     } else {
       // Try the next replacement
@@ -619,7 +619,7 @@ public:
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
-    result = expr(substitute(r, ctx));
+    result = substitute(r, ctx);
     return true;
   }
 
