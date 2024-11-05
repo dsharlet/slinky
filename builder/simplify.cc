@@ -639,19 +639,18 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a, b_info.bounds.min)) ||
-        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_info.bounds.max, b)) ||
-        prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), a_info.bounds.max, b_info.bounds.min))) {
+    if (prove_constant_false(simplify(static_cast<const less*>(nullptr), b_info.bounds.min, a)) ||
+        prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_info.bounds.max)) ||
+        prove_constant_false(simplify(static_cast<const less*>(nullptr), b_info.bounds.min, a_info.bounds.max))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(a), std::move(a_info));
       } else {
         set_result(std::move(b), std::move(b_info));
       }
       return;
-    } else if (prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b, a_info.bounds.min)) ||
-               prove_constant_true(simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a)) ||
-               prove_constant_true(
-                   simplify(static_cast<const less_equal*>(nullptr), b_info.bounds.max, a_info.bounds.min))) {
+    } else if (prove_constant_false(simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b)) ||
+               prove_constant_false(simplify(static_cast<const less*>(nullptr), a, b_info.bounds.max)) ||
+               prove_constant_false(simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b_info.bounds.max))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(b), std::move(b_info));
       } else {
