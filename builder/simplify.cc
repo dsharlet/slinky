@@ -30,9 +30,9 @@ expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
     if (is_zero(ne->b)) {
       return strip_boolean(ne->a);
-    } else if (is_zero(ne->a)) {
-      return strip_boolean(ne->b);
-    }
+    } 
+    // This should be canonicalized to the RHS.
+    assert(!is_zero(ne->a));
   }
   return x;
 }
