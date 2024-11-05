@@ -571,7 +571,7 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_true(expr_ref x) {
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_false(expr_ref x) { return is_zero(x); }
 
 // Check if `x` is a call to the intrinsic `fn`.
-inline const call* as_intrinsic(expr_ref x, intrinsic fn) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const call* as_intrinsic(expr_ref x, intrinsic fn) {
   const call* c = x.as<call>();
   return c && c->intrinsic == fn ? c : nullptr;
 }

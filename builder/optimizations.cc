@@ -851,23 +851,22 @@ public:
   }
 
   // Handler for the `terminal` nodes.
-  void visit_terminal(const base_stmt_node* s) {
-    stmt result(s);
-    if (!found && depends_on(stmt(s), names).any()) {
+  void visit_terminal(stmt s) {
+    if (!found && depends_on(s, names).any()) {
       found = true;
       if (visited_something) {
-        result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}))});
+        s = block::make({std::move(s), check::make(call::make(intrinsic::free, {names.front()}))});
       }
     }
 
-    set_result(result);
+    set_result(std::move(s));
   }
 
-  void visit(const loop* op) override { visit_terminal(op); }
-  void visit(const call_stmt* op) override { visit_terminal(op); }
-  void visit(const copy_stmt* op) override { visit_terminal(op); }
-  void visit(const check* op) override { visit_terminal(op); }
-  void visit(const let_stmt* op) override { visit_terminal(op); }
+  void visit(const loop* op) override { visit_terminal(stmt(op)); }
+  void visit(const call_stmt* op) override { visit_terminal(stmt(op)); }
+  void visit(const copy_stmt* op) override { visit_terminal(stmt(op)); }
+  void visit(const check* op) override { visit_terminal(stmt(op)); }
+  void visit(const let_stmt* op) override { visit_terminal(stmt(op)); }
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
