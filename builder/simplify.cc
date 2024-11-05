@@ -389,14 +389,12 @@ private:
     set_result(expr(e), std::move(info));
   }
   void set_result(stmt s) {
-    assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
-    result_info = {interval_expr(), alignment_type()};
     node_mutator::set_result(std::move(s));
   }
   void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
   // Dummy for template code.
-  void set_result(stmt s, expr_info) { set_result(std::move(s)); }
-  void set_result(const base_stmt_node* s, expr_info) { set_result(stmt(s)); }
+  void set_result(stmt s, const expr_info&) { set_result(std::move(s)); }
+  void set_result(const base_stmt_node* s, const expr_info&) { set_result(stmt(s)); }
 
 public:
   simplifier() {}
