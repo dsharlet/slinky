@@ -201,16 +201,6 @@ public:
   }
 };
 
-expr operator+(expr a, expr b);
-expr operator-(expr a, expr b);
-expr operator*(expr a, expr b);
-expr operator/(expr a, expr b);
-expr operator%(expr a, expr b);
-
-// These are the same as operator/ and operator% for expr, but having these allows overloaded calls to work properly.
-expr euclidean_div(expr a, expr b);
-expr euclidean_mod(expr a, expr b);
-
 // `expr` is an owner of a reference counted pointer to a `base_expr_node`.
 // Operations that appear to mutate these objects are actually just reassigning this reference counted pointer.
 class expr {
@@ -263,6 +253,13 @@ public:
 
 SLINKY_ALWAYS_INLINE inline expr_ref::expr_ref(const expr& e) : n_(e.get()) {}
 
+expr operator+(expr a, expr b);
+expr operator-(expr a, expr b);
+expr operator*(expr a, expr b);
+expr operator/(expr a, expr b);
+expr operator%(expr a, expr b);
+expr euclidean_div(expr a, expr b);
+expr euclidean_mod(expr a, expr b);
 expr operator==(expr a, expr b);
 expr operator!=(expr a, expr b);
 expr operator<(expr a, expr b);
