@@ -359,9 +359,7 @@ SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, const expr& x, match_co
   return false;
 }
 
-SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) {
-  return call::make(p.fn, {});
-}
+SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) { return call::make(p.fn, {}); }
 template <typename A>
 SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
   return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
@@ -577,12 +575,41 @@ template <typename Target>
 class base_rewriter {
   Target x;
 
+  template <typename Pattern>
+  SLINKY_ALWAYS_INLINE static bool find_replacement(const match_context& ctx) {
+    return false;
+  }
+
+  template <typename Pattern, typename Replacement>
+  SLINKY_ALWAYS_INLINE bool find_replacement(const match_context& ctx, Replacement r) {
+    static_assert(pattern_info<Replacement>::is_canonical);
+    static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
+    result = expr(substitute(r, ctx));
+    return true;
+  }
+
+  template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
+  SLINKY_ALWAYS_INLINE bool find_replacement(
+      const match_context& ctx, Replacement r, Predicate pr, ReplacementPredicates... r_pr) {
+    static_assert(pattern_info<Replacement>::is_canonical);
+    static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
+
+    if (substitute(pr, ctx)) {
+      result = expr(substitute(r, ctx));
+      return true;
+    } else {
+      // Try the next replacement
+      return find_replacement<Pattern>(ctx, r_pr...);
+    }
+  }
+
 public:
   expr result;
 
   base_rewriter(Target x) : x(std::move(x)) {}
   base_rewriter(const base_rewriter&) = delete;
 
+  // If the pattern p matches the target, substitute with the replacement r.
   template <typename Pattern, typename Replacement>
   SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r) {
     static_assert(pattern_info<Pattern>::is_canonical);
@@ -596,19 +623,17 @@ public:
     return true;
   }
 
-  template <typename Pattern, typename Replacement, typename Predicate>
-  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r, Predicate pr) {
+  // If the pattern p matches the target, substitute with the replacement r if the predicate pr is true.
+  // If the predicate is false, consider the next replacement and predicate.
+  // The last predicate is optional and defaults to true.
+  template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
+  SLINKY_ALWAYS_INLINE bool operator()(Pattern p, Replacement r, Predicate pr, ReplacementPredicates... r_pr) {
     static_assert(pattern_info<Pattern>::is_canonical);
-    static_assert(pattern_info<Replacement>::is_canonical);
-    static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 
-    if (!substitute(pr, ctx)) return false;
-
-    result = substitute(r, ctx);
-    return true;
+    return find_replacement<Pattern>(ctx, r, pr, r_pr...);
   }
 };
 
