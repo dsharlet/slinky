@@ -1315,7 +1315,8 @@ public:
   }
 
   template <typename T>
-  bool buffer_changed(const T* op, const buffer_info& info) {
+  static bool buffer_changed(const T* op, const buffer_info& info) {
+    if (op->dims.size() != info.dims.size()) return true;
     if (!info.elem_size.same_as(op->elem_size)) return true;
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (!info.dims[d].same_as(op->dims[d])) return true;
