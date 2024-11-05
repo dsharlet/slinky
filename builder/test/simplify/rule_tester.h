@@ -118,6 +118,11 @@ public:
     // Returning true stops any more tests.
     return true;
   }
+
+  template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicate>
+  bool operator()(const Pattern& p, const Replacement& r, const Predicate& pr, ReplacementPredicate... r_pr) {
+    return operator()(p, r, pr) && operator()(p, r_pr...);
+  }
 };
 
 }  // namespace slinky
