@@ -27,20 +27,22 @@ public:
   const stmt& mutated_stmt() const { return s_; }
 
   virtual expr mutate(const expr& e) {
+    assert(!e_.defined());
     if (e.defined()) {
-      e.accept(this);
-      return std::move(e_);
-    } else {
-      return expr();
+      switch (e.type()) {
+      case expr_node_type::variable: visit(static_cast<const variable*>(e.get())); break;
+      case expr_node_type::constant: visit(static_cast<const constant*>(e.get())); break;
+      default: e.accept(this);
+      }
     }
+    return std::move(e_);
   }
   virtual stmt mutate(const stmt& s) {
+    assert(!s_.defined());
     if (s.defined()) {
       s.accept(this);
-      return std::move(s_);
-    } else {
-      return stmt();
     }
+    return std::move(s_);
   }
 
   virtual interval_expr mutate(const interval_expr& x) {
