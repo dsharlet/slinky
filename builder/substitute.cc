@@ -306,15 +306,14 @@ public:
   }
 };
 
-bool match(const expr& a, const expr& b) { return compare(a, b) == 0; }
-bool match(const base_expr_node* a, const base_expr_node* b) { return compare(a, b) == 0; }
-bool match(const stmt& a, const stmt& b) { return compare(a, b) == 0; }
+bool match(expr_ref a, expr_ref b) { return compare(a, b) == 0; }
+bool match(stmt_ref a, stmt_ref b) { return compare(a, b) == 0; }
 bool match(const interval_expr& a, const interval_expr& b) { return match(a.min, b.min) && match(a.max, b.max); }
 bool match(const dim_expr& a, const dim_expr& b) {
   return match(a.bounds, b.bounds) && match(a.stride, b.stride) && match(a.fold_factor, b.fold_factor);
 }
 
-const call* match_call(const expr& x, intrinsic fn, var a) {
+const call* match_call(expr_ref x, intrinsic fn, var a) {
   const call* c = as_intrinsic(x, fn);
   if (!c) return nullptr;
 
@@ -325,7 +324,7 @@ const call* match_call(const expr& x, intrinsic fn, var a) {
   return c;
 }
 
-const call* match_call(const expr& x, intrinsic fn, var a, index_t b) {
+const call* match_call(expr_ref x, intrinsic fn, var a, index_t b) {
   const call* c = match_call(x, fn, a);
   if (!c) return nullptr;
 
@@ -341,17 +340,15 @@ int compare(const var& a, const var& b) {
   m.try_match(a, b);
   return m.match;
 }
-int compare(const expr& a, const expr& b) { return compare(a.get(), b.get()); }
-
-int compare(const base_expr_node* a, const base_expr_node* b) {
+int compare(expr_ref a, expr_ref b) {
   matcher m;
-  m.try_match(a, b);
+  m.try_match(a.get(), b.get());
   return m.match;
 }
 
-int compare(const stmt& a, const stmt& b) {
+int compare(stmt_ref a, stmt_ref b) {
   matcher m;
-  m.try_match(a, b);
+  m.try_match(a.get(), b.get());
   return m.match;
 }
 

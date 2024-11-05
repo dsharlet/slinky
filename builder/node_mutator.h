@@ -21,6 +21,8 @@ public:
     assert(!s_.defined());
     s_ = std::move(s);
   }
+  void set_result(const base_expr_node* e) { set_result(expr(e)); }
+  void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
   const expr& mutated_expr() const { return e_; }
   const stmt& mutated_stmt() const { return s_; }
 
@@ -49,8 +51,8 @@ public:
     }
   }
 
-  void visit(const variable* op) override { set_result(op); }
-  void visit(const constant* op) override { set_result(op); }
+  void visit(const variable* op) override;
+  void visit(const constant* op) override;
 
   void visit(const let*) override;
   void visit(const let_stmt*) override;

@@ -851,23 +851,22 @@ public:
   }
 
   // Handler for the `terminal` nodes.
-  void visit_terminal(const stmt& s) {
-    stmt result = s;
+  void visit_terminal(stmt s) {
     if (!found && depends_on(s, names).any()) {
       found = true;
       if (visited_something) {
-        result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}))});
+        s = block::make({std::move(s), check::make(call::make(intrinsic::free, {names.front()}))});
       }
     }
 
-    set_result(result);
+    set_result(std::move(s));
   }
 
-  void visit(const loop* op) override { visit_terminal(op); }
-  void visit(const call_stmt* op) override { visit_terminal(op); }
-  void visit(const copy_stmt* op) override { visit_terminal(op); }
-  void visit(const check* op) override { visit_terminal(op); }
-  void visit(const let_stmt* op) override { visit_terminal(op); }
+  void visit(const loop* op) override { visit_terminal(stmt(op)); }
+  void visit(const call_stmt* op) override { visit_terminal(stmt(op)); }
+  void visit(const copy_stmt* op) override { visit_terminal(stmt(op)); }
+  void visit(const check* op) override { visit_terminal(stmt(op)); }
+  void visit(const let_stmt* op) override { visit_terminal(stmt(op)); }
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
@@ -958,7 +957,7 @@ public:
 
   template <typename T>
   void visit_decl(const T* op) {
-    stmt result = op;
+    stmt result(op);
     const std::optional<bool>& sym_defined = symbols[op->sym];
     var sym = op->sym;
     if (sym_defined && *sym_defined) {
@@ -970,7 +969,7 @@ public:
   }
 
   void visit(const loop* op) override {
-    stmt result = op;
+    stmt result(op);
     const std::optional<bool>& sym_defined = symbols[op->sym];
     var sym = op->sym;
     if (sym_defined && *sym_defined) {
@@ -985,7 +984,7 @@ public:
   }
   void visit(const allocate* op) override { visit_decl(op); }
   void visit(const make_buffer* op) override {
-    stmt result = op;
+    stmt result(op);
     // We want to keep the name of allocates that shadow make_buffers, so rename the make_buffer instead.
     // TODO: We should only do this if there is actually an allocate shadowing this buffer.
     var sym = rename(op->sym);

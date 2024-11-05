@@ -210,30 +210,30 @@ public:
 
 }  // namespace
 
-void depends_on(const expr& e, span<const std::pair<var, depends_on_result&>> var_deps) {
+void depends_on(expr_ref e, span<const std::pair<var, depends_on_result&>> var_deps) {
   if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (e.defined()) e.accept(&v);
 }
 
-void depends_on(const stmt& s, span<const std::pair<var, depends_on_result&>> var_deps) {
+void depends_on(stmt_ref s, span<const std::pair<var, depends_on_result&>> var_deps) {
   scoped_trace trace("depends_on");
   if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (s.defined()) s.accept(&v);
 }
 
-void depends_on(const expr& e, var x, depends_on_result& deps) {
+void depends_on(expr_ref e, var x, depends_on_result& deps) {
   std::pair<var, depends_on_result&> var_deps[] = {{x, deps}};
   depends_on(e, var_deps);
 }
 
-void depends_on(const stmt& s, var x, depends_on_result& deps) {
+void depends_on(stmt_ref s, var x, depends_on_result& deps) {
   std::pair<var, depends_on_result&> var_deps[] = {{x, deps}};
   depends_on(s, var_deps);
 }
 
-depends_on_result depends_on(const expr& e, var x) {
+depends_on_result depends_on(expr_ref e, var x) {
   depends_on_result r;
   depends_on(e, x, r);
   return r;
@@ -246,13 +246,13 @@ depends_on_result depends_on(const interval_expr& e, var x) {
   return r;
 }
 
-depends_on_result depends_on(const stmt& s, var x) {
+depends_on_result depends_on(stmt_ref s, var x) {
   depends_on_result r;
   depends_on(s, x, r);
   return r;
 }
 
-depends_on_result depends_on(const expr& e, span<const var> xs) {
+depends_on_result depends_on(expr_ref e, span<const var> xs) {
   depends_on_result r;
   std::vector<std::pair<var, depends_on_result&>> var_deps;
   for (var x : xs) {
@@ -262,7 +262,7 @@ depends_on_result depends_on(const expr& e, span<const var> xs) {
   return r;
 }
 
-depends_on_result depends_on(const stmt& s, span<const var> xs) {
+depends_on_result depends_on(stmt_ref s, span<const var> xs) {
   depends_on_result r;
   std::vector<std::pair<var, depends_on_result&>> var_deps;
   for (var x : xs) {

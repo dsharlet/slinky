@@ -81,8 +81,8 @@ public:
     std::stringstream rule_str;
     rule_str << p << " -> " << r;
 
-    expr pattern = substitute(p, m);
-    expr replacement = substitute(r, m);
+    expr pattern = expr(substitute(p, m));
+    expr replacement = expr(substitute(r, m));
 
     // Make sure the expressions have the same value when evaluated.
     test_expr(pattern, replacement, rule_str.str());
@@ -102,8 +102,8 @@ public:
     for (int test = 0; test < 100000; ++test) {
       init_match_context();
       if (substitute(pr, m)) {
-        expr pattern = substitute(p, m);
-        expr replacement = substitute(r, m);
+        expr pattern = expr(substitute(p, m));
+        expr replacement = expr(substitute(r, m));
 
         // Make sure the expressions have the same value when evaluated.
         test_expr(pattern, replacement, rule_str.str());

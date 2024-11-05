@@ -20,7 +20,7 @@ pattern_constant<2> c2;
 template <typename T>
 interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
@@ -31,7 +31,7 @@ interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
 template <typename T>
 interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
@@ -133,7 +133,7 @@ void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr&
 
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
@@ -146,7 +146,7 @@ interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
 }
 interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
@@ -163,7 +163,7 @@ interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
 interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else if (is_non_negative(a.min) && is_non_negative(b.min)) {
@@ -246,7 +246,7 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (b.is_point()) {
     if (is_zero(b.min)) {
       return {0, 0};
@@ -282,7 +282,7 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   }
@@ -324,7 +324,7 @@ interval_expr bounds_of(const less_equal* op, interval_expr a, interval_expr b) 
 }
 interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
@@ -340,7 +340,7 @@ interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
 }
 interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
   if (a.is_point(op) && b.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point() && b.is_point()) {
     return point(simplify(op, std::move(a.min), std::move(b.min)));
   } else {
@@ -359,7 +359,7 @@ interval_expr bounds_of(const logical_or* op, interval_expr a, interval_expr b) 
 }
 interval_expr bounds_of(const logical_not* op, interval_expr a) {
   if (a.is_point(op)) {
-    return point(op);
+    return point(expr(op));
   } else if (a.is_point()) {
     return point(simplify(op, std::move(a.min)));
   } else {
@@ -400,9 +400,9 @@ interval_expr bounds_of(const call* op, std::vector<interval_expr> args) {
       return {0, simplify(static_cast<const class max*>(nullptr), std::move(abs_min), std::move(abs_max))};
     }
   case intrinsic::buffer_rank:
-  case intrinsic::buffer_elem_size: return {0, op};
-  case intrinsic::buffer_fold_factor: return {1, op};
-  default: return {op, op};
+  case intrinsic::buffer_elem_size: return {0, expr(op)};
+  case intrinsic::buffer_fold_factor: return {1, expr(op)};
+  default: return point(expr(op));
   }
 }
 

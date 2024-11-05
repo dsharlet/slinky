@@ -912,7 +912,7 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
       return let_stmt::make({{token, trace_begin}}, block::make({std::move(s), check::make(trace_end)}));
     }
 
-    void visit(const call_stmt* op) override { set_result(add_trace(op, get_trace_arg(op))); }
+    void visit(const call_stmt* op) override { set_result(add_trace(stmt(op), get_trace_arg(op))); }
     void visit(const loop* op) override {
       expr iter_name = get_trace_arg("loop " + ctx.name(op->sym) + " iteration");
       expr loop_name = get_trace_arg("loop " + ctx.name(op->sym));

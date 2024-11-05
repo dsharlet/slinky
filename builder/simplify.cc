@@ -381,13 +381,18 @@ private:
     result_info = std::move(info);
     node_mutator::set_result(std::move(e));
   }
+  void set_result(const base_expr_node* e, expr_info info) {
+    set_result(expr(e), std::move(info));
+  }
   void set_result(stmt s) {
     assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
     result_info = {interval_expr(), alignment_type()};
     node_mutator::set_result(std::move(s));
   }
+  void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
   // Dummy for template code.
   void set_result(stmt s, expr_info) { set_result(std::move(s)); }
+  void set_result(const base_stmt_node* s, expr_info) { set_result(stmt(s)); }
 
 public:
   simplifier() {}
@@ -608,15 +613,15 @@ public:
   void visit(const variable* op) override {
     std::optional<expr_info> info = info_map[op->sym];
     if (info) {
-      if (!info->bounds.min.defined()) info->bounds.min = op;
-      if (!info->bounds.max.defined()) info->bounds.max = op;
+      if (!info->bounds.min.defined()) info->bounds.min = expr(op);
+      if (!info->bounds.max.defined()) info->bounds.max = expr(op);
       set_result(op, std::move(*info));
     } else {
-      set_result(op, {{op, op}, alignment_type()});
+      set_result(op, {point(expr(op)), alignment_type()});
     }
   }
 
-  void visit(const constant* op) override { set_result(op, {{op, op}, {0, op->value}}); }
+  void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
 
   template <typename T>
   void visit_min_max(const T* op) {
@@ -1031,16 +1036,16 @@ public:
   void visit(const let* op) override { visit_let(op); }
   void visit(const let_stmt* op) override { visit_let(op); }
 
-  stmt mutate_with_buffer(stmt decl, stmt body, var buf, var src, std::optional<buffer_info> buffer) {
+  stmt mutate_with_buffer(const base_stmt_node* decl, stmt body, var buf, var src, std::optional<buffer_info> buffer) {
     if (buffer) {
-      buffer->decl = decl;
+      buffer->decl = stmt(decl);
       buffer->src = src;
     }
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     return mutate(body);
   }
-  stmt mutate_with_buffer(stmt decl, stmt body, var buf, std::optional<buffer_info> buffer) {
-    if (buffer) buffer->decl = decl;
+  stmt mutate_with_buffer(const base_stmt_node* decl, stmt body, var buf, std::optional<buffer_info> buffer) {
+    if (buffer) buffer->decl = stmt(decl);
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     return mutate(body);
   }
@@ -1299,7 +1304,7 @@ public:
       info.dims.push_back(mutate(op->dims[d]));
     }
     info.all_dims_known = true;
-    info.decl = op;
+    info.decl = stmt(op);
     return info;
   }
 
@@ -1747,7 +1752,7 @@ public:
 
     auto make_crop = [&](const stmt& body) -> stmt {
       if (!changed && body.same_as(op_body)) {
-        return op;
+        return stmt(op);
       } else if (dims_count == 1) {
         // This crop is of one dimension, replace it with crop_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1810,7 +1815,7 @@ public:
     std::optional<buffer_info> info = buffers[op_src];
 
     if (info) {
-      info->decl = op;
+      info->decl = stmt(op);
       buffers[op_sym] = std::move(info);
     } else {
       buffers[op_sym] = std::nullopt;
@@ -1856,7 +1861,7 @@ public:
 
     auto make_slice = [&](const stmt& body) -> stmt {
       if (!changed && body.same_as(op)) {
-        return op;
+        return stmt(op);
       } else if (at_count == 1) {
         // This slice is of one dimension, replace it with slice_dim.
         // We removed undefined trailing bounds, so this must be the dim we want.
@@ -1926,7 +1931,7 @@ public:
         }
       }
     }
-    sym_info.decl = op;
+    sym_info.decl = stmt(op);
 
     stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(sym_info));
 
