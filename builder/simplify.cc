@@ -2157,15 +2157,14 @@ public:
     // We can recursively mutate if:
     // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
     // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-    // Whenever we mutate an expression implicitly converted to bool, we need to force it to have the value 0 or 1.
-    expr a = recurse ? mutate(boolean(op->a)) : op->a;
-    expr b = recurse ? mutate(boolean(op->b)) : op->b;
+    expr a = recurse ? mutate(op->a) : op->a;
+    expr b = recurse ? mutate(op->b) : op->b;
 
     const index_t* ca = as_constant(a);
     const index_t* cb = as_constant(b);
 
     if (ca && cb) {
-      set_result(make_binary<T>(*ca, *cb));
+      set_result(make_binary<T>(*ca != 0, *cb != 0));
     } else if (sign < 0) {
       set_result(expr(0));
     } else {
@@ -2177,8 +2176,7 @@ public:
 
   void visit(const logical_not* op) override {
     sign = -sign;
-    // Whenever we mutate an expression implicitly converted to bool, we need to force it to have the value 0 or 1.
-    expr a = mutate(boolean(op->a));
+    expr a = mutate(op->a);
     sign = -sign;
     const index_t* ca = as_constant(a);
     if (ca) {
