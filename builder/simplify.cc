@@ -440,7 +440,9 @@ public:
   // this.
   expr mutate_boolean(const expr& e, expr_info* info) {
     expr result = strip_boolean(mutate(e, info));
-    if (info) info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), std::move(info->bounds), point(0));
+    if (info && !is_boolean(result)) {
+      info->bounds = bounds_of(static_cast<const not_equal*>(nullptr), std::move(info->bounds), point(0));
+    }
     return result;
   }
 
