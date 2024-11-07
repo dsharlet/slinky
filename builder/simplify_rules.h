@@ -690,11 +690,7 @@ bool apply_less_rules(Fn&& apply) {
       apply(w < select(x, y, w), select(x, w < y, false)) ||
       apply(select(x, y, z) < select(x, w, u), select(x, y < w, z < u)) ||
       apply(select(x, y, z) < v + select(x, w, u), select(x, y < v + w, z < v + u)) ||
-      apply(select(x, y, z) < v - select(x, w, u), select(x, y < v - w, z < v - u)) ||
-      apply(select(x, y, z) < select(x, w, u) - v, select(x, y < w - v, z < u - v)) ||
       apply(v + select(x, y, z) < select(x, w, u), select(x, v + y < w, v + z < u)) ||
-      apply(v - select(x, y, z) < select(x, w, u), select(x, v - y < w, v - z < u)) ||
-      apply(select(x, y, z) - v < select(x, w, u), select(x, y - v < w, z - v < u)) ||
 
       // Nested logicals
       apply(x < y, y && !x, is_boolean(x) && is_boolean(y)) ||
