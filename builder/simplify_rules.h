@@ -800,14 +800,12 @@ bool apply_logical_and_rules(Fn&& apply) {
     
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_And.cpp#L67-L76
-      apply(c0 < x && x < c1, false, eval(c1 <= c0 + 1)) ||
-      apply(x < c1 && c0 < x, false, eval(c1 <= c0 + 1)) ||
-      apply(c0 < x && x <= c1, false, eval(c1 <= c0)) ||
-      apply(x < c1 && c0 <= x, false, eval(c1 <= c0)) ||
       apply(c0 <= x && x <= c1, false, eval(c1 < c0)) ||
-      apply(x <= c1 && c0 <= x, false, eval(c1 < c0)) ||
-      apply(c0 < x && c1 < x, eval(max(c0, c1)) < x) ||
       apply(c0 <= x && c1 <= x, eval(max(c0, c1)) <= x) ||
+      apply(c0 < x && x < c1, false, eval(c1 <= c0 + 1)) ||
+      apply(c0 < x && x <= c1, false, eval(c1 <= c0)) ||
+      apply(c0 < x && c1 < x, eval(max(c0, c1)) < x) ||
+      apply(x < c1 && c0 <= x, false, eval(c1 <= c0)) ||
       apply(x < c0 && x < c1, x < eval(min(c0, c1))) ||
       apply(x <= c0 && x <= c1, x <= eval(min(c0, c1))) ||
 
@@ -877,16 +875,15 @@ bool apply_logical_or_rules(Fn&& apply) {
       apply(x == y || (z || x != y), true) ||
       apply(x != y || (z || x == y), true) ||
       apply(x == c1 || x != c0, x != c0, eval(c0 != c1)) ||
+
       apply(x <= c0 || c1 <= x, true, eval(c1 <= c0 + 1)) ||
-      apply(c1 <= x || x <= c0, true, eval(c1 <= c0 + 1)) ||
-      apply(c1 < x || x <= c0, true, eval(c1 <= c0)) ||
+      apply(x <= c0 || x <= c1, x <= eval(max(c0, c1))) ||
+      apply(x < c0 || x < c1, x < eval(max(c0, c1))) ||
       apply(x < c0 || c1 <= x, true, eval(c1 <= c0)) ||
       apply(x < c0 || c1 < x, true, eval(c1 < c0)) ||
-      apply(c1 < x || x < c0, true, eval(c1 < c0)) ||
       apply(c0 < x || c1 < x, eval(min(c0, c1)) < x) ||
       apply(c0 <= x || c1 <= x, eval(min(c0, c1)) <= x) ||
-      apply(x < c0 || x < c1, x < eval(max(c0, c1))) ||
-      apply(x <= c0 || x <= c1, x <= eval(max(c0, c1))) ||
+      apply(c1 < x || x <= c0, true, eval(c1 <= c0)) ||
 
       // The way we implement <= and < means that constants will be on the LHS for <=, and on the RHS for <
       apply(x + c0 <= y || y + c1 <= x, true, eval(c0 + c1 < 1)) ||
