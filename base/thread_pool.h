@@ -121,9 +121,9 @@ public:
 
   int thread_count() const override { return worker_count_; }
 
-  void enqueue(int n, task t, task_id id) override;
-  void enqueue(task t, task_id id) override;
-  void run(const task& t, task_id id) override;
+  void enqueue(int n, task t, task_id id = unique_task_id) override;
+  void enqueue(task t, task_id id = unique_task_id) override;
+  void run(const task& t, task_id id = unique_task_id) override;
   void cancel(task_id id) override;
   void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(const task& t) override;
