@@ -40,17 +40,53 @@ class stmt_visitor;
 
 using base_stmt_node = base_node<stmt_node_type, stmt_visitor>;
 
+class stmt;
+
+// `stmt_ref` is a non-owning reference to a `base_stmt_node`.
+class stmt_ref {
+  const base_stmt_node* n_;
+
+public:
+  SLINKY_ALWAYS_INLINE stmt_ref(const stmt_ref&) = default;
+  SLINKY_ALWAYS_INLINE stmt_ref(stmt_ref&&) = default;
+  SLINKY_ALWAYS_INLINE stmt_ref& operator=(const stmt_ref&) = default;
+  SLINKY_ALWAYS_INLINE stmt_ref& operator=(stmt_ref&&) = default;
+
+  SLINKY_ALWAYS_INLINE stmt_ref(const stmt& e);
+  SLINKY_ALWAYS_INLINE stmt_ref(const base_stmt_node* n) : n_(n) {}
+
+  SLINKY_ALWAYS_INLINE void accept(stmt_visitor* v) const {
+    assert(defined());
+    n_->accept(v);
+  }
+
+  SLINKY_ALWAYS_INLINE bool defined() const { return n_ != nullptr; }
+  SLINKY_ALWAYS_INLINE stmt_node_type type() const { return n_ ? n_->type : stmt_node_type::none; }
+  SLINKY_ALWAYS_INLINE const base_stmt_node* get() const { return n_; }
+
+  template <typename T>
+  SLINKY_ALWAYS_INLINE const T* as() const {
+    if (n_ && type() == T::static_type) {
+      return reinterpret_cast<const T*>(&*n_);
+    } else {
+      return nullptr;
+    }
+  }
+};
+
+// `stmt` is an owner of a reference counted pointer to a `base_stmt_node`.
 class stmt {
   ref_count<const base_stmt_node> n_;
 
 public:
-  stmt() = default;
-  stmt(const stmt&) = default;
-  stmt(stmt&&) = default;
-  stmt(const base_stmt_node* n) : n_(n) {}
+  SLINKY_ALWAYS_INLINE stmt() = default;
+  SLINKY_ALWAYS_INLINE stmt(const stmt&) = default;
+  SLINKY_ALWAYS_INLINE stmt(stmt&&) = default;
+  SLINKY_ALWAYS_INLINE stmt(stmt_ref s) : n_(s.get()) {}
+  SLINKY_ALWAYS_INLINE explicit stmt(const base_stmt_node* n) : n_(n) {}
 
-  stmt& operator=(const stmt&) = default;
-  stmt& operator=(stmt&&) noexcept = default;
+  SLINKY_ALWAYS_INLINE stmt& operator=(const stmt&) = default;
+  SLINKY_ALWAYS_INLINE stmt& operator=(stmt&&) noexcept = default;
 
   SLINKY_ALWAYS_INLINE void accept(stmt_visitor* v) const {
     assert(defined());
@@ -72,6 +108,8 @@ public:
     }
   }
 };
+
+SLINKY_ALWAYS_INLINE inline stmt_ref::stmt_ref(const stmt& s) : n_(s.get()) {}
 
 template <typename T>
 class stmt_node : public base_stmt_node {
@@ -147,7 +185,7 @@ public:
 
   static stmt make(std::vector<std::pair<var, expr>> lets, stmt body);
 
-  static stmt make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
+  static stmt make(var sym, expr value, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::let_stmt;
 };
@@ -319,13 +357,8 @@ public:
   std::vector<int> dims;
   stmt body;
 
-  static bool is_truncate(span<const int> dims) {
-    for (std::size_t i = 0; i < dims.size(); ++i) {
-      if (dims[i] != static_cast<int>(i)) return false;
-    }
-    return true;
-  }
-  bool is_truncate() const { return is_truncate(dims); }
+  static bool is_truncate(span<const int> dims);
+  bool is_truncate() const;
 
   void accept(stmt_visitor* v) const override;
 

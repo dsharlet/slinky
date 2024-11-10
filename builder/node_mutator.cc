@@ -32,7 +32,7 @@ expr mutate_binary(node_mutator* this_, const T* op) {
   expr a = this_->mutate(op->a);
   expr b = this_->mutate(op->b);
   if (a.same_as(op->a) && b.same_as(op->b)) {
-    return op;
+    return expr(op);
   } else {
     return T::make(std::move(a), std::move(b));
   }
@@ -80,6 +80,8 @@ stmt clone_with(const slice_buffer* op, stmt new_body) { return clone_with(op, o
 stmt clone_with(const slice_dim* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const transpose* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 
+void node_mutator::visit(const variable* op) { set_result(op); }
+void node_mutator::visit(const constant* op) { set_result(op); }
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
 void node_mutator::visit(const let_stmt* op) { set_result(mutate_let(this, op)); }
 void node_mutator::visit(const add* op) { set_result(mutate_binary(this, op)); }

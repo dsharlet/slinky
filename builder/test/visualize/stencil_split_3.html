@@ -363,17 +363,17 @@ function pipeline(__in, out) {
     let __loop_min = (buffer_min(out, 1) + -2);
     let __loop_max = buffer_max(out, 1);
     let __loop_step = 3;
-    for(let y = __loop_min; y <= __loop_max; y += __loop_step) {
-      { let __intm = crop_dim(intm, 1, [(y + 1), (y + 3)]); {
+    for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
+      { let __intm = crop_dim(intm, 1, [(out_y + 1), (out_y + 3)]); {
         let intm = __intm;
         consume(__in);
         produce(intm);
         __event_t++;
       }}
-      { let __out_y = crop_dim(out, 1, [y, (y + 2)]); {
-        let out_y = __out_y;
+      { let __out_out_y = crop_dim(out, 1, [out_y, (out_y + 2)]); {
+        let out_out_y = __out_out_y;
         consume(intm);
-        produce(out_y);
+        produce(out_out_y);
         __event_t++;
       }}
     }

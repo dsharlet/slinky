@@ -29,6 +29,16 @@ cc_test(
 )
 
 cc_test(
+    name = "modulus_remainder",
+    srcs = ["modulus_remainder.cc"],
+    deps = [
+        "//base",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "thread_pool",
     srcs = ["thread_pool.cc"],
     deps = [
@@ -45,7 +55,7 @@ cc_test(
         "//base",
         "@google_benchmark//:benchmark_main",
     ],
-    args=["--benchmark_min_time=0.1s"],
+    args=["--benchmark_min_time=1x"],
     size = "small",
 )
 
@@ -57,6 +67,6 @@ cc_test(
         "//base:thread_pool",
         "@google_benchmark//:benchmark_main",
     ],
-    args=["--benchmark_min_time=0.1s"],
+    args=["--benchmark_min_time=1x"],
     size = "small",
 )

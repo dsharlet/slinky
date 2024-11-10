@@ -197,6 +197,15 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x < 5, y, abs(x))), matches(select(x < 5, y, x)));
   ASSERT_THAT(simplify(select(x < -3, abs(x), y)), matches(select(x < -3, -x, y)));
 
+  ASSERT_THAT(simplify(min(x + 64, max(min(x, 113) + 5, min(y, 128)))),
+      matches(min(min(x + 64, max(y, min(x, 113) + 5)), 128)));
+
+  ASSERT_THAT(simplify(select(x, (y - 4), 2) + 4), matches(select(x, y, 6)));
+  ASSERT_THAT(simplify(select(x, y + 3, 5) - 1), matches(select(x, y + 2, 4)));
+  ASSERT_THAT(simplify(min(x + 2, select(y, 3, z + 4)) - 1), matches(min(x + 1, select(y, 2, z + 3))));
+
+  ASSERT_THAT(simplify(select((y <= 0), select((x <= 0), z, x), z)), matches(select(0 < x && y <= 0, x, z)));
+
   ASSERT_THAT(simplify(crop_dim::make(y, x, 1, {expr(), expr()}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(crop_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
@@ -613,6 +622,19 @@ TEST(simplify, transpose) {
   ASSERT_THAT(simplify(transpose::make(
                   b1, b0, {3, 2, 1}, transpose::make(b2, b1, {1, 0}, call_stmt::make(nullptr, {}, {b2}, {})))),
       matches(transpose::make(b2, b0, {2, 3}, call_stmt::make(nullptr, {}, {b2}, {}))));
+
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
+                  transpose::make_truncate(b2, b1, 3, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(crop_buffer::make(
+          b1, b0, {{x, y}, {z, w}}, transpose::make_truncate(b2, b1, 3, call_stmt::make(nullptr, {}, {b2}, {})))));
+
+  ASSERT_THAT(simplify(crop_buffer::make(
+                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 0) <= w)))),
+      matches(stmt()));
+  ASSERT_THAT(simplify(crop_buffer::make(
+                  b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))),
+      matches(crop_buffer::make(
+          b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))));
 }
 
 TEST(simplify, bounds_of) {
@@ -705,6 +727,16 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(min(x, 4) / -2), matches(min(x, 4) / -2));
   ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(expr(4) / -2));
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
+}
+
+TEST(simplify, modulus_remainder) {
+  ASSERT_THAT(simplify((x + 15) / 16), matches((x + 15) / 16));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {16, 0}}}), matches(x / 16));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {16, 1}}}), matches(x / 16 + 1));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {32, 0}}}), matches(x / 16));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {32, 1}}}), matches(x / 16 + 1));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {32, 2}}}), matches(x / 16 + 1));
+  ASSERT_THAT(simplify((x + 15) / 16, {}, {{x, {8, 0}}}), matches((x + 15) / 16));
 }
 
 TEST(simplify, fuzz) {

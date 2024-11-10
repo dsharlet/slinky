@@ -159,6 +159,10 @@ TEST_P(softmax, pipeline) {
     box_expr bounds;
     if (copy_at_the_end == 1) {
       bounds = {point(c), point(b)};
+      // If we want to alias intermediate buffer to the output buffer,
+      // we need to tell aliaser that output is unfolded and it's safe to alias.
+      out->dim(0).fold_factor = dim::unfolded;
+      out->dim(1).fold_factor = dim::unfolded;
     } else {
       bounds = {
           select(in->dim(0).extent() == 1, point(in->dim(0).min()), point(c)),
@@ -219,8 +223,8 @@ TEST_P(softmax, pipeline) {
     const int softmax_out_size = split_b * (split_c == 0 ? D : split_c) * sizeof(float);
     if (copy_at_the_end == 2) {
       const int add_out_size = D * B * sizeof(float);
-      ASSERT_THAT(eval_ctx.heap.allocs,
-          testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size, add_out_size));
+      ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size,
+                                            softmax_in_size, softmax_out_size, add_out_size));
     } else {
       ASSERT_THAT(eval_ctx.heap.allocs,
           testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size));

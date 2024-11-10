@@ -32,6 +32,11 @@ TEST_P(may_alias, transpose_input) {
     in_t->dim(0).stride = sizeof(int);
   }
 
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  in->dim(0).fold_factor = dim::unfolded;
+  in->dim(1).fold_factor = dim::unfolded;
+
   var x(ctx, "x");
   var y(ctx, "y");
 
@@ -84,6 +89,11 @@ TEST_P(may_alias, transpose_output) {
     // Our callback requires the stride to be 1 element.
     out_t->dim(0).stride = sizeof(int);
   }
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
 
   var x(ctx, "x");
   var y(ctx, "y");
@@ -142,6 +152,12 @@ TEST_P(may_alias, aligned) {
   if (may_alias) {
     out->dim(0).bounds = align(out->dim(0).bounds, 2);
   }
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
 
@@ -194,6 +210,14 @@ TEST_P(may_alias, same_bounds) {
     out2->dim(0).bounds = out1->dim(0).bounds;
     out2->dim(1).bounds = out1->dim(1).bounds;
   }
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out1->dim(0).fold_factor = dim::unfolded;
+  out1->dim(1).fold_factor = dim::unfolded;
+  out2->dim(0).fold_factor = dim::unfolded;
+  out2->dim(1).fold_factor = dim::unfolded;
+
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func copied1 = func::make_copy({intm, {point(x), point(y)}}, {out1, {x, y}});
   func copied2 = func::make_copy({intm, {point(x), point(y)}}, {out2, {x, y}});
@@ -248,6 +272,11 @@ TEST_P(may_alias, unfolded) {
   if (may_alias) {
     out->dim(1).fold_factor = dim::unfolded;
   }
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func copied = func::make_copy({intm, {point(x), point(y)}}, {out, {x, y}});
 

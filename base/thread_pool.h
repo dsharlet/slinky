@@ -21,6 +21,8 @@ public:
   using task = std::function<void()>;
   using predicate = std::function<bool()>;
 
+  virtual ~thread_pool() = default;
+
   virtual int thread_count() const = 0;
 
   // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
@@ -87,7 +89,8 @@ public:
 // It is not directly used by anything except for testing.
 class thread_pool_impl : public thread_pool {
 private:
-  std::vector<std::thread> workers_;
+  std::atomic<int> worker_count_{0};
+  std::vector<std::thread> threads_;
   std::atomic<bool> stop_;
 
   using queued_task = std::tuple<int, task, task_id>;
@@ -106,16 +109,21 @@ private:
   task_id dequeue(task& t);
 
 public:
+  // Constructs a thread pool with no worker threads. Use `run_worker` to enter a thread into the thread pool.
+  thread_pool_impl();
   // `workers` indicates how many worker threads the thread pool will have.
   // `init` is a task that is run on each newly created thread.
-  thread_pool_impl(int workers = 3, const task& init = nullptr);
-  ~thread_pool_impl();
+  thread_pool_impl(int workers, const task& init = nullptr);
+  ~thread_pool_impl() override;
 
-  int thread_count() const override { return workers_.size(); }
+  // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
+  void run_worker(const predicate& condition);
 
-  void enqueue(int n, task t, task_id id) override;
-  void enqueue(task t, task_id id) override;
-  void run(const task& t, task_id id) override;
+  int thread_count() const override { return worker_count_; }
+
+  void enqueue(int n, task t, task_id id = unique_task_id) override;
+  void enqueue(task t, task_id id = unique_task_id) override;
+  void run(const task& t, task_id id = unique_task_id) override;
   void cancel(task_id id) override;
   void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(const task& t) override;

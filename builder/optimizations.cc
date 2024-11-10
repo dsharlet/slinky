@@ -1,24 +1,27 @@
 #include "builder/optimizations.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 #include <numeric>
 #include <optional>
 #include <set>
-#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "base/chrome_trace.h"
 #include "builder/node_mutator.h"
+#include "builder/pipeline.h"
 #include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/buffer.h"
 #include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
+#include "runtime/stmt.h"
 
 namespace slinky {
 
@@ -47,10 +50,10 @@ dim_expr select(const expr& c, dim_expr t, dim_expr f) {
 bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
-    expr at_t = at;
-    expr at_f = at;
-    dim_expr src_dim_t = src_dim;
-    dim_expr src_dim_f = src_dim;
+    expr at_t;
+    expr at_f;
+    dim_expr src_dim_t;
+    dim_expr src_dim_f;
     if (is_copy(src, s->true_value, src_d, dst, dst_x, dst_d, at_t, src_dim_t) &&
         is_copy(src, s->false_value, src_d, dst, dst_x, dst_d, at_f, src_dim_f)) {
       at = select(s->condition, at_t, at_f);
@@ -133,11 +136,10 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
 }
 
 // Replace copies between buffers a and b with calls to pad.
-class copy_replacer : public node_mutator {
+class copy_remover : public node_mutator {
   // Track all names of a and b as we go.
   std::vector<var> as;
   std::vector<var> bs;
-  const std::vector<int>& permutation;
 
   bool is_a_and_b(var x, var y) const {
     return (std::find(as.begin(), as.end(), x) != as.end() && std::find(bs.begin(), bs.end(), y) != bs.end()) ||
@@ -145,7 +147,7 @@ class copy_replacer : public node_mutator {
   }
 
 public:
-  copy_replacer(var a, var b, const std::vector<int>& permutation) : as({a}), bs({b}), permutation(permutation) {}
+  copy_remover(var a, var b) : as({a}), bs({b}) {}
 
   void visit(const copy_stmt* op) override {
     if (!is_a_and_b(op->src, op->dst)) {
@@ -158,23 +160,7 @@ public:
       set_result(stmt());
       return;
     }
-
-    // Make a call to `pad`.
-    call_stmt::attributes pad_attrs;
-    pad_attrs.name = "pad";
-    stmt pad = call_stmt::make(
-        [padding = *op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
-          // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
-          // don't matter. But in this case, they do...
-          const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
-          const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-          ctx.pad(src_buf->dims, *dst_buf, padding.data());
-          return 0;
-        },
-        {}, {op->src, op->dst}, std::move(pad_attrs));
-
-    // The copy may have also be transposed.
-    set_result(transpose::make(op->dst, op->dst, permutation, pad));
+    set_result(op);
   }
 
   void visit(const call_stmt* op) override {
@@ -207,9 +193,9 @@ public:
   void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
-stmt replace_copy_with_pad(const stmt& s, var a, var b, const std::vector<int>& permutation) {
-  scoped_trace trace("replace_copy_with_pad");
-  return copy_replacer(a, b, permutation).mutate(s);
+stmt remove_copy(const stmt& s, var a, var b) {
+  scoped_trace trace("remove_copy");
+  return copy_remover(a, b).mutate(s);
 }
 
 class buffer_aliaser : public node_mutator {
@@ -228,6 +214,11 @@ class buffer_aliaser : public node_mutator {
 
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
+
+    // If true, we want to write to this alias. This will prevent aliasing an input.
+    bool may_mutate = true;
+
+    bool is_copy = false;
 
     bool is_contiguous_copy = false;
   };
@@ -269,6 +260,11 @@ class buffer_aliaser : public node_mutator {
       // We just assume flat copies are OK.
       return true;
     }
+    if (alias.may_mutate && target_info.is_input) {
+      // We can't write to the input.
+      // TODO: Maybe having an option that allows writing to the input would be useful.
+      return false;
+    }
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (alias.permutation[d] < 0) {
         // This dimension must be a broadcast.
@@ -280,9 +276,8 @@ class buffer_aliaser : public node_mutator {
         if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
             !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
-          assert(!target_info.is_input);
-          if (target_info.is_output) {
-            // We can't reallocate this output buffer.
+          if (target_info.is_input || target_info.is_output) {
+            // We can't reallocate this buffer.
             return false;
           }
         }
@@ -293,8 +288,9 @@ class buffer_aliaser : public node_mutator {
           return false;
         }
       }
+
+      const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
       if (op->dims[d].fold_factor.defined()) {
-        const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
         if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
@@ -302,9 +298,16 @@ class buffer_aliaser : public node_mutator {
           // The fold factor of this allocation does not evenly divide the target fold factor.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
+        } else if (!prove_true((target_info.dims[alias.permutation[d]].bounds.min % target_fold_factor) ==
+                               (op->dims[d].bounds.min % op->dims[d].fold_factor))) {
+          // The mins of folded buffers are not aligned.
+          return false;
         }
-        // It's surprising we don't need to check the mins are aligned here. I have tried very hard to write a test that
-        // fails without such a check, but I cannot.
+      } else if ((target_fold_factor.defined() && !is_constant(target_fold_factor, dim::unfolded)) &&
+                 !prove_true(op->dims[d].extent() <= target_fold_factor)) {
+        // If the target is folded, but the op is not, we can only alias it if the extent of this dimension
+        // is less than the fold factor.
+        return false;
       }
     }
     return true;
@@ -328,13 +331,14 @@ public:
 
     scoped_trace trace("visit(const allocate*)");
     buffer_info info = std::move(*buffers[op->sym]);
+    var sym = info.shared_alloc_sym.defined() ? info.shared_alloc_sym : op->sym;
 
     // When an allocation goes out of scope, we should remove it as an aliasing candidate.
     for (std::optional<buffer_info>& i : buffers) {
       if (i) i->do_not_alias(op->sym);
     }
 
-    box_expr op_dims_bounds = dims_bounds(op->dims);
+    box_expr op_dims_bounds = dims_bounds(info.dims);
     for (auto& target : info.aliases) {
       var target_var = target.first;
       alias_info& alias = target.second;
@@ -342,6 +346,7 @@ public:
       var alloc_var = target_var;
       std::optional<buffer_info>& target_info = buffers[target_var];
       assert(target_info);
+
       if (!alias_compatible(op, alias, target_var, *target_info)) {
         continue;
       }
@@ -359,13 +364,16 @@ public:
         if (!target_info->is_output) {
           assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
           // We allocated this buffer, make it big enough to share with this buffer.
-          if (!target_info->shared_alloc_sym.defined()) {
-            target_info->shared_alloc_sym = ctx.insert_unique(ctx.name(target_var) + "/" + ctx.name(op->sym));
-            alloc_var = target_info->shared_alloc_sym;
-          }
+          std::string old_name =
+              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
+          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
+          alloc_var = target_info->shared_alloc_sym;
           for (std::size_t d = 0; d < op->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
-            target_info->dims[d].bounds |= alias.dims[alias.permutation[d]].bounds;
+            // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
+            // starts.
+            size_t alias_d = alias.permutation[d];
+            target_info->dims[d].bounds |= alias.at[alias_d] + min_extent(0, alias.dims[alias_d].bounds.extent());
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.
@@ -374,17 +382,26 @@ public:
 
       // Replace the allocation with a buffer using the dims (and maybe elem_size) the alias wants.
       expr elem_size = alias.elem_size.defined() ? alias.elem_size : op->elem_size;
-      stmt result = make_buffer::make(op->sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
+      if (sym != op->sym) {
+        body = crop_buffer::make(op->sym, sym, dims_bounds(op->dims), std::move(body));
+      }
+      stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
-      result = make_buffer::make(op->sym, expr(), elem_size, op->dims, result);
+      result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
+
+      for (auto& i : target_info->aliases) {
+        i.second.may_mutate = i.second.may_mutate || alias.may_mutate;
+        i.second.assume_in_bounds = i.second.assume_in_bounds && alias.assume_in_bounds;
+      }
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
       }
 
-      // If we aliased the source and destination of a copy, replace the copy with a pad.
-      stmt pad_result = replace_copy_with_pad(result, op->sym, target_var, alias.permutation);
-      if (pad_result.same_as(result)) {
+      // If we aliased the source and destination of a copy with no padding, the copy can be removed.
+      result = remove_copy(result, op->sym, target_var);
+
+      if (!alias.is_copy) {
         // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
         // without understanding the lifetimes more carefully.
         // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
@@ -395,14 +412,15 @@ public:
           i->do_not_alias(target_var);
         }
       }
-      set_result(pad_result);
+
+      set_result(std::move(result));
       return;
     }
     if (!body.same_as(op->body)) {
       if (info.shared_alloc_sym.defined()) {
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
-        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, std::move(op_dims_bounds), std::move(body));
+        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
         result =
             allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
         set_result(result);
@@ -418,7 +436,7 @@ public:
   static std::vector<dim_expr> make_contiguous_dims(var buf, std::size_t rank) {
     std::vector<dim_expr> dims(rank);
     expr stride = buffer_elem_size(buf);
-    for (std::size_t i = 0; i < rank; ++i) {
+    for (int i = 0; i < static_cast<int>(rank); ++i) {
       dims[i].bounds = buffer_bounds(buf, i);
       dims[i].stride = stride;
       stride *= dims[i].bounds.extent();
@@ -450,7 +468,9 @@ public:
         output_info->maybe_alias(in, std::move(back));
       }
     } else if (op->attrs.allow_in_place) {
-      for (var i : op->inputs) {
+      // If input is repeated, we don't want to add into the alias info again.
+      std::set<var> unique_inputs(op->inputs.begin(), op->inputs.end());
+      for (var i : unique_inputs) {
         std::optional<buffer_info>& input_info = buffers[i];
         if (!input_info || input_info->is_input) {
           // We can't write to this buffer.
@@ -459,20 +479,32 @@ public:
         for (var o : op->outputs) {
           std::optional<buffer_info>& output_info = buffers[o];
           if (!output_info) continue;
-          
+
+          if (input_info->dims.size() != output_info->dims.size()) {
+            // This is allow_in_place, but appears to not be elementwise?
+            continue;
+          }
+          size_t rank = input_info->dims.size();
+
           alias_info fwd;
-          fwd.dims = buffer_dims(o, output_info->dims.size());
-          fwd.at = buffer_mins(i, input_info->dims.size());
+          fwd.dims = buffer_dims(o, rank);
+          fwd.at = buffer_mins(i, rank);
           fwd.assume_in_bounds = true;
-          fwd.permutation.resize(output_info->dims.size());
+          fwd.may_mutate = false;
+          fwd.permutation.resize(rank);
           std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
           input_info->maybe_alias(o, std::move(fwd));
 
           alias_info back;
-          back.dims = buffer_dims(i, input_info->dims.size());
-          back.at = buffer_mins(o, output_info->dims.size());
+          // Use the bounds of the output, but the memory layout of the input.
+          back.dims.resize(rank);
+          for (int d = 0; d < static_cast<int>(rank); ++d) {
+            back.dims[d] = {buffer_bounds(o, d), buffer_stride(i, d), buffer_fold_factor(i, d)};
+          }
+          back.at = buffer_mins(o, rank);
           back.assume_in_bounds = true;
-          back.permutation.resize(input_info->dims.size());
+          back.may_mutate = true;
+          back.permutation.resize(rank);
           std::iota(back.permutation.begin(), back.permutation.end(), 0);
           output_info->maybe_alias(i, std::move(back));
         }
@@ -518,6 +550,9 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
+    // If we can't assume the input is in bounds, we might write padding.
+    a.may_mutate = !a.assume_in_bounds;
+    a.is_copy = true;
 
     a.elem_size = buffer_elem_size(op->src);
 
@@ -577,6 +612,8 @@ public:
     a.permutation.resize(op->dst_x.size());
     std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
+    a.is_copy = true;
+    a.may_mutate = false;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->maybe_alias(op->dst, std::move(a));
@@ -589,11 +626,57 @@ public:
     alias_copy_src(op);
   }
 
-  template <typename T, typename Fn>
-  void visit_buffer_mutator(const T* op, Fn&& handler) {
+  void merge_buffer_info(
+      symbol_map<buffer_info>& old_buffers, var sym, var src, std::function<void(alias_info&)> handler) {
+    for (std::optional<buffer_info>& i : buffers) {
+      if (!i) continue;
+      auto j = i->aliases.find(sym);
+      if (j != i->aliases.end()) {
+        handler(j->second);
+      }
+      for (auto& a : i->aliases) {
+        // We need to substitute uses of sym with uses of src in the aliases we added here.
+        for (dim_expr& d : a.second.dims) {
+          d.bounds = substitute(d.bounds, sym, src);
+          d.stride = substitute(d.stride, sym, src);
+          d.fold_factor = substitute(d.fold_factor, sym, src);
+        }
+        a.second.elem_size = substitute(a.second.elem_size, sym, src);
+        for (expr& i : a.second.at) {
+          i = substitute(i, sym, src);
+        }
+      }
+    }
+
+    // Add the old alias candidates back to the alias info.
+    old_buffers.reserve(std::max(buffers.size(), old_buffers.size()));
+    for (std::size_t i = 0; i < buffers.size(); ++i) {
+      if (!buffers[i]) continue;
+      std::optional<buffer_info> info = std::move(buffers[i]);
+      std::optional<buffer_info>& old_info = old_buffers[var(i) != sym ? var(i) : src];
+      if (!old_info) {
+        old_info = buffer_info(info->dims, info->elem_size, info->is_input, info->is_output);
+      } else {
+        old_info->dims = std::move(info->dims);
+        old_info->elem_size = std::move(info->elem_size);
+      }
+      if (info->shared_alloc_sym.defined()) {
+        assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
+        old_info->shared_alloc_sym = info->shared_alloc_sym;
+      }
+      for (auto& j : info->aliases) {
+        old_info->maybe_alias(j.first == sym ? src : j.first, std::move(j.second));
+      }
+    }
+    std::swap(old_buffers, buffers);
+  }
+
+  template <typename T>
+  void visit_buffer_mutator(const T* op, std::function<void(alias_info&)> handler) {
     // We need to know which alias candidates are added inside this mutator.
     symbol_map<buffer_info> old_buffers(buffers.size());
     std::swap(old_buffers, buffers);
+    // Copy the buffer info, but not alias candidates, we'll copy those back later below.
     for (std::size_t i = 0; i < old_buffers.size(); ++i) {
       if (old_buffers[i]) {
         buffers[i] = buffer_info(
@@ -606,48 +689,7 @@ public:
     node_mutator::visit(op);
 
     scoped_trace trace("visit_buffer_mutator");
-
-    for (std::optional<buffer_info>& i : buffers) {
-      if (!i) continue;
-      auto j = i->aliases.find(op->sym);
-      if (j != i->aliases.end()) {
-        handler(j->second);
-      }
-      for (auto& a : i->aliases) {
-        // We need to substitute uses of sym with uses of src in the aliases we added here.
-        for (dim_expr& d : a.second.dims) {
-          d.bounds = substitute(d.bounds, op->sym, op->src);
-          d.stride = substitute(d.stride, op->sym, op->src);
-          d.fold_factor = substitute(d.fold_factor, op->sym, op->src);
-        }
-        a.second.elem_size = substitute(a.second.elem_size, op->sym, op->src);
-        for (expr& i : a.second.at) {
-          i = substitute(i, op->sym, op->src);
-        }
-      }
-    }
-
-    // Add the old alias candidates back to the alias info.
-    old_buffers.reserve(std::max(buffers.size(), old_buffers.size()));
-    for (std::size_t i = 0; i < buffers.size(); ++i) {
-      if (!buffers[i]) continue;
-      std::optional<buffer_info> info = std::move(buffers[i]);
-      std::optional<buffer_info>& old_info = old_buffers[var(i) != op->sym ? var(i) : op->src];
-      if (!old_info) {
-        old_info = buffer_info(info->dims, info->elem_size, info->is_input, info->is_output);
-      } else {
-        old_info->dims = std::move(info->dims);
-        old_info->elem_size = std::move(info->elem_size);
-      }
-      if (info->shared_alloc_sym.defined()) {
-        assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
-        old_info->shared_alloc_sym = info->shared_alloc_sym;
-      }
-      for (auto& j : info->aliases) {
-        old_info->maybe_alias(j.first == op->sym ? op->src : j.first, std::move(j.second));
-      }
-    }
-    std::swap(old_buffers, buffers);
+    merge_buffer_info(old_buffers, op->sym, op->src, handler);
   }
 
   void visit(const slice_buffer* op) override {
@@ -809,22 +851,22 @@ public:
   }
 
   // Handler for the `terminal` nodes.
-  void visit_terminal(const stmt& s) {
-    stmt result = s;
+  void visit_terminal(stmt s) {
     if (!found && depends_on(s, names).any()) {
       found = true;
       if (visited_something) {
-        result = block::make({result, check::make(call::make(intrinsic::free, {names.front()}))});
+        s = block::make({std::move(s), check::make(call::make(intrinsic::free, {names.front()}))});
       }
     }
 
-    set_result(result);
+    set_result(std::move(s));
   }
 
-  void visit(const loop* op) override { visit_terminal(op); }
-  void visit(const call_stmt* op) override { visit_terminal(op); }
-  void visit(const copy_stmt* op) override { visit_terminal(op); }
-  void visit(const check* op) override { visit_terminal(op); }
+  void visit(const loop* op) override { visit_terminal(stmt(op)); }
+  void visit(const call_stmt* op) override { visit_terminal(stmt(op)); }
+  void visit(const copy_stmt* op) override { visit_terminal(stmt(op)); }
+  void visit(const check* op) override { visit_terminal(stmt(op)); }
+  void visit(const let_stmt* op) override { visit_terminal(stmt(op)); }
 
   // Remaining functions collect all the buffer symbols which refer the original allocate
   // symbol or its dependencies.
@@ -915,7 +957,7 @@ public:
 
   template <typename T>
   void visit_decl(const T* op) {
-    stmt result = op;
+    stmt result(op);
     const std::optional<bool>& sym_defined = symbols[op->sym];
     var sym = op->sym;
     if (sym_defined && *sym_defined) {
@@ -927,7 +969,7 @@ public:
   }
 
   void visit(const loop* op) override {
-    stmt result = op;
+    stmt result(op);
     const std::optional<bool>& sym_defined = symbols[op->sym];
     var sym = op->sym;
     if (sym_defined && *sym_defined) {
@@ -942,7 +984,7 @@ public:
   }
   void visit(const allocate* op) override { visit_decl(op); }
   void visit(const make_buffer* op) override {
-    stmt result = op;
+    stmt result(op);
     // We want to keep the name of allocates that shadow make_buffers, so rename the make_buffer instead.
     // TODO: We should only do this if there is actually an allocate shadowing this buffer.
     var sym = rename(op->sym);

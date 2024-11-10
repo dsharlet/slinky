@@ -63,10 +63,11 @@ public:
         assert(buf);
         update_deps(*buf, [fn = op->intrinsic](depends_on_result& deps) {
           deps.buffer_meta = true;
-          // TODO: Treating buffer_size_bytes as using the base is a hack to avoid needing to implement substituting a
-          // buffer into it.
-          if (fn == intrinsic::buffer_at || fn == intrinsic::buffer_size_bytes) {
+          if (fn == intrinsic::buffer_at) {
             deps.buffer_base = true;
+          }
+          if (fn == intrinsic::buffer_size_bytes) {
+            deps.var = true;
           }
         });
 
@@ -94,12 +95,11 @@ public:
     }
   }
 
-  template <typename T>
-  depends_on_result visit_sym_body(const T* op) {
-    if (!op->body.defined()) return depends_on_result{};
+  depends_on_result visit_sym_body(var sym, const stmt& body) {
+    if (!body.defined()) return depends_on_result{};
     depends_on_result sym_deps;
-    var_deps.push_back({op->sym, &sym_deps});
-    op->body.accept(this);
+    var_deps.push_back({sym, &sym_deps});
+    body.accept(this);
     var_deps.pop_back();
     return sym_deps;
   }
@@ -109,15 +109,19 @@ public:
     op->bounds.max.accept(this);
     if (op->step.defined()) op->step.accept(this);
 
-    visit_sym_body(op);
+    visit_sym_body(op->sym, op->body);
   }
 
   void visit(const call_stmt* op) override {
     for (var i : op->inputs) {
-      update_deps(i, [](depends_on_result& deps) { deps.buffer_input = true; });
+      update_deps(i, [](depends_on_result& deps) {
+        deps.var = true;
+        deps.buffer_input = true;
+      });
     }
     for (var i : op->outputs) {
       update_deps(i, [](depends_on_result& deps) {
+        deps.var = true;
         deps.buffer_output = true;
         deps.buffer_meta = true;
       });
@@ -126,10 +130,12 @@ public:
 
   void visit(const copy_stmt* op) override {
     update_deps(op->src, [](depends_on_result& deps) {
+      deps.var = true;
       deps.buffer_src = true;
       deps.buffer_meta = true;
     });
     update_deps(op->dst, [](depends_on_result& deps) {
+      deps.var = true;
       deps.buffer_dst = true;
       deps.buffer_meta = true;
     });
@@ -148,7 +154,7 @@ public:
   }
 
   void visit(const clone_buffer* op) override {
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
 
@@ -160,7 +166,7 @@ public:
       if (i.stride.defined()) i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    visit_sym_body(op);
+    visit_sym_body(op->sym, op->body);
   }
   void visit(const make_buffer* op) override {
     if (op->base.defined()) op->base.accept(this);
@@ -171,7 +177,7 @@ public:
       if (i.stride.defined()) i.stride.accept(this);
       if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
-    visit_sym_body(op);
+    visit_sym_body(op->sym, op->body);
   }
   void visit(const crop_buffer* op) override {
     for (const interval_expr& i : op->bounds) {
@@ -179,14 +185,14 @@ public:
       if (i.max.defined()) i.max.accept(this);
     }
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const crop_dim* op) override {
     if (op->bounds.min.defined()) op->bounds.min.accept(this);
     if (op->bounds.max.defined()) op->bounds.max.accept(this);
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const slice_buffer* op) override {
@@ -194,48 +200,48 @@ public:
       if (i.defined()) i.accept(this);
     }
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const slice_dim* op) override {
     op->at.accept(this);
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const transpose* op) override {
     update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
-    depends_on_result sym_deps = visit_sym_body(op);
+    depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
 };
 
 }  // namespace
 
-void depends_on(const expr& e, span<const std::pair<var, depends_on_result&>> var_deps) {
+void depends_on(expr_ref e, span<const std::pair<var, depends_on_result&>> var_deps) {
   if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (e.defined()) e.accept(&v);
 }
 
-void depends_on(const stmt& s, span<const std::pair<var, depends_on_result&>> var_deps) {
+void depends_on(stmt_ref s, span<const std::pair<var, depends_on_result&>> var_deps) {
   scoped_trace trace("depends_on");
   if (var_deps.empty()) return;
   dependencies v(var_deps);
   if (s.defined()) s.accept(&v);
 }
 
-void depends_on(const expr& e, var x, depends_on_result& deps) {
+void depends_on(expr_ref e, var x, depends_on_result& deps) {
   std::pair<var, depends_on_result&> var_deps[] = {{x, deps}};
   depends_on(e, var_deps);
 }
 
-void depends_on(const stmt& s, var x, depends_on_result& deps) {
+void depends_on(stmt_ref s, var x, depends_on_result& deps) {
   std::pair<var, depends_on_result&> var_deps[] = {{x, deps}};
   depends_on(s, var_deps);
 }
 
-depends_on_result depends_on(const expr& e, var x) {
+depends_on_result depends_on(expr_ref e, var x) {
   depends_on_result r;
   depends_on(e, x, r);
   return r;
@@ -248,13 +254,13 @@ depends_on_result depends_on(const interval_expr& e, var x) {
   return r;
 }
 
-depends_on_result depends_on(const stmt& s, var x) {
+depends_on_result depends_on(stmt_ref s, var x) {
   depends_on_result r;
   depends_on(s, x, r);
   return r;
 }
 
-depends_on_result depends_on(const expr& e, span<const var> xs) {
+depends_on_result depends_on(expr_ref e, span<const var> xs) {
   depends_on_result r;
   std::vector<std::pair<var, depends_on_result&>> var_deps;
   for (var x : xs) {
@@ -264,7 +270,7 @@ depends_on_result depends_on(const expr& e, span<const var> xs) {
   return r;
 }
 
-depends_on_result depends_on(const stmt& s, span<const var> xs) {
+depends_on_result depends_on(stmt_ref s, span<const var> xs) {
   depends_on_result r;
   std::vector<std::pair<var, depends_on_result&>> var_deps;
   for (var x : xs) {
@@ -285,5 +291,7 @@ void depends_on(const stmt& s, symbol_map<depends_on_result>& deps) {
   dependencies v(&deps);
   s.accept(&v);
 }
+
+bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data() || r.var); }
 
 }  // namespace slinky

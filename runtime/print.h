@@ -4,6 +4,7 @@
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
 
+#include <iostream>
 #include <tuple>
 
 namespace slinky {
@@ -24,6 +25,11 @@ std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, memory_type type);
 
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const modulus_remainder<T>& i) {
+  return os << "(" << i.modulus << ", " << i.remainder << ")";
+}
+
 std::ostream& operator<<(std::ostream& os, const raw_buffer& buf);
 std::ostream& operator<<(std::ostream& os, const dim& d);
 
@@ -31,8 +37,8 @@ std::ostream& operator<<(std::ostream& os, const dim& d);
 // intended usage here is to do `using std::to_string;` followed by naked
 // to_string() calls.
 std::string to_string(var sym);
-std::string to_string(intrinsic fn);
-std::string to_string(memory_type type);
+const char* to_string(intrinsic fn);
+const char* to_string(memory_type type);
 
 }  // namespace slinky
 

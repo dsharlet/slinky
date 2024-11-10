@@ -37,6 +37,8 @@ std::size_t alloc_size(std::size_t rank, std::size_t elem_size, const dim* dims)
   for (std::size_t i = 0; i < rank; ++i) {
     if (dims[i].stride() == 0) continue;
     index_t extent = alloc_extent(dims[i]);
+    assert(extent >= 0);
+    if (extent == 0) return 0;
     flat_min += (extent - 1) * std::min<index_t>(0, dims[i].stride());
     flat_max += (extent - 1) * std::max<index_t>(0, dims[i].stride());
   }
@@ -222,6 +224,7 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
 void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   assert(src.rank == dst.rank);
   assert(src.elem_size == dst.elem_size);
+  assert(dst.base || dst.elem_count() == 0);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
@@ -329,6 +332,7 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding) {
 
 SLINKY_NO_STACK_PROTECTOR void fill(const raw_buffer& dst, const void* value) {
   assert(value);
+  assert(dst.base || dst.elem_count() == 0);
   const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
@@ -422,7 +426,8 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
 }
 
 SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, int d) {
-  if (bufs[0]->dim(d).fold_factor() != dim::unfolded) {
+  const dim& buf_dim = bufs[0]->dim(d);
+  if (buf_dim.is_folded()) {
     // The main buffer is folded.
     return true;
   }
@@ -430,10 +435,10 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
     if (d >= static_cast<int>(bufs[i]->rank)) {
       // Broadcast dimension.
       continue;
-    } else if (bufs[i]->dim(d).fold_factor() != dim::unfolded) {
+    } else if (bufs[i]->dim(d).is_folded(buf_dim)) {
       // There's a folded buffer, we need a folded loop.
       return true;
-    } else if (!bufs[i]->dim(d).contains(bufs[0]->dim(d))) {
+    } else if (!bufs[i]->dim(d).contains(buf_dim)) {
       // One of the extra buffers is out of bounds, use a folded loop.
       return true;
     }

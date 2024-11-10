@@ -21,24 +21,28 @@ public:
     assert(!s_.defined());
     s_ = std::move(s);
   }
+  void set_result(const base_expr_node* e) { set_result(expr(e)); }
+  void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
   const expr& mutated_expr() const { return e_; }
   const stmt& mutated_stmt() const { return s_; }
 
   virtual expr mutate(const expr& e) {
+    assert(!e_.defined());
     if (e.defined()) {
-      e.accept(this);
-      return std::move(e_);
-    } else {
-      return expr();
+      switch (e.type()) {
+      case expr_node_type::variable: visit(static_cast<const variable*>(e.get())); break;
+      case expr_node_type::constant: visit(static_cast<const constant*>(e.get())); break;
+      default: e.accept(this);
+      }
     }
+    return std::move(e_);
   }
   virtual stmt mutate(const stmt& s) {
+    assert(!s_.defined());
     if (s.defined()) {
       s.accept(this);
-      return std::move(s_);
-    } else {
-      return stmt();
     }
+    return std::move(s_);
   }
 
   virtual interval_expr mutate(const interval_expr& x) {
@@ -49,8 +53,8 @@ public:
     }
   }
 
-  void visit(const variable* op) override { set_result(op); }
-  void visit(const constant* op) override { set_result(op); }
+  void visit(const variable* op) override;
+  void visit(const constant* op) override;
 
   void visit(const let*) override;
   void visit(const let_stmt*) override;

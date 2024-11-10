@@ -71,4 +71,13 @@ TEST(optimizations, optimize_async) {
           async::make({y, z}, {b0, b1}, {y, expr(), z, 1}, {}, check::make(buffer_rank(b0) + buffer_rank(b1)))})));
 }
 
+TEST(optimizations, deshadow_speed) {
+  node_context ctx = symbols;
+  stmt s = call_stmt::make(nullptr, {x}, {y}, {});
+  for (int i = 0; i < 1000; ++i) {
+    s = crop_dim::make(y, y, 0, {0, 0}, s);
+  }
+  stmt s2 = deshadow(s, ctx);
+}
+
 }  // namespace slinky

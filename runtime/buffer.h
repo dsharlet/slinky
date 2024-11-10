@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -13,12 +14,13 @@
 
 namespace slinky {
 
-#ifdef __APPLE__
-using index_t = std::int64_t;
-static_assert(sizeof(index_t) == sizeof(std::size_t));
-#else
-using index_t = std::ptrdiff_t;
-#endif
+// index_t needs to at least be as big as a pointer and must be signed.
+// Using ptrdiff_t or intptr_t here seems tempting, but those can
+// alias to `long` under some compilers which can cause some not so fun
+// overloading issues with expr(), so let's use std::conditional
+// instead to make it an exact alias of either int32_t or int64_t.
+using index_t =
+    std::conditional<sizeof(void*) == 4, std::int32_t, std::int64_t>::type;
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>
@@ -126,6 +128,7 @@ public:
     if (fold_factor() == unfolded) return false;
     return euclidean_div(min, fold_factor()) != euclidean_div(max, fold_factor());
   }
+  bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }
   bool is_folded() const { return is_folded(min(), max()); }
 };
 
@@ -536,13 +539,24 @@ const buffer<NewT>& raw_buffer::cast() const {
 // If `padding` is null, `src` must contain every index that `dst` contains.
 // If `padding` is non-null, `dst` is filled with the padding when it is out of bounds of `src`.
 void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding = nullptr);
+template <typename T, typename = typename std::enable_if<!std::is_pointer<T>::value>::type>
+void copy(const raw_buffer& src, const raw_buffer& dst, const T& padding) {
+  copy(src, dst, &padding);
+}
 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
 void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
+template <typename T, typename = typename std::enable_if<!std::is_pointer<T>::value>::type>
+void pad(const dim* in_bounds, const raw_buffer& dst, const T& padding) {
+  pad(in_bounds, dst, &padding);
+}
 
 // Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
 void fill(const raw_buffer& dst, const void* value);
-
+template <typename T, typename = typename std::enable_if<!std::is_pointer<T>::value>::type>
+void fill(const raw_buffer& dst, const T& padding) {
+  fill(dst, &padding);
+}
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (outer.max() == outer.min() && outer.stride() != 0) return true;

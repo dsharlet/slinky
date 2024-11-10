@@ -143,7 +143,8 @@ bool is_produced_by(var v, const stmt& body) {
 
 // Find a maximum value of x which makes `condition` expression true. The search goes
 // backwards from initial_guess up to some fixed depth.
-expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess) {
+expr where_true_upper_bound(const expr& condition, var x, const expr& initial_guess, const bounds_map& expr_bounds,
+    const symbol_map<modulus_remainder<index_t>>& expr_alignment) {
   scoped_trace trace("where_true_upper_bound");
   expr result = negative_infinity();
 
@@ -153,8 +154,8 @@ expr where_true_upper_bound(const expr& condition, var x, const expr& initial_gu
 
   for (int ix = 0; ix < max_search_depth; ix++) {
     expr shifted = substitute(condition, x, (initial_guess - ix));
-    if (prove_true(shifted)) {
-      result = simplify(initial_guess - ix);
+    if (prove_true(shifted, expr_bounds, expr_alignment)) {
+      result = simplify(initial_guess - ix, expr_bounds, expr_alignment);
       break;
     }
   }
@@ -176,10 +177,13 @@ public:
     // Overlap between iteration i and i + 1.
     expr overlap;
 
-    // Which loop this fold is for.
-    std::size_t loop;
+    // Unique ID of the loop this fold is for.
+    std::size_t loop_id;
   };
   symbol_map<std::vector<dim_fold_info>> fold_factors;
+
+  // Counter for the number of loops we've seen.
+  std::size_t loop_counter = 0;
 
   struct loop_info {
     var sym;
@@ -190,6 +194,8 @@ public:
     bool data_parallel = true;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds = std::make_unique<symbol_map<box_expr>>();
     std::unique_ptr<symbol_map<interval_expr>> expr_bounds = std::make_unique<symbol_map<interval_expr>>();
+    std::unique_ptr<symbol_map<modulus_remainder<index_t>>> expr_alignment =
+        std::make_unique<symbol_map<modulus_remainder<index_t>>>();
 
     // The next few fields relate to implementing synchronization in pipelined loops. In a pipelined loop, we
     // treat a sequence of stmts as "stages" in the pipeline, where we add synchronization to cause the loop
@@ -208,6 +214,9 @@ public:
     // TODO: This seems like a hack.
     bool in_allocation = false;
 
+    // Unique loop ID.
+    std::size_t loop_id = -1;
+
     bool add_synchronization() {
       if (sync_stages + 1 >= max_workers) {
         // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
@@ -222,12 +231,13 @@ public:
       return true;
     }
 
-    loop_info(node_context& ctx, var sym, expr orig_min, interval_expr bounds, expr step, int max_workers)
+    loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step,
+        int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
-          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count") {}
+          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"),
+          loop_id(loop_id) {}
   };
   std::vector<loop_info> loops;
-  symbol_map<std::size_t> allocation_loop_levels;
 
   symbol_map<var> aliases;
 
@@ -236,9 +246,10 @@ public:
 
   symbol_map<box_expr>& current_buffer_bounds() { return *loops.back().buffer_bounds; }
   symbol_map<interval_expr>& current_expr_bounds() { return *loops.back().expr_bounds; }
+  symbol_map<modulus_remainder<index_t>>& current_expr_alignment() { return *loops.back().expr_alignment; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(ctx, var(), expr(), interval_expr::none(), expr(), loop::serial);
+    loops.emplace_back(ctx, var(), loop_counter++, expr(), interval_expr::none(), expr(), loop::serial);
   }
 
   stmt mutate(const stmt& s) override {
@@ -252,9 +263,9 @@ public:
     if (!l.in_allocation && l.stage) {
       // We need to wait for the previous stage, and the previous iteration.
       std::vector<expr> wait = {
-          buffer_at(l.semaphores, std::vector<expr>{*l.stage, l.sym - l.step}),
+          buffer_at(l.semaphores, std::vector<expr>{*l.stage, floor_div(expr(l.sym), l.step) - 1}),
           expr(),
-          buffer_at(l.semaphores, std::vector<expr>{*l.stage - 1, l.sym}),
+          buffer_at(l.semaphores, std::vector<expr>{*l.stage - 1, floor_div(expr(l.sym), l.step)}),
           expr(),
       };
 
@@ -336,11 +347,6 @@ public:
       }
     }
 
-    // Only consider loops that are there the allocation of this output for folding.
-    // TODO: It seems like there's probably a more elegant way to do this.
-    std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
-    if (!alloc_loop_level) alloc_loop_level = 1;
-
     loop_info& loop = loops.back();
     std::optional<box_expr>& bounds = (*loop.buffer_bounds)[output];
     if (!bounds) return;
@@ -362,8 +368,8 @@ public:
       }
 
       // Some expressions which involve loop bounds are difficult to simplify, so let's try to do that using the latest
-      // loop bounds.
-      cur_bounds_d = simplify(cur_bounds_d, {{loop.sym, loop.bounds}});
+      // loop bounds.;
+      cur_bounds_d = simplify(cur_bounds_d, *loop.expr_bounds, *loop.expr_alignment);
 
       interval_expr prev_bounds_d = {
           substitute(cur_bounds_d.min, loop.sym, loop_var - loop.step),
@@ -371,13 +377,14 @@ public:
       };
 
       interval_expr overlap = prev_bounds_d & cur_bounds_d;
-      if (prove_true(overlap.empty())) {
+      if (prove_true(overlap.empty(), *loop.expr_bounds, *loop.expr_alignment)) {
         // The bounds of each loop iteration do not overlap. We can't re-use work between loop iterations, but we
         // can fold the storage.
-        expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
-        fold_factor = simplify(constant_upper_bound(fold_factor));
+        expr fold_factor =
+            simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max, *loop.expr_bounds, *loop.expr_alignment);
+        fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
-          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.size() - 1};
+          vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.back().loop_id};
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
         }
@@ -387,22 +394,23 @@ public:
       // Allowing the leading edge to not change means that some calls may ask for empty buffers.
       expr is_monotonic_increasing = prev_bounds_d.min <= cur_bounds_d.min && prev_bounds_d.max <= cur_bounds_d.max;
       expr is_monotonic_decreasing = prev_bounds_d.min >= cur_bounds_d.min && prev_bounds_d.max >= cur_bounds_d.max;
-      if (prove_true(is_monotonic_increasing)) {
+      if (prove_true(is_monotonic_increasing, *loop.expr_bounds, *loop.expr_alignment)) {
         // The bounds for each loop iteration overlap and are monotonically increasing,
         // so we can incrementally compute only the newly required bounds.
         expr old_min = cur_bounds_d.min;
-        expr new_min = simplify(prev_bounds_d.max + 1);
+        expr new_min = simplify(prev_bounds_d.max + 1, *loop.expr_bounds, *loop.expr_alignment);
 
         if (!did_overlapped_fold) {
-          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds).max);
-          fold_factor = simplify(constant_upper_bound(fold_factor));
+          expr fold_factor = simplify(bounds_of(cur_bounds_d.extent(), *loop.expr_bounds, *loop.expr_alignment).max,
+              *loop.expr_bounds, *loop.expr_alignment);
+          fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
           if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
             // Align the fold factor to the loop step size, so it doesn't try to crop across a folding boundary.
-            vector_at(fold_factors[output], d) = {
-                simplify(fold_factor),
-                simplify(constant_upper_bound(bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds).max)),
-                loops.size() - 1,
-            };
+            vector_at(fold_factors[output], d) = {simplify(fold_factor, *loop.expr_bounds, *loop.expr_alignment),
+                simplify(constant_upper_bound(
+                             bounds_of(cur_bounds_d.max - new_min + 1, *loop.expr_bounds, *loop.expr_alignment).max),
+                    *loop.expr_bounds),
+                loops.back().loop_id};
             did_overlapped_fold = true;
           } else {
             // The fold factor didn't simplify to something that doesn't depend on the loop variable.
@@ -413,7 +421,8 @@ public:
         // to move the loop min back so we compute the whole required region.
         expr new_min_at_new_loop_min = substitute(new_min, loop.sym, x);
         expr old_min_at_loop_min = substitute(old_min, loop.sym, loop.bounds.min);
-        expr new_loop_min = where_true_upper_bound(new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min);
+        expr new_loop_min = where_true_upper_bound(
+            new_min <= old_min_at_loop_min, loop.sym, loop.bounds.min, *loop.expr_bounds, *loop.expr_alignment);
 
         if (!is_negative_infinity(new_loop_min)) {
           loop.bounds.min = new_loop_min;
@@ -428,17 +437,15 @@ public:
 
         // This loop has a dependency between loop iterations, mark it as not data parallel.
         loop.data_parallel = false;
-      } else if (prove_true(is_monotonic_decreasing)) {
+      } else if (prove_true(is_monotonic_decreasing, *loop.expr_bounds, *loop.expr_alignment)) {
         // TODO: We could also try to slide when the bounds are monotonically
         // decreasing, but this is an unusual case.
       }
     }
   }
 
-  template <typename T>
-  void visit_call_or_copy(const T* op, span<const var> inputs, span<const var> outputs) {
+  void visit_call_or_copy(span<const var> inputs, span<const var> outputs) {
     scoped_trace trace("visit_call_or_copy");
-    set_result(op);
 
     for (var input : inputs) {
       // Remove folding for an input that was folded in a more deeply nested loop than the current loop.
@@ -447,7 +454,11 @@ public:
       while (true) {
         if (fold_factors[a]) {
           for (dim_fold_info& i : *fold_factors[a]) {
-            if (i.loop >= loops.size()) {
+            bool is_correct_fold = false;
+            for (const loop_info& loop : loops) {
+              is_correct_fold = is_correct_fold || loop.loop_id == i.loop_id;
+            }
+            if (!is_correct_fold) {
               // We found a consumer of a buffer outside the loop it was folded in, remove the folding.
               i = dim_fold_info();
             }
@@ -460,21 +471,13 @@ public:
     }
 
     for (var output : outputs) {
-      // Start from 1 to skip the 'outermost' loop.
-      // Only consider loops that are inside the allocation of this output for folding.
-      // TODO: It seems like there's probably a more elegant way to do this.
-      std::optional<std::size_t> alloc_loop_level = allocation_loop_levels[output];
-      if (!alloc_loop_level) alloc_loop_level = 1;
-
-      for (std::size_t loop_index = *alloc_loop_level; loop_index < loops.size(); ++loop_index) {
-        loop_info& loop = loops[loop_index];
-        loop.add_synchronization();
-
+      for (loop_info& loop : loops) {
         if (!fold_factors[output]) continue;
+        loop.add_synchronization();
 
         expr loop_var = variable::make(loop.sym);
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
-          if ((*fold_factors[output])[d].loop != loop_index) {
+          if ((*fold_factors[output])[d].loop_id != loop.loop_id) {
             // This is a fold factor for a different loop.
             continue;
           }
@@ -506,8 +509,14 @@ public:
     }
   }
 
-  void visit(const call_stmt* op) override { visit_call_or_copy(op, op->inputs, op->outputs); }
-  void visit(const copy_stmt* op) override { visit_call_or_copy(op, {&op->src, 1}, {&op->dst, 1}); }
+  void visit(const call_stmt* op) override {
+    set_result(op);
+    visit_call_or_copy(op->inputs, op->outputs);
+  }
+  void visit(const copy_stmt* op) override {
+    set_result(op);
+    visit_call_or_copy({&op->src, 1}, {&op->dst, 1});
+  }
 
   void visit(const crop_buffer* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
@@ -614,6 +623,7 @@ public:
 
     symbol_map<box_expr> last_buffer_bounds = current_buffer_bounds();
     symbol_map<interval_expr> last_expr_bounds = current_expr_bounds();
+    symbol_map<modulus_remainder<index_t>> last_expr_alignment = current_expr_alignment();
 
     interval_expr loop_bounds = op->bounds;
     // It's possible that after sliding some of the buffers the bounds of the
@@ -623,13 +633,23 @@ public:
     // we substitute current buffer bounds into loop bounds.
     substitute_bounds(loop_bounds, current_buffer_bounds());
 
-    loops.emplace_back(ctx, op->sym, orig_min, loop_bounds, op->step, op->max_workers);
+    loops.emplace_back(ctx, op->sym, loop_counter++, orig_min, loop_bounds, op->step, op->max_workers);
     current_buffer_bounds() = last_buffer_bounds;
     current_expr_bounds() = last_expr_bounds;
+    current_expr_alignment() = last_expr_alignment;
 
     stmt body;
     {
-      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym, loop_bounds);
+      // We can use narrower bounds for the loop var, because the loop var not necessarily will reach max if step > 1.
+      auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym,
+          {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
+
+      const index_t* maybe_min = as_constant(loop_bounds.min);
+      const index_t* maybe_step = as_constant(op->step);
+      index_t modulus = maybe_step ? *maybe_step : 1;
+      index_t remainder = (maybe_min && maybe_step) ? *maybe_min % *maybe_step : 0;
+
+      auto set_expr_alignment = set_value_in_scope(current_expr_alignment(), op->sym, {modulus, remainder});
       body = mutate(op->body);
     }
 
@@ -692,11 +712,12 @@ public:
           {}, {l.semaphores}, std::move(init_sems_attrs));
       // We can fold the semaphores array by the number of threads we'll use.
       // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
-      expr sem_fold_factor = stage_count * op->step;
+      expr sem_fold_factor = stage_count;
       std::vector<dim_expr> sem_dims = {
           {sem_bounds, sem_size, stage_count},
           // TODO: We should just let dimensions like this have undefined bounds.
-          {{loop_bounds.min - op->step, loop_bounds.max}, sem_size * sem_bounds.extent(), sem_fold_factor},
+          {{floor_div(loop_bounds.min, op->step) - 1, floor_div(loop_bounds.max, op->step)},
+              sem_size * sem_bounds.extent(), sem_fold_factor},
       };
       expr last_iter = loop_bounds.max;  // + align_down(loop_bounds.extent(), op->step);
       stmt wait =

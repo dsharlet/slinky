@@ -15,8 +15,12 @@ void BM_binary(benchmark::State& state, Fn&& fn) {
   }
 }
 
-void BM_euclidean_div(benchmark::State& state) { BM_binary(state, euclidean_div<std::ptrdiff_t>); }
-void BM_euclidean_mod(benchmark::State& state) { BM_binary(state, euclidean_mod<std::ptrdiff_t>); }
+void BM_euclidean_div(benchmark::State& state) {
+  BM_binary(state, [](std::ptrdiff_t a, std::ptrdiff_t b) { return euclidean_div<std::ptrdiff_t>(a, b); });
+}
+void BM_euclidean_mod(benchmark::State& state) {
+  BM_binary(state, [](std::ptrdiff_t a, std::ptrdiff_t b) { return euclidean_mod<std::ptrdiff_t>(a, b); });
+}
 void BM_euclidean_mod_positive_modulus(benchmark::State& state) {
   BM_binary(state, euclidean_mod_positive_modulus<std::ptrdiff_t>);
 }

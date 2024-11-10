@@ -13,14 +13,7 @@ namespace slinky {
 // init_random() for raw_buffer requires allocation be done by caller
 template <typename T, std::size_t N>
 void fill_random(const buffer<T, N>& buf) {
-  std::size_t flat_size = buf.size_bytes();
-  std::size_t i = 0;
-  for (; i + 3 < flat_size; i += 4) {
-    reinterpret_cast<int*>(buf.base())[i >> 2] = (rand() % 20) - 10;
-  }
-  for (; i < flat_size; ++i) {
-    reinterpret_cast<char*>(buf.base())[i] = (rand() % 20) - 10;
-  }
+  for_each_element([](T* v) { *v = (rand() & 15) - 8; }, buf);
 }
 
 template <typename T, std::size_t N>
@@ -33,15 +26,14 @@ void init_random(buffer<T, N>& x) {
 // TODO: We should be able to just do this with raw_buffer and not make it a template.
 template <typename T>
 index_t copy_2d(const buffer<const T>& in, const buffer<T>& out) {
-  copy(in, out, nullptr);
+  copy(in, out);
   return 0;
 }
 
 template <typename T>
 index_t zero_padded_copy(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
-  T zero = 0;
-  slinky::copy(in, out, &zero);
+  slinky::copy(in, out, static_cast<T>(0));
   return 0;
 }
 
@@ -120,6 +112,16 @@ index_t sum3x1(const buffer<const T>& in, const buffer<T>& out) {
 template <typename T>
 index_t sum5x5(const buffer<const T>& in, const buffer<T>& out) {
   return sum_stencil<T, -2, -2, 2, 2>(in, out);
+}
+
+template <typename T>
+index_t upsample_nn_2x(const buffer<const T>& in, const buffer<T>& out) {
+  for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+    for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+      out(x, y) = in((x + 0) >> 1, (y + 0) >> 1);
+    }
+  }
+  return 0;
 }
 
 }  // namespace slinky

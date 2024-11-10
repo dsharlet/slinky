@@ -41,8 +41,7 @@ buffer_expr::buffer_expr(var sym, std::size_t rank, expr elem_size)
 }
 
 buffer_expr::buffer_expr(var sym, const_raw_buffer_ptr constant_buffer)
-    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr),
-      constant_(std::move(constant_buffer)) {
+    : sym_(sym), elem_size_(constant_buffer->elem_size), producer_(nullptr), constant_(std::move(constant_buffer)) {
   assert(constant_ != nullptr);
   dims_.reserve(constant_->rank);
 
@@ -107,6 +106,7 @@ func& func::operator=(func&& m) noexcept {
   compute_at_ = std::move(m.compute_at_);
   padding_ = std::move(m.padding_);
   attrs_ = std::move(m.attrs_);
+  user_data_ = m.user_data_;
   add_this_to_buffers();
   return *this;
 }
@@ -149,6 +149,9 @@ stmt func::make_call() const {
         dst_x.push_back(i);
       }
       stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+      if (!input.input_crop.empty()) {
+        copy = crop_buffer::make(inputs_[0].sym(), inputs_[0].sym(), input.input_crop, copy);
+      }
       if (!input.output_crop.empty()) {
         copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
       }
@@ -311,12 +314,11 @@ bool operator==(const loop_id& a, const loop_id& b) {
   }
 }
 
-void topological_sort_impl(const func* f, std::set<const func*>& processing,
-                          std::set<const func*>& visited, std::vector<const func*>& order,
-                          std::map<const func*, std::vector<const func*>>& deps,
-                          std::set<buffer_expr_ptr>& constants) {
+void topological_sort_impl(const func* f, std::set<const func*>& processing, std::set<const func*>& visited,
+    std::vector<const func*>& order, std::map<const func*, std::vector<const func*>>& deps,
+    std::set<buffer_expr_ptr>& constants) {
   if (visited.count(f) > 0) {
-    return ;
+    return;
   }
 
   assert(processing.count(f) == 0);
@@ -680,7 +682,15 @@ class pipeline_builder {
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
       interval_expr loop_bounds = get_loop_bounds(base_f, loop);
-      body = loop::make(loop.sym(), loop.max_workers, loop_bounds, loop_step, body);
+      // Make sure that a loop variable is unique.
+      std::string loop_var_name;
+      if (base_f->outputs().size() == 1) {
+        loop_var_name = ctx.name(base_f->outputs()[0].sym()) + ".";
+      }
+      loop_var_name += ctx.name(loop.sym());
+      var loop_var = ctx.insert_unique(loop_var_name);
+      body = substitute(body, loop.sym(), loop_var);
+      body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body);
     }
 
     return body;
@@ -902,7 +912,7 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
       return let_stmt::make({{token, trace_begin}}, block::make({std::move(s), check::make(trace_end)}));
     }
 
-    void visit(const call_stmt* op) override { set_result(add_trace(op, get_trace_arg(op))); }
+    void visit(const call_stmt* op) override { set_result(add_trace(stmt(op), get_trace_arg(op))); }
     void visit(const loop* op) override {
       expr iter_name = get_trace_arg("loop " + ctx.name(op->sym) + " iteration");
       expr loop_name = get_trace_arg("loop " + ctx.name(op->sym));

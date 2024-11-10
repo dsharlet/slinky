@@ -4,30 +4,12 @@
 #include <vector>
 
 #include "builder/pipeline.h"
+#include "builder/test/context.h"
 #include "builder/test/util.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 
 namespace slinky {
-
-class test_context : public eval_context {
-public:
-  int copy_calls = 0;
-  int copy_elements = 0;
-  int pad_calls = 0;
-
-  test_context() {
-    copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
-      ++copy_calls;
-      copy_elements += dst.elem_count();
-      slinky::copy(src, dst, padding);
-    };
-    pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
-      ++pad_calls;
-      slinky::pad(in_bounds, dst, padding);
-    };
-  }
-};
 
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
@@ -238,6 +220,53 @@ TEST(padded, copy) {
     for (int x = 0; x < W + padding_x * 2; ++x) {
       if (padding_x <= x && x < padding_x + W && padding_y <= y && y < padding_y + H) {
         ASSERT_EQ(out_buf(x, y), in_buf(x - padding_x, y - padding_y));
+      } else {
+        ASSERT_EQ(out_buf(x, y), 0);
+      }
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
+}
+
+TEST(custom_pad, copy) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  std::vector<char> padding(sizeof(int), 0);
+
+  const int x_min = 1;
+  const int x_max = 8;
+  const int y_min = 2;
+  const int y_max = 4;
+  func copy = func::make_copy({in, {point(x), point(y)}, {{x_min, x_max}, {y_min, y_max}}}, {out, {x, y}}, padding);
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int H = 10;
+  const int W = 7;
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  buffer<int, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      if (x_min <= x && x <= x_max && y_min <= y && y <= y_max) {
+        ASSERT_EQ(out_buf(x, y), in_buf(x, y));
       } else {
         ASSERT_EQ(out_buf(x, y), 0);
       }

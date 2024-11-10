@@ -15,7 +15,9 @@ namespace slinky {
 bool operator==(const dim& a, const dim& b) { return memcmp(&a, &b, sizeof(dim)) == 0; }
 
 template <typename Rng>
-int random(Rng& rng, int min, int max) { return rng() % (max - min + 1) + min; }
+int random(Rng& rng, int min, int max) {
+  return rng() % (max - min + 1) + min;
+}
 
 template <typename T, std::size_t N, typename Rng>
 void init_random(Rng& rng, buffer<T, N>& buf) {
@@ -156,6 +158,14 @@ TEST(buffer, buffer) {
   for (int i = 0; i < 10 * 20; ++i) {
     ASSERT_EQ(i, buf.base()[i]);
   }
+}
+
+TEST(buffer, empty_buffer) {
+  buffer<int, 3> buf({1, 0, 2});
+
+  ASSERT_EQ(buf.rank, 3);
+
+  buf.allocate();
 }
 
 bool test_fill(int elem_size, int size) {
@@ -312,7 +322,7 @@ TEST(buffer, for_each_contiguous_slice) {
   buf.allocate();
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-    memset(slice, 7, slice_extent);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, 1);
@@ -325,7 +335,7 @@ TEST(buffer, for_each_contiguous_slice_non_zero_min) {
   buf.translate(1, 2, 3);
   int slices = 0;
   for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-    memset(slice, 7, slice_extent);
+    std::fill_n(slice, slice_extent, 7);
     slices++;
   });
   ASSERT_EQ(slices, 1);
@@ -340,12 +350,21 @@ TEST(buffer, for_each_contiguous_folded) {
     buf.dim(1).set_min_extent(8, crop_extent);
     int slices = 0;
     for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
-      memset(slice, 7, slice_extent);
+      std::fill_n(slice, slice_extent, 7);
       slices++;
     });
-    ASSERT_EQ(slices, crop_extent * 30);
+    ASSERT_EQ(slices, 30);
     ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
+  // Also check an unaligned crop with the fold.
+  buf.dim(1).set_min_extent(6, 4);
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
+    std::fill_n(slice, slice_extent, 7);
+    slices++;
+  });
+  ASSERT_EQ(slices, 120);
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
 TEST(buffer, for_each_contiguous_slice_padded) {
@@ -353,7 +372,7 @@ TEST(buffer, for_each_contiguous_slice_padded) {
     buffer<char, 3> buf({10, 20, 30});
     buf.allocate();
     buf.dim(padded_dim).set_bounds(0, 8);
-    for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { memset(slice, 7, slice_extent); });
+    for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) { std::fill_n(slice, slice_extent, 7); });
     ASSERT_TRUE(is_filled_buffer(buf, 7));
   }
 }
@@ -370,10 +389,8 @@ TEST(buffer, for_each_contiguous_slice_non_innermost) {
   ASSERT_EQ(slices, buf.dim(0).extent() * buf.dim(2).extent());
 }
 
-template <typename T>
-void test_for_each_contiguous_slice_fill() {
-  gtest_seeded_mt19937 rng;
-
+template <typename T, typename Rng>
+void test_for_each_contiguous_slice_fill(Rng& rng) {
   buffer<T, 4> dst;
   for (std::size_t d = 0; d < dst.rank; ++d) {
     dst.dim(d).set_min_extent(0, 5);
@@ -387,16 +404,15 @@ void test_for_each_contiguous_slice_fill() {
 }
 
 TEST(buffer, for_each_contiguous_slice_fill) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 1000; ++cases) {
-    test_for_each_contiguous_slice_fill<char>();
-    test_for_each_contiguous_slice_fill<int>();
+    test_for_each_contiguous_slice_fill<char>(rng);
+    test_for_each_contiguous_slice_fill<int>(rng);
   }
 }
 
-template <typename Src, typename Dst>
-void test_for_each_contiguous_slice_copy() {
-  gtest_seeded_mt19937 rng;
-
+template <typename Src, typename Dst, typename Rng>
+void test_for_each_contiguous_slice_copy(Rng& rng) {
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
@@ -430,17 +446,16 @@ void test_for_each_contiguous_slice_copy() {
 }
 
 TEST(buffer, for_each_contiguous_slice_copy) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 10000; ++cases) {
-    test_for_each_contiguous_slice_copy<char, char>();
-    test_for_each_contiguous_slice_copy<short, int>();
-    test_for_each_contiguous_slice_copy<int, int>();
+    test_for_each_contiguous_slice_copy<char, char>(rng);
+    test_for_each_contiguous_slice_copy<short, int>(rng);
+    test_for_each_contiguous_slice_copy<int, int>(rng);
   }
 }
 
-template <typename Src, typename Dst>
-void test_for_each_element_copy() {
-  gtest_seeded_mt19937 rng;
-
+template <typename Src, typename Dst, typename Rng>
+void test_for_each_element_copy(Rng& rng) {
   buffer<Src, 4> src;
   buffer<Dst, 4> dst;
   for (std::size_t d = 0; d < src.rank; ++d) {
@@ -465,17 +480,16 @@ void test_for_each_element_copy() {
 }
 
 TEST(buffer, for_each_element_copy) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 10000; ++cases) {
-    test_for_each_element_copy<char, char>();
-    test_for_each_element_copy<short, int>();
-    test_for_each_element_copy<int, int>();
+    test_for_each_element_copy<char, char>(rng);
+    test_for_each_element_copy<short, int>(rng);
+    test_for_each_element_copy<int, int>(rng);
   }
 }
 
-template <typename A, typename B, typename Dst>
-void test_for_each_contiguous_slice_add() {
-  gtest_seeded_mt19937 rng;
-
+template <typename A, typename B, typename Dst, typename Rng>
+void test_for_each_contiguous_slice_add(Rng& rng) {
   buffer<A, 4> a;
   buffer<B, 4> b;
   for (std::size_t d = 0; d < a.rank; ++d) {
@@ -509,10 +523,11 @@ void test_for_each_contiguous_slice_add() {
 }
 
 TEST(buffer, for_each_contiguous_slice_add) {
+  gtest_seeded_mt19937 rng;
   for (int cases = 0; cases < 1000; ++cases) {
-    test_for_each_contiguous_slice_add<int, int, int>();
-    test_for_each_contiguous_slice_add<short, int, int>();
-    test_for_each_contiguous_slice_add<short, short, int>();
+    test_for_each_contiguous_slice_add<int, int, int>(rng);
+    test_for_each_contiguous_slice_add<short, int, int>(rng);
+    test_for_each_contiguous_slice_add<short, short, int>(rng);
   }
 }
 
@@ -541,15 +556,15 @@ TEST(buffer, for_each_contiguous_slice_multi_fuse_lots) {
       buf1,
       [&](index_t slice_extent, char* slice1, char* slice2, char* slice3, char* slice4, char* slice5, char* slice6,
           char* slice7, char* slice8, char* slice9) {
-        memset(slice1, 1, slice_extent);
-        memset(slice2, 2, slice_extent);
-        memset(slice3, 3, slice_extent);
-        memset(slice4, 4, slice_extent);
-        memset(slice5, 5, slice_extent);
-        memset(slice6, 6, slice_extent);
-        memset(slice7, 7, slice_extent);
-        memset(slice8, 8, slice_extent);
-        memset(slice9, 9, slice_extent);
+        std::fill_n(slice1, slice_extent, 1);
+        std::fill_n(slice2, slice_extent, 2);
+        std::fill_n(slice3, slice_extent, 3);
+        std::fill_n(slice4, slice_extent, 4);
+        std::fill_n(slice5, slice_extent, 5);
+        std::fill_n(slice6, slice_extent, 6);
+        std::fill_n(slice7, slice_extent, 7);
+        std::fill_n(slice8, slice_extent, 8);
+        std::fill_n(slice9, slice_extent, 9);
         slices++;
       },
       buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9);

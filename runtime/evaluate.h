@@ -32,8 +32,10 @@ public:
   // Functions implementing buffer data movement:
   // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.
   // - `pad` should fill the area out of bounds of `src_dims` with `padding` in `dst`.
-  std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy = slinky::copy;
-  std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad = slinky::pad;
+  std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy =
+      static_cast<void (*)(const raw_buffer&, const raw_buffer&, const void*)>(slinky::copy);
+  std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad =
+      static_cast<void (*)(const dim*, const raw_buffer&, const void*)>(slinky::pad);
 
   // Functions called every time a stmt begins or ends evaluation.
   std::function<index_t(const char*)> trace_begin;

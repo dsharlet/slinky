@@ -31,29 +31,25 @@ var node_context::insert(const std::string& name) {
   if (!sym) {
     sym = var(sym_to_name.size());
     sym_to_name.push_back(name);
+    name_to_sym[name] = *sym;
   }
   return *sym;
 }
 var node_context::insert_unique(const std::string& prefix) {
   std::string name = prefix;
   for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
-    if (!lookup(name)) break;
+    if (name_to_sym.find(name) == name_to_sym.end()) break;
     name = prefix + "#" + std::to_string(i);
   }
   return insert(name);
 }
 std::optional<var> node_context::lookup(const std::string& name) const {
-  // TODO: At some point we might need a better data structure than doing this linear search.
-  for (std::size_t i = 0; i < sym_to_name.size(); ++i) {
-    if (sym_to_name[i] == name) {
-      return var(i);
-    }
-  }
-  return std::nullopt;
+  auto i = name_to_sym.find(name);
+  return i != name_to_sym.end() ? std::optional<var>(i->second) : std::nullopt;
 }
 
 template <typename T>
-const T* make_bin_op(expr a, expr b) {
+expr make_bin_op(expr a, expr b) {
   auto n = new T();
   if (T::commutative && should_commute(a, b)) {
     // Aggressively canonicalizing the order is a big speedup by avoiding unnecessary simplifier rewrites.
@@ -61,11 +57,11 @@ const T* make_bin_op(expr a, expr b) {
   }
   n->a = std::move(a);
   n->b = std::move(b);
-  return n;
+  return expr(n);
 }
 
 template <typename T, typename Body>
-const T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
+Body make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   auto n = new T();
   n->lets = std::move(lets);
   if (const T* l = body.template as<T>()) {
@@ -74,16 +70,20 @@ const T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   } else {
     n->body = std::move(body);
   }
-  return n;
+  return Body(n);
 }
 
 expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
   return make_let<let>(std::move(lets), std::move(body));
 }
 
+expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
+
 stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
   return make_let<let_stmt>(std::move(lets), std::move(body));
 }
+
+stmt let_stmt::make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
 namespace {
 
@@ -123,9 +123,9 @@ const constant* make_constant(std::int64_t value) {
 expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
-expr variable::make(var sym) { return make_variable(sym); }
+expr variable::make(var sym) { return expr(make_variable(sym)); }
 
-expr constant::make(index_t value) { return make_constant(value); }
+expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 
 expr add::make(expr a, expr b) { return make_bin_op<add>(std::move(a), std::move(b)); }
@@ -144,7 +144,7 @@ expr logical_or::make(expr a, expr b) { return make_bin_op<logical_or>(std::move
 expr logical_not::make(expr a) {
   logical_not* n = new logical_not();
   n->a = std::move(a);
-  return n;
+  return expr(n);
 }
 
 expr operator+(expr a, expr b) { return add::make(std::move(a), std::move(b)); }
@@ -171,6 +171,29 @@ expr operator>=(expr a, expr b) { return less_equal::make(std::move(b), std::mov
 expr operator&&(expr a, expr b) { return logical_and::make(std::move(a), std::move(b)); }
 expr operator||(expr a, expr b) { return logical_or::make(std::move(a), std::move(b)); }
 expr operator!(expr x) { return logical_not::make(std::move(x)); }
+
+expr expr::operator-() const { return 0 - *this; }
+
+expr& expr::operator+=(expr r) {
+  *this = *this + std::move(r);
+  return *this;
+}
+expr& expr::operator-=(expr r) {
+  *this = *this - std::move(r);
+  return *this;
+}
+expr& expr::operator*=(expr r) {
+  *this = *this * std::move(r);
+  return *this;
+}
+expr& expr::operator/=(expr r) {
+  *this = *this / std::move(r);
+  return *this;
+}
+expr& expr::operator%=(expr r) {
+  *this = *this % std::move(r);
+  return *this;
+}
 
 expr min(span<expr> x) {
   if (x.empty()) {
@@ -202,6 +225,11 @@ const interval_expr& interval_expr::none() {
 }
 const interval_expr& interval_expr::union_identity() { return none(); }
 const interval_expr& interval_expr::intersection_identity() { return all(); }
+
+const expr& interval_expr::begin() const { return min; }
+expr interval_expr::end() const { return max + 1; }
+expr interval_expr::extent() const { return max - min + 1; }
+expr interval_expr::empty() const { return min > max; }
 
 interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_point()) {
@@ -287,34 +315,49 @@ interval_expr interval_expr::operator-() const {
   return {max.defined() ? -max : expr(), min.defined() ? -min : expr()};
 }
 
-interval_expr& interval_expr::operator|=(const interval_expr& r) {
-  min = (min.defined() && r.min.defined()) ? slinky::min(min, r.min) : expr();
-  max = (max.defined() && r.max.defined()) ? slinky::max(max, r.max) : expr();
+interval_expr& interval_expr::operator|=(interval_expr r) {
+  min = (min.defined() && r.min.defined()) ? slinky::min(std::move(min), std::move(r.min)) : expr();
+  max = (max.defined() && r.max.defined()) ? slinky::max(std::move(max), std::move(r.max)) : expr();
   return *this;
 }
 
-interval_expr& interval_expr::operator&=(const interval_expr& r) {
-  min = (min.defined() && r.min.defined()) ? slinky::max(min, r.min) : min.defined() ? min : r.min;
-  max = (max.defined() && r.max.defined()) ? slinky::min(max, r.max) : max.defined() ? max : r.max;
+interval_expr& interval_expr::operator&=(interval_expr r) {
+  if (min.defined() && r.min.defined()) {
+    min = slinky::max(std::move(min), std::move(r.min));
+  } else if (!min.defined()) {
+    min = std::move(r.min);
+  }
+  if (max.defined() && r.max.defined()) {
+    max = slinky::min(std::move(max), std::move(r.max));
+  } else if (!max.defined()) {
+    max = std::move(r.max);
+  }
   return *this;
 }
 
-interval_expr interval_expr::operator|(const interval_expr& r) const {
+interval_expr interval_expr::operator|(interval_expr r) const {
   interval_expr result(*this);
-  result |= r;
+  result |= std::move(r);
   return result;
 }
 
-interval_expr interval_expr::operator&(const interval_expr& r) const {
+interval_expr interval_expr::operator&(interval_expr r) const {
   interval_expr result(*this);
-  result &= r;
+  result &= std::move(r);
   return result;
 }
+
+interval_expr range(expr begin, expr end) { return {std::move(begin), std::move(end) - 1}; }
+interval_expr bounds(expr min, expr max) { return {std::move(min), std::move(max)}; }
+interval_expr min_extent(const expr& min, expr extent) { return {min, min + std::move(extent) - 1}; }
+
+interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
+interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
 
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
   if (t.is_point() && f.is_point()) {
-    return point(select(std::move(c), std::move(t.min), std::move(f.min)));
+    return point(select(c, std::move(t.min), std::move(f.min)));
   } else {
     return {
         select(c, std::move(t.min), std::move(f.min)),
@@ -343,14 +386,14 @@ expr select::make(expr condition, expr true_value, expr false_value) {
   n->condition = std::move(condition);
   n->true_value = std::move(true_value);
   n->false_value = std::move(false_value);
-  return n;
+  return expr(n);
 }
 
 expr call::make(slinky::intrinsic i, std::vector<expr> args) {
   auto n = new call();
   n->intrinsic = i;
   n->args = std::move(args);
-  return n;
+  return expr(n);
 }
 
 stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list outputs, attributes attrs) {
@@ -359,7 +402,7 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   n->inputs = std::move(inputs);
   n->outputs = std::move(outputs);
   n->attrs = std::move(attrs);
-  return n;
+  return stmt(n);
 }
 
 stmt copy_stmt::make(
@@ -370,7 +413,7 @@ stmt copy_stmt::make(
   n->dst = dst;
   n->dst_x = std::move(dst_x);
   n->padding = std::move(padding);
-  return n;
+  return stmt(n);
 }
 
 namespace {
@@ -416,7 +459,7 @@ stmt block::make(std::vector<stmt> stmts) {
   } else {
     auto n = new block();
     n->stmts = std::move(stmts);
-    return n;
+    return stmt(n);
   }
 }
 
@@ -432,7 +475,7 @@ stmt loop::make(var sym, int max_workers, interval_expr bounds, expr step, stmt 
   l->bounds = std::move(bounds);
   l->step = std::move(step);
   l->body = std::move(body);
-  return l;
+  return stmt(l);
 }
 
 stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<dim_expr> dims, stmt body) {
@@ -442,7 +485,7 @@ stmt allocate::make(var sym, memory_type storage, expr elem_size, std::vector<di
   n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr> dims, stmt body) {
@@ -452,7 +495,7 @@ stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr>
   n->elem_size = std::move(elem_size);
   n->dims = std::move(dims);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt clone_buffer::make(var sym, var src, stmt body) {
@@ -460,7 +503,7 @@ stmt clone_buffer::make(var sym, var src, stmt body) {
   n->sym = sym;
   n->src = src;
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt body) {
@@ -469,7 +512,7 @@ stmt crop_buffer::make(var sym, var src, std::vector<interval_expr> bounds, stmt
   n->src = src;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) {
@@ -479,7 +522,7 @@ stmt crop_dim::make(var sym, var src, int dim, interval_expr bounds, stmt body) 
   n->dim = dim;
   n->bounds = std::move(bounds);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
@@ -488,7 +531,7 @@ stmt slice_buffer::make(var sym, var src, std::vector<expr> at, stmt body) {
   n->src = src;
   n->at = std::move(at);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
@@ -498,7 +541,7 @@ stmt slice_dim::make(var sym, var src, int dim, expr at, stmt body) {
   n->dim = dim;
   n->at = std::move(at);
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
@@ -507,7 +550,7 @@ stmt transpose::make(var sym, var src, std::vector<int> dims, stmt body) {
   n->src = src;
   n->dims = dims;
   n->body = std::move(body);
-  return n;
+  return stmt(n);
 }
 
 stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
@@ -516,10 +559,18 @@ stmt transpose::make_truncate(var sym, var src, int rank, stmt body) {
   return make(sym, src, std::move(dims), std::move(body));
 }
 
+bool transpose::is_truncate(span<const int> dims) {
+  for (std::size_t i = 0; i < dims.size(); ++i) {
+    if (dims[i] != static_cast<int>(i)) return false;
+  }
+  return true;
+}
+bool transpose::is_truncate() const { return is_truncate(dims); }
+
 stmt check::make(expr condition) {
   auto n = new check();
   n->condition = std::move(condition);
-  return n;
+  return stmt(n);
 }
 
 stmt async::make(
@@ -550,10 +601,39 @@ const expr& indeterminate() {
   return e;
 }
 
+bool is_positive(expr_ref x) {
+  if (is_positive_infinity(x)) return true;
+  if (const call* c = as_intrinsic(x, intrinsic::abs)) {
+    assert(c->args.size() == 1);
+    return is_positive(c->args[0]);
+  }
+  const index_t* c = as_constant(x);
+  return c ? *c > 0 : false;
+}
+
+bool is_non_negative(expr_ref x) {
+  if (is_positive_infinity(x)) return true;
+  if (as_intrinsic(x, intrinsic::abs)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c >= 0 : false;
+}
+
+bool is_negative(expr_ref x) {
+  if (is_negative_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c < 0 : false;
+}
+
+bool is_non_positive(expr_ref x) {
+  if (is_negative_infinity(x)) return true;
+  const index_t* c = as_constant(x);
+  return c ? *c <= 0 : false;
+}
+
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
-expr align_down(expr x, expr a) { return (x / a) * a; }
-expr align_up(expr x, expr a) { return ((x + a - 1) / a) * a; }
-interval_expr align(interval_expr x, expr a) { return {align_down(x.min, a), align_up(x.max + 1, a) - 1}; }
+expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
+expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
+interval_expr align(interval_expr x, const expr& a) { return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1}; }
 
 expr and_then(std::vector<expr> args) { return call::make(intrinsic::and_then, std::move(args)); }
 expr or_else(std::vector<expr> args) { return call::make(intrinsic::or_else, std::move(args)); }
@@ -562,7 +642,7 @@ expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::mov
 expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
 expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
 expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
-expr buffer_extent(expr buf, expr dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
+expr buffer_extent(const expr& buf, const expr& dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
 expr buffer_stride(expr buf, expr dim) {
   return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)});
 }
@@ -571,13 +651,17 @@ expr buffer_fold_factor(expr buf, expr dim) {
 }
 
 expr buffer_at(expr buf, span<const expr> at) {
-  std::vector<expr> args = {buf};
+  std::vector<expr> args;
+  args.reserve(at.size() + 1);
+  args.push_back(std::move(buf));
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
 
 expr buffer_at(expr buf, span<const var> at) {
-  std::vector<expr> args = {buf};
+  std::vector<expr> args;
+  args.reserve(at.size() + 1);
+  args.push_back(std::move(buf));
   args.insert(args.end(), at.begin(), at.end());
   return call::make(intrinsic::buffer_at, std::move(args));
 }
@@ -629,7 +713,16 @@ bool is_buffer_dim_intrinsic(intrinsic fn) {
   }
 }
 
-bool is_finite(const expr& x) {
+bool is_positive_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::positive_infinity); }
+bool is_negative_infinity(expr_ref x) { return as_intrinsic(x, intrinsic::negative_infinity); }
+bool is_indeterminate(expr_ref x) { return as_intrinsic(x, intrinsic::indeterminate); }
+int is_infinity(expr_ref x) {
+  if (is_positive_infinity(x)) return 1;
+  if (is_negative_infinity(x)) return -1;
+  return 0;
+}
+
+bool is_finite(expr_ref x) {
   if (x.as<constant>()) return true;
   if (const call* c = x.as<call>()) {
     return is_buffer_intrinsic(c->intrinsic);
@@ -643,10 +736,11 @@ expr boolean(const expr& x) {
   } else if (const index_t* c = as_constant(x)) {
     return *c != 0;
   } else {
-    return x != 0;
+    return not_equal::make(x, 0);
   }
 }
-bool is_boolean(const expr& x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
+
+bool is_boolean(expr_ref x) { return is_boolean_node(x.type()) || is_one(x) || is_zero(x); }
 
 expr semaphore_init(expr sem, expr count) {
   return call::make(intrinsic::semaphore_init, {std::move(sem), std::move(count)});
@@ -692,27 +786,26 @@ void recursive_node_visitor::visit(const let* op) {
 
 namespace {
 
-template <typename T>
-void visit_binary(recursive_node_visitor* _this, const T* op) {
-  if (op->a.defined()) op->a.accept(_this);
-  if (op->b.defined()) op->b.accept(_this);
+void visit_binary(recursive_node_visitor* _this, const expr& a, const expr& b) {
+  if (a.defined()) a.accept(_this);
+  if (b.defined()) b.accept(_this);
 }
 
 }  // namespace
 
-void recursive_node_visitor::visit(const add* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const sub* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const mul* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const div* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const mod* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const class min* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const class max* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const equal* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const not_equal* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const less* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const less_equal* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const logical_and* op) { visit_binary(this, op); }
-void recursive_node_visitor::visit(const logical_or* op) { visit_binary(this, op); }
+void recursive_node_visitor::visit(const add* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const sub* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const mul* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const div* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const mod* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const class min* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const class max* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const equal* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const not_equal* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const less* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const less_equal* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const logical_and* op) { visit_binary(this, op->a, op->b); }
+void recursive_node_visitor::visit(const logical_or* op) { visit_binary(this, op->a, op->b); }
 void recursive_node_visitor::visit(const logical_not* op) {
   if (op->a.defined()) op->a.accept(this);
 }

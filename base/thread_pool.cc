@@ -10,22 +10,30 @@ namespace slinky {
 
 thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
 
+thread_pool_impl::thread_pool_impl() {}
+
 thread_pool_impl::thread_pool_impl(int workers, const task& init) : stop_(false) {
   auto worker = [this, init]() {
     if (init) init();
-    wait_for([this]() -> bool { return stop_; }, cv_worker_);
+    run_worker([this]() -> bool { return stop_; });
   };
   for (int i = 0; i < workers; ++i) {
-    workers_.push_back(std::thread(worker));
+    threads_.push_back(std::thread(worker));
   }
 }
 
 thread_pool_impl::~thread_pool_impl() {
   atomic_call([this]() { stop_ = true; });
   cv_worker_.notify_all();
-  for (std::thread& i : workers_) {
+  for (std::thread& i : threads_) {
     i.join();
   }
+}
+
+void thread_pool_impl::run_worker(const predicate& condition) {
+  ++worker_count_;
+  wait_for(condition, cv_worker_);
+  --worker_count_;
 }
 
 namespace {

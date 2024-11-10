@@ -4,9 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "base/thread_pool.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
-#include "base/thread_pool.h"
 
 namespace slinky {
 

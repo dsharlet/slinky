@@ -24,7 +24,7 @@ TEST(tile_area, pipeline) {
   // Track the max number of elements produced by any one call.
   int max_elem_count_seen = 0;
 
-  auto m2 = [&](const buffer<const int>& a, const buffer<int>& b) -> index_t { 
+  auto m2 = [&](const buffer<const int>& a, const buffer<int>& b) -> index_t {
     max_elem_count_seen = std::max<int>(max_elem_count_seen, b.elem_count());
     return multiply_2<int>(a, b);
   };

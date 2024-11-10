@@ -27,7 +27,10 @@ namespace slinky {
 
 bool can_evaluate(intrinsic fn) {
   switch (fn) {
-  case intrinsic::abs: return true;
+  case intrinsic::abs: 
+  case intrinsic::and_then:
+  case intrinsic::or_else:
+    return true;
   default: return false;
   }
 }
@@ -566,7 +569,7 @@ public:
 
     if (op->storage == memory_type::stack) {
       buffer.init_strides();
-      buffer.base = alloca(buffer.size_bytes());
+      buffer.base = __builtin_alloca(buffer.size_bytes());
       buffer.allocation = nullptr;
     } else {
       assert(op->storage == memory_type::heap);

@@ -8,6 +8,7 @@ cc_library(
     hdrs = [
         "arithmetic.h",
         "ref_count.h",
+        "modulus_remainder.h",
         "span.h",
         "util.h",
     ],

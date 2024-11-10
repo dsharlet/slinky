@@ -29,7 +29,7 @@ public:
 
 // A smart pointer to a ref_counted base.
 template <typename T>
-class ref_count {
+class SLINKY_TRIVIAL_ABI ref_count {
   T* value;
 
 public:
