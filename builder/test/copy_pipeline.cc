@@ -681,4 +681,82 @@ TEST_P(broadcasted_elementwise, internal) {
   }
 }
 
+class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool>> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, constrained_transpose,
+    testing::Combine(testing::Values(true, false), testing::Values(true, false), testing::Values(true, false)),
+    test_params_to_string<constrained_transpose::ParamType>);
+
+TEST_P(constrained_transpose, pipeline) {
+  const bool no_alias_buffers = std::get<0>(GetParam());
+  const bool intm1_fixed = std::get<1>(GetParam());
+  const bool intm2_fixed = std::get<2>(GetParam());
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", 3, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 3, sizeof(short));
+
+  if (intm1_fixed) {
+    intm1->dim(0).stride = sizeof(short);
+    intm1->dim(1).stride = sizeof(short) * in->dim(0).extent();
+    intm1->dim(2).stride = sizeof(short) * in->dim(0).extent() * in->dim(0).extent();
+  }
+  if (intm2_fixed) {
+    intm2->dim(0).stride = sizeof(short);
+    intm2->dim(1).stride = sizeof(short) * out->dim(0).extent();
+    intm2->dim(2).stride = sizeof(short) * out->dim(0).extent() * out->dim(0).extent();
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add_in = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm1, {x, y, z}}}});
+  func transposed = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}});
+  func add_out = func::make(add_1<short>, {{intm2, {point(x), point(y), point(z)}}}, {{{out, {x, y, z}}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  const int D = 7;
+  buffer<short, 3> in_buf({W, D, H});
+  init_random(in_buf);
+
+  buffer<short, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x, z, y) + 2);
+      }
+    }
+  }
+
+  if (!no_alias_buffers) {
+    if (intm1_fixed && intm2_fixed) {
+      // Both the intermediates have stride constraints, we can't alias anything.
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+    } else {
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+      ASSERT_EQ(eval_ctx.copy_calls, 0);
+    }
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+  }
+}
+
 }  // namespace slinky

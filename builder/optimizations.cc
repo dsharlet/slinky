@@ -198,6 +198,9 @@ stmt remove_copy(const stmt& s, var a, var b) {
   return copy_remover(a, b).mutate(s);
 }
 
+bool dim_has_stride(const dim_expr& d) { return d.stride.defined(); }
+bool dims_have_stride(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
+
 class buffer_aliaser : public node_mutator {
   node_context& ctx;
 
@@ -265,6 +268,10 @@ class buffer_aliaser : public node_mutator {
       // TODO: Maybe having an option that allows writing to the input would be useful.
       return false;
     }
+
+    const bool target_has_stride = dims_have_stride(target_info.dims);
+    const bool alloc_has_stride = dims_have_stride(op->dims);
+
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       if (alias.permutation[d] < 0) {
         // This dimension must be a broadcast.
@@ -281,9 +288,19 @@ class buffer_aliaser : public node_mutator {
             return false;
           }
         }
-      }
-      if (op->dims[d].stride.defined()) {
-        if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
+
+        if (op->dims[d].stride.defined()) {
+          if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
+            // This alias would violate a constraint on the stride of the buffer.
+            return false;
+          }
+        }
+      } else if (!alloc_has_stride || !target_has_stride) {
+        // Either the allocation or the target can assume the strides of the other.
+      } else {
+        // There are strides on both the allocation and the target, they must be equal.
+        expr alias_stride = simplify(substitute_buffer(alias.dims[d].stride, target, expr(), target_info.dims));
+        if (!prove_true(op->dims[d].stride == alias_stride)) {
           // This alias would violate a constraint on the stride of the buffer.
           return false;
         }
@@ -368,15 +385,28 @@ public:
               ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
           target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
           alloc_var = target_info->shared_alloc_sym;
-          for (std::size_t d = 0; d < op->dims.size(); ++d) {
+          assert(target_info->dims.size() == alias.at.size());
+          for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
             // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
             // starts.
-            size_t alias_d = alias.permutation[d];
-            target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
+            int alias_d = alias.permutation[d];
+            if (alias_d >= 0) {
+              target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
+            }
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.
+        }
+      } else if (!dims_have_stride(target_info->dims)) {
+        assert(target_info->dims.size() == alias.permutation.size());
+        // The target doesn't have any strides, we might have some strides we assumed we could propagate.
+        for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
+          int alias_d = alias.permutation[d];
+          if (alias_d >= 0) {
+            assert(!target_info->dims[d].stride.defined());
+            target_info->dims[d].stride = op->dims[alias_d].stride;
+          }
         }
       }
 
