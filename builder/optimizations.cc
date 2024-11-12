@@ -255,11 +255,12 @@ class buffer_aliaser : public node_mutator {
   symbol_map<buffer_info> buffers;
 
   static bool alias_compatible(
-      const allocate* op, const alias_info& alias, var target, const buffer_info& target_info) {
+      const allocate* op, alias_info& alias, var target, const buffer_info& target_info) {
     scoped_trace trace("alias_compatible");
     assert(op->dims.size() == alias.dims.size());
 
     if (alias.is_contiguous_copy) {
+      assert(alias.assume_in_bounds);
       // We just assume flat copies are OK.
       return true;
     }
@@ -274,13 +275,19 @@ class buffer_aliaser : public node_mutator {
 
     auto substitute_alias = [&](const expr& e) { return substitute_buffer(e, target, expr(), target_info.dims); };
 
-    for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      dim_expr alias_dim = alias.dims[d];
-      alias_dim.bounds.min = substitute_alias(alias_dim.bounds.min);
-      alias_dim.bounds.max = substitute_alias(alias_dim.bounds.max);
-      alias_dim.stride = substitute_alias(alias_dim.stride);
-      alias_dim.fold_factor = substitute_alias(alias_dim.fold_factor);
-      if (!alias.assume_in_bounds) {
+    // Figure out what the actual alias dimension will be by substituting the target into it.
+    std::vector<dim_expr> alias_dims = alias.dims;
+    for (dim_expr& i : alias_dims) {
+      i.bounds.min = substitute_alias(i.bounds.min);
+      i.bounds.max = substitute_alias(i.bounds.max);
+      i.stride = substitute_alias(i.stride);
+      i.fold_factor = substitute_alias(i.fold_factor);
+    }
+
+    if (!alias.assume_in_bounds) {
+      bool in_bounds = true;
+      for (std::size_t d = 0; d < op->dims.size(); ++d) {
+        const dim_expr& alias_dim = alias_dims[d];
         if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
             !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
@@ -288,8 +295,17 @@ class buffer_aliaser : public node_mutator {
             // We can't reallocate this buffer.
             return false;
           }
+          in_bounds = false;
         }
+      }
 
+      alias.assume_in_bounds = in_bounds;
+    }
+
+    for (std::size_t d = 0; d < op->dims.size(); ++d) {
+      const dim_expr& alias_dim = alias_dims[d];
+      if (!alias.assume_in_bounds) {
+        // The alias might grow the target allocation, so we can't use the target's strides.
         if (op->dims[d].stride.defined()) {
           if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
             // This alias would violate a constraint on the stride of the buffer.
@@ -376,26 +392,23 @@ public:
         i = substitute_bounds(i, op->sym, op_dims_bounds);
       }
 
-      if (!alias.assume_in_bounds && !alias.is_contiguous_copy) {
-        if (!target_info->is_output) {
-          assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
-          // We allocated this buffer, make it big enough to share with this buffer.
-          std::string old_name =
-              ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
-          target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
-          alloc_var = target_info->shared_alloc_sym;
-          assert(target_info->dims.size() == alias.at.size());
-          for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
-            // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
-            // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
-            // starts.
-            int alias_d = alias.permutation[d];
-            if (alias_d >= 0) {
-              target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
-            }
+      if (!alias.assume_in_bounds) {
+        assert(!target_info->is_output);
+        assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
+        // We allocated this buffer, make it big enough to share with this buffer.
+        std::string old_name =
+            ctx.name(target_info->shared_alloc_sym.defined() ? target_info->shared_alloc_sym : target_var);
+        target_info->shared_alloc_sym = ctx.insert_unique(old_name + "/" + ctx.name(sym));
+        alloc_var = target_info->shared_alloc_sym;
+        assert(target_info->dims.size() == alias.at.size());
+        for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
+          // TODO: We may have proven this is unnecessary in alias_compatible, we can avoid this in such cases.
+          // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
+          // starts.
+          int alias_d = alias.permutation[d];
+          if (alias_d >= 0) {
+            target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
           }
-        } else {
-          // In this case, alias_compatible must have determined that we do not need to grow the allocation.
         }
       } else if (!dims_have_stride(target_info->dims)) {
         assert(target_info->dims.size() == alias.permutation.size());
@@ -484,12 +497,14 @@ public:
         fwd.dims = make_contiguous_dims(in, input_info->dims.size());
         fwd.at = buffer_mins(out, output_info->dims.size());
         fwd.is_contiguous_copy = true;
+        fwd.assume_in_bounds = true;
         input_info->maybe_alias(out, std::move(fwd));
 
         alias_info back;
         back.dims = make_contiguous_dims(out, output_info->dims.size());
         back.at = buffer_mins(in, input_info->dims.size());
         back.is_contiguous_copy = true;
+        back.assume_in_bounds = true;
         output_info->maybe_alias(in, std::move(back));
       }
     } else if (op->attrs.allow_in_place) {
