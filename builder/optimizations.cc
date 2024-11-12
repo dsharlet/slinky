@@ -373,7 +373,7 @@ public:
             // We need the bounds of the alias, as it exists in the target buffer. `alias.at` tells us where this alias
             // starts.
             size_t alias_d = alias.permutation[d];
-            target_info->dims[d].bounds |= alias.at[alias_d] + min_extent(0, alias.dims[alias_d].bounds.extent());
+            target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
           }
         } else {
           // In this case, alias_compatible must have determined that we do not need to grow the allocation.

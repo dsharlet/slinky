@@ -51,17 +51,22 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool>> {};
+class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, bool>> {};
 
 auto offsets = testing::Values(0, 1, -1, 10, -10);
 
-INSTANTIATE_TEST_SUITE_P(offsets, padded_copy, testing::Combine(offsets, offsets, testing::Values(true, false)),
+INSTANTIATE_TEST_SUITE_P(offsets, padded_copy,
+    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(false, true)),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
   int offset_x = std::get<0>(GetParam());
   int offset_y = std::get<1>(GetParam());
   bool in_bounds = std::get<2>(GetParam());
+  std::vector<int> permutation = {0, 1};
+  if (std::get<3>(GetParam())) {
+    std::swap(permutation[0], permutation[1]);
+  }
 
   // Make the pipeline
   node_context ctx;
@@ -75,8 +80,9 @@ TEST_P(padded_copy, pipeline) {
   var y(ctx, "y");
 
   func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func crop =
-      func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}, in->bounds()}, {padded_intm, {x, y}}, {3});
+  func crop = func::make_copy(
+      {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
+      {padded_intm, {x, y}}, {3});
   func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -85,9 +91,9 @@ TEST_P(padded_copy, pipeline) {
   const int H = 5;
 
   // Run the pipeline.
-  buffer<char, 2> in_buf({W, H});
+  buffer<char, 2> in_buf(permute<index_t>(permutation, {W, H}));
   if (in_bounds) {
-    in_buf.translate(offset_x, offset_y);
+    in_buf.translate(permute<index_t>(permutation, {offset_x, offset_y}));
   }
   init_random(in_buf);
 
@@ -101,8 +107,8 @@ TEST_P(padded_copy, pipeline) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      if (in_buf.contains(x + offset_x, y + offset_y)) {
-        ASSERT_EQ(out_buf(x, y), in_buf(x + offset_x, y + offset_y));
+      if (in_buf.contains(permute<index_t>(permutation, {x + offset_x, y + offset_y}))) {
+        ASSERT_EQ(out_buf(x, y), in_buf(permute<index_t>(permutation, {x + offset_x, y + offset_y})));
       } else {
         ASSERT_EQ(out_buf(x, y), 3);
       }
@@ -153,7 +159,8 @@ TEST_P(copy_sequence, pipeline) {
   // If the pad mask is one for that stage, we add padding outside the region [1, 4].
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
-      return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
+      return func::make_copy(
+          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
