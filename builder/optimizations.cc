@@ -272,14 +272,15 @@ class buffer_aliaser : public node_mutator {
     const bool target_has_stride = dims_have_stride(target_info.dims);
     const bool alloc_has_stride = dims_have_stride(op->dims);
 
+    auto substitute_alias = [&](const expr& e) { return substitute_buffer(e, target, expr(), target_info.dims); };
+
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      if (alias.permutation[d] < 0) {
-        // This dimension must be a broadcast.
-        continue;
-      }
-      const dim_expr& alias_dim = alias.dims[alias.permutation[d]];
+      dim_expr alias_dim = alias.dims[d];
+      alias_dim.bounds.min = substitute_alias(alias_dim.bounds.min);
+      alias_dim.bounds.max = substitute_alias(alias_dim.bounds.max);
+      alias_dim.stride = substitute_alias(alias_dim.stride);
+      alias_dim.fold_factor = substitute_alias(alias_dim.fold_factor);
       if (!alias.assume_in_bounds) {
-        assert(alias.permutation.size() == op->dims.size());
         if (!prove_true(op->dims[d].bounds.min >= alias_dim.bounds.min) ||
             !prove_true(op->dims[d].bounds.max <= alias_dim.bounds.max)) {
           // We don't know if this target is big enough for this allocation.
@@ -299,29 +300,27 @@ class buffer_aliaser : public node_mutator {
         // Either the allocation or the target can assume the strides of the other.
       } else {
         // There are strides on both the allocation and the target, they must be equal.
-        expr alias_stride = simplify(substitute_buffer(alias.dims[d].stride, target, expr(), target_info.dims));
-        if (!prove_true(op->dims[d].stride == alias_stride)) {
+        if (!prove_true(op->dims[d].stride == alias_dim.stride)) {
           // This alias would violate a constraint on the stride of the buffer.
           return false;
         }
       }
 
-      const expr& target_fold_factor = target_info.dims[alias.permutation[d]].fold_factor;
       if (op->dims[d].fold_factor.defined()) {
-        if (!target_fold_factor.defined() || is_constant(target_fold_factor, dim::unfolded)) {
+        if (!alias_dim.fold_factor.defined() || is_constant(alias_dim.fold_factor, dim::unfolded)) {
           // The target isn't folded, we can alias this buffer. We lose our fold factor, but it's not going to occupy
           // any memory anyways if it's an alias.
-        } else if (!prove_true(target_fold_factor >= op->dims[d].fold_factor)) {
+        } else if (!prove_true(alias_dim.fold_factor >= op->dims[d].fold_factor)) {
           // The fold factor of this allocation does not evenly divide the target fold factor.
           // TODO: We could increase the fold factor like we do the bounds.
           return false;
-        } else if (!prove_true((target_info.dims[alias.permutation[d]].bounds.min % target_fold_factor) ==
+        } else if (!prove_true((alias_dim.bounds.min % alias_dim.fold_factor) ==
                                (op->dims[d].bounds.min % op->dims[d].fold_factor))) {
           // The mins of folded buffers are not aligned.
           return false;
         }
-      } else if ((target_fold_factor.defined() && !is_constant(target_fold_factor, dim::unfolded)) &&
-                 !prove_true(op->dims[d].extent() <= target_fold_factor)) {
+      } else if ((alias_dim.fold_factor.defined() && !is_constant(alias_dim.fold_factor, dim::unfolded)) &&
+                 !prove_true(op->dims[d].extent() <= alias_dim.fold_factor)) {
         // If the target is folded, but the op is not, we can only alias it if the extent of this dimension
         // is less than the fold factor.
         return false;
