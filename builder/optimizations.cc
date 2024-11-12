@@ -199,7 +199,7 @@ stmt remove_copy(const stmt& s, var a, var b) {
 }
 
 bool dim_has_stride(const dim_expr& d) { return d.stride.defined(); }
-bool dims_have_stride(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
+bool any_stride_defined(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
 
 class buffer_aliaser : public node_mutator {
   node_context& ctx;
@@ -270,8 +270,8 @@ class buffer_aliaser : public node_mutator {
       return false;
     }
 
-    const bool target_has_stride = dims_have_stride(target_info.dims);
-    const bool alloc_has_stride = dims_have_stride(op->dims);
+    const bool target_has_stride = any_stride_defined(target_info.dims);
+    const bool alloc_has_stride = any_stride_defined(op->dims);
 
     auto substitute_alias = [&](const expr& e) { return substitute_buffer(e, target, expr(), target_info.dims); };
 
@@ -410,7 +410,7 @@ public:
             target_info->dims[d].bounds |= alias.at[d] + min_extent(0, alias.dims[alias_d].bounds.extent());
           }
         }
-      } else if (!dims_have_stride(target_info->dims)) {
+      } else if (!any_stride_defined(target_info->dims)) {
         assert(target_info->dims.size() == alias.permutation.size());
         // The target doesn't have any strides, we might have some strides we assumed we could propagate.
         for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
