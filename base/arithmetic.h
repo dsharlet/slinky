@@ -189,7 +189,7 @@ T gcd(T a, T b) {
   }
   while (b != 0) {
     T tmp = b;
-    b = a % b;
+    b = euclidean_mod(a, b);
     a = tmp;
   }
   return a;
@@ -197,7 +197,7 @@ T gcd(T a, T b) {
 
 template <typename T>
 T lcm(T a, T b) {
-  return (a * b) / gcd(a, b);
+  return euclidean_div(a * b, gcd(a, b));
 }
 
 }  // namespace slinky

@@ -92,6 +92,8 @@ enum class intrinsic {
 
   // Common arithmetic functions.
   abs,
+  gcd,
+  lcm,
 
   // These are short circuiting logical operations, unlike the && and || operators which are commutative and do not
   // short circuit.
@@ -613,6 +615,8 @@ bool is_negative(expr_ref x);
 bool is_non_positive(expr_ref x);
 
 expr abs(expr x);
+expr gcd(expr a, expr b);
+expr lcm(expr a, expr b);
 expr align_down(expr x, const expr& a);
 expr align_up(expr x, const expr& a);
 // Expand the interval to have a min and extent aligned to a multiple of a.

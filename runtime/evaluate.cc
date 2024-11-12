@@ -27,7 +27,9 @@ namespace slinky {
 
 bool can_evaluate(intrinsic fn) {
   switch (fn) {
-  case intrinsic::abs: 
+  case intrinsic::abs:
+  case intrinsic::gcd:
+  case intrinsic::lcm: 
   case intrinsic::and_then:
   case intrinsic::or_else:
     return true;
@@ -348,6 +350,8 @@ public:
     case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
 
     case intrinsic::abs: assert(op->args.size() == 1); return std::abs(eval(op->args[0]));
+    case intrinsic::gcd: assert(op->args.size() == 2); return gcd(eval(op->args[0]), eval(op->args[1]));
+    case intrinsic::lcm: assert(op->args.size() == 2); return lcm(eval(op->args[0]), eval(op->args[1]));
 
     case intrinsic::and_then:
     case intrinsic::or_else: return eval_short_circuit_op(op);
@@ -824,6 +828,17 @@ public:
       std::optional<index_t> x = eval(op->args[0]);
       if (x) {
         result = std::abs(*x);
+      } else {
+        result = std::nullopt;
+      }
+      return;
+    }
+    case intrinsic::gcd:
+    case intrinsic::lcm: {
+      std::optional<index_t> a = eval(op->args[0]);
+      std::optional<index_t> b = eval(op->args[1]);
+      if (a && b) {
+        result = op->intrinsic == intrinsic::gcd ? gcd(*a, *b) : lcm(*a, *b);
       } else {
         result = std::nullopt;
       }

@@ -620,6 +620,8 @@ bool is_non_positive(expr_ref x) {
 }
 
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
+expr gcd(expr a, expr b) { return call::make(intrinsic::gcd, {std::move(a), std::move(b)}); }
+expr lcm(expr a, expr b) { return call::make(intrinsic::lcm, {std::move(a), std::move(b)}); }
 expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) { return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1}; }

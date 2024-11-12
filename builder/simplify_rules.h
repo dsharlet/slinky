@@ -501,6 +501,9 @@ bool apply_div_rules(Fn&& apply) {
       apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
       apply(select(x, c0, y)/c2, select(x, eval(c0/c2), y/c2)) ||
 
+      apply(x * y / gcd(x, y), lcm(x, y)) ||
+      apply(x * y / lcm(x, y), gcd(x, y)) ||
+
       false;
 }
 
@@ -516,6 +519,12 @@ bool apply_mod_rules(Fn&& apply) {
       apply(select(x, c0, c1)%c2, select(x, eval(c0%c2), eval(c1%c2))) ||
       apply(select(x, y, c1)%c2, select(x, y%c2, eval(c1%c2))) ||
       apply(select(x, c0, y)%c2, select(x, eval(c0%c2), y%c2)) ||
+
+      apply(x % gcd(x, y), 0) ||
+      apply(y % gcd(x, y), 0) ||
+      apply(lcm(x, y) % x, 0) ||
+      apply(lcm(x, y) % y, 0) ||
+
       false;
 }
 

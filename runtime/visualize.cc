@@ -360,6 +360,13 @@ function euclidean_mod(a, b) { return Math.round(a - b * euclidean_div(a, b)); }
 function min(a, b) { return Math.min(a, b); }
 function max(a, b) { return Math.max(a, b); }
 function abs(a) { return Math.abs(a); }
+function gcd(a, b) { 
+  if (b === 0) {
+    return a;
+  }
+  return gcd(b, a % b);
+}
+function lcm(a, b) { return a * b / gcd(a, b); }
 function clamp(x, a, b) { return min(max(x, a), b); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function lerp_color(a, b, t) {

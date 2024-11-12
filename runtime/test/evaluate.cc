@@ -63,6 +63,9 @@ TEST(evaluate, arithmetic) {
   ASSERT_EQ(evaluate(or_else({expr(false), expr(true)})), true);
   ASSERT_EQ(evaluate(or_else({expr(false), expr(false)})), false);
   ASSERT_EQ(evaluate(or_else({expr(true), indeterminate()})), true);
+
+  ASSERT_EQ(evaluate(gcd(12, 9), context), 3);
+  ASSERT_EQ(evaluate(lcm(3, 4), context), 12);
 }
 
 TEST(evaluate, undef) {

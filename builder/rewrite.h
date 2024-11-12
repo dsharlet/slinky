@@ -510,6 +510,10 @@ template <typename C, typename T, typename F, bool = typename enable_pattern_ops
 SLINKY_UNIQUE auto select(const C& c, const T& t, const F& f) { return pattern_select<C, T, F>{c, t, f}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto abs(const T& x) { return pattern_call<T>{intrinsic::abs, {x}}; }
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
+SLINKY_UNIQUE auto gcd(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::gcd, {a, b}}; }
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
+SLINKY_UNIQUE auto lcm(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::lcm, {a, b}}; }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto boolean(const T& x) { return replacement_boolean<T>{x}; }
 SLINKY_UNIQUE auto positive_infinity() { return pattern_call<>{intrinsic::positive_infinity, {}}; }
