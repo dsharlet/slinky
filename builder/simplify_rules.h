@@ -569,8 +569,7 @@ bool apply_less_rules(Fn&& apply) {
 
       apply(x%c0 < c1,
         true, eval(c0 > 0 && c0 <= c1),
-        false, eval(c0 > 0 && c1 <= 0),
-        x%c0 != c1, eval(c0 > 0 && c1 >= c0 - 1)) ||
+        false, eval(c0 > 0 && c1 <= 0)) ||
       apply(c0 < x%c1,
         true, eval(c1 > 0 && c0 < 0),
         false, eval(c1 > 0 && c0 >= c1 - 1),
@@ -669,14 +668,14 @@ bool apply_less_rules(Fn&& apply) {
       apply(x + z < max(x, y), z < max(y - x, 0), !is_constant(x)) ||
 
       apply(min(z, x + y) < x + w, min(y, z - x) < w, !is_constant(x)) ||
-      apply(min(z, x - y) < x + w, min(-y, z - x) < w, !is_constant(x)) ||
+      apply(min(z, x - y) < x + w, 0 < w + max(y, x - z), !is_constant(x)) ||
       apply(max(z, x + y) < x + w, max(y, z - x) < w, !is_constant(x)) ||
-      apply(max(z, x - y) < x + w, max(-y, z - x) < w, !is_constant(x)) ||
+      apply(max(z, x - y) < x + w, 0 < w + min(y, x - z), !is_constant(x)) ||
 
       apply(x + y < max(w, x + z), y < max(z, w - x), !is_constant(x)) ||
-      apply(x + y < max(w, x - z), y < max(-z, w - x), !is_constant(x)) ||
+      apply(x + y < max(w, x - z), y + min(z, x - w) < 0, !is_constant(x)) ||
       apply(x + y < min(w, x + z), y < min(z, w - x), !is_constant(x)) ||
-      apply(x + y < min(w, x - z), y < min(-z, w - x), !is_constant(x)) ||
+      apply(x + y < min(w, x - z), y + max(z, x - w) < 0, !is_constant(x)) ||
 
       // Selects
       apply(select(x, c0, y) < c1, select(x, eval(c0 < c1), y < c1)) ||
@@ -740,8 +739,6 @@ bool apply_equal_rules(Fn&& apply) {
     
       apply(select(x, y, z) == select(x, w, u), select(x, y == w, z == u)) ||
       apply(v + select(x, y, z) == select(x, w, u), select(x, w == v + y, u == v + z)) ||
-      apply(v - select(x, y, z) == select(x, w, u), select(x, w == v - y, u == v - z)) ||
-      apply(select(x, y, z) - v == select(x, w, u), select(x, w == y - v, u == z - v)) ||
       apply(select(x, c0, y) == c1, select(x, eval(c0 == c1), y == c1)) ||
       apply(select(x, y, c0) == c1, select(x, y == c1, eval(c0 == c1))) ||
       apply(y == select(x == y, x, z), x == y || y == z) ||
