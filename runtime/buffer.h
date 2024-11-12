@@ -914,45 +914,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   });
 }
 
-// Call `f` for each slice of the first `slice_rank` dimensions of `buf`. The trailing dimensions of `bufs` will also be
-// sliced at the same indices as `buf`.  If the other buffers are out of bounds for a slice, the corresponding argument
-// to the callback will be `nullptr`.
-template <typename F, typename... Bufs>
-SLINKY_NO_STACK_PROTECTOR void for_each_slice(
-    std::size_t slice_rank, const raw_buffer& buf, const F& f, const Bufs&... bufs) {
-  constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
-  std::array<const raw_buffer*, BufsSize> buf_ptrs;
-  // Remove the sliced dimensions from the bufs.
-  std::array<raw_buffer, BufsSize> sliced_bufs = {buf, bufs...};
-  for (std::size_t i = 0; i < BufsSize; ++i) {
-    std::size_t slice_rank_i =
-        std::min(sliced_bufs[i].rank, slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank);
-    sliced_bufs[i].rank -= slice_rank_i;
-    sliced_bufs[i].dims += slice_rank_i;
-    buf_ptrs[i] = &sliced_bufs[i];
-  }
-
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank - slice_rank, BufsSize));
-  std::array<void*, BufsSize> bases;
-  internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
-
-  // TODO: We only need to copy dims and rank here. `elem_size` should already be set, and `base` is set below.
-  // I'm not sure if fixing this would be much of an improvement.
-  sliced_bufs = {buf, bufs...};
-  for (std::size_t i = 0; i < BufsSize; ++i) {
-    sliced_bufs[i].rank =
-        std::min(sliced_bufs[i].rank, slice_rank + std::max(sliced_bufs[i].rank, buf.rank) - buf.rank);
-  }
-
-  internal::for_each_impl(bases, plan, [&](const std::array<void*, BufsSize>& bases) {
-    for (std::size_t i = 0; i < BufsSize; ++i) {
-      sliced_bufs[i].base = bases[i];
-    }
-    std::apply(f, sliced_bufs);
-  });
-}
-
 // Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`, or
 // `nullptr` if `buf` is out of bounds of `bufs`.
 template <typename F, typename Buf, typename... Bufs>
@@ -970,28 +931,6 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
                       bases, std::make_index_sequence<BufsSize>()));
   });
 }
-
-// Call `f(buf)` for each tile of size `tile` in the domain of `buf`. `tile` is a span of sizes of the tile in each
-// dimension.
-template <typename F>
-SLINKY_NO_STACK_PROTECTOR void for_each_tile(span<const index_t> tile, const raw_buffer& buf, const F& f) {
-  assert(buf.rank == tile.size());
-
-  // Copy the buffer so we can mutate it.
-  // TODO: We restore the buffer to its original state, so if we can guarantee that this thread has its own copy, it
-  // should be OK to just const_cast it.
-  raw_buffer buf_;
-  buf_.base = buf.base;
-  buf_.elem_size = buf.elem_size;
-  buf_.rank = buf.rank;
-  buf_.dims = SLINKY_ALLOCA(dim, buf.rank);
-  internal::copy_small_n(buf.dims, buf.rank, buf_.dims);
-
-  internal::for_each_tile(tile.data(), buf_, buf_.rank - 1, f);
-}
-
-// Value for use in tile tuples indicating the dimension should be passed unmodified.
-static constexpr index_t all = std::numeric_limits<index_t>::max();
 
 }  // namespace slinky
 
