@@ -420,13 +420,9 @@ public:
       if (info.shared_alloc_sym.defined()) {
         // This allocation's bounds were expanded to accommodate aliases. Make a new expanded allocation, and make the
         // original allocation a crop of the expanded allocation.
-        stmt result = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
-        result =
-            allocate::make(info.shared_alloc_sym, op->storage, op->elem_size, std::move(info.dims), std::move(result));
-        set_result(result);
-      } else {
-        set_result(clone_with(op, std::move(body)));
+        body = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
       }
+      set_result(allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body)));
     } else {
       set_result(op);
     }
