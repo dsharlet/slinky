@@ -109,11 +109,11 @@ private:
   task_id dequeue(task& t);
 
 public:
-  // Constructs a thread pool with no worker threads. Use `run_worker` to enter a thread into the thread pool.
-  thread_pool_impl();
   // `workers` indicates how many worker threads the thread pool will have.
   // `init` is a task that is run on each newly created thread.
-  thread_pool_impl(int workers, const task& init = nullptr);
+  // Pass workers = 0 to have a thread pool with no worker threads and 
+  // use `run_worker` to enter a thread into the thread pool.
+  thread_pool_impl(int workers = 3, const task& init = nullptr);
   ~thread_pool_impl() override;
 
   // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
