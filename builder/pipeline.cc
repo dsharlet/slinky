@@ -563,8 +563,8 @@ class pipeline_builder {
   symbol_map<std::vector<dim_expr>> inferred_shapes_;
   symbol_map<std::vector<interval_expr>> inferred_bounds_;
 
-  std::vector<var> input_syms_;
-  std::set<var> output_syms_;
+  std::map<var, buffer_expr_ptr> input_syms_;
+  std::map<var, buffer_expr_ptr> output_syms_;
 
   sanitize_user_exprs sanitizer_;
 
@@ -607,9 +607,9 @@ class pipeline_builder {
       }
     }
 
-    for (var i : input_syms_) {
-      assert(allocation_bounds_[i]);
-      inferred_bounds_[i] = allocation_bounds_[i];
+    for (const auto& i : input_syms_) {
+      assert(allocation_bounds_[i.first]);
+      inferred_bounds_[i.first] = allocation_bounds_[i.first];
     }
   }
 
@@ -653,10 +653,11 @@ class pipeline_builder {
 
       // Add crops for the used buffers using previously inferred bounds.
       // Input syms should be the innermost.
-      for (var i : input_syms_) {
-        if (!allocation_bounds_[i]) continue;
-        if (!buffer_used[i]) continue;
-        body = crop_buffer::make(i, i, *allocation_bounds_[i], body);
+      for (const auto& i : input_syms_) {
+        var sym = i.first;
+        if (!allocation_bounds_[sym]) continue;
+        if (!buffer_used[sym]) continue;
+        body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body);
       }
 
       // Followed by intermediate buffers in the reverse topological order
@@ -732,17 +733,18 @@ public:
     topological_sort(outputs, order_, deps, constants);
 
     for (auto& i : outputs) {
-      output_syms_.insert(i->sym());
+      output_syms_[i->sym()] = i;
+      sanitizer_.external.insert(i->sym());
     }
 
     for (const buffer_expr_ptr& i : inputs) {
-      input_syms_.push_back(i->sym());
+      input_syms_[i->sym()] = i;
+      sanitizer_.external.insert(i->sym());
     }
     for (const buffer_expr_ptr& i : constants) {
-      input_syms_.push_back(i->sym());
+      input_syms_[i->sym()] = i;
+      sanitizer_.external.insert(i->sym());
     }
-    sanitizer_.external.insert(input_syms_.begin(), input_syms_.end());
-    sanitizer_.external.insert(output_syms_.begin(), output_syms_.end());
 
     // Build a loop nest tree and computes compute_at locations when neccessary.
     compute_innermost_locations(order_, deps, compute_at_levels_);
@@ -822,13 +824,12 @@ public:
   // Add checks that the inputs are sufficient based on inferred bounds.
   stmt add_input_checks(const stmt& body) {
     std::vector<stmt> checks;
-    for (var i : input_syms_) {
-      expr buf_var = variable::make(i);
-      const std::optional<box_expr>& bounds = allocation_bounds_[i];
+    for (const auto& i : input_syms_) {
+      const std::optional<box_expr>& bounds = allocation_bounds_[i.first];
       assert(bounds);
       for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
-        checks.push_back(check::make(buffer_min(buf_var, d) <= (*bounds)[d].min));
-        checks.push_back(check::make(buffer_max(buf_var, d) >= (*bounds)[d].max));
+        checks.push_back(check::make(i.second->dim(d).min() <= (*bounds)[d].min));
+        checks.push_back(check::make(i.second->dim(d).max() >= (*bounds)[d].max));
       }
     }
     return block::make(std::move(checks), std::move(body));
@@ -847,8 +848,6 @@ public:
     }
     return body;
   }
-
-  const std::vector<var>& input_syms() { return input_syms_; }
 };
 
 void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
