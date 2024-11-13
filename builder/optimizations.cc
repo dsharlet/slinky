@@ -254,8 +254,9 @@ class buffer_aliaser : public node_mutator {
   };
   symbol_map<buffer_info> buffers;
 
-  static bool alias_compatible(
-      const allocate* op, alias_info& alias, var target, const buffer_info& target_info) {
+  // Checks if `op` can safely be replaced by `alias` targeting a buffer `target` described by `target_info`.
+  // This updates some fields of `alias` from what we learn from `target_info`.
+  static bool alias_compatible(const allocate* op, alias_info& alias, var target, const buffer_info& target_info) {
     scoped_trace trace("alias_compatible");
     assert(op->dims.size() == alias.dims.size());
 
