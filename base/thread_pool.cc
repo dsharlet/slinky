@@ -10,8 +10,6 @@ namespace slinky {
 
 thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
 
-thread_pool_impl::thread_pool_impl() {}
-
 thread_pool_impl::thread_pool_impl(int workers, const task& init) : stop_(false) {
   auto worker = [this, init]() {
     if (init) init();
