@@ -51,17 +51,22 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool>> {};
+class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, bool>> {};
 
 auto offsets = testing::Values(0, 1, -1, 10, -10);
 
-INSTANTIATE_TEST_SUITE_P(offsets, padded_copy, testing::Combine(offsets, offsets, testing::Values(true, false)),
+INSTANTIATE_TEST_SUITE_P(offsets, padded_copy,
+    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(false, true)),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
   int offset_x = std::get<0>(GetParam());
   int offset_y = std::get<1>(GetParam());
   bool in_bounds = std::get<2>(GetParam());
+  std::vector<int> permutation = {0, 1};
+  if (std::get<3>(GetParam())) {
+    std::swap(permutation[0], permutation[1]);
+  }
 
   // Make the pipeline
   node_context ctx;
@@ -75,8 +80,9 @@ TEST_P(padded_copy, pipeline) {
   var y(ctx, "y");
 
   func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func crop =
-      func::make_copy({intm, {point(x + offset_x), point(y + offset_y)}, in->bounds()}, {padded_intm, {x, y}}, {3});
+  func crop = func::make_copy(
+      {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
+      {padded_intm, {x, y}}, {3});
   func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -85,9 +91,9 @@ TEST_P(padded_copy, pipeline) {
   const int H = 5;
 
   // Run the pipeline.
-  buffer<char, 2> in_buf({W, H});
+  buffer<char, 2> in_buf(permute<index_t>(permutation, {W, H}));
   if (in_bounds) {
-    in_buf.translate(offset_x, offset_y);
+    in_buf.translate(permute<index_t>(permutation, {offset_x, offset_y}));
   }
   init_random(in_buf);
 
@@ -101,8 +107,8 @@ TEST_P(padded_copy, pipeline) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      if (in_buf.contains(x + offset_x, y + offset_y)) {
-        ASSERT_EQ(out_buf(x, y), in_buf(x + offset_x, y + offset_y));
+      if (in_buf.contains(permute<index_t>(permutation, {x + offset_x, y + offset_y}))) {
+        ASSERT_EQ(out_buf(x, y), in_buf(permute<index_t>(permutation, {x + offset_x, y + offset_y})));
       } else {
         ASSERT_EQ(out_buf(x, y), 3);
       }
@@ -153,7 +159,8 @@ TEST_P(copy_sequence, pipeline) {
   // If the pad mask is one for that stage, we add padding outside the region [1, 4].
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
-      return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
+      return func::make_copy(
+          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
@@ -671,6 +678,84 @@ TEST_P(broadcasted_elementwise, internal) {
   if (!no_alias_buffers) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
     ASSERT_EQ(eval_ctx.copy_calls, 0);
+  }
+}
+
+class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool>> {};
+
+INSTANTIATE_TEST_SUITE_P(dim, constrained_transpose,
+    testing::Combine(testing::Values(true, false), testing::Values(true, false), testing::Values(true, false)),
+    test_params_to_string<constrained_transpose::ParamType>);
+
+TEST_P(constrained_transpose, pipeline) {
+  const bool no_alias_buffers = std::get<0>(GetParam());
+  const bool intm1_fixed = std::get<1>(GetParam());
+  const bool intm2_fixed = std::get<2>(GetParam());
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 3, sizeof(short));
+  auto out = buffer_expr::make(ctx, "out", 3, sizeof(short));
+
+  auto intm1 = buffer_expr::make(ctx, "intm1", 3, sizeof(short));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 3, sizeof(short));
+
+  if (intm1_fixed) {
+    intm1->dim(0).stride = sizeof(short);
+    intm1->dim(1).stride = sizeof(short) * in->dim(0).extent();
+    intm1->dim(2).stride = sizeof(short) * in->dim(0).extent() * in->dim(0).extent();
+  }
+  if (intm2_fixed) {
+    intm2->dim(0).stride = sizeof(short);
+    intm2->dim(1).stride = sizeof(short) * out->dim(0).extent();
+    intm2->dim(2).stride = sizeof(short) * out->dim(0).extent() * out->dim(0).extent();
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+  var z(ctx, "z");
+
+  // In this pipeline, the result is copied to the output. We should just compute the result directly in the output.
+  func add_in = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm1, {x, y, z}}}});
+  func transposed = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}});
+  func add_out = func::make(add_1<short>, {{intm2, {point(x), point(y), point(z)}}}, {{{out, {x, y, z}}}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 4;
+  const int D = 7;
+  buffer<short, 3> in_buf({W, D, H});
+  init_random(in_buf);
+
+  buffer<short, 3> out_buf({W, H, D});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int z = 0; z < D; ++z) {
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y, z), in_buf(x, z, y) + 2);
+      }
+    }
+  }
+
+  if (!no_alias_buffers) {
+    if (intm1_fixed && intm2_fixed) {
+      // Both the intermediates have stride constraints, we can't alias anything.
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
+    } else {
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+      ASSERT_EQ(eval_ctx.copy_calls, 0);
+    }
+  } else {
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
   }
 }
 

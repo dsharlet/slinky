@@ -374,7 +374,9 @@ public:
   virtual stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) = 0;
 
   // Implementation of substitution for buffer intrinsics.
-  virtual expr mutate_buffer_intrinsic(intrinsic fn, var buf, span<const expr> args) { return expr(); }
+  virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
+    return expr(op);
+  }
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }
@@ -507,11 +509,13 @@ public:
     interval_expr old_bounds = buffer_bounds(src, dim);
     interval_expr new_bounds = {mutate(old_bounds.min), mutate(old_bounds.max)};
     interval_expr result = {mutate(bounds.min), mutate(bounds.max)};
-    if (!old_bounds.min.same_as(new_bounds.min) && !match_call(new_bounds.min, intrinsic::buffer_min, new_src, dim)) {
+    if (new_bounds.min.defined() && !old_bounds.min.same_as(new_bounds.min) &&
+        !match_call(new_bounds.min, intrinsic::buffer_min, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.min = max(result.min, new_bounds.min);
     }
-    if (!old_bounds.max.same_as(new_bounds.max) && !match_call(new_bounds.max, intrinsic::buffer_max, new_src, dim)) {
+    if (new_bounds.max.defined() && !old_bounds.max.same_as(new_bounds.max) &&
+        !match_call(new_bounds.max, intrinsic::buffer_max, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.max = min(result.max, new_bounds.max);
     }
@@ -562,7 +566,7 @@ public:
           if (d + 1 >= args.size() || !args[d + 1].defined()) {
             // buffer_at has an implicit buffer_min if it is not defined.
             expr min_args[] = {d};
-            expr min = mutate_buffer_intrinsic(intrinsic::buffer_min, *buf, min_args);
+            expr min = mutate_buffer_intrinsic(nullptr, intrinsic::buffer_min, *buf, min_args);
             if (min.defined()) {
               args.resize(std::max(args.size(), d + 2));
               args[d + 1] = min;
@@ -572,11 +576,9 @@ public:
         }
       }
 
-      expr result = mutate_buffer_intrinsic(op->intrinsic, *buf, span<const expr>(args).subspan(1));
-      if (result.defined()) {
-        set_result(std::move(result));
-        return;
-      }
+      expr result = changed ? call::make(op->intrinsic, args) : expr(op);
+      set_result(mutate_buffer_intrinsic(result.as<call>(), op->intrinsic, *buf, span<const expr>(args).subspan(1)));
+      return;
     }
     if (changed) {
       set_result(call::make(op->intrinsic, std::move(args)));
@@ -759,13 +761,13 @@ public:
     return 0;
   }
 
-  expr mutate_buffer_intrinsic(intrinsic fn, var buf, span<const expr> args) override {
+  expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) override {
     const call* c = as_intrinsic(target, fn);
-    if (!c) return expr();
-    if (!match(c->args[0], buf)) return expr();
-    if (c->args.size() != args.size() + 1) return expr();
+    if (!c) return expr(op);
+    if (!match(c->args[0], buf)) return expr(op);
+    if (c->args.size() != args.size() + 1) return expr(op);
     for (std::size_t d = 0; d < args.size(); ++d) {
-      if (!match(c->args[d + 1], args[d])) return expr();
+      if (!match(c->args[d + 1], args[d])) return expr(op);
     }
     return replacement;
   }
@@ -814,8 +816,8 @@ public:
 
   std::size_t get_target_buffer_rank(var x) override { return x == target ? dims.size() : 0; }
 
-  expr mutate_buffer_intrinsic(intrinsic fn, var buf, span<const expr> args) override {
-    if (buf != target) return expr();
+  expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) override {
+    if (buf != target) return expr(op);
 
     if (fn == intrinsic::buffer_elem_size) {
       if (elem_size.defined()) {
@@ -826,16 +828,13 @@ public:
       const index_t* dim = as_constant(args[0]);
       assert(dim);
       if (*dim < static_cast<index_t>(dims.size())) {
-        expr result = eval_buffer_intrinsic(fn, dims[*dim]);
-        if (result.defined()) {
-          return result;
-        }
+        return eval_buffer_intrinsic(fn, dims[*dim]);
       }
     } else if (fn == intrinsic::buffer_size_bytes) {
       std::cerr << "substituting buffer_size_bytes not implemented" << std::endl;
       std::abort();
     }
-    return expr();
+    return expr(op);
   }
 };
 

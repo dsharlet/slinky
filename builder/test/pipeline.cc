@@ -976,6 +976,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   if (require_dense_x) {
     padded_intm_t->dim(0).stride = sizeof(short);
     padded_intm->dim(0).stride = sizeof(short);
+    stencil_intm->dim(0).stride = sizeof(short);
   }
 
   var x(ctx, "x");

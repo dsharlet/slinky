@@ -61,6 +61,15 @@ void merge_crop(std::optional<box_expr>& bounds, const box_expr& new_bounds) {
   }
 }
 
+// Replace any undefined bounds, which can come from merge_crop above, with buffer_min/buffer_max.
+void define_undef_bounds(box_expr& bounds, var sym) {
+  for (int d = 0; d < static_cast<int>(bounds.size()); ++d) {
+    interval_expr& bounds_d = bounds[d];
+    if (!bounds_d.min.defined()) bounds_d.min = buffer_min(sym, d);
+    if (!bounds_d.max.defined()) bounds_d.max = buffer_max(sym, d);
+  }
+}
+
 // Keep substituting substitutions until nothing happens.
 std::vector<dim_expr> recursive_substitute(
     std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
@@ -514,6 +523,7 @@ public:
     std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     merge_crop(bounds, op->bounds);
     if (bounds) {
+      define_undef_bounds(*bounds, op->sym);
       substitute_bounds(*bounds, current_buffer_bounds());
       // Now do the reverse substitution, because the updated bounds can be used in other
       // bounds.
@@ -544,6 +554,7 @@ public:
   void visit(const crop_dim* op) override {
     std::optional<box_expr> bounds = current_buffer_bounds()[op->src];
     merge_crop(bounds, op->dim, op->bounds);
+    define_undef_bounds(*bounds, op->sym);
     substitute_bounds(*bounds, current_buffer_bounds());
     // Now do the reverse substitution, because the updated bounds can be used in other
     // bounds.
