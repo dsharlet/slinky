@@ -67,7 +67,7 @@ public:
   index_t end() const { return max_ + 1; }
   index_t extent() const {
     assert(!sub_overflows<index_t>(max_, min_) && !add_overflows<index_t>(max_ - min_, 1));
-    return max_ - min_ + 1;
+    return (max_ - min_) + 1;
   }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
@@ -562,14 +562,12 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   if (outer.max() == outer.min() && outer.stride() != 0) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
 
-    // Avoid asserts on overflow in extent.
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
   // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
   index_t next_stride = inner.stride() == 0 ? 0 : inner.stride() * inner.extent();
 #else
   index_t next_stride = inner.stride() * (inner.max() - inner.min() + 1);
 #endif
-  // Avoid overflow for broadcast dimensions
   if (next_stride != outer.stride()) return false;
   return true;
 }
@@ -598,11 +596,12 @@ inline void fuse(int inner, int outer, raw_buffer& buf) {
       id.set_range(od.begin() * id.extent(), od.end() * id.extent());
     }
   } else {
+    const index_t id_extent = id.extent();
     if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
       assert(id.fold_factor() == dim::unfolded);
-      id.set_fold_factor(od.fold_factor() * id.extent());
+      id.set_fold_factor(od.fold_factor() * id_extent);
     }
-    id.set_range(od.begin() * id.extent(), od.end() * id.extent());
+    id.set_range(od.begin() * id_extent, od.end() * id_extent);
   }
   if (type == fuse_type::keep) {
     od.set_point(0);
@@ -843,44 +842,6 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(const std::array<void*, NumBufs>&
     for_each_impl_folded<true>(bases, loop->extent, plan, f);
   } else {
     for_each_impl_folded<false>(bases, loop->extent, plan, f);
-  }
-}
-
-// Implements the cropping part of a loop over tiles.
-template <typename F>
-void for_each_tile(const index_t* tile, raw_buffer& buf, int d, const F& f) {
-  if (d == -1) {
-    f(buf);
-    return;
-  }
-
-  slinky::dim& dim = buf.dim(d);
-  index_t step = tile[d];
-  if (dim.extent() <= step) {
-    // Don't need to tile this dimension.
-    for_each_tile(tile, buf, d - 1, f);
-  } else {
-    // TODO: Supporting folding here should be possible.
-    assert(!dim.is_folded());
-    index_t stride = dim.stride() * step;
-
-    // Save the old base and bounds.
-    void* old_base = buf.base;
-    index_t old_min = dim.min();
-    index_t old_max = dim.max();
-
-    // Handle the first tile.
-    dim.set_bounds(old_min, old_min + step - 1);
-    for_each_tile(tile, buf, d - 1, f);
-    for (index_t i = old_min + step; i <= old_max; i += step) {
-      buf.base = offset_bytes(buf.base, stride);
-      dim.set_bounds(i, std::min(old_max, i + step - 1));
-      for_each_tile(tile, buf, d - 1, f);
-    }
-
-    // Restore the old base and bounds.
-    buf.base = old_base;
-    dim.set_bounds(old_min, old_max);
   }
 }
 
