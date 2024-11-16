@@ -93,6 +93,7 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::co
 void thread_pool_impl::atomic_call(const task& t) {
   std::unique_lock l(mutex_);
   t();
+  cv_worker_.notify_all();
   cv_helper_.notify_all();
 }
 
