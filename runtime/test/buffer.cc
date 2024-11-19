@@ -600,6 +600,30 @@ TEST(buffer, for_each_element) {
   ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
+TEST(buffer, for_each_element_zero) {
+  // Verify that zero-dimensional buffers work
+  buffer<int, 0> buf0({});
+  buffer<int, 0> buf1({});
+  buffer<int, 0> buf2({});
+  buf0.allocate();
+  buf1.allocate();
+  buf2.allocate();
+  int elements = 0;
+  for_each_element(
+      [&](int* elt0, int* elt1, int* elt2) {
+        *elt0 = 1111;
+        *elt1 = 2222;
+        *elt2 = 3333;
+        elements++;
+      },
+      buf0, buf1, buf2);
+  int expected_elements = 1;
+  ASSERT_EQ(elements, expected_elements);
+  ASSERT_EQ(*(int*)buf0.address_at(), 1111);
+  ASSERT_EQ(*(int*)buf1.address_at(), 2222);
+  ASSERT_EQ(*(int*)buf2.address_at(), 3333);
+}
+
 TEST(buffer, for_each_element_empty) {
   buffer<int, 2> buf({0, 20});
   buf.allocate();
