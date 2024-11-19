@@ -602,18 +602,18 @@ TEST(buffer, for_each_element) {
 
 TEST(buffer, for_each_element_rank_zero) {
   // Verify that zero-dimensional buffers work
-  buffer<int, 0> buf0({});
-  buf0.allocate();
+  buffer<int, 0> buf({});
+  buf.allocate();
   int elements = 0;
   for_each_element(
-      [&](int* elt0) {
-        *elt0 = 1111;
+      [&](int* elt) {
+        *elt = 1111;
         elements++;
       },
-      buf0);
+      buf);
   int expected_elements = 1;
   ASSERT_EQ(elements, expected_elements);
-  ASSERT_EQ(*(int*)buf0.address_at(), 1111);
+  ASSERT_EQ(buf(), 1111);
 }
 
 TEST(buffer, for_each_element_empty) {
