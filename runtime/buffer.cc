@@ -478,6 +478,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
   void* plan = plan_base;
   index_t slice_extent = 1;
   index_t extent = 1;
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
   if (buf->rank == 0) {
     // This is here mainly to ensure that the strides[] array is initialized
     // properly for the zero-dimensional case; we don't use the results of
@@ -486,88 +487,88 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     for_each_loop* loop = increment_plan<for_each_loop>(plan);
     loop->impl = for_each_loop::linear | for_each_loop::call_f;
     loop->extent = 1;
-    prev_loop = loop;
 
     index_t* strides = increment_plan<index_t>(plan, bufs_size);
     strides[0] = 0;
     for (std::size_t n = 1; n < bufs_size; n++) {
       strides[n] = 0;
     }
-  } else {
-    for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
-      const dim& buf_dim = buf->dim(d);
+    return 1;
+  }
+#endif
+  for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
+    const dim& buf_dim = buf->dim(d);
 
-      if (buf_dim.min() == buf_dim.max()) {
-        // extent 1, we don't need any of the logic here, skip to below.
-      } else if (buf_dim.max() > buf_dim.min()) {
-        if (use_folded_loop(bufs, bufs_size, d)) {
-          // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
-          assert(extent == 1);
-          for_each_loop* loop = increment_plan<for_each_loop>(plan);
-          loop->impl = for_each_loop::folded;
-          loop->extent = buf_dim.extent();
-          prev_loop = loop;
-
-          const dim** dims = increment_plan<const dim*>(plan, bufs_size);
-          dims[0] = &buf->dim(d);
-          for (std::size_t n = 1; n < bufs_size; n++) {
-            dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
-          }
-          continue;
-        } else {
-          // Not folded, use a linear, possibly fused loop below.
-          extent *= buf_dim.extent();
-        }
-      } else {
-        // extent <= 0.
-        assert(buf_dim.empty());
-        write_empty_plan(plan_base, bufs_size);
-        return 0;
-      }
-
-      // Align the bases for dimensions we will access via linear pointer arithmetic.
-      if (bases[0]) {
-        // This function is expected to adjust all bases to point to the min of `buf_dim`. For non-folded dimensions, that
-        // is true by construction, but not for folded dimensions.
-        index_t offset = buf_dim.flat_offset_bytes(buf_dim.min());
-        bases[0] = offset_bytes_non_null(bases[0], offset);
-      }
-      for (std::size_t n = 1; n < bufs_size; n++) {
-        if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
-          const dim& buf_n_dim = bufs[n]->dim(d);
-          if (buf_n_dim.contains(buf_dim)) {
-            index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
-            bases[n] = offset_bytes_non_null(bases[n], offset);
-          } else {
-            // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
-            // use_folded_loop should have returned true above.
-            assert(buf_n_dim.empty() || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
-            bases[n] = nullptr;
-          }
-        }
-      }
-
-      if (d > 0 && (extent == 1 || can_fuse(bufs, bufs_size, d))) {
-        // Let this fuse with the next dimension.
-      } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
-        // This is the slice dimension.
-        slice_extent *= extent;
-        extent = 1;
-      } else {
-        // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
-        assert(!buf_dim.is_folded());
-
+    if (buf_dim.min() == buf_dim.max()) {
+      // extent 1, we don't need any of the logic here, skip to below.
+    } else if (buf_dim.max() > buf_dim.min()) {
+      if (use_folded_loop(bufs, bufs_size, d)) {
+        // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
+        assert(extent == 1);
         for_each_loop* loop = increment_plan<for_each_loop>(plan);
-        loop->impl = for_each_loop::linear;
-        loop->extent = extent;
+        loop->impl = for_each_loop::folded;
+        loop->extent = buf_dim.extent();
         prev_loop = loop;
-        extent = 1;
 
-        index_t* strides = increment_plan<index_t>(plan, bufs_size);
-        strides[0] = buf->dim(d).stride();
+        const dim** dims = increment_plan<const dim*>(plan, bufs_size);
+        dims[0] = &buf->dim(d);
         for (std::size_t n = 1; n < bufs_size; n++) {
-          strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+          dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
         }
+        continue;
+      } else {
+        // Not folded, use a linear, possibly fused loop below.
+        extent *= buf_dim.extent();
+      }
+    } else {
+      // extent <= 0.
+      assert(buf_dim.empty());
+      write_empty_plan(plan_base, bufs_size);
+      return 0;
+    }
+
+    // Align the bases for dimensions we will access via linear pointer arithmetic.
+    if (bases[0]) {
+      // This function is expected to adjust all bases to point to the min of `buf_dim`. For non-folded dimensions, that
+      // is true by construction, but not for folded dimensions.
+      index_t offset = buf_dim.flat_offset_bytes(buf_dim.min());
+      bases[0] = offset_bytes_non_null(bases[0], offset);
+    }
+    for (std::size_t n = 1; n < bufs_size; n++) {
+      if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
+        const dim& buf_n_dim = bufs[n]->dim(d);
+        if (buf_n_dim.contains(buf_dim)) {
+          index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
+          bases[n] = offset_bytes_non_null(bases[n], offset);
+        } else {
+          // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
+          // use_folded_loop should have returned true above.
+          assert(buf_n_dim.empty() || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
+          bases[n] = nullptr;
+        }
+      }
+    }
+
+    if (d > 0 && (extent == 1 || can_fuse(bufs, bufs_size, d))) {
+      // Let this fuse with the next dimension.
+    } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
+      // This is the slice dimension.
+      slice_extent *= extent;
+      extent = 1;
+    } else {
+      // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
+      assert(!buf_dim.is_folded());
+
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
+      loop->impl = for_each_loop::linear;
+      loop->extent = extent;
+      prev_loop = loop;
+      extent = 1;
+
+      index_t* strides = increment_plan<index_t>(plan, bufs_size);
+      strides[0] = buf->dim(d).stride();
+      for (std::size_t n = 1; n < bufs_size; n++) {
+        strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
       }
     }
   }
