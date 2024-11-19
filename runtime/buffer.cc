@@ -489,8 +489,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     loop->extent = 1;
 
     index_t* strides = increment_plan<index_t>(plan, bufs_size);
-    strides[0] = 0;
-    for (std::size_t n = 1; n < bufs_size; n++) {
+    for (std::size_t n = 0; n < bufs_size; n++) {
       strides[n] = 0;
     }
     return 1;

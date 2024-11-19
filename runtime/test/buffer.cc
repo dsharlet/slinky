@@ -600,7 +600,7 @@ TEST(buffer, for_each_element) {
   ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
-TEST(buffer, for_each_element_zero) {
+TEST(buffer, for_each_element_rank_zero) {
   // Verify that zero-dimensional buffers work
   buffer<int, 0> buf0({});
   buf0.allocate();
