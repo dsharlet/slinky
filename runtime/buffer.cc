@@ -478,6 +478,23 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
   void* plan = plan_base;
   index_t slice_extent = 1;
   index_t extent = 1;
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
+  if (buf->rank == 0) {
+    // This is here mainly to ensure that the strides[] array is initialized
+    // properly for the zero-dimensional case; we don't use the results of
+    // adding these strides, but in certain Sanitizer modes we could fail
+    // if we added garbage to a pointer and it overflowed.
+    for_each_loop* loop = increment_plan<for_each_loop>(plan);
+    loop->impl = for_each_loop::linear | for_each_loop::call_f;
+    loop->extent = 1;
+
+    index_t* strides = increment_plan<index_t>(plan, bufs_size);
+    for (std::size_t n = 0; n < bufs_size; n++) {
+      strides[n] = 0;
+    }
+    return 1;
+  }
+#endif
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
 
