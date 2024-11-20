@@ -574,6 +574,9 @@ class pipeline_builder {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
+        // This can happen if this func output isn't used as an input by any
+        // other func in the pipeline (and isn't an output of the pipeline itself)
+        if (!allocation_bounds_[b->sym()]) continue;
 
         expr alloc_var = variable::make(b->sym());
 
@@ -789,6 +792,9 @@ public:
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
+        // This can happen if this func output isn't used as an input by any
+        // other func in the pipeline (and isn't an output of the pipeline itself)
+        if (!allocation_bounds_[b->sym()]) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
           var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
