@@ -272,7 +272,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     constant_buffer buffer;
     if (padding) {
       optimize_fill_value(padding, elem_size, buffer);
-    } else if (src.dim(0).empty()) {
+    } else if (src.rank > 0 && src.dim(0).empty()) {
       // src is empty and there is no padding -> nothing to do
       return;
     } else {
