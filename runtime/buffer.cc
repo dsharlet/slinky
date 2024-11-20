@@ -242,8 +242,8 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   dim& dst_dim0 = dst.dim(0);
   dim& src_dim0 = src.dim(0);
 
-  if (src_dim0.empty() || dst_dim0.empty()) {
-    // Empty source or destination, nothing to do.
+  if (dst_dim0.empty()) {
+    // Empty destination, nothing to do.
   } else if (dst_dim0.fold_factor() != dim::unfolded || src_dim0.fold_factor() != dim::unfolded ||
              dst_dim0.stride() != elem_size || src_dim0.stride() != elem_size) {
     // The inner copy dimension is not a linear copy, let for_each_element handle it.
@@ -272,6 +272,9 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     constant_buffer buffer;
     if (padding) {
       optimize_fill_value(padding, elem_size, buffer);
+    } else if (src.dim(0).empty()) {
+      // src is empty and there is no padding -> nothing to do
+      return;
     } else {
       assert(size == padded_size);
       assert(pad_before == 0);
