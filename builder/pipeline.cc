@@ -722,7 +722,7 @@ class pipeline_builder {
         if (allocation_bounds_[o.sym()]) continue;
         box_expr crop(o.buffer->rank());
         for (std::size_t d = 0; d < crop.size(); ++d) {
-          crop[d] = {0, 0};
+          crop[d] = {std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min()};
         }
         allocation_bounds_[o.sym()] = crop;
       }
