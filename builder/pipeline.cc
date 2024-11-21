@@ -574,14 +574,12 @@ class pipeline_builder {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
-        // This can happen if this func output isn't used as an input by any
-        // other func in the pipeline (and isn't an output of the pipeline itself)
-        if (!allocation_bounds_[b->sym()]) continue;
 
         expr alloc_var = variable::make(b->sym());
 
         // First substitute the bounds.
         std::vector<std::pair<expr, expr>> substitutions;
+        assert(allocation_bounds_[b->sym()]);
         const box_expr& bounds = *allocation_bounds_[b->sym()];
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           const interval_expr& bounds_d = bounds[d];
@@ -714,6 +712,21 @@ class pipeline_builder {
         }
       }
     }
+
+    // Check to see if there are any *intermediate* outputs that don't
+    // have allocation bounds; if there are, create an empty allocation
+    // bounds for them.
+    for (const func* f : order_) {
+      for (const auto& o : f->outputs()) {
+        if (output_syms_.count(o.sym())) continue;
+        if (allocation_bounds_[o.sym()]) continue;
+        box_expr crop(o.buffer->rank());
+        for (std::size_t d = 0; d < crop.size(); ++d) {
+          crop[d] = {0, 0};
+        }
+        allocation_bounds_[o.sym()] = crop;
+      }
+    }
   }
 
   stmt produce(const func* f) {
@@ -792,9 +805,6 @@ public:
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
-        // This can happen if this func output isn't used as an input by any
-        // other func in the pipeline (and isn't an output of the pipeline itself)
-        if (!allocation_bounds_[b->sym()]) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
           var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
@@ -802,6 +812,7 @@ public:
           result = clone_buffer::make(uncropped, b->sym(), result);
 
           const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
+          assert(allocation_bounds_[b->sym()]);
           const box_expr& bounds = *allocation_bounds_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 

@@ -636,14 +636,15 @@ TEST_P(stencil_chain, pipeline) {
   }
 }
 
-class multiple_outputs : public testing::TestWithParam<std::tuple<int, int>> {};
+class multiple_outputs : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(split_mode, multiple_outputs, testing::Combine(loop_modes, testing::Range(0, 4)),
+INSTANTIATE_TEST_SUITE_P(split_mode, multiple_outputs, testing::Combine(loop_modes, testing::Range(0, 4), testing::Bool()),
     test_params_to_string<multiple_outputs::ParamType>);
 
 TEST_P(multiple_outputs, pipeline) {
   int max_workers = std::get<0>(GetParam());
   int split = std::get<1>(GetParam());
+  bool ignore_one_output = std::get<2>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -662,14 +663,13 @@ TEST_P(multiple_outputs, pipeline) {
   // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
   func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
                                                      const buffer<int>& sum_xy) -> index_t {
-    assert(sum_x.dim(1).min() == sum_xy.dim(0).min());
-    for (index_t z = sum_xy.dim(0).min(); z <= sum_xy.dim(0).max(); ++z) {
-      sum_xy(z) = 0;
-      for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
-        sum_x(y, z) = 0;
+    for (index_t z = in.dim(2).min(); z <= in.dim(2).max(); ++z) {
+      if (sum_xy.contains(z)) sum_xy(z) = 0;
+      for (index_t y = in.dim(1).min(); y <= in.dim(1).max(); ++y) {
+        if (sum_x.contains(y, z)) sum_x(y, z) = 0;
         for (index_t x = in.dim(0).min(); x <= in.dim(0).max(); ++x) {
-          sum_x(y, z) += in(x, y, z);
-          sum_xy(z) += in(x, y, z);
+          if (sum_x.contains(y, z)) sum_x(y, z) += in(x, y, z);
+          if (sum_xy.contains(z)) sum_xy(z) += in(x, y, z);
         }
       }
     }
@@ -681,38 +681,66 @@ TEST_P(multiple_outputs, pipeline) {
     sums.loops({{z, split, max_workers}});
   }
 
-  pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
+  if (ignore_one_output) {
+    pipeline p = build_pipeline(ctx, {in}, {sum_x});
 
-  // Run the pipeline.
-  const int H = 20;
-  const int W = 10;
-  const int D = 5;
-  buffer<int, 3> in_buf({W, H, D});
-  init_random(in_buf);
+    // Run the pipeline.
+    const int H = 20;
+    const int W = 10;
+    const int D = 5;
+    buffer<int, 3> in_buf({W, H, D});
+    init_random(in_buf);
 
-  buffer<int, 2> sum_x_buf({H, D});
-  buffer<int, 1> sum_xy_buf({D});
-  sum_x_buf.allocate();
-  sum_xy_buf.allocate();
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+    buffer<int, 2> sum_x_buf({H, D});
+    sum_x_buf.allocate();
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&sum_x_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int z = 0; z < D; ++z) {
-    int expected_xy = 0;
-    for (int y = 0; y < H; ++y) {
-      int expected_x = 0;
-      for (int x = 0; x < W; ++x) {
-        expected_x += in_buf(x, y, z);
-        expected_xy += in_buf(x, y, z);
+    for (int z = 0; z < D; ++z) {
+      for (int y = 0; y < H; ++y) {
+        int expected_x = 0;
+        for (int x = 0; x < W; ++x) {
+          expected_x += in_buf(x, y, z);
+        }
+        ASSERT_EQ(sum_x_buf(y, z), expected_x);
       }
-      ASSERT_EQ(sum_x_buf(y, z), expected_x);
     }
-    ASSERT_EQ(sum_xy_buf(z), expected_xy);
+  } else {
+    pipeline p = build_pipeline(ctx, {in}, {sum_x, sum_xy});
+
+    // Run the pipeline.
+    const int H = 20;
+    const int W = 10;
+    const int D = 5;
+    buffer<int, 3> in_buf({W, H, D});
+    init_random(in_buf);
+
+    buffer<int, 2> sum_x_buf({H, D});
+    buffer<int, 1> sum_xy_buf({D});
+    sum_x_buf.allocate();
+    sum_xy_buf.allocate();
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&sum_x_buf, &sum_xy_buf};
+    test_context eval_ctx;
+    p.evaluate(inputs, outputs, eval_ctx);
+
+    for (int z = 0; z < D; ++z) {
+      int expected_xy = 0;
+      for (int y = 0; y < H; ++y) {
+        int expected_x = 0;
+        for (int x = 0; x < W; ++x) {
+          expected_x += in_buf(x, y, z);
+          expected_xy += in_buf(x, y, z);
+        }
+        ASSERT_EQ(sum_x_buf(y, z), expected_x);
+      }
+      ASSERT_EQ(sum_xy_buf(z), expected_xy);
+    }
   }
 
-  if (split == 1 && max_workers == loop::serial) {
+  if (split == 1 && max_workers == loop::serial && !ignore_one_output) {
     check_replica_pipeline(define_replica_pipeline(ctx, {in}, {sum_x, sum_xy}));
   }
 }
