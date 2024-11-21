@@ -663,9 +663,9 @@ TEST_P(multiple_outputs, pipeline) {
   // For a 3D input in(x, y, z), compute sum_x = sum(input(:, y, z)) and sum_xy = sum(input(:, :, z)) in one stage.
   func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
                                                      const buffer<int>& sum_xy) -> index_t {
-    for (index_t z = in.dim(2).min(); z <= in.dim(2).max(); ++z) {
+    for (index_t z = std::min(sum_xy.dim(0).min(), sum_x.dim(1).min()); z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
       if (sum_xy.contains(z)) sum_xy(z) = 0;
-      for (index_t y = in.dim(1).min(); y <= in.dim(1).max(); ++y) {
+      for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
         if (sum_x.contains(y, z)) sum_x(y, z) = 0;
         for (index_t x = in.dim(0).min(); x <= in.dim(0).max(); ++x) {
           if (sum_x.contains(y, z)) sum_x(y, z) += in(x, y, z);
