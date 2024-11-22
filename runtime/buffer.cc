@@ -266,13 +266,11 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     const index_t pad_before = (src_dim0.begin() - dst_dim0.begin()) * elem_size;
     const index_t pad_after = (dst_dim0.end() - src_dim0.end()) * elem_size;
     const index_t size = padded_size - pad_before - pad_after;
-    dst.slice(0);
-    src.slice(0);
 
     constant_buffer buffer;
     if (padding) {
       optimize_fill_value(padding, elem_size, buffer);
-    } else if (src.rank > 0 && src.dim(0).empty()) {
+    } else if (src_dim0.empty()) {
       // src is empty and there is no padding -> nothing to do
       return;
     } else {
@@ -280,6 +278,9 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
       assert(pad_before == 0);
       assert(pad_after == 0);
     }
+
+    dst.slice(0);
+    src.slice(0);
 
     for_each_element(
         [=](void* dst, const void* src) {
