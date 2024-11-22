@@ -27,7 +27,7 @@ index_t alloc_extent(const dim& dim) {
     // TODO: We can do better than this if the dim doesn't cross a fold boundary.
     return dim.fold_factor();
   } else {
-    return dim.extent();
+    return dim.max() >= dim.min() ? dim.extent() : 0;
   }
 }
 
