@@ -282,6 +282,11 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     dst.slice(0);
     src.slice(0);
 
+    if (!padding && src.rank > 0 && src.dim(0).empty()) {
+      // Have to check again in case subsequent dims were empty
+      return;
+    }
+
     for_each_element(
         [=](void* dst, const void* src) {
           // TDOO: There are a lot of branches in here. They could possibly be lifted out of the for_each_element loops,

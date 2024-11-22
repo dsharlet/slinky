@@ -360,7 +360,8 @@ std::ostream& operator<<(std::ostream& os, const raw_buffer& buf) {
 }
 
 std::ostream& operator<<(std::ostream& os, const dim& d) {
-  os << "{min=" << d.min() << ", max=" << d.max() << ", extent=" << d.extent() << ", stride=" << d.stride();
+  const index_t extent = d.max() >= d.min() ? d.extent() : 0;
+  os << "{min=" << d.min() << ", max=" << d.max() << ", extent=" << extent << ", stride=" << d.stride();
   if (d.fold_factor() != dim::unfolded) {
     os << ", fold_factor=" << d.fold_factor();
   }

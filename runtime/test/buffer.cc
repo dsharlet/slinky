@@ -683,6 +683,41 @@ TEST(buffer, copy) {
   }
 }
 
+TEST(buffer, copy_empty_src) {
+  gtest_seeded_mt19937 rng;
+
+  constexpr int rank = 4;
+  constexpr int D = 5;
+
+  for (int empty_dim = 0; empty_dim < rank; empty_dim++) {
+    buffer<int, rank> src;
+    for (int d = 0; d < rank; d++) {
+      src.dim(0).set_min_extent(0, D);
+    }
+    src.dim(empty_dim).set_min_extent(std::numeric_limits<index_t>::max(),
+                                      std::numeric_limits<index_t>::min());
+    init_random(rng, src);
+
+    buffer<int, rank> dst;
+    for (int d = 0; d < rank; d++) {
+      dst.dim(0).set_min_extent(0, D);
+    }
+    // We want to verify that dst is unchanged, so fill it with easy to verify data
+    dst.allocate();
+    int v = 0;
+    for_each_index(dst, [&](auto i) {
+      dst(i) = v++;
+    });
+
+    slinky::copy(src, dst);
+
+    v = 0;
+    for_each_index(dst, [&](auto i) {
+      ASSERT_EQ(dst(i), v++);
+    });
+  }
+}
+
 TEST(fuse_contiguous_dims, same_rank) {
   buffer<int, 1> r1;
   buffer<int, 2> r2;
