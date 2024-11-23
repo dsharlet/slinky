@@ -160,7 +160,7 @@ public:
       }
       if (!match(bep->dim(d).fold_factor, buffer_fold_factor(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).fold_factor);
-        os_ << "  " << name << "->dim(" << d << ").fold_factor = " << e << ";\n";
+        os_ << "  " << name << "->dim(" << d << ").fold_factor = (index_t) " << e << ";\n";
       }
     }
 
