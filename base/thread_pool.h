@@ -8,6 +8,7 @@
 #include <functional>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace slinky {
@@ -16,28 +17,55 @@ namespace slinky {
 // It is not directly used by anything except for testing.
 class thread_pool {
 public:
-  using task_id = const void*;
-  static task_id unique_task_id;
   using task = std::function<void()>;
   using predicate = std::function<bool()>;
 
-  virtual ~thread_pool() = default;
+private:
+  struct task_queue {
+    std::deque<task> queue;
+    std::mutex mutex;
+    std::condition_variable cv;
 
-  virtual int thread_count() const = 0;
+    // task queues form a linked list.
+    std::atomic<task_queue*> prev = nullptr;
+    std::atomic<task_queue*> next = nullptr;
 
-  // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
-  // be run recursively on the same thread while in `wait_for`.
-  virtual void enqueue(int n, task t, task_id id = unique_task_id) = 0;
-  virtual void enqueue(task t, task_id id = unique_task_id) = 0;
-  // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  virtual void run(const task& t, task_id id = unique_task_id) = 0;
-  // Cancel tasks previously enqueued with the given `id`.
-  virtual void cancel(task_id id) {}
-  // Waits for `condition` to become true. While waiting, executes tasks on the queue.
-  // The condition is executed atomically.
-  virtual void wait_for(const predicate& condition) = 0;
-  // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
-  virtual void atomic_call(const task& t) = 0;
+    bool dequeue(task& t, bool allow_steal = true);
+  };
+
+  std::atomic<int> worker_count_{0};
+  std::vector<std::thread> threads_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::atomic<bool> stop_;
+
+  // This is a pointer to a random element in a circular linked list.
+  std::atomic<task_queue*> queue_ = nullptr;
+
+  task_queue* get_task_queue(std::optional<task_queue*> init = std::nullopt);
+
+  void wait_for(const predicate& condition, task_queue* queue, std::condition_variable& cv);
+
+public:
+  // `workers` indicates how many worker threads the thread pool will have.
+  // `init` is a task that is run on each newly created thread.
+  // Pass workers = 0 to have a thread pool with no worker threads and 
+  // use `run_worker` to enter a thread into the thread pool.
+  thread_pool(int workers = 3, const task& init = nullptr);
+  ~thread_pool();
+
+  // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
+  void run_worker(const predicate& condition);
+  // Wait until this thread pool has at least one worker.
+  void wait_for_worker();
+
+  int thread_count() const { return worker_count_; }
+
+  void enqueue(int n, const task& t);
+  void enqueue(task t);
+  void wait_for(const predicate& condition) { wait_for(condition, get_task_queue(), cv_); }
+
+  void atomic_call(const task& t);
 
   template <typename Fn>
   void parallel_for(std::size_t n, Fn&& body, int max_workers = std::numeric_limits<int>::max()) {
@@ -58,15 +86,11 @@ public:
     };
     auto state = std::make_shared<shared_state>();
     // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [this, state, n, body = std::move(body)]() mutable {
+    auto worker = [state, n, body = std::move(body)]() mutable {
       while (true) {
         std::size_t i = state->i++;
         if (i >= n) {
           // There are no more iterations to run.
-          if (i == n) {
-            // We hit the end of the loop, cancel any queued workers to save ourselves some work.
-            cancel(state.get());
-          }
           break;
         }
         body(i);
@@ -75,58 +99,14 @@ public:
     };
     int workers = std::min<int>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
     if (workers > 1) {
-      enqueue(workers - 1, worker, state.get());
+      enqueue(workers - 1, worker);
     }
     // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
     // available.
-    run(worker, state.get());
+    worker();
     // While the loop still isn't done, work on other tasks.
     wait_for([&]() { return state->done >= n; });
   }
-};
-
-// This implements a simple thread pool that maps easily to the eval_context thread pool interface.
-// It is not directly used by anything except for testing.
-class thread_pool_impl : public thread_pool {
-private:
-  std::atomic<int> worker_count_{0};
-  std::vector<std::thread> threads_;
-  std::atomic<bool> stop_;
-
-  using queued_task = std::tuple<int, task, task_id>;
-  std::deque<queued_task> task_queue_;
-  std::mutex mutex_;
-  // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
-  // - cv_helper_ is waited on by threads that are helping the worker threads while waiting for a condition.
-  // - cv_worker_ is waited on by worker threads.
-  // Enqueuing a task wakes up a thread from each condition variable.
-  // cv_helper_ is only notified when the state of a condition may change (a task completes, or an `atomic_call` runs).
-  std::condition_variable cv_helper_;
-  std::condition_variable cv_worker_;
-
-  void wait_for(const predicate& condition, std::condition_variable& cv);
-
-  task_id dequeue(task& t);
-
-public:
-  // `workers` indicates how many worker threads the thread pool will have.
-  // `init` is a task that is run on each newly created thread.
-  // Pass workers = 0 to have a thread pool with no worker threads and 
-  // use `run_worker` to enter a thread into the thread pool.
-  thread_pool_impl(int workers = 3, const task& init = nullptr);
-  ~thread_pool_impl() override;
-
-  // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
-  void run_worker(const predicate& condition);
-
-  int thread_count() const override { return worker_count_; }
-
-  void enqueue(int n, task t, task_id id = unique_task_id) override;
-  void enqueue(task t, task_id id = unique_task_id) override;
-  void run(const task& t, task_id id = unique_task_id) override;
-  void cancel(task_id id) override;
-  void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
-  void atomic_call(const task& t) override;
 };
 
 }  // namespace slinky

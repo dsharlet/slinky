@@ -97,7 +97,7 @@ TEST(evaluate, call) {
 
 TEST(evaluate, loop) {
   eval_context ctx;
-  thread_pool_impl t;
+  thread_pool t;
   ctx.thread_pool = &t;
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
@@ -218,7 +218,7 @@ TEST(evaluate, clone_buffer) {
 
 TEST(evaluate, semaphore) {
   eval_context ctx;
-  thread_pool_impl t;
+  thread_pool t;
   ctx.thread_pool = &t;
 
   index_t sem1 = 0;

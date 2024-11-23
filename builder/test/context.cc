@@ -36,7 +36,7 @@ void setup_tracing(eval_context& ctx, const std::string& filename) {
 }
 
 test_context::test_context() {
-  static thread_pool_impl threads;
+  static thread_pool threads;
 
   allocate = [this](var, raw_buffer* b) {
     void* allocation = b->allocate();

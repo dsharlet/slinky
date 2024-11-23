@@ -15,7 +15,7 @@ struct unshared {
 
 void BM_parallel_for_overhead(benchmark::State& state) {
   const int workers = state.range(0);
-  thread_pool_impl t(workers - 1);
+  thread_pool t(workers - 1);
 
   std::vector<unshared> values(workers);
   while (state.KeepRunningBatch(workers)) {
@@ -27,7 +27,7 @@ BENCHMARK(BM_parallel_for_overhead)->Arg(2)->Arg(4)->Arg(8);
 
 void BM_parallel_for(benchmark::State& state) {
   const int workers = state.range(0);
-  thread_pool_impl t(workers - 1);
+  thread_pool t(workers - 1);
 
   const int n = 1000000;
 
@@ -41,7 +41,7 @@ BENCHMARK(BM_parallel_for)->Arg(2)->Arg(4)->Arg(8);
 
 void BM_parallel_for_nested(benchmark::State& state) {
   const int workers = state.range(0);
-  thread_pool_impl t(workers - 1);
+  thread_pool t(workers - 1);
 
   const int n = 1000;
 

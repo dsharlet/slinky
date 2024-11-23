@@ -216,7 +216,7 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
   body = loop::make(x, workers, range(0, iterations), 1, body);
 
   eval_context eval_ctx;
-  thread_pool_impl t(workers);
+  thread_pool t(workers);
   eval_ctx.thread_pool = &t;
 
   for (auto _ : state) {

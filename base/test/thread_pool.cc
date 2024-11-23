@@ -10,7 +10,7 @@ namespace slinky {
 int sum_arithmetic_sequence(int n) { return n * (n - 1) / 2; }
 
 TEST(parallel_for, sum) {
-  thread_pool_impl t;
+  thread_pool t;
   for (int n = 0; n < 100; ++n) {
     std::atomic<int> count = 0;
     std::atomic<int> sum = 0;
@@ -24,7 +24,7 @@ TEST(parallel_for, sum) {
 }
 
 TEST(parallel_for, sum_nested) {
-  thread_pool_impl t;
+  thread_pool t;
   std::atomic<int> count = 0;
   std::atomic<int> sum = 0;
   t.parallel_for(10, [&](int i) {
@@ -38,14 +38,14 @@ TEST(parallel_for, sum_nested) {
 }
 
 TEST(atomic_call, sum) {
-  thread_pool_impl t;
+  thread_pool t;
   int sum = 0;
   t.parallel_for(1000, [&](int i) { t.atomic_call([&]() { sum += i; }); });
   ASSERT_EQ(sum, sum_arithmetic_sequence(1000));
 }
 
 TEST(wait_for, barriers) {
-  thread_pool_impl t;
+  thread_pool t;
   bool barrier0 = false;
   bool barrier1 = false;
   bool barrier2 = false;
