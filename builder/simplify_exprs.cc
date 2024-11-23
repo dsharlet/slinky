@@ -16,8 +16,8 @@ expr simplify(const class min* op, expr a, expr b) {
     std::swap(a, b);
   }
 
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return std::min(*ca, *cb);
   }
@@ -40,8 +40,8 @@ expr simplify(const class max* op, expr a, expr b) {
     std::swap(a, b);
   }
 
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return std::max(*ca, *cb);
   }
@@ -64,8 +64,8 @@ expr simplify(const add* op, expr a, expr b) {
     std::swap(a, b);
   }
 
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return *ca + *cb;
   }
@@ -87,8 +87,8 @@ expr simplify(const add* op, expr a, expr b) {
 }
 
 expr simplify(const sub* op, expr a, expr b) {
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return *ca - *cb;
   } else if (cb) {
@@ -117,8 +117,8 @@ expr simplify(const mul* op, expr a, expr b) {
     std::swap(a, b);
   }
 
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return *ca * *cb;
   }
@@ -140,8 +140,8 @@ expr simplify(const mul* op, expr a, expr b) {
 }
 
 expr simplify(const div* op, expr a, expr b) {
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return euclidean_div(*ca, *cb);
   }
@@ -161,8 +161,8 @@ expr simplify(const div* op, expr a, expr b) {
 }
 
 expr simplify(const mod* op, expr a, expr b) {
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return euclidean_mod(*ca, *cb);
   }
@@ -178,8 +178,8 @@ expr simplify(const mod* op, expr a, expr b) {
 }
 
 expr simplify(const less* op, expr a, expr b) {
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return *ca < *cb;
   }
@@ -213,8 +213,8 @@ expr simplify(const equal* op, expr a, expr b) {
     std::swap(a, b);
   }
 
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
   if (ca && cb) {
     return *ca == *cb;
   }
@@ -247,8 +247,8 @@ expr simplify(const logical_and* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
 
   if (ca && cb) {
     return *ca != 0 && *cb != 0;
@@ -270,8 +270,8 @@ expr simplify(const logical_or* op, expr a, expr b) {
   if (should_commute(a, b)) {
     std::swap(a, b);
   }
-  const index_t* ca = as_constant(a);
-  const index_t* cb = as_constant(b);
+  auto ca = as_constant(a);
+  auto cb = as_constant(b);
 
   if (ca && cb) {
     return *ca != 0 || *cb != 0;
@@ -290,7 +290,7 @@ expr simplify(const logical_or* op, expr a, expr b) {
 }
 
 expr simplify(const class logical_not* op, expr a) {
-  const index_t* cv = as_constant(a);
+  auto cv = as_constant(a);
   if (cv) {
     return *cv == 0;
   }

@@ -647,8 +647,8 @@ public:
       auto set_expr_bounds = set_value_in_scope(current_expr_bounds(), op->sym,
           {loop_bounds.min, loop_bounds.min + align_down(loop_bounds.extent() - 1, op->step)});
 
-      const index_t* maybe_min = as_constant(loop_bounds.min);
-      const index_t* maybe_step = as_constant(op->step);
+      auto maybe_min = as_constant(loop_bounds.min);
+      auto maybe_step = as_constant(op->step);
       index_t modulus = maybe_step ? *maybe_step : 1;
       index_t remainder = (maybe_min && maybe_step) ? *maybe_min % *maybe_step : 0;
 

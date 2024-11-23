@@ -221,7 +221,7 @@ public:
 
   index_t eval_buffer_metadata(const call* op) {
     assert(op->args.size() == 1);
-    const var* sym = as_variable(op->args[0]);
+    auto sym = as_variable(op->args[0]);
     assert(sym);
     raw_buffer* buf = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
     assert(buf);
@@ -235,9 +235,9 @@ public:
 
   index_t eval_dim_metadata(const call* op) {
     assert(op->args.size() == 2);
-    const var* sym = as_variable(op->args[0]);
+    auto sym = as_variable(op->args[0]);
     assert(sym);
-    const index_t* d = as_constant(op->args[1]);
+    auto d = as_constant(op->args[1]);
     assert(d);
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
     assert(buffer);
