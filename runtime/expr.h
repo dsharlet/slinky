@@ -539,16 +539,24 @@ inline void logical_not::accept(expr_visitor* v) const { v->visit(this); }
 inline void select::accept(expr_visitor* v) const { v->visit(this); }
 inline void call::accept(expr_visitor* v) const { v->visit(this); }
 
-// If `x` is a constant, returns the value of the constant, otherwise `nullptr`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const index_t* as_constant(expr_ref x) {
+// If `x` is a constant, returns the value of the constant, otherwise `nullopt`.
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<index_t> as_constant(expr_ref x) {
   const constant* cx = x.as<constant>();
-  return cx ? &cx->value : nullptr;
+  if (cx) {
+    return cx->value;
+  } else {
+    return std::nullopt;
+  }
 }
 
-// If `x` is a variable, returns the `var` of the variable, otherwise `nullptr`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const var* as_variable(expr_ref x) {
+// If `x` is a variable, returns the `var` of the variable, otherwise `nullopt`.
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
   const variable* vx = x.as<variable>();
-  return vx ? &vx->sym : nullptr;
+  if (vx) {
+    return vx->sym;
+  } else {
+    return std::nullopt;
+  }
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.

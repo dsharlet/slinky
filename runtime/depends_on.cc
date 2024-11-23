@@ -51,7 +51,7 @@ public:
     if (is_buffer_intrinsic(op->intrinsic)) {
       assert(op->args.size() >= 1);
       if (op->args[0].defined()) {
-        const var* buf = as_variable(op->args[0]);
+        auto buf = as_variable(op->args[0]);
         assert(buf);
         update_deps(*buf, [fn = op->intrinsic](depends_on_result& deps) {
           deps.buffer_meta = true;

@@ -596,26 +596,26 @@ bool is_positive(expr_ref x) {
     assert(c->args.size() == 1);
     return is_positive(c->args[0]);
   }
-  const index_t* c = as_constant(x);
+  auto c = as_constant(x);
   return c ? *c > 0 : false;
 }
 
 bool is_non_negative(expr_ref x) {
   if (is_positive_infinity(x)) return true;
   if (as_intrinsic(x, intrinsic::abs)) return true;
-  const index_t* c = as_constant(x);
+  auto c = as_constant(x);
   return c ? *c >= 0 : false;
 }
 
 bool is_negative(expr_ref x) {
   if (is_negative_infinity(x)) return true;
-  const index_t* c = as_constant(x);
+  auto c = as_constant(x);
   return c ? *c < 0 : false;
 }
 
 bool is_non_positive(expr_ref x) {
   if (is_negative_infinity(x)) return true;
-  const index_t* c = as_constant(x);
+  auto c = as_constant(x);
   return c ? *c <= 0 : false;
 }
 
@@ -722,7 +722,7 @@ bool is_finite(expr_ref x) {
 expr boolean(const expr& x) {
   if (!x.defined() || is_boolean(x)) {
     return x;
-  } else if (const index_t* c = as_constant(x)) {
+  } else if (auto c = as_constant(x)) {
     return *c != 0;
   } else {
     return not_equal::make(x, 0);
