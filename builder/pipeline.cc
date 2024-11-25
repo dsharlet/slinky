@@ -735,7 +735,6 @@ class pipeline_builder {
     // Fortunately, all external inputs (constant or not) should have well-defined
     // boundaries at this point so we can just slurp them in directly here to be
     // permissive of this situation.
-    // we can just slurp directly
     for (const auto& i : input_syms_) {
       if (allocation_bounds_[i.first]) continue;
       box_expr crop(i.second->rank());
