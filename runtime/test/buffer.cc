@@ -704,17 +704,9 @@ TEST(buffer, copy_empty_src) {
     }
     // We want to verify that dst is unchanged, so fill it with easy to verify data
     dst.allocate();
-    int v = 0;
-    for_each_index(dst, [&](auto i) {
-      dst(i) = v++;
-    });
-
+    fill(dst, 7);
     slinky::copy(src, dst);
-
-    v = 0;
-    for_each_index(dst, [&](auto i) {
-      ASSERT_EQ(dst(i), v++);
-    });
+    ASSERT_TRUE(is_filled_buffer(dst, 7));
   }
 }
 
