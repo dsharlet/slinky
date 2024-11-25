@@ -266,6 +266,8 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     const index_t pad_before = (src_dim0.begin() - dst_dim0.begin()) * elem_size;
     const index_t pad_after = (dst_dim0.end() - src_dim0.end()) * elem_size;
     const index_t size = padded_size - pad_before - pad_after;
+    dst.slice(0);
+    src.slice(0);
 
     constant_buffer buffer;
     if (padding) {
@@ -277,14 +279,6 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
       assert(size == padded_size);
       assert(pad_before == 0);
       assert(pad_after == 0);
-    }
-
-    dst.slice(0);
-    src.slice(0);
-
-    if (!padding && src.rank > 0 && src.dim(0).empty()) {
-      // Have to check again in case subsequent dims were empty
-      return;
     }
 
     for_each_element(
