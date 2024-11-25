@@ -318,7 +318,7 @@ const call* match_call(expr_ref x, intrinsic fn, var a) {
   if (!c) return nullptr;
 
   assert(c->args.size() >= 1);
-  const var* av = as_variable(c->args[0]);
+  auto av = as_variable(c->args[0]);
   if (!av || *av != a) return nullptr;
 
   return c;
@@ -329,7 +329,7 @@ const call* match_call(expr_ref x, intrinsic fn, var a, index_t b) {
   if (!c) return nullptr;
 
   assert(c->args.size() >= 2);
-  const index_t* bv = as_constant(c->args[1]);
+  auto bv = as_constant(c->args[1]);
   if (!bv || *bv != b) return nullptr;
 
   return c;
@@ -558,7 +558,7 @@ public:
       changed = changed || !args.back().same_as(i);
     }
     if (is_buffer_intrinsic(op->intrinsic) && !args.empty() && args.front().defined()) {
-      const var* buf = as_variable(args[0]);
+      auto buf = as_variable(args[0]);
       assert(buf);
       if (op->intrinsic == intrinsic::buffer_at) {
         const std::size_t buf_rank = get_target_buffer_rank(*buf);
@@ -674,7 +674,7 @@ public:
   using substitutor::visit;
 
   static var replacement_symbol(const expr& r) {
-    const var* s = as_variable(r);
+    auto s = as_variable(r);
     assert(s);
     return *s;
   }
@@ -753,7 +753,7 @@ public:
   std::size_t get_target_buffer_rank(var x) override {
     if (const call* c = target.as<call>()) {
       if (is_buffer_dim_intrinsic(c->intrinsic) && is_variable(c->args[0], x)) {
-        const index_t* dim = as_constant(c->args[1]);
+        auto dim = as_constant(c->args[1]);
         assert(dim);
         return *dim + 1;
       }
@@ -825,7 +825,7 @@ public:
       }
     } else if (is_buffer_dim_intrinsic(fn)) {
       assert(args.size() == 1);
-      const index_t* dim = as_constant(args[0]);
+      auto dim = as_constant(args[0]);
       assert(dim);
       if (*dim < static_cast<index_t>(dims.size())) {
         return eval_buffer_intrinsic(fn, dims[*dim]);
@@ -872,7 +872,7 @@ interval_expr substitute(const interval_expr& x, var target, const expr& replace
 }
 
 expr substitute(const expr& e, const expr& target, const expr& replacement) {
-  if (const var* v = as_variable(target)) {
+  if (auto v = as_variable(target)) {
     return var_substitutor(*v, replacement).mutate(e);
   } else {
     return expr_substitutor(target, replacement).mutate(e);
@@ -880,7 +880,7 @@ expr substitute(const expr& e, const expr& target, const expr& replacement) {
 }
 stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
   scoped_trace trace("substitute");
-  if (const var* v = as_variable(target)) {
+  if (auto v = as_variable(target)) {
     return var_substitutor(*v, replacement).mutate(s);
   } else {
     return expr_substitutor(target, replacement).mutate(s);
@@ -925,7 +925,7 @@ public:
     case intrinsic::buffer_stride:
     case intrinsic::buffer_fold_factor:
       if (is_variable(op->args[0], sym)) {
-        const index_t* dim = as_constant(op->args[1]);
+        auto dim = as_constant(op->args[1]);
         assert(dim);
         index_t new_dim = *dim;
         for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {

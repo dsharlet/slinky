@@ -282,7 +282,7 @@ public:
   }
 
   void visit(const mul* op) override {
-    if (const index_t* b = as_constant(op->b)) {
+    if (auto b = as_constant(op->b)) {
       // a*b + c == (a + c/b)*b if c%b == 0
       if (*b != 0 && euclidean_mod(c, *b) == 0) {
         c = euclidean_div(c, *b);
@@ -338,7 +338,7 @@ public:
       if (alignment.modulus == 0) {
         bounds = point(alignment.remainder);
       } else if (alignment.modulus > 1) {
-        const index_t* bounds_min = as_constant(bounds.min);
+        auto bounds_min = as_constant(bounds.min);
         if (bounds_min) {
           index_t adjustment;
           bool no_overflow =
@@ -350,7 +350,7 @@ public:
             bounds.min = new_min;
           }
         }
-        const index_t* bounds_max = as_constant(bounds.max);
+        auto bounds_max = as_constant(bounds.max);
         if (bounds_max) {
           index_t adjustment;
           bool no_overflow =
@@ -365,7 +365,7 @@ public:
       }
 
       if (bounds.is_point()) {
-        const auto* c = as_constant(bounds.min);
+        auto c = as_constant(bounds.min);
         if (c) {
           alignment.modulus = 0;
           alignment.remainder = *c;
@@ -729,7 +729,7 @@ public:
     }
   }
   void visit(const add* op) override {
-    if (const index_t* bc = as_constant(op->b)) {
+    if (auto bc = as_constant(op->b)) {
       // We have a lot of rules that pull constants out of expressions. Sometimes we end up with complicated expressions
       // that add a constant, e.g. select(x, max(2, y + 3), 4) - 1 and we could put that constant back inside. However,
       // writing rules for all of these rewrites would be very tedious, so we handle it here instead.
@@ -920,7 +920,7 @@ public:
         set_result(expr(), expr_info());
         return;
       }
-      const var* buf = as_variable(op->args[0]);
+      auto buf = as_variable(op->args[0]);
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
@@ -935,7 +935,7 @@ public:
           }
           return;
         } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
-          const index_t* dim = as_constant(op->args[1]);
+          auto dim = as_constant(op->args[1]);
           assert(dim);
           if (*dim < static_cast<index_t>(info->dims.size())) {
             const expr& value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
@@ -1368,7 +1368,7 @@ public:
     const call* min = match_call(d.bounds.min, intrinsic::buffer_min, sym);
     if (min) {
       assert(min->args.size() == 2);
-      const index_t* dim = as_constant(min->args[1]);
+      auto dim = as_constant(min->args[1]);
       assert(dim);
       if (match_call(d.bounds.max, intrinsic::buffer_max, sym, *dim) &&
           match_call(d.stride, intrinsic::buffer_stride, sym, *dim) &&
@@ -1436,7 +1436,7 @@ public:
 
     if (const call* bc = as_intrinsic(base, intrinsic::buffer_at)) {
       // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
-      const var* src_buf = as_variable(bc->args[0]);
+      auto src_buf = as_variable(bc->args[0]);
       assert(src_buf);
 
       const std::optional<buffer_info>& src_info = buffers[*src_buf];
@@ -2035,8 +2035,8 @@ public:
     // incorrect conservative bounds in the wrong direction.
     expr a = take_constant ? mutate(op->a) : op->a;
     expr b = take_constant ? mutate(op->b) : op->b;
-    const index_t* ca = as_constant(a);
-    const index_t* cb = as_constant(b);
+    auto ca = as_constant(a);
+    auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
     } else if (take_constant && ca) {
@@ -2059,8 +2059,8 @@ public:
     sign *= rhs_sign;
     expr b = mutate(op->b);
     sign *= rhs_sign;
-    const index_t* ca = as_constant(a);
-    const index_t* cb = as_constant(b);
+    auto ca = as_constant(a);
+    auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
@@ -2138,8 +2138,8 @@ public:
     sign = -sign;
     expr b = mutate(op->b);
 
-    const index_t* ca = as_constant(a);
-    const index_t* cb = as_constant(b);
+    auto ca = as_constant(a);
+    auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
     } else if (sign < 0) {
@@ -2159,8 +2159,8 @@ public:
     expr a = recurse ? mutate(op->a) : op->a;
     expr b = recurse ? mutate(op->b) : op->b;
 
-    const index_t* ca = as_constant(a);
-    const index_t* cb = as_constant(b);
+    auto ca = as_constant(a);
+    auto cb = as_constant(b);
 
     if (ca && cb) {
       set_result(make_binary<T>(*ca != 0, *cb != 0));
@@ -2177,7 +2177,7 @@ public:
     sign = -sign;
     expr a = mutate(op->a);
     sign = -sign;
-    const index_t* ca = as_constant(a);
+    auto ca = as_constant(a);
     if (ca) {
       set_result(*ca != 0 ? 0 : 1);
     } else if (sign < 0) {
@@ -2189,8 +2189,8 @@ public:
   void visit(const class select* op) override {
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
-    const index_t* ct = as_constant(t);
-    const index_t* cf = as_constant(f);
+    auto ct = as_constant(t);
+    auto cf = as_constant(f);
     if (sign < 0 && ct && cf) {
       set_result(expr(std::min(*ct, *cf)));
     } else if (sign > 0 && ct && cf) {
@@ -2206,7 +2206,7 @@ public:
     case intrinsic::abs:
       if (sign < 0) {
         expr a = mutate(op->args[0]);
-        if (const index_t* ca = as_constant(a)) {
+        if (auto ca = as_constant(a)) {
           set_result(std::max<index_t>(0, *ca));
         } else {
           set_result(expr(0));

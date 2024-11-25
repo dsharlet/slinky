@@ -519,7 +519,7 @@ SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indetermin
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, slinky::as_constant); }
+SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
