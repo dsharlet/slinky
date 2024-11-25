@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <map>
 #include <optional>
@@ -726,6 +727,22 @@ class pipeline_builder {
         }
         allocation_bounds_[o.sym()] = crop;
       }
+    }
+
+    // Finally, check to see if there are any input_syms_ that don't have allocation
+    // bounds; well-behaved callers probably shouldn't send us these, but sometimes they
+    // do (usually in the form of constant tensors that are marked as external inputs).
+    // Fortunately, all external inputs (constant or not) should have well-defined
+    // boundaries at this point so we can just slurp them in directly here to be
+    // permissive of this situation.
+    // we can just slurp directly
+    for (const auto& i : input_syms_) {
+      if (allocation_bounds_[i.first]) continue;
+      box_expr crop(i.second->rank());
+      for (std::size_t d = 0; d < crop.size(); ++d) {
+        crop[d] = {i.second->dim(d).bounds.min, i.second->dim(d).bounds.max};
+      }
+      allocation_bounds_[i.first] = crop;
     }
   }
 
