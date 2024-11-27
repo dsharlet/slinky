@@ -19,8 +19,7 @@ namespace slinky {
 // alias to `long` under some compilers which can cause some not so fun
 // overloading issues with expr(), so let's use std::conditional
 // instead to make it an exact alias of either int32_t or int64_t.
-using index_t =
-    std::conditional<sizeof(void*) == 4, std::int32_t, std::int64_t>::type;
+using index_t = std::conditional<sizeof(void*) == 4, std::int32_t, std::int64_t>::type;
 
 // Helper to offset a pointer by a number of bytes.
 template <typename T>
@@ -65,10 +64,7 @@ public:
   index_t max() const { return max_; }
   index_t begin() const { return min_; }
   index_t end() const { return max_ + 1; }
-  index_t extent() const {
-    assert(!sub_overflows<index_t>(max_, min_) && !add_overflows<index_t>(max_ - min_, 1));
-    return (max_ - min_) + 1;
-  }
+  index_t extent() const { return end() > begin() ? end() - begin() : 0; }
   index_t stride() const { return stride_; }
   index_t fold_factor() const { return fold_factor_; }
   bool empty() const { return max_ < min_; }

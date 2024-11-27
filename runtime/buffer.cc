@@ -27,7 +27,7 @@ index_t alloc_extent(const dim& dim) {
     // TODO: We can do better than this if the dim doesn't cross a fold boundary.
     return dim.fold_factor();
   } else {
-    return dim.max() >= dim.min() ? dim.extent() : 0;
+    return dim.extent();
   }
 }
 
@@ -263,8 +263,8 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     src.crop(0, dst_dim0.min(), dst_dim0.max());
 
     const index_t padded_size = dst_dim0.extent() * elem_size;
-    const index_t pad_before = (src_dim0.begin() - dst_dim0.begin()) * elem_size;
-    const index_t pad_after = (dst_dim0.end() - src_dim0.end()) * elem_size;
+    const index_t pad_before = src_dim0.begin() > dst_dim0.begin() ? (src_dim0.begin() - dst_dim0.begin()) * elem_size : 0;
+    const index_t pad_after = dst_dim0.end() > src_dim0.end() ? (dst_dim0.end() - src_dim0.end()) * elem_size : 0;
     const index_t size = padded_size - pad_before - pad_after;
     dst.slice(0);
     src.slice(0);
