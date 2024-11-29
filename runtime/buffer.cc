@@ -229,11 +229,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
   index_t elem_size = dst.elem_size;
 
   if (rank == 0) {
-    if (src.base) {
-      memcpy(dst.base, src.base, elem_size);
-    } else if (padding) {
-      memcpy(dst.base, padding, elem_size);
-    }
+    memcpy(dst.base, padding && !src.base ? padding : src.base, elem_size);
     return;
   }
 
@@ -249,57 +245,52 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
     // The inner copy dimension is not a linear copy, let for_each_element handle it.
     for_each_element(
         [elem_size, padding](void* dst, const void* src) {
-          if (src) {
-            memcpy(dst, src, elem_size);
-          } else {
-            memcpy(dst, padding, elem_size);
-          }
+          memcpy(dst, padding && !src ? padding : src, elem_size);
         },
         dst, src);
   } else {
     // The inner dimension is a linear copy. Slice off that dimension and handle it ourselves.
-
-    // Eliminate the case we need to consider where src is bigger than dst.
     src.crop(0, dst_dim0.min(), dst_dim0.max());
-
-    const index_t padded_size = dst_dim0.extent() * elem_size;
-    const index_t pad_before = src_dim0.begin() > dst_dim0.begin() ? (src_dim0.begin() - dst_dim0.begin()) * elem_size : 0;
-    const index_t pad_after = dst_dim0.end() > src_dim0.end() ? (dst_dim0.end() - src_dim0.end()) * elem_size : 0;
-    const index_t size = padded_size - pad_before - pad_after;
     dst.slice(0);
     src.slice(0);
 
-    constant_buffer buffer;
-    if (padding) {
-      optimize_fill_value(padding, elem_size, buffer);
-    } else if (src_dim0.empty()) {
-      // src is empty and there is no padding -> nothing to do
-      return;
-    } else {
-      assert(size == padded_size);
-      assert(pad_before == 0);
-      assert(pad_after == 0);
-    }
+    const index_t dst_size = dst_dim0.extent() * elem_size;
 
-    for_each_element(
-        [=](void* dst, const void* src) {
-          // TDOO: There are a lot of branches in here. They could possibly be lifted out of the for_each_element loops,
-          // but we need to find ways to do it that avoids increasing the number of cases we need to handle too much.
-          if (src) {
-            if (pad_before > 0) {
-              fill(dst, padding, elem_size, pad_before);
-              dst = offset_bytes_non_null(dst, pad_before);
+    if (padding) {
+      const index_t pad_before =
+          src_dim0.begin() > dst_dim0.begin() ? (src_dim0.begin() - dst_dim0.begin()) * elem_size : 0;
+      const index_t pad_after = dst_dim0.end() > src_dim0.end() ? (dst_dim0.end() - src_dim0.end()) * elem_size : 0;
+      const index_t src_size = dst_size - pad_before - pad_after;
+
+      constant_buffer buffer;
+      optimize_fill_value(padding, elem_size, buffer);
+
+      for_each_element(
+          [=](void* dst, const void* src) {
+            // TDOO: There are a lot of branches in here. They could possibly be lifted out of the for_each_element
+            // loops, but we need to find ways to do it that avoids increasing the number of cases we need to handle too
+            // much.
+            if (src) {
+              if (pad_before > 0) {
+                fill(dst, padding, elem_size, pad_before);
+                dst = offset_bytes_non_null(dst, pad_before);
+              }
+              memcpy(dst, src, src_size);
+              if (pad_after > 0) {
+                dst = offset_bytes_non_null(dst, src_size);
+                fill(dst, padding, elem_size, pad_after);
+              }
+            } else {
+              fill(dst, padding, elem_size, dst_size);
             }
-            memcpy(dst, src, size);
-            if (pad_after > 0) {
-              dst = offset_bytes_non_null(dst, size);
-              fill(dst, padding, elem_size, pad_after);
-            }
-          } else {
-            fill(dst, padding, elem_size, padded_size);
-          }
-        },
-        dst, src);
+          },
+          dst, src);
+    } else {
+      assert(src_dim0.begin() == dst_dim0.begin());
+      assert(src_dim0.end() == dst_dim0.end());
+
+      for_each_element([=](void* dst, const void* src) { memcpy(dst, src, dst_size); }, dst, src);
+    }
   }
 }
 
