@@ -81,8 +81,11 @@ public:
     std::stringstream rule_str;
     rule_str << p << " -> " << r;
 
-    expr pattern = expr(substitute(p, m));
-    expr replacement = expr(substitute(r, m));
+    bool overflowed = false;
+    expr pattern = expr(substitute(p, m, overflowed));
+    assert(!overflowed);
+    expr replacement = expr(substitute(r, m, overflowed));
+    assert(!overflowed);
 
     // Make sure the expressions have the same value when evaluated.
     test_expr(pattern, replacement, rule_str.str());
@@ -101,9 +104,12 @@ public:
     // expression that the rule applies to.
     for (int test = 0; test < 100000; ++test) {
       init_match_context();
-      if (substitute(pr, m)) {
-        expr pattern = expr(substitute(p, m));
-        expr replacement = expr(substitute(r, m));
+      bool overflowed = false;
+      if (substitute(pr, m, overflowed) && !overflowed) {
+        expr pattern = expr(substitute(p, m, overflowed));
+        assert(!overflowed);
+        expr replacement = expr(substitute(r, m, overflowed));
+        assert(!overflowed);
 
         // Make sure the expressions have the same value when evaluated.
         test_expr(pattern, replacement, rule_str.str());

@@ -42,7 +42,7 @@ template <int matched>
 SLINKY_UNIQUE bool match(index_t p, expr_ref x, match_context&) {
   return is_constant(x, p);
 }
-SLINKY_UNIQUE index_t substitute(index_t p, const match_context&) { return p; }
+SLINKY_UNIQUE index_t substitute(index_t p, const match_context&, bool&) { return p; }
 
 template <typename T>
 struct pattern_info {
@@ -117,7 +117,7 @@ SLINKY_UNIQUE bool match(const pattern_wildcard<N>& p, expr_ref x, match_context
 }
 
 template <int N>
-SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>& p, const match_context& ctx) {
+SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>&, const match_context& ctx, bool&) {
   return ctx.vars[N];
 }
 
@@ -150,7 +150,7 @@ SLINKY_UNIQUE bool match(const pattern_constant<N>& p, expr_ref x, match_context
 }
 
 template <int N>
-SLINKY_UNIQUE index_t substitute(const pattern_constant<N>& p, const match_context& ctx) {
+SLINKY_UNIQUE index_t substitute(const pattern_constant<N>&, const match_context& ctx, bool&) {
   return ctx.constants[N];
 }
 
@@ -211,9 +211,24 @@ SLINKY_UNIQUE bool match(
   return match_binary<matched>(p, x.a.e, x.b.e, ctx);
 }
 
+template <typename T>
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&) {
+  return make_binary<T>(std::move(a), std::move(b));
+}
+
+template <typename T>
+SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed) {
+  if (binary_overflows<T>(a, b)) {
+    overflowed = true;
+    return 0;
+  } else {
+    return make_binary<T>(a, b);
+  }
+}
+
 template <typename T, typename A, typename B>
-SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
-  return make_binary<T>(substitute(p.a, ctx), substitute(p.b, ctx));
+SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx, bool& overflowed) {
+  return substitute_binary<T>(substitute(p.a, ctx, overflowed), substitute(p.b, ctx, overflowed), overflowed);
 }
 
 template <typename T, typename A, typename B>
@@ -278,8 +293,8 @@ template <> inline index_t make_unary<logical_not>(index_t a) { return a == 0 ? 
 // clang-format on
 
 template <typename T, typename A>
-SLINKY_UNIQUE auto substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
-  return make_unary<T>(substitute(p.a, ctx));
+SLINKY_UNIQUE auto substitute(const pattern_unary<T, A>& p, const match_context& ctx, bool& overflowed) {
+  return make_unary<T>(substitute(p.a, ctx, overflowed));
 }
 
 template <typename C, typename T, typename F>
@@ -314,8 +329,9 @@ SLINKY_UNIQUE bool match(const pattern_select<C, T, F>& p,
 }
 
 template <typename C, typename T, typename F>
-SLINKY_UNIQUE expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
-  return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
+SLINKY_UNIQUE expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx, bool& overflowed) {
+  return select::make(
+      substitute(p.c, ctx, overflowed), substitute(p.t, ctx, overflowed), substitute(p.f, ctx, overflowed));
 }
 
 template <typename C, typename T, typename F>
@@ -359,14 +375,15 @@ SLINKY_UNIQUE bool match(const pattern_call<Args...>& p, expr_ref x, match_conte
   return false;
 }
 
-SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) { return call::make(p.fn, {}); }
+SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx, bool&) { return call::make(p.fn, {}); }
 template <typename A>
-SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
-  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
+SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx, bool& overflowed) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx, overflowed)});
 }
 template <typename A, typename B>
-SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx) {
-  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx), substitute(std::get<1>(p.args), ctx)});
+SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx, bool& overflowed) {
+  return call::make(
+      p.fn, {substitute(std::get<0>(p.args), ctx, overflowed), substitute(std::get<1>(p.args), ctx, overflowed)});
 }
 
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<>& p) { return os << p.fn << "()"; }
@@ -389,8 +406,8 @@ public:
 };
 
 template <typename T, typename Fn>
-SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
-  return r.fn(substitute(r.a, ctx));
+SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx, bool& overflowed) {
+  return r.fn(substitute(r.a, ctx, overflowed));
 }
 
 template <typename T, typename Fn>
@@ -413,8 +430,8 @@ public:
 };
 
 template <typename T>
-SLINKY_UNIQUE index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
-  return substitute(r.a, ctx);
+SLINKY_UNIQUE index_t substitute(const replacement_eval<T>& r, const match_context& ctx, bool& overflowed) {
+  return substitute(r.a, ctx, overflowed);
 }
 
 template <typename T>
@@ -432,8 +449,8 @@ public:
 };
 
 template <typename T>
-SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
-  return boolean(substitute(r.a, ctx));
+SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx, bool& overflowed) {
+  return boolean(substitute(r.a, ctx, overflowed));
 }
 
 template <typename T>
@@ -563,7 +580,9 @@ SLINKY_UNIQUE bool match_any_variant(Pattern p, const Target& x, match_context& 
 
 template <typename Pattern, typename Target, typename Predicate>
 SLINKY_UNIQUE bool match(match_context& ctx, Pattern p, const Target& x, Predicate pr) {
-  return match_any_variant(p, x, ctx) && substitute(pr, ctx);
+  if (!match_any_variant(p, x, ctx)) return false;
+  bool overflowed = false;
+  return substitute(pr, ctx, overflowed) && !overflowed;
 }
 
 template <typename Pattern, typename Target>
@@ -584,8 +603,9 @@ class base_rewriter {
   SLINKY_ALWAYS_INLINE bool find_replacement(const match_context& ctx, Replacement r) {
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
-    result = substitute(r, ctx);
-    return true;
+    bool overflowed = false;
+    result = substitute(r, ctx, overflowed);
+    return !overflowed;
   }
 
   template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
@@ -594,13 +614,13 @@ class base_rewriter {
     static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
-    if (substitute(pr, ctx)) {
-      result = substitute(r, ctx);
-      return true;
-    } else {
-      // Try the next replacement
-      return find_replacement<Pattern>(ctx, r_pr...);
+    bool overflowed = false;
+    if (substitute(pr, ctx, overflowed) && !overflowed) {
+      result = substitute(r, ctx, overflowed);
+      if (!overflowed) return true;
     }
+    // Try the next replacement
+    return find_replacement<Pattern>(ctx, r_pr...);
   }
 
 public:
