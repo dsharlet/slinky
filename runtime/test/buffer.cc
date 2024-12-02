@@ -702,11 +702,11 @@ TEST(buffer, copy_empty_src) {
     for (int d = 0; d < rank; d++) {
       dst.dim(0).set_min_extent(0, D);
     }
-    // We want to verify that dst is unchanged, so fill it with easy to verify data
     dst.allocate();
     fill(dst, 7);
-    slinky::copy(src, dst);
-    ASSERT_TRUE(is_filled_buffer(dst, 7));
+    // The result of copying an empty buffer should be entirely padding.
+    slinky::copy(src, dst, 3);
+    ASSERT_TRUE(is_filled_buffer(dst, 3));
   }
 }
 
