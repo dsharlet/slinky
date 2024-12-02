@@ -2029,7 +2029,7 @@ public:
   constant_bound(int sign) : sign(sign) {}
 
   template <typename T>
-  void visit_min_max(const T* op, bool take_constant) {
+  void visit_min_max(const T* op, bool take_constant, index_t ignore_constant) {
     // We can only learn about upper bounds from min and lower bounds from max. Furthermore, it is an error to
     // attempt to recursively mutate into a max while finding upper bounds or vice versa, because we might find
     // incorrect conservative bounds in the wrong direction.
@@ -2039,9 +2039,9 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
-    } else if (take_constant && ca) {
+    } else if (take_constant && ca && *ca != ignore_constant) {
       set_result(std::move(a));
-    } else if (take_constant && cb) {
+    } else if (take_constant && cb && *cb != ignore_constant) {
       set_result(std::move(b));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
@@ -2049,8 +2049,8 @@ public:
       set_result(T::make(std::move(a), std::move(b)));
     }
   }
-  void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0); }
-  void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
+  void visit(const class min* op) override { visit_min_max(op, /*take_constant=*/sign > 0, /*ignore_constant*/std::numeric_limits<index_t>::max()); }
+  void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0, /*ignore_constant*/std::numeric_limits<index_t>::min()); }
 
   template <typename T>
   void visit_add_sub(const T* op, int rhs_sign) {
