@@ -2038,7 +2038,7 @@ public:
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
-      set_result(make_binary_maybe_constant<T>(*ca, *cb));
+      set_result(make_binary<T>(*ca, *cb));
     } else if (take_constant && ca) {
       set_result(std::move(a));
     } else if (take_constant && cb) {
@@ -2062,7 +2062,7 @@ public:
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
-      set_result(make_binary_maybe_constant<T>(*ca, *cb));
+      set_result(make_or_eval_binary<T>(*ca, *cb));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
@@ -2141,7 +2141,7 @@ public:
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
-      set_result(make_binary_maybe_constant<T>(*ca, *cb));
+      set_result(make_binary<T>(*ca, *cb));
     } else if (sign < 0) {
       set_result(expr(0));
     } else {
@@ -2163,7 +2163,7 @@ public:
     auto cb = as_constant(b);
 
     if (ca && cb) {
-      set_result(make_binary_maybe_constant<T>(*ca != 0, *cb != 0));
+      set_result(make_binary<T>(*ca != 0, *cb != 0));
     } else if (sign < 0) {
       set_result(expr(0));
     } else {
