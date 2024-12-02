@@ -2062,7 +2062,7 @@ public:
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
-      set_result(make_binary<T>(*ca, *cb));
+      set_result(make_or_eval_binary<T>(*ca, *cb));
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
