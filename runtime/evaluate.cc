@@ -775,7 +775,7 @@ public:
   void visit_binary(const T* op) {
     std::optional<index_t> a = eval(op->a);
     std::optional<index_t> b = eval(op->b);
-    if (a && b) {
+    if (a && b && !binary_overflows<T>(*a, *b)) {
       result = make_binary<T>(*a, *b);
     } else {
       result = std::nullopt;
