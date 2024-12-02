@@ -441,6 +441,22 @@ template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<logical_and>(index_t
 template <> SLINKY_ALWAYS_INLINE inline index_t make_binary<logical_or>(index_t a, index_t b) { return a || b ? 1 : 0; }
 // clang-format on
 
+// clang-format off
+template <typename T> SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool binary_op_overflows(index_t a, index_t b) { return false; }
+template <> SLINKY_ALWAYS_INLINE inline bool binary_op_overflows<add>(index_t a, index_t b) { return add_overflows(a, b); }
+template <> SLINKY_ALWAYS_INLINE inline bool binary_op_overflows<sub>(index_t a, index_t b) { return sub_overflows(a, b); }
+template <> SLINKY_ALWAYS_INLINE inline bool binary_op_overflows<mul>(index_t a, index_t b) { return mul_overflows(a, b); }
+// clang-format on
+
+template <typename T>
+expr make_binary_maybe_constant(index_t a, index_t b) {
+  if (binary_op_overflows<T>(a, b)) {
+    return make_binary<T>(expr(a), expr(b));
+  } else {
+    return make_binary<T>(a, b);
+  }
+}
+
 class logical_not : public expr_node<logical_not> {
 public:
   expr a;
