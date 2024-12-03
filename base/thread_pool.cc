@@ -1,5 +1,6 @@
 #include "base/thread_pool.h"
 
+#include <algorithm>
 #include <cassert>
 #include <functional>
 #include <mutex>
