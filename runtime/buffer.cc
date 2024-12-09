@@ -256,10 +256,13 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
 
     const index_t dst_size = dst_dim0.extent() * elem_size;
 
+    const index_t src_dim0_begin = std::min(src_dim0.begin(), dst_dim0.end());
+    const index_t src_dim0_end = std::max(src_dim0.end(), dst_dim0.begin());
+
     if (padding) {
       const index_t pad_before =
-          src_dim0.begin() > dst_dim0.begin() ? (src_dim0.begin() - dst_dim0.begin()) * elem_size : 0;
-      const index_t pad_after = dst_dim0.end() > src_dim0.end() ? (dst_dim0.end() - src_dim0.end()) * elem_size : 0;
+          src_dim0_begin > dst_dim0.begin() ? (src_dim0_begin - dst_dim0.begin()) * elem_size : 0;
+      const index_t pad_after = dst_dim0.end() > src_dim0_end ? (dst_dim0.end() - src_dim0_end) * elem_size : 0;
       const index_t src_size = dst_size - pad_before - pad_after;
 
       constant_buffer buffer;
@@ -286,8 +289,8 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
           },
           dst, src);
     } else {
-      assert(src_dim0.begin() == dst_dim0.begin());
-      assert(src_dim0.end() == dst_dim0.end());
+      assert(src_dim0_begin == dst_dim0.begin());
+      assert(src_dim0_end == dst_dim0.end());
 
       for_each_element([=](void* dst, const void* src) { memcpy(dst, src, dst_size); }, dst, src);
     }
