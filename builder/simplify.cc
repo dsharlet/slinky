@@ -1132,6 +1132,9 @@ public:
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
 
+    // TODO: Try not to assume that step > 0.
+    auto knowledge = learn_from_true(step > 0);
+
     if (prove_true(bounds.min > bounds.max)) {
       // This loop is dead.
       set_result(stmt());
@@ -1239,7 +1242,8 @@ public:
         if (const crop_dim* crop = result.as<crop_dim>()) {
           // Find the bounds of the crop on the next iteration.
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
-          if (prove_true(crop->bounds.max + 1 >= next_iter.min || next_iter.max + 1 >= crop->bounds.min)) {
+          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) || 
+                         (next_iter.min < crop->bounds.min && next_iter.max + 1 >= crop->bounds.min))) {
             result = crop->body;
             auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
             expr_info info_of_min, info_of_max;

@@ -244,6 +244,27 @@ TEST(simplify, let) {
       matches(let::make({{z, (y + 1) / y}}, (z + 1) / z)));
 }
 
+TEST(simplify, loop) {
+  auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
+
+  ASSERT_THAT(simplify(loop::make(
+                  x, loop::serial, buffer_bounds(b0, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
+      matches(make_call(b2, b0)));
+  ASSERT_THAT(simplify(loop::make(
+                  x, loop::serial, buffer_bounds(b3, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
+      matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b2, b1))));
+  ASSERT_THAT(simplify(loop::make(
+                  x, loop::serial, bounds(0, buffer_max(b0, 0)), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
+      matches(crop_dim::make(b1, b0, 0, bounds(0, expr()), make_call(b2, b1))));
+  ASSERT_THAT(simplify(loop::make(
+                  x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
+      matches(loop::make(
+          x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))));
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, buffer_bounds(b0, 0), y,
+                  crop_dim::make(b1, b0, 0, min_extent(x, y), make_call(b2, b1)))),
+      matches(make_call(b2, b0)));
+}
+
 TEST(simplify, licm) {
   // Use parallel loops so loops of one call don't get rewritten to a single call.
   auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
