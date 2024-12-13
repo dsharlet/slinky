@@ -245,30 +245,30 @@ TEST(simplify, let) {
 }
 
 TEST(simplify, loop) {
-  auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
+  auto make_call = [](const var& out) { return call_stmt::make(nullptr, {}, {out}, {}); };
 
   ASSERT_THAT(simplify(loop::make(
-                  x, loop::serial, buffer_bounds(b0, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
-      matches(make_call(b2, b0)));
+                  x, loop::serial, buffer_bounds(b0, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
+      matches(make_call(b0)));
   ASSERT_THAT(simplify(loop::make(
-                  x, loop::serial, buffer_bounds(b3, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
-      matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b2, b1))));
+                  x, loop::serial, buffer_bounds(b3, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
+      matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b1))));
   ASSERT_THAT(simplify(loop::make(
-                  x, loop::serial, bounds(0, buffer_max(b0, 0)), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
-      matches(crop_dim::make(b1, b0, 0, bounds(0, expr()), make_call(b2, b1))));
+                  x, loop::serial, bounds(0, buffer_max(b0, 0)), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
+      matches(crop_dim::make(b1, b0, 0, bounds(0, expr()), make_call(b1))));
   ASSERT_THAT(simplify(loop::make(
-                  x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))),
+                  x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
       matches(loop::make(
-          x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b2, b1)))));
+          x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, buffer_bounds(b0, 0), y,
-                  crop_dim::make(b1, b0, 0, min_extent(x, y), make_call(b2, b1)))),
-      matches(make_call(b2, b0)));
+                  crop_dim::make(b1, b0, 0, min_extent(x, y), make_call(b1)))),
+      matches(make_call(b0)));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, buffer_bounds(b3, 0), y,
-                  crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b2, b1)))),
-      matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b2, b1))));
+                  crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b1)))),
+      matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b1))));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(0, buffer_max(b3, 0)), y,
-                  crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b2, b1)))),
-      matches(crop_dim::make(b1, b0, 0, bounds(0, buffer_max(b3, 0)), make_call(b2, b1))));
+                  crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b1)))),
+      matches(crop_dim::make(b1, b0, 0, bounds(0, buffer_max(b3, 0)), make_call(b1))));
 }
 
 TEST(simplify, licm) {
