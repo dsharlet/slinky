@@ -1252,7 +1252,9 @@ public:
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
           auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
-          if (prove_true(crop->bounds.max + 1 >= next_iter.min || prev_iter.max + 1 >= crop->bounds.min)) {
+          // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
+          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) || 
+                         (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
             result = crop->body;
             expr_info info_of_min, info_of_max;
             mutate(crop->bounds, &info_of_min, &info_of_max);
