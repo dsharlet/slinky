@@ -964,6 +964,16 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, y, false), x && y, is_boolean(y)) ||
       apply(select(x, true, y), x || y, is_boolean(y)) ||
       apply(select(x, false, y), y && !x, is_boolean(y)) ||
+    
+      // Simplifications of min/max
+      apply(select(x < y, min(x, y), z), select(x < y, x, z)) ||
+      apply(select(x < y, max(x, y), z), select(x < y, y, z)) ||
+      apply(select(x < y, z, min(x, y)), select(x < y, z, y)) ||
+      apply(select(x < y, z, max(x, y)), select(x < y, z, x)) ||
+      apply(select(x <= y, min(x, y), z), select(x <= y, x, z)) ||
+      apply(select(x <= y, max(x, y), z), select(x <= y, y, z)) ||
+      apply(select(x <= y, z, min(x, y)), select(x <= y, z, y)) ||
+      apply(select(x <= y, z, max(x, y)), select(x <= y, z, x)) ||
 
       // Equivalents with min/max
       apply(select(x <= y, x, y), min(x, y)) ||

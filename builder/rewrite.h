@@ -482,8 +482,8 @@ template <typename T, typename A, typename... Ts>
 struct enable_pattern_ops<pattern_unary<T, A>, Ts...> { using type = std::true_type; };
 template <typename C, typename T, typename F, typename... Ts>
 struct enable_pattern_ops<pattern_select<C, T, F>, Ts...> { using type = std::true_type; };
-template <typename Args, typename... Ts>
-struct enable_pattern_ops<pattern_call<Args>, Ts...> { using type = std::true_type; };
+template <typename... Args, typename... Ts>
+struct enable_pattern_ops<pattern_call<Args...>, Ts...> { using type = std::true_type; };
 template <typename T, typename... Ts>
 struct enable_pattern_ops<replacement_eval<T>, Ts...> { using type = std::true_type; };
 template <typename T, typename Fn, typename... Ts>
