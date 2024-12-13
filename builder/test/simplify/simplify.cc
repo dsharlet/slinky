@@ -263,6 +263,12 @@ TEST(simplify, loop) {
   ASSERT_THAT(simplify(loop::make(x, loop::serial, buffer_bounds(b0, 0), y,
                   crop_dim::make(b1, b0, 0, min_extent(x, y), make_call(b2, b1)))),
       matches(make_call(b2, b0)));
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, buffer_bounds(b3, 0), y,
+                  crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b2, b1)))),
+      matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b2, b1))));
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(0, buffer_max(b3, 0)), y,
+                  crop_dim::make(b1, b0, 0, bounds(x, min(x + y - 1, buffer_max(b3, 0))), make_call(b2, b1)))),
+      matches(crop_dim::make(b1, b0, 0, bounds(0, buffer_max(b3, 0)), make_call(b2, b1))));
 }
 
 TEST(simplify, licm) {

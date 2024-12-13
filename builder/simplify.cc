@@ -30,7 +30,7 @@ expr strip_boolean(expr x) {
   if (const not_equal* ne = x.as<not_equal>()) {
     if (is_zero(ne->b)) {
       return strip_boolean(ne->a);
-    } 
+    }
     // This should be canonicalized to the RHS.
     assert(!is_zero(ne->a));
   }
@@ -385,12 +385,8 @@ private:
     result_info = std::move(info);
     node_mutator::set_result(std::move(e));
   }
-  void set_result(const base_expr_node* e, expr_info info) {
-    set_result(expr(e), std::move(info));
-  }
-  void set_result(stmt s) {
-    node_mutator::set_result(std::move(s));
-  }
+  void set_result(const base_expr_node* e, expr_info info) { set_result(expr(e), std::move(info)); }
+  void set_result(stmt s) { node_mutator::set_result(std::move(s)); }
   void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
   // Dummy for template code.
   void set_result(stmt s, const expr_info&) { set_result(std::move(s)); }
@@ -458,7 +454,16 @@ public:
       return point(std::move(result));
     } else {
       interval_expr result = {mutate(x.min, min_info), mutate(x.max, max_info)};
+      // If the interval is of the form [select(b < a, b + 1, a), b], i.e. checking if the interval is empty, we can
+      // just rewrite it to [a, b], because all empty intervals are equivalent.
+      rewrite::pattern_wildcard<0> a;
+      rewrite::pattern_wildcard<1> b;
+      rewrite::match_context ctx;
+      if (match(ctx, select(b < a, b + 1, a), result.min) && match(ctx.matched(b), result.max)) {
+        result = {ctx.matched(a), ctx.matched(b)};
+      }
       ensure_is_point(result);
+
       return result;
     }
   }
@@ -657,7 +662,8 @@ public:
       return;
     } else if (prove_constant_false(simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b)) ||
                prove_constant_false(simplify(static_cast<const less*>(nullptr), a, b_info.bounds.max)) ||
-               prove_constant_false(simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b_info.bounds.max))) {
+               prove_constant_false(
+                   simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b_info.bounds.max))) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(b), std::move(b_info));
       } else {
@@ -1240,15 +1246,20 @@ public:
       while (true) {
         // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
         if (const crop_dim* crop = result.as<crop_dim>()) {
-          // Find the bounds of the crop on the next iteration.
+          // If we can prove that the union of either the current and next iteration, or previous and current iteration,
+          // is the whole iteration domain, then we can drop the loop. It's helpful to check both, because usually
+          // clamps that make this proof hard only exist in one direction.
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
-          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) || 
-                         (next_iter.min < crop->bounds.min && next_iter.max + 1 >= crop->bounds.min))) {
+          interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
+          auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
+          if (prove_true(crop->bounds.max + 1 >= next_iter.min || prev_iter.max + 1 >= crop->bounds.min)) {
             result = crop->body;
-            auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
             expr_info info_of_min, info_of_max;
             mutate(crop->bounds, &info_of_min, &info_of_max);
-            new_crops.emplace_back(crop->sym, crop->src, crop->dim, info_of_min.bounds | info_of_max.bounds);
+            interval_expr crop_bounds = info_of_min.bounds | info_of_max.bounds;
+            // If the original loop was empty, we need to hack the crop bounds to produce an empty buffer.
+            crop_bounds.min = select(bounds.max < bounds.min, crop_bounds.max + 1, crop_bounds.min);
+            new_crops.emplace_back(crop->sym, crop->src, crop->dim, std::move(crop_bounds));
           } else {
             // This crop was not contiguous, we can't drop the loop.
             drop_loop = false;
@@ -1658,6 +1669,22 @@ public:
     // We already proved above that this min/max is necessary (otherwise result would be undefined here).
     if (result.min.defined()) buffer.min = max(buffer.min, result.min);
     if (result.max.defined()) buffer.max = min(buffer.max, result.max);
+
+    // We might have written a select into an interval that tries to preserve the empty-ness of the interval.
+    // But this might be unnecessary. Try to remove unnecessary selects here.
+    rewrite::pattern_wildcard<0> b;
+    rewrite::pattern_wildcard<1> d;
+    rewrite::pattern_wildcard<2> empty_min;
+    rewrite::pattern_wildcard<3> new_min;
+    rewrite::match_context ctx;
+    if (match(ctx, select(buffer_max(b, d) < buffer_min(b, d), empty_min, new_min), result.min)) {
+      if (is_variable(ctx.matched(b), buf) && is_constant(ctx.matched(d), dim)) {
+        // This select is a check that the dimension we are cropping is empty.
+        // If the buffer is empty, it doesn't matter what we do, the resulting crop will still be empty, so we can
+        // just take the new min.
+        result.min = ctx.matched(new_min);
+      }
+    }
 
     return result;
   }
