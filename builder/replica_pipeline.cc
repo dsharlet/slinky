@@ -92,7 +92,12 @@ public:
     std::string s = print_expr_maybe_inlined(op->a);
     name_ = "!(" + s + ")";
   }
-  void visit(const class select* op) override { fail("unimplemented select"); }
+  void visit(const class select* op) override {
+    std::string c = print_expr_maybe_inlined(op->condition);
+    std::string t = print_expr_maybe_inlined(op->true_value);
+    std::string f = print_expr_maybe_inlined(op->false_value);
+    name_ = "(" + c + " ? " + t + " : " + f + ")";
+  }
 
   void visit(const call* op) override {
     std::vector<std::string> args;
