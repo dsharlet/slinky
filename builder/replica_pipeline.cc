@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/print.h"
 
@@ -152,9 +151,9 @@ public:
       (void)print_assignment_explicit(
           const_name, "std::make_shared<buffer<void, ", bep->rank(), ">>(/*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");
       for (std::size_t d = 0; d < bep->rank(); d++) {
-          std::string m = print_expr_inlined(bep->dim(d).bounds.min);
-          std::string e = print_expr_inlined(bep->dim(d).bounds.extent());
-          os_ << "  " << const_name << "->dim(" << d << ").set_min_extent(" << m << ", " << e << ");\n";
+          std::string mn = print_expr_inlined(bep->dim(d).bounds.min);
+          std::string mx = print_expr_inlined(bep->dim(d).bounds.max);
+          os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << mn << ", " << mx << ");\n";
           os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(slinky::dim::unfolded);\n";
       }
       os_ << "  " << const_name << "->allocate();\n";
@@ -431,7 +430,7 @@ private:
   std::string print_expr_maybe_inlined(const expr& e) {
     if (e.defined()) {
       name_ = "$$INVALID$$";
-      simplify(e).accept(this);
+      e.accept(this);
     } else {
       name_ = "expr()";
     }
