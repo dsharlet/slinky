@@ -96,7 +96,7 @@ public:
     std::string c = print_expr_maybe_inlined(op->condition);
     std::string t = print_expr_maybe_inlined(op->true_value);
     std::string f = print_expr_maybe_inlined(op->false_value);
-    name_ = "(" + c + " ? " + t + " : " + f + ")";
+    name_ = "select(" + c + ", " + t + ", " + f + ")";
   }
 
   void visit(const call* op) override {
@@ -153,11 +153,11 @@ public:
     for (std::size_t d = 0; d < bep->rank(); d++) {
       if (!match(bep->dim(d).bounds.min, buffer_min(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.min);
-        os_ << "  " << name << "->dim(" << d << ").min = " << e << ";\n";
+        os_ << "  " << name << "->dim(" << d << ").bounds.min = " << e << ";\n";
       }
       if (!match(bep->dim(d).bounds.max, buffer_max(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.max);
-        os_ << "  " << name << "->dim(" << d << ").max = " << e << ";\n";
+        os_ << "  " << name << "->dim(" << d << ").bounds.max = " << e << ";\n";
       }
       if (!match(bep->dim(d).stride, buffer_stride(bep_var, d))) {
         std::string e = print_expr_inlined(bep->dim(d).stride);

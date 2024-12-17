@@ -24,6 +24,7 @@ public:
   span(const value_type* begin, const value_type* end) : data_(begin), size_(end - begin) {}
   template <std::size_t N>
   span(const value_type (&x)[N]) : data_(&x[0]), size_(N) {}
+  span(const value_type (&x)[0]) : data_(nullptr), size_(0) {}
   template <std::size_t N>
   span(const std::array<value_type, N>& x) : data_(std::data(x)), size_(N) {}
   span(const std::vector<value_type>& c) : data_(std::data(c)), size_(std::size(c)) {}
