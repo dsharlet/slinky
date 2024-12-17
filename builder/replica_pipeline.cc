@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "builder/simplify.h"
 #include "builder/substitute.h"
 #include "runtime/print.h"
 
