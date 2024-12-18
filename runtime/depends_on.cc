@@ -40,7 +40,8 @@ public:
       to_deps.buffer_src = to_deps.buffer_src || deps.buffer_src;
       to_deps.buffer_dst = to_deps.buffer_dst || deps.buffer_dst;
       to_deps.buffer_base = to_deps.buffer_base || deps.buffer_base;
-      to_deps.buffer_meta = to_deps.buffer_meta || deps.buffer_meta;
+      to_deps.buffer_dims = to_deps.buffer_dims || deps.buffer_dims;
+      to_deps.buffer_bounds = to_deps.buffer_bounds || deps.buffer_bounds;
     });
   }
 
@@ -54,7 +55,12 @@ public:
         auto buf = as_variable(op->args[0]);
         assert(buf);
         update_deps(*buf, [fn = op->intrinsic](depends_on_result& deps) {
-          deps.buffer_meta = true;
+          if (fn == intrinsic::buffer_min || fn == intrinsic::buffer_max) {
+            deps.buffer_bounds = true;
+          }
+          if (is_buffer_dim_intrinsic(fn)) {
+            deps.buffer_dims = true;
+          }
           if (fn == intrinsic::buffer_at) {
             deps.buffer_base = true;
           }
@@ -109,27 +115,33 @@ public:
       update_deps(i, [](depends_on_result& deps) {
         deps.var = true;
         deps.buffer_input = true;
+        deps.buffer_dims = true;
       });
     }
     for (var i : op->outputs) {
       update_deps(i, [](depends_on_result& deps) {
         deps.var = true;
         deps.buffer_output = true;
-        deps.buffer_meta = true;
+        deps.buffer_bounds = true;
+        deps.buffer_dims = true;
       });
     }
   }
 
   void visit(const copy_stmt* op) override {
-    update_deps(op->src, [](depends_on_result& deps) {
+    update_deps(op->src, [op](depends_on_result& deps) {
       deps.var = true;
       deps.buffer_src = true;
-      deps.buffer_meta = true;
+      if (op->padding) {
+        deps.buffer_bounds = true;
+      }
+      deps.buffer_dims = true;
     });
     update_deps(op->dst, [](depends_on_result& deps) {
       deps.var = true;
       deps.buffer_dst = true;
-      deps.buffer_meta = true;
+      deps.buffer_bounds = true;
+      deps.buffer_dims = true;
     });
 
     // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
@@ -176,14 +188,20 @@ public:
       if (i.min.defined()) i.min.accept(this);
       if (i.max.defined()) i.max.accept(this);
     }
-    update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
+    update_deps(op->src, [](depends_on_result& deps) {
+      deps.buffer_bounds = true;
+      deps.buffer_dims = true;
+    });
     depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const crop_dim* op) override {
     if (op->bounds.min.defined()) op->bounds.min.accept(this);
     if (op->bounds.max.defined()) op->bounds.max.accept(this);
-    update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
+    update_deps(op->src, [](depends_on_result& deps) {
+      deps.buffer_bounds = true;
+      deps.buffer_dims = true;
+    });
     depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
@@ -191,18 +209,27 @@ public:
     for (const expr& i : op->at) {
       if (i.defined()) i.accept(this);
     }
-    update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
+    update_deps(op->src, [](depends_on_result& deps) {
+      deps.buffer_bounds = true;
+      deps.buffer_dims = true;
+    });
     depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const slice_dim* op) override {
     op->at.accept(this);
-    update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
+    update_deps(op->src, [](depends_on_result& deps) {
+      deps.buffer_bounds = true;
+      deps.buffer_dims = true;
+    });
     depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }
   void visit(const transpose* op) override {
-    update_deps(op->src, [](depends_on_result& deps) { deps.buffer_meta = true; });
+    update_deps(op->src, [](depends_on_result& deps) {
+      deps.buffer_bounds = true;  // TODO: Maybe not?
+      deps.buffer_dims = true;
+    });
     depends_on_result sym_deps = visit_sym_body(op->sym, op->body);
     propagate_deps(sym_deps, op->src);
   }

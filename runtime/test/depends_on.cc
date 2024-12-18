@@ -25,7 +25,8 @@ bool operator==(const depends_on_result& l, const depends_on_result& r) {
   if (l.buffer_src != r.buffer_src) return false;
   if (l.buffer_dst != r.buffer_dst) return false;
   if (l.buffer_base != r.buffer_base) return false;
-  if (l.buffer_meta != r.buffer_meta) return false;
+  if (l.buffer_dims != r.buffer_dims) return false;
+  if (l.buffer_bounds != r.buffer_bounds) return false;
   return true;
 }
 
@@ -36,7 +37,8 @@ std::ostream& operator<<(std::ostream& os, const depends_on_result& r) {
   os << ", .buffer_src = " << r.buffer_src;
   os << ", .buffer_dst = " << r.buffer_dst;
   os << ", .buffer_base = " << r.buffer_base;
-  os << ", .buffer_meta = " << r.buffer_meta;
+  os << ", .buffer_dims = " << r.buffer_dims;
+  os << ", .buffer_bounds = " << r.buffer_bounds;
   os << "}";
   return os;
 }
@@ -44,7 +46,7 @@ std::ostream& operator<<(std::ostream& os, const depends_on_result& r) {
 TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(x + y, x), (depends_on_result{.var = true}));
   ASSERT_EQ(depends_on(x + x, x), (depends_on_result{.var = true}));
-  ASSERT_EQ(depends_on(buffer_at(x), x), (depends_on_result{.buffer_base = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(buffer_at(x), x), (depends_on_result{.buffer_base = true}));
 
   stmt loop_x = loop::make(x, loop::serial, {y, z}, 1, check::make(x && z));
   ASSERT_EQ(depends_on(loop_x, x), depends_on_result{});
@@ -53,14 +55,15 @@ TEST(depends_on, basic) {
   stmt call = call_stmt::make(nullptr, {xc}, {yc}, {});
   // Everything here should be transparent to clones.
   call = clone_buffer::make(xc, x, clone_buffer::make(yc, y, call));
-  ASSERT_EQ(depends_on(call, x), (depends_on_result{.var = true, .buffer_input = true}));
-  ASSERT_EQ(depends_on(call, y), (depends_on_result{.var = true, .buffer_output = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(call, x), (depends_on_result{.var = true, .buffer_input = true, .buffer_dims = true}));
+  ASSERT_EQ(depends_on(call, y),
+      (depends_on_result{.var = true, .buffer_output = true, .buffer_dims = true, .buffer_bounds = true}));
 
   stmt crop = crop_dim::make(x, w, 1, {y, z}, check::make(y));
   ASSERT_EQ(depends_on(crop, x), (depends_on_result{}));
 
   stmt crop_shadowed = crop_dim::make(x, x, 1, {y, z}, check::make(y));
-  ASSERT_EQ(depends_on(crop_shadowed, x), (depends_on_result{.buffer_meta = true}));
+  ASSERT_EQ(depends_on(crop_shadowed, x), (depends_on_result{.buffer_dims = true, .buffer_bounds = true}));
 
   stmt make_buffer = make_buffer::make(x, 0, 1, {{{y, z}, w}}, check::make(x && z));
   ASSERT_EQ(depends_on(make_buffer, x), (depends_on_result{}));
@@ -68,17 +71,23 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(make_buffer, z), (depends_on_result{.var = true}));
 
   stmt cropped_output = crop_dim::make(y, z, 0, {w, w}, call);
-  ASSERT_EQ(depends_on(cropped_output, z), (depends_on_result{.var = true, .buffer_output = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(cropped_output, z),
+      (depends_on_result{.var = true, .buffer_output = true, .buffer_dims = true, .buffer_bounds = true}));
 
   stmt cropped_input = crop_dim::make(x, z, 0, {w, w}, call);
-  ASSERT_EQ(depends_on(cropped_input, z), (depends_on_result{.var = true, .buffer_input = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(cropped_input, z),
+      (depends_on_result{.var = true, .buffer_input = true, .buffer_dims = true, .buffer_bounds = true}));
 }
 
 TEST(depends_on, copy) {
-  ASSERT_EQ(
-      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x), (depends_on_result{.var = true, .buffer_src = true, .buffer_meta = true}));
-  ASSERT_EQ(
-      depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y), (depends_on_result{.var = true, .buffer_dst = true, .buffer_meta = true}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x),
+      (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {{3}}), x),
+      (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true, .buffer_bounds = true}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y),
+      (depends_on_result{.var = true, .buffer_dst = true, .buffer_dims = true, .buffer_bounds = true}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {{3}}), y),
+      (depends_on_result{.var = true, .buffer_dst = true, .buffer_dims = true, .buffer_bounds = true}));
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
