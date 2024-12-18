@@ -245,6 +245,8 @@ class buffer_aliaser : public node_mutator {
     // this symbol, but make a crop of it for the original bounds.
     var shared_alloc_sym;
 
+    int uses = 0;
+
     buffer_info(std::vector<dim_expr> dims, expr elem_size, bool is_input = false, bool is_output = false)
         : dims(std::move(dims)), elem_size(std::move(elem_size)), is_input(is_input), is_output(is_output) {}
 
@@ -263,6 +265,13 @@ class buffer_aliaser : public node_mutator {
   static bool alias_compatible(const allocate* op, alias_info& alias, var target, const buffer_info& target_info) {
     scoped_trace trace("alias_compatible");
     assert(op->dims.size() == alias.dims.size());
+
+    if (target_info.uses > 1 && alias.may_mutate) {
+      // We can't use a mutating alias on a buffer that is used more than once.
+      // TODO: We could do better here: if the mutating alias is the *last* use, we can still use that alias.
+      // This is tricky to figure out especially when loops are involved.
+      return false;
+    }
 
     if (alias.is_contiguous_copy) {
       assert(alias.assume_in_bounds);
@@ -380,9 +389,8 @@ public:
       if (alias.disabled) {
         continue;
       }
-      var target_var = alias.target;
 
-      var alloc_var = target_var;
+      var target_var = alias.target;
       std::optional<buffer_info>& target_info = buffers[target_var];
       assert(target_info);
 
@@ -399,6 +407,7 @@ public:
         i = substitute_bounds(i, op->sym, op_dims_bounds);
       }
 
+      var alloc_var = target_var;
       if (!alias.assume_in_bounds) {
         assert(!target_info->is_output);
         assert(!target_info->is_input);  // We shouldn't be trying to write to an input anyways.
@@ -450,18 +459,6 @@ public:
       // If we aliased the source and destination of a copy with no padding, the copy can be removed.
       result = remove_copy(result, op->sym, target_var);
 
-      if (!alias.is_copy) {
-        // This wasn't a copy, we actually did some computation in place. We can't alias another buffer to this target
-        // without understanding the lifetimes more carefully.
-        // TODO: I think this is a hack, but I'm not sure. I think maybe the proper thing to do is track a box_expr
-        // of the region that has been aliased so far, and allow another alias as long as it does not intersect that
-        // region. That will likely be very difficult to do symbolically.
-        for (std::optional<buffer_info>& i : buffers) {
-          if (!i) continue;
-          i->do_not_alias(target_var);
-        }
-      }
-
       set_result(std::move(result));
       return;
     }
@@ -498,6 +495,7 @@ public:
       var in = op->inputs[0];
       var out = op->outputs[0];
       std::optional<buffer_info>& input_info = buffers[in];
+      if (input_info) input_info->uses++;
       std::optional<buffer_info>& output_info = buffers[out];
       if (input_info && output_info) {
         alias_info fwd;
@@ -522,6 +520,7 @@ public:
       for (var i : unique_inputs) {
         std::optional<buffer_info>& input_info = buffers[i];
         if (!input_info) continue;
+        input_info->uses++;
 
         if (!op->attrs.allow_in_place || input_info->is_input) {
           // We can't write to this buffer.
@@ -677,6 +676,9 @@ public:
   void visit(const copy_stmt* op) override {
     set_result(op);
 
+    std::optional<buffer_info>& src_info = buffers[op->src];
+    if (src_info) src_info->uses++;
+
     alias_copy_dst(op);
     alias_copy_src(op);
   }
@@ -718,6 +720,7 @@ public:
         assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
         old_info->shared_alloc_sym = info->shared_alloc_sym;
       }
+      old_info->uses += info->uses;
       for (alias_info& a : info->aliases) {
         if (a.target == sym) {
           a.target = src;
