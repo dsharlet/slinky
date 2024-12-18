@@ -146,8 +146,25 @@ public:
     buffers_emitted_.insert(bep->sym());
 
     std::string elem_size = print_expr_inlined(bep->elem_size());
-    (void)print_assignment_explicit(
-        name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");
+    if (bep->constant()) {
+      auto c = bep->constant();
+      std::string const_name = name + "_const";
+      (void)print_assignment_explicit(
+          const_name, "std::make_shared<buffer<void, ", c->rank, ">>(/*rank=*/", c->rank, ", /*elem_size=*/", elem_size, ")");
+      for (std::size_t d = 0; d < c->rank; d++) {
+          os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << c->dim(d).min() << ", " << c->dim(d).max() << ");\n";
+          os_ << "  " << const_name << "->dim(" << d << ").set_stride(" << c->dim(d).stride() << ");\n";
+          os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(" << c->dim(d).fold_factor() << ");\n";
+      }
+      os_ << "  " << const_name << "->allocate();\n";
+      os_ << "  std::uint8_t " << const_name << "_fill[" << elem_size << "] = { 0 };\n";
+      os_ << "  fill(*" << const_name << ", " << const_name << "_fill);\n";
+      (void)print_assignment_explicit(
+          name, "buffer_expr::make(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
+    } else {
+      (void)print_assignment_explicit(
+          name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");
+    }
 
     expr bep_var = variable::make(bep->sym());
     for (std::size_t d = 0; d < bep->rank(); d++) {
