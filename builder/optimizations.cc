@@ -542,7 +542,7 @@ public:
           fwd.dims = buffer_dims(o, rank);
           fwd.at = buffer_mins(i, rank);
           fwd.assume_in_bounds = true;
-          fwd.may_mutate = false;
+          fwd.may_mutate = true;
           fwd.permutation.resize(rank);
           std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
           input_info->aliases.push_back(std::move(fwd));
