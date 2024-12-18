@@ -152,13 +152,9 @@ public:
       (void)print_assignment_explicit(
           const_name, "std::make_shared<buffer<void, ", c->rank, ">>(/*rank=*/", c->rank, ", /*elem_size=*/", elem_size, ")");
       for (std::size_t d = 0; d < c->rank; d++) {
-          std::string mn = print_expr_inlined(c->dim(d).min());
-          std::string mx = print_expr_inlined(c->dim(d).max());
-          std::string st = print_expr_inlined(c->dim(d).stride());
-          std::string ff = print_expr_inlined(c->dim(d).fold_factor());
-          os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << mn << ", " << mx << ");\n";
-          os_ << "  " << const_name << "->dim(" << d << ").set_stride(" << st << ");\n";
-          os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(" << ff << ");\n";
+          os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << c->dim(d).min() << ", " << c->dim(d).max() << ");\n";
+          os_ << "  " << const_name << "->dim(" << d << ").set_stride(" << c->dim(d).stride() << ");\n";
+          os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(" << c->dim(d).fold_factor() << ");\n";
       }
       os_ << "  " << const_name << "->allocate();\n";
       os_ << "  std::uint8_t " << const_name << "_fill[" << elem_size << "] = { 0 };\n";
