@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <map>
 #include <numeric>
 #include <optional>
 #include <set>
@@ -205,6 +204,8 @@ class buffer_aliaser : public node_mutator {
   node_context& ctx;
 
   struct alias_info {
+    var target;
+
     // Parameters for this alias's make_buffer call.
     std::vector<dim_expr> dims;
     expr elem_size;
@@ -224,6 +225,8 @@ class buffer_aliaser : public node_mutator {
     bool is_copy = false;
 
     bool is_contiguous_copy = false;
+
+    bool disabled = false;
   };
 
   class buffer_info {
@@ -236,21 +239,22 @@ class buffer_aliaser : public node_mutator {
     bool is_output;
 
     // Possible aliases of this allocation.
-    std::map<var, alias_info> aliases;
+    std::vector<alias_info> aliases;
 
     // If we decided to alias this buffer, we might have grown the bounds. If so, we need to make a new allocation with
     // this symbol, but make a crop of it for the original bounds.
     var shared_alloc_sym;
 
-  public:
     buffer_info(std::vector<dim_expr> dims, expr elem_size, bool is_input = false, bool is_output = false)
         : dims(std::move(dims)), elem_size(std::move(elem_size)), is_input(is_input), is_output(is_output) {}
 
-    void maybe_alias(var s, alias_info a) {
-      assert(aliases.count(s) == 0);
-      aliases[s] = std::move(a);
+    void do_not_alias(var t) {
+      for (alias_info& i : aliases) {
+        if (i.target == t) {
+          i.disabled = true;
+        }
+      }
     }
-    void do_not_alias(var s) { aliases.erase(s); }
   };
   symbol_map<buffer_info> buffers;
 
@@ -372,9 +376,11 @@ public:
     }
 
     box_expr op_dims_bounds = dims_bounds(info.dims);
-    for (auto& target : info.aliases) {
-      var target_var = target.first;
-      alias_info& alias = target.second;
+    for (alias_info& alias : info.aliases) {
+      if (alias.disabled) {
+        continue;
+      }
+      var target_var = alias.target;
 
       var alloc_var = target_var;
       std::optional<buffer_info>& target_info = buffers[target_var];
@@ -433,8 +439,8 @@ public:
       result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
 
       for (auto& i : target_info->aliases) {
-        i.second.may_mutate = i.second.may_mutate || alias.may_mutate;
-        i.second.assume_in_bounds = i.second.assume_in_bounds && alias.assume_in_bounds;
+        i.may_mutate = i.may_mutate || alias.may_mutate;
+        i.assume_in_bounds = i.assume_in_bounds && alias.assume_in_bounds;
       }
 
       if (elem_size.defined()) {
@@ -495,25 +501,29 @@ public:
       std::optional<buffer_info>& output_info = buffers[out];
       if (input_info && output_info) {
         alias_info fwd;
+        fwd.target = out;
         fwd.dims = make_contiguous_dims(in, input_info->dims.size());
         fwd.at = buffer_mins(out, output_info->dims.size());
         fwd.is_contiguous_copy = true;
         fwd.assume_in_bounds = true;
-        input_info->maybe_alias(out, std::move(fwd));
+        input_info->aliases.push_back(std::move(fwd));
 
         alias_info back;
+        back.target = in;
         back.dims = make_contiguous_dims(out, output_info->dims.size());
         back.at = buffer_mins(in, input_info->dims.size());
         back.is_contiguous_copy = true;
         back.assume_in_bounds = true;
-        output_info->maybe_alias(in, std::move(back));
+        output_info->aliases.push_back(std::move(back));
       }
-    } else if (op->attrs.allow_in_place) {
+    } else {
       // If input is repeated, we don't want to add into the alias info again.
       std::set<var> unique_inputs(op->inputs.begin(), op->inputs.end());
       for (var i : unique_inputs) {
         std::optional<buffer_info>& input_info = buffers[i];
-        if (!input_info || input_info->is_input) {
+        if (!input_info) continue;
+
+        if (!op->attrs.allow_in_place || input_info->is_input) {
           // We can't write to this buffer.
           continue;
         }
@@ -528,15 +538,17 @@ public:
           size_t rank = input_info->dims.size();
 
           alias_info fwd;
+          fwd.target = o;
           fwd.dims = buffer_dims(o, rank);
           fwd.at = buffer_mins(i, rank);
           fwd.assume_in_bounds = true;
           fwd.may_mutate = false;
           fwd.permutation.resize(rank);
           std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
-          input_info->maybe_alias(o, std::move(fwd));
+          input_info->aliases.push_back(std::move(fwd));
 
           alias_info back;
+          back.target = i;
           // Use the bounds of the output, but the memory layout of the input.
           back.dims.resize(rank);
           for (int d = 0; d < static_cast<int>(rank); ++d) {
@@ -547,7 +559,7 @@ public:
           back.may_mutate = true;
           back.permutation.resize(rank);
           std::iota(back.permutation.begin(), back.permutation.end(), 0);
-          output_info->maybe_alias(i, std::move(back));
+          output_info->aliases.push_back(std::move(back));
         }
       }
     }
@@ -565,6 +577,7 @@ public:
     // are the same dimensions we want the dst to be.
 
     alias_info a;
+    a.target = op->src;
     a.at.resize(op->src_x.size());
     a.permutation.resize(op->dst_x.size());
     a.dims = info->dims;
@@ -580,8 +593,8 @@ public:
         return;
       }
 
-      // We want the bounds of the original dst dimension, but the memory layout of the src dimension. This may require
-      // the allocation to be expanded to accommodate this alias.
+      // We want the bounds of the original dst dimension, but the memory layout of the src dimension. This may
+      // require the allocation to be expanded to accommodate this alias.
       a.dims[dst_d] = {buffer_bounds(op->dst, dst_d), src_dim.stride, src_dim.fold_factor};
       a.permutation[dst_d] = src_d;
       if (at.defined()) {
@@ -597,7 +610,7 @@ public:
 
     a.elem_size = buffer_elem_size(op->src);
 
-    info->maybe_alias(op->src, std::move(a));
+    info->aliases.push_back(std::move(a));
   }
 
   void alias_copy_src(const copy_stmt* op) {
@@ -613,6 +626,7 @@ public:
     // broadcasting).
 
     alias_info a;
+    a.target = op->dst;
     a.at.resize(op->dst_x.size());
     a.dims.resize(op->src_x.size());
     assert(op->src_x.size() == info->dims.size());
@@ -657,7 +671,7 @@ public:
     a.may_mutate = false;
     a.elem_size = buffer_elem_size(op->dst);
 
-    info->maybe_alias(op->dst, std::move(a));
+    info->aliases.push_back(std::move(a));
   }
 
   void visit(const copy_stmt* op) override {
@@ -671,19 +685,18 @@ public:
       symbol_map<buffer_info>& old_buffers, var sym, var src, std::function<void(alias_info&)> handler) {
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
-      auto j = i->aliases.find(sym);
-      if (j != i->aliases.end()) {
-        handler(j->second);
-      }
       for (auto& a : i->aliases) {
+        if (a.target == sym) {
+          handler(a);
+        }
         // We need to substitute uses of sym with uses of src in the aliases we added here.
-        for (dim_expr& d : a.second.dims) {
+        for (dim_expr& d : a.dims) {
           d.bounds = substitute(d.bounds, sym, src);
           d.stride = substitute(d.stride, sym, src);
           d.fold_factor = substitute(d.fold_factor, sym, src);
         }
-        a.second.elem_size = substitute(a.second.elem_size, sym, src);
-        for (expr& i : a.second.at) {
+        a.elem_size = substitute(a.elem_size, sym, src);
+        for (expr& i : a.at) {
           i = substitute(i, sym, src);
         }
       }
@@ -705,8 +718,11 @@ public:
         assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
         old_info->shared_alloc_sym = info->shared_alloc_sym;
       }
-      for (auto& j : info->aliases) {
-        old_info->maybe_alias(j.first == sym ? src : j.first, std::move(j.second));
+      for (alias_info& a : info->aliases) {
+        if (a.target == sym) {
+          a.target = src;
+        }
+        old_info->aliases.push_back(std::move(a));
       }
     }
     std::swap(old_buffers, buffers);
