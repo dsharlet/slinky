@@ -1694,7 +1694,7 @@ public:
   static bool crop_needed(const depends_on_result& deps) {
     // We don't need a crop if the buffer is only used as an input to a call. But we do need the crop if it is used as
     // an input to a copy, which uses the bounds of the input for padding.
-    return deps.buffer_output || deps.buffer_src || deps.buffer_dst || deps.buffer_meta;
+    return deps.buffer_output || deps.buffer_src || deps.buffer_dst || deps.buffer_bounds;
   }
 
   void visit_crop(const base_stmt_node* op, var op_sym, var op_src, const box_expr& op_bounds, stmt op_body) {
@@ -1978,8 +1978,14 @@ public:
     if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(
           b->stmts, op->sym, [&](stmt body) { return mutate(transpose::make(op->sym, src, dims, std::move(body))); }));
-    } else if (!depends_on(body, op->sym).any()) {
+      return;
+    }
+
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
       set_result(std::move(body));
+    } else if (!deps.buffer_dims) {
+      set_result(mutate(substitute(body, op->sym, op->src)));
     } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
       set_result(op);
     } else {

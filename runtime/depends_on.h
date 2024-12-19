@@ -21,10 +21,11 @@ struct depends_on_result {
   bool buffer_base = false;
 
   // True if the buffer metadata is read.
-  bool buffer_meta = false;
+  bool buffer_dims = false;
+  bool buffer_bounds = false;
 
   bool buffer_data() const { return buffer_input || buffer_output || buffer_src || buffer_dst || buffer_base; }
-  bool buffer() const { return buffer_data() || buffer_meta; }
+  bool buffer() const { return buffer_data() || buffer_dims || buffer_bounds; }
 
   bool any() const { return var || buffer(); }
 };

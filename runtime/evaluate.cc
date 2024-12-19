@@ -46,7 +46,7 @@ void dump_context_for_expr(
       } else {
         s << "  " << sym << " = <>" << std::endl;
       }
-    } else if (!deps_of.defined() || deps.buffer_meta) {
+    } else if (!deps_of.defined() || deps.buffer_dims || deps.buffer_bounds) {
       if (ctx[i]) {
         const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx[i]);
         s << "  " << sym << " = " << *buf << std::endl;

@@ -253,13 +253,13 @@ TEST(simplify, loop) {
   ASSERT_THAT(simplify(loop::make(
                   x, loop::serial, buffer_bounds(b3, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
       matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b1))));
-  ASSERT_THAT(simplify(loop::make(
-                  x, loop::serial, bounds(0, buffer_max(b0, 0)), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(0, buffer_max(b0, 0)), 1,
+                  crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
       matches(crop_dim::make(b1, b0, 0, bounds(0, expr()), make_call(b1))));
   ASSERT_THAT(simplify(loop::make(
                   x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
-      matches(loop::make(
-          x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))));
+      matches(
+          loop::make(x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))));
   ASSERT_THAT(simplify(loop::make(x, loop::serial, buffer_bounds(b0, 0), y,
                   crop_dim::make(b1, b0, 0, min_extent(x, y), make_call(b1)))),
       matches(make_call(b0)));
@@ -465,8 +465,9 @@ TEST(simplify, clone) {
   ASSERT_THAT(simplify(clone_buffer::make(b1, b0, clone_buffer::make(b2, b1, check::make(b0 && b2)))),
       matches(check::make(b0)));
 
-  ASSERT_THAT(simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, check::make(b0 && b2)))),
-      matches(transpose::make(b2, b0, {1, 0}, check::make(b0 && b2))));
+  ASSERT_THAT(
+      simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, call_stmt::make(nullptr, {}, {b0, b2}, {})))),
+      matches(transpose::make(b2, b0, {1, 0}, call_stmt::make(nullptr, {}, {b0, b2}, {}))));
 
   // Clone is shadowed
   ASSERT_THAT(
@@ -640,6 +641,12 @@ TEST(simplify, make_buffer) {
               call_stmt::make(nullptr, {}, {b0, b1}, {})))),
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 10}, {}, {}}, {{0, 20}, {}, {}}, {{0, 30}, {}, {}}},
           transpose::make(b1, b0, {0, 1}, call_stmt::make(nullptr, {}, {b0, b1}, {})))));
+
+  ASSERT_THAT(simplify(transpose::make(b1, b2, {1, 0},
+                  make_buffer::make(b0, buffer_at(b1), buffer_elem_size(b1), {{{0, 10}, 2}},
+                      call_stmt::make(nullptr, {}, {b0}, {})))),
+      matches(make_buffer::make(
+          b0, buffer_at(b2), buffer_elem_size(b2), {{{0, 10}, 2}}, call_stmt::make(nullptr, {}, {b0}, {}))));
 }
 
 TEST(simplify, transpose) {
