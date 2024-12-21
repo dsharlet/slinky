@@ -202,17 +202,12 @@ void BM_buffer_metadata(benchmark::State& state) {
 
 BENCHMARK(BM_buffer_metadata);
 
-void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
+void benchmark_parallel_loop(benchmark::State& state) {
   const int workers = state.range(0);
 
   std::atomic<int> calls = 0;
   stmt body = make_call_counter(calls);
 
-  index_t sem = workers;
-  if (synchronize) {
-    body = block::make({check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))), body,
-        check::make(semaphore_signal(reinterpret_cast<index_t>(&sem)))});
-  }
   body = loop::make(x, workers, range(0, iterations), 1, body);
 
   eval_context eval_ctx;
@@ -226,10 +221,8 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
   state.SetItemsProcessed(calls);
 }
 
-void BM_parallel_loop(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/false); }
-void BM_semaphores(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/true); }
+void BM_parallel_loop(benchmark::State& state) { benchmark_parallel_loop(state); }
 
 BENCHMARK(BM_parallel_loop)->RangeMultiplier(2)->Range(1, 16);
-BENCHMARK(BM_semaphores)->RangeMultiplier(2)->Range(1, 16);
 
 }  // namespace slinky

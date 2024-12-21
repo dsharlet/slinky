@@ -236,54 +236,6 @@ public:
     return result;
   }
 
-  index_t eval_semaphore_init(const call* op) {
-    assert(op->args.size() == 2);
-    index_t* sem = reinterpret_cast<index_t*>(eval(op->args[0]));
-    index_t count = eval(op->args[1], 0);
-    context.thread_pool->atomic_call([=]() { *sem = count; });
-    return 1;
-  }
-
-  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_signal(const call* op) {
-    assert(op->args.size() % 2 == 0);
-    std::size_t sem_count = op->args.size() / 2;
-    index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
-    index_t* counts = SLINKY_ALLOCA(index_t, sem_count);
-    for (std::size_t i = 0; i < sem_count; ++i) {
-      sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
-      counts[i] = eval(op->args[i * 2 + 1], 1);
-    }
-    context.thread_pool->atomic_call([=]() {
-      for (std::size_t i = 0; i < sem_count; ++i) {
-        *sems[i] += counts[i];
-      }
-    });
-    return 1;
-  }
-
-  SLINKY_NO_STACK_PROTECTOR index_t eval_semaphore_wait(const call* op) {
-    assert(op->args.size() % 2 == 0);
-    std::size_t sem_count = op->args.size() / 2;
-    index_t** sems = SLINKY_ALLOCA(index_t*, sem_count);
-    index_t* counts = SLINKY_ALLOCA(index_t, sem_count);
-    for (std::size_t i = 0; i < sem_count; ++i) {
-      sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
-      counts[i] = eval(op->args[i * 2 + 1], 1);
-    }
-    context.thread_pool->wait_for([=]() {
-      // Check we can acquire all of the semaphores before acquiring any of them.
-      for (std::size_t i = 0; i < sem_count; ++i) {
-        if (*sems[i] < counts[i]) return false;
-      }
-      // Acquire them all.
-      for (std::size_t i = 0; i < sem_count; ++i) {
-        *sems[i] -= counts[i];
-      }
-      return true;
-    });
-    return 1;
-  }
-
   index_t eval_trace_begin(const call* op) {
     assert(op->args.size() == 1);
     const char* name = reinterpret_cast<const char*>(eval(op->args[0]));
@@ -322,10 +274,6 @@ public:
 
     case intrinsic::buffer_size_bytes: return eval_buffer_metadata(op);
     case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));
-
-    case intrinsic::semaphore_init: return eval_semaphore_init(op);
-    case intrinsic::semaphore_signal: return eval_semaphore_signal(op);
-    case intrinsic::semaphore_wait: return eval_semaphore_wait(op);
 
     case intrinsic::trace_begin: return eval_trace_begin(op);
     case intrinsic::trace_end: return eval_trace_end(op);
