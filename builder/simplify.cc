@@ -2120,6 +2120,15 @@ public:
 
   template <typename T>
   void visit_mul_div(const T* op) {
+    auto make = [](expr a, expr b) {
+      auto ac = as_constant(a);
+      auto bc = as_constant(b);
+      if (ac && bc) {
+        return make_or_eval_binary<T>(*ac, *bc);
+      } else {
+        return T::make(std::move(a), std::move(b));
+      }
+    };
     // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
     int sign_a = sign_of(op->a);
     int sign_b = sign_of(op->b);
@@ -2132,7 +2141,7 @@ public:
       if (b.same_as(op->b)) {
         set_result(op);
       } else {
-        set_result(T::make(op->a, std::move(b)));
+        set_result(make(op->a, std::move(b)));
       }
     } else if (sign_b != 0) {
       int old_sign = sign;
@@ -2142,7 +2151,7 @@ public:
       if (a.same_as(op->a)) {
         set_result(op);
       } else {
-        set_result(T::make(std::move(a), op->b));
+        set_result(make(std::move(a), op->b));
       }
     } else {
       set_result(op);
