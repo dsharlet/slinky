@@ -92,4 +92,11 @@ TEST(depends_on, copy) {
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
 
+TEST(depends_on, is_pure) {
+  ASSERT_TRUE(is_pure(x + y));
+  ASSERT_TRUE(is_pure(abs(x)));
+  ASSERT_FALSE(is_pure(buffer_min(x, 0)));
+  ASSERT_FALSE(is_pure(y + buffer_min(x, 0)));
+}
+
 }  // namespace slinky
