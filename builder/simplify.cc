@@ -58,13 +58,23 @@ void ensure_is_point(interval_expr& x) {
 
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
-stmt lift_decl_invariants(std::vector<stmt> stmts, var sym, Fn&& make_decl) {
-  for (stmt& i : stmts) {
-    if (depends_on(i, sym).any()) {
-      i = make_decl(i);
+stmt lift_decl_invariants(const std::vector<stmt>& stmts, var sym, Fn&& make_decl) {
+  std::vector<stmt> result;
+  result.reserve(stmts.size());
+  for (auto i = stmts.begin(); i != stmts.end();) {
+    if (depends_on(*i, sym).any()) {
+      std::vector<stmt> result_i;
+      result_i.reserve(stmts.size());
+      do {
+        result_i.push_back(*i++);
+      } while (i != stmts.end() && depends_on(*i, sym).any());
+      result.push_back(make_decl(block::make(std::move(result_i))));
+      if (i != stmts.end()) result.push_back(*i++);
+    } else {
+      result.push_back(*i++);
     }
   }
-  return block::make(std::move(stmts));
+  return block::make(std::move(result));
 }
 
 // Given an expression that produces a base pointer for a buffer, find the buffer the pointer is from.
@@ -1969,7 +1979,7 @@ public:
 
     if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(
-          b->stmts, op->sym, [&](stmt body) { return mutate(transpose::make(op->sym, src, dims, std::move(body))); }));
+          b->stmts, op->sym, [&](stmt body) { return transpose::make(op->sym, src, dims, std::move(body)); }));
       return;
     }
 

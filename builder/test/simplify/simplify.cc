@@ -245,7 +245,7 @@ TEST(simplify, let) {
 }
 
 TEST(simplify, loop) {
-  auto make_call = [](const var& out) { return call_stmt::make(nullptr, {}, {out}, {}); };
+  auto make_call = [](var out) { return call_stmt::make(nullptr, {}, {out}, {}); };
 
   ASSERT_THAT(simplify(loop::make(
                   x, loop::serial, buffer_bounds(b0, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
@@ -271,13 +271,35 @@ TEST(simplify, loop) {
       matches(crop_dim::make(b1, b0, 0, bounds(0, buffer_max(b3, 0)), make_call(b1))));
 }
 
+TEST(simplify, siblings) {
+  auto make_call = [](var out) { return call_stmt::make(nullptr, {}, {out}, {}); };
+  auto make_crop_x = [](var out, var in, int dim, const stmt& body) {
+    return crop_dim::make(out, in, dim, point(x), body);
+  };
+  auto make_crop_y = [](var out, var in, int dim, const stmt& body) {
+    return crop_dim::make(out, in, dim, point(y), body);
+  };
+
+  ASSERT_THAT(simplify(make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b0)}))),
+      matches(block::make({make_crop_x(b1, b0, 0, make_call(b1)), make_call(b0)})));
+  ASSERT_THAT(simplify(make_crop_x(b1, b0, 0, block::make({make_call(b0), make_call(b1)}))),
+      matches(block::make({make_call(b0), make_crop_x(b1, b0, 0, make_call(b1))})));
+  ASSERT_THAT(
+      simplify(make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b0), make_call(b1), make_call(b0)}))),
+      matches(block::make({make_crop_x(b1, b0, 0, make_call(b1)), make_call(b0), make_crop_x(b1, b0, 0, make_call(b1)),
+          make_call(b0)})));
+  ASSERT_THAT(
+      simplify(make_crop_x(b1, b0, 0, block::make({make_call(b0), make_call(b1), make_call(b1), make_call(b0)}))),
+      matches(block::make({make_call(b0), make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b1)})), make_call(b0)})));
+}
+
 TEST(simplify, licm) {
   // Use parallel loops so loops of one call don't get rewritten to a single call.
   auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
   auto make_loop_y = [](const stmt& body) { return loop::make(y, loop::parallel, bounds(0, 10), 1, body); };
-  auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
-  auto make_crop_x = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
-  auto make_crop_y = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
+  auto make_call = [](var in, var out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
+  auto make_crop_x = [](var b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
+  auto make_crop_y = [](var b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
 
   // One call doesn't depend on the loop.
   ASSERT_THAT(simplify(make_loop_x(make_call(b0, b1))), matches(make_call(b0, b1)));
