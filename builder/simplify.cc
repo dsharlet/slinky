@@ -1457,7 +1457,7 @@ public:
       // This make_buffer is unused.
       set_result(std::move(body));
       return;
-    } else if (can_substitute_buffer(depends_on(op->body, op->sym))) {
+    } else if (can_substitute_buffer(deps)) {
       // We only needed the buffer meta, not the buffer itself.
       set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
       return;
