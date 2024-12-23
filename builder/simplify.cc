@@ -1725,22 +1725,14 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
       return;
+    } else if (!crop_needed(deps)) {
+      set_result(substitute(body, op_sym, op_src));
+      return;
     }
 
     // Remove trailing undefined bounds.
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
       bounds.pop_back();
-    }
-
-    if (!crop_needed(deps)) {
-      // Add clamps for the implicit bounds like crop would have done.
-      for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-        bounds[d] &= slinky::buffer_bounds(op_src, d);
-      }
-      body = substitute_bounds(body, op_sym, bounds);
-      body = substitute(body, op_sym, op_src);
-      set_result(mutate(body));
-      return;
     }
 
     // Rewrite nested crops to be one crop where possible.
