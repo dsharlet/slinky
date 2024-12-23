@@ -1402,10 +1402,16 @@ public:
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
   bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
-    return is_buffer_meta(d.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, dim) &&
-           is_buffer_meta(d.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, dim) &&
-           is_buffer_meta(d.stride, src.stride, intrinsic::buffer_stride, sym, dim) &&
-           is_buffer_meta(d.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, dim);
+    if (!is_buffer_meta(d.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, dim)) return false;
+    if (!is_buffer_meta(d.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, dim)) return false;
+
+    if (prove_true(src.bounds.min == src.bounds.max)) {
+      // The extent is 1, the stride and fold factor don't matter.
+      return true;
+    } else {
+      return is_buffer_meta(d.stride, src.stride, intrinsic::buffer_stride, sym, dim) &&
+             is_buffer_meta(d.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, dim);
+    }
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
@@ -1416,11 +1422,17 @@ public:
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
-    for (dim_expr& d : buf.dims) {
-      for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
-        if (is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
-          d = buffer_dim(sym, src_d);
-          break;
+    for (int buf_d = 0; buf_d < static_cast<int>(buf.dims.size());  ++buf_d) {
+      dim_expr& d = buf.dims[buf_d];
+      // Try buf_d first, to prefer making identical buffers.
+      if (buf_d < static_cast<int>(src.dims.size()) && is_buffer_dim(d, src.dims[buf_d], sym, buf_d)) {
+        d = buffer_dim(sym, buf_d);
+      } else {
+        for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
+          if (src_d != buf_d && is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
+            d = buffer_dim(sym, src_d);
+            break;
+          }
         }
       }
     }

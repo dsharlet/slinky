@@ -647,6 +647,29 @@ TEST(simplify, make_buffer) {
                       call_stmt::make(nullptr, {}, {b0}, {})))),
       matches(make_buffer::make(
           b0, buffer_at(b2), buffer_elem_size(b2), {{{0, 10}, 2}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+
+  // The same buffer
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
+                      call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
+                      call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), {{0, 0}, 0, {}}},
+                      call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+  ASSERT_THAT(
+      simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
+          make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
+              {buffer_dim(b0, 0), {{0, 0}, 0, {}}, {{0, 0}, 0, {}}}, call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
+          call_stmt::make(nullptr, {}, {b0}, {}))));
 }
 
 TEST(simplify, transpose) {
