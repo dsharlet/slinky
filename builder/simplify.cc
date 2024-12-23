@@ -1989,7 +1989,7 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
     } else if (!deps.buffer_dims) {
-      set_result(mutate(substitute(body, op->sym, op->src)));
+      set_result(substitute(body, op->sym, op->src));
     } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
       set_result(op);
     } else {
