@@ -753,6 +753,9 @@ public:
     }
     node_mutator::visit(op);
   }
+  
+  // Silences a weird warning on clang. It seems like this should be in the base class (and it is).
+  using node_mutator::visit;
 };
 
 expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices) {
