@@ -14,6 +14,8 @@
 
 namespace slinky {
 
+namespace {
+
 class matcher : public expr_visitor, public stmt_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
   union {
@@ -89,7 +91,9 @@ public:
 
   bool try_match(const interval_expr& self, const interval_expr& op) {
     if (!try_match(self.min, op.min)) return false;
-    if (!try_match(self.max, op.max)) return false;
+    if (!self.min.same_as(self.max) || !op.min.same_as(op.max)) {
+      if (!try_match(self.max, op.max)) return false;
+    }
     return true;
   }
 
@@ -306,12 +310,12 @@ public:
   }
 };
 
-bool match(expr_ref a, expr_ref b) { return compare(a, b) == 0; }
-bool match(stmt_ref a, stmt_ref b) { return compare(a, b) == 0; }
-bool match(const interval_expr& a, const interval_expr& b) { return match(a.min, b.min) && match(a.max, b.max); }
-bool match(const dim_expr& a, const dim_expr& b) {
-  return match(a.bounds, b.bounds) && match(a.stride, b.stride) && match(a.fold_factor, b.fold_factor);
-}
+}  // namespace
+
+bool match(expr_ref a, expr_ref b) { return matcher().try_match(a.get(), b.get()); }
+bool match(stmt_ref a, stmt_ref b) { return matcher().try_match(a.get(), b.get()); }
+bool match(const interval_expr& a, const interval_expr& b) { return matcher().try_match(a, b); }
+bool match(const dim_expr& a, const dim_expr& b) { return matcher().try_match(a, b); }
 
 const call* match_call(expr_ref x, intrinsic fn, var a) {
   const call* c = as_intrinsic(x, fn);
