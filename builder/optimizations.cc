@@ -1079,6 +1079,8 @@ public:
     stmt body = mutate(op->body);
     set_result(make_buffer::make(sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
   }
+
+  using node_mutator::visit;
 };
 
 // This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
