@@ -147,7 +147,7 @@ void node_mutator::visit(const block* op) {
   }
 }
 void node_mutator::visit(const loop* op) {
-  interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
+  interval_expr bounds = mutate(op->bounds);
   expr step = mutate(op->step);
   stmt body = mutate(op->body);
   if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
@@ -177,8 +177,7 @@ void node_mutator::visit(const allocate* op) {
   dims.reserve(op->dims.size());
   bool changed = false;
   for (const dim_expr& i : op->dims) {
-    interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-    dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
+    dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
     changed = changed || !dims.back().same_as(i);
   }
   stmt body = mutate(op->body);
@@ -195,8 +194,7 @@ void node_mutator::visit(const make_buffer* op) {
   dims.reserve(op->dims.size());
   bool changed = false;
   for (const dim_expr& i : op->dims) {
-    interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-    dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
+    dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
     changed = changed || !dims.back().same_as(i);
   }
   stmt body = mutate(op->body);
@@ -219,7 +217,7 @@ void node_mutator::visit(const crop_buffer* op) {
   bounds.reserve(op->bounds.size());
   bool changed = false;
   for (const interval_expr& i : op->bounds) {
-    bounds.emplace_back(mutate(i.min), mutate(i.max));
+    bounds.emplace_back(mutate(i));
     changed = changed || !bounds.back().same_as(i);
   }
   stmt body = mutate(op->body);
@@ -230,7 +228,7 @@ void node_mutator::visit(const crop_buffer* op) {
   }
 }
 void node_mutator::visit(const crop_dim* op) {
-  interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
+  interval_expr bounds = mutate(op->bounds);
   stmt body = mutate(op->body);
   if (bounds.same_as(op->bounds) && body.same_as(op->body)) {
     set_result(op);

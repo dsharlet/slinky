@@ -424,7 +424,7 @@ public:
   void visit(const let_stmt* op) override { set_result(mutate_let(op)); }
 
   void visit(const loop* op) override {
-    interval_expr bounds = {mutate(op->bounds.min), mutate(op->bounds.max)};
+    interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
     stmt body = mutate_decl_body(op->sym, op->body);
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
@@ -439,8 +439,7 @@ public:
     dims.reserve(op->dims.size());
     bool changed = false;
     for (const dim_expr& i : op->dims) {
-      interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
+      dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
       changed = changed || !dims.back().same_as(i);
     }
     stmt body = mutate_decl_body(op->sym, op->body);
@@ -457,8 +456,7 @@ public:
     dims.reserve(op->dims.size());
     bool changed = false;
     for (const dim_expr& i : op->dims) {
-      interval_expr bounds = {mutate(i.bounds.min), mutate(i.bounds.max)};
-      dims.push_back({std::move(bounds), mutate(i.stride), mutate(i.fold_factor)});
+      dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
       changed = changed || !dims.back().same_as(i);
     }
     stmt body = mutate_decl_body(op->sym, op->body);
@@ -511,8 +509,8 @@ public:
     // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(sym, dim) and
     // buffer_max(src, dim).
     interval_expr old_bounds = buffer_bounds(src, dim);
-    interval_expr new_bounds = {mutate(old_bounds.min), mutate(old_bounds.max)};
-    interval_expr result = {mutate(bounds.min), mutate(bounds.max)};
+    interval_expr new_bounds = mutate(old_bounds);
+    interval_expr result = mutate(bounds);
     if (new_bounds.min.defined() && !old_bounds.min.same_as(new_bounds.min) &&
         !match_call(new_bounds.min, intrinsic::buffer_min, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
