@@ -656,6 +656,12 @@ expr buffer_at(expr buf, span<const expr> at);
 expr buffer_at(expr buf, span<const var> at);
 expr buffer_at(expr buf);
 
+template <typename... Args>
+expr buffer_at(expr buf, expr at0, Args... at) {
+  expr args[] = {at0, at...};
+  return buffer_at(buf, args);
+}
+
 interval_expr buffer_bounds(const expr& buf, const expr& dim);
 dim_expr buffer_dim(const expr& buf, const expr& dim);
 std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
