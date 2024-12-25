@@ -2018,6 +2018,8 @@ public:
       set_result(check::make(std::move(c)));
     }
   }
+
+  using node_mutator::visit;
 };
 
 }  // namespace

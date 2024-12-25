@@ -174,7 +174,7 @@ expr where_true_upper_bound(const expr& condition, var x, const expr& initial_gu
 // Try to find cases where we can do "sliding window" or "line buffering" optimizations. When there
 // is a producer that is consumed by a stencil operation in a loop, the producer can incrementally produce
 // only the values required by the next iteration, and re-use the rest of the values from the previous iteration.
-class slide_and_fold : public node_mutator {
+class slide_and_fold : public stmt_mutator {
 public:
   node_context& ctx;
 
@@ -257,7 +257,7 @@ public:
   }
 
   stmt mutate(const stmt& s) override {
-    stmt result = node_mutator::mutate(s);
+    stmt result = stmt_mutator::mutate(s);
 
     // The loop at the back of the loops vector is the immediately containing loop. So, we know there are no
     // intervening loops, and we can add any synchronization that has been requested. Doing so completes the current
@@ -616,7 +616,7 @@ public:
   void visit(const transpose*) override { std::abort(); }
   void visit(const clone_buffer* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
-    node_mutator::visit(op);
+    stmt_mutator::visit(op);
   }
 
   void visit(const loop* op) override {

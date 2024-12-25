@@ -80,6 +80,50 @@ stmt clone_with(const slice_buffer* op, stmt new_body) { return clone_with(op, o
 stmt clone_with(const slice_dim* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const transpose* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 
+void stmt_mutator::visit(const block* op) {
+  std::vector<stmt> stmts;
+  stmts.reserve(op->stmts.size());
+  bool changed = false;
+  for (const stmt& s : op->stmts) {
+    stmts.push_back(mutate(s));
+    changed = changed || !stmts.back().same_as(s);
+  }
+  if (!changed) {
+    set_result(op);
+  } else {
+    set_result(block::make(std::move(stmts)));
+  }
+}
+
+void stmt_mutator::visit(const call_stmt* op) { set_result(op); }
+void stmt_mutator::visit(const copy_stmt* op) { set_result(op); }
+void stmt_mutator::visit(const check* op) { set_result(op); }
+
+namespace {
+
+template <typename T>
+stmt mutate_decl(stmt_mutator* this_, const T* op) {
+  stmt body = this_->mutate(op->body);
+  if (body.same_as(op->body)) {
+    return stmt(op);
+  } else {
+    return clone_with(op, std::move(body));
+  }
+}
+
+}  // namespace
+
+void stmt_mutator::visit(const let_stmt* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const loop* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const allocate* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const make_buffer* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const clone_buffer* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const crop_buffer* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const crop_dim* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const slice_buffer* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const slice_dim* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const transpose* op) { set_result(mutate_decl(this, op)); }
+
 void node_mutator::visit(const variable* op) { set_result(op); }
 void node_mutator::visit(const constant* op) { set_result(op); }
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
@@ -132,20 +176,6 @@ void node_mutator::visit(const call* op) {
   }
 }
 
-void node_mutator::visit(const block* op) {
-  std::vector<stmt> stmts;
-  stmts.reserve(op->stmts.size());
-  bool changed = false;
-  for (const stmt& s : op->stmts) {
-    stmts.push_back(mutate(s));
-    changed = changed || !stmts.back().same_as(s);
-  }
-  if (!changed) {
-    set_result(op);
-  } else {
-    set_result(block::make(std::move(stmts)));
-  }
-}
 void node_mutator::visit(const loop* op) {
   interval_expr bounds = mutate(op->bounds);
   expr step = mutate(op->step);
@@ -156,7 +186,6 @@ void node_mutator::visit(const loop* op) {
     set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
   }
 }
-void node_mutator::visit(const call_stmt* op) { set_result(op); }
 void node_mutator::visit(const copy_stmt* op) {
   std::vector<expr> src_x;
   src_x.reserve(op->src_x.size());
@@ -202,14 +231,6 @@ void node_mutator::visit(const make_buffer* op) {
     set_result(op);
   } else {
     set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
-  }
-}
-void node_mutator::visit(const clone_buffer* op) {
-  stmt body = mutate(op->body);
-  if (body.same_as(op->body)) {
-    set_result(op);
-  } else {
-    set_result(clone_buffer::make(op->sym, op->src, std::move(body)));
   }
 }
 void node_mutator::visit(const crop_buffer* op) {
@@ -258,14 +279,6 @@ void node_mutator::visit(const slice_dim* op) {
     set_result(op);
   } else {
     set_result(slice_dim::make(op->sym, op->src, op->dim, std::move(at), std::move(body)));
-  }
-}
-void node_mutator::visit(const transpose* op) {
-  stmt body = mutate(op->body);
-  if (body.same_as(op->body)) {
-    set_result(op);
-  } else {
-    set_result(transpose::make(op->sym, op->src, op->dims, std::move(body)));
   }
 }
 
