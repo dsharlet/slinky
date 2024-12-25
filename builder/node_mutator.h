@@ -6,9 +6,45 @@
 
 namespace slinky {
 
-class node_mutator : public expr_visitor, public stmt_visitor {
-  expr e_;
+class stmt_mutator : public stmt_visitor {
   stmt s_;
+
+public:
+  // We need to be careful not to allow derived classes to release these while
+  // they might still be in used.
+  void set_result(stmt s) {
+    assert(!s_.defined());
+    s_ = std::move(s);
+  }
+  void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
+  const stmt& mutated_stmt() const { return s_; }
+
+  virtual stmt mutate(const stmt& s) {
+    assert(!s_.defined());
+    if (s.defined()) {
+      s.accept(this);
+    }
+    return std::move(s_);
+  }
+
+  void visit(const let_stmt*) override;
+  void visit(const block*) override;
+  void visit(const loop*) override;
+  void visit(const call_stmt*) override;
+  void visit(const copy_stmt*) override;
+  void visit(const allocate*) override;
+  void visit(const make_buffer*) override;
+  void visit(const clone_buffer*) override;
+  void visit(const crop_buffer*) override;
+  void visit(const crop_dim*) override;
+  void visit(const slice_buffer*) override;
+  void visit(const slice_dim*) override;
+  void visit(const transpose*) override;
+  void visit(const check*) override;
+};
+
+class node_mutator : public expr_visitor, public stmt_mutator {
+  expr e_;
 
 public:
   // We need to be careful not to allow derived classes to release these while
@@ -17,14 +53,10 @@ public:
     assert(!e_.defined());
     e_ = std::move(e);
   }
-  void set_result(stmt s) {
-    assert(!s_.defined());
-    s_ = std::move(s);
-  }
   void set_result(const base_expr_node* e) { set_result(expr(e)); }
-  void set_result(const base_stmt_node* s) { set_result(stmt(s)); }
+  using stmt_mutator::set_result;
   const expr& mutated_expr() const { return e_; }
-  const stmt& mutated_stmt() const { return s_; }
+  using stmt_mutator::mutated_stmt;
 
   virtual expr mutate(const expr& e) {
     assert(!e_.defined());
@@ -37,13 +69,7 @@ public:
     }
     return std::move(e_);
   }
-  virtual stmt mutate(const stmt& s) {
-    assert(!s_.defined());
-    if (s.defined()) {
-      s.accept(this);
-    }
-    return std::move(s_);
-  }
+  using stmt_mutator::mutate;
 
   virtual interval_expr mutate(const interval_expr& x) {
     if (x.is_point()) {
@@ -57,7 +83,6 @@ public:
   void visit(const constant* op) override;
 
   void visit(const let*) override;
-  void visit(const let_stmt*) override;
   void visit(const add*) override;
   void visit(const sub*) override;
   void visit(const mul*) override;
@@ -75,19 +100,17 @@ public:
   void visit(const class select*) override;
   void visit(const call*) override;
 
-  void visit(const block*) override;
+  void visit(const let_stmt*) override;
   void visit(const loop*) override;
-  void visit(const call_stmt*) override;
   void visit(const copy_stmt*) override;
   void visit(const allocate*) override;
   void visit(const make_buffer*) override;
-  void visit(const clone_buffer*) override;
   void visit(const crop_buffer*) override;
   void visit(const crop_dim*) override;
   void visit(const slice_buffer*) override;
   void visit(const slice_dim*) override;
-  void visit(const transpose*) override;
   void visit(const check*) override;
+  using stmt_mutator::visit;
 };
 
 // This is helpful for writing templated mutators.
@@ -116,7 +139,7 @@ stmt clone_with(const transpose* op, var sym, stmt new_body);
 template <typename T>
 stmt recursive_mutate(const stmt& s, const std::function<stmt(const T*)>& mutator) {
   using mutator_fn = std::function<stmt(const T*)>;
-  class impl : public node_mutator {
+  class impl : public stmt_mutator {
   public:
     const mutator_fn& mutator;
     impl(const mutator_fn& mutator) : mutator(mutator) {}
@@ -124,7 +147,7 @@ stmt recursive_mutate(const stmt& s, const std::function<stmt(const T*)>& mutato
       if (const T* t = s.as<T>()) {
         return mutator(t);
       } else {
-        return node_mutator::mutate(s);
+        return stmt_mutator::mutate(s);
       }
     }
   };
