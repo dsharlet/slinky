@@ -784,7 +784,7 @@ public:
   //   of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
-    stmt result;
+    std::vector<stmt> results;
 
     // Build the functions computed at this loop level.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
@@ -792,11 +792,11 @@ public:
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
       if (compute_at->second == at) {
-        result = block::make({result, produce(f)});
+        results.push_back(produce(f));
       }
     }
 
-    result = block::make({result, body});
+    stmt result = block::make(std::move(results), body);
 
     symbol_map<var> uncropped_subs;
     // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
