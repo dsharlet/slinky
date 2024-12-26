@@ -1450,18 +1450,6 @@ public:
       set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
       return;
     }
-    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
-    scoped_trace trace("visit(const make_buffer*)");
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      // This make_buffer is unused.
-      set_result(std::move(body));
-      return;
-    } else if (can_substitute_buffer(deps)) {
-      // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
-      return;
-    }
 
     if (const call* bc = as_intrinsic(base, intrinsic::buffer_at)) {
       // Check if this make_buffer is equivalent to transpose, slice_buffer or crop_buffer
@@ -1496,7 +1484,7 @@ public:
         }
         if (is_slice && slice_rank == info.dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), std::move(body));
+          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), op->body);
           // make_buffer drops trailing dims, do the same here.
           result = transpose::make_truncate(op->sym, *src_buf, info.dims.size() + at_rank, std::move(result));
           set_result(mutate(result));
@@ -1526,7 +1514,7 @@ public:
           }
         }
         if (is_crop) {
-          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), std::move(body));
+          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), op->body);
           // make_buffer drops trailing dims, do the same here.
           result = transpose::make_truncate(op->sym, *src_buf, info.dims.size(), std::move(result));
           set_result(mutate(result));
@@ -1549,10 +1537,23 @@ public:
           }
         }
         if (is_transpose) {
-          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), std::move(body))));
+          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), op->body)));
           return;
         }
       }
+    }
+
+    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
+    scoped_trace trace("visit(const make_buffer*)");
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
+      // This make_buffer is unused.
+      set_result(std::move(body));
+      return;
+    } else if (can_substitute_buffer(deps)) {
+      // We only needed the buffer meta, not the buffer itself.
+      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
+      return;
     }
 
     if (const block* b = body.as<block>()) {
