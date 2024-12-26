@@ -1001,13 +1001,10 @@ class deshadower : public node_mutator {
   var in_loop;
 
 public:
-  deshadower(node_context& ctx) : ctx(ctx) {}
-
-  void visit_symbol(var x) { symbols[x] = true; }
-
-  void visit(const variable* op) override {
-    visit_symbol(op->sym);
-    set_result(op);
+  deshadower(node_context& ctx, span<var> external_symbols) : ctx(ctx) {
+    for (var i : external_symbols) {
+      symbols[i] = true;
+    }
   }
 
   var rename(var x) {
@@ -1018,14 +1015,14 @@ public:
   template <typename T>
   void visit_decl(const T* op) {
     stmt result(op);
-    const std::optional<bool>& sym_defined = symbols[op->sym];
+    std::optional<bool> sym_defined = symbols.lookup(op->sym);
     var sym = op->sym;
     if (sym_defined && *sym_defined) {
       sym = rename(op->sym);
       result = clone_with(op, sym, substitute(op->body, op->sym, sym));
     }
     auto s = set_value_in_scope(symbols, sym, true);
-    node_mutator::visit(result.as<T>());
+    stmt_mutator::visit(result.as<T>());
   }
 
   void visit(const loop* op) override {
@@ -1039,7 +1036,7 @@ public:
     var old_in_loop = in_loop;
     in_loop = sym;
     auto s = set_value_in_scope(symbols, sym, true);
-    node_mutator::visit(result.as<loop>());
+    stmt_mutator::visit(result.as<loop>());
     in_loop = old_in_loop;
   }
   void visit(const allocate* op) override { visit_decl(op); }
@@ -1050,33 +1047,15 @@ public:
     var sym = rename(op->sym);
     result = clone_with(op, sym, substitute(op->body, op->sym, sym));
     auto s = set_value_in_scope(symbols, sym, true);
-    node_mutator::visit(result.as<make_buffer>());
+    stmt_mutator::visit(result.as<make_buffer>());
   }
-  void visit(const crop_buffer* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const crop_dim* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const slice_buffer* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const slice_dim* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const transpose* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const clone_buffer* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-
+  void visit(const crop_buffer* op) override { visit_decl(op); }
+  void visit(const crop_dim* op) override { visit_decl(op); }
+  void visit(const slice_buffer* op) override { visit_decl(op); }
+  void visit(const slice_dim* op) override { visit_decl(op); }
+  void visit(const transpose* op) override { visit_decl(op); }
+  void visit(const clone_buffer* op) override { visit_decl(op); }
+ 
   using node_mutator::visit;
 };
 
@@ -1143,9 +1122,9 @@ public:
 
 }  // namespace
 
-stmt deshadow(const stmt& s, node_context& ctx) {
+stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
   scoped_trace trace("deshadow");
-  return deshadower(ctx).mutate(s);
+  return deshadower(ctx, symbols).mutate(s);
 }
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
