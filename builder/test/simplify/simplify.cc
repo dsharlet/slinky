@@ -491,15 +491,10 @@ TEST(simplify, clone) {
       simplify(clone_buffer::make(b1, b0, transpose::make(b2, b1, {1, 0}, call_stmt::make(nullptr, {}, {b0, b2}, {})))),
       matches(transpose::make(b2, b0, {1, 0}, call_stmt::make(nullptr, {}, {b0, b2}, {}))));
 
-  // Clone is shadowed
-  ASSERT_THAT(
-      simplify(clone_buffer::make(x, y, crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
-      matches(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))));
-
   // Clone should be substituted.
   ASSERT_THAT(
-      simplify(clone_buffer::make(x, y, crop_dim::make(x, x, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {})))),
-      matches(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {z}, {x}, {}))));
+      simplify(clone_buffer::make(y, x, crop_dim::make(z, y, 0, {0, 0}, call_stmt::make(nullptr, {w}, {z}, {})))),
+      matches(crop_dim::make(z, x, 0, {0, 0}, call_stmt::make(nullptr, {w}, {z}, {}))));
 }
 
 TEST(simplify, allocate) {
