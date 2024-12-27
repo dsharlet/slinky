@@ -400,7 +400,7 @@ public:
 
 private:
   symbol_map<buffer_info> buffers;
-  symbol_map<expr_info> info_map;
+  symbol_map<expr_info> vars;
 
   expr_info result_info;
 
@@ -422,16 +422,16 @@ public:
     for (size_t ix = 0; ix < bounds.size(); ix++) {
       var id = var(ix);
       if (!bounds[id]) continue;
-      info_map[id] = {*bounds[id], alignment_type()};
+      vars[id] = {*bounds[id], alignment_type()};
     }
 
     for (size_t ix = 0; ix < alignment.size(); ix++) {
       var id = var(ix);
       if (!alignment[id]) continue;
-      if (info_map[id]) {
-        info_map[id]->alignment = *alignment[id];
+      if (vars[id]) {
+        vars[id]->alignment = *alignment[id];
       } else {
-        info_map[id] = {interval_expr(), *alignment[id]};
+        vars[id] = {interval_expr(), *alignment[id]};
       }
     }
   }
@@ -498,12 +498,12 @@ public:
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
     std::vector<scoped_value_in_symbol_map<expr_info>> k;
 
-    symbol_map<expr_info>& info_map;
+    symbol_map<expr_info>& vars;
 
-    alignment_type get_alignment(const var& v) { return info_map[v] ? info_map[v]->alignment : alignment_type(); }
+    alignment_type get_alignment(const var& v) { return vars[v] ? vars[v]->alignment : alignment_type(); }
 
   public:
-    knowledge(symbol_map<expr_info>& info_map) : info_map(info_map) {}
+    knowledge(symbol_map<expr_info>& vars) : vars(vars) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() {
@@ -516,40 +516,40 @@ public:
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {point(b), get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(a), get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {point(a), get_alignment(v->sym)}));
       }
     }
 
     void learn_from_less(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b - 1
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{lb, b - 1}, get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{a + 1, ub}, get_alignment(v->sym)}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{lb, b}, get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{a, ub}, get_alignment(v->sym)}));
       }
     }
 
@@ -584,12 +584,12 @@ public:
   };
 
   knowledge learn_from_true(const expr& c) {
-    knowledge result(info_map);
+    knowledge result(vars);
     result.learn_from_true(c);
     return result;
   }
   knowledge learn_from_false(const expr& c) {
-    knowledge result(info_map);
+    knowledge result(vars);
     result.learn_from_false(c);
     return result;
   }
@@ -647,8 +647,8 @@ public:
   }
 
   void visit(const variable* op) override {
-    if (info_map.contains(op->sym)) {
-      expr_info info = *info_map[op->sym];
+    if (vars.contains(op->sym)) {
+      expr_info info = *vars[op->sym];
       if (info.replacement.defined()) {
         set_result(info.replacement, {std::move(info.bounds), std::move(info.alignment)});
       } else {
@@ -662,8 +662,8 @@ public:
   }
 
   var visit_symbol(var x) {
-    if (info_map.contains(x)) {
-      const expr_info& info = *info_map[x];
+    if (vars.contains(x)) {
+      const expr_info& info = *vars[x];
       if (info.replacement.defined()) {
         return info.replacement_sym();
       }
@@ -1037,8 +1037,8 @@ public:
       lets.emplace_back(s.first, mutate(s.second, &value_info));
       values_changed = values_changed || !lets.back().second.same_as(s.second);
 
-      assert(!info_map.contains(s.first));
-      scoped_values.push_back(set_value_in_scope(info_map, s.first, std::move(value_info)));
+      assert(!vars.contains(s.first));
+      scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
     }
 
     expr_info body_info;
@@ -1092,7 +1092,7 @@ public:
       buffer->src = src;
     }
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
-    assert(!info_map.contains(buf));
+    assert(!vars.contains(buf));
     return mutate(body);
   }
   // if `decl` is nullptr, the buffer will be substituted.
@@ -1103,8 +1103,8 @@ public:
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
-    assert(!info_map.contains(v));
-    auto set_bounds = set_value_in_scope(info_map, v, {std::move(bounds), alignment_type()});
+    assert(!vars.contains(v));
+    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment_type()});
     return mutate(body);
   }
 
@@ -1188,7 +1188,7 @@ public:
     } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs at most once. It's safe to run the body even if the loop is empty, because we assume we can
       // move loops freely in and out of calls, even if the buffers are empty.
-      auto s = set_value_in_scope(info_map, op->sym, expr_info::substitution(bounds.min));
+      auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(bounds.min));
       set_result(mutate(op->body));
       return;
     }
@@ -1292,7 +1292,7 @@ public:
           // clamps that make this proof hard only exist in one direction.
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
-          auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
+          auto set_bounds_of_sym = set_value_in_scope(vars, op->sym, {bounds, alignment_type()});
           // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
           if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
                          (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
@@ -1366,7 +1366,7 @@ public:
 
     std::vector<scoped_value_in_symbol_map<expr_info>> decls;
     for (var i : op->dst_x) {
-      decls.push_back(set_value_in_scope(info_map, i, expr_info()));
+      decls.push_back(set_value_in_scope(vars, i, expr_info()));
     }
 
     std::vector<expr> src_x;
@@ -1907,8 +1907,8 @@ public:
     visit_crop(src == op->src ? op : nullptr, op->sym, src, bounds, op->body);
   }
 
-  static void update_sliced_buffer_metadata(symbol_map<expr_info>& info_map, var sym, span<const int> sliced) {
-    for (std::optional<expr_info>& i : info_map) {
+  static void update_sliced_buffer_metadata(symbol_map<expr_info>& vars, var sym, span<const int> sliced) {
+    for (std::optional<expr_info>& i : vars) {
       if (!i) continue;
       i->bounds = slinky::update_sliced_buffer_metadata(i->bounds, sym, sliced);
       i->replacement = slinky::update_sliced_buffer_metadata(i->replacement, sym, sliced);
@@ -1938,7 +1938,7 @@ public:
     }
 
     symbol_map<buffer_info> old_buffers = buffers;
-    symbol_map<expr_info> old_info_map = info_map;
+    symbol_map<expr_info> old_info_map = vars;
     std::optional<buffer_info> info = buffers[op_src];
 
     if (info) {
@@ -1948,10 +1948,10 @@ public:
       buffers[op_sym] = std::nullopt;
     }
     update_sliced_buffer_metadata(buffers, op_sym, sliced_dims);
-    update_sliced_buffer_metadata(info_map, op_sym, sliced_dims);
+    update_sliced_buffer_metadata(vars, op_sym, sliced_dims);
     stmt body = mutate(op_body);
     buffers = std::move(old_buffers);
-    info_map = std::move(old_info_map);
+    vars = std::move(old_info_map);
 
     if (!depends_on(body, op_sym).any()) {
       set_result(std::move(body));
@@ -2045,7 +2045,7 @@ public:
         // transpose can't add dimensions.
         assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
-        auto s = set_value_in_scope(info_map, op->sym, expr_info::substitution(variable::make(src)));
+        auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
         set_result(mutate(op->body));
         return;
       }
@@ -2089,7 +2089,7 @@ public:
     // Because we disallow shadowing (i.e. mutating buffers in place), clone_buffer can always be removed :)
     // Essentially, every operation is also a clone here.
     var src = visit_symbol(op->src);
-    auto s = set_value_in_scope(info_map, op->sym, expr_info::substitution(variable::make(src)));
+    auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
     set_result(mutate(op->body));
   }
 
