@@ -368,310 +368,334 @@ const expr& eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
   }
 }
 
-// This base class helps substitute implementations handle shadowing correctly.
-class substitutor : public node_mutator {
-public:
-  // Implementation of substitution for vars.
-  virtual var visit_symbol(var x) { return x; }
-
-  // Implementation of substitution for slice bodies.
-  virtual stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) = 0;
-
-  // Implementation of substitution for buffer intrinsics.
-  virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
-    return expr(op);
-  }
-  virtual expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) { return expr(op); }
-
-  // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
-  virtual std::size_t get_target_buffer_rank(var x) { return 0; }
-
-  // Allow substitution inside a declaration of `x`.
-  virtual bool allow_substitute(const var& x) const { return true; }
-
-  template <typename T>
-  T mutate_decl_body(var sym, const T& x) {
-    if (allow_substitute(sym)) {
-      return mutate(x);
-    } else {
-      return x;
+template <typename T>
+auto mutate_let(substitutor* this_, const T* op) {
+  std::vector<std::pair<var, expr>> lets = op->lets;
+  bool changed = false;
+  std::size_t decls_entered = 0;
+  for (auto& s : lets) {
+    expr value = this_->mutate(s.second);
+    changed = changed || !value.same_as(s.second);
+    s.second = std::move(value);
+    var decl = this_->enter_decl(s.first);
+    if (!decl.defined()) {
+      this_->exit_decls(decls_entered);
+      break;
     }
+    changed = changed || decl != s.first;
+    s.first = decl;
+    ++decls_entered;
   }
 
-  template <typename T>
-  auto mutate_let(const T* op) {
-    std::vector<std::pair<var, expr>> lets;
-    lets.reserve(op->lets.size());
-    bool changed = false;
-    for (const auto& s : op->lets) {
-      lets.emplace_back(s.first, mutate(s.second));
-      if (!allow_substitute(s.first)) {
-        return decltype(op->body){op};
-      }
-      changed = changed || !lets.back().second.same_as(s.second);
-    }
+  auto body = decls_entered == lets.size() ? this_->mutate(op->body) : op->body;
+  changed = changed || !body.same_as(op->body);
+  this_->exit_decls(decls_entered);
+  if (!changed) {
+    return decltype(op->body){op};
+  } else {
+    return T::make(std::move(lets), std::move(body));
+  }
+}
 
-    auto body = mutate(op->body);
-    changed = changed || !body.same_as(op->body);
+}  // namespace
 
-    if (!changed) {
-      return decltype(op->body){op};
-    } else {
-      return T::make(std::move(lets), std::move(body));
+void substitutor::visit(const variable* op) {
+  std::optional<var> new_sym = visit_symbol(op->sym);
+  if (new_sym && *new_sym != op->sym) {
+    set_result(variable::make(*new_sym));
+  } else {
+    set_result(op);
+  }
+}
+
+void substitutor::visit(const let* op) { set_result(mutate_let(this, op)); }
+void substitutor::visit(const let_stmt* op) { set_result(mutate_let(this, op)); }
+
+void substitutor::visit(const loop* op) {
+  interval_expr bounds = mutate(op->bounds);
+  expr step = mutate(op->step);
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(loop::make(sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+  }
+  exit_decls();
+}
+void substitutor::visit(const allocate* op) {
+  expr elem_size = mutate(op->elem_size);
+  std::vector<dim_expr> dims;
+  dims.reserve(op->dims.size());
+  bool changed = false;
+  for (const dim_expr& i : op->dims) {
+    dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
+    changed = changed || !dims.back().same_as(i);
+  }
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (!changed && sym == op->sym && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(allocate::make(sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)));
+  }
+  exit_decls();
+}
+void substitutor::visit(const make_buffer* op) {
+  expr base = mutate(op->base);
+  expr elem_size = mutate(op->elem_size);
+  std::vector<dim_expr> dims;
+  dims.reserve(op->dims.size());
+  bool changed = false;
+  for (const dim_expr& i : op->dims) {
+    dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
+    changed = changed || !dims.back().same_as(i);
+  }
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (!changed && sym == op->sym && base.same_as(op->base) && elem_size.same_as(op->elem_size) &&
+      body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(make_buffer::make(sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
+  }
+  exit_decls();
+}
+
+void substitutor::visit(const slice_buffer* op) {
+  // Slices do not shadow, so we should substitute sym as well.
+  // TODO: This seems sketchy.
+  var src = visit_symbol(op->src);
+  std::vector<expr> at(op->at.size());
+  at.reserve(op->at.size());
+  bool changed = false;
+  std::vector<int> dims;
+  for (int d = 0; d < static_cast<int>(op->at.size()); ++d) {
+    at[d] = mutate(op->at[d]);
+    changed = changed || !at[d].same_as(op->at[d]);
+    if (at[d].defined()) {
+      dims.push_back(d);
     }
   }
+  var sym = enter_decl(op->sym);
+  stmt body = mutate_slice_body(op->sym, op->src, dims, op->body);
+  sym = sym.defined() ? sym : op->sym;
+  if (!changed && sym == op->sym && src == op->src && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(slice_buffer::make(sym, src, std::move(at), std::move(body)));
+  }
+  exit_decls();
+}
+void substitutor::visit(const slice_dim* op) {
+  // Slices do not shadow, so we should substitute sym as well.
+  // TODO: This seems sketchy.
+  var src = visit_symbol(op->src);
+  expr at = mutate(op->at);
+  int slices[] = {op->dim};
+  var sym = enter_decl(op->sym);
+  stmt body = mutate_slice_body(op->sym, op->src, slices, op->body);
+  sym = sym.defined() ? sym : op->sym;
+  if (sym == op->sym && src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(slice_dim::make(sym, src, op->dim, std::move(at), std::move(body)));
+  }
+  exit_decls();
+}
 
-  void visit(const let* op) override { set_result(mutate_let(op)); }
-  void visit(const let_stmt* op) override { set_result(mutate_let(op)); }
+namespace {
 
-  void visit(const loop* op) override {
-    interval_expr bounds = mutate(op->bounds);
-    expr step = mutate(op->step);
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+interval_expr substitute_crop_bounds(substitutor* this_, var new_src, var src, int dim, const interval_expr& bounds) {
+  // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(src, dim) and
+  // buffer_max(src, dim).
+  interval_expr result = this_->mutate(bounds);
+  if (match_call(result.min, intrinsic::buffer_min, new_src, dim)) {
+    result.min = expr();
+  } else if (!match_call(bounds.min, intrinsic::buffer_min, src, dim)) {
+    expr new_bounds = this_->mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, src, dim);
+    if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_min, new_src, dim)) {
+      // The substitution changed the implicit clamp, include it.
+      result.min = max(result.min, new_bounds);
     }
   }
-  void visit(const allocate* op) override {
-    expr elem_size = mutate(op->elem_size);
-    std::vector<dim_expr> dims;
-    dims.reserve(op->dims.size());
-    bool changed = false;
-    for (const dim_expr& i : op->dims) {
-      dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
-      changed = changed || !dims.back().same_as(i);
-    }
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (!changed && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)));
+  if (match_call(result.max, intrinsic::buffer_max, new_src, dim)) {
+    result.max = expr();
+  } else if (!match_call(bounds.max, intrinsic::buffer_max, src, dim)) {
+    expr new_bounds = this_->mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_max, src, dim);
+    if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_max, new_src, dim)) {
+      // The substitution changed the implicit clamp, include it.
+      result.max = min(result.max, new_bounds);
     }
   }
-  void visit(const make_buffer* op) override {
-    expr base = mutate(op->base);
-    expr elem_size = mutate(op->elem_size);
-    std::vector<dim_expr> dims;
-    dims.reserve(op->dims.size());
-    bool changed = false;
-    for (const dim_expr& i : op->dims) {
-      dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
-      changed = changed || !dims.back().same_as(i);
-    }
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (!changed && base.same_as(op->base) && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(make_buffer::make(op->sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
-    }
-  }
+  return result;
+}
 
-  void visit(const slice_buffer* op) override {
-    // Slices do not shadow, so we should substitute sym as well.
-    // TODO: This seems sketchy.
-    var sym = visit_symbol(op->sym);
-    var src = visit_symbol(op->src);
-    std::vector<expr> at(op->at.size());
-    at.reserve(op->at.size());
-    bool changed = false;
-    std::vector<int> dims;
-    for (int d = 0; d < static_cast<int>(op->at.size()); ++d) {
-      at[d] = mutate(op->at[d]);
-      changed = changed || !at[d].same_as(op->at[d]);
-      if (at[d].defined()) {
-        dims.push_back(d);
-      }
-    }
-    stmt body = mutate_slice_body(op->sym, op->src, dims, op->body);
-    if (!changed && sym == op->sym && src == op->src && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(slice_buffer::make(sym, src, std::move(at), std::move(body)));
-    }
-  }
-  void visit(const slice_dim* op) override {
-    // Slices do not shadow, so we should substitute sym as well.
-    // TODO: This seems sketchy.
-    var sym = visit_symbol(op->sym);
-    var src = visit_symbol(op->src);
-    expr at = mutate(op->at);
-    int slices[] = {op->dim};
-    stmt body = mutate_slice_body(op->sym, op->src, slices, op->body);
-    if (sym == op->sym && src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(slice_dim::make(sym, src, op->dim, std::move(at), std::move(body)));
-    }
-  }
+}  // namespace
 
-  interval_expr substitute_crop_bounds(var new_src, var src, int dim, const interval_expr& bounds) {
-    // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(src, dim) and
-    // buffer_max(src, dim).
-    interval_expr result = mutate(bounds);
-    if (match_call(result.min, intrinsic::buffer_min, new_src, dim)) {
-      result.min = expr();
-    } else if (!match_call(bounds.min, intrinsic::buffer_min, src, dim)) {
-      expr new_bounds = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, src, dim);
-      if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_min, new_src, dim)) {
-        // The substitution changed the implicit clamp, include it.
-        result.min = max(result.min, new_bounds);
-      }
-    }
-    if (match_call(result.max, intrinsic::buffer_max, new_src, dim)) {
-      result.max = expr();
-    } else if (!match_call(bounds.max, intrinsic::buffer_max, src, dim)) {
-      expr new_bounds = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_max, src, dim);
-      if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_max, new_src, dim)) {
-        // The substitution changed the implicit clamp, include it.
-        result.max = min(result.max, new_bounds);
-      }
-    }
-    return result;
+void substitutor::visit(const crop_buffer* op) {
+  var src = visit_symbol(op->src);
+  box_expr bounds(op->bounds.size());
+  bool changed = false;
+  for (std::size_t i = 0; i < op->bounds.size(); ++i) {
+    bounds[i] = substitute_crop_bounds(this, src, op->src, i, op->bounds[i]);
+    changed = changed || !bounds[i].same_as(op->bounds[i]);
   }
-
-  void visit(const crop_buffer* op) override {
-    var src = visit_symbol(op->src);
-    box_expr bounds(op->bounds.size());
-    bool changed = false;
-    for (std::size_t i = 0; i < op->bounds.size(); ++i) {
-      bounds[i] = substitute_crop_bounds(src, op->src, i, op->bounds[i]);
-      changed = changed || !bounds[i].same_as(op->bounds[i]);
-    }
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (changed || src != op->src || !body.same_as(op->body)) {
-      set_result(crop_buffer::make(op->sym, src, std::move(bounds), std::move(body)));
-    } else {
-      set_result(op);
-    }
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (changed || sym != op->sym || src != op->src || !body.same_as(op->body)) {
+    set_result(crop_buffer::make(sym, src, std::move(bounds), std::move(body)));
+  } else {
+    set_result(op);
   }
+  exit_decls();
+}
 
-  void visit(const crop_dim* op) override {
-    var src = visit_symbol(op->src);
-    interval_expr bounds = substitute_crop_bounds(src, op->src, op->dim, op->bounds);
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (src == op->src && bounds.same_as(op->bounds) && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(crop_dim::make(op->sym, src, op->dim, std::move(bounds), std::move(body)));
-    }
+void substitutor::visit(const crop_dim* op) {
+  var src = visit_symbol(op->src);
+  interval_expr bounds = substitute_crop_bounds(this, src, op->src, op->dim, op->bounds);
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (sym == op->sym && src == op->src && bounds.same_as(op->bounds) && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(crop_dim::make(sym, src, op->dim, std::move(bounds), std::move(body)));
   }
+  exit_decls();
+}
 
-  void visit(const call* op) override {
-    std::vector<expr> args;
-    args.reserve(op->args.size());
-    bool changed = false;
-    for (const expr& i : op->args) {
-      args.push_back(mutate(i));
-      changed = changed || !args.back().same_as(i);
-    }
-    if (is_buffer_intrinsic(op->intrinsic) && !args.empty() && args.front().defined()) {
-      auto buf = as_variable(args[0]);
-      assert(buf);
-      if (op->intrinsic == intrinsic::buffer_at) {
-        const std::size_t buf_rank = std::max(args.size() - 1, get_target_buffer_rank(*buf));
-        for (std::size_t d = 0; d < buf_rank; ++d) {
-          if (d + 1 >= args.size() || !args[d + 1].defined()) {
-            // buffer_at has an implicit buffer_min if it is not defined.
-            expr min = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, *buf, d);
-            if (min.defined()) {
-              assert(!match_call(min, intrinsic::buffer_min, *buf, d));
-              args.resize(std::max(args.size(), d + 2));
-              args[d + 1] = min;
-              changed = true;
-            }
-          } else if (d + 1 < args.size() && match_call(args[d + 1], intrinsic::buffer_min, *buf, d)) {
-            args[d + 1] = expr();
+void substitutor::visit(const call* op) {
+  std::vector<expr> args;
+  args.reserve(op->args.size());
+  bool changed = false;
+  for (const expr& i : op->args) {
+    args.push_back(mutate(i));
+    changed = changed || !args.back().same_as(i);
+  }
+  if (is_buffer_intrinsic(op->intrinsic) && !args.empty() && args.front().defined()) {
+    auto buf = as_variable(args[0]);
+    assert(buf);
+    if (op->intrinsic == intrinsic::buffer_at) {
+      const std::size_t buf_rank = std::max(args.size() - 1, get_target_buffer_rank(*buf));
+      for (std::size_t d = 0; d < buf_rank; ++d) {
+        if (d + 1 >= args.size() || !args[d + 1].defined()) {
+          // buffer_at has an implicit buffer_min if it is not defined.
+          expr min = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, *buf, d);
+          if (min.defined()) {
+            assert(!match_call(min, intrinsic::buffer_min, *buf, d));
+            args.resize(std::max(args.size(), d + 2));
+            args[d + 1] = min;
             changed = true;
           }
-        }
-
-        while (!args.empty() && !args.back().defined()) {
-          args.pop_back();
+        } else if (d + 1 < args.size() && match_call(args[d + 1], intrinsic::buffer_min, *buf, d)) {
+          args[d + 1] = expr();
           changed = true;
         }
       }
 
-      expr result = changed ? call::make(op->intrinsic, args) : expr(op);
-      set_result(mutate_buffer_intrinsic(result.as<call>(), op->intrinsic, *buf, span<const expr>(args).subspan(1)));
-      return;
-    }
-    if (changed) {
-      set_result(call::make(op->intrinsic, std::move(args)));
-    } else {
-      set_result(op);
-    }
-  }
-
-  void visit(const transpose* op) override {
-    // TODO: transpose is a bit tricky, the replacements for expressions might be invalid if they access truncated
-    // dims.
-    var src = visit_symbol(op->src);
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (src != op->src || !body.same_as(op->body)) {
-      set_result(transpose::make(op->sym, src, op->dims, std::move(body)));
-    } else {
-      set_result(op);
-    }
-  }
-
-  void visit(const call_stmt* op) override {
-    call_stmt::symbol_list inputs(op->inputs.size());
-    call_stmt::symbol_list outputs(op->outputs.size());
-    bool changed = false;
-    for (std::size_t i = 0; i < op->inputs.size(); ++i) {
-      inputs[i] = visit_symbol(op->inputs[i]);
-      changed = changed || inputs[i] != op->inputs[i];
-    }
-    for (std::size_t i = 0; i < op->outputs.size(); ++i) {
-      outputs[i] = visit_symbol(op->outputs[i]);
-      changed = changed || outputs[i] != op->outputs[i];
-    }
-    if (changed) {
-      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
-    } else {
-      set_result(op);
-    }
-  }
-
-  void visit(const copy_stmt* op) override {
-    var src = visit_symbol(op->src);
-    var dst = visit_symbol(op->dst);
-
-    // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
-    for (const var& i : op->dst_x) {
-      if (!allow_substitute(i)) {
-        set_result(op);
-        return;
+      while (!args.empty() && !args.back().defined()) {
+        args.pop_back();
+        changed = true;
       }
     }
-    std::vector<expr> src_x(op->src_x.size());
-    bool changed = false;
-    for (std::size_t i = 0; i < op->src_x.size(); ++i) {
-      src_x[i] = mutate(op->src_x[i]);
-      changed = changed || !src_x[i].same_as(op->src_x[i]);
-    }
-    if (changed || src != op->src || dst != op->dst) {
-      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->padding));
-    } else {
-      set_result(op);
-    }
-  }
 
-  void visit(const clone_buffer* op) override {
-    var src = visit_symbol(op->src);
-    stmt body = mutate_decl_body(op->sym, op->body);
-    if (src != op->src || !body.same_as(op->body)) {
-      set_result(clone_buffer::make(op->sym, src, std::move(body)));
-    } else {
-      set_result(op);
-    }
+    expr result = changed ? call::make(op->intrinsic, args) : expr(op);
+    set_result(mutate_buffer_intrinsic(result.as<call>(), op->intrinsic, *buf, span<const expr>(args).subspan(1)));
+    return;
   }
-  
-  // Silences a weird warning on clang. It seems like this should be in the base class (and it is).
-  using node_mutator::visit;
-};
+  if (changed) {
+    set_result(call::make(op->intrinsic, std::move(args)));
+  } else {
+    set_result(op);
+  }
+}
+
+void substitutor::visit(const transpose* op) {
+  // TODO: transpose is a bit tricky, the replacements for expressions might be invalid if they access truncated
+  // dims.
+  var src = visit_symbol(op->src);
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (sym != op->sym || src != op->src || !body.same_as(op->body)) {
+    set_result(transpose::make(sym, src, op->dims, std::move(body)));
+  } else {
+    set_result(op);
+  }
+  exit_decls();
+}
+
+void substitutor::visit(const call_stmt* op) {
+  call_stmt::symbol_list inputs(op->inputs.size());
+  call_stmt::symbol_list outputs(op->outputs.size());
+  bool changed = false;
+  for (std::size_t i = 0; i < op->inputs.size(); ++i) {
+    inputs[i] = visit_symbol(op->inputs[i]);
+    changed = changed || inputs[i] != op->inputs[i];
+  }
+  for (std::size_t i = 0; i < op->outputs.size(); ++i) {
+    outputs[i] = visit_symbol(op->outputs[i]);
+    changed = changed || outputs[i] != op->outputs[i];
+  }
+  if (changed) {
+    set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
+  } else {
+    set_result(op);
+  }
+}
+
+void substitutor::visit(const copy_stmt* op) {
+  var src = visit_symbol(op->src);
+  var dst = visit_symbol(op->dst);
+
+  std::size_t decls_entered = 0;
+  // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
+  std::vector<var> dst_x = op->dst_x;
+  bool changed = false;
+  for (var& i : dst_x) {
+    var new_i = enter_decl(i);
+    if (!new_i.defined()) {
+      set_result(op);
+      exit_decls(decls_entered);
+      return;
+    } else if (new_i != i) {
+      i = new_i;
+      changed = true;
+    }
+    ++decls_entered;
+  }
+  std::vector<expr> src_x(op->src_x.size());
+  for (std::size_t i = 0; i < op->src_x.size(); ++i) {
+    src_x[i] = decls_entered == dst_x.size() ? mutate(op->src_x[i]) : op->src_x[i];
+    changed = changed || !src_x[i].same_as(op->src_x[i]);
+  }
+  exit_decls(decls_entered);
+  if (changed || src != op->src || dst != op->dst) {
+    set_result(copy_stmt::make(src, std::move(src_x), dst, std::move(dst_x), op->padding));
+  } else {
+    set_result(op);
+  }
+}
+
+void substitutor::visit(const clone_buffer* op) {
+  var src = visit_symbol(op->src);
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (sym != op->sym || src != op->src || !body.same_as(op->body)) {
+    set_result(clone_buffer::make(sym, src, std::move(body)));
+  } else {
+    set_result(op);
+  }
+  exit_decls();
+}
+
+namespace {
 
 // A substutitor implementation for target vars
 class var_substitutor : public substitutor {
@@ -682,7 +706,7 @@ public:
 public:
   var_substitutor(var target, const expr& replacement) : target(target), replacement(replacement) {}
 
-  bool allow_substitute(const var& x) const override { return x != target && !depends_on(replacement, x).any(); }
+  var enter_decl(var x) override { return x != target && !depends_on(replacement, x).any() ? x : var(); }
 
   void visit(const variable* v) override {
     if (v->sym == target) {
@@ -715,7 +739,7 @@ public:
     replacement = update_sliced_buffer_metadata(replacement, sym, slices);
 
     // Mutate the slice
-    if (sym == src || allow_substitute(sym)) {
+    if (enter_decl(sym).defined()) {
       body = mutate(body);
     }
 
@@ -737,8 +761,8 @@ public:
     assert(!as_variable(target));
   }
 
-  bool allow_substitute(const var& x) const override {
-    return !depends_on(target, x).any() && !depends_on(replacement, x).any();
+  var enter_decl(var x) override {
+    return !depends_on(target, x).any() && !depends_on(replacement, x).any() ? x : var();
   }
 
   expr mutate(const expr& op) override {
@@ -759,7 +783,7 @@ public:
     replacement = update_sliced_buffer_metadata(replacement, sym, slices);
 
     // Mutate the slice
-    if (sym == src || allow_substitute(sym)) {
+    if (sym == src || enter_decl(sym).defined()) {
       body = mutate(body);
     }
 
@@ -811,7 +835,7 @@ public:
   buffer_substitutor(var target, expr elem_size, span<const dim_expr> dims)
       : target(target), elem_size(elem_size), dims(dims) {}
 
-  bool allow_substitute(const var& x) const override { return x != target; }
+  var enter_decl(var x) override { return x != target ? x : var(); }
 
   stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
     // Remember the replacements from before the slice.
@@ -830,7 +854,7 @@ public:
     dims = span<const dim_expr>(new_dims);
 
     // Mutate the slice
-    if (sym == src || allow_substitute(sym)) {
+    if (sym == src || enter_decl(sym).defined()) {
       body = mutate(body);
     }
 
