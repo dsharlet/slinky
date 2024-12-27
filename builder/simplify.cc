@@ -944,7 +944,7 @@ public:
         // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
         if (op->intrinsic == intrinsic::buffer_elem_size) {
           const expr& value = info->elem_size;
-          if (should_substitute(value) || value.as<call>()) {
+          if (!info->decl.defined() || should_substitute(value) || value.as<call>()) {
             set_result(value, {point(value), alignment_type()});
           } else {
             set_result(op, {point(value), alignment_type()});
@@ -955,7 +955,7 @@ public:
           assert(dim);
           if (*dim < static_cast<index_t>(info->dims.size())) {
             const expr& value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
-            if (should_substitute(value) || value.as<call>()) {
+            if (!info->decl.defined() || should_substitute(value) || value.as<call>()) {
               set_result(value, {point(value), alignment_type()});
             } else {
               set_result(op, {point(value), alignment_type()});
@@ -1066,6 +1066,7 @@ public:
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
     return mutate(body);
   }
+  // if `decl` is nullptr, the buffer will be substituted.
   stmt mutate_with_buffer(const base_stmt_node* decl, stmt body, var buf, std::optional<buffer_info> buffer) {
     if (buffer) buffer->decl = stmt(decl);
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
@@ -1361,7 +1362,7 @@ public:
       return;
     } else if (!deps.buffer_data()) {
       // We only needed the buffer meta, not the allocation itself.
-      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, std::move(info)));
       return;
     }
 
@@ -1457,7 +1458,7 @@ public:
     // check below could be unnecessary.
     if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
       return;
     }
 
@@ -1562,7 +1563,7 @@ public:
       return;
     } else if (can_substitute_buffer(deps)) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
       return;
     }
 
