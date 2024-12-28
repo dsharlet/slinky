@@ -1552,6 +1552,15 @@ public:
         canonicalize_buffer(info, *src_info, *src_buf);
       }
 
+      auto make_truncate = [&](var src, std::size_t rank, stmt body) {
+        if (src_info && src_info->all_dims_known && src_info->dims.size() == rank) {
+          // We know all the dims, and the rank is already what we want to truncate to.
+          return body;
+        }
+        // In this special case, we allow shadowing.
+        return transpose::make_truncate(src, src, rank, std::move(body));
+      };
+
       if (match(info.elem_size, buffer_elem_size(*src_buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
@@ -1573,11 +1582,10 @@ public:
           }
         }
         if (is_slice && slice_rank == info.dims.size()) {
-          std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), op->body);
           // make_buffer drops trailing dims, do the same here.
-          result = transpose::make_truncate(op->sym, *src_buf, info.dims.size() + at_rank, std::move(result));
-          set_result(mutate(result));
+          stmt body = make_truncate(op->sym, info.dims.size(), op->body);
+          std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
+          set_result(mutate(slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body))));
           return;
         }
 
@@ -1596,18 +1604,16 @@ public:
           bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
           expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
           if (match(info.dims[d].bounds.min, crop_min)) {
-            // We rewrite src -> sym in the truncate below.
-            crop_bounds[d] = substitute(info.dims[d].bounds, *src_buf, op->sym);
+            crop_bounds[d] = info.dims[d].bounds;
           } else {
             is_crop = false;
             break;
           }
         }
         if (is_crop) {
-          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), op->body);
           // make_buffer drops trailing dims, do the same here.
-          result = transpose::make_truncate(op->sym, *src_buf, info.dims.size(), std::move(result));
-          set_result(mutate(result));
+          stmt body = make_truncate(op->sym, info.dims.size(), op->body);
+          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
           return;
         }
 
@@ -1907,52 +1913,19 @@ public:
     visit_crop(src == op->src ? op : nullptr, op->sym, src, bounds, op->body);
   }
 
-  static void update_sliced_buffer_metadata(symbol_map<expr_info>& vars, var sym, span<const int> sliced) {
-    for (std::optional<expr_info>& i : vars) {
-      if (!i) continue;
-      i->bounds = slinky::update_sliced_buffer_metadata(i->bounds, sym, sliced);
-      i->replacement = slinky::update_sliced_buffer_metadata(i->replacement, sym, sliced);
-    }
-  }
-  static void update_sliced_buffer_metadata(symbol_map<buffer_info>& buffers, var sym, span<const int> sliced) {
-    for (std::optional<buffer_info>& i : buffers) {
-      if (!i) continue;
-      for (dim_expr& j : i->dims) {
-        j.bounds = slinky::update_sliced_buffer_metadata(j.bounds, sym, sliced);
-        j.stride = slinky::update_sliced_buffer_metadata(j.stride, sym, sliced);
-        j.fold_factor = slinky::update_sliced_buffer_metadata(j.fold_factor, sym, sliced);
-      }
-    }
-  }
-
   void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
     std::vector<expr> at(op_at.size());
-    std::vector<int> sliced_dims;
     bool changed = op == nullptr;
-    for (index_t i = 0; i < static_cast<index_t>(op_at.size()); ++i) {
+    std::optional<buffer_info> info = buffers[op_src];
+    for (index_t i = static_cast<index_t>(op_at.size()) - 1; i >= 0; --i) {
       if (op_at[i].defined()) {
         at[i] = mutate(op_at[i]);
         changed = changed || !at[i].same_as(op_at[i]);
-        sliced_dims.push_back(i);
+        if (info && static_cast<index_t>(info->dims.size()) > i) info->dims.erase(info->dims.begin() + i);
       }
     }
 
-    symbol_map<buffer_info> old_buffers = buffers;
-    symbol_map<expr_info> old_info_map = vars;
-    std::optional<buffer_info> info = buffers[op_src];
-
-    if (info) {
-      info->decl = stmt(op);
-      buffers[op_sym] = std::move(info);
-    } else {
-      buffers[op_sym] = std::nullopt;
-    }
-    update_sliced_buffer_metadata(buffers, op_sym, sliced_dims);
-    update_sliced_buffer_metadata(vars, op_sym, sliced_dims);
-    stmt body = mutate(op_body);
-    buffers = std::move(old_buffers);
-    vars = std::move(old_info_map);
-
+    stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));
     if (!depends_on(body, op_sym).any()) {
       set_result(std::move(body));
       return;
