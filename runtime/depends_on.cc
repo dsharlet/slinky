@@ -101,38 +101,68 @@ public:
     }
   }
 
+  // Returns true if everything is shadowed and the result is already not pure, so there is no point in recursing.
+  bool add_dummy_decl(var x) {
+    if (no_dummy(find_deps(x))) {
+      if (!is_pure && !unknown_deps) {
+        // We want to know if every decl we care about is shadowed. For this to be true, the number of dummy decls in
+        // var_deps (including the new one we are about to add) must be equal to the number of non-dummy decls. This is
+        // true because we don't add new deps for decls that are already dummy deps.
+        int dummies = 0;
+        int non_dummies = 0;
+        for (const auto& i : var_deps) {
+          if (i.second == &dummy_deps) {
+            ++dummies;
+          } else {
+            ++non_dummies;
+          }
+        }
+        if (dummies + 1 >= non_dummies) {
+          return false;
+        }
+      }
+      var_deps.push_back({x, &dummy_deps});
+    }
+    return true;
+  }
+
   template <typename T>
   void visit_let(const T* op) {
     size_t var_deps_count = var_deps.size();
     for (const auto& p : op->lets) {
       p.second.accept(this);
-      if (decl_needs_shadow(p.first)) {
-        var_deps.push_back({p.first, &dummy_deps});
+      if (!add_dummy_decl(p.first)) {
+        var_deps.resize(var_deps_count);
+        return;
       }
     }
     op->body.accept(this);
     var_deps.resize(var_deps_count);
   }
-
   void visit(const let* op) override { visit_let(op); }
-  void visit(const let_stmt* op) override { visit_let(op); }
+  void visit(const let_stmt* op) override {
+    is_pure = false;
+    visit_let(op);
+  }
 
   void visit_sym_body(var sym, depends_on_result* src_deps, const stmt& body) {
+    // We assume that any sym declaration is not pure, because if it were pure, why does it exist?
+    is_pure = false;
     if (!body.defined()) return;
     size_t var_deps_count = var_deps.size();
     if (no_dummy(src_deps)) {
       // We have src_deps we want to transitively add to via this declaration.
       var_deps.push_back({sym, src_deps});
-    } else if (decl_needs_shadow(sym)) {
-      // We are shadowing something we are finding the dependencies of. Point at the dummy instead to avoid
-      // contaminating the dependencies.
-      var_deps.push_back({sym, &dummy_deps});
+    } else if (!add_dummy_decl(sym)) {
+      return;
     }
     body.accept(this);
     var_deps.resize(var_deps_count);
   }
 
   void visit_sym_body(var sym, var src, depends_on_result* src_deps, const stmt& body) {
+    // We assume that any sym declaration is not pure, because if it were pure, why does it exist?
+    is_pure = false;
     if (sym == src) {
       if (!body.defined()) return;
       body.accept(this);
@@ -151,6 +181,7 @@ public:
   }
 
   void visit(const call_stmt* op) override {
+    is_pure = false;
     for (var i : op->inputs) {
       if (depends_on_result* deps = find_deps(i)) {
         deps->var = true;
@@ -169,6 +200,7 @@ public:
   }
 
   void visit(const copy_stmt* op) override {
+    is_pure = false;
     if (depends_on_result* deps = find_deps(op->src)) {
       deps->var = true;
       deps->buffer_src = true;
@@ -192,8 +224,9 @@ public:
     // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
     size_t var_deps_count = var_deps.size();
     for (std::size_t i = 0; i < op->dst_x.size(); ++i) {
-      if (decl_needs_shadow(op->dst_x[i])) {
-        var_deps.push_back({op->dst_x[i], &dummy_deps});
+      if (!add_dummy_decl(op->dst_x[i])) {
+        var_deps.resize(var_deps_count);
+        return;
       }
     }
     for (const expr& i : op->src_x) {
