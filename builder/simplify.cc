@@ -1253,7 +1253,7 @@ public:
           interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
           auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
           // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
-          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) || 
+          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
                          (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
             result = crop->body;
             expr_info info_of_min, info_of_max;
@@ -1422,7 +1422,7 @@ public:
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
-    for (int buf_d = 0; buf_d < static_cast<int>(buf.dims.size());  ++buf_d) {
+    for (int buf_d = 0; buf_d < static_cast<int>(buf.dims.size()); ++buf_d) {
       dim_expr& d = buf.dims[buf_d];
       // Try buf_d first, to prefer making identical buffers.
       if (buf_d < static_cast<int>(src.dims.size()) && is_buffer_dim(d, src.dims[buf_d], sym, buf_d)) {
@@ -1677,9 +1677,8 @@ public:
       result = mutate(deduped);
     }
 
-    // TODO: We should not need to compare to both buffer_bounds(buf, dim) and buffer.
-    if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
-    if (prove_true(result.max >= buffer.max || result.max >= buffer_max(buf, dim))) result.max = expr();
+    if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
+    if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
 
     // We already proved above that this min/max is necessary (otherwise result would be undefined here).
     if (result.min.defined()) buffer.min = max(buffer.min, result.min);
