@@ -1583,18 +1583,6 @@ public:
     return info;
   }
 
-  // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
-  static expr simplify_crop_bound(expr x, var sym, int dim) {
-    if (const class max* m = x.as<class max>()) {
-      if (match_call(m->a, intrinsic::buffer_min, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
-      if (match_call(m->b, intrinsic::buffer_min, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
-    } else if (const class min* m = x.as<class min>()) {
-      if (match_call(m->a, intrinsic::buffer_max, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
-      if (match_call(m->b, intrinsic::buffer_max, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
-    }
-    return x;
-  }
-
   template <typename T>
   static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds) {
     bounds.insert(x);
