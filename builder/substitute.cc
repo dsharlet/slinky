@@ -725,59 +725,6 @@ public:
   }
 };
 
-// A substitutor implementation for target exprs.
-class expr_substitutor : public substitutor {
-public:
-  expr target;
-  expr replacement;
-
-public:
-  expr_substitutor(expr target, expr replacement) : target(target), replacement(replacement) {
-    assert(!as_variable(target));
-  }
-
-  var enter_decl(var x) override {
-    return !depends_on(target, x).any() && !depends_on(replacement, x).any() ? x : var();
-  }
-
-  expr mutate(const expr& op) override {
-    if (match(op, target)) {
-      return replacement;
-    }
-    return node_mutator::mutate(op);
-  }
-  using node_mutator::mutate;
-
-  std::size_t get_target_buffer_rank(var x) override {
-    if (const call* c = target.as<call>()) {
-      if (is_buffer_dim_intrinsic(c->intrinsic) && is_variable(c->args[0], x)) {
-        auto dim = as_constant(c->args[1]);
-        assert(dim);
-        return *dim + 1;
-      }
-    }
-    return 0;
-  }
-
-  expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) override {
-    const call* c = as_intrinsic(target, fn);
-    if (!c) return expr(op);
-    if (!match(c->args[0], buf)) return expr(op);
-    if (c->args.size() != args.size() + 1) return expr(op);
-    for (std::size_t d = 0; d < args.size(); ++d) {
-      if (!match(c->args[d + 1], args[d])) return expr(op);
-    }
-    return replacement;
-  }
-  expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) override {
-    const call* c = as_intrinsic(target, fn);
-    if (!c || c->args.size() != 2) return expr(op);
-    if (!is_variable(c->args[0], buf)) return expr(op);
-    if (!is_constant(c->args[1], dim)) return expr(op);
-    return replacement;
-  }
-};
-
 // A substitutor implementation for target buffers.
 class buffer_substitutor : public substitutor {
 public:
@@ -840,22 +787,6 @@ interval_expr substitute(const interval_expr& x, var target, const expr& replace
   }
 }
 
-expr substitute(const expr& e, const expr& target, const expr& replacement) {
-  if (auto v = as_variable(target)) {
-    return var_substitutor(*v, replacement).mutate(e);
-  } else {
-    return expr_substitutor(target, replacement).mutate(e);
-  }
-}
-stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
-  scoped_trace trace("substitute");
-  if (auto v = as_variable(target)) {
-    return var_substitutor(*v, replacement).mutate(s);
-  } else {
-    return expr_substitutor(target, replacement).mutate(s);
-  }
-}
-
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
   return buffer_substitutor(buffer, elem_size, dims).mutate(e);
 }
@@ -870,6 +801,34 @@ expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& 
   std::vector<dim_expr> dims(dim + 1);
   dims[dim].bounds = bounds;
   return substitute_buffer(e, buffer, expr(), dims);
+}
+
+namespace {
+
+class expr_substitutor : public node_mutator {
+public:
+  expr target;
+  expr replacement;
+
+public:
+  expr_substitutor(expr target, expr replacement) : target(target), replacement(replacement) {}
+
+  expr mutate(const expr& op) override {
+    if (match(op, target)) {
+      return replacement;
+    }
+    return node_mutator::mutate(op);
+  }
+  stmt mutate(const stmt& op) override {
+    // We don't support substituting exprs into stmts.
+    std::abort();
+  }
+};
+
+}  // namespace
+
+expr substitute(const expr& e, const expr& target, const expr& replacement) {
+  return expr_substitutor(target, replacement).mutate(e);
 }
 
 }  // namespace slinky
