@@ -1644,24 +1644,25 @@ public:
       if (match(info.elem_size, buffer_elem_size(*src_buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
-        int dim = 0;
-        std::size_t slice_rank = 0;
-        std::size_t at_rank =
-            std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
-        bool is_slice = true;
-        for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
-          if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
-            // Skip this dimension.
-            ++dim;
-          } else if (slice_rank < info.dims.size()) {
-            // This arg is undefined. We need to find the next dimension here to be a slice.
-            is_slice = is_slice && is_buffer_dim(info.dims[slice_rank++], *src_buf) == dim++;
-          } else {
-            is_slice = false;
-            break;
+        auto is_slice = [&]() {
+          int dim = 0;
+          std::size_t slice_rank = 0;
+          std::size_t at_rank =
+              std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
+          for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
+            if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
+              // Skip this dimension.
+              ++dim;
+            } else if (slice_rank < info.dims.size()) {
+              // This arg is undefined. We need to find the next dimension here to be a slice.
+              if (is_buffer_dim(info.dims[slice_rank++], *src_buf) != dim++) return false;
+            } else {
+              return false;
+            }
           }
-        }
-        if (is_slice && slice_rank == info.dims.size()) {
+          return slice_rank == info.dims.size();
+        };
+        if (is_slice()) {
           // make_buffer drops trailing dims, do the same here.
           stmt body = make_truncate(op->sym, info.dims.size(), op->body);
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
@@ -1670,49 +1671,49 @@ public:
         }
 
         // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
-        bool is_crop = bc->args.size() <= info.dims.size() + 1;
-        box_expr crop_bounds(info.dims.size());
-        for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
-          if (!match_call(info.dims[d].stride, intrinsic::buffer_stride, *src_buf, d) ||
-              !match_call(info.dims[d].fold_factor, intrinsic::buffer_fold_factor, *src_buf, d)) {
-            is_crop = false;
-            break;
-          }
+        auto is_crop = [&]() {
+          if (bc->args.size() > info.dims.size() + 1) return false;
+          for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
+            if (!match_call(info.dims[d].stride, intrinsic::buffer_stride, *src_buf, d) ||
+                !match_call(info.dims[d].fold_factor, intrinsic::buffer_fold_factor, *src_buf, d)) {
+              return false;
+            }
 
-          // If the argument to buffer_at is defined, we need the min to be the same as the argument.
-          // If it is not defined, it must be buffer_min(buf, d).
-          bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
-          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
-          if (match(info.dims[d].bounds.min, crop_min)) {
-            crop_bounds[d] = info.dims[d].bounds;
-          } else {
-            is_crop = false;
-            break;
+            // If the argument to buffer_at is defined, we need the min to be the same as the argument.
+            // If it is not defined, it must be buffer_min(buf, d).
+            bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
+            expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
+            if (!match(info.dims[d].bounds.min, crop_min)) {
+              return false;
+            }
           }
-        }
-        if (is_crop) {
+          return true;
+        };
+        if (is_crop()) {
           // make_buffer drops trailing dims, do the same here.
           stmt body = make_truncate(op->sym, info.dims.size(), op->body);
-          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
+          set_result(mutate(crop_buffer::make(op->sym, *src_buf, dims_bounds(info.dims), std::move(body))));
           return;
         }
 
         // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
         // original buffer.
         // TODO: This could probably be built into the slice check above.
-        bool is_transpose = bc->args.size() == 1;
         std::vector<int> permutation;
-        permutation.reserve(info.dims.size());
-        for (std::size_t d = 0; d < info.dims.size(); ++d) {
-          int dim = is_buffer_dim(info.dims[d], *src_buf);
-          if (dim >= 0) {
-            permutation.push_back(dim);
-          } else {
-            is_transpose = false;
-            break;
+        auto is_transpose = [&]() {
+          if (bc->args.size() != 1) return false;
+          permutation.reserve(info.dims.size());
+          for (std::size_t d = 0; d < info.dims.size(); ++d) {
+            int dim = is_buffer_dim(info.dims[d], *src_buf);
+            if (dim >= 0) {
+              permutation.push_back(dim);
+            } else {
+              return false;
+            }
           }
-        }
-        if (is_transpose) {
+          return true;
+        };
+        if (is_transpose()) {
           set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), op->body)));
           return;
         }
