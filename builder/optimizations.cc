@@ -836,36 +836,29 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // at the beginning of the pipeline, e.g. that buffer_stride(op->dst, d) == buffer_stride(op->dst, d - 1) *
   // buffer_extent(op->dst, d - 1).
 
+  // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
+  // the body, we'll make a clone of the buffer outside the loop.
+  // TODO: Is this really the right thing to do, or is it an artifact of a bad idea/implementation?
+  var clone_id = ctx.insert_unique(ctx.name(op->dst) + ".unsliced");
+  for (expr& i : src_x) {
+    i = substitute(i, op->dst, clone_id);
+  }
+  for (dim_expr& i : src_dims) {
+    i.bounds = substitute(i.bounds, op->dst, clone_id);
+    i.stride = substitute(i.stride, op->dst, clone_id);
+    i.fold_factor = substitute(i.fold_factor, op->dst, clone_id);
+  }
+
   // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
   result = make_buffer::make(op->src, buffer_at(op->src, src_x), buffer_elem_size(op->src), src_dims, result);
 
   // Any dimensions left need loops and slices.
-  // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
-  // the body, we'll make lets of the buffer metadata outside the loops.
-  // TODO: Is this really the right thing to do, or is it an artifact of a bad idea/implementation?
-  std::vector<std::pair<var, expr>> lets;
-  var let_id = ctx.insert_unique();
-  auto do_substitute = [&](const expr& value) {
-    stmt new_result = substitute(result, value, variable::make(let_id));
-    if (!new_result.same_as(result)) {
-      lets.push_back({let_id, value});
-      let_id = ctx.insert_unique();
-      result = std::move(new_result);
-    }
-  };
-  for (int d = 0; d < static_cast<index_t>(op->dst_x.size()); ++d) {
-    do_substitute(buffer_min(op->dst, d));
-    do_substitute(buffer_max(op->dst, d));
-    do_substitute(buffer_stride(op->dst, d));
-    do_substitute(buffer_fold_factor(op->dst, d));
-  }
-
   for (int d = 0; d < static_cast<index_t>(dst_x.size()); ++d) {
     if (!dst_x[d].defined()) continue;
     result = slice_dim::make(op->dst, op->dst, d, dst_x[d], result);
     result = loop::make(dst_x[d], loop::serial, buffer_bounds(op->dst, d), 1, result);
   }
-  return let_stmt::make(std::move(lets), result);
+  return clone_buffer::make(clone_id, op->dst, std::move(result));
 }
 
 stmt implement_copies(const stmt& s, node_context& ctx) {
