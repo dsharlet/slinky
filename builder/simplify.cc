@@ -1034,8 +1034,14 @@ public:
     bool values_changed = false;
     for (const auto& s : op->lets) {
       expr_info value_info;
-      lets.emplace_back(s.first, mutate(s.second, &value_info));
-      values_changed = values_changed || !lets.back().second.same_as(s.second);
+      expr value = mutate(s.second, &value_info);
+      if (should_substitute(value)) {
+        value_info = expr_info::substitution(std::move(value));
+        values_changed = true;
+      } else {
+        lets.emplace_back(s.first, std::move(value));
+        values_changed = values_changed || !lets.back().second.same_as(s.second);
+      }
 
       assert(!vars.contains(s.first));
       scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
@@ -1044,9 +1050,8 @@ public:
     expr_info body_info;
     auto body = mutate(op->body, &body_info);
 
-    bool substituted = false;
+    scoped_values.clear();
     for (auto it = lets.rbegin(); it != lets.rend();) {
-      scoped_values.pop_back();
       auto deps = depends_on(body, it->first);
       // Find any deps on this variable in the inner let values.
       for (auto inner = lets.rbegin(); inner != it; ++inner) {
@@ -1057,20 +1062,9 @@ public:
         // Prune dead lets
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
-      } else if (should_substitute(it->second)) {
-        body = substitute(body, it->first, it->second);
-        for (auto inner = lets.rbegin(); inner != it; ++inner) {
-          inner->second = substitute(inner->second, it->first, it->second);
-        }
-        it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
-        values_changed = true;
-        substituted = true;
       } else {
         ++it;
       }
-    }
-    if (substituted) {
-      body = mutate(body, &body_info);
     }
 
     if (lets.empty()) {
