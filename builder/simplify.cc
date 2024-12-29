@@ -1418,20 +1418,17 @@ public:
     call_stmt::symbol_list inputs = op->inputs;
     call_stmt::symbol_list outputs = op->outputs;
     bool changed = false;
-    for (var& i : inputs) {
-      var new_i = visit_symbol(i);
-      if (new_i != i) {
-        i = new_i;
-        changed = true;
+    auto visit_symbol_list = [&, this](call_stmt::symbol_list& list) {
+      for (var& i : list) {
+        var new_i = visit_symbol(i);
+        if (new_i != i) {
+          i = new_i;
+          changed = true;
+        }
       }
-    }
-    for (var& i : outputs) {
-      var new_i = visit_symbol(i);
-      if (new_i != i) {
-        i = new_i;
-        changed = true;
-      }
-    }
+    };
+    visit_symbol_list(inputs);
+    visit_symbol_list(outputs);
     if (changed) {
       set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
     } else {
