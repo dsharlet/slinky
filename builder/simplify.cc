@@ -1605,6 +1605,42 @@ public:
     }
   }
 
+  std::vector<std::tuple<var, depends_on_result, stmt>> deps_cache;
+
+  // It's more efficient to compute the dependencies of multiple symbols at once. For sequences of nested make_buffer
+  // ops, this can be significant. To avoid computing the dependencies of all the buffers one at a time, we instead
+  // build a list of buffers we are likely to compute the dependencies of, and compute them all at once.
+  const depends_on_result& cached_depends_on(const stmt& body, var sym) {
+    auto cached = std::find_if(deps_cache.begin(), deps_cache.end(),
+        [&](const auto& i) { return std::get<0>(i) == sym && body.same_as(std::get<2>(i)); });
+    if (cached != deps_cache.end()) {
+      return std::get<1>(*cached);
+    } else {
+      deps_cache.clear();
+
+      stmt r = body;
+      while (true) {
+        deps_cache.push_back({sym, depends_on_result(), r});
+        const make_buffer* mb = r.as<make_buffer>();
+        if (!mb) break;
+        if (mb->base.defined()) {
+          break;
+        }
+        r = mb->body;
+        sym = mb->sym;
+      }
+
+      std::vector<std::pair<var, depends_on_result&>> deps;
+      deps.reserve(deps_cache.size());
+      for (auto& i : deps_cache) {
+        deps.push_back(std::pair<var, depends_on_result&>(std::get<0>(i), std::get<1>(i)));
+      }
+
+      depends_on(r, deps);
+      return std::get<1>(deps_cache.front());
+    }
+  }
+
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
     buffer_info info;
@@ -1613,7 +1649,7 @@ public:
     // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
     // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
     // check below could be unnecessary.
-    if (can_substitute_buffer(depends_on(op->body, op->sym))) {
+    if (can_substitute_buffer(cached_depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
       set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_data_dependency(base), std::move(info)));
       return;
