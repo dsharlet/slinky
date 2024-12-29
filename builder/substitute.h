@@ -86,11 +86,8 @@ stmt substitute(const stmt& s, const expr& target, const expr& replacement);
 // Substitute `elem_size` in for buffer_elem_size(buffer) and the other buffer metadata in `dims` for per-dimension
 // metadata.
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
-stmt substitute_buffer(const stmt& s, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds);
-stmt substitute_bounds(const stmt& s, var buffer, const box_expr& bounds);
 expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& bounds);
-stmt substitute_bounds(const stmt& s, var buffer, int dim, const interval_expr& bounds);
 
 }  // namespace slinky
 

@@ -761,12 +761,6 @@ expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slice
   return slice_updater(buf, slices).mutate(e);
 }
 
-dim_expr update_sliced_buffer_metadata(const dim_expr& x, var buf, span<const int> slices) {
-  scoped_trace trace("update_sliced_buffer_metadata");
-  slice_updater m(buf, slices);
-  return {m.mutate(x.bounds), m.mutate(x.stride), m.mutate(x.fold_factor)};
-}
-
 class transpose_updater : public node_mutator {
   var sym;
   span<const int> permutation;
@@ -829,12 +823,6 @@ public:
 expr update_transposed_buffer_metadata(const expr& e, var buf, span<const int> permutation) {
   scoped_trace trace("update_transposed_buffer_metadata");
   return transpose_updater(buf, permutation).mutate(e);
-}
-
-dim_expr update_transposed_buffer_metadata(const dim_expr& x, var buf, span<const int> permutation) {
-  scoped_trace trace("update_transposed_buffer_metadata");
-  transpose_updater m(buf, permutation);
-  return {m.mutate(x.bounds), m.mutate(x.stride), m.mutate(x.fold_factor)};
 }
 
 // A substutitor implementation for target vars
@@ -997,62 +985,11 @@ public:
 
   var enter_decl(var x) override { return x != target ? x : var(); }
 
-  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
-    // Remember the replacements from before the slice.
-    expr old_elem_size = elem_size;
-    span<const dim_expr> old_dims = dims;
-
-    // Update the replacements for slices.
-    elem_size = update_sliced_buffer_metadata(elem_size, sym, slices);
-    std::vector<dim_expr> new_dims;
-    new_dims.reserve(dims.size());
-    for (std::size_t d = 0; d < dims.size(); ++d) {
-      if (target != sym || std::find(slices.begin(), slices.end(), d) == slices.end()) {
-        new_dims.push_back(update_sliced_buffer_metadata(dims[d], sym, slices));
-      }
-    }
-    dims = span<const dim_expr>(new_dims);
-
-    // Mutate the slice
-    if (sym == src || enter_decl(sym).defined()) {
-      body = mutate(body);
-    }
-
-    // Restore the old replacements.
-    elem_size = old_elem_size;
-    dims = old_dims;
-
-    return body;
+  stmt mutate(const stmt& s) override {
+    // We don't support substituting buffers into stmts.
+    std::abort(); 
   }
-
-  stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) override {
-    // Remember the replacements from before the slice.
-    expr old_elem_size = elem_size;
-    span<const dim_expr> old_dims = dims;
-
-    // Update the replacements for slices.
-    elem_size = update_transposed_buffer_metadata(elem_size, sym, permutation);
-    std::vector<dim_expr> new_dims(permutation.size());
-    if (target == sym) {
-      for (std::size_t d = 0; d < permutation.size(); ++d) {
-        if (permutation[d] < static_cast<int>(dims.size())) {
-          new_dims[d] = update_transposed_buffer_metadata(dims[permutation[d]], sym, permutation);
-        }
-      }
-      dims = span<const dim_expr>(new_dims);
-    }
-
-    // Mutate the slice
-    if (sym == src || enter_decl(sym).defined()) {
-      body = mutate(body);
-    }
-
-    // Restore the old replacements.
-    elem_size = old_elem_size;
-    dims = old_dims;
-
-    return body;
-  }
+  using substitutor::mutate;
 
   std::size_t get_target_buffer_rank(var x) override { return x == target ? dims.size() : 0; }
 
@@ -1132,23 +1069,11 @@ stmt substitute(const stmt& s, const expr& target, const expr& replacement) {
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
   return buffer_substitutor(buffer, elem_size, dims).mutate(e);
 }
-stmt substitute_buffer(const stmt& s, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
-  scoped_trace trace("substitute_buffer");
-  return buffer_substitutor(buffer, elem_size, dims).mutate(s);
-}
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds) {
   return substitute_bounds_impl(e, buffer, bounds);
 }
-stmt substitute_bounds(const stmt& s, var buffer, const box_expr& bounds) {
-  scoped_trace trace("substitute_bounds");
-  return substitute_bounds_impl(s, buffer, bounds);
-}
 expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& bounds) {
   return substitute_bounds_impl(e, buffer, dim, bounds);
-}
-stmt substitute_bounds(const stmt& s, var buffer, int dim, const interval_expr& bounds) {
-  scoped_trace trace("substitute_bounds");
-  return substitute_bounds_impl(s, buffer, dim, bounds);
 }
 
 }  // namespace slinky
