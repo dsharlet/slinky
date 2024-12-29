@@ -466,8 +466,6 @@ void substitutor::visit(const make_buffer* op) {
 }
 
 void substitutor::visit(const slice_buffer* op) {
-  // Slices do not shadow, so we should substitute sym as well.
-  // TODO: This seems sketchy.
   var src = visit_symbol(op->src);
   std::vector<expr> at(op->at.size());
   at.reserve(op->at.size());
@@ -491,8 +489,6 @@ void substitutor::visit(const slice_buffer* op) {
   exit_decls();
 }
 void substitutor::visit(const slice_dim* op) {
-  // Slices do not shadow, so we should substitute sym as well.
-  // TODO: This seems sketchy.
   var src = visit_symbol(op->src);
   expr at = mutate(op->at);
   int slices[] = {op->dim};
