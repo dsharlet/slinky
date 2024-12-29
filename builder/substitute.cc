@@ -823,6 +823,7 @@ public:
     // We don't support substituting exprs into stmts.
     std::abort();
   }
+  using node_mutator::mutate;
 };
 
 }  // namespace
