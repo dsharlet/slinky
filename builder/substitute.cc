@@ -775,16 +775,12 @@ public:
 expr substitute(const expr& e, var target, const expr& replacement) {
   return var_substitutor(target, replacement).mutate(e);
 }
+interval_expr substitute(const interval_expr& x, var target, const expr& replacement) {
+  return var_substitutor(target, replacement).mutate(x);
+}
 stmt substitute(const stmt& s, var target, const expr& replacement) {
   scoped_trace trace("substitute");
   return var_substitutor(target, replacement).mutate(s);
-}
-interval_expr substitute(const interval_expr& x, var target, const expr& replacement) {
-  if (x.is_point()) {
-    return point(substitute(x.min, target, replacement));
-  } else {
-    return {substitute(x.min, target, replacement), substitute(x.max, target, replacement)};
-  }
 }
 
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {

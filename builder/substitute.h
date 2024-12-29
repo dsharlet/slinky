@@ -74,8 +74,8 @@ public:
 
 // Replace the var `target` with a `replacement` expr. Respects shadowing and implicit buffer metadata.
 expr substitute(const expr& e, var target, const expr& replacement);
-stmt substitute(const stmt& s, var target, const expr& replacement);
 interval_expr substitute(const interval_expr& x, var target, const expr& replacement);
+stmt substitute(const stmt& s, var target, const expr& replacement);
 
 // Substitute `elem_size` in for buffer_elem_size(buffer) and the other buffer metadata in `dims` for per-dimension
 // metadata.
