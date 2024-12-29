@@ -794,6 +794,8 @@ stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_ex
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   scoped_trace trace("implement_copy");
   // Start by making a call to copy.
+  // We're going to slice this buffer, to avoid messing with metadata in the user expressions, work on a clone instead.
+  var dst = ctx.insert_unique(ctx.name(op->dst) + ".sliced");
   call_stmt::attributes copy_attrs;
   copy_attrs.name = "copy";
   stmt result = call_stmt::make(
@@ -806,7 +808,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         ctx.copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
-      {}, {op->src, op->dst}, std::move(copy_attrs));
+      {}, {op->src, dst}, std::move(copy_attrs));
 
   std::vector<expr> src_x = op->src_x;
   std::vector<var> dst_x = op->dst_x;
@@ -833,21 +835,8 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
 
   // TODO: Try to optimize reshapes, where the index of the input is an "unpacking" of a flat index of the output.
   // This will require the simplifier to understand the constraints implied by the checks on the buffer metadata
-  // at the beginning of the pipeline, e.g. that buffer_stride(op->dst, d) == buffer_stride(op->dst, d - 1) *
-  // buffer_extent(op->dst, d - 1).
-
-  // We're going to make slices here, which invalidates buffer metadata calls in the body. To avoid breaking
-  // the body, we'll make a clone of the buffer outside the loop.
-  // TODO: Is this really the right thing to do, or is it an artifact of a bad idea/implementation?
-  var clone_id = ctx.insert_unique(ctx.name(op->dst) + ".unsliced");
-  for (expr& i : src_x) {
-    i = substitute(i, op->dst, clone_id);
-  }
-  for (dim_expr& i : src_dims) {
-    i.bounds = substitute(i.bounds, op->dst, clone_id);
-    i.stride = substitute(i.stride, op->dst, clone_id);
-    i.fold_factor = substitute(i.fold_factor, op->dst, clone_id);
-  }
+  // at the beginning of the pipeline, e.g. that
+  // buffer_stride(dst, d) == buffer_stride(dst, d - 1) * buffer_extent(dst, d - 1).
 
   // Rewrite the source buffer to be only the dimensions of the src we want to pass to copy.
   result = make_buffer::make(op->src, buffer_at(op->src, src_x), buffer_elem_size(op->src), src_dims, result);
@@ -855,10 +844,10 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   // Any dimensions left need loops and slices.
   for (int d = 0; d < static_cast<index_t>(dst_x.size()); ++d) {
     if (!dst_x[d].defined()) continue;
-    result = slice_dim::make(op->dst, op->dst, d, dst_x[d], result);
-    result = loop::make(dst_x[d], loop::serial, buffer_bounds(op->dst, d), 1, result);
+    result = slice_dim::make(dst, dst, d, dst_x[d], result);
+    result = loop::make(dst_x[d], loop::serial, buffer_bounds(dst, d), 1, result);
   }
-  return clone_buffer::make(clone_id, op->dst, std::move(result));
+  return clone_buffer::make(dst, op->dst, std::move(result));
 }
 
 stmt implement_copies(const stmt& s, node_context& ctx) {
