@@ -612,11 +612,9 @@ void substitutor::visit(const call* op) {
 }
 
 void substitutor::visit(const transpose* op) {
-  // TODO: transpose is a bit tricky, the replacements for expressions might be invalid if they access truncated
-  // dims.
   var src = visit_symbol(op->src);
   var sym = enter_decl(op->sym);
-  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  stmt body = mutate_transpose_body(op->sym, op->src, op->dims, op->body);
   sym = sym.defined() ? sym : op->sym;
   if (sym != op->sym || src != op->src || !body.same_as(op->body)) {
     set_result(transpose::make(sym, src, op->dims, std::move(body)));
@@ -769,6 +767,76 @@ dim_expr update_sliced_buffer_metadata(const dim_expr& x, var buf, span<const in
   return {m.mutate(x.bounds), m.mutate(x.stride), m.mutate(x.fold_factor)};
 }
 
+class transpose_updater : public node_mutator {
+  var sym;
+  span<const int> permutation;
+
+public:
+  transpose_updater(var sym, span<const int> permutation) : sym(sym), permutation(permutation) {}
+
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
+    case intrinsic::buffer_min:
+    case intrinsic::buffer_max:
+    case intrinsic::buffer_stride:
+    case intrinsic::buffer_fold_factor:
+      if (is_variable(op->args[0], sym)) {
+        auto dim = as_constant(op->args[1]);
+        assert(dim);
+        index_t new_dim = -1;
+        for (int i = 0; i < static_cast<int>(permutation.size()); ++i) {
+          if (*dim == permutation[i]) {
+            new_dim = i;
+            break;
+          }
+        }
+        if (new_dim == -1) {
+          set_result(expr());
+        } else if (new_dim != *dim) {
+          set_result(call::make(op->intrinsic, {op->args[0], new_dim}));
+        } else {
+          set_result(op);
+        }
+        return;
+      }
+      break;
+    case intrinsic::buffer_at:
+      if (is_variable(op->args[0], sym)) {
+        std::vector<expr> args(permutation.size() + 1);
+        bool changed = args.size() != op->args.size();
+        for (int i = 0; i < static_cast<int>(permutation.size()); ++i) {
+          if (permutation[i] + 1 < static_cast<int>(op->args.size())) {
+            args[i + 1] = mutate(op->args[permutation[i] + 1]);
+          } else {
+            args[i + 1] = expr();
+          }
+          changed = changed || !args[i + 1].same_as(op->args[i + 1]);
+        }
+        if (changed) {
+          set_result(call::make(intrinsic::buffer_at, std::move(args)));
+        } else {
+          set_result(op);
+        }
+        return;
+      }
+      break;
+    default: break;
+    }
+    node_mutator::visit(op);
+  }
+};
+
+expr update_transposed_buffer_metadata(const expr& e, var buf, span<const int> permutation) {
+  scoped_trace trace("update_transposed_buffer_metadata");
+  return transpose_updater(buf, permutation).mutate(e);
+}
+
+dim_expr update_transposed_buffer_metadata(const dim_expr& x, var buf, span<const int> permutation) {
+  scoped_trace trace("update_transposed_buffer_metadata");
+  transpose_updater m(buf, permutation);
+  return {m.mutate(x.bounds), m.mutate(x.stride), m.mutate(x.fold_factor)};
+}
+
 // A substutitor implementation for target vars
 class var_substitutor : public substitutor {
 public:
@@ -803,12 +871,13 @@ public:
     }
   }
 
-  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
+  template <typename Fn>
+  stmt mutate_slice_or_transpose_body(var sym, var src, stmt body, Fn update) {
     // Remember the replacements from before the slice.
     expr old_replacement = replacement;
 
     // Update the replacements for slices.
-    replacement = update_sliced_buffer_metadata(replacement, sym, slices);
+    replacement = update(replacement);
 
     // Mutate the slice
     if (enter_decl(sym).defined()) {
@@ -819,6 +888,15 @@ public:
     replacement = old_replacement;
 
     return body;
+  }
+
+  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
+    return mutate_slice_or_transpose_body(
+        sym, src, body, [=, this](const expr& x) { return update_sliced_buffer_metadata(x, sym, slices); });
+  }
+  stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) override {
+    return mutate_slice_or_transpose_body(
+        sym, src, body, [=, this](const expr& x) { return update_transposed_buffer_metadata(x, sym, permutation); });
   }
 };
 
@@ -845,14 +923,15 @@ public:
   }
   using node_mutator::mutate;
 
-  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
+  template <typename Fn>
+  stmt mutate_slice_or_transpose_body(var sym, var src, stmt body, Fn update) {
     // Remember the replacements from before the slice.
     expr old_target = target;
     expr old_replacement = replacement;
 
     // Update the replacements for slices.
-    target = update_sliced_buffer_metadata(target, sym, slices);
-    replacement = update_sliced_buffer_metadata(replacement, sym, slices);
+    target = update(target);
+    replacement = update(replacement);
 
     // Mutate the slice
     if (sym == src || enter_decl(sym).defined()) {
@@ -864,6 +943,15 @@ public:
     replacement = old_replacement;
 
     return body;
+  }
+
+  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
+    return mutate_slice_or_transpose_body(
+        sym, src, body, [=, this](const expr& x) { return update_sliced_buffer_metadata(x, sym, slices); });
+  }
+  stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) override {
+    return mutate_slice_or_transpose_body(
+        sym, src, body, [=, this](const expr& x) { return update_transposed_buffer_metadata(x, sym, permutation); });
   }
 
   std::size_t get_target_buffer_rank(var x) override {
@@ -924,6 +1012,35 @@ public:
       }
     }
     dims = span<const dim_expr>(new_dims);
+
+    // Mutate the slice
+    if (sym == src || enter_decl(sym).defined()) {
+      body = mutate(body);
+    }
+
+    // Restore the old replacements.
+    elem_size = old_elem_size;
+    dims = old_dims;
+
+    return body;
+  }
+
+  stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) override {
+    // Remember the replacements from before the slice.
+    expr old_elem_size = elem_size;
+    span<const dim_expr> old_dims = dims;
+
+    // Update the replacements for slices.
+    elem_size = update_transposed_buffer_metadata(elem_size, sym, permutation);
+    std::vector<dim_expr> new_dims(permutation.size());
+    if (target == sym) {
+      for (std::size_t d = 0; d < permutation.size(); ++d) {
+        if (permutation[d] < static_cast<int>(dims.size())) {
+          new_dims[d] = update_transposed_buffer_metadata(dims[permutation[d]], sym, permutation);
+        }
+      }
+      dims = span<const dim_expr>(new_dims);
+    }
 
     // Mutate the slice
     if (sym == src || enter_decl(sym).defined()) {

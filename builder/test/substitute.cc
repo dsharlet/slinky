@@ -102,6 +102,25 @@ TEST(substitute, shadowed) {
     }
   }
 
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0)), buffer_min(x, 0), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0)), buffer_min(x, 1), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0)), buffer_min(x, 2), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(expr(1) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0)), buffer_min(x, 0), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0)), buffer_min(x, 1), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(expr(1) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0)), buffer_min(x, 2), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0)), buffer_min(x, 0), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(expr(1) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0)), buffer_min(x, 1), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0))));
+  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0)), buffer_min(x, 2), 1),
+      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0))));
+
   ASSERT_THAT(
       substitute(copy_stmt::make(x, {y, z}, w, {y, z}, {}), y, z), matches(copy_stmt::make(x, {y, z}, w, {y, z}, {})));
   ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {y}, {}), y, z), matches(copy_stmt::make(x, {y}, w, {y}, {})));
@@ -119,6 +138,42 @@ TEST(substitute, implicit_bounds) {
   ASSERT_THAT(substitute(buffer_at(x), buffer_min(x, 2), y), matches(buffer_at(x, expr(), expr(), expr(y))));
   ASSERT_THAT(substitute(buffer_at(x, expr(), expr(), y), y, buffer_min(x, 2)), matches(buffer_at(x)));
   ASSERT_THAT(substitute(buffer_at(x, y, buffer_min(z, 1)), z, x), matches(buffer_at(x, expr(y))));
+}
+
+TEST(substitute_buffer, basic) {
+  expr elem_size = 100;
+  std::vector<dim_expr> dims = {
+      {{0, 1}, 2, 3},
+      {{10, 11}, 12, 13},
+      {{20, 21}, 22, 23},
+  };
+  ASSERT_THAT(substitute_buffer(make_buffer::make(z, expr(), buffer_elem_size(x),
+                                    {buffer_dim(x, 2), buffer_dim(x, 1), buffer_dim(x, 0)}, stmt()),
+                  x, elem_size, dims),
+      matches(make_buffer::make(z, expr(), elem_size, {dims[2], dims[1], dims[0]}, stmt())));
+
+  ASSERT_THAT(substitute_buffer(
+                  slice_dim::make(x, x, 0, w,
+                      make_buffer::make(y, expr(), buffer_elem_size(x), {buffer_dim(x, 0), buffer_dim(x, 1)}, stmt())),
+                  x, elem_size, dims),
+      matches(slice_dim::make(x, x, 0, w, make_buffer::make(y, expr(), elem_size, {dims[1], dims[2]}, stmt()))));
+  ASSERT_THAT(substitute_buffer(
+                  slice_dim::make(x, x, 1, w,
+                      make_buffer::make(y, expr(), buffer_elem_size(x), {buffer_dim(x, 0), buffer_dim(x, 1)}, stmt())),
+                  x, elem_size, dims),
+      matches(slice_dim::make(x, x, 1, w, make_buffer::make(y, expr(), elem_size, {dims[0], dims[2]}, stmt()))));
+  ASSERT_THAT(substitute_buffer(
+                  slice_dim::make(x, x, 2, w,
+                      make_buffer::make(y, expr(), buffer_elem_size(x), {buffer_dim(x, 0), buffer_dim(x, 1)}, stmt())),
+                  x, elem_size, dims),
+      matches(slice_dim::make(x, x, 2, w, make_buffer::make(y, expr(), elem_size, {dims[0], dims[1]}, stmt()))));
+
+  ASSERT_THAT(substitute_buffer(transpose::make(x, x, {2, 1, 0},
+                                    make_buffer::make(y, expr(), buffer_elem_size(x),
+                                        {buffer_dim(x, 0), buffer_dim(x, 1), buffer_dim(x, 2)}, stmt())),
+                  x, elem_size, dims),
+      matches(transpose::make(
+          x, x, {2, 1, 0}, make_buffer::make(y, expr(), elem_size, {dims[2], dims[1], dims[0]}, stmt()))));
 }
 
 TEST(match, basic) {

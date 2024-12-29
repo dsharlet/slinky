@@ -40,9 +40,9 @@ public:
   virtual var visit_symbol(var x) { return x; }
 
   // Implementation of substitution for slice bodies.
-  virtual stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) {
-    return mutate(body);
-  }
+  virtual stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) { return mutate(body); }
+  // Implementation of substitution for slice bodies.
+  virtual stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) { return mutate(body); }
 
   // Implementation of substitution for buffer intrinsics.
   virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
@@ -52,7 +52,7 @@ public:
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }
-  
+
   virtual var enter_decl(var sym) { return sym; }
   virtual void exit_decls(int n = 1) {}
 
