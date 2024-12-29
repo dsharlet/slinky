@@ -70,30 +70,6 @@ TEST(substitute, shadowed) {
   ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(u, 3)),
       matches(slice_dim::make(x, u, 2, 0, check::make(buffer_max(u, 3) == buffer_min(x, 3)))));
 
-  ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 2)),
-      matches(slice_dim::make(x, x, 2, 0, check::make(expr() == buffer_min(x, 3)))));
-  ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1)),
-      matches(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3)))));
-
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0)), buffer_min(x, 0), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0)), buffer_min(x, 1), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 0) == 0)), buffer_min(x, 2), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(expr(1) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0)), buffer_min(x, 0), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0)), buffer_min(x, 1), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(expr(1) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0)), buffer_min(x, 2), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 1) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0)), buffer_min(x, 0), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(expr(1) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0)), buffer_min(x, 1), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0))));
-  ASSERT_THAT(substitute(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0)), buffer_min(x, 2), 1),
-      matches(transpose::make(x, x, {2, 1, 0}, check::make(buffer_min(x, 2) == 0))));
-
   ASSERT_THAT(
       substitute(copy_stmt::make(x, {y, z}, w, {y, z}, {}), y, z), matches(copy_stmt::make(x, {y, z}, w, {y, z}, {})));
   ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {y}, {}), y, z), matches(copy_stmt::make(x, {y}, w, {y}, {})));

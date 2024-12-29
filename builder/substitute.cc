@@ -479,7 +479,7 @@ void substitutor::visit(const slice_buffer* op) {
     }
   }
   var sym = enter_decl(op->sym);
-  stmt body = mutate_slice_body(op->sym, op->src, dims, op->body);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
   sym = sym.defined() ? sym : op->sym;
   if (!changed && sym == op->sym && src == op->src && body.same_as(op->body)) {
     set_result(op);
@@ -491,9 +491,8 @@ void substitutor::visit(const slice_buffer* op) {
 void substitutor::visit(const slice_dim* op) {
   var src = visit_symbol(op->src);
   expr at = mutate(op->at);
-  int slices[] = {op->dim};
   var sym = enter_decl(op->sym);
-  stmt body = mutate_slice_body(op->sym, op->src, slices, op->body);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
   sym = sym.defined() ? sym : op->sym;
   if (sym == op->sym && src == op->src && at.same_as(op->at) && body.same_as(op->body)) {
     set_result(op);
@@ -614,7 +613,7 @@ void substitutor::visit(const call* op) {
 void substitutor::visit(const transpose* op) {
   var src = visit_symbol(op->src);
   var sym = enter_decl(op->sym);
-  stmt body = mutate_transpose_body(op->sym, op->src, op->dims, op->body);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
   sym = sym.defined() ? sym : op->sym;
   if (sym != op->sym || src != op->src || !body.same_as(op->body)) {
     set_result(transpose::make(sym, src, op->dims, std::move(body)));
@@ -691,140 +690,6 @@ void substitutor::visit(const clone_buffer* op) {
 
 namespace {
 
-class slice_updater : public node_mutator {
-  var sym;
-  span<const int> slices;
-
-public:
-  slice_updater(var sym, span<const int> slices) : sym(sym), slices(slices) {}
-
-  void visit(const call* op) override {
-    switch (op->intrinsic) {
-    case intrinsic::buffer_min:
-    case intrinsic::buffer_max:
-    case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor:
-      if (is_variable(op->args[0], sym)) {
-        auto dim = as_constant(op->args[1]);
-        assert(dim);
-        index_t new_dim = *dim;
-        for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
-          if (slices[i] == new_dim) {
-            // This dimension is gone.
-            set_result(expr());
-            return;
-          } else if (slices[i] < new_dim) {
-            --new_dim;
-          }
-        }
-        if (new_dim != *dim) {
-          set_result(call::make(op->intrinsic, {op->args[0], new_dim}));
-        } else {
-          set_result(op);
-        }
-        return;
-      }
-      break;
-    case intrinsic::buffer_at:
-      if (is_variable(op->args[0], sym)) {
-        std::vector<expr> args = op->args;
-        for (int i = static_cast<int>(slices.size()) - 1; i >= 0; --i) {
-          if (slices[i] + 1 < static_cast<int>(args.size())) {
-            args.erase(args.begin() + slices[i] + 1);
-          }
-        }
-        bool changed = args.size() < op->args.size();
-        for (expr& i : args) {
-          expr new_i = mutate(i);
-          changed = changed || !new_i.same_as(i);
-          i = new_i;
-        }
-        if (changed) {
-          set_result(call::make(intrinsic::buffer_at, std::move(args)));
-        } else {
-          set_result(op);
-        }
-        return;
-      }
-      break;
-    default: break;
-    }
-    node_mutator::visit(op);
-  }
-  
-  // Silences a weird warning on clang. It seems like this should be in the base class (and it is).
-  using node_mutator::visit;
-};
-
-expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices) {
-  scoped_trace trace("update_sliced_buffer_metadata");
-  return slice_updater(buf, slices).mutate(e);
-}
-
-class transpose_updater : public node_mutator {
-  var sym;
-  span<const int> permutation;
-
-public:
-  transpose_updater(var sym, span<const int> permutation) : sym(sym), permutation(permutation) {}
-
-  void visit(const call* op) override {
-    switch (op->intrinsic) {
-    case intrinsic::buffer_min:
-    case intrinsic::buffer_max:
-    case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor:
-      if (is_variable(op->args[0], sym)) {
-        auto dim = as_constant(op->args[1]);
-        assert(dim);
-        index_t new_dim = -1;
-        for (int i = 0; i < static_cast<int>(permutation.size()); ++i) {
-          if (*dim == permutation[i]) {
-            new_dim = i;
-            break;
-          }
-        }
-        if (new_dim == -1) {
-          set_result(expr());
-        } else if (new_dim != *dim) {
-          set_result(call::make(op->intrinsic, {op->args[0], new_dim}));
-        } else {
-          set_result(op);
-        }
-        return;
-      }
-      break;
-    case intrinsic::buffer_at:
-      if (is_variable(op->args[0], sym)) {
-        std::vector<expr> args(permutation.size() + 1);
-        bool changed = args.size() != op->args.size();
-        for (int i = 0; i < static_cast<int>(permutation.size()); ++i) {
-          if (permutation[i] + 1 < static_cast<int>(op->args.size())) {
-            args[i + 1] = mutate(op->args[permutation[i] + 1]);
-          } else {
-            args[i + 1] = expr();
-          }
-          changed = changed || !args[i + 1].same_as(op->args[i + 1]);
-        }
-        if (changed) {
-          set_result(call::make(intrinsic::buffer_at, std::move(args)));
-        } else {
-          set_result(op);
-        }
-        return;
-      }
-      break;
-    default: break;
-    }
-    node_mutator::visit(op);
-  }
-};
-
-expr update_transposed_buffer_metadata(const expr& e, var buf, span<const int> permutation) {
-  scoped_trace trace("update_transposed_buffer_metadata");
-  return transpose_updater(buf, permutation).mutate(e);
-}
-
 // A substutitor implementation for target vars
 class var_substitutor : public substitutor {
 public:
@@ -858,34 +723,6 @@ public:
       return x;
     }
   }
-
-  template <typename Fn>
-  stmt mutate_slice_or_transpose_body(var sym, var src, stmt body, Fn update) {
-    // Remember the replacements from before the slice.
-    expr old_replacement = replacement;
-
-    // Update the replacements for slices.
-    replacement = update(replacement);
-
-    // Mutate the slice
-    if (enter_decl(sym).defined()) {
-      body = mutate(body);
-    }
-
-    // Restore the old replacements.
-    replacement = old_replacement;
-
-    return body;
-  }
-
-  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
-    return mutate_slice_or_transpose_body(
-        sym, src, body, [=, this](const expr& x) { return update_sliced_buffer_metadata(x, sym, slices); });
-  }
-  stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) override {
-    return mutate_slice_or_transpose_body(
-        sym, src, body, [=, this](const expr& x) { return update_transposed_buffer_metadata(x, sym, permutation); });
-  }
 };
 
 // A substitutor implementation for target exprs.
@@ -910,37 +747,6 @@ public:
     return node_mutator::mutate(op);
   }
   using node_mutator::mutate;
-
-  template <typename Fn>
-  stmt mutate_slice_or_transpose_body(var sym, var src, stmt body, Fn update) {
-    // Remember the replacements from before the slice.
-    expr old_target = target;
-    expr old_replacement = replacement;
-
-    // Update the replacements for slices.
-    target = update(target);
-    replacement = update(replacement);
-
-    // Mutate the slice
-    if (sym == src || enter_decl(sym).defined()) {
-      body = mutate(body);
-    }
-
-    // Restore the old replacements.
-    target = old_target;
-    replacement = old_replacement;
-
-    return body;
-  }
-
-  stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) override {
-    return mutate_slice_or_transpose_body(
-        sym, src, body, [=, this](const expr& x) { return update_sliced_buffer_metadata(x, sym, slices); });
-  }
-  stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) override {
-    return mutate_slice_or_transpose_body(
-        sym, src, body, [=, this](const expr& x) { return update_transposed_buffer_metadata(x, sym, permutation); });
-  }
 
   std::size_t get_target_buffer_rank(var x) override {
     if (const call* c = target.as<call>()) {
@@ -987,7 +793,7 @@ public:
 
   stmt mutate(const stmt& s) override {
     // We don't support substituting buffers into stmts.
-    std::abort(); 
+    std::abort();
   }
   using substitutor::mutate;
 
@@ -1016,22 +822,6 @@ public:
     return buf == target && dim < static_cast<index_t>(dims.size()) ? eval_buffer_intrinsic(fn, dims[dim]) : expr(op);
   }
 };
-
-template <typename T>
-T substitute_bounds_impl(const T& op, var buffer, int dim, const interval_expr& bounds) {
-  std::vector<dim_expr> dims(dim + 1);
-  dims[dim].bounds = bounds;
-  return buffer_substitutor(buffer, expr(), dims).mutate(op);
-}
-
-template <typename T>
-T substitute_bounds_impl(const T& op, var buffer, const box_expr& bounds) {
-  std::vector<dim_expr> dims(bounds.size());
-  for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-    dims[d].bounds = bounds[d];
-  }
-  return buffer_substitutor(buffer, expr(), dims).mutate(op);
-}
 
 }  // namespace
 
@@ -1070,10 +860,16 @@ expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const s
   return buffer_substitutor(buffer, elem_size, dims).mutate(e);
 }
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds) {
-  return substitute_bounds_impl(e, buffer, bounds);
+  std::vector<dim_expr> dims(bounds.size());
+  for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
+    dims[d].bounds = bounds[d];
+  }
+  return substitute_buffer(e, buffer, expr(), dims);
 }
 expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& bounds) {
-  return substitute_bounds_impl(e, buffer, dim, bounds);
+  std::vector<dim_expr> dims(dim + 1);
+  dims[dim].bounds = bounds;
+  return substitute_buffer(e, buffer, expr(), dims);
 }
 
 }  // namespace slinky

@@ -39,11 +39,6 @@ public:
   // Implementation of substitution for vars.
   virtual var visit_symbol(var x) { return x; }
 
-  // Implementation of substitution for slice bodies.
-  virtual stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) { return mutate(body); }
-  // Implementation of substitution for slice bodies.
-  virtual stmt mutate_transpose_body(var sym, var src, span<const int> permutation, stmt body) { return mutate(body); }
-
   // Implementation of substitution for buffer intrinsics.
   virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
     return expr(op);
