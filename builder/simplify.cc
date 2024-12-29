@@ -952,9 +952,11 @@ public:
     std::vector<interval_expr> args_bounds;
     args.reserve(op->args.size());
     args_bounds.reserve(op->args.size());
+    bool changed = false;
     for (const expr& i : op->args) {
       expr_info i_info;
       args.push_back(mutate(i, &i_info));
+      changed = changed || !args.back().same_as(i);
       args_bounds.push_back(std::move(i_info.bounds));
     }
 
@@ -970,25 +972,25 @@ public:
       if (info) {
         // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
         // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
-        if (op->intrinsic == intrinsic::buffer_elem_size) {
-          const expr& value = info->elem_size;
-          if (!info->decl.defined() || should_substitute(value) || value.as<call>()) {
-            set_result(value, {point(value), alignment_type()});
-          } else {
-            set_result(op, {point(value), alignment_type()});
+        auto visit_buffer_meta_value = [&, this](expr x) {
+          if ((!info->decl.defined() || should_substitute(x) || x.as<call>()) && !match(x, op)) {
+            // This is a value we should substitute, and it's different from what we started with.
+            mutate_and_set_result(x);
+            return true;
+          } else if (!changed) {
+            set_result(op, {point(x), alignment_type()});
+            return true;
           }
-          return;
+          return false;
+        };
+        if (op->intrinsic == intrinsic::buffer_elem_size) {
+          if (visit_buffer_meta_value(info->elem_size)) return;
         } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
           auto dim = as_constant(args[1]);
           assert(dim);
           if (*dim < static_cast<index_t>(info->dims.size())) {
             const expr& value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
-            if (!info->decl.defined() || should_substitute(value) || value.as<call>()) {
-              set_result(value, {point(value), alignment_type()});
-            } else {
-              set_result(op, {point(value), alignment_type()});
-            }
-            return;
+            if (visit_buffer_meta_value(value)) return;
           }
         } else if (op->intrinsic == intrinsic::buffer_at) {
           for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {

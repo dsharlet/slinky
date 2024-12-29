@@ -495,6 +495,15 @@ TEST(simplify, clone) {
   ASSERT_THAT(
       simplify(clone_buffer::make(y, x, crop_dim::make(z, y, 0, {0, 0}, call_stmt::make(nullptr, {w}, {z}, {})))),
       matches(crop_dim::make(z, x, 0, {0, 0}, call_stmt::make(nullptr, {w}, {z}, {}))));
+
+  ASSERT_THAT(simplify(crop_dim::make(x, u, 1, point(10),
+                  clone_buffer::make(y, x,
+                      make_buffer::make(z, buffer_at(w), buffer_elem_size(w), {buffer_dim(y, 0), buffer_dim(y, 1)},
+                          call_stmt::make(nullptr, {}, {x, z}, {}))))),
+      matches(crop_dim::make(x, u, 1, point(10),
+          make_buffer::make(z, buffer_at(w), buffer_elem_size(w),
+              {buffer_dim(u, 0), {buffer_bounds(x, 1), buffer_stride(u, 1), buffer_fold_factor(u, 1)}},
+              call_stmt::make(nullptr, {}, {x, z}, {})))));
 }
 
 TEST(simplify, allocate) {
