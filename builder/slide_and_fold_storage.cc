@@ -97,8 +97,7 @@ void substitute_bounds(interval_expr& bounds, const symbol_map<box_expr>& buffer
   scoped_trace trace("substitute_bounds");
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
-    if (bounds.min.defined()) bounds.min = substitute_bounds(bounds.min, var(i), *buffers[i]);
-    if (bounds.max.defined()) bounds.max = substitute_bounds(bounds.max, var(i), *buffers[i]);
+    bounds = substitute_buffer(bounds, var(i), make_dims_from_bounds(*buffers[i]));
   }
 }
 
@@ -106,21 +105,21 @@ void substitute_bounds(box_expr& bounds, const symbol_map<box_expr>& buffers) {
   scoped_trace trace("substitute_bounds");
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
+    auto dims = make_dims_from_bounds(*buffers[i]);
     for (interval_expr& j : bounds) {
-      if (j.min.defined()) j.min = substitute_bounds(j.min, var(i), *buffers[i]);
-      if (j.max.defined()) j.max = substitute_bounds(j.max, var(i), *buffers[i]);
+      j = substitute_buffer(j, var(i), dims);
     }
   }
 }
 
 void substitute_bounds(symbol_map<box_expr>& buffers, var buffer_id, const box_expr& bounds) {
   scoped_trace trace("substitute_bounds");
+  auto dims = make_dims_from_bounds(bounds);
   for (std::size_t i = 0; i < buffers.size(); ++i) {
     if (!buffers[i]) continue;
     slinky::box_expr& b = *buffers[i];
     for (interval_expr& j : b) {
-      if (j.min.defined()) j.min = substitute_bounds(j.min, buffer_id, bounds);
-      if (j.max.defined()) j.max = substitute_bounds(j.max, buffer_id, bounds);
+      j = substitute_buffer(j, buffer_id, dims);
     }
   }
 }

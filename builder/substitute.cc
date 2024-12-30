@@ -742,6 +742,7 @@ public:
     // We don't support substituting buffers into stmts.
     std::abort();
   }
+  dim_expr mutate(const dim_expr& e) { return {mutate(e.bounds), mutate(e.stride), mutate(e.fold_factor)}; }
   using substitutor::mutate;
 
   std::size_t get_target_buffer_rank(var x) override { return x == target ? dims.size() : 0; }
@@ -783,20 +784,31 @@ stmt substitute(const stmt& s, var target, const expr& replacement) {
   return var_substitutor(target, replacement).mutate(s);
 }
 
+expr substitute_buffer(const expr& e, var buffer, const std::vector<dim_expr>& dims) {
+  return substitute_buffer(e, buffer, expr(), dims);
+}
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
   return buffer_substitutor(buffer, elem_size, dims).mutate(e);
 }
-expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds) {
+interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::vector<dim_expr>& dims) {
+  return substitute_buffer(e, buffer, expr(), dims);
+}
+interval_expr substitute_buffer(
+    const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
+  return buffer_substitutor(buffer, elem_size, dims).mutate(e);
+}
+
+std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds) {
   std::vector<dim_expr> dims(bounds.size());
   for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
     dims[d].bounds = bounds[d];
   }
-  return substitute_buffer(e, buffer, expr(), dims);
+  return dims;
 }
-expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& bounds) {
+std::vector<dim_expr> make_dims_from_bounds(int dim, const interval_expr& bounds) {
   std::vector<dim_expr> dims(dim + 1);
   dims[dim].bounds = bounds;
-  return substitute_buffer(e, buffer, expr(), dims);
+  return dims;
 }
 
 namespace {
