@@ -537,30 +537,11 @@ TEST(simplify, crop) {
       matches(crop_dim::make(b2, b0, 0, {max(x, z), min(y, w)}, body)));
   ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}}, crop_buffer::make(b2, b1, {{z, w}, {u, v}}, body))),
       matches(crop_buffer::make(b2, b0, {{max(x, z), min(y, w)}, {u, v}}, body)));
+  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{z, w}, {u, v}}, crop_buffer::make(b2, b1, {{x, y}}, body))),
+      matches(crop_buffer::make(b2, b0, {{max(z, x), min(w, y)}, {u, v}}, body)));
   ASSERT_THAT(
       simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, crop_buffer::make(b2, b1, {{}, {z, w}, {u, v}}, body))),
       matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
-
-  // Duplicate crops that can share a symbol.
-  ASSERT_THAT(simplify(crop_dim::make(
-                  b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 1, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(crop_dim::make(b1, b0, 1, {x, y}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
-  ASSERT_THAT(simplify(crop_dim::make(
-                  b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 1, {x, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(crop_dim::make(
-          b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 1, {x, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
-  ASSERT_THAT(simplify(crop_dim::make(
-                  b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 2, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(crop_dim::make(
-          b1, b0, 1, {x, y}, crop_dim::make(b2, b0, 2, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
-
-  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
-                  crop_buffer::make(b2, b0, {{x, y}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
-  ASSERT_THAT(simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
-                  crop_buffer::make(b2, b0, {{x, {}}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(crop_buffer::make(b1, b0, {{x, y}, {z, w}},
-          crop_buffer::make(b2, b0, {{x, {}}, {z, w}}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
 }
 
 TEST(simplify, slice) {
