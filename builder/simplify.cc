@@ -1920,23 +1920,6 @@ public:
       at.pop_back();
     }
 
-    while (true) {
-      if (const slice_buffer* s = body.as<slice_buffer>()) {
-        if (s->src == op_src && match(s->at, at)) {
-          // Two slices producing the same buffer, we can just use one of them and discard the other.
-          body = substitute(s->body, s->sym, op_sym);
-          continue;
-        }
-      } else if (const slice_dim* s = body.as<slice_dim>()) {
-        if (s->src == op_src && match(s->dim, s->at, at)) {
-          // Two slices producing the same buffer, we can just use one of them and discard the other.
-          body = substitute(s->body, s->sym, op_sym);
-          continue;
-        }
-      }
-      break;
-    }
-
     changed = changed || at.size() != op_at.size() || !body.same_as(op_body);
 
     // If this was a slice_buffer, and we only have one dimension, we're going to change it to a slice_dim.
@@ -2020,7 +2003,6 @@ public:
         }
       }
     }
-    sym_info.decl = stmt(op);
 
     stmt body = mutate_with_buffer(op, op->body, op->sym, src, std::move(sym_info));
 

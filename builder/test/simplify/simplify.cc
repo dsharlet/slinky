@@ -544,31 +544,6 @@ TEST(simplify, crop) {
       matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
 }
 
-TEST(simplify, slice) {
-  stmt body = call_stmt::make(nullptr, {}, {b2}, {});
-
-  // Duplicate slices that can share a symbol.
-  ASSERT_THAT(simplify(slice_dim::make(
-                  b1, b0, 1, x, slice_dim::make(b2, b0, 1, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(slice_dim::make(b1, b0, 1, x, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
-  ASSERT_THAT(simplify(slice_dim::make(
-                  b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(
-          slice_dim::make(b1, b0, 1, x, slice_dim::make(b2, b0, 1, y, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
-  ASSERT_THAT(simplify(slice_dim::make(
-                  b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(
-          slice_dim::make(b1, b0, 1, x, slice_dim::make(b2, b0, 2, x, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
-
-  ASSERT_THAT(simplify(slice_buffer::make(
-                  b1, b0, {x, y}, slice_buffer::make(b2, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(slice_buffer::make(b1, b0, {x, y}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
-  ASSERT_THAT(simplify(slice_buffer::make(b1, b0, {x, y, z},
-                  slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
-      matches(slice_buffer::make(
-          b1, b0, {x, y, z}, slice_buffer::make(b2, b0, {x, {}, z}, call_stmt::make(nullptr, {}, {b1, b2}, {})))));
-}
-
 TEST(simplify, make_buffer) {
   stmt body = call_stmt::make(nullptr, {}, {b1}, {});
   auto make_slice = [body](var sym, var src, std::vector<expr> at, std::vector<dim_expr> dims) {
