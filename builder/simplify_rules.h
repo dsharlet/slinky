@@ -44,6 +44,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, min(x, y)), min(x, y)) ||
       apply(min(x, min(y, min(x, z))), min(x, min(y, z))) ||
       apply(min(x, min(y, min(z, min(x, w)))), min(x, min(y, min(z, w)))) ||
+      apply(min(x, min(y, min(z, min(w, min(x, u))))), min(x, min(y, min(z, min(w, u))))) ||
+      apply(min(x, min(y, min(z, min(w, min(u, min(x, v)))))), min(x, min(y, min(z, min(w, min(u, v)))))) ||
 
       // Similar rules but with mixes of min and max.
       apply(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
@@ -194,6 +196,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, max(x, y)), max(x, y)) ||
       apply(max(x, max(y, max(x, z))), max(x, max(y, z))) ||
       apply(max(x, max(y, max(z, max(x, w)))), max(x, max(y, max(z, w)))) ||
+      apply(max(x, max(y, max(z, max(w, max(x, u))))), max(x, max(y, max(z, max(w, u))))) ||
+      apply(max(x, max(y, max(z, max(w, max(u, max(x, v)))))), max(x, max(y, max(z, max(w, max(u, v)))))) ||
     
       // Similar rules but with mixes of min and max.
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
