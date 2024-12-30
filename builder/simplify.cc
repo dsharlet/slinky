@@ -1760,9 +1760,9 @@ public:
     if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
     if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
 
-    // We already proved above that this min/max is necessary (otherwise result would be undefined here).
-    if (result.min.defined()) buffer.min = max(buffer.min, result.min);
-    if (result.max.defined()) buffer.max = min(buffer.max, result.max);
+    // TODO: I think it might be possible to avoid generating these min/max + mutate in some cases.
+    if (result.min.defined()) buffer.min = mutate(max(buffer.min, result.min));
+    if (result.max.defined()) buffer.max = mutate(min(buffer.max, result.max));
 
     // We might have written a select into an interval that tries to preserve the empty-ness of the interval.
     // But this might be unnecessary. Try to remove unnecessary selects here.
