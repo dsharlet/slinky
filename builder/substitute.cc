@@ -183,7 +183,7 @@ public:
     if (!try_match(c->args, op->args)) return;
   }
 
-  void visit(const let_stmt* op) override { visit_let(static_cast<const let_stmt*>(self)); }
+  void visit(const let_stmt* op) override { visit_let(static_cast<const let_stmt*>(op)); }
 
   void visit(const block* op) override {
     const block* bs = static_cast<const block*>(self);
