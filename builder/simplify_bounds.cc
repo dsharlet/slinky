@@ -160,6 +160,23 @@ interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
     return result;
   }
 }
+
+namespace {
+
+// Some `bounds_of` implementations can produce exponential amounts of expr nodes. To avoid problems with this,
+// we can "give up" on producing tight bounds if the expressions aren't simple.
+// Currently, we only use this for `mul` ops, because it is less likely to encounter large sequences of other ops that
+// produce exponential bounds, and it is also unlikely we'll be able to prove useful things about the bounds of mul ops,
+// but this is a pretty lame heuristic.
+interval_expr simple_or_unbounded(expr min, expr max) {
+  auto is_simple = [](const expr& x) { return x.as<variable>() || x.as<constant>(); };
+  if (!is_simple(min)) min = slinky::negative_infinity();
+  if (!is_simple(max)) max = slinky::positive_infinity();
+  return {min, max};
+}
+
+}  // namespace
+
 interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
   if (a.is_point(op) && b.is_point(op)) {
@@ -182,10 +199,8 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
           simplify(op, a.min, b.min),
           simplify(op, a.max, b.min),
       };
-      return {
-          simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
-          simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]),
-      };
+      return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
+          simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]));
     }
   } else if (a.is_point()) {
     if (is_non_negative(a.min)) {
@@ -197,10 +212,8 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
           simplify(op, a.min, b.min),
           simplify(op, a.min, b.max),
       };
-      return {
-          simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
-          simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]),
-      };
+      return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
+          simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]));
     }
   } else {
     // We don't know anything. The results is the union of all 4 possible intervals.
@@ -210,14 +223,12 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
         simplify(op, a.max, b.min),
         simplify(op, a.max, b.max),
     };
-    return {
-        simplify(static_cast<const class min*>(nullptr),
-            simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
-            simplify(static_cast<const class min*>(nullptr), corners[2], corners[3])),
+    return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr),
+                                   simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
+                                   simplify(static_cast<const class min*>(nullptr), corners[2], corners[3])),
         simplify(static_cast<const class max*>(nullptr),
             simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]),
-            simplify(static_cast<const class max*>(nullptr), corners[2], corners[3])),
-    };
+            simplify(static_cast<const class max*>(nullptr), corners[2], corners[3])));
   }
 }
 
