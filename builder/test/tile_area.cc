@@ -37,12 +37,18 @@ TEST(tile_area, pipeline) {
   func add = func::make(std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   // Split the loops such that we limit the number of elements produced to a total number across both dimensions.
-  const int split_area = 20;
-  expr split_x = min(out->dim(0).extent(), split_area);
-  expr split_y = max(1, split_area / split_x);
+  var split_x(ctx, "split_x");
+  var split_y(ctx, "split_y");
   add.loops({{x, split_x}, {y, split_y}});
 
-  pipeline p = build_pipeline(ctx, {in}, {out});
+  // Make the split area a parameter to the pipeline, and use the `lets` feature to define these splits as global
+  // variables.
+  var split_area(ctx, "split_area");
+  std::vector<std::pair<var, expr>> lets = {
+      {split_x, min(out->dim(0).extent(), split_area)},
+      {split_y, max(1, split_area / split_x)},
+  };
+  pipeline p = build_pipeline(ctx, {split_area}, {in}, {out}, std::move(lets));
 
   // Run the pipeline
   const int W = 10;
@@ -60,18 +66,21 @@ TEST(tile_area, pipeline) {
   out_buf.allocate();
 
   // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+  for (int split_area : {1, 5, 10, 20, W * H, W * H * 2}) {
+    const index_t args[] = {split_area};
+    const raw_buffer* inputs[] = {&in_buf};
+    const raw_buffer* outputs[] = {&out_buf};
+    test_context eval_ctx;
+    p.evaluate(args, inputs, outputs, eval_ctx);
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
+      }
     }
-  }
 
-  ASSERT_LE(max_elem_count_seen, split_area);
+    ASSERT_LE(max_elem_count_seen, split_area);
+  }
 }
 
 }  // namespace slinky

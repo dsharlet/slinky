@@ -149,18 +149,18 @@ public:
     if (bep->constant()) {
       auto c = bep->constant();
       std::string const_name = name + "_const";
-      (void)print_assignment_explicit(
-          const_name, "std::make_shared<buffer<void, ", c->rank, ">>(/*rank=*/", c->rank, ", /*elem_size=*/", elem_size, ")");
+      (void)print_assignment_explicit(const_name, "std::make_shared<buffer<void, ", c->rank, ">>(/*rank=*/", c->rank,
+          ", /*elem_size=*/", elem_size, ")");
       for (std::size_t d = 0; d < c->rank; d++) {
-          os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << c->dim(d).min() << ", " << c->dim(d).max() << ");\n";
-          os_ << "  " << const_name << "->dim(" << d << ").set_stride(" << c->dim(d).stride() << ");\n";
-          os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(" << c->dim(d).fold_factor() << ");\n";
+        os_ << "  " << const_name << "->dim(" << d << ").set_bounds(" << c->dim(d).min() << ", " << c->dim(d).max()
+            << ");\n";
+        os_ << "  " << const_name << "->dim(" << d << ").set_stride(" << c->dim(d).stride() << ");\n";
+        os_ << "  " << const_name << "->dim(" << d << ").set_fold_factor(" << c->dim(d).fold_factor() << ");\n";
       }
       os_ << "  " << const_name << "->allocate();\n";
       os_ << "  std::uint8_t " << const_name << "_fill[" << elem_size << "] = { 0 };\n";
       os_ << "  fill(*" << const_name << ", " << const_name << "_fill);\n";
-      (void)print_assignment_explicit(
-          name, "buffer_expr::make(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
+      (void)print_assignment_explicit(name, "buffer_expr::make(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
     } else {
       (void)print_assignment_explicit(
           name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");
@@ -374,8 +374,19 @@ public:
     return print_vector(values);
   }
 
+  std::string print(const std::vector<std::pair<var, expr>>& lets) {
+    std::vector<std::string> items;
+    for (const auto& l : lets) {
+      std::string name = print(l.first);
+      std::string value = print_expr_maybe_inlined(l.second);
+      items.push_back("{" + name + ", " + value + "}");
+    }
+    return print_vector(items);
+  }
+
   std::string print(const std::vector<var>& args, const std::vector<buffer_expr_ptr>& inputs,
-      const std::vector<buffer_expr_ptr>& outputs, const build_options& options, const std::string& fname) {
+      const std::vector<buffer_expr_ptr>& outputs, const std::vector<std::pair<var, expr>>& lets,
+      const build_options& options, const std::string& fname) {
     if (!fname.empty()) {
       os_ << "  // clang-format off\n";
       os_ << "// BEGIN define_replica_pipeline() output\n";
@@ -387,8 +398,9 @@ public:
     std::string a = print(args);
     std::string i = print(inputs);
     std::string o = print(outputs);
+    std::string l = print(lets);
     std::string bo = print(options);
-    print_assignment_explicit("p", "build_pipeline(ctx, ", a, ", ", i, ", ", o, ", ", bo, ")");
+    print_assignment_explicit("p", "build_pipeline(ctx, ", a, ", ", i, ", ", o, ", ", l, ", ", bo, ")");
     os_ << "  return p;\n";
     if (!fname.empty()) {
       os_ << "};\n";
@@ -623,14 +635,14 @@ index_t replica_pipeline_handler(span<const buffer<const void>*> inputs, span<co
 
 std::string define_replica_pipeline(node_context& ctx, const std::vector<var>& args,
     const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-    const build_options& options, const std::string& fname) {
+    std::vector<std::pair<var, expr>> lets, const build_options& options, const std::string& fname) {
   pipeline_replicator r(ctx);
-  return r.print(args, inputs, outputs, options, fname);
+  return r.print(args, inputs, outputs, lets, options, fname);
 }
 
 std::string define_replica_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options, const std::string& fname) {
-  return define_replica_pipeline(ctx, {}, inputs, outputs, options, fname);
+  return define_replica_pipeline(ctx, {}, inputs, outputs, {}, options, fname);
 }
 
 }  // namespace slinky

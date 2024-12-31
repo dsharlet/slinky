@@ -11,7 +11,8 @@ namespace slinky {
 // the same structure instead of the pipeline itself.
 std::string define_replica_pipeline(node_context& ctx, const std::vector<var>& args,
     const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs,
-    const build_options& options = build_options(), const std::string& fname = "p");
+    std::vector<std::pair<var, expr>> lets, const build_options& options = build_options(),
+    const std::string& fname = "p");
 std::string define_replica_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options = build_options(),
     const std::string& fname = "p");

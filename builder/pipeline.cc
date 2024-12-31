@@ -950,7 +950,8 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants,
+    std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
@@ -958,6 +959,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  result = let_stmt::make(std::move(lets), result);
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
@@ -1036,9 +1038,9 @@ std::vector<std::pair<var, const_raw_buffer_ptr>> constant_map(const std::set<bu
 }  // namespace
 
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   std::set<buffer_expr_ptr> constants;
-  stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
+  stmt body = build_pipeline(ctx, inputs, outputs, constants, lets, options);
   pipeline p;
   p.args = args;
   p.inputs = vars(inputs);
@@ -1050,7 +1052,7 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
 
 pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
-  return build_pipeline(ctx, {}, inputs, outputs, options);
+  return build_pipeline(ctx, {}, inputs, outputs, {}, options);
 }
 
 }  // namespace slinky
