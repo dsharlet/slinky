@@ -44,6 +44,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, min(x, y)), min(x, y)) ||
       apply(min(x, min(y, min(x, z))), min(x, min(y, z))) ||
       apply(min(x, min(y, min(z, min(x, w)))), min(x, min(y, min(z, w)))) ||
+      apply(min(x, min(y, min(z, min(w, min(x, u))))), min(x, min(y, min(z, min(w, u))))) ||
+      apply(min(x, min(y, min(z, min(w, min(u, min(x, v)))))), min(x, min(y, min(z, min(w, min(u, v)))))) ||
 
       // Similar rules but with mixes of min and max.
       apply(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
@@ -194,6 +196,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, max(x, y)), max(x, y)) ||
       apply(max(x, max(y, max(x, z))), max(x, max(y, z))) ||
       apply(max(x, max(y, max(z, max(x, w)))), max(x, max(y, max(z, w)))) ||
+      apply(max(x, max(y, max(z, max(w, max(x, u))))), max(x, max(y, max(z, max(w, u))))) ||
+      apply(max(x, max(y, max(z, max(w, max(u, max(x, v)))))), max(x, max(y, max(z, max(w, max(u, v)))))) ||
     
       // Similar rules but with mixes of min and max.
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
@@ -464,6 +468,7 @@ bool apply_mul_rules(Fn&& apply) {
       apply((x*c0)*c1, x*eval(c0*c1)) ||
       apply((x + c0)*c1, x*c1 + eval(c0*c1)) ||
       apply((c0 - x)*c1, x*eval(-c1) + eval(c0*c1)) ||
+      apply(y*(x*c0), (x*y)*c0) ||
     
       apply(select(x, c0, c1)*c2, select(x, eval(c0*c2), eval(c1*c2))) ||
       apply(select(x, y, c1)*c2, select(x, y*c2, eval(c1*c2))) ||
@@ -491,6 +496,7 @@ bool apply_div_rules(Fn&& apply) {
       apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), eval(c0 > 0 && c1 > 0)) ||
       apply((x/c0)/c1, x/eval(c0*c1), eval(c0 > 0 && c1 > 0)) ||
       apply((x*c0)/c1, x*eval(c0/c1), eval(c1 > 0 && c0%c1 == 0)) ||
+      apply((x*y)/x, y*(x != 0)) ||
 
       apply((x + y*c0)/c1, y*eval(c0/c1) + x/c1, eval(c0%c1 == 0)) ||
       apply((x + c0)/c1, x/c1 + eval(c0/c1), eval(c0%c1 == 0)) ||
@@ -949,6 +955,8 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, y + z, y + w), y + select(x, z, w)) ||
       apply(select(x, z - y, w - y), select(x, z, w) - y) ||
       apply(select(x, w - y, w - z), w - select(x, y, z)) ||
+      apply(select(x, max(y, w), max(z, w)), max(w, select(x, y, z))) ||
+      apply(select(x, min(y, w), min(z, w)), min(w, select(x, y, z))) ||
 
       apply(select(x, select(y, z, w), select(y, u, w + c0) + c1), select(y, select(x, z, u + c1), w), eval(c0 + c1 == 0)) ||
       apply(select(x, select(y, z, w), select(y, z + c0, u) + c1), select(y, z, select(x, w, u + c1)), eval(c0 + c1 == 0)) ||

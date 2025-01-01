@@ -66,6 +66,15 @@ TEST(match, basic) {
   ASSERT_FALSE(match(x, x * 2));
   ASSERT_FALSE(match(x + y, x - y));
   ASSERT_TRUE(match(x + y, x + y));
+
+  ASSERT_TRUE(match(let::make(x, y * z, x), let::make(x, y * z, x)));
+  ASSERT_FALSE(match(let::make(x, y * z, x), let::make(x, y, x)));
+  ASSERT_FALSE(match(let::make(x, y * z, x), let::make({{x, y * z}, {w, y * z}}, x)));
+
+  ASSERT_TRUE(match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make(x, y * z, check::make(x))));
+  ASSERT_FALSE(match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make(x, y, check::make(x))));
+  ASSERT_FALSE(
+      match(let_stmt::make(x, y * z, check::make(x)), let_stmt::make({{x, y * z}, {w, y * z}}, check::make(x))));
 }
 
 }  // namespace slinky

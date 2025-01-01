@@ -287,15 +287,12 @@ class buffer_aliaser : public stmt_mutator {
     const bool target_has_stride = any_stride_defined(target_info.dims);
     const bool alloc_has_stride = any_stride_defined(alloc_info.dims);
 
-    auto substitute_alias = [&](const expr& e) { return substitute_buffer(e, target, expr(), target_info.dims); };
-
     // Figure out what the actual alias dimension will be by substituting the target into it.
     std::vector<dim_expr> alias_dims = alias.dims;
     for (dim_expr& i : alias_dims) {
-      i.bounds.min = substitute_alias(i.bounds.min);
-      i.bounds.max = substitute_alias(i.bounds.max);
-      i.stride = substitute_alias(i.stride);
-      i.fold_factor = substitute_alias(i.fold_factor);
+      i.bounds = substitute_buffer(i.bounds, target, target_info.dims);
+      i.stride = substitute_buffer(i.stride, target, target_info.dims);
+      i.fold_factor = substitute_buffer(i.fold_factor, target, target_info.dims);
     }
 
     if (!alias.assume_in_bounds) {
@@ -384,7 +381,12 @@ public:
       if (i) i->do_not_alias(op->sym);
     }
 
-    box_expr op_dims_bounds = dims_bounds(info.dims);
+    // Make a set of dims for substituting the bounds (but not the stride or fold factor) of this symbol.
+    std::vector<dim_expr> op_dims_bounds = info.dims;
+    for (dim_expr& i : op_dims_bounds) {
+      i.stride = expr();
+      i.fold_factor = expr();
+    }
     for (alias_info& alias : info.aliases) {
       if (alias.disabled) {
         continue;
@@ -400,11 +402,10 @@ public:
 
       // The alias might have used the bounds of this symbol, substitute them now.
       for (dim_expr& i : alias.dims) {
-        i.bounds.min = substitute_bounds(i.bounds.min, op->sym, op_dims_bounds);
-        i.bounds.max = substitute_bounds(i.bounds.max, op->sym, op_dims_bounds);
+        i.bounds = substitute_buffer(i.bounds, op->sym, op_dims_bounds);
       }
       for (expr& i : alias.at) {
-        i = substitute_bounds(i, op->sym, op_dims_bounds);
+        i = substitute_buffer(i, op->sym, op_dims_bounds);
       }
 
       var alloc_var = target_var;

@@ -375,8 +375,12 @@ box_expr operator|(box_expr a, const box_expr& b) {
 }
 
 box_expr operator&(box_expr a, const box_expr& b) {
+  a.resize(std::max(a.size(), b.size()));
   for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
     a[i] &= b[i];
+  }
+  for (std::size_t i = b.size(); i < a.size(); ++i) {
+    a[i] = b[i];
   }
   return a;
 }
