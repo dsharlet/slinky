@@ -343,6 +343,20 @@ public:
   struct expr_info {
     interval_expr bounds;
     alignment_type alignment;
+    expr replacement;
+
+    static expr_info substitution(expr replacement) {
+      expr_info result;
+      result.replacement = replacement;
+      return result;
+    }
+
+    var replacement_sym() const {
+      if (!replacement.defined()) return var();
+      auto result = as_variable(replacement);
+      assert(result);
+      return *result;
+    }
 
     void trim_bounds_using_alignment() {
       if (alignment.modulus == 0) {
@@ -386,7 +400,7 @@ public:
 
 private:
   symbol_map<buffer_info> buffers;
-  symbol_map<expr_info> info_map;
+  symbol_map<expr_info> vars;
 
   expr_info result_info;
 
@@ -408,16 +422,16 @@ public:
     for (size_t ix = 0; ix < bounds.size(); ix++) {
       var id = var(ix);
       if (!bounds[id]) continue;
-      info_map[id] = {*bounds[id], alignment_type()};
+      vars[id] = {*bounds[id], alignment_type()};
     }
 
     for (size_t ix = 0; ix < alignment.size(); ix++) {
       var id = var(ix);
       if (!alignment[id]) continue;
-      if (info_map[id]) {
-        info_map[id]->alignment = *alignment[id];
+      if (vars[id]) {
+        vars[id]->alignment = *alignment[id];
       } else {
-        info_map[id] = {interval_expr(), *alignment[id]};
+        vars[id] = {interval_expr(), *alignment[id]};
       }
     }
   }
@@ -484,12 +498,12 @@ public:
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
     std::vector<scoped_value_in_symbol_map<expr_info>> k;
 
-    symbol_map<expr_info>& info_map;
+    symbol_map<expr_info>& vars;
 
-    alignment_type get_alignment(const var& v) { return info_map[v] ? info_map[v]->alignment : alignment_type(); }
+    alignment_type get_alignment(const var& v) { return vars[v] ? vars[v]->alignment : alignment_type(); }
 
   public:
-    knowledge(symbol_map<expr_info>& info_map) : info_map(info_map) {}
+    knowledge(symbol_map<expr_info>& vars) : vars(vars) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() {
@@ -502,40 +516,40 @@ public:
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(b), get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {point(b), get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(info_map, v->sym, {point(a), get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {point(a), get_alignment(v->sym)}));
       }
     }
 
     void learn_from_less(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b - 1
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b - 1}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{lb, b - 1}, get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a + 1
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a + 1, ub}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{a + 1, ub}, get_alignment(v->sym)}));
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         // a has an upper bound of b
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{lb, b}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{lb, b}, get_alignment(v->sym)}));
       }
       if (const variable* v = b.as<variable>()) {
         // b has a lower bound of a
-        const std::optional<expr_info>& old_info = info_map[v->sym];
+        const std::optional<expr_info>& old_info = vars[v->sym];
         const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(info_map, v->sym, {{a, ub}, get_alignment(v->sym)}));
+        k.push_back(set_value_in_scope(vars, v->sym, {{a, ub}, get_alignment(v->sym)}));
       }
     }
 
@@ -570,12 +584,12 @@ public:
   };
 
   knowledge learn_from_true(const expr& c) {
-    knowledge result(info_map);
+    knowledge result(vars);
     result.learn_from_true(c);
     return result;
   }
   knowledge learn_from_false(const expr& c) {
-    knowledge result(info_map);
+    knowledge result(vars);
     result.learn_from_false(c);
     return result;
   }
@@ -633,14 +647,28 @@ public:
   }
 
   void visit(const variable* op) override {
-    std::optional<expr_info> info = info_map[op->sym];
-    if (info) {
-      if (!info->bounds.min.defined()) info->bounds.min = expr(op);
-      if (!info->bounds.max.defined()) info->bounds.max = expr(op);
-      set_result(op, std::move(*info));
+    if (vars.contains(op->sym)) {
+      expr_info info = *vars[op->sym];
+      if (info.replacement.defined()) {
+        set_result(info.replacement, {std::move(info.bounds), std::move(info.alignment)});
+      } else {
+        if (!info.bounds.min.defined()) info.bounds.min = expr(op);
+        if (!info.bounds.max.defined()) info.bounds.max = expr(op);
+        set_result(op, std::move(info));
+      }
     } else {
       set_result(op, {point(expr(op)), alignment_type()});
     }
+  }
+
+  var visit_symbol(var x) {
+    if (vars.contains(x)) {
+      const expr_info& info = *vars[x];
+      if (info.replacement.defined()) {
+        return info.replacement_sym();
+      }
+    }
+    return x;
   }
 
   void visit(const constant* op) override { set_result(op, {point(expr(op)), {0, op->value}}); }
@@ -936,7 +964,7 @@ public:
         set_result(expr(), expr_info());
         return;
       }
-      auto buf = as_variable(op->args[0]);
+      auto buf = as_variable(args[0]);
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
@@ -944,18 +972,18 @@ public:
         // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
         if (op->intrinsic == intrinsic::buffer_elem_size) {
           const expr& value = info->elem_size;
-          if (should_substitute(value) || value.as<call>()) {
+          if (!info->decl.defined() || should_substitute(value) || value.as<call>()) {
             set_result(value, {point(value), alignment_type()});
           } else {
             set_result(op, {point(value), alignment_type()});
           }
           return;
         } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
-          auto dim = as_constant(op->args[1]);
+          auto dim = as_constant(args[1]);
           assert(dim);
           if (*dim < static_cast<index_t>(info->dims.size())) {
             const expr& value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
-            if (should_substitute(value) || value.as<call>()) {
+            if (!info->decl.defined() || should_substitute(value) || value.as<call>()) {
               set_result(value, {point(value), alignment_type()});
             } else {
               set_result(op, {point(value), alignment_type()});
@@ -1006,19 +1034,24 @@ public:
     bool values_changed = false;
     for (const auto& s : op->lets) {
       expr_info value_info;
-      lets.emplace_back(s.first, mutate(s.second, &value_info));
-      values_changed = values_changed || !lets.back().second.same_as(s.second);
+      expr value = mutate(s.second, &value_info);
+      if (should_substitute(value)) {
+        value_info = expr_info::substitution(std::move(value));
+        values_changed = true;
+      } else {
+        lets.emplace_back(s.first, std::move(value));
+        values_changed = values_changed || !lets.back().second.same_as(s.second);
+      }
 
-      assert(!info_map.contains(s.first));
-      scoped_values.push_back(set_value_in_scope(info_map, s.first, std::move(value_info)));
+      assert(!vars.contains(s.first));
+      scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
     }
 
     expr_info body_info;
     auto body = mutate(op->body, &body_info);
 
-    bool substituted = false;
+    scoped_values.clear();
     for (auto it = lets.rbegin(); it != lets.rend();) {
-      scoped_values.pop_back();
       auto deps = depends_on(body, it->first);
       // Find any deps on this variable in the inner let values.
       for (auto inner = lets.rbegin(); inner != it; ++inner) {
@@ -1029,20 +1062,9 @@ public:
         // Prune dead lets
         it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
         values_changed = true;
-      } else if (should_substitute(it->second)) {
-        body = substitute(body, it->first, it->second);
-        for (auto inner = lets.rbegin(); inner != it; ++inner) {
-          inner->second = substitute(inner->second, it->first, it->second);
-        }
-        it = std::make_reverse_iterator(lets.erase(std::next(it).base()));
-        values_changed = true;
-        substituted = true;
       } else {
         ++it;
       }
-    }
-    if (substituted) {
-      body = mutate(body, &body_info);
     }
 
     if (lets.empty()) {
@@ -1064,8 +1086,10 @@ public:
       buffer->src = src;
     }
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
+    assert(!vars.contains(buf));
     return mutate(body);
   }
+  // if `decl` is nullptr, the buffer will be substituted.
   stmt mutate_with_buffer(const base_stmt_node* decl, stmt body, var buf, std::optional<buffer_info> buffer) {
     if (buffer) buffer->decl = stmt(decl);
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
@@ -1073,8 +1097,8 @@ public:
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
-    assert(!info_map.contains(v));
-    auto set_bounds = set_value_in_scope(info_map, v, {std::move(bounds), alignment_type()});
+    assert(!vars.contains(v));
+    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment_type()});
     return mutate(body);
   }
 
@@ -1158,7 +1182,8 @@ public:
     } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs at most once. It's safe to run the body even if the loop is empty, because we assume we can
       // move loops freely in and out of calls, even if the buffers are empty.
-      set_result(mutate(substitute(op->body, op->sym, bounds.min)));
+      auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(bounds.min));
+      set_result(mutate(op->body));
       return;
     }
 
@@ -1261,7 +1286,7 @@ public:
           // clamps that make this proof hard only exist in one direction.
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
-          auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
+          auto set_bounds_of_sym = set_value_in_scope(vars, op->sym, {bounds, alignment_type()});
           // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
           if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
                          (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
@@ -1301,6 +1326,55 @@ public:
       set_result(op);
     } else {
       set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+    }
+  }
+
+  void visit(const call_stmt* op) override {
+    call_stmt::symbol_list inputs = op->inputs;
+    call_stmt::symbol_list outputs = op->outputs;
+    bool changed = false;
+    for (var& i : inputs) {
+      var new_i = visit_symbol(i);
+      if (new_i != i) {
+        i = new_i;
+        changed = true;
+      }
+    }
+    for (var& i : outputs) {
+      var new_i = visit_symbol(i);
+      if (new_i != i) {
+        i = new_i;
+        changed = true;
+      }
+    }
+    if (changed) {
+      set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit(const copy_stmt* op) override {
+    var src = visit_symbol(op->src);
+    var dst = visit_symbol(op->dst);
+
+    std::vector<scoped_value_in_symbol_map<expr_info>> decls;
+    for (var i : op->dst_x) {
+      decls.push_back(set_value_in_scope(vars, i, expr_info()));
+    }
+
+    std::vector<expr> src_x;
+    src_x.reserve(op->src_x.size());
+    bool changed = false;
+    for (const expr& i : op->src_x) {
+      src_x.push_back(mutate(i));
+      changed = changed || !src_x.back().same_as(i);
+    }
+
+    if (changed || src != op->src || dst != op->dst) {
+      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->padding));
+    } else {
+      set_result(op);
     }
   }
 
@@ -1361,7 +1435,7 @@ public:
       return;
     } else if (!deps.buffer_data()) {
       // We only needed the buffer meta, not the allocation itself.
-      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, std::move(info)));
       return;
     }
 
@@ -1457,7 +1531,7 @@ public:
     // check below could be unnecessary.
     if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
       return;
     }
 
@@ -1471,6 +1545,15 @@ public:
         // Before trying to do anything, try to normalize the dimensions to be in terms of src_buf metadata.
         canonicalize_buffer(info, *src_info, *src_buf);
       }
+
+      auto make_truncate = [&](var src, std::size_t rank, stmt body) {
+        if (src_info && src_info->all_dims_known && src_info->dims.size() == rank) {
+          // We know all the dims, and the rank is already what we want to truncate to.
+          return body;
+        }
+        // In this special case, we allow shadowing.
+        return transpose::make_truncate(src, src, rank, std::move(body));
+      };
 
       if (match(info.elem_size, buffer_elem_size(*src_buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
@@ -1493,11 +1576,10 @@ public:
           }
         }
         if (is_slice && slice_rank == info.dims.size()) {
-          std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), op->body);
           // make_buffer drops trailing dims, do the same here.
-          result = transpose::make_truncate(op->sym, *src_buf, info.dims.size() + at_rank, std::move(result));
-          set_result(mutate(result));
+          stmt body = make_truncate(op->sym, info.dims.size(), op->body);
+          std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
+          set_result(mutate(slice_buffer::make(op->sym, *src_buf, std::move(at), std::move(body))));
           return;
         }
 
@@ -1516,18 +1598,16 @@ public:
           bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
           expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
           if (match(info.dims[d].bounds.min, crop_min)) {
-            // We rewrite src -> sym in the truncate below.
-            crop_bounds[d] = substitute(info.dims[d].bounds, *src_buf, op->sym);
+            crop_bounds[d] = info.dims[d].bounds;
           } else {
             is_crop = false;
             break;
           }
         }
         if (is_crop) {
-          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), op->body);
           // make_buffer drops trailing dims, do the same here.
-          result = transpose::make_truncate(op->sym, *src_buf, info.dims.size(), std::move(result));
-          set_result(mutate(result));
+          stmt body = make_truncate(op->sym, info.dims.size(), op->body);
+          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
           return;
         }
 
@@ -1562,7 +1642,7 @@ public:
       return;
     } else if (can_substitute_buffer(deps)) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
       return;
     }
 
@@ -1712,7 +1792,7 @@ public:
     box_expr bounds(op_bounds.size());
 
     // If possible, rewrite crop_buffer of one dimension to crop_dim.
-    bool changed = false;
+    bool changed = op == nullptr;
     for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
       bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dims[i].bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
@@ -1815,59 +1895,31 @@ public:
     }
   }
 
-  void visit(const crop_buffer* op) override { visit_crop(op, op->sym, op->src, op->bounds, op->body); }
+  void visit(const crop_buffer* op) override {
+    var src = visit_symbol(op->src);
+    visit_crop(src == op->src ? op : nullptr, op->sym, src, op->bounds, op->body);
+  }
 
   void visit(const crop_dim* op) override {
+    var src = visit_symbol(op->src);
     box_expr bounds(op->dim + 1);
     bounds[op->dim] = op->bounds;
-    visit_crop(op, op->sym, op->src, bounds, op->body);
-  }
-
-  static void update_sliced_buffer_metadata(symbol_map<expr_info>& info_map, var sym, span<const int> sliced) {
-    for (std::optional<expr_info>& i : info_map) {
-      if (!i) continue;
-      i->bounds = slinky::update_sliced_buffer_metadata(i->bounds, sym, sliced);
-    }
-  }
-  static void update_sliced_buffer_metadata(symbol_map<buffer_info>& buffers, var sym, span<const int> sliced) {
-    for (std::optional<buffer_info>& i : buffers) {
-      if (!i) continue;
-      for (dim_expr& j : i->dims) {
-        j.bounds = slinky::update_sliced_buffer_metadata(j.bounds, sym, sliced);
-        j.stride = slinky::update_sliced_buffer_metadata(j.stride, sym, sliced);
-        j.fold_factor = slinky::update_sliced_buffer_metadata(j.fold_factor, sym, sliced);
-      }
-    }
+    visit_crop(src == op->src ? op : nullptr, op->sym, src, bounds, op->body);
   }
 
   void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
     std::vector<expr> at(op_at.size());
-    std::vector<int> sliced_dims;
-    bool changed = false;
-    for (index_t i = 0; i < static_cast<index_t>(op_at.size()); ++i) {
+    bool changed = op == nullptr;
+    std::optional<buffer_info> info = buffers[op_src];
+    for (index_t i = static_cast<index_t>(op_at.size()) - 1; i >= 0; --i) {
       if (op_at[i].defined()) {
         at[i] = mutate(op_at[i]);
         changed = changed || !at[i].same_as(op_at[i]);
-        sliced_dims.push_back(i);
+        if (info && static_cast<index_t>(info->dims.size()) > i) info->dims.erase(info->dims.begin() + i);
       }
     }
 
-    symbol_map<buffer_info> old_buffers = buffers;
-    symbol_map<expr_info> old_info_map = info_map;
-    std::optional<buffer_info> info = buffers[op_src];
-
-    if (info) {
-      info->decl = stmt(op);
-      buffers[op_sym] = std::move(info);
-    } else {
-      buffers[op_sym] = std::nullopt;
-    }
-    update_sliced_buffer_metadata(buffers, op_sym, sliced_dims);
-    update_sliced_buffer_metadata(info_map, op_sym, sliced_dims);
-    stmt body = mutate(op_body);
-    buffers = std::move(old_buffers);
-    info_map = std::move(old_info_map);
-
+    stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));
     if (!depends_on(body, op_sym).any()) {
       set_result(std::move(body));
       return;
@@ -1924,18 +1976,22 @@ public:
     }
   }
 
-  void visit(const slice_buffer* op) override { visit_slice(op, op->sym, op->src, op->at, op->body); }
+  void visit(const slice_buffer* op) override {
+    var src = visit_symbol(op->src);
+    visit_slice(src == op->src ? op : nullptr, op->sym, src, op->at, op->body);
+  }
 
   void visit(const slice_dim* op) override {
+    var src = visit_symbol(op->src);
     std::vector<expr> at(op->dim + 1);
     at[op->dim] = op->at;
-    visit_slice(op, op->sym, op->src, at, op->body);
+    visit_slice(src == op->src ? op : nullptr, op->sym, src, at, op->body);
   }
 
   void visit(const transpose* op) override {
     const std::optional<buffer_info>* src_info = &buffers[op->src];
 
-    var src = op->src;
+    var src = visit_symbol(op->src);
     std::vector<int> dims = op->dims;
     while (src_info && *src_info) {
       if (const transpose* t = (*src_info)->decl.as<transpose>()) {
@@ -1956,7 +2012,8 @@ public:
         // transpose can't add dimensions.
         assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
-        set_result(mutate(substitute(op->body, op->sym, src)));
+        auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
+        set_result(mutate(op->body));
         return;
       }
 
@@ -1975,7 +2032,7 @@ public:
     }
     sym_info.decl = stmt(op);
 
-    stmt body = mutate_with_buffer(op, op->body, op->sym, op->src, std::move(sym_info));
+    stmt body = mutate_with_buffer(op, op->body, op->sym, src, std::move(sym_info));
 
     if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(
@@ -1987,7 +2044,7 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
     } else if (!deps.buffer_dims) {
-      set_result(substitute(body, op->sym, op->src));
+      set_result(substitute(body, op->sym, src));
     } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
       set_result(op);
     } else {
@@ -1998,7 +2055,9 @@ public:
   void visit(const clone_buffer* op) override {
     // Because we disallow shadowing (i.e. mutating buffers in place), clone_buffer can always be removed :)
     // Essentially, every operation is also a clone here.
-    set_result(mutate(substitute(op->body, op->sym, op->src)));
+    var src = visit_symbol(op->src);
+    auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
+    set_result(mutate(op->body));
   }
 
   void visit(const check* op) override {

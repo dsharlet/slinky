@@ -92,11 +92,6 @@ stmt substitute_bounds(const stmt& s, var buffer, const box_expr& bounds);
 expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& bounds);
 stmt substitute_bounds(const stmt& s, var buffer, int dim, const interval_expr& bounds);
 
-// Update buffer metadata expressions to account for a slice that has occurred.
-expr update_sliced_buffer_metadata(const expr& e, var buf, span<const int> slices);
-interval_expr update_sliced_buffer_metadata(const interval_expr& x, var buf, span<const int> slices);
-dim_expr update_sliced_buffer_metadata(const dim_expr& x, var buf, span<const int> slices);
-
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_SUBSTITUTE_H
