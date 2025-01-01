@@ -2269,16 +2269,12 @@ public:
 
   void visit(const mod* op) override { set_result(op); }
 
-  void visit_equal() {
-    // Can we tighten this? I'm not sure. We need both upper and lower bounds to say anything here.
-    if (sign < 0) {
-      set_result(expr(0));
-    } else {
-      set_result(expr(1));
-    }
+  void visit_logical() {
+    // If we don't know anything about a logical op, the result is either 0 or 1.
+    set_result(expr(sign < 0 ? 0 : 1));
   }
-  void visit(const equal* op) override { visit_equal(); }
-  void visit(const not_equal* op) override { visit_equal(); }
+  void visit(const equal* op) override { visit_logical(); }
+  void visit(const not_equal* op) override { visit_logical(); }
 
   template <typename T>
   void visit_less(const T* op) {
@@ -2296,10 +2292,8 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
-    } else if (sign < 0) {
-      set_result(expr(0));
     } else {
-      set_result(expr(1));
+      visit_logical();
     }
   }
   void visit(const less* op) override { visit_less(op); }
@@ -2318,10 +2312,8 @@ public:
 
     if (ca && cb) {
       set_result(make_binary<T>(*ca != 0, *cb != 0));
-    } else if (sign < 0) {
-      set_result(expr(0));
     } else {
-      set_result(expr(1));
+      visit_logical();
     }
   }
   void visit(const logical_and* op) override { visit_logical_and_or(op, /*recurse=*/sign > 0); }
@@ -2334,10 +2326,8 @@ public:
     auto ca = as_constant(a);
     if (ca) {
       set_result(*ca != 0 ? 0 : 1);
-    } else if (sign < 0) {
-      set_result(expr(0));
     } else {
-      set_result(expr(1));
+      visit_logical();
     }
   }
   void visit(const class select* op) override {
