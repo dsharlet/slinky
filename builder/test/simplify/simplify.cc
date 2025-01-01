@@ -707,6 +707,11 @@ TEST(simplify, knowledge) {
           check::make(buffer_min(b0, 2) == x + 1),
           crop_buffer::make(b1, b0, {{expr(), 1}, {0, expr()}, {expr(), 3}}, call_stmt::make(nullptr, {}, {b1}, {})),
       })));
+
+  ASSERT_THAT(simplify(let_stmt::make(x, max((buffer_max(b1, 0) + 1) * (buffer_max(b1, 1) + 1), 10) / 10,
+                  make_buffer::make(b0, expr(), expr(), {{{0, max(abs(x), 1) - 1}}},
+                      check::make(buffer_max(b0, 0) <= ((buffer_max(b0, 0) + 16) / 16) * 16 - 1)))),
+      matches(stmt()));
 }
 
 TEST(simplify, bounds_of) {
