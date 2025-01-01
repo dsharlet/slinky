@@ -443,6 +443,7 @@ TEST(simplify, buffer_bounds) {
     return allocate::make(buf, memory_type::heap, 1, dims, body);
   };
   auto use_buffer = [](var b) { return call_stmt::make(nullptr, {}, {b}, {}); };
+  auto use_buffers = [](std::vector<var> bs) { return call_stmt::make(nullptr, {}, std::move(bs), {}); };
   ASSERT_THAT(simplify(decl_bounds(b0, {buffer_bounds(b1, 0)},
                   crop_dim::make(b2, b0, 0, buffer_bounds(b1, 0) & bounds(x, y), use_buffer(b2)))),
       matches(decl_bounds(b0, {{buffer_bounds(b1, 0)}}, crop_dim::make(b2, b0, 0, bounds(x, y), use_buffer(b2)))));
@@ -467,6 +468,21 @@ TEST(simplify, buffer_bounds) {
       matches(decl_bounds(b0, {{x, y}}, crop_dim::make(b1, b0, 0, bounds(w, z), use_buffer(b1)))));
   ASSERT_THAT(simplify(decl_bounds(x, {{x, y}}, crop_dim::make(x, x, 0, bounds(min(x, w), max(y, z)), use_buffer(x)))),
       matches(decl_bounds(x, {{x, y}}, use_buffer(x))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, x + -1}},
+                  decl_bounds(b1, {{0, x + -1}},
+                      crop_dim::make(b2, b0, 0, {expr(), buffer_max(b1, 0)},
+                          crop_dim::make(b3, b0, 0, {expr(), buffer_max(b2, 0)}, use_buffers({b1, b3})))))),
+      matches(decl_bounds(b0, {{0, x + -1}}, decl_bounds(b1, {{0, x + -1}}, use_buffers({b1, b0})))));
+
+  ASSERT_THAT(simplify(let_stmt::make(x, select(1 < y, y, max(w, 1)),
+                  decl_bounds(b0, {{0, x + -1}},
+                      decl_bounds(b1, {{0, x + -1}},
+                          crop_dim::make(b2, b0, 0, {expr(), buffer_max(b1, 0)},
+                              crop_dim::make(b3, b0, 0, {expr(), buffer_max(b2, 0)},
+                                  use_buffers({b1, b3}))))))),
+      matches(let_stmt::make(x, select(1 < y, y, max(w, 1)),
+          decl_bounds(b0, {{0, x + -1}}, decl_bounds(b1, {{0, x + -1}}, use_buffers({b1, b0}))))));
 }
 
 TEST(simplify, crop_not_needed) {
