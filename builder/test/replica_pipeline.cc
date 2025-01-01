@@ -46,7 +46,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_0 = func::make(std::move(_replica_fn_5), {{ab, {point(i), {(buffer_min(_4, 0)), (buffer_max(_4, 0))}}}, {c, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, point(j)}}}, {{abc, {i, j}}}, {});
   _fn_0.loops({{i, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {});
+  auto p = build_pipeline(ctx, {}, {a, b, c}, {abc}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -103,7 +103,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_0 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}, {intm, {{((x / 2)), ((((x + 1)) / 2))}, {((y / 2)), ((((y + 1)) / 2))}}}}, {{out, {x, y}}}, {});
   _fn_0.loops({{y, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in}, {out}, {});
+  auto p = build_pipeline(ctx, {}, {in}, {out}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -146,7 +146,7 @@ auto p = []() -> ::slinky::pipeline {
   auto sum_xy = buffer_expr::make(ctx, "sum_xy", /*rank=*/1, /*elem_size=*/4);
   auto _fn_0 = func::make(std::move(_replica_fn_2), {{in, {{(buffer_min(_1, 0)), (buffer_max(_1, 0))}, {(buffer_min(_1, 1)), (buffer_max(_1, 1))}, point(z)}}}, {{sum_x, {y, z}}, {sum_xy, {z}}}, {});
   _fn_0.loops({{z, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {});
+  auto p = build_pipeline(ctx, {}, {in}, {sum_x, sum_xy}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -216,7 +216,7 @@ auto p = []() -> ::slinky::pipeline {
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
   auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}}, {.allow_in_place = true, .name = "add2"});
-  auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {});
+  auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -282,7 +282,7 @@ auto p = []() -> ::slinky::pipeline {
   auto _fn_4 = func::make(std::move(_replica_fn_5), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}}, {});
   auto _6 = variable::make(out->sym());
   auto _fn_0 = func::make_copy({{intm1, {point(x), point(((y - 0)))}, {point(expr()), {0, (((((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 0)) - 1))}}, {point(expr()), {0, (((((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)) - 1))}}, {}}, {intm2, {point(x), point(((y - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))))}, {point(expr()), {0, (((((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - (((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)))) - 1))}}, {point(expr()), {(((((buffer_max(_3, 1)) - (buffer_min(_3, 1)))) + 1)), (((((((buffer_max(_6, 1)) - (buffer_min(_6, 1)))) + 1)) - 1))}}, {}}}, {out, {x, y}});
-  auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {.no_alias_buffers = true});
+  auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {}, {.no_alias_buffers = true});
   return p;
 };
 // END define_replica_pipeline() output
@@ -339,7 +339,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_3 = func::make(std::move(_replica_fn_4), {{in2, {point(x), point(y)}}}, {{intm2, {x, y}}}, {});
   auto _fn_0 = func::make_copy({{intm1, {point(x), point(y)}, {}, {}, {expr(), expr(), 0}}, {intm2, {point(x), point(y)}, {}, {}, {expr(), expr(), 1}}}, {out, {x, y}});
-  auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {});
+  auto p = build_pipeline(ctx, {}, {in1, in2}, {out}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -394,7 +394,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_0 = func::make(std::move(_replica_fn_5), {{padded_intm, {{((x + -1)), ((x + 1))}, {((y + -1)), ((y + 1))}}}}, {{out, {x, y}}}, {});
   _fn_0.loops({{y, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in}, {out}, {});
+  auto p = build_pipeline(ctx, {}, {in}, {out}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -461,7 +461,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_0 = func::make(std::move(_replica_fn_7), {{intm3, {point(x), point(y)}}, {intm4, {point(x), point(y)}}}, {{out, {x, y}}}, {});
   _fn_0.loops({{y, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in1}, {out}, {});
+  auto p = build_pipeline(ctx, {}, {in1}, {out}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output
@@ -520,7 +520,7 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_4 = func::make(std::move(_replica_fn_5), {{intm2, {point(x), point(y)}}}, {{out2, {x, y}}}, {});
   _fn_4.loops({{y, 1, loop::serial}});
-  auto p = build_pipeline(ctx, {}, {in1}, {out1, out2}, {});
+  auto p = build_pipeline(ctx, {}, {in1}, {out1, out2}, {}, {});
   return p;
 };
 // END define_replica_pipeline() output

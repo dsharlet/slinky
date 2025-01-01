@@ -292,7 +292,8 @@ struct build_options {
 
 // Constructs a body and a pipeline object for a graph described by input and output buffers.
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options = build_options());
+    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets = {},
+    const build_options& options = build_options());
 pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options = build_options());
 

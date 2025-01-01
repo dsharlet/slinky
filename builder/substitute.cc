@@ -591,11 +591,6 @@ void substitutor::visit(const call* op) {
           args[d + 1] = expr();
           changed = true;
         }
-
-        while (!args.empty() && !args.back().defined()) {
-          args.pop_back();
-          changed = true;
-        }
       }
 
       while (!args.empty() && !args.back().defined()) {

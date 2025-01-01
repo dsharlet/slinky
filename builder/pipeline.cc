@@ -870,11 +870,16 @@ public:
   }
 };
 
-void add_buffer_checks(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
+void check_buffer(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
   expr buf_var = variable::make(b->sym());
   checks.push_back(check::make(buf_var != 0));
   checks.push_back(check::make(buffer_rank(buf_var) == rank));
+}
+
+void check_buffer_constraints(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
+  int rank = static_cast<int>(b->rank());
+  expr buf_var = variable::make(b->sym());
   checks.push_back(check::make(buffer_elem_size(buf_var) == b->elem_size()));
   for (int d = 0; d < rank; ++d) {
     expr fold_factor = buffer_fold_factor(buf_var, d);
@@ -950,7 +955,8 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants, const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants,
+    std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
@@ -962,17 +968,29 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
 
-  result = slide_and_fold_storage(result, ctx);
-
-  // Add checks that the buffer constraints the user set are satisfied.
-  std::vector<stmt> checks;
+  std::vector<stmt> constraint_checks;
   for (const buffer_expr_ptr& i : inputs) {
-    add_buffer_checks(i, /*output=*/false, checks);
+    check_buffer_constraints(i, /*output=*/false, constraint_checks);
   }
   for (const buffer_expr_ptr& i : outputs) {
-    add_buffer_checks(i, /*output=*/true, checks);
+    check_buffer_constraints(i, /*output=*/true, constraint_checks);
   }
-  result = block::make(std::move(checks), std::move(result));
+  result = block::make(std::move(constraint_checks), std::move(result));
+
+  // Add user provided lets after checking buffers are non-null and of expected rank, but before checking constraints,
+  // which may use these lets.
+  result = let_stmt::make(std::move(lets), result);
+
+  std::vector<stmt> buffer_checks;
+  for (const buffer_expr_ptr& i : inputs) {
+    check_buffer(i, buffer_checks);
+  }
+  for (const buffer_expr_ptr& i : outputs) {
+    check_buffer(i, buffer_checks);
+  }
+  result = block::make(std::move(buffer_checks), std::move(result));
+
+  result = slide_and_fold_storage(result, ctx);
 
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
@@ -1036,9 +1054,9 @@ std::vector<std::pair<var, const_raw_buffer_ptr>> constant_map(const std::set<bu
 }  // namespace
 
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   std::set<buffer_expr_ptr> constants;
-  stmt body = build_pipeline(ctx, inputs, outputs, constants, options);
+  stmt body = build_pipeline(ctx, inputs, outputs, constants, lets, options);
   pipeline p;
   p.args = args;
   p.inputs = vars(inputs);
@@ -1050,7 +1068,7 @@ pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vec
 
 pipeline build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, const build_options& options) {
-  return build_pipeline(ctx, {}, inputs, outputs, options);
+  return build_pipeline(ctx, {}, inputs, outputs, {}, options);
 }
 
 }  // namespace slinky
