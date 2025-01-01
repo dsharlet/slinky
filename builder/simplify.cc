@@ -341,6 +341,28 @@ public:
 
     // How many loops out is the `decl` found.
     int loop_depth = 0;
+
+    buffer_info(expr elem_size) : elem_size(elem_size) {}
+
+    buffer_info(var sym, int rank) : dims(rank) {
+      elem_size = buffer_elem_size(sym);
+      for (int d = 0; d < rank; ++d) {
+        dims[d] = buffer_dim(sym, d);
+      }
+    }
+
+    void init_dims(var sym, int rank) {
+      for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
+        if (!dims[d].bounds.min.defined()) dims[d].bounds.min = buffer_min(sym, d);
+        if (!dims[d].bounds.max.defined()) dims[d].bounds.max = buffer_max(sym, d);
+        if (!dims[d].stride.defined()) dims[d].stride = buffer_stride(sym, d);
+        if (!dims[d].fold_factor.defined()) dims[d].fold_factor = buffer_fold_factor(sym, d);
+      }
+      dims.reserve(rank);
+      for (int d = dims.size(); d < rank; ++d) {
+        dims.push_back(buffer_dim(sym, d));
+      }
+    }
   };
 
   struct expr_info {
@@ -499,60 +521,110 @@ public:
   // This class manages information learned from conditions that can be used to improve bounds.
   class knowledge {
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
-    std::vector<scoped_value_in_symbol_map<expr_info>> k;
+    std::vector<scoped_value_in_symbol_map<expr_info>> vk;
+    std::vector<scoped_value_in_symbol_map<buffer_info>> bk;
 
     symbol_map<expr_info>& vars;
+    symbol_map<buffer_info>& buffers;
 
-    alignment_type get_alignment(const var& v) { return vars[v] ? vars[v]->alignment : alignment_type(); }
+    void set_var_bounds(var x, interval_expr bounds) {
+      std::optional<expr_info> before = vars.lookup(x);
+      if (!bounds.min.defined() && before) bounds.min = before->bounds.min;
+      if (!bounds.max.defined() && before) bounds.max = before->bounds.max;
+      alignment_type alignment = before ? before->alignment : alignment_type();
+      vk.push_back(set_value_in_scope(vars, x, {std::move(bounds), alignment}));
+    }
+
+    void set_call_value(const call* c, expr value) {
+      if (!is_buffer_intrinsic(c->intrinsic)) return;
+      if (!is_pure(value)) {
+        // TODO: Try to resolve the circular dependency that can result if we relax this constraint.
+        return;
+      }
+      assert(!c->args.empty());
+      auto buf = as_variable(c->args[0]);
+      assert(buf);
+      if (std::find_if(bk.begin(), bk.end(), [buf](const auto& i) { return i.sym() == *buf; }) == bk.end()) {
+        // Save the value if we haven't already, but we set the new values below.
+        bk.push_back(scoped_value_in_symbol_map<buffer_info>(buffers, *buf));
+      }
+      std::optional<buffer_info>& info = buffers[*buf];
+      if (is_buffer_dim_intrinsic(c->intrinsic)) {
+        assert(c->args.size() == 2);
+        auto dim = as_constant(c->args[1]);
+        assert(dim);
+        if (!info) {
+          info = buffer_info(*buf, *dim + 1);
+        } else {
+          info->init_dims(*buf, *dim + 1);
+        }
+        switch (c->intrinsic) {
+        case intrinsic::buffer_min: info->dims[*dim].bounds.min = std::move(value); break;
+        case intrinsic::buffer_max: info->dims[*dim].bounds.max = std::move(value); break;
+        case intrinsic::buffer_stride: info->dims[*dim].stride = std::move(value); break;
+        case intrinsic::buffer_fold_factor: info->dims[*dim].fold_factor = std::move(value); break;
+        default: break;
+        }
+      } else if (c->intrinsic == intrinsic::buffer_elem_size) {
+        if (!info) {
+          info = buffer_info(std::move(value));
+        } else {
+          info->elem_size = std::move(value);
+        }
+      } else if (c->intrinsic == intrinsic::buffer_rank) {
+        if (auto rank = as_constant(value)) {
+          if (!info) {
+            info = buffer_info(*buf, *rank);
+          } else {
+            info->init_dims(*buf, *rank);
+          }
+          info->all_dims_known = true;
+        }
+      }
+    }
+
 
   public:
-    knowledge(symbol_map<expr_info>& vars) : vars(vars) {}
+    knowledge(symbol_map<expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() {
       // Destroy our knowledge in reverse order.
-      while (!k.empty()) {
-        k.pop_back();
+      while (!vk.empty()) {
+        vk.pop_back();
+      }
+      while (!bk.empty()) {
+        bk.pop_back();
       }
     }
 
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        // bounds of a are [b, b].
-        k.push_back(set_value_in_scope(vars, v->sym, {point(b), get_alignment(v->sym)}));
+        set_var_bounds(v->sym, point(b));
+      } else if (const call* c = a.as<call>()) {
+        set_call_value(c, b);
       }
       if (const variable* v = b.as<variable>()) {
-        // bounds of b are [a, a].
-        k.push_back(set_value_in_scope(vars, v->sym, {point(a), get_alignment(v->sym)}));
+        set_var_bounds(v->sym, point(a));
+      } else if (const call* c = b.as<call>()) {
+        set_call_value(c, a);
       }
     }
 
     void learn_from_less(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        // a has an upper bound of b - 1
-        const std::optional<expr_info>& old_info = vars[v->sym];
-        const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(vars, v->sym, {{lb, b - 1}, get_alignment(v->sym)}));
+        set_var_bounds(v->sym, {expr(), b - 1});
       }
       if (const variable* v = b.as<variable>()) {
-        // b has a lower bound of a + 1
-        const std::optional<expr_info>& old_info = vars[v->sym];
-        const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(vars, v->sym, {{a + 1, ub}, get_alignment(v->sym)}));
+        set_var_bounds(v->sym, {a + 1, expr()});
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        // a has an upper bound of b
-        const std::optional<expr_info>& old_info = vars[v->sym];
-        const expr& lb = old_info ? old_info->bounds.min : expr();
-        k.push_back(set_value_in_scope(vars, v->sym, {{lb, b}, get_alignment(v->sym)}));
+        set_var_bounds(v->sym, {expr(), b});
       }
       if (const variable* v = b.as<variable>()) {
-        // b has a lower bound of a
-        const std::optional<expr_info>& old_info = vars[v->sym];
-        const expr& ub = old_info ? old_info->bounds.max : expr();
-        k.push_back(set_value_in_scope(vars, v->sym, {{a, ub}, get_alignment(v->sym)}));
+        set_var_bounds(v->sym, {a, expr()});
       }
     }
 
@@ -587,12 +659,12 @@ public:
   };
 
   knowledge learn_from_true(const expr& c) {
-    knowledge result(vars);
+    knowledge result(vars, buffers);
     result.learn_from_true(c);
     return result;
   }
   knowledge learn_from_false(const expr& c) {
-    knowledge result(vars);
+    knowledge result(vars, buffers);
     result.learn_from_false(c);
     return result;
   }
@@ -1395,8 +1467,13 @@ public:
     std::vector<stmt> stmts;
     stmts.reserve(op->stmts.size());
     bool changed = false;
+    // Learn from checks in this scope and store the knowledge in k.
+    knowledge k(vars, buffers);
     for (const stmt& s : op->stmts) {
       stmts.push_back(mutate(s));
+      if (const check* c = stmts.back().as<check>()) {
+        k.learn_from_true(c->condition);
+      }
       changed = changed || !stmts.back().same_as(s);
     }
 
@@ -1417,8 +1494,7 @@ public:
   template <typename T>
   buffer_info mutate_buffer(const T* op) {
     scoped_trace trace("mutate_buffer");
-    buffer_info info;
-    info.elem_size = mutate(op->elem_size);
+    buffer_info info(mutate(op->elem_size));
     info.dims.reserve(op->dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       info.dims.push_back(mutate(op->dims[d]));
@@ -1673,15 +1749,9 @@ public:
   std::optional<buffer_info> get_buffer_info(var buf, int rank) {
     std::optional<buffer_info> info = buffers[buf];
     if (!info) {
-      info = buffer_info();
-    }
-    info->dims.resize(std::max(info->dims.size(), static_cast<std::size_t>(rank)));
-    if (!info->elem_size.defined()) info->elem_size = buffer_elem_size(buf);
-    for (int d = 0; d < static_cast<int>(info->dims.size()); ++d) {
-      if (!info->dims[d].bounds.min.defined()) info->dims[d].bounds.min = buffer_min(buf, d);
-      if (!info->dims[d].bounds.max.defined()) info->dims[d].bounds.max = buffer_max(buf, d);
-      if (!info->dims[d].stride.defined()) info->dims[d].stride = buffer_stride(buf, d);
-      if (!info->dims[d].fold_factor.defined()) info->dims[d].fold_factor = buffer_fold_factor(buf, d);
+      info = buffer_info(buf, rank);
+    } else {
+      info->init_dims(buf, rank);
     }
     return info;
   }
@@ -1981,7 +2051,7 @@ public:
       break;
     }
 
-    buffer_info sym_info;
+    buffer_info sym_info{expr()};
     if (src_info && *src_info) {
       if (transpose::is_truncate(dims) && (*src_info)->all_dims_known && (*src_info)->dims.size() <= dims.size()) {
         // transpose can't add dimensions.

@@ -563,15 +563,24 @@ bool apply_less_rules(Fn&& apply) {
       apply(x + c0 < y, x < y + eval(-c0)) ||
       apply(c0 < x + c1, eval(c0 - c1) < x) ||
 
-      apply(x + y < z + (x/c0)*c0, y + x%c0 < z, eval(c0 > 0)) ||
-      apply(x + y < (x/c0)*c0, y + x%c0 < 0, eval(c0 > 0)) ||
-      apply(x < z + (x/c0)*c0, x%c0 < z, eval(c0 > 0)) ||
-      apply(x < (x/c0)*c0, false, eval(c0 > 0)) ||
-    
-      apply(y + (x/c0)*c0 < x + z, y < z + x%c0, eval(c0 > 0)) ||
-      apply((x/c0)*c0 < x + z, 0 < z + x%c0, eval(c0 > 0)) ||
-      apply(y + (x/c0)*c0 < x, y < x%c0, eval(c0 > 0)) ||
-      apply((x/c0)*c0 < x, boolean(x%c0), eval(c0 > 0)) ||
+      // These rules taken from:
+      // https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_LT.cpp#L340-L397
+      apply(w + ((x + c0)/c1)*c1 < x + z, w + c0 < z + (x + c0)%c1, eval(c1 > 0)) ||
+      apply(x + z < w + ((x + c0)/c1)*c1, z + (x + c0)%c1 < w + c0, eval(c1 > 0)) ||
+      apply(((x + c0)/c1)*c1 < x + z, c0 < z + (x + c0)%c1, eval(c1 > 0)) ||
+      apply(x + z < ((x + c0)/c1)*c1, z + (x + c0)%c1 < c0, eval(c1 > 0)) ||
+      apply(w + ((x + c0)/c1)*c1 < x, w + c0 < (x + c0)%c1, eval(c1 > 0)) ||
+      apply(x < w + ((x + c0)/c1)*c1, (x + c0)%c1 < w + c0, eval(c1 > 0)) ||
+      apply(w + (x/c1)*c1 < x + z, w < z + x%c1, eval(c1 > 0)) ||
+      apply(x + z < w + (x/c1)*c1, z + x%c1 < w, eval(c1 > 0)) ||
+      apply(((x + c0)/c1)*c1 < x, c0 < (x + c0)%c1, eval(c1 > 0)) ||
+      apply(x < ((x + c0)/c1)*c1, (x + c0)%c1 < c0, eval(c1 > 0)) ||
+      apply((x/c1)*c1 < x + z, 0 < z + x%c1, eval(c1 > 0)) ||
+      apply(x + z < (x/c1)*c1, z + x%c1 < 0, eval(c1 > 0)) ||
+      apply(w + (x/c1)*c1 < x, w < x%c1, eval(c1 > 0)) ||
+      apply(x < w + (x/c1)*c1, x%c1 < w, eval(c1 > 0)) ||
+      apply((x/c1)*c1 < x, x%c1 != 0, eval(c1 > 0)) ||
+      apply(x < (x/c1)*c1, false, eval(c1 > 0)) ||
 
       apply(x%c0 < c1,
         true, eval(c0 > 0 && c0 <= c1),
