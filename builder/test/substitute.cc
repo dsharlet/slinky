@@ -113,7 +113,12 @@ TEST(substitute, implicit_bounds) {
       matches(crop_dim::make(x, u, 0, bounds(max(y, w), z), check::make(x))));
   ASSERT_THAT(substitute(crop_dim::make(x, u, 0, bounds(y, z), check::make(x)), buffer_max(u, 0), w),
       matches(crop_dim::make(x, u, 0, bounds(y, min(z, w)), check::make(x))));
+
+  ASSERT_THAT(substitute(buffer_at(x, buffer_min(y, 0)), y, x), matches(buffer_at(x)));
+  ASSERT_THAT(substitute(buffer_at(x, buffer_min(y, 0)), y, z), matches(buffer_at(x, buffer_min(z, 0))));
   ASSERT_THAT(substitute(buffer_at(x), buffer_min(x, 2), y), matches(buffer_at(x, expr(), expr(), expr(y))));
+  ASSERT_THAT(substitute(buffer_at(x, expr(), expr(), y), y, buffer_min(x, 2)), matches(buffer_at(x)));
+  ASSERT_THAT(substitute(buffer_at(x, y, buffer_min(z, 1)), z, x), matches(buffer_at(x, expr(y))));
 }
 
 TEST(match, basic) {

@@ -381,6 +381,7 @@ public:
   virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
     return expr(op);
   }
+  virtual expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) { return expr(op); }
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }
@@ -506,20 +507,26 @@ public:
   }
 
   interval_expr substitute_crop_bounds(var new_src, var src, int dim, const interval_expr& bounds) {
-    // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(sym, dim) and
+    // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(src, dim) and
     // buffer_max(src, dim).
-    interval_expr old_bounds = buffer_bounds(src, dim);
-    interval_expr new_bounds = mutate(old_bounds);
     interval_expr result = mutate(bounds);
-    if (new_bounds.min.defined() && !old_bounds.min.same_as(new_bounds.min) &&
-        !match_call(new_bounds.min, intrinsic::buffer_min, new_src, dim)) {
-      // The substitution changed the implicit clamp, include it.
-      result.min = max(result.min, new_bounds.min);
+    if (match_call(result.min, intrinsic::buffer_min, new_src, dim)) {
+      result.min = expr();
+    } else if (!match_call(bounds.min, intrinsic::buffer_min, src, dim)) {
+      expr new_bounds = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, src, dim);
+      if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_min, new_src, dim)) {
+        // The substitution changed the implicit clamp, include it.
+        result.min = max(result.min, new_bounds);
+      }
     }
-    if (new_bounds.max.defined() && !old_bounds.max.same_as(new_bounds.max) &&
-        !match_call(new_bounds.max, intrinsic::buffer_max, new_src, dim)) {
-      // The substitution changed the implicit clamp, include it.
-      result.max = min(result.max, new_bounds.max);
+    if (match_call(result.max, intrinsic::buffer_max, new_src, dim)) {
+      result.max = expr();
+    } else if (!match_call(bounds.max, intrinsic::buffer_max, src, dim)) {
+      expr new_bounds = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_max, src, dim);
+      if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_max, new_src, dim)) {
+        // The substitution changed the implicit clamp, include it.
+        result.max = min(result.max, new_bounds);
+      }
     }
     return result;
   }
@@ -563,18 +570,26 @@ public:
       auto buf = as_variable(args[0]);
       assert(buf);
       if (op->intrinsic == intrinsic::buffer_at) {
-        const std::size_t buf_rank = get_target_buffer_rank(*buf);
+        const std::size_t buf_rank = std::max(args.size() - 1, get_target_buffer_rank(*buf));
         for (std::size_t d = 0; d < buf_rank; ++d) {
           if (d + 1 >= args.size() || !args[d + 1].defined()) {
             // buffer_at has an implicit buffer_min if it is not defined.
-            expr min_args[] = {d};
-            expr min = mutate_buffer_intrinsic(nullptr, intrinsic::buffer_min, *buf, min_args);
+            expr min = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, *buf, d);
             if (min.defined()) {
+              assert(!match_call(min, intrinsic::buffer_min, *buf, d));
               args.resize(std::max(args.size(), d + 2));
               args[d + 1] = min;
               changed = true;
             }
+          } else if (d + 1 < args.size() && match_call(args[d + 1], intrinsic::buffer_min, *buf, d)) {
+            args[d + 1] = expr();
+            changed = true;
           }
+        }
+
+        while (!args.empty() && !args.back().defined()) {
+          args.pop_back();
+          changed = true;
         }
       }
 
@@ -773,6 +788,13 @@ public:
     }
     return replacement;
   }
+  expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) override {
+    const call* c = as_intrinsic(target, fn);
+    if (!c || c->args.size() != 2) return expr(op);
+    if (!is_variable(c->args[0], buf)) return expr(op);
+    if (!is_constant(c->args[1], dim)) return expr(op);
+    return replacement;
+  }
 };
 
 // A substitutor implementation for target buffers.
@@ -829,14 +851,16 @@ public:
       assert(args.size() == 1);
       auto dim = as_constant(args[0]);
       assert(dim);
-      if (*dim < static_cast<index_t>(dims.size())) {
-        return eval_buffer_intrinsic(fn, dims[*dim]);
-      }
+      return mutate_buffer_dim_intrinsic(op, fn, buf, *dim);
     } else if (fn == intrinsic::buffer_size_bytes) {
       std::cerr << "substituting buffer_size_bytes not implemented" << std::endl;
       std::abort();
     }
     return expr(op);
+  }
+  expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) override {
+    assert(is_buffer_dim_intrinsic(fn));
+    return buf == target && dim < static_cast<index_t>(dims.size()) ? eval_buffer_intrinsic(fn, dims[dim]) : expr(op);
   }
 };
 
