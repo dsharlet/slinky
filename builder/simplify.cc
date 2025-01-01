@@ -521,36 +521,93 @@ public:
   // This class manages information learned from conditions that can be used to improve bounds.
   class knowledge {
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
-    std::vector<scoped_value_in_symbol_map<expr_info>> k;
+    std::vector<scoped_value_in_symbol_map<expr_info>> vk;
+    std::vector<scoped_value_in_symbol_map<buffer_info>> bk;
 
     symbol_map<expr_info>& vars;
+    symbol_map<buffer_info>& buffers;
 
     void set_var_bounds(var x, interval_expr bounds) {
       std::optional<expr_info> before = vars.lookup(x);
       if (!bounds.min.defined() && before) bounds.min = before->bounds.min;
       if (!bounds.max.defined() && before) bounds.max = before->bounds.max;
       alignment_type alignment = before ? before->alignment : alignment_type();
-      k.push_back(set_value_in_scope(vars, x, {std::move(bounds), alignment}));
+      vk.push_back(set_value_in_scope(vars, x, {std::move(bounds), alignment}));
+    }
+
+    void set_call_value(const call* c, expr value) {
+      if (!is_buffer_intrinsic(c->intrinsic)) return;
+      if (!is_pure(value)) {
+        // TODO: Try to resolve the circular dependency that can result if we relax this constraint.
+        return;
+      }
+      assert(!c->args.empty());
+      auto buf = as_variable(c->args[0]);
+      assert(buf);
+      if (std::find_if(bk.begin(), bk.end(), [buf](const auto& i) { return i.sym() == *buf; }) == bk.end()) {
+        // Save the value if we haven't already, but we set the new values below.
+        bk.push_back(scoped_value_in_symbol_map<buffer_info>(buffers, *buf));
+      }
+      std::optional<buffer_info>& info = buffers[*buf];
+      if (is_buffer_dim_intrinsic(c->intrinsic)) {
+        assert(c->args.size() == 2);
+        auto dim = as_constant(c->args[1]);
+        assert(dim);
+        if (!info) {
+          info = buffer_info(*buf, *dim + 1);
+        } else {
+          info->init_dims(*buf, *dim + 1);
+        }
+        switch (c->intrinsic) {
+        case intrinsic::buffer_min: info->dims[*dim].bounds.min = std::move(value); break;
+        case intrinsic::buffer_max: info->dims[*dim].bounds.max = std::move(value); break;
+        case intrinsic::buffer_stride: info->dims[*dim].stride = std::move(value); break;
+        case intrinsic::buffer_fold_factor: info->dims[*dim].fold_factor = std::move(value); break;
+        default: break;
+        }
+      } else if (c->intrinsic == intrinsic::buffer_elem_size) {
+        if (!info) {
+          info = buffer_info(std::move(value));
+        } else {
+          info->elem_size = std::move(value);
+        }
+      } else if (c->intrinsic == intrinsic::buffer_rank) {
+        if (auto rank = as_constant(value)) {
+          if (!info) {
+            info = buffer_info(*buf, *rank);
+          } else {
+            info->init_dims(*buf, *rank);
+          }
+          info->all_dims_known = true;
+        }
+      }
     }
 
 
   public:
-    knowledge(symbol_map<expr_info>& vars) : vars(vars) {}
+    knowledge(symbol_map<expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() {
       // Destroy our knowledge in reverse order.
-      while (!k.empty()) {
-        k.pop_back();
+      while (!vk.empty()) {
+        vk.pop_back();
+      }
+      while (!bk.empty()) {
+        bk.pop_back();
       }
     }
 
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
         set_var_bounds(v->sym, point(b));
+      } else if (const call* c = a.as<call>()) {
+        set_call_value(c, b);
       }
       if (const variable* v = b.as<variable>()) {
         set_var_bounds(v->sym, point(a));
+      } else if (const call* c = b.as<call>()) {
+        set_call_value(c, a);
       }
     }
 
@@ -602,12 +659,12 @@ public:
   };
 
   knowledge learn_from_true(const expr& c) {
-    knowledge result(vars);
+    knowledge result(vars, buffers);
     result.learn_from_true(c);
     return result;
   }
   knowledge learn_from_false(const expr& c) {
-    knowledge result(vars);
+    knowledge result(vars, buffers);
     result.learn_from_false(c);
     return result;
   }

@@ -750,6 +750,10 @@ class scoped_value_in_symbol_map {
   std::optional<T> old_value_;
 
 public:
+  scoped_value_in_symbol_map(symbol_map<T>& context, var sym) : context_(&context), sym_(sym) {
+    std::optional<T>& ctx_value = context[sym];
+    old_value_ = std::move(ctx_value);
+  }
   scoped_value_in_symbol_map(symbol_map<T>& context, var sym, T value) : context_(&context), sym_(sym) {
     std::optional<T>& ctx_value = context[sym];
     old_value_ = std::move(ctx_value);
@@ -775,6 +779,7 @@ public:
     return *this;
   }
 
+  var sym() const { return sym_; }
   const std::optional<T>& old_value() const { return old_value_; }
 
   void exit_scope() {
