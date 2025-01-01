@@ -668,6 +668,9 @@ public:
       set_result(op);
     }
   }
+  
+  // Silences a weird warning on clang. It seems like this should be in the base class (and it is).
+  using node_mutator::visit;
 };
 
 // A substutitor implementation for target vars

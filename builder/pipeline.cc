@@ -489,7 +489,7 @@ std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const
 
 // Perform a substitute limited to call or copy inputs only.
 stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
-  class m : public node_mutator {
+  class m : public stmt_mutator {
     const symbol_map<var>& subs;
 
   public:
@@ -892,7 +892,7 @@ bool is_verbose() {
 
 // This function inserts calls to trace_begin and trace_end around calls and loops.
 stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& constants) {
-  class injector : public node_mutator {
+  class injector : public stmt_mutator {
   public:
     node_context& ctx;
     var token;

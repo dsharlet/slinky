@@ -135,7 +135,7 @@ std::vector<expr> buffer_mins(var buf, std::size_t rank) {
 }
 
 // Replace copies between buffers a and b with calls to pad.
-class copy_remover : public node_mutator {
+class copy_remover : public stmt_mutator {
   // Track all names of a and b as we go.
   std::vector<var> as;
   std::vector<var> bs;
@@ -179,7 +179,7 @@ public:
     bool b_contains = std::find(bs.begin(), bs.end(), op->src) != bs.end();
     if (a_contains) as.push_back(op->sym);
     if (b_contains) bs.push_back(op->sym);
-    node_mutator::visit(op);
+    stmt_mutator::visit(op);
     if (a_contains) as.pop_back();
     if (b_contains) bs.pop_back();
   }
@@ -200,7 +200,7 @@ stmt remove_copy(const stmt& s, var a, var b) {
 bool dim_has_stride(const dim_expr& d) { return d.stride.defined(); }
 bool any_stride_defined(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
 
-class buffer_aliaser : public node_mutator {
+class buffer_aliaser : public stmt_mutator {
   node_context& ctx;
 
   struct alias_info {
@@ -746,7 +746,7 @@ public:
     }
 
     auto set_info_sym = set_value_in_scope(buffers, op->sym, buffers[op->src]);
-    node_mutator::visit(op);
+    stmt_mutator::visit(op);
 
     scoped_trace trace("visit_buffer_mutator");
     merge_buffer_info(old_buffers, op->sym, op->src, handler);
@@ -875,7 +875,7 @@ stmt implement_copies(const stmt& s, node_context& ctx) {
 
 namespace {
 
-class insert_free_into_allocate : public node_mutator {
+class insert_free_into_allocate : public stmt_mutator {
   // Contains the sym of the allocate node + all other buffer nodes which reference it.
   std::vector<var> names;
   // If we found some statement which references anything from `names`.
@@ -940,7 +940,7 @@ public:
       if (base_depends) {
         names.push_back(op->sym);
       }
-      node_mutator::visit(op);
+      stmt_mutator::visit(op);
       if (base_depends) {
         names.pop_back();
       }
@@ -958,7 +958,7 @@ public:
       if (found_src) {
         names.push_back(op->sym);
       }
-      node_mutator::visit(op);
+      stmt_mutator::visit(op);
       if (found_src) {
         names.pop_back();
       }
@@ -973,7 +973,7 @@ public:
   void visit(const transpose* op) override { visit_buffer_mutator(op); }
 };
 
-class early_free_inserter : public node_mutator {
+class early_free_inserter : public stmt_mutator {
 public:
   void visit(const allocate* op) override {
     stmt body = mutate(op->body);
@@ -1076,11 +1076,13 @@ public:
     visit_symbol(op->src);
     visit_decl(op);
   }
+
+  using node_mutator::visit;
 };
 
 // This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
 // efficient when performed in place.
-class reuse_shadows : public node_mutator {
+class reuse_shadows : public stmt_mutator {
   // Buffers that can be mutated in place are true in this map.
   symbol_map<bool> can_mutate;
 
@@ -1114,7 +1116,7 @@ public:
   void visit_buffer_decl(const T* op) {
     // Buffers start out mutable.
     can_mutate[op->sym] = true;
-    node_mutator::visit(op);
+    stmt_mutator::visit(op);
   }
 
   void visit(const loop* op) override {
@@ -1122,10 +1124,10 @@ public:
       // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
       symbol_map<bool> old_can_mutate;
       std::swap(can_mutate, old_can_mutate);
-      node_mutator::visit(op);
+      stmt_mutator::visit(op);
       can_mutate = std::move(old_can_mutate);
     } else {
-      node_mutator::visit(op);
+      stmt_mutator::visit(op);
     }
   }
 
