@@ -276,9 +276,6 @@ TEST(simplify, siblings) {
   auto make_crop_x = [](var out, var in, int dim, const stmt& body) {
     return crop_dim::make(out, in, dim, point(x), body);
   };
-  auto make_crop_y = [](var out, var in, int dim, const stmt& body) {
-    return crop_dim::make(out, in, dim, point(y), body);
-  };
 
   ASSERT_THAT(simplify(make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b0)}))),
       matches(block::make({make_crop_x(b1, b0, 0, make_call(b1)), make_call(b0)})));
