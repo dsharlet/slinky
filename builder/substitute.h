@@ -39,11 +39,6 @@ public:
   // Implementation of substitution for vars.
   virtual var visit_symbol(var x) { return x; }
 
-  // Implementation of substitution for slice bodies.
-  virtual stmt mutate_slice_body(var sym, var src, span<const int> slices, stmt body) {
-    return mutate(body);
-  }
-
   // Implementation of substitution for buffer intrinsics.
   virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
     return expr(op);
@@ -52,7 +47,7 @@ public:
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }
-  
+
   virtual var enter_decl(var sym) { return sym; }
   virtual void exit_decls(int n = 1) {}
 
@@ -77,20 +72,19 @@ public:
   using node_mutator::visit;
 };
 
+// Replace the var `target` with a `replacement` expr. Respects shadowing and implicit buffer metadata.
 expr substitute(const expr& e, var target, const expr& replacement);
-stmt substitute(const stmt& s, var target, const expr& replacement);
 interval_expr substitute(const interval_expr& x, var target, const expr& replacement);
-expr substitute(const expr& e, const expr& target, const expr& replacement);
-stmt substitute(const stmt& s, const expr& target, const expr& replacement);
+stmt substitute(const stmt& s, var target, const expr& replacement);
 
 // Substitute `elem_size` in for buffer_elem_size(buffer) and the other buffer metadata in `dims` for per-dimension
 // metadata.
 expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
-stmt substitute_buffer(const stmt& s, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
 expr substitute_bounds(const expr& e, var buffer, const box_expr& bounds);
-stmt substitute_bounds(const stmt& s, var buffer, const box_expr& bounds);
 expr substitute_bounds(const expr& e, var buffer, int dim, const interval_expr& bounds);
-stmt substitute_bounds(const stmt& s, var buffer, int dim, const interval_expr& bounds);
+
+// Find `target` and replace it with `replacement`. Does not respect shadowing or implicit buffer metadata.
+expr substitute(const expr& e, const expr& target, const expr& replacement);
 
 }  // namespace slinky
 
