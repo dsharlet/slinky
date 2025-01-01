@@ -1467,8 +1467,13 @@ public:
     std::vector<stmt> stmts;
     stmts.reserve(op->stmts.size());
     bool changed = false;
+    // Learn from checks in this scope and store the knowledge in k.
+    knowledge k(vars, buffers);
     for (const stmt& s : op->stmts) {
       stmts.push_back(mutate(s));
+      if (const check* c = stmts.back().as<check>()) {
+        k.learn_from_true(c->condition);
+      }
       changed = changed || !stmts.back().same_as(s);
     }
 

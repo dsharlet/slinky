@@ -483,8 +483,7 @@ TEST(simplify, buffer_bounds) {
                   decl_bounds(b0, {{0, x + -1}},
                       decl_bounds(b1, {{0, x + -1}},
                           crop_dim::make(b2, b0, 0, {expr(), buffer_max(b1, 0)},
-                              crop_dim::make(b3, b0, 0, {expr(), buffer_max(b2, 0)},
-                                  use_buffers({b1, b3}))))))),
+                              crop_dim::make(b3, b0, 0, {expr(), buffer_max(b2, 0)}, use_buffers({b1, b3}))))))),
       matches(let_stmt::make(x, select(1 < y, y, max(w, 1)),
           decl_bounds(b0, {{0, x + -1}}, decl_bounds(b1, {{0, x + -1}}, use_buffers({b1, b0}))))));
 }
@@ -691,6 +690,23 @@ TEST(simplify, transpose) {
                   b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))),
       matches(crop_buffer::make(
           b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))));
+}
+
+TEST(simplify, knowledge) {
+  ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
+  ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
+  ASSERT_THAT(simplify(block::make({
+                  check::make(buffer_min(b0, 0) == 0),
+                  check::make(buffer_max(b0, 1) == 10),
+                  check::make(buffer_min(b0, 2) == x + 1),
+                  crop_buffer::make(b1, b0, {{0, 1}, {0, 20}, {x, 3}}, call_stmt::make(nullptr, {}, {b1}, {})),
+              })),
+      matches(block::make({
+          check::make(buffer_min(b0, 0) == 0),
+          check::make(buffer_max(b0, 1) == 10),
+          check::make(buffer_min(b0, 2) == x + 1),
+          crop_buffer::make(b1, b0, {{expr(), 1}, {0, expr()}, {expr(), 3}}, call_stmt::make(nullptr, {}, {b1}, {})),
+      })));
 }
 
 TEST(simplify, bounds_of) {
