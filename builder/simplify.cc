@@ -626,7 +626,7 @@ public:
     return *a == 0 && *b == 0;
   }
 
-  std::optional<bool> attempt_to_prove(const interval_expr& e) {
+  static std::optional<bool> attempt_to_prove(const interval_expr& e) {
     if (prove_constant_true(e.min)) {
       return true;
     } else if (prove_constant_false(e.max)) {
@@ -839,10 +839,8 @@ public:
 
     if (!a.defined()) {
       set_result(expr(), expr_info());
-    } else if (prove_constant_true(info.bounds.min)) {
-      set_result(expr(false), {point(false), alignment_type()});
-    } else if (prove_constant_false(info.bounds.max)) {
-      set_result(expr(true), {point(true), alignment_type()});
+    } else if (auto proven = attempt_to_prove(info.bounds)) {
+      set_result(expr(!*proven), {point(!*proven), alignment_type()});
     } else {
       expr result = simplify(op, std::move(a));
       if (result.same_as(op)) {
@@ -904,11 +902,8 @@ public:
     if (!c.defined()) {
       set_result(expr(), expr_info());
       return;
-    } else if (prove_constant_true(c_info.bounds.min)) {
-      mutate_and_set_result(op->true_value);
-      return;
-    } else if (prove_constant_false(c_info.bounds.max)) {
-      mutate_and_set_result(op->false_value);
+    } else if (auto proven = attempt_to_prove(c_info.bounds)) {
+      mutate_and_set_result(*proven ? op->true_value : op->false_value);
       return;
     }
 
@@ -2045,11 +2040,13 @@ public:
 
     if (!c.defined()) {
       set_result(stmt());
-    } else if (prove_constant_true(c_info.bounds.min)) {
-      set_result(stmt());
-    } else if (prove_constant_false(c_info.bounds.max)) {
-      std::cerr << op->condition << " is statically false." << std::endl;
-      std::abort();
+    } else if (auto proven = attempt_to_prove(c_info.bounds)) {
+      if (*proven) {
+        set_result(stmt());
+      } else {
+        std::cerr << op->condition << " is statically false." << std::endl;
+        std::abort();
+      }
     } else if (c.same_as(op->condition)) {
       set_result(op);
     } else {
