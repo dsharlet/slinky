@@ -341,6 +341,28 @@ public:
 
     // How many loops out is the `decl` found.
     int loop_depth = 0;
+
+    buffer_info(expr elem_size) : elem_size(elem_size) {}
+
+    buffer_info(var sym, int rank) : dims(rank) {
+      elem_size = buffer_elem_size(sym);
+      for (int d = 0; d < rank; ++d) {
+        dims[d] = buffer_dim(sym, d);
+      }
+    }
+
+    void init_dims(var sym, int rank) {
+      for (int d = 0; d < static_cast<int>(dims.size()); ++d) {
+        if (!dims[d].bounds.min.defined()) dims[d].bounds.min = buffer_min(sym, d);
+        if (!dims[d].bounds.max.defined()) dims[d].bounds.max = buffer_max(sym, d);
+        if (!dims[d].stride.defined()) dims[d].stride = buffer_stride(sym, d);
+        if (!dims[d].fold_factor.defined()) dims[d].fold_factor = buffer_fold_factor(sym, d);
+      }
+      dims.reserve(rank);
+      for (int d = dims.size(); d < rank; ++d) {
+        dims.push_back(buffer_dim(sym, d));
+      }
+    }
   };
 
   struct expr_info {
@@ -1417,8 +1439,7 @@ public:
   template <typename T>
   buffer_info mutate_buffer(const T* op) {
     scoped_trace trace("mutate_buffer");
-    buffer_info info;
-    info.elem_size = mutate(op->elem_size);
+    buffer_info info(mutate(op->elem_size));
     info.dims.reserve(op->dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       info.dims.push_back(mutate(op->dims[d]));
@@ -1673,15 +1694,9 @@ public:
   std::optional<buffer_info> get_buffer_info(var buf, int rank) {
     std::optional<buffer_info> info = buffers[buf];
     if (!info) {
-      info = buffer_info();
-    }
-    info->dims.resize(std::max(info->dims.size(), static_cast<std::size_t>(rank)));
-    if (!info->elem_size.defined()) info->elem_size = buffer_elem_size(buf);
-    for (int d = 0; d < static_cast<int>(info->dims.size()); ++d) {
-      if (!info->dims[d].bounds.min.defined()) info->dims[d].bounds.min = buffer_min(buf, d);
-      if (!info->dims[d].bounds.max.defined()) info->dims[d].bounds.max = buffer_max(buf, d);
-      if (!info->dims[d].stride.defined()) info->dims[d].stride = buffer_stride(buf, d);
-      if (!info->dims[d].fold_factor.defined()) info->dims[d].fold_factor = buffer_fold_factor(buf, d);
+      info = buffer_info(buf, rank);
+    } else {
+      info->init_dims(buf, rank);
     }
     return info;
   }
@@ -1981,7 +1996,7 @@ public:
       break;
     }
 
-    buffer_info sym_info;
+    buffer_info sym_info{expr()};
     if (src_info && *src_info) {
       if (transpose::is_truncate(dims) && (*src_info)->all_dims_known && (*src_info)->dims.size() <= dims.size()) {
         // transpose can't add dimensions.
