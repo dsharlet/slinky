@@ -626,17 +626,21 @@ public:
     return *a == 0 && *b == 0;
   }
 
+  std::optional<bool> attempt_to_prove(const interval_expr& e) {
+    if (prove_constant_true(e.min)) {
+      return true;
+    } else if (prove_constant_false(e.max)) {
+      return false;
+    } else {
+      return std::nullopt;
+    }
+  }
+
   std::optional<bool> attempt_to_prove(const expr& e) {
     scoped_trace trace("attempt_to_prove");
     expr_info info;
     mutate_boolean(e, &info);
-    if (prove_constant_true(info.bounds.min)) {
-      return true;
-    } else if (prove_constant_false(info.bounds.max)) {
-      return false;
-    } else {
-      return {};
-    }
+    return attempt_to_prove(info.bounds);
   }
 
   bool prove_true(const expr& e) {
@@ -805,17 +809,20 @@ public:
       return;
     }
 
-    expr result = simplify(op, std::move(a), std::move(b));
+    expr result = simplify(op, a, b);
     if (!result.same_as(op)) {
       mutate_and_set_result(result);
     } else {
-      interval_expr result_info = bounds_of(op, std::move(a_info.bounds), std::move(b_info.bounds));
-      if (prove_constant_true(result_info.min)) {
-        set_result(expr(true), {point(true), alignment_type()});
-      } else if (prove_constant_false(result_info.max)) {
-        set_result(expr(false), {point(false), alignment_type()});
+      // Similar to the way we handle min/max, we need to check the bounds against the expression itself.
+      interval_expr result_bounds = bounds_of(op, a_info.bounds, b_info.bounds);
+      if (auto proven = attempt_to_prove(result_bounds)) {
+        set_result(expr(*proven), {point(*proven), alignment_type()});
+      } else if (auto proven = attempt_to_prove(bounds_of(op, point(a), b_info.bounds))) {
+        set_result(expr(*proven), {point(*proven), alignment_type()});
+      } else if (auto proven = attempt_to_prove(bounds_of(op, a_info.bounds, point(b)))) {
+        set_result(expr(*proven), {point(*proven), alignment_type()});
       } else {
-        set_result(std::move(result), {std::move(result_info), alignment_type()});
+        set_result(std::move(result), {std::move(result_bounds), alignment_type()});
       }
     }
   }
