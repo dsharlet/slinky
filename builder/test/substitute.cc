@@ -70,7 +70,7 @@ TEST(substitute, shadowed) {
       matches(slice_dim::make(x, u, 2, 0, check::make(expr(1) == 0))));
 
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3)),
-      matches(slice_dim::make(x, x, 2, 0, check::make(buffer_max(x, 2) == buffer_min(x, 3)))));
+      matches(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3)))));
   ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 3)),
       matches(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3)))));
   ASSERT_THAT(substitute(slice_dim::make(x, u, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(u, 3)),
@@ -79,7 +79,7 @@ TEST(substitute, shadowed) {
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 2)),
       matches(slice_dim::make(x, x, 2, 0, check::make(expr() == buffer_min(x, 3)))));
   ASSERT_THAT(substitute(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3))), y, buffer_max(x, 1)),
-      matches(slice_dim::make(x, x, 2, 0, check::make(buffer_max(x, 1) == buffer_min(x, 3)))));
+      matches(slice_dim::make(x, x, 2, 0, check::make(y == buffer_min(x, 3)))));
 
   ASSERT_THAT(substitute_bounds(slice_dim::make(x, x, 2, 0, check::make(buffer_min(x, 3) == w)), x, 3, {1, expr()}),
       matches(slice_dim::make(x, x, 2, 0, check::make(buffer_min(x, 3) == w))));

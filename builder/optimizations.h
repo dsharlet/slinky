@@ -23,7 +23,7 @@ stmt implement_copies(const stmt& s, node_context& ctx);
 stmt insert_early_free(const stmt& s);
 
 // The simplifier can't handle shadowed symbols. This mutator rewrites all declarations to avoid any shadowing.
-stmt deshadow(const stmt& s, node_context& ctx);
+stmt deshadow(const stmt& s, span<var> external_symbols, node_context& ctx);
 
 // We can improve `evaluate`'s performance and memory usage if:
 // - Buffer mutators are self-shadowing, so they can be performed in-place on existing buffers.

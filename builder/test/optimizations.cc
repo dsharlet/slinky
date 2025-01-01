@@ -60,7 +60,7 @@ TEST(optimizations, deshadow_speed) {
   for (int i = 0; i < 1000; ++i) {
     s = crop_dim::make(y, y, 0, {0, 0}, s);
   }
-  stmt s2 = deshadow(s, ctx);
+  stmt s2 = deshadow(s, {}, ctx);
 }
 
 }  // namespace slinky

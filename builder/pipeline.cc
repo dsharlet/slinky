@@ -237,7 +237,7 @@ class sanitize_user_exprs : public node_mutator {
 public:
   node_context& ctx;
   std::map<expr, var, node_less> replacements;
-  std::set<var> external;
+  std::vector<var> external;
 
   sanitize_user_exprs(node_context& ctx) : ctx(ctx) {}
 
@@ -259,7 +259,7 @@ public:
     // Don't lift internally allocated buffer metadata expressions.
     assert(op->args.size() >= 1 && as_variable(op->args[0]));
     // TODO: This should be a proper API error.
-    assert(external.count(*as_variable(op->args[0])));
+    assert(std::binary_search(external.begin(), external.end(), *as_variable(op->args[0])));
 
     auto i = replacements.insert(std::pair<const expr, var>(op, 0));
     if (i.second) {
@@ -748,19 +748,20 @@ public:
     std::map<const func*, std::vector<const func*>> deps;
     topological_sort(outputs, order_, deps, constants);
 
+    sanitizer_.external.reserve(outputs.size() + inputs.size() + constants.size());
     for (auto& i : outputs) {
       output_syms_[i->sym()] = i;
-      sanitizer_.external.insert(i->sym());
+      sanitizer_.external.push_back(i->sym());
     }
-
     for (const buffer_expr_ptr& i : inputs) {
       input_syms_[i->sym()] = i;
-      sanitizer_.external.insert(i->sym());
+      sanitizer_.external.push_back(i->sym());
     }
     for (const buffer_expr_ptr& i : constants) {
       input_syms_[i->sym()] = i;
-      sanitizer_.external.insert(i->sym());
+      sanitizer_.external.push_back(i->sym());
     }
+    std::sort(sanitizer_.external.begin(), sanitizer_.external.end());
 
     // Build a loop nest tree and computes compute_at locations when neccessary.
     compute_innermost_locations(order_, deps, compute_at_levels_);
@@ -771,6 +772,8 @@ public:
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
   }
+
+  const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
   // This function works together with the produce() function to
   // build an initial IR. The high-level approach is the following:
@@ -971,7 +974,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
   result = block::make(std::move(checks), std::move(result));
 
-  result = deshadow(result, ctx);
+  result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 
   // Try to reuse buffers and eliminate copies where possible.
@@ -992,7 +995,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   }
 
   // `implement_copies` adds shadowed declarations, remove them before simplifying.
-  result = deshadow(result, ctx);
+  result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 
   result = optimize_symbols(result, ctx);

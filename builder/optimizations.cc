@@ -995,19 +995,18 @@ stmt insert_early_free(const stmt& s) {
 
 namespace {
 
-class deshadower : public node_mutator {
+class deshadower : public substitutor {
   node_context& ctx;
-  symbol_map<bool> symbols;
+  symbol_map<var> symbols;
   var in_loop;
 
+  std::vector<scoped_value_in_symbol_map<var>> decls;
+
 public:
-  deshadower(node_context& ctx) : ctx(ctx) {}
-
-  void visit_symbol(var x) { symbols[x] = true; }
-
-  void visit(const variable* op) override {
-    visit_symbol(op->sym);
-    set_result(op);
+  deshadower(node_context& ctx, span<var> external_symbols) : ctx(ctx) {
+    for (var i : external_symbols) {
+      symbols[i] = i;
+    }
   }
 
   var rename(var x) {
@@ -1015,66 +1014,70 @@ public:
     return ctx.insert_unique(ctx.name(x) + suffix);
   }
 
-  template <typename T>
-  void visit_decl(const T* op) {
-    stmt result(op);
-    const std::optional<bool>& sym_defined = symbols[op->sym];
-    var sym = op->sym;
-    if (sym_defined && *sym_defined) {
-      sym = rename(op->sym);
-      result = clone_with(op, sym, substitute(op->body, op->sym, sym));
-    }
-    auto s = set_value_in_scope(symbols, sym, true);
-    node_mutator::visit(result.as<T>());
+  var visit_symbol(var x) override {
+    std::optional<var> new_x = symbols.lookup(x);
+    return new_x ? *new_x : x;
   }
 
+  var enter_decl(var x) override {
+    var renamed = symbols.contains(x) ? rename(x) : x;
+    decls.push_back(set_value_in_scope(symbols, x, renamed));
+    return renamed;
+  }
+
+  void exit_decls(int n) override { decls.erase(decls.begin() + decls.size() - n, decls.end()); }
+
   void visit(const loop* op) override {
-    stmt result(op);
-    const std::optional<bool>& sym_defined = symbols[op->sym];
-    var sym = op->sym;
-    if (sym_defined && *sym_defined) {
-      sym = rename(op->sym);
-      result = clone_with(op, sym, substitute(op->body, op->sym, sym));
-    }
+    interval_expr bounds = mutate(op->bounds);
+    expr step = mutate(op->step);
+    var sym = symbols.contains(op->sym) ? rename(op->sym) : op->sym;
+    auto s = set_value_in_scope(symbols, op->sym, sym);
     var old_in_loop = in_loop;
     in_loop = sym;
-    auto s = set_value_in_scope(symbols, sym, true);
-    node_mutator::visit(result.as<loop>());
+    stmt body = mutate(op->body);
     in_loop = old_in_loop;
+    if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(loop::make(sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+    }
   }
-  void visit(const allocate* op) override { visit_decl(op); }
+
+  void visit(const allocate* op) override {
+    expr elem_size = mutate(op->elem_size);
+    std::vector<dim_expr> dims;
+    dims.reserve(op->dims.size());
+    bool changed = false;
+    for (const dim_expr& i : op->dims) {
+      dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
+      changed = changed || !dims.back().same_as(i);
+    }
+    // We don't rename allocations.
+    // TODO: We don't want to rename allocations that shadow make_buffer (we rename make_buffer instead below), but we
+    // do want to rename allocations that shadow anything else.
+    auto s = set_value_in_scope(symbols, op->sym, op->sym);
+    stmt body = mutate(op->body);
+    if (!changed && elem_size.same_as(op->elem_size) && body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(allocate::make(op->sym, op->storage, std::move(elem_size), std::move(dims), std::move(body)));
+    }
+  }
+
   void visit(const make_buffer* op) override {
-    stmt result(op);
+    expr base = mutate(op->base);
+    expr elem_size = mutate(op->elem_size);
+    std::vector<dim_expr> dims;
+    dims.reserve(op->dims.size());
+    for (const dim_expr& i : op->dims) {
+      dims.push_back({mutate(i.bounds), mutate(i.stride), mutate(i.fold_factor)});
+    }
     // We want to keep the name of allocates that shadow make_buffers, so rename the make_buffer instead.
     // TODO: We should only do this if there is actually an allocate shadowing this buffer.
     var sym = rename(op->sym);
-    result = clone_with(op, sym, substitute(op->body, op->sym, sym));
-    auto s = set_value_in_scope(symbols, sym, true);
-    node_mutator::visit(result.as<make_buffer>());
-  }
-  void visit(const crop_buffer* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const crop_dim* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const slice_buffer* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const slice_dim* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const transpose* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
-  }
-  void visit(const clone_buffer* op) override {
-    visit_symbol(op->src);
-    visit_decl(op);
+    auto s = set_value_in_scope(symbols, op->sym, sym);
+    stmt body = mutate(op->body);
+    set_result(make_buffer::make(sym, std::move(base), std::move(elem_size), std::move(dims), std::move(body)));
   }
 
   using node_mutator::visit;
@@ -1143,9 +1146,9 @@ public:
 
 }  // namespace
 
-stmt deshadow(const stmt& s, node_context& ctx) {
+stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
   scoped_trace trace("deshadow");
-  return deshadower(ctx).mutate(s);
+  return deshadower(ctx, symbols).mutate(s);
 }
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
