@@ -98,6 +98,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
+    
+      apply(min(select(x && y, z, w), select(y, u, v)), select(y, min(u, select(x, z, w)), min(w, v))) ||
+      apply(min(select(x || y, z, w), select(y, u, v)), select(y, min(z, u), min(v, select(x, z, w)))) ||
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -250,6 +253,9 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
+    
+      apply(max(select(x && y, z, w), select(y, u, v)), select(y, max(u, select(x, z, w)), max(w, v))) ||
+      apply(max(select(x || y, z, w), select(y, u, v)), select(y, max(z, u), max(v, select(x, z, w)))) ||
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -366,6 +372,9 @@ bool apply_add_rules(Fn&& apply) {
     
       apply(w + select(x, y, z - w), select(x, y + w, z)) ||
       apply(w + select(x, y - w, z), select(x, y, z + w)) ||
+    
+      apply(select(x && y, z, w) + select(y, u, v), select(y, u + select(x, z, w), w + v)) ||
+      apply(select(x || y, z, w) + select(y, u, v), select(y, z + u, v + select(x, z, w))) ||
 
       false;
 }
@@ -450,6 +459,11 @@ bool apply_sub_rules(Fn&& apply) {
       apply(select(x, y, z) - z, select(x, y - z, 0)) ||
       apply(y - select(x, y, z), select(x, 0, y - z)) ||
       apply(z - select(x, y, z), select(x, z - y, 0)) ||
+    
+      apply(select(x && y, z, w) - select(y, u, v), select(y, select(x, z, w) - u, w - v)) ||
+      apply(select(y, z, w) - select(x && y, u, v), select(y, z - select(x, u, v), w - v)) ||
+      apply(select(x || y, z, w) - select(y, u, v), select(y, z - u, select(x, z, w) - v)) ||
+      apply(select(y, z, w) - select(x || y, u, v), select(y, z - u, w - select(x, u, v))) ||
 
       false;
 }
@@ -705,6 +719,11 @@ bool apply_less_rules(Fn&& apply) {
       apply(select(x, y, z) < select(x, w, u), select(x, y < w, z < u)) ||
       apply(select(x, y, z) < v + select(x, w, u), select(x, y < v + w, z < v + u)) ||
       apply(v + select(x, y, z) < select(x, w, u), select(x, v + y < w, v + z < u)) ||
+        
+      apply(select(x && y, z, w) < select(y, u, v), select(y, select(x, z, w) < u, w < v)) ||
+      apply(select(y, z, w) < select(x && y, u, v), select(y, z < select(x, u, v), w < v)) ||
+      apply(select(x || y, z, w) < select(y, u, v), select(y, z < u, select(x, z, w) < v)) ||
+      apply(select(y, z, w) < select(x || y, u, v), select(y, z < u, w < select(x, u, v))) ||
 
       // Nested logicals
       apply(x < y, y && !x, is_boolean(x) && is_boolean(y)) ||
@@ -760,6 +779,9 @@ bool apply_equal_rules(Fn&& apply) {
       apply(y == select(x == y, z, x), x == y && y == z) ||
       apply(y == select(x, y, z), select(x, true, y == z)) ||
       apply(z == select(x, y, z), select(x, z == y, true)) ||
+    
+      apply(select(x && y, z, w) == select(y, u, v), select(y, u == select(x, z, w), w == v)) ||
+      apply(select(x || y, z, w) == select(y, u, v), select(y, z == u, v == select(x, z, w))) ||
 
       apply(y == max(x, y), x <= y) ||
       apply(y == min(x, y), y <= x) ||
