@@ -433,6 +433,12 @@ TEST(simplify, bounds) {
   // Tricky case because want to use the bounds of x but the value of y.
   symbol_map<interval_expr> xy_bounds = {{x, {0, y}}, {y, {z, w}}};
   ASSERT_THAT(simplify(min(x, y + 1), xy_bounds), matches(x));
+
+  ASSERT_THAT(simplify(let::make(x, select(1 < y, y, max(z, 1)), max(x, 0))),
+      matches(let::make(x, select(1 < y, y, max(z, 1)), x)));
+
+  ASSERT_THAT(simplify(let::make({{x, select(1 < y, y, max(z, 1))}, {w, select(1 < x, x, max(u, 1))}}, max(w, 0))),
+      matches(let::make({{x, select(1 < y, y, max(z, 1))}, {w, select(1 < x, x, max(u, 1))}}, w)));
 }
 
 TEST(simplify, buffer_bounds) {
@@ -792,6 +798,8 @@ TEST(simplify, constant_lower_bound) {
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) * 256 < 0), matches(0));
+
+  ASSERT_THAT(constant_lower_bound(min(1, max(x, 1))), matches(1));
 }
 
 TEST(simplify, constant_upper_bound) {

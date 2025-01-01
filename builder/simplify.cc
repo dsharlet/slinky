@@ -2178,11 +2178,8 @@ public:
 
   template <typename T>
   void visit_min_max(const T* op, bool take_constant) {
-    // We can only learn about upper bounds from min and lower bounds from max. Furthermore, it is an error to
-    // attempt to recursively mutate into a max while finding upper bounds or vice versa, because we might find
-    // incorrect conservative bounds in the wrong direction.
-    expr a = take_constant ? mutate(op->a) : op->a;
-    expr b = take_constant ? mutate(op->b) : op->b;
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
