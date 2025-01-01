@@ -245,7 +245,7 @@ TEST(simplify, let) {
 }
 
 TEST(simplify, loop) {
-  auto make_call = [](const var& out) { return call_stmt::make(nullptr, {}, {out}, {}); };
+  auto make_call = [](var out) { return call_stmt::make(nullptr, {}, {out}, {}); };
 
   ASSERT_THAT(simplify(loop::make(
                   x, loop::serial, buffer_bounds(b0, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
@@ -271,13 +271,32 @@ TEST(simplify, loop) {
       matches(crop_dim::make(b1, b0, 0, bounds(0, buffer_max(b3, 0)), make_call(b1))));
 }
 
+TEST(simplify, siblings) {
+  auto make_call = [](var out) { return call_stmt::make(nullptr, {}, {out}, {}); };
+  auto make_crop_x = [](var out, var in, int dim, const stmt& body) {
+    return crop_dim::make(out, in, dim, point(x), body);
+  };
+
+  ASSERT_THAT(simplify(make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b0)}))),
+      matches(block::make({make_crop_x(b1, b0, 0, make_call(b1)), make_call(b0)})));
+  ASSERT_THAT(simplify(make_crop_x(b1, b0, 0, block::make({make_call(b0), make_call(b1)}))),
+      matches(block::make({make_call(b0), make_crop_x(b1, b0, 0, make_call(b1))})));
+  ASSERT_THAT(
+      simplify(make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b0), make_call(b1), make_call(b0)}))),
+      matches(block::make({make_crop_x(b1, b0, 0, make_call(b1)), make_call(b0), make_crop_x(b1, b0, 0, make_call(b1)),
+          make_call(b0)})));
+  ASSERT_THAT(
+      simplify(make_crop_x(b1, b0, 0, block::make({make_call(b0), make_call(b1), make_call(b1), make_call(b0)}))),
+      matches(block::make({make_call(b0), make_crop_x(b1, b0, 0, block::make({make_call(b1), make_call(b1)})), make_call(b0)})));
+}
+
 TEST(simplify, licm) {
   // Use parallel loops so loops of one call don't get rewritten to a single call.
   auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
   auto make_loop_y = [](const stmt& body) { return loop::make(y, loop::parallel, bounds(0, 10), 1, body); };
-  auto make_call = [](const var& in, const var& out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
-  auto make_crop_x = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
-  auto make_crop_y = [](const var& b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
+  auto make_call = [](var in, var out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
+  auto make_crop_x = [](var b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
+  auto make_crop_y = [](var b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
 
   // One call doesn't depend on the loop.
   ASSERT_THAT(simplify(make_loop_x(make_call(b0, b1))), matches(make_call(b0, b1)));
@@ -647,6 +666,29 @@ TEST(simplify, make_buffer) {
                       call_stmt::make(nullptr, {}, {b0}, {})))),
       matches(make_buffer::make(
           b0, buffer_at(b2), buffer_elem_size(b2), {{{0, 10}, 2}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+
+  // The same buffer
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
+                      call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), buffer_dim(b0, 1)},
+                      call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+  ASSERT_THAT(simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}},
+                  make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0), {buffer_dim(b0, 0), {{0, 0}, 0, {}}},
+                      call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(
+          b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}}, call_stmt::make(nullptr, {}, {b0}, {}))));
+  ASSERT_THAT(
+      simplify(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
+          make_buffer::make(b1, buffer_at(b0), buffer_elem_size(b0),
+              {buffer_dim(b0, 0), {{0, 0}, 0, {}}, {{0, 0}, 0, {}}}, call_stmt::make(nullptr, {}, {b1}, {})))),
+      matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
+          call_stmt::make(nullptr, {}, {b0}, {}))));
 }
 
 TEST(simplify, transpose) {
@@ -747,20 +789,32 @@ TEST(simplify, bounds_of) {
   }
 }
 
+TEST(simplify, constant_lower_bound) {
+  ASSERT_THAT(constant_lower_bound(min(x, 0) < 0), matches(0));
+  ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
+  ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
+  ASSERT_THAT(constant_lower_bound(max(x, 0) * 256 < 0), matches(0));
+}
+
 TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
   ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
   ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
   ASSERT_THAT(constant_upper_bound(x - max(y, 4)), matches(x - 4));
   ASSERT_THAT(constant_upper_bound(x * 3), matches(x * 3));
-  ASSERT_THAT(constant_upper_bound(min(x, 4) * 2), matches(expr(4) * 2));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) * 2), matches(8));
   ASSERT_THAT(constant_upper_bound(min(x, 4) * -2), matches(min(x, 4) * -2));
-  ASSERT_THAT(constant_upper_bound(max(x, 4) * -2), matches(expr(4) * -2));
-  ASSERT_THAT(constant_upper_bound(min(x, 4) / 2), matches(expr(4) / 2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) * -2), matches(-8));
+  ASSERT_THAT(constant_upper_bound(min(x, 4) / 2), matches(2));
   ASSERT_THAT(constant_upper_bound(max(x, 4) / 2), matches(max(x, 4) / 2));
   ASSERT_THAT(constant_upper_bound(min(x, 4) / -2), matches(min(x, 4) / -2));
-  ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(expr(4) / -2));
+  ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(-2));
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
+
+  ASSERT_THAT(constant_upper_bound(min(x, 0) < 0), matches(1));
+  ASSERT_THAT(constant_upper_bound(min(x, 0) * 256 < 0), matches(1));
+  ASSERT_THAT(constant_upper_bound(max(x, 0) < 0), matches(0));
+  ASSERT_THAT(constant_upper_bound(max(x, 0) * 256 < 0), matches(0));
 }
 
 TEST(simplify, modulus_remainder) {

@@ -58,13 +58,23 @@ void ensure_is_point(interval_expr& x) {
 
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
-stmt lift_decl_invariants(std::vector<stmt> stmts, var sym, Fn&& make_decl) {
-  for (stmt& i : stmts) {
-    if (depends_on(i, sym).any()) {
-      i = make_decl(i);
+stmt lift_decl_invariants(const std::vector<stmt>& stmts, var sym, Fn&& make_decl) {
+  std::vector<stmt> result;
+  result.reserve(stmts.size());
+  for (auto i = stmts.begin(); i != stmts.end();) {
+    if (depends_on(*i, sym).any()) {
+      std::vector<stmt> result_i;
+      result_i.reserve(stmts.size());
+      do {
+        result_i.push_back(*i++);
+      } while (i != stmts.end() && depends_on(*i, sym).any());
+      result.push_back(make_decl(block::make(std::move(result_i))));
+      if (i != stmts.end()) result.push_back(*i++);
+    } else {
+      result.push_back(*i++);
     }
   }
-  return block::make(std::move(stmts));
+  return block::make(std::move(result));
 }
 
 // Given an expression that produces a base pointer for a buffer, find the buffer the pointer is from.
@@ -1253,7 +1263,7 @@ public:
           interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
           auto set_bounds_of_sym = set_value_in_scope(info_map, op->sym, {bounds, alignment_type()});
           // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
-          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) || 
+          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
                          (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
             result = crop->body;
             expr_info info_of_min, info_of_max;
@@ -1402,10 +1412,16 @@ public:
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
   bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
-    return is_buffer_meta(d.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, dim) &&
-           is_buffer_meta(d.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, dim) &&
-           is_buffer_meta(d.stride, src.stride, intrinsic::buffer_stride, sym, dim) &&
-           is_buffer_meta(d.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, dim);
+    if (!is_buffer_meta(d.bounds.min, src.bounds.min, intrinsic::buffer_min, sym, dim)) return false;
+    if (!is_buffer_meta(d.bounds.max, src.bounds.max, intrinsic::buffer_max, sym, dim)) return false;
+
+    if (prove_true(src.bounds.min == src.bounds.max)) {
+      // The extent is 1, the stride and fold factor don't matter.
+      return true;
+    } else {
+      return is_buffer_meta(d.stride, src.stride, intrinsic::buffer_stride, sym, dim) &&
+             is_buffer_meta(d.fold_factor, src.fold_factor, intrinsic::buffer_fold_factor, sym, dim);
+    }
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
@@ -1416,11 +1432,17 @@ public:
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
     canonicalize_buffer_meta(buf.elem_size, src.elem_size, intrinsic::buffer_elem_size, sym);
-    for (dim_expr& d : buf.dims) {
-      for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
-        if (is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
-          d = buffer_dim(sym, src_d);
-          break;
+    for (int buf_d = 0; buf_d < static_cast<int>(buf.dims.size()); ++buf_d) {
+      dim_expr& d = buf.dims[buf_d];
+      // Try buf_d first, to prefer making identical buffers.
+      if (buf_d < static_cast<int>(src.dims.size()) && is_buffer_dim(d, src.dims[buf_d], sym, buf_d)) {
+        d = buffer_dim(sym, buf_d);
+      } else {
+        for (int src_d = 0; src_d < static_cast<int>(src.dims.size()); ++src_d) {
+          if (src_d != buf_d && is_buffer_dim(d, src.dims[src_d], sym, src_d)) {
+            d = buffer_dim(sym, src_d);
+            break;
+          }
         }
       }
     }
@@ -1436,18 +1458,6 @@ public:
     if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
       set_result(mutate(substitute_buffer(op->body, op->sym, info.elem_size, info.dims)));
-      return;
-    }
-    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
-    scoped_trace trace("visit(const make_buffer*)");
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      // This make_buffer is unused.
-      set_result(std::move(body));
-      return;
-    } else if (can_substitute_buffer(depends_on(op->body, op->sym))) {
-      // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
       return;
     }
 
@@ -1484,7 +1494,7 @@ public:
         }
         if (is_slice && slice_rank == info.dims.size()) {
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
-          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), std::move(body));
+          stmt result = slice_buffer::make(op->sym, op->sym, std::move(at), op->body);
           // make_buffer drops trailing dims, do the same here.
           result = transpose::make_truncate(op->sym, *src_buf, info.dims.size() + at_rank, std::move(result));
           set_result(mutate(result));
@@ -1514,7 +1524,7 @@ public:
           }
         }
         if (is_crop) {
-          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), std::move(body));
+          stmt result = crop_buffer::make(op->sym, op->sym, std::move(crop_bounds), op->body);
           // make_buffer drops trailing dims, do the same here.
           result = transpose::make_truncate(op->sym, *src_buf, info.dims.size(), std::move(result));
           set_result(mutate(result));
@@ -1537,10 +1547,23 @@ public:
           }
         }
         if (is_transpose) {
-          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), std::move(body))));
+          set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), op->body)));
           return;
         }
       }
+    }
+
+    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
+    scoped_trace trace("visit(const make_buffer*)");
+    auto deps = depends_on(body, op->sym);
+    if (!deps.any()) {
+      // This make_buffer is unused.
+      set_result(std::move(body));
+      return;
+    } else if (can_substitute_buffer(deps)) {
+      // We only needed the buffer meta, not the buffer itself.
+      set_result(mutate(substitute_buffer(body, op->sym, info.elem_size, info.dims)));
+      return;
     }
 
     if (const block* b = body.as<block>()) {
@@ -1568,18 +1591,6 @@ public:
       if (!info->dims[d].fold_factor.defined()) info->dims[d].fold_factor = buffer_fold_factor(buf, d);
     }
     return info;
-  }
-
-  // Crop bounds like min(buffer_max(x, d), y) can be rewritten to just y because the crop will clamp anyways.
-  static expr simplify_crop_bound(expr x, var sym, int dim) {
-    if (const class max* m = x.as<class max>()) {
-      if (match_call(m->a, intrinsic::buffer_min, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
-      if (match_call(m->b, intrinsic::buffer_min, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
-    } else if (const class min* m = x.as<class min>()) {
-      if (match_call(m->a, intrinsic::buffer_max, sym, dim)) return simplify_crop_bound(m->b, sym, dim);
-      if (match_call(m->b, intrinsic::buffer_max, sym, dim)) return simplify_crop_bound(m->a, sym, dim);
-    }
-    return x;
   }
 
   template <typename T>
@@ -1664,9 +1675,8 @@ public:
       result = mutate(deduped);
     }
 
-    // TODO: We should not need to compare to both buffer_bounds(buf, dim) and buffer.
-    if (prove_true(result.min <= buffer.min || result.min <= buffer_min(buf, dim))) result.min = expr();
-    if (prove_true(result.max >= buffer.max || result.max >= buffer_max(buf, dim))) result.max = expr();
+    if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
+    if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
 
     // We already proved above that this min/max is necessary (otherwise result would be undefined here).
     if (result.min.defined()) buffer.min = max(buffer.min, result.min);
@@ -1713,22 +1723,14 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
       return;
+    } else if (!crop_needed(deps)) {
+      set_result(substitute(body, op_sym, op_src));
+      return;
     }
 
     // Remove trailing undefined bounds.
     while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
       bounds.pop_back();
-    }
-
-    if (!crop_needed(deps)) {
-      // Add clamps for the implicit bounds like crop would have done.
-      for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-        bounds[d] &= slinky::buffer_bounds(op_src, d);
-      }
-      body = substitute_bounds(body, op_sym, bounds);
-      body = substitute(body, op_sym, op_src);
-      set_result(mutate(body));
-      return;
     }
 
     // Rewrite nested crops to be one crop where possible.
@@ -1977,7 +1979,7 @@ public:
 
     if (const block* b = body.as<block>()) {
       set_result(lift_decl_invariants(
-          b->stmts, op->sym, [&](stmt body) { return mutate(transpose::make(op->sym, src, dims, std::move(body))); }));
+          b->stmts, op->sym, [&](stmt body) { return transpose::make(op->sym, src, dims, std::move(body)); }));
       return;
     }
 
@@ -1985,7 +1987,7 @@ public:
     if (!deps.any()) {
       set_result(std::move(body));
     } else if (!deps.buffer_dims) {
-      set_result(mutate(substitute(body, op->sym, op->src)));
+      set_result(substitute(body, op->sym, op->src));
     } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
       set_result(op);
     } else {
@@ -2120,6 +2122,15 @@ public:
 
   template <typename T>
   void visit_mul_div(const T* op) {
+    auto make = [](expr a, expr b) {
+      auto ac = as_constant(a);
+      auto bc = as_constant(b);
+      if (ac && bc) {
+        return make_or_eval_binary<T>(*ac, *bc);
+      } else {
+        return T::make(std::move(a), std::move(b));
+      }
+    };
     // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
     int sign_a = sign_of(op->a);
     int sign_b = sign_of(op->b);
@@ -2132,7 +2143,7 @@ public:
       if (b.same_as(op->b)) {
         set_result(op);
       } else {
-        set_result(T::make(op->a, std::move(b)));
+        set_result(make(op->a, std::move(b)));
       }
     } else if (sign_b != 0) {
       int old_sign = sign;
@@ -2142,7 +2153,7 @@ public:
       if (a.same_as(op->a)) {
         set_result(op);
       } else {
-        set_result(T::make(std::move(a), op->b));
+        set_result(make(std::move(a), op->b));
       }
     } else {
       set_result(op);

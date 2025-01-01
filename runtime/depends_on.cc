@@ -11,8 +11,10 @@ namespace {
 
 class dependencies : public recursive_node_visitor {
 public:
+  bool is_pure = true;
   std::vector<std::pair<var, depends_on_result*>> var_deps;
 
+  dependencies() {}
   dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
   dependencies(span<const std::pair<var, depends_on_result&>> deps) {
     var_deps.reserve(deps.size());
@@ -50,6 +52,7 @@ public:
   }
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
+      is_pure = false;
       assert(op->args.size() >= 1);
       if (op->args[0].defined()) {
         auto buf = as_variable(op->args[0]);
@@ -300,5 +303,11 @@ depends_on_result depends_on(stmt_ref s, span<const var> xs) {
 }
 
 bool can_substitute_buffer(const depends_on_result& r) { return !(r.buffer_data() || r.var); }
+
+bool is_pure(expr_ref x) {
+  dependencies v;
+  x.accept(&v);
+  return v.is_pure;
+}
 
 }  // namespace slinky
