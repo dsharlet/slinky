@@ -2178,11 +2178,8 @@ public:
 
   template <typename T>
   void visit_min_max(const T* op, bool take_constant) {
-    // We can only learn about upper bounds from min and lower bounds from max. Furthermore, it is an error to
-    // attempt to recursively mutate into a max while finding upper bounds or vice versa, because we might find
-    // incorrect conservative bounds in the wrong direction.
-    expr a = take_constant ? mutate(op->a) : op->a;
-    expr b = take_constant ? mutate(op->b) : op->b;
+    expr a = mutate(op->a);
+    expr b = mutate(op->b);
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
@@ -2270,18 +2267,28 @@ public:
   void visit(const mul* op) override { visit_mul_div(op); }
   void visit(const div* op) override { visit_mul_div(op); }
 
-  void visit(const mod* op) override { set_result(op); }
-
-  void visit_equal() {
-    // Can we tighten this? I'm not sure. We need both upper and lower bounds to say anything here.
+  void visit(const mod* op) override {
+    // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
+    // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
     if (sign < 0) {
       set_result(expr(0));
+      return;
+    }
+    expr equiv = max(0, max(-op->b, op->b) - 1);
+    expr result = mutate(equiv);
+    if (!equiv.same_as(result)) {
+      set_result(std::move(result));
     } else {
-      set_result(expr(1));
+      set_result(op);
     }
   }
-  void visit(const equal* op) override { visit_equal(); }
-  void visit(const not_equal* op) override { visit_equal(); }
+
+  void visit_logical() {
+    // If we don't know anything about a logical op, the result is either 0 or 1.
+    set_result(expr(sign < 0 ? 0 : 1));
+  }
+  void visit(const equal* op) override { visit_logical(); }
+  void visit(const not_equal* op) override { visit_logical(); }
 
   template <typename T>
   void visit_less(const T* op) {
@@ -2299,10 +2306,8 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
-    } else if (sign < 0) {
-      set_result(expr(0));
     } else {
-      set_result(expr(1));
+      visit_logical();
     }
   }
   void visit(const less* op) override { visit_less(op); }
@@ -2321,10 +2326,8 @@ public:
 
     if (ca && cb) {
       set_result(make_binary<T>(*ca != 0, *cb != 0));
-    } else if (sign < 0) {
-      set_result(expr(0));
     } else {
-      set_result(expr(1));
+      visit_logical();
     }
   }
   void visit(const logical_and* op) override { visit_logical_and_or(op, /*recurse=*/sign > 0); }
@@ -2337,10 +2340,8 @@ public:
     auto ca = as_constant(a);
     if (ca) {
       set_result(*ca != 0 ? 0 : 1);
-    } else if (sign < 0) {
-      set_result(expr(0));
     } else {
-      set_result(expr(1));
+      visit_logical();
     }
   }
   void visit(const class select* op) override {
@@ -2359,19 +2360,13 @@ public:
     }
   }
   void visit(const call* op) override {
-    switch (op->intrinsic) {
-    case intrinsic::abs:
-      if (sign < 0) {
-        expr a = mutate(op->args[0]);
-        if (auto ca = as_constant(a)) {
-          set_result(std::max<index_t>(0, *ca));
-        } else {
-          set_result(expr(0));
-        }
+    if (op->intrinsic == intrinsic::abs) {
+      expr equiv = max(0, max(op->args[0], -op->args[0]));
+      expr result = mutate(equiv);
+      if (!equiv.same_as(result)) {
+        set_result(std::move(result));
         return;
       }
-      break;
-    default: break;
     }
     set_result(op);
   }

@@ -66,7 +66,7 @@ expr simplify(const add* op, expr a, expr b) {
 
   auto ca = as_constant(a);
   auto cb = as_constant(b);
-  if (ca && cb) {
+  if (ca && cb && !add_overflows(*ca, *cb)) {
     return *ca + *cb;
   }
 
@@ -89,9 +89,9 @@ expr simplify(const add* op, expr a, expr b) {
 expr simplify(const sub* op, expr a, expr b) {
   auto ca = as_constant(a);
   auto cb = as_constant(b);
-  if (ca && cb) {
+  if (ca && cb && !sub_overflows(*ca, *cb)) {
     return *ca - *cb;
-  } else if (cb) {
+  } else if (cb && !sub_overflows<index_t>(0, *cb)) {
     // Canonicalize to addition with constants.
     return simplify(static_cast<add*>(nullptr), a, -*cb);
   }
@@ -119,7 +119,7 @@ expr simplify(const mul* op, expr a, expr b) {
 
   auto ca = as_constant(a);
   auto cb = as_constant(b);
-  if (ca && cb) {
+  if (ca && cb && !mul_overflows(*ca, *cb)) {
     return *ca * *cb;
   }
 
