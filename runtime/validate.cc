@@ -32,6 +32,8 @@ class validator : public expr_visitor, public stmt_visitor {
 
   variable_state state = unknown;
 
+  bool required = true;
+
   void print_symbol_info(const symbol_info& s) {
     if (s.decl_stmt.defined()) {
       std::cerr << "Declared by:" << std::endl;
@@ -84,11 +86,14 @@ public:
 
   void visit(const let* x) override { visit_let(x); }
 
-  void check_arithmetic(const expr& x, bool required = true) {
+  void check_arithmetic(const expr& x, bool required) {
     if (error) return;
 
     if (x.defined()) {
+      bool old_required = this->required;
+      this->required = required;
       x.accept(this);
+      this->required = old_required;
       if (state == pointer) {
         std::cerr << "Arithmetic on pointer value: ";
         print(std::cerr, x, symbols);
@@ -102,6 +107,10 @@ public:
       return;
     }
     state = arithmetic;
+  }
+
+  void check_arithmetic(const expr& x) {
+    check_arithmetic(x, required);
   }
 
   void check(const expr& x, bool required = true) {
@@ -370,7 +379,7 @@ public:
   }
   void visit(const crop_dim* x) override {
     check_pointer(x->src);
-    check_arithmetic(x->bounds);
+    check_arithmetic(x->bounds, /*required=*/false);
     auto s = set_value_in_scope(ctx, x->sym, {pointer, x});
     check(x->body, x->sym);
   }
