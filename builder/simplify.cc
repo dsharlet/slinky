@@ -2267,7 +2267,16 @@ public:
   void visit(const mul* op) override { visit_mul_div(op); }
   void visit(const div* op) override { visit_mul_div(op); }
 
-  void visit(const mod* op) override { set_result(op); }
+  void visit(const mod* op) override {
+    // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
+    // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
+    int old_sign = sign;
+    sign = 1;
+    expr abs_b = mutate(max(0, max(-op->b, op->b) - 1));
+    sign = old_sign;
+
+    set_result(sign > 0 ? abs_b : expr(0));
+  }
 
   void visit_logical() {
     // If we don't know anything about a logical op, the result is either 0 or 1.

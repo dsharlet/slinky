@@ -489,6 +489,11 @@ TEST(simplify, buffer_bounds) {
                               crop_dim::make(b3, b0, 0, {expr(), buffer_max(b2, 0)}, use_buffers({b1, b3}))))))),
       matches(let_stmt::make(x, select(1 < y, y, max(w, 1)),
           decl_bounds(b0, {{0, x + -1}}, decl_bounds(b1, {{0, x + -1}}, use_buffers({b1, b0}))))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, select(1 <= x, ((y + 15) / 16) * 16, 16) + -1}},
+                  decl_bounds(b1, {{0, select(1 <= x, y + -1, 0)}},
+                      crop_dim::make(b2, b0, 0, {expr(), (buffer_max(b0, 0) / 16) * 16 + 15}, use_buffer(b2))))),
+      matches(decl_bounds(b0, {{0, select(1 <= x, ((y + 15) / 16) * 16, 16) + -1}}, use_buffer(b0))));
 }
 
 TEST(simplify, crop_not_needed) {
@@ -798,6 +803,7 @@ TEST(simplify, constant_lower_bound) {
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) * 256 < 0), matches(0));
+  ASSERT_THAT(constant_lower_bound(x % 4), matches(0));
 
   ASSERT_THAT(constant_lower_bound(min(1, max(x, 1))), matches(1));
 }
@@ -816,6 +822,7 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(min(x, 4) / -2), matches(min(x, 4) / -2));
   ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(-2));
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
+  ASSERT_THAT(constant_upper_bound(x % 4), matches(3));
 
   ASSERT_THAT(constant_upper_bound(min(x, 0) < 0), matches(1));
   ASSERT_THAT(constant_upper_bound(min(x, 0) * 256 < 0), matches(1));
