@@ -2355,21 +2355,12 @@ public:
     }
   }
   void visit(const call* op) override {
-    switch (op->intrinsic) {
-    case intrinsic::abs:
-      if (sign < 0) {
-        expr a = mutate(op->args[0]);
-        if (auto ca = as_constant(a)) {
-          set_result(std::max<index_t>(0, *ca));
-        } else {
-          set_result(expr(0));
-        }
-        return;
-      }
-      break;
-    default: break;
+    if (op->intrinsic == intrinsic::abs) {
+      expr equiv = max(0, max(op->args[0], -op->args[0]));
+      equiv.accept(this);
+    } else {
+      set_result(op);
     }
-    set_result(op);
   }
 };
 

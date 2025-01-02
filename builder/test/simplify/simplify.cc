@@ -804,8 +804,10 @@ TEST(simplify, constant_lower_bound) {
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(x % 4), matches(0));
-
+  ASSERT_THAT(constant_lower_bound(abs(x)), matches(0));
+  ASSERT_THAT(constant_lower_bound(abs(min(x, -5))), matches(5));
   ASSERT_THAT(constant_lower_bound(min(1, max(x, 1))), matches(1));
+  ASSERT_THAT(constant_lower_bound(clamp(x, -2, 3)), matches(-2));
 }
 
 TEST(simplify, constant_upper_bound) {
@@ -823,6 +825,7 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(max(x, 4) / -2), matches(-2));
   ASSERT_THAT(constant_upper_bound(select(x, 3, 1)), matches(3));
   ASSERT_THAT(constant_upper_bound(x % 4), matches(3));
+  ASSERT_THAT(constant_upper_bound(clamp(x, -2, 3)), matches(3));
 
   ASSERT_THAT(constant_upper_bound(min(x, 0) < 0), matches(1));
   ASSERT_THAT(constant_upper_bound(min(x, 0) * 256 < 0), matches(1));
