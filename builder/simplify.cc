@@ -2270,12 +2270,17 @@ public:
   void visit(const mod* op) override {
     // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
     // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
-    int old_sign = sign;
-    sign = 1;
-    expr abs_b = mutate(max(0, max(-op->b, op->b) - 1));
-    sign = old_sign;
-
-    set_result(sign > 0 ? abs_b : expr(0));
+    if (sign < 0) {
+      set_result(expr(0));
+      return;
+    }
+    expr equiv = max(0, max(-op->b, op->b) - 1);
+    expr result = mutate(equiv);
+    if (!equiv.same_as(result)) {
+      set_result(std::move(result));
+    } else {
+      set_result(op);
+    }
   }
 
   void visit_logical() {
@@ -2357,10 +2362,13 @@ public:
   void visit(const call* op) override {
     if (op->intrinsic == intrinsic::abs) {
       expr equiv = max(0, max(op->args[0], -op->args[0]));
-      equiv.accept(this);
-    } else {
-      set_result(op);
+      expr result = mutate(equiv);
+      if (!equiv.same_as(result)) {
+        set_result(std::move(result));
+        return;
+      }
     }
+    set_result(op);
   }
 };
 
