@@ -45,9 +45,30 @@ const char* to_string(intrinsic fn) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, var sym) { return os << to_string(sym); }
+std::string to_string(stmt_node_type type) {
+  switch (type) {
+  case stmt_node_type::call_stmt: return "call_stmt";
+  case stmt_node_type::copy_stmt: return "copy_stmt";
+  case stmt_node_type::let_stmt: return "let_stmt";
+  case stmt_node_type::block: return "block";
+  case stmt_node_type::loop: return "loop";
+  case stmt_node_type::allocate: return "allocate";
+  case stmt_node_type::make_buffer: return "make_buffer";
+  case stmt_node_type::clone_buffer: return "clone_buffer";
+  case stmt_node_type::crop_buffer: return "crop_buffer";
+  case stmt_node_type::crop_dim: return "crop_dim";
+  case stmt_node_type::slice_buffer: return "slice_buffer";
+  case stmt_node_type::slice_dim: return "slice_dim";
+  case stmt_node_type::transpose: return "transpose";
+  case stmt_node_type::check: return "check";
+
+  default: return "<invalid stmt_node_type>";
+  }
+}
+
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
+std::ostream& operator<<(std::ostream& os, stmt_node_type type) { return os << to_string(type); }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
@@ -84,7 +105,7 @@ public:
     if (context) {
       os << context->name(sym);
     } else {
-      os << sym;
+      os << "<" << sym.id << ">";
     }
     return *this;
   }
@@ -327,6 +348,11 @@ void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   p << s;
 }
 
+void print(std::ostream& os, var sym, const node_context* ctx) {
+  printer p(os, ctx ? ctx : default_context);
+  p << sym;
+}
+
 std::ostream& operator<<(std::ostream& os, const expr& e) {
   print(os, e);
   return os;
@@ -337,13 +363,8 @@ std::ostream& operator<<(std::ostream& os, const stmt& s) {
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const std::tuple<const expr&, const node_context&>& e) {
-  print(os, std::get<0>(e), &std::get<1>(e));
-  return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const std::tuple<const stmt&, const node_context&>& s) {
-  print(os, std::get<0>(s), &std::get<1>(s));
+std::ostream& operator<<(std::ostream& os, var sym) {
+  print(os, sym);
   return os;
 }
 

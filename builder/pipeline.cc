@@ -23,6 +23,7 @@
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
 #include "runtime/print.h"
+#include "runtime/validate.h"
 
 namespace slinky {
 
@@ -954,7 +955,7 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
   return result;
 }
 
-stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+stmt build_pipeline(node_context& ctx, const std::vector<var>& args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants,
     std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
@@ -1028,6 +1029,19 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     std::cout << result << std::endl;
   }
 
+  std::vector<var> external = args;
+  external.reserve(args.size() + inputs.size() + outputs.size() + constants.size());
+  for (const buffer_expr_ptr& i : inputs) {
+    external.push_back(i->sym());
+  }
+  for (const buffer_expr_ptr& i : outputs) {
+    external.push_back(i->sym());
+  }
+  for (const buffer_expr_ptr& i : constants) {
+    external.push_back(i->sym());
+  }
+  assert(is_valid(result, external, &ctx));
+
   set_default_print_context(old_context);
 
   return result;
@@ -1056,7 +1070,7 @@ std::vector<std::pair<var, const_raw_buffer_ptr>> constant_map(const std::set<bu
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   std::set<buffer_expr_ptr> constants;
-  stmt body = build_pipeline(ctx, inputs, outputs, constants, lets, options);
+  stmt body = build_pipeline(ctx, args, inputs, outputs, constants, lets, options);
   pipeline p;
   p.args = args;
   p.inputs = vars(inputs);
