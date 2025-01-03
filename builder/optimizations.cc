@@ -266,7 +266,7 @@ class buffer_aliaser : public stmt_mutator {
     scoped_trace trace("alias_compatible");
     assert(alloc_info.dims.size() == alias.dims.size());
 
-    if (target_info.uses > 1 && alias.may_mutate) {
+    if ((alloc_info.uses > 1 || target_info.uses > 1) && alias.may_mutate) {
       // We can't use a mutating alias on a buffer that is used more than once.
       // TODO: We could do better here: if the mutating alias is the *last* use, we can still use that alias.
       // This is tricky to figure out especially when loops are involved.
