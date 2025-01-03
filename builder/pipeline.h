@@ -258,6 +258,12 @@ public:
   static func make_copy(input in, output out, std::vector<char> padding) {
     return func({std::move(in)}, std::move(out), std::move(padding));
   }
+  template <typename T>
+  static func make_copy(input in, output out, T padding) {
+    std::vector<char> p(sizeof(padding));
+    memcpy(p.data(), &padding, sizeof(T));
+    return make_copy(std::move(in), std::move(out), std::move(p));
+  }
   // Make a copy from multiple inputs with undefined padding.
   static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in

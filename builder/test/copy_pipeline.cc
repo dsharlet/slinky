@@ -160,7 +160,7 @@ TEST_P(copy_sequence, pipeline) {
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
       return func::make_copy(
-          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {(char)stage});
+          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, static_cast<char>(stage));
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
