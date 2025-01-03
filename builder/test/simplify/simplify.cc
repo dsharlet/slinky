@@ -494,6 +494,19 @@ TEST(simplify, buffer_bounds) {
                   decl_bounds(b1, {{0, select(1 <= x, y + -1, 0)}},
                       crop_dim::make(b2, b0, 0, {expr(), (buffer_max(b0, 0) / 16) * 16 + 15}, use_buffer(b2))))),
       matches(decl_bounds(b0, {{0, select(1 <= x, ((y + 15) / 16) * 16, 16) + -1}}, use_buffer(b0))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, max(x, 0)}},
+                  decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
+                      crop_dim::make(b2, b0, 0, {expr(), buffer_max(b1, 0)}, use_buffers({b2}))))),
+      matches(decl_bounds(b0, {{0, max(x, 0)}}, use_buffers({b0}))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, max(x, 0)}},
+                  decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
+                      crop_dim::make(b3, b1, 1, {1, 10},
+                          crop_dim::make(b2, b0, 0, {expr(), buffer_max(b3, 0)}, use_buffers({b2, b3})))))),
+      matches(decl_bounds(b0, {{0, max(x, 0)}},
+          decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
+              crop_dim::make(b3, b1, 1, {1, 10}, use_buffers({b0, b3}))))));
 }
 
 TEST(simplify, crop_not_needed) {
