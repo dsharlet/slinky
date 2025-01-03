@@ -528,12 +528,13 @@ public:
     symbol_map<expr_info>& vars;
     symbol_map<buffer_info>& buffers;
 
-    void set_var_bounds(var x, interval_expr bounds) {
+    void add_var_info(var x, interval_expr bounds, alignment_type alignment = {}) {
       std::optional<expr_info> info = vars.lookup(x);
       if (!info) {
-        info = {std::move(bounds), alignment_type()};
+        info = {std::move(bounds), alignment};
       } else {
         info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));
+        info->alignment = info->alignment & alignment;
       }
       vk.push_back(set_value_in_scope(vars, x, std::move(info)));
     }
@@ -602,12 +603,20 @@ public:
 
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        set_var_bounds(v->sym, point(b));
+        add_var_info(v->sym, point(b));
       } else if (const call* c = a.as<call>()) {
         set_call_value(c, b);
+      } else if (const mod* md = a.as<mod>()) {
+        if (const variable* v = md->a.as<variable>()) {
+          if (auto m = as_constant(md->b)) {
+            if (auto r = as_constant(b)) {
+              add_var_info(v->sym, {}, {*m, *r});
+            }
+          }
+        }
       }
       if (const variable* v = b.as<variable>()) {
-        set_var_bounds(v->sym, point(a));
+        add_var_info(v->sym, point(a));
       } else if (const call* c = b.as<call>()) {
         set_call_value(c, a);
       }
@@ -615,18 +624,18 @@ public:
 
     void learn_from_less(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        set_var_bounds(v->sym, {expr(), b - 1});
+        add_var_info(v->sym, {expr(), b - 1});
       }
       if (const variable* v = b.as<variable>()) {
-        set_var_bounds(v->sym, {a + 1, expr()});
+        add_var_info(v->sym, {a + 1, expr()});
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        set_var_bounds(v->sym, {expr(), b});
+        add_var_info(v->sym, {expr(), b});
       }
       if (const variable* v = b.as<variable>()) {
-        set_var_bounds(v->sym, {a, expr()});
+        add_var_info(v->sym, {a, expr()});
       }
     }
 
@@ -734,7 +743,8 @@ public:
     if (vars.contains(op->sym)) {
       expr_info info = *vars[op->sym];
       if (info.replacement.defined()) {
-        // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment information.
+        // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment
+        // information.
         // TODO: Maybe we should intersect any information we already had with this?
         mutate_and_set_result(info.replacement);
       } else {
@@ -826,6 +836,25 @@ public:
       return;
     }
 
+    if (T::static_type == expr_node_type::mul) {
+      // TODO: This is really ugly, we should have a better way of expressing such simplifications.
+      if (auto c1 = as_constant(b)) {
+        if (const div* d = a.as<div>()) {
+          if (auto c0 = as_constant(d->b)) {
+            if (*c0 != 0) {
+              // This is (x/c0)*c1. If we know x is aligned to c0, the result is x*(c1/c0).
+              expr_info x_info;
+              expr x = mutate(d->a, &x_info);
+              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0) {
+                mutate_and_set_result((x * *c1) / *c0);
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+
     auto a_mod = a_info.alignment.modulus;
     auto a_rem = a_info.alignment.remainder;
 
@@ -841,6 +870,16 @@ public:
       // clang-format off
       if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), eval(a_mod % c1 == 0)) ||
           r((c0 - x) / c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, eval(a_mod % c1 == 0)) ||
+          false) {
+        mutate_and_set_result(r.result);
+        return;
+      }
+      // clang-format on
+    } else if (T::static_type == expr_node_type::mod) {
+      auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} % rewrite::pattern_expr{b});
+      // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
+      // clang-format off
+      if (r(x % c0, eval(a_rem % c0), eval(a_mod % c0 == 0)) ||
           false) {
         mutate_and_set_result(r.result);
         return;
@@ -1190,9 +1229,9 @@ public:
     return mutate(body);
   }
 
-  stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
+  stmt mutate_with_bounds(stmt body, var v, interval_expr bounds, alignment_type alignment = {}) {
     assert(!vars.contains(v));
-    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment_type()});
+    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment});
     return mutate(body);
   }
 
@@ -1284,7 +1323,10 @@ public:
     for (auto& i : buffers) {
       if (i) ++i->loop_depth;
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
+    alignment_type alignment;
+    if (auto cstep = as_constant(step)) alignment.modulus = *cstep;
+    if (auto cmin = as_constant(bounds.min)) alignment.remainder = *cmin;
+    stmt body = mutate_with_bounds(op->body, op->sym, bounds, alignment);
     for (auto& i : buffers) {
       if (i) --i->loop_depth;
     }

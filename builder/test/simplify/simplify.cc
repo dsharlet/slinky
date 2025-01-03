@@ -164,6 +164,19 @@ TEST(simplify, basic) {
   ASSERT_THAT(
       simplify(max(((y + 14) / 16) * 2 + 1, (y + 6) / 8) <= max(((y + 15) / 16) * 2 + 1, (y + 7) / 8)), matches(true));
 
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 8)), matches(let::make(x, (y / 8) * 8, x)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 16)), matches(let::make(x, (y / 8) * 8, x * 2)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 4)), matches(let::make(x, (y / 8) * 8, x / 2)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 4) * 4)), matches(let::make(x, (y / 8) * 8, x)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 16) * 16)), matches(let::make(x, (y / 8) * 8, (x / 16) * 16)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 3) * 3)), matches(let::make(x, (y / 8) * 8, (x / 3) * 3)));
+
+  ASSERT_THAT(simplify(block::make({check::make(x % 8 == 0), check::make((x / 8) * 8 == x)})),
+      matches(check::make(x % 8 == 0)));
+  ASSERT_THAT(simplify(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0), check::make(x % 6 == 0)})),
+      matches(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0)})));
+  ASSERT_THAT(simplify(let::make(x, y % 2 == 0, x && y % 2 == 1)), matches(false));
+
   ASSERT_THAT(simplify((x < 1) != 0), matches(x < 1));
 
   ASSERT_THAT(simplify(select(x == 3 && y == 2, x == 3 && y == 2, true)), matches(true));
@@ -507,6 +520,10 @@ TEST(simplify, buffer_bounds) {
       matches(decl_bounds(b0, {{0, max(x, 0)}},
           decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
               crop_dim::make(b3, b1, 1, {1, 10}, use_buffers({b0, b3}))))));
+
+  ASSERT_THAT(simplify(loop::make(x, loop::parallel, {0, 256}, 16,
+                  crop_dim::make(b1, b0, 0, {(x / 16) * 16, (x / 16) * 16 + 15}, use_buffer(b1)))),
+      matches(loop::make(x, loop::parallel, {0, 256}, 16, crop_dim::make(b1, b0, 0, {x, x + 15}, use_buffer(b1)))));
 }
 
 TEST(simplify, crop_not_needed) {
