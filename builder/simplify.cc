@@ -734,7 +734,9 @@ public:
     if (vars.contains(op->sym)) {
       expr_info info = *vars[op->sym];
       if (info.replacement.defined()) {
-        set_result(info.replacement, {std::move(info.bounds), std::move(info.alignment)});
+        // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment information.
+        // TODO: Maybe we should intersect any information we already had with this?
+        mutate_and_set_result(info.replacement);
       } else {
         if (!info.bounds.min.defined()) info.bounds.min = expr(op);
         if (!info.bounds.max.defined()) info.bounds.max = expr(op);
