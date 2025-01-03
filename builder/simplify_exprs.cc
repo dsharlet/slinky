@@ -413,4 +413,18 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
   }
 }
 
+interval_expr simplify_intersection(interval_expr a, interval_expr b) {
+  if (a.min.defined() && b.min.defined()) {
+    a.min = simplify(static_cast<const class max*>(nullptr), std::move(a.min), std::move(b.min));
+  } else if (!a.min.defined()) {
+    a.min = std::move(b.min);
+  }
+  if (a.max.defined() && b.max.defined()) {
+    a.max = simplify(static_cast<const class min*>(nullptr), std::move(a.max), std::move(b.max));
+  } else if (!a.max.defined()) {
+    a.max = std::move(b.max);
+  }
+  return a;
+}
+
 }  // namespace slinky

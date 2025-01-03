@@ -529,11 +529,13 @@ public:
     symbol_map<buffer_info>& buffers;
 
     void set_var_bounds(var x, interval_expr bounds) {
-      std::optional<expr_info> before = vars.lookup(x);
-      if (!bounds.min.defined() && before) bounds.min = before->bounds.min;
-      if (!bounds.max.defined() && before) bounds.max = before->bounds.max;
-      alignment_type alignment = before ? before->alignment : alignment_type();
-      vk.push_back(set_value_in_scope(vars, x, {std::move(bounds), alignment}));
+      std::optional<expr_info> info = vars.lookup(x);
+      if (!info) {
+        info = {std::move(bounds), alignment_type()};
+      } else {
+        info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));
+      }
+      vk.push_back(set_value_in_scope(vars, x, std::move(info)));
     }
 
     void set_call_value(const call* c, expr value) {
