@@ -190,9 +190,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x == 0 && y == 0, x == 0, true)), matches(true));
   ASSERT_THAT(simplify(select(x == 0 || y == 0, x == 0, y == 0)), matches(x == 0));
   ASSERT_THAT(simplify(select(x == 0 || y == 0, false, y == 0)), matches(false));
-  // TODO: We need stronger learning from conditions for these to work.
-  // ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
-  // ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
+  ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
+  ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
 
   ASSERT_THAT(simplify(select(x, expr(), 2) == 1), matches(select(x, expr(), false)));
   ASSERT_THAT(simplify(!select(x, expr(), true)), matches(select(x, expr(), false)));
