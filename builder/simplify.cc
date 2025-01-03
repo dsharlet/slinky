@@ -584,7 +584,6 @@ public:
       }
     }
 
-
   public:
     knowledge(symbol_map<expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
@@ -773,9 +772,9 @@ public:
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
     auto less_equal = [this](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
-      return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a)) ||
-             prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)) ||
-             prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max));
+      return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
+             (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
+             (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
     };
     if (less_equal(a, a_info.bounds.max, b, b_info.bounds.min)) {
       if (T::static_type == expr_node_type::min) {
@@ -1065,7 +1064,7 @@ public:
               mutate_and_set_result(x);
               return true;
             }
-          } 
+          }
           if (!changed) {
             set_result(op, {point(x), alignment_type()});
             return true;
