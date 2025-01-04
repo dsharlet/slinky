@@ -778,6 +778,17 @@ TEST(simplify, knowledge) {
                   make_buffer::make(b0, expr(), expr(), {{{0, max(abs(x), 1) - 1}}},
                       check::make(buffer_max(b0, 0) <= ((buffer_max(b0, 0) + 16) / 16) * 16 - 1)))),
       matches(stmt()));
+
+  expr huge_select = 1;
+  for (int i = 0; i < 100; ++i) {
+    switch (i % 4) { 
+    case 0: huge_select = select(var(i) < i, huge_select, i); break;
+    case 1: huge_select = select(var(i) <= i, huge_select, i); break;
+    case 2: huge_select = select(var(i) == i, huge_select, i); break;
+    case 3: huge_select = select(var(i) != i, huge_select, i); break;
+    }
+  }
+  simplify(huge_select);
 }
 
 TEST(simplify, bounds_of) {
