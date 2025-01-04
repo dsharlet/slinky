@@ -618,6 +618,10 @@ public:
             }
           }
         }
+      } else {
+        // If a is not a variable, then b is not a variable (because we canonicalize variables to the left hand side),
+        // so if we're going to learn from this, we need to just learn it as a fact.
+        facts.push_back({a == b, true});
       }
       if (const variable* v = b.as<variable>()) {
         add_var_info(v->sym, point(a));
@@ -636,11 +640,13 @@ public:
         learn_from_less(l->a, b);
         learn_from_less(l->b, b);
       } else {
-        if (const variable* v = a.as<variable>()) {
-          add_var_info(v->sym, {expr(), b - 1});
-        }
-        if (const variable* v = b.as<variable>()) {
-          add_var_info(v->sym, {a + 1, expr()});
+        const variable* av = a.as<variable>();
+        const variable* bv = b.as<variable>();
+        if (av) add_var_info(av->sym, {expr(), b - 1});
+        if (bv) add_var_info(bv->sym, {a + 1, expr()});
+        if (!(av || bv)) {
+          // We couldn't learn from this, just remember it as a fact.
+          facts.push_back({a < b, true});
         }
       }
     }
@@ -654,11 +660,13 @@ public:
         learn_from_less_equal(l->a, b);
         learn_from_less_equal(l->b, b);
       } else {
-        if (const variable* v = a.as<variable>()) {
-          add_var_info(v->sym, {expr(), b});
-        }
-        if (const variable* v = b.as<variable>()) {
-          add_var_info(v->sym, {a, expr()});
+        const variable* av = a.as<variable>();
+        const variable* bv = b.as<variable>();
+        if (av) add_var_info(av->sym, {expr(), b});
+        if (bv) add_var_info(bv->sym, {a, expr()});
+        if (!(av || bv)) {
+          // We couldn't learn from this, just remember it as a fact.
+          facts.push_back({a <= b, true});
         }
       }
     }
@@ -669,17 +677,16 @@ public:
         learn_from_true(a->b);
       } else if (const logical_not* n = c.as<logical_not>()) {
         learn_from_false(n->a);
-      } else if (!as_constant(c)) {
-        if (!as_variable(c)) {
-          facts.push_back({c, expr(true)});
-        }
-        if (const equal* eq = c.as<equal>()) {
-          learn_from_equal(eq->a, eq->b);
-        } else if (const less* lt = c.as<less>()) {
-          learn_from_less(lt->a, lt->b);
-        } else if (const less_equal* lt = c.as<less_equal>()) {
-          learn_from_less_equal(lt->a, lt->b);
-        }
+      } else if (const less* lt = c.as<less>()) {
+        learn_from_less(lt->a, lt->b);
+      } else if (const less_equal* lt = c.as<less_equal>()) {
+        learn_from_less_equal(lt->a, lt->b);
+      } else if (const equal* eq = c.as<equal>()) {
+        learn_from_equal(eq->a, eq->b);
+      } else if (!as_constant(c) && !as_variable(c)) {
+        // We couldn't learn anything, just add the whole expression as a fact, if it isn't a constant or variable,
+        // which could rewrite the value from any x not zero to 1.
+        facts.push_back({c, expr(true)});
       }
     }
     void learn_from_false(const expr& c) {
@@ -688,15 +695,15 @@ public:
         learn_from_false(a->b);
       } else if (const logical_not* n = c.as<logical_not>()) {
         learn_from_true(n->a);
+      } else if (const less* lt = c.as<less>()) {
+        learn_from_less_equal(lt->b, lt->a);
+      } else if (const less_equal* lt = c.as<less_equal>()) {
+        learn_from_less(lt->b, lt->a);
+      } else if (const not_equal* ne = c.as<not_equal>()) {
+        learn_from_equal(ne->a, ne->b);
       } else if (!as_constant(c)) {
+        // We couldn't learn anything, just add the whole expression as a fact.
         facts.push_back({c, expr(false)});
-        if (const not_equal* ne = c.as<not_equal>()) {
-          learn_from_equal(ne->a, ne->b);
-        } else if (const less* lt = c.as<less>()) {
-          learn_from_less_equal(lt->b, lt->a);
-        } else if (const less_equal* lt = c.as<less_equal>()) {
-          learn_from_less(lt->b, lt->a);
-        }
       }
     }
 
@@ -1812,7 +1819,7 @@ public:
     if (const T* t = x.as<T>()) {
       enumerate_bounds<T>(t->a, bounds, offset);
       enumerate_bounds<T>(t->b, bounds, offset);
-    } 
+    }
   }
 
   template <typename T>
