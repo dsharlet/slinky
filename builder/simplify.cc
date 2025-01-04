@@ -623,19 +623,39 @@ public:
     }
 
     void learn_from_less(const expr& a, const expr& b) {
-      if (const variable* v = a.as<variable>()) {
-        add_var_info(v->sym, {expr(), b - 1});
-      }
-      if (const variable* v = b.as<variable>()) {
-        add_var_info(v->sym, {a + 1, expr()});
+      if (const class max* r = b.as<class max>()) {
+        // a < max(x, y) ==> a < x && a < y
+        learn_from_less(a, r->a);
+        learn_from_less(a, r->b);
+      } else if (const class min* l = a.as<class min>()) {
+        // min(x, y) < b ==> x < b && y < b
+        learn_from_less(l->a, b);
+        learn_from_less(l->b, b);
+      } else {
+        if (const variable* v = a.as<variable>()) {
+          add_var_info(v->sym, {expr(), b - 1});
+        }
+        if (const variable* v = b.as<variable>()) {
+          add_var_info(v->sym, {a + 1, expr()});
+        }
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
-      if (const variable* v = a.as<variable>()) {
-        add_var_info(v->sym, {expr(), b});
-      }
-      if (const variable* v = b.as<variable>()) {
-        add_var_info(v->sym, {a, expr()});
+      if (const class max* r = b.as<class max>()) {
+        // a <= max(x, y) ==> a <= x && a <= y
+        learn_from_less_equal(a, r->a);
+        learn_from_less_equal(a, r->b);
+      } else if (const class min* l = a.as<class min>()) {
+        // min(x, y) <= b ==> x <= b && y <= b
+        learn_from_less_equal(l->a, b);
+        learn_from_less_equal(l->b, b);
+      } else {
+        if (const variable* v = a.as<variable>()) {
+          add_var_info(v->sym, {expr(), b});
+        }
+        if (const variable* v = b.as<variable>()) {
+          add_var_info(v->sym, {a, expr()});
+        }
       }
     }
 

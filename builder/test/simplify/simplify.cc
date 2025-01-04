@@ -164,19 +164,6 @@ TEST(simplify, basic) {
   ASSERT_THAT(
       simplify(max(((y + 14) / 16) * 2 + 1, (y + 6) / 8) <= max(((y + 15) / 16) * 2 + 1, (y + 7) / 8)), matches(true));
 
-  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 8)), matches(let::make(x, (y / 8) * 8, x)));
-  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 16)), matches(let::make(x, (y / 8) * 8, x * 2)));
-  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 4)), matches(let::make(x, (y / 8) * 8, x / 2)));
-  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 4) * 4)), matches(let::make(x, (y / 8) * 8, x)));
-  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 16) * 16)), matches(let::make(x, (y / 8) * 8, (x / 16) * 16)));
-  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 3) * 3)), matches(let::make(x, (y / 8) * 8, (x / 3) * 3)));
-
-  ASSERT_THAT(simplify(block::make({check::make(x % 8 == 0), check::make((x / 8) * 8 == x)})),
-      matches(check::make(x % 8 == 0)));
-  ASSERT_THAT(simplify(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0), check::make(x % 6 == 0)})),
-      matches(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0)})));
-  ASSERT_THAT(simplify(let::make(x, y % 2 == 0, x && y % 2 == 1)), matches(false));
-
   ASSERT_THAT(simplify((x < 1) != 0), matches(x < 1));
 
   ASSERT_THAT(simplify(select(x == 3 && y == 2, x == 3 && y == 2, true)), matches(true));
@@ -730,6 +717,37 @@ TEST(simplify, transpose) {
 }
 
 TEST(simplify, knowledge) {
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 8)), matches(let::make(x, (y / 8) * 8, x)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 16)), matches(let::make(x, (y / 8) * 8, x * 2)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 4)), matches(let::make(x, (y / 8) * 8, x / 2)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 4) * 4)), matches(let::make(x, (y / 8) * 8, x)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 16) * 16)), matches(let::make(x, (y / 8) * 8, (x / 16) * 16)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 3) * 3)), matches(let::make(x, (y / 8) * 8, (x / 3) * 3)));
+
+  ASSERT_THAT(simplify(block::make({check::make(x % 8 == 0), check::make((x / 8) * 8 == x)})),
+      matches(check::make(x % 8 == 0)));
+  ASSERT_THAT(simplify(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0), check::make(x % 6 == 0)})),
+      matches(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0)})));
+  ASSERT_THAT(simplify(let::make(x, y % 2 == 0, x && y % 2 == 1)), matches(false));
+
+  ASSERT_THAT(
+      simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})), matches(check::make(3 <= max(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})),
+      matches(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})));
+  ASSERT_THAT(
+      simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})), matches(check::make(3 < max(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})),
+      matches(block::make({check::make(3 < min(x, y)), check::make(3 < x)})));
+
+  ASSERT_THAT(
+      simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})), matches(check::make(min(x, y) <= 4)));
+  ASSERT_THAT(simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})),
+      matches(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})));
+  ASSERT_THAT(
+      simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})), matches(check::make(min(x, y) < 4)));
+  ASSERT_THAT(simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})),
+      matches(block::make({check::make(max(x, y) < 4), check::make(x < 4)})));
+
   ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
   ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
   ASSERT_THAT(simplify(block::make({
