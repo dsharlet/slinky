@@ -464,7 +464,7 @@ public:
 
   expr mutate(const expr& e, expr_info* info) {
     expr result = node_mutator::mutate(e);
-    if (info) {
+    if (result.defined() && info) {
       ensure_is_point(result_info.bounds);
       if (info != &result_info) {
         *info = std::move(result_info);
