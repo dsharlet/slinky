@@ -129,8 +129,7 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(max((x + -1), select((1 < x), (max(min(x, 128), 118) + -1), 0))),
       matches(select(1 < x, max(x, 118), 1) + -1));
-  ASSERT_THAT(
-      simplify(min((y + -1), max((x + -1), max(min(x, (((z / 16) * 16) + 16)) + -1, select((1 < x), 117, 0))))),
+  ASSERT_THAT(simplify(min((y + -1), max((x + -1), max(min(x, (((z / 16) * 16) + 16)) + -1, select((1 < x), 117, 0))))),
       matches((min(y, select((1 < x), max(x, 118), 1)) + -1)));
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
@@ -510,6 +509,13 @@ TEST(simplify, buffer_bounds) {
   ASSERT_THAT(simplify(loop::make(x, loop::parallel, {0, 256}, 16,
                   crop_dim::make(b1, b0, 0, {(x / 16) * 16, (x / 16) * 16 + 15}, use_buffer(b1)))),
       matches(loop::make(x, loop::parallel, {0, 256}, 16, crop_dim::make(b1, b0, 0, {x, x + 15}, use_buffer(b1)))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, select(1 < z, 127, 15)}},
+                  loop::make(x, loop::parallel, {0, select((1 < z), 117, 0)}, y,
+                      crop_dim::make(b1, b0, 0, {x, ((min((x + y), select((1 < z), 118, 1)) + 15) / 16) * 16}, use_buffer(b1))))),
+      matches(decl_bounds(b0, {{0, select(1 < z, 127, 15)}},
+          loop::make(x, loop::parallel, {0, select((1 < z), 117, 0)}, y,
+              crop_dim::make(b1, b0, 0, {x, (((x + y) + 15) / 16) * 16}, use_buffer(b1))))));
 }
 
 TEST(simplify, crop_not_needed) {
@@ -787,7 +793,7 @@ TEST(simplify, knowledge) {
 
   expr huge_select = 1;
   for (int i = 0; i < 100; ++i) {
-    switch (i % 4) { 
+    switch (i % 4) {
     case 0: huge_select = select(var(i) < i, huge_select, i); break;
     case 1: huge_select = select(var(i) <= i, huge_select, i); break;
     case 2: huge_select = select(var(i) == i, huge_select, i); break;

@@ -1825,15 +1825,22 @@ public:
 
   template <typename T>
   expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
-    if (bounds.count(x)) return expr();
+    auto is_redundant = [&](const expr& x) {
+      // A bound x is redundant if the bounds already have a value i such that T(x, i) == i
+      for (const expr& i : bounds) {
+        if (std::is_same<T, class min>::value && prove_true(i <= x)) return true;
+        if (std::is_same<T, class max>::value && prove_true(i >= x)) return true;
+      }
+      return false;
+    };
     if (const T* t = x.as<T>()) {
-      bool a_is_bound = bounds.count(t->a);
-      bool b_is_bound = bounds.count(t->b);
-      if (a_is_bound && b_is_bound) {
+      bool a_redundant = is_redundant(t->a);
+      bool b_redundant = is_redundant(t->b);
+      if (a_redundant && b_redundant) {
         return expr();
-      } else if (a_is_bound) {
+      } else if (a_redundant) {
         return remove_redundant_bounds<T>(t->b, bounds);
-      } else if (b_is_bound) {
+      } else if (b_redundant) {
         return remove_redundant_bounds<T>(t->a, bounds);
       }
     } else if (const add* xa = x.as<add>()) {
@@ -1844,6 +1851,30 @@ public:
           expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)});
           if (!removed.same_as(xa->a)) {
             return std::move(removed) + xa->b;
+          }
+        }
+      }
+    } else if (const div* xa = x.as<div>()) {
+      if (as_constant(xa->b)) {
+        // We have T(x / y, b). We can rewrite to T(x, b * y) / y, and if we can eliminate the bound, the whole
+        // bound is redundant.
+        for (const expr& i : bounds) {
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i * xa->b)});
+          if (!removed.same_as(xa->a)) {
+            return std::move(removed) / xa->b;
+          }
+        }
+      }
+    } else if (const mul* xa = x.as<mul>()) {
+      if (as_constant(xa->b)) {
+        // We have T(x * y, b). We can do something similar to the above, but we need to be careful because division
+        // is not invertible. Since we're looking for bounds, we can use a conservative rounding. If we're looking for
+        // redundant mins, we should round up, and redundant maxes should round down.
+        for (const expr& i : bounds) {
+          expr rounded = std::is_same<T, class min>::value ? i + (xa->b - 1) : i;
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(rounded / xa->b)});
+          if (!removed.same_as(xa->a)) {
+            return std::move(removed) * xa->b;
           }
         }
       }
@@ -1868,7 +1899,7 @@ public:
         return select(xs->condition, std::move(t), std::move(f));
       }
     }
-    return x;
+    return is_redundant(x) ? expr() : x;
   }
 
   interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
