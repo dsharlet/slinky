@@ -430,6 +430,7 @@ private:
   void set_result(expr e, expr_info info) {
     assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
     result_info = std::move(info);
+    ensure_is_point(result_info.bounds);
     node_mutator::set_result(std::move(e));
   }
   void set_result(const base_expr_node* e, expr_info info) { set_result(expr(e), std::move(info)); }
@@ -462,7 +463,6 @@ public:
   expr mutate(const expr& e, expr_info* info) {
     expr result = node_mutator::mutate(e);
     if (result.defined() && info) {
-      ensure_is_point(result_info.bounds);
       if (info != &result_info) {
         *info = std::move(result_info);
       }
@@ -529,6 +529,7 @@ public:
     void add_var_info(var x, interval_expr bounds, alignment_type alignment = {}) {
       std::optional<expr_info> info = vars.lookup(x);
       if (!info) {
+        ensure_is_point(bounds);
         info = {std::move(bounds), alignment};
       } else {
         info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));

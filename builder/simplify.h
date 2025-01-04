@@ -56,7 +56,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args);
 
 interval_expr simplify_intersection(interval_expr a, interval_expr b);
 
-// Helpers for producing the bounds of ops.
+// Helpers for producing the bounds of ops. If `op` is non-null, assumes that it is simplified.
 interval_expr bounds_of(const class min* op, interval_expr a, interval_expr b);
 interval_expr bounds_of(const class max* op, interval_expr a, interval_expr b);
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b);
