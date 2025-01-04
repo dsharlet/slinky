@@ -157,8 +157,8 @@ expr euclidean_mod(expr a, expr b) { return mod::make(std::move(a), std::move(b)
 expr min(expr a, expr b) { return min::make(std::move(a), std::move(b)); }
 expr max(expr a, expr b) { return max::make(std::move(a), std::move(b)); }
 expr clamp(expr x, expr a, expr b) {
-  if (a.defined()) x = max::make(std::move(x), std::move(a));
   if (b.defined()) x = min::make(std::move(x), std::move(b));
+  if (a.defined()) x = max::make(std::move(x), std::move(a));
   return x;
 }
 expr select(expr c, expr t, expr f) { return select::make(std::move(c), std::move(t), std::move(f)); }

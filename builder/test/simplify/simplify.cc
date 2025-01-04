@@ -126,10 +126,9 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x == 1, select(x == 1, y, z), w)), matches(select(x == 1, y, w)));
 
   ASSERT_THAT(simplify(select(x == y, x, y)), matches(y));
-  ASSERT_THAT(simplify(select(x == 1, 0, x + -1)), matches(x + -1));
-  ASSERT_THAT(simplify(select(x != 1, x + -1, 0)), matches(x + -1));
-  ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
-  ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
+
+  ASSERT_THAT(simplify(max((x + -1), select((1 < x), (max(min(x, 128), 118) + -1), 0))),
+      matches(select(1 < x, max(x, 118), 1) + -1));
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
 

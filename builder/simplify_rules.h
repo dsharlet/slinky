@@ -38,6 +38,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, x), x) ||
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
+      // This might be the only rule that doesn't have an analogous max rule.
+      apply(min(max(x, c0), c1), max(min(x, c1), c0), eval(c0 <= c1)) ||
+
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
       apply(min(min(x, y), min(z, w)), min(x, min(y, min(z, w)))) ||
@@ -86,6 +89,8 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, -x), -abs(x)) ||
 
       // Selects
+      apply(min(x, select(y, max(z, min(x, u)), w)), select(y, min(x, max(z, u)), min(x, w))) ||
+      apply(min(x, select(y, z, max(w, min(x, u)))), select(y, min(x, z), min(x, max(w, u)))) ||
       apply(min(x, select(y, min(x, z), w)), min(x, select(y, z, w))) ||
       apply(min(x, select(y, z, min(x, w))), min(x, select(y, z, w))) ||
       apply(min(x, select(y, max(x, z), w)), select(y, x, min(x, w))) ||
@@ -238,6 +243,8 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, -x), abs(x)) ||
 
       // Selects
+      apply(max(x, select(y, max(z, min(x, u)), w)), select(y, max(z, x), max(x, w))) ||
+      apply(max(x, select(y, z, max(w, min(x, u)))), select(y, max(x, z), max(x, w))) ||
       apply(max(x, select(y, max(x, z), w)), max(x, select(y, z, w))) ||
       apply(max(x, select(y, z, max(x, w))), max(x, select(y, z, w))) ||
       apply(max(x, select(y, min(x, z), w)), select(y, x, max(x, w))) ||
@@ -967,6 +974,8 @@ bool apply_select_rules(Fn&& apply) {
       apply(select(x, w - y, w - z), w - select(x, y, z)) ||
       apply(select(x, max(y, w), max(z, w)), max(w, select(x, y, z))) ||
       apply(select(x, min(y, w), min(z, w)), min(w, select(x, y, z))) ||
+      apply(select(x, y + c0, c1), select(x, y, eval(c1 - c0)) + c0) ||
+      apply(select(x, c0, y + c1), select(x, eval(c0 - c1), y) + c1) ||
 
       apply(select(x, select(y, z, w), select(y, u, w + c0) + c1), select(y, select(x, z, u + c1), w), eval(c0 + c1 == 0)) ||
       apply(select(x, select(y, z, w), select(y, z + c0, u) + c1), select(y, z, select(x, w, u + c1)), eval(c0 + c1 == 0)) ||
