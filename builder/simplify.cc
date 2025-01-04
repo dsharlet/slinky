@@ -786,6 +786,8 @@ public:
         // information.
         // TODO: Maybe we should intersect any information we already had with this?
         mutate_and_set_result(info.replacement);
+      } else if (auto c = as_constant(info.bounds.as_point())) {
+        set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
       } else {
         if (!info.bounds.min.defined()) info.bounds.min = expr(op);
         if (!info.bounds.max.defined()) info.bounds.max = expr(op);
