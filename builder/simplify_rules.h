@@ -496,6 +496,7 @@ bool apply_div_rules(Fn&& apply) {
       apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), eval(c0 > 0 && c1 > 0)) ||
       apply((x/c0)/c1, x/eval(c0*c1), eval(c0 > 0 && c1 > 0)) ||
       apply((x*c0)/c1, x*eval(c0/c1), eval(c1 > 0 && c0%c1 == 0)) ||
+      apply((x*c0)/c1, x/eval(c1/c0), eval(c0 > 0 && c1 > 0 && c1%c0 == 0)) ||
       apply((x*y)/x, y*(x != 0)) ||
 
       apply((x + y*c0)/c1, y*eval(c0/c1) + x/c1, eval(c0%c1 == 0)) ||

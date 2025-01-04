@@ -177,9 +177,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x == 0 && y == 0, x == 0, true)), matches(true));
   ASSERT_THAT(simplify(select(x == 0 || y == 0, x == 0, y == 0)), matches(x == 0));
   ASSERT_THAT(simplify(select(x == 0 || y == 0, false, y == 0)), matches(false));
-  // TODO: We need stronger learning from conditions for these to work.
-  // ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
-  // ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
+  ASSERT_THAT(simplify(select(!(x == 0) && y, x == 0, false)), matches(false));
+  ASSERT_THAT(simplify(select(x != 0 && y, x == 0, false)), matches(false));
 
   ASSERT_THAT(simplify(select(x, expr(), 2) == 1), matches(select(x, expr(), false)));
   ASSERT_THAT(simplify(!select(x, expr(), true)), matches(select(x, expr(), false)));
@@ -494,6 +493,23 @@ TEST(simplify, buffer_bounds) {
                   decl_bounds(b1, {{0, select(1 <= x, y + -1, 0)}},
                       crop_dim::make(b2, b0, 0, {expr(), (buffer_max(b0, 0) / 16) * 16 + 15}, use_buffer(b2))))),
       matches(decl_bounds(b0, {{0, select(1 <= x, ((y + 15) / 16) * 16, 16) + -1}}, use_buffer(b0))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, max(x, 0)}},
+                  decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
+                      crop_dim::make(b2, b0, 0, {expr(), buffer_max(b1, 0)}, use_buffers({b2}))))),
+      matches(decl_bounds(b0, {{0, max(x, 0)}}, use_buffers({b0}))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, max(x, 0)}},
+                  decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
+                      crop_dim::make(b3, b1, 1, {1, 10},
+                          crop_dim::make(b2, b0, 0, {expr(), buffer_max(b3, 0)}, use_buffers({b2, b3})))))),
+      matches(decl_bounds(b0, {{0, max(x, 0)}},
+          decl_bounds(b1, {{0, ((max(x, 0) / 16) * 16) + 15}, {0, 20}},
+              crop_dim::make(b3, b1, 1, {1, 10}, use_buffers({b0, b3}))))));
+
+  ASSERT_THAT(simplify(loop::make(x, loop::parallel, {0, 256}, 16,
+                  crop_dim::make(b1, b0, 0, {(x / 16) * 16, (x / 16) * 16 + 15}, use_buffer(b1)))),
+      matches(loop::make(x, loop::parallel, {0, 256}, 16, crop_dim::make(b1, b0, 0, {x, x + 15}, use_buffer(b1)))));
 }
 
 TEST(simplify, crop_not_needed) {
@@ -701,6 +717,37 @@ TEST(simplify, transpose) {
 }
 
 TEST(simplify, knowledge) {
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 8)), matches(let::make(x, (y / 8) * 8, x)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 16)), matches(let::make(x, (y / 8) * 8, x * 2)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 4)), matches(let::make(x, (y / 8) * 8, x / 2)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 4) * 4)), matches(let::make(x, (y / 8) * 8, x)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 16) * 16)), matches(let::make(x, (y / 8) * 8, (x / 16) * 16)));
+  ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 3) * 3)), matches(let::make(x, (y / 8) * 8, (x / 3) * 3)));
+
+  ASSERT_THAT(simplify(block::make({check::make(x % 8 == 0), check::make((x / 8) * 8 == x)})),
+      matches(check::make(x % 8 == 0)));
+  ASSERT_THAT(simplify(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0), check::make(x % 6 == 0)})),
+      matches(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0)})));
+  ASSERT_THAT(simplify(let::make(x, y % 2 == 0, x && y % 2 == 1)), matches(false));
+
+  ASSERT_THAT(
+      simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})), matches(check::make(3 <= max(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})),
+      matches(block::make({check::make(3 <= min(x, y)), check::make(3 <= x)})));
+  ASSERT_THAT(
+      simplify(block::make({check::make(3 < max(x, y)), check::make(3 < x)})), matches(check::make(3 < max(x, y))));
+  ASSERT_THAT(simplify(block::make({check::make(3 < min(x, y)), check::make(3 < x)})),
+      matches(block::make({check::make(3 < min(x, y)), check::make(3 < x)})));
+
+  ASSERT_THAT(
+      simplify(block::make({check::make(min(x, y) <= 4), check::make(x <= 4)})), matches(check::make(min(x, y) <= 4)));
+  ASSERT_THAT(simplify(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})),
+      matches(block::make({check::make(max(x, y) <= 4), check::make(x <= 4)})));
+  ASSERT_THAT(
+      simplify(block::make({check::make(min(x, y) < 4), check::make(x < 4)})), matches(check::make(min(x, y) < 4)));
+  ASSERT_THAT(simplify(block::make({check::make(max(x, y) < 4), check::make(x < 4)})),
+      matches(block::make({check::make(max(x, y) < 4), check::make(x < 4)})));
+
   ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
   ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
   ASSERT_THAT(simplify(block::make({

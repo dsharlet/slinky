@@ -21,6 +21,10 @@ TEST(modulus_remainder, p) {
   ASSERT_EQ(mod_rem(10, 0) - mod_rem(35, 0), mod_rem(5, 0));
   // // Check overflow
   ASSERT_EQ(mod_rem(5045320, 4) * mod_rem(405713, 3) * mod_rem(8000123, 4354), mod_rem(1, 0));
+
+  ASSERT_EQ(mod_rem(2, 0) & mod_rem(2, 0), mod_rem(2, 0));
+  ASSERT_EQ(mod_rem(2, 0) & mod_rem(3, 0), mod_rem(6, 0));
+  ASSERT_EQ(mod_rem(2, 1) & mod_rem(3, 1), mod_rem(3, 1));
 }
 
 }  // namespace slinky

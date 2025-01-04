@@ -152,6 +152,28 @@ modulus_remainder<T> operator|(const modulus_remainder<T>& a, const modulus_rema
 }
 
 template <typename T>
+modulus_remainder<T> operator&(const modulus_remainder<T>& a, const modulus_remainder<T>& b) {
+  if (a.modulus == 0) return a;
+  if (b.modulus == 0) return b;
+  if (a.remainder == 0 && b.remainder == 0) return {lcm(a.modulus, b.modulus), 0};
+  // We have x == ma * y + ra == mb * z + rb
+
+  // We want to synthesize these two facts into one modulus
+  // remainder relationship. We are permitted to be
+  // conservatively-large, so it's OK if some elements of the result
+  // only satisfy one of the two constraints.
+
+  // For coprime ma and mb you want to use the Chinese remainder
+  // theorem. In our case, the moduli will almost always be
+  // powers of two, so we should just return the smaller of the two
+  // sets (usually the one with the larger modulus).
+  if (a.modulus > b.modulus) {
+    return a;
+  }
+  return b;
+}
+
+template <typename T>
 modulus_remainder<T> operator%(const modulus_remainder<T>& a, const modulus_remainder<T>& b) {
   // For non-zero y, we can treat x mod y as x + z*y, where we know
   // nothing about z.
