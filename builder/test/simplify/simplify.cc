@@ -186,16 +186,6 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(select(x, 0, y) + 4, select(x, expr(), min(y, 113) + 4))),
       matches(select(x, expr(), min(y, 113) + 4)));
 
-  ASSERT_THAT(simplify(select(expr(x) == y, z, select(expr(x) == y, 2, w))), matches(select(expr(x) == y, z, w)));
-  ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
-  ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
-
-  ASSERT_THAT(simplify(select(x <= 1, y, min(x, 1))), matches(select(x <= 1, y, 1)));
-  ASSERT_THAT(simplify(select(x > 0 && x < 4, max(x, 1), y)), matches(select(x > 0 && x < 4, x, y)));
-
-  ASSERT_THAT(simplify(select(x < 5, y, abs(x))), matches(select(x < 5, y, x)));
-  ASSERT_THAT(simplify(select(x < -3, abs(x), y)), matches(select(x < -3, -x, y)));
-
   ASSERT_THAT(simplify(min(x + 64, max(min(x, 113) + 5, min(y, 128)))),
       matches(min(min(x + 64, max(y, min(x, 113) + 5)), 128)));
 
@@ -717,6 +707,27 @@ TEST(simplify, transpose) {
 }
 
 TEST(simplify, knowledge) {
+  ASSERT_THAT(simplify(select(expr(x) < y, min(x, y), z)), matches(select(expr(x) < y, x, z)));
+  ASSERT_THAT(simplify(select(expr(x) < y, max(x, y), z)), matches(select(expr(x) < y, y, z)));
+  ASSERT_THAT(simplify(select(expr(x) < y, z, min(x, y))), matches(select(expr(x) < y, z, y)));
+  ASSERT_THAT(simplify(select(expr(x) < y, z, max(x, y))), matches(select(expr(x) < y, z, x)));
+  ASSERT_THAT(simplify(select(expr(x) <= y, min(x, y), z)), matches(select(expr(x) <= y, x, z)));
+  ASSERT_THAT(simplify(select(expr(x) <= y, max(x, y), z)), matches(select(expr(x) <= y, y, z)));
+  ASSERT_THAT(simplify(select(expr(x) <= y, z, min(x, y))), matches(select(expr(x) <= y, z, y)));
+  ASSERT_THAT(simplify(select(expr(x) <= y, z, max(x, y))), matches(select(expr(x) <= y, z, x)));
+
+  ASSERT_THAT(simplify(select(expr(x) == y, z, select(expr(x) == y, 2, w))), matches(select(expr(x) == y, z, w)));
+  ASSERT_THAT(simplify(select(x == 1, 0, x + -1)), matches(x + -1));
+  ASSERT_THAT(simplify(select(x != 1, x + -1, 0)), matches(x + -1));
+  ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
+  ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
+
+  ASSERT_THAT(simplify(select(x <= 1, y, min(x, 1))), matches(select(x <= 1, y, 1)));
+  ASSERT_THAT(simplify(select(x > 0 && x < 4, max(x, 1), y)), matches(select(x > 0 && x < 4, x, y)));
+
+  ASSERT_THAT(simplify(select(x < 5, y, abs(x))), matches(select(x < 5, y, x)));
+  ASSERT_THAT(simplify(select(x < -3, abs(x), y)), matches(select(x < -3, -x, y)));
+
   ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 8)), matches(let::make(x, (y / 8) * 8, x)));
   ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 16)), matches(let::make(x, (y / 8) * 8, x * 2)));
   ASSERT_THAT(simplify(let::make(x, (y / 8) * 8, (x / 8) * 4)), matches(let::make(x, (y / 8) * 8, x / 2)));
