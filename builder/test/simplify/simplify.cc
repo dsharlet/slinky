@@ -129,6 +129,9 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(max((x + -1), select((1 < x), (max(min(x, 128), 118) + -1), 0))),
       matches(select(1 < x, max(x, 118), 1) + -1));
+  ASSERT_THAT(
+      simplify(min((y + -1), max((x + -1), max(min(x, (((z / 16) * 16) + 16)) + -1, select((1 < x), 117, 0))))),
+      matches((min(y, select((1 < x), max(x, 118), 1)) + -1)));
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
 
@@ -195,8 +198,8 @@ TEST(simplify, basic) {
       matches(min(min(x + 64, max(y, min(x, 113) + 5)), 128)));
 
   ASSERT_THAT(simplify(select(x, (y - 4), 2) + 4), matches(select(x, y, 6)));
-  ASSERT_THAT(simplify(select(x, y + 3, 5) - 1), matches(select(x, y + 2, 4)));
-  ASSERT_THAT(simplify(min(x + 2, select(y, 3, z + 4)) - 1), matches(min(x + 1, select(y, 2, z + 3))));
+  ASSERT_THAT(simplify(select(x, y + 3, 5) - 1), matches(select(x, y, 2) + 2));
+  ASSERT_THAT(simplify(min(x + 2, select(y, 3, z + 4)) - 1), matches(min(x, select(y, -1, z) + 2) + 1));
 
   ASSERT_THAT(simplify(select((y <= 0), select((x <= 0), z, x), z)), matches(select(0 < x && y <= 0, x, z)));
 
@@ -247,9 +250,11 @@ TEST(simplify, loop) {
   ASSERT_THAT(simplify(loop::make(
                   x, loop::serial, buffer_bounds(b3, 0), 1, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
       matches(crop_dim::make(b1, b0, 0, buffer_bounds(b3, 0), make_call(b1))));
-  ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(0, buffer_max(b0, 0)), 1,
-                  crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
-      matches(crop_dim::make(b1, b0, 0, bounds(0, expr()), make_call(b1))));
+  for (expr min : {expr(-1), expr(0), expr(1), expr(3), expr(z)}) {
+    ASSERT_THAT(simplify(loop::make(x, loop::serial, bounds(min, buffer_max(b0, 0)), 1,
+                    crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
+        matches(crop_dim::make(b1, b0, 0, bounds(min, expr()), make_call(b1))));
+  }
   ASSERT_THAT(simplify(loop::make(
                   x, loop::serial, buffer_bounds(b0, 0), y, crop_dim::make(b1, b0, 0, point(x), make_call(b1)))),
       matches(

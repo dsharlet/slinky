@@ -1801,12 +1801,18 @@ public:
   }
 
   template <typename T>
-  static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds) {
-    bounds.insert(x);
-    if (const T* t = x.as<T>()) {
-      enumerate_bounds<T>(t->a, bounds);
-      enumerate_bounds<T>(t->b, bounds);
+  static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds, index_t offset = 0) {
+    bounds.insert(offset ? simplify(static_cast<const class add*>(nullptr), x, offset) : x);
+    if (const add* a = x.as<add>()) {
+      if (auto c = as_constant(a->b)) {
+        x = a->a;
+        offset += *c;
+      }
     }
+    if (const T* t = x.as<T>()) {
+      enumerate_bounds<T>(t->a, bounds, offset);
+      enumerate_bounds<T>(t->b, bounds, offset);
+    } 
   }
 
   template <typename T>
@@ -1891,17 +1897,24 @@ public:
 
     // We might have written a select into an interval that tries to preserve the empty-ness of the interval.
     // But this might be unnecessary. Try to remove unnecessary selects here.
-    rewrite::pattern_wildcard<0> b;
-    rewrite::pattern_wildcard<1> d;
-    rewrite::pattern_wildcard<2> empty_min;
-    rewrite::pattern_wildcard<3> new_min;
+    rewrite::pattern_wildcard<0> x;
+    rewrite::pattern_wildcard<1> y;
+    rewrite::pattern_wildcard<2> z;
+    rewrite::pattern_wildcard<3> w;
     rewrite::match_context ctx;
-    if (match(ctx, select(buffer_max(b, d) < buffer_min(b, d), empty_min, new_min), result.min)) {
-      if (is_variable(ctx.matched(b), buf) && is_constant(ctx.matched(d), dim)) {
+    if (match(ctx, select(buffer_max(x, y) < buffer_min(x, y), z, w), result.min)) {
+      if (is_variable(ctx.matched(x), buf) && is_constant(ctx.matched(y), dim)) {
         // This select is a check that the dimension we are cropping is empty.
         // If the buffer is empty, it doesn't matter what we do, the resulting crop will still be empty, so we can
         // just take the new min.
-        result.min = ctx.matched(new_min);
+        result.min = ctx.matched(w);
+      }
+    } else if (match(ctx, x + min(y, z), result.min)) {
+      // This is the same as above, but the select was simplified.
+      if (match_call(ctx.matched(y), intrinsic::buffer_max, buf, dim) || match(ctx.matched(y), result.max)) {
+        result.min = mutate(ctx.matched(x) + ctx.matched(z));
+      } else if (match_call(ctx.matched(z), intrinsic::buffer_max, buf, dim) || match(ctx.matched(z), result.max)) {
+        result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }
 

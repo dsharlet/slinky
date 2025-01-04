@@ -103,6 +103,11 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
+    
+      apply(min(x, select(c0 < x, y, c1)), select(c0 < x, min(x, y), x), eval(c1 >= c0)) ||
+      apply(min(x, select(c0 < x, c1, y)), select(c0 < x, c1, min(x, y)), eval(c1 <= c0)) ||
+      apply(min(x, select(x < c0, y, c1)), select(x < c0, min(x, y), c1), eval(c1 <= c0)) ||
+      apply(min(x, select(x < c0, c1, y)), select(x < c0, x, min(x, y)), eval(c1 >= c0)) ||
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -121,6 +126,11 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(max(x, c0), max(y, c1)),
         max(min(x, max(y, c1)), c0), eval(c0 < c1),
         max(min(y, max(x, c0)), c1), eval(c0 > c1)) ||
+      apply(min(x + c0, select(y, z + c1, w + c2)), min(x, select(y, z + eval(c1 - c0), w + eval(c2 - c0))) + c0) ||
+      apply(min(x + c0, select(y, c1, w + c2)), min(x, select(y, eval(c1 - c0), w + eval(c2 - c0))) + c0) ||
+      apply(min(x + c0, select(y, z + c1, c2)), min(x, select(y, z + eval(c1 - c0), eval(c2 - c0))) + c0) ||
+      apply(min(x + c0, select(y, c1, c2)), min(x, select(y, eval(c1 - c0), eval(c2 - c0))) + c0) ||
+      apply(min(select(y, c1, c2), c0), select(y, eval(min(c0, c1)), eval(min(c0, c2)))) ||
 
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Min.cpp#L276-L311
       apply(min(x*c0, c1),
@@ -257,6 +267,11 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
+    
+      apply(max(x, select(c0 < x, y, c1)), select(c0 < x, max(x, y), c1), eval(c1 >= c0)) ||
+      apply(max(x, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y)), eval(c1 <= c0)) ||
+      apply(max(x, select(x < c0, y, c1)), select(x < c0, max(x, y), x), eval(c1 <= c0)) ||
+      apply(max(x, select(x < c0, c1, y)), select(x < c0, c1, max(x, y)), eval(c1 >= c0)) ||
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -275,7 +290,12 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(min(x, c0), min(y, c1)),
         min(max(x, min(y, c1)), c0), eval(c0 > c1),
         min(max(y, min(x, c0)), c1), eval(c0 < c1)) ||
-
+      apply(max(x + c0, select(y, z + c1, w + c2)), max(x, select(y, z + eval(c1 - c0), w + eval(c2 - c0))) + c0) ||
+      apply(max(x + c0, select(y, c1, w + c2)), max(x, select(y, eval(c1 - c0), w + eval(c2 - c0))) + c0) ||
+      apply(max(x + c0, select(y, z + c1, c2)), max(x, select(y, z + eval(c1 - c0), eval(c2 - c0))) + c0) ||
+      apply(max(x + c0, select(y, c1, c2)), max(x, select(y, eval(c1 - c0), eval(c2 - c0))) + c0) ||
+      apply(max(select(y, c1, c2), c0), select(y, eval(max(c0, c1)), eval(max(c0, c2)))) ||
+      
       // https://github.com/halide/Halide/blob/7994e7030976f9fcd321a4d1d5f76f4582e01905/src/Simplify_Max.cpp#L271-L300
       apply(max(x*c0, c1),
         max(x, eval(c1/c0))*c0, eval(c0 > 0 && c1%c0 == 0),
