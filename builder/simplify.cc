@@ -756,6 +756,7 @@ public:
     return *a == 0 && *b == 0;
   }
 
+  // Attempt to prove that the interval only contains true or false.
   static std::optional<bool> attempt_to_prove(const interval_expr& e) {
     if (prove_constant_true(e.min)) {
       return true;
@@ -766,25 +767,20 @@ public:
     }
   }
 
-  std::optional<bool> attempt_to_prove(const expr& e) {
-    scoped_trace trace("attempt_to_prove");
+  // Find the interval where `x` is true.
+  interval_expr where_true(const expr& x) {
+    scoped_trace trace("where_true");
     expr_info info;
     bool old_proving = proving;
     proving = true;
-    mutate_boolean(e, &info);
+    mutate_boolean(x, &info);
     proving = old_proving;
-    return attempt_to_prove(info.bounds);
+    return info.bounds;
   }
 
-  bool prove_true(const expr& e) {
-    std::optional<bool> result = attempt_to_prove(e);
-    return result && *result;
-  }
-
-  bool prove_false(const expr& e) {
-    std::optional<bool> result = attempt_to_prove(e);
-    return result && !*result;
-  }
+  std::optional<bool> attempt_to_prove(const expr& e) { return attempt_to_prove(where_true(e)); }
+  bool prove_true(const expr& e) { return prove_constant_true(where_true(e).min); }
+  bool prove_false(const expr& e) { return prove_constant_false(where_true(e).max); }
 
   void visit(const variable* op) override {
     if (vars.contains(op->sym)) {
