@@ -125,6 +125,12 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x == 1, y, select(x == 1, z, w))), matches(select(x == 1, y, w)));
   ASSERT_THAT(simplify(select(x == 1, select(x == 1, y, z), w)), matches(select(x == 1, y, w)));
 
+  ASSERT_THAT(simplify(select(x == y, x, y)), matches(y));
+  ASSERT_THAT(simplify(select(x == 1, 0, x + -1)), matches(x + -1));
+  ASSERT_THAT(simplify(select(x != 1, x + -1, 0)), matches(x + -1));
+  ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
+  ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
+
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
 
   ASSERT_THAT(simplify(and_then({expr(true), expr(true)})), matches(true));
@@ -717,10 +723,6 @@ TEST(simplify, knowledge) {
   ASSERT_THAT(simplify(select(expr(x) <= y, z, max(x, y))), matches(select(expr(x) <= y, z, x)));
 
   ASSERT_THAT(simplify(select(expr(x) == y, z, select(expr(x) == y, 2, w))), matches(select(expr(x) == y, z, w)));
-  ASSERT_THAT(simplify(select(x == 1, 0, x + -1)), matches(x + -1));
-  ASSERT_THAT(simplify(select(x != 1, x + -1, 0)), matches(x + -1));
-  ASSERT_THAT(simplify(select(x == 1, 0, max(abs(x), 1) + -1)), matches(max(abs(x), 1) + -1));
-  ASSERT_THAT(simplify(select(x != 1, max(abs(x), 1), 1)), matches(max(abs(x), 1)));
 
   ASSERT_THAT(simplify(select(x <= 1, y, min(x, 1))), matches(select(x <= 1, y, 1)));
   ASSERT_THAT(simplify(select(x > 0 && x < 4, max(x, 1), y)), matches(select(x > 0 && x < 4, x, y)));

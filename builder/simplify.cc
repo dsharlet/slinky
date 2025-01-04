@@ -1010,50 +1010,6 @@ public:
     }
   }
 
-  // substitute c = true into x.
-  static expr substitute_true(expr x, const expr& c) {
-    if (const logical_and* l = c.as<logical_and>()) {
-      // If we assume a && b is true, then a and b both must be true.
-      x = substitute_true(x, l->a);
-      x = substitute_true(x, l->b);
-    } else if (const logical_not* l = c.as<logical_not>()) {
-      x = substitute_false(x, l->a);
-    } else if (is_boolean(c) && !as_constant(c)) {
-      x = substitute(x, c, true);
-    }
-    // Do this separately because we might be able to substitute c and one side of an equals too.
-    if (const equal* e = c.as<equal>()) {
-      if (e->b.as<constant>()) {
-        x = substitute(x, e->a, e->b);
-      } else if (e->a.as<constant>()) {
-        x = substitute(x, e->b, e->a);
-      }
-    }
-    return x;
-  }
-
-  // substitute c = false into x.
-  static expr substitute_false(expr x, const expr& c) {
-    if (const logical_or* l = c.as<logical_or>()) {
-      // If we assume a || b is false, then a and b both must be false.
-      x = substitute_false(x, l->a);
-      x = substitute_false(x, l->b);
-    } else if (const logical_not* l = c.as<logical_not>()) {
-      x = substitute_true(x, l->a);
-    } else if (is_boolean(c) && !as_constant(c)) {
-      x = substitute(x, c, false);
-    }
-    // Do this separately because we might be able to substitute c and one side of an equals too.
-    if (const not_equal* e = c.as<not_equal>()) {
-      if (e->b.as<constant>()) {
-        x = substitute(x, e->a, e->b);
-      } else if (e->a.as<constant>()) {
-        x = substitute(x, e->b, e->a);
-      }
-    }
-    return x;
-  }
-
   void visit(const class select* op) override {
     expr_info c_info;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
@@ -1066,31 +1022,23 @@ public:
       return;
     }
 
-    expr t = op->true_value;
-    expr f = op->false_value;
-
-    t = substitute_true(t, c);
-    f = substitute_false(f, c);
-
-    expr t_when_c_false = substitute_false(t, c);
-    expr f_when_c_true = substitute_true(f, c);
-    if (!t_when_c_false.same_as(t) && prove_true(t_when_c_false == f)) {
-      mutate_and_set_result(t);
-      return;
-    } else if (!f_when_c_true.same_as(f) && prove_true(f_when_c_true == t)) {
-      mutate_and_set_result(f);
-      return;
-    }
-
-    expr_info t_info;
+    expr t, f;
+    expr_info t_info, f_info;
     {
-      auto knowledge = learn_from_true(c);
-      t = mutate(t, &t_info);
+      auto k = learn_from_true(c);
+      t = mutate(op->true_value, &t_info);
+      expr learned = k.substitute(t);
+      if (!learned.same_as(t)) {
+        t = mutate(learned, &t_info);
+      }
     }
-    expr_info f_info;
     {
-      auto knowledge = learn_from_false(c);
-      f = mutate(f, &f_info);
+      auto k = learn_from_false(c);
+      f = mutate(op->false_value, &f_info);
+      expr learned = k.substitute(f);
+      if (!learned.same_as(f)) {
+        f = mutate(learned, &f_info);
+      }
     }
 
     if (!t.defined() && !f.defined()) {
