@@ -292,6 +292,8 @@ struct interval_expr {
   bool is_point() const { return min.defined() && min.same_as(max); }
   bool is_point(expr_ref x) const { return min.same_as(x) && max.same_as(x); }
 
+  expr_ref as_point() const { return is_point() ? expr_ref(min) : expr_ref(nullptr); }
+
   static const interval_expr& all();
   static const interval_expr& none();
   // An interval_expr x such that x | y == y

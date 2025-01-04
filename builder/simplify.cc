@@ -413,12 +413,9 @@ public:
         }
       }
 
-      if (bounds.is_point()) {
-        auto c = as_constant(bounds.min);
-        if (c) {
-          alignment.modulus = 0;
-          alignment.remainder = *c;
-        }
+      if (auto c = as_constant(bounds.as_point())) {
+        alignment.modulus = 0;
+        alignment.remainder = *c;
       }
     }
   };
@@ -535,6 +532,10 @@ public:
       } else {
         info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));
         info->alignment = info->alignment & alignment;
+      }
+      if (auto value = as_constant(info->bounds.as_point())) {
+        // The bounds tell us this is a constant point.
+        info->replacement = *value;
       }
       vk.push_back(set_value_in_scope(vars, x, std::move(info)));
     }
