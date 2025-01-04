@@ -424,6 +424,10 @@ interval_expr simplify_intersection(interval_expr a, interval_expr b) {
   } else if (!a.max.defined()) {
     a.max = std::move(b.max);
   }
+  if (match(a.min, a.max)) {
+    // Ensure that is_point is true if the result is a point.
+    a.max = a.min;
+  }
   return a;
 }
 
