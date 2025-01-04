@@ -521,6 +521,7 @@ public:
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
     std::vector<scoped_value_in_symbol_map<expr_info>> vk;
     std::vector<scoped_value_in_symbol_map<buffer_info>> bk;
+    std::vector<std::pair<expr, expr>> facts;
 
     symbol_map<expr_info>& vars;
     symbol_map<buffer_info>& buffers;
@@ -592,7 +593,9 @@ public:
     knowledge(symbol_map<expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
-    ~knowledge() {
+    ~knowledge() { exit_scope(); }
+
+    void exit_scope() {
       // Destroy our knowledge in reverse order.
       while (!vk.empty()) {
         vk.pop_back();
@@ -666,12 +669,17 @@ public:
         learn_from_true(a->b);
       } else if (const logical_not* n = c.as<logical_not>()) {
         learn_from_false(n->a);
-      } else if (const equal* eq = c.as<equal>()) {
-        learn_from_equal(eq->a, eq->b);
-      } else if (const less* lt = c.as<less>()) {
-        learn_from_less(lt->a, lt->b);
-      } else if (const less_equal* lt = c.as<less_equal>()) {
-        learn_from_less_equal(lt->a, lt->b);
+      } else if (!as_constant(c)) {
+        if (!as_variable(c)) {
+          facts.push_back({c, expr(true)});
+        }
+        if (const equal* eq = c.as<equal>()) {
+          learn_from_equal(eq->a, eq->b);
+        } else if (const less* lt = c.as<less>()) {
+          learn_from_less(lt->a, lt->b);
+        } else if (const less_equal* lt = c.as<less_equal>()) {
+          learn_from_less_equal(lt->a, lt->b);
+        }
       }
     }
     void learn_from_false(const expr& c) {
@@ -680,13 +688,23 @@ public:
         learn_from_false(a->b);
       } else if (const logical_not* n = c.as<logical_not>()) {
         learn_from_true(n->a);
-      } else if (const not_equal* ne = c.as<not_equal>()) {
-        learn_from_equal(ne->a, ne->b);
-      } else if (const less* lt = c.as<less>()) {
-        learn_from_less_equal(lt->b, lt->a);
-      } else if (const less_equal* lt = c.as<less_equal>()) {
-        learn_from_less(lt->b, lt->a);
+      } else if (!as_constant(c)) {
+        facts.push_back({c, expr(false)});
+        if (const not_equal* ne = c.as<not_equal>()) {
+          learn_from_equal(ne->a, ne->b);
+        } else if (const less* lt = c.as<less>()) {
+          learn_from_less_equal(lt->b, lt->a);
+        } else if (const less_equal* lt = c.as<less_equal>()) {
+          learn_from_less(lt->b, lt->a);
+        }
       }
+    }
+
+    expr substitute(expr x) const {
+      for (const auto& i : facts) {
+        x = slinky::substitute(x, i.first, i.second);
+      }
+      return x;
     }
   };
 
