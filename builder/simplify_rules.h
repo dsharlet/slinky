@@ -103,7 +103,11 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
-    
+
+      apply(min(x + c2, select(c0 < x, y, c1)), select(c0 < x, min(x, y - c2), x) + c2, eval(c1 >= c0 + c2)) ||
+      apply(min(x + c2, select(c0 < x, c1, y)), select(c0 < x, c1, min(y, x + c2)), eval(c1 <= c0 + c2)) ||
+      apply(min(x + c2, select(x < c0, y, c1)), select(x < c0, min(y, x + c2), c1), eval(c1 <= c0 + c2)) ||
+      apply(min(x + c2, select(x < c0, c1, y)), select(x < c0, x, min(x, y - c2)) + c2, eval(c1 >= c0 + c2)) ||
       apply(min(x, select(c0 < x, y, c1)), select(c0 < x, min(x, y), x), eval(c1 >= c0)) ||
       apply(min(x, select(c0 < x, c1, y)), select(c0 < x, c1, min(x, y)), eval(c1 <= c0)) ||
       apply(min(x, select(x < c0, y, c1)), select(x < c0, min(x, y), c1), eval(c1 <= c0)) ||
@@ -267,7 +271,11 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
-    
+
+      apply(max(x + c2, select(c0 < x, y, c1)), select(c0 < x, max(y, x + c2), c1), eval(c1 >= c0 + c2)) ||
+      apply(max(x + c2, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y - c2)) + c2, eval(c1 <= c0 + c2)) ||
+      apply(max(x + c2, select(x < c0, y, c1)), select(x < c0, max(x, y - c2), x) + c2, eval(c1 <= c0 + c2)) ||
+      apply(max(x + c2, select(x < c0, c1, y)), select(x < c0, c1, max(y, x + c2)), eval(c1 >= c0 + c2)) ||
       apply(max(x, select(c0 < x, y, c1)), select(c0 < x, max(x, y), c1), eval(c1 >= c0)) ||
       apply(max(x, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y)), eval(c1 <= c0)) ||
       apply(max(x, select(x < c0, y, c1)), select(x < c0, max(x, y), x), eval(c1 <= c0)) ||
