@@ -346,8 +346,10 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     }
   } else if (fn == intrinsic::buffer_at) {
     for (index_t d = 1; d < static_cast<index_t>(args.size()); ++d) {
+      auto buf = as_variable(args[0]);
+      assert(buf);
       // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_at(b, <>)
-      if (args[d].defined() && match(args[d], buffer_min(args[0], d - 1))) {
+      if (args[d].defined() && is_buffer_field(args[d], field_id::min, *buf, d - 1)) {
         args[d] = expr();
         changed = true;
       }

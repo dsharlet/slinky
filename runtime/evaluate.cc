@@ -238,28 +238,7 @@ public:
     raw_buffer* buf = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
     assert(buf);
     switch (op->intrinsic) {
-    case intrinsic::buffer_rank: return buf->rank;
-    case intrinsic::buffer_elem_size: return buf->elem_size;
     case intrinsic::buffer_size_bytes: return buf->size_bytes();
-    default: std::abort();
-    }
-  }
-
-  index_t eval_dim_metadata(const call* op) {
-    assert(op->args.size() == 2);
-    auto sym = as_variable(op->args[0]);
-    assert(sym);
-    auto d = as_constant(op->args[1]);
-    assert(d);
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
-    assert(buffer);
-    assert(*d < static_cast<index_t>(buffer->rank));
-    const slinky::dim& dim = buffer->dim(*d);
-    switch (op->intrinsic) {
-    case intrinsic::buffer_min: return dim.min();
-    case intrinsic::buffer_max: return dim.max();
-    case intrinsic::buffer_stride: return dim.stride();
-    case intrinsic::buffer_fold_factor: return dim.fold_factor();
     default: std::abort();
     }
   }
@@ -366,14 +345,7 @@ public:
 
     case intrinsic::define_undef: return eval_define_undef(op);
 
-    case intrinsic::buffer_rank:
-    case intrinsic::buffer_elem_size:
     case intrinsic::buffer_size_bytes: return eval_buffer_metadata(op);
-
-    case intrinsic::buffer_min:
-    case intrinsic::buffer_max:
-    case intrinsic::buffer_stride:
-    case intrinsic::buffer_fold_factor: return eval_dim_metadata(op);
 
     case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));
 

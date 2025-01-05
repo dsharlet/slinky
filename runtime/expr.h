@@ -144,6 +144,19 @@ enum class intrinsic {
   free,
 };
 
+inline intrinsic to_intrinsic(field_id field) {
+  switch (field) {
+  case field_id::min: return intrinsic::buffer_min;
+  case field_id::max: return intrinsic::buffer_max;
+  case field_id::stride: return intrinsic::buffer_stride;
+  case field_id::fold_factor: return intrinsic::buffer_fold_factor;
+  case field_id::rank: return intrinsic::buffer_rank;
+  case field_id::elem_size: return intrinsic::buffer_elem_size;
+  case field_id::size_bytes: return intrinsic::buffer_size_bytes;
+  default: std::abort();
+  }
+}
+
 class expr_visitor;
 
 // The next few classes are the base of the expression (`expr`) and statement (`stmt`) mechanism.
@@ -663,13 +676,18 @@ interval_expr align(interval_expr x, const expr& a);
 expr and_then(std::vector<expr> args);
 expr or_else(std::vector<expr> args);
 
-expr buffer_rank(expr buf);
-expr buffer_elem_size(expr buf);
-expr buffer_min(expr buf, expr dim);
-expr buffer_max(expr buf, expr dim);
-expr buffer_extent(const expr& buf, const expr& dim);
-expr buffer_stride(expr buf, expr dim);
-expr buffer_fold_factor(expr buf, expr dim);
+expr buffer_rank(var buf);
+expr buffer_elem_size(var buf);
+expr buffer_min(var buf, int dim);
+expr buffer_max(var buf, int dim);
+expr buffer_extent(var buf, int dim);
+expr buffer_stride(var buf, int dim);
+expr buffer_fold_factor(var buf, int dim);
+
+interval_expr buffer_bounds(var buf, int dim);
+dim_expr buffer_dim(var buf, int dim);
+std::vector<dim_expr> buffer_dims(var buf, int rank);
+
 expr buffer_at(expr buf, span<const expr> at);
 expr buffer_at(expr buf, span<const var> at);
 expr buffer_at(expr buf);
@@ -679,10 +697,6 @@ expr buffer_at(expr buf, expr at0, Args... at) {
   expr args[] = {at0, at...};
   return buffer_at(buf, args);
 }
-
-interval_expr buffer_bounds(const expr& buf, const expr& dim);
-dim_expr buffer_dim(const expr& buf, const expr& dim);
-std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
 box_expr dims_bounds(span<const dim_expr> dims);
 

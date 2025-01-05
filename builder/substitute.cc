@@ -11,6 +11,7 @@
 #include "builder/node_mutator.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -341,6 +342,22 @@ const call* match_call(expr_ref x, intrinsic fn, var a, index_t b) {
   return c;
 }
 
+bool is_buffer_field(expr_ref x, field_id field, var b) {
+  if (const variable* v = x.as<variable>()) {
+    return v->sym == b && v->field == field;
+  } else {
+    return match_call(x, to_intrinsic(field), b);
+  }
+}
+
+bool is_buffer_field(expr_ref x, field_id field, var b, int dim) {
+  if (const variable* v = x.as<variable>()) {
+    return v->sym == b && v->field == field && v->dim == dim;
+  } else {
+    return match_call(x, to_intrinsic(field), b, dim);
+  }
+}
+
 int compare(const var& a, const var& b) {
   matcher m;
   m.try_match(a, b);
@@ -360,12 +377,12 @@ int compare(stmt_ref a, stmt_ref b) {
 
 namespace {
 
-const expr& eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
-  switch (fn) {
-  case intrinsic::buffer_min: return d.bounds.min;
-  case intrinsic::buffer_max: return d.bounds.max;
-  case intrinsic::buffer_stride: return d.stride;
-  case intrinsic::buffer_fold_factor: return d.fold_factor;
+const expr& eval_buffer_field(field_id field, const dim_expr& d) {
+  switch (field) {
+  case field_id::min: return d.bounds.min;
+  case field_id::max: return d.bounds.max;
+  case field_id::stride: return d.stride;
+  case field_id::fold_factor: return d.fold_factor;
   default: std::abort();
   }
 }
@@ -402,11 +419,12 @@ auto mutate_let(substitutor* this_, const T* op) {
 }  // namespace
 
 void substitutor::visit(const variable* op) {
-  std::optional<var> new_sym = visit_symbol(op->sym);
-  if (new_sym && *new_sym != op->sym) {
-    set_result(variable::make(*new_sym, op->field, op->dim));
+  var new_sym = visit_symbol(op->sym);
+  expr result = new_sym != op->sym ? variable::make(new_sym, op->field, op->dim) : expr(op);
+  if (op->field != field_id::none) {
+    set_result(mutate_buffer_field(result.as<variable>(), op->field, new_sym, op->dim));
   } else {
-    set_result(op);
+    set_result(std::move(result));
   }
 }
 
@@ -510,20 +528,20 @@ interval_expr substitute_crop_bounds(substitutor* this_, var new_src, var src, i
   // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(src, dim) and
   // buffer_max(src, dim).
   interval_expr result = this_->mutate(bounds);
-  if (match_call(result.min, intrinsic::buffer_min, new_src, dim)) {
+  if (is_buffer_field(result.min, field_id::min, new_src, dim)) {
     result.min = expr();
-  } else if (!match_call(bounds.min, intrinsic::buffer_min, src, dim)) {
-    expr new_bounds = this_->mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, src, dim);
-    if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_min, new_src, dim)) {
+  } else if (!is_buffer_field(bounds.min, field_id::min, src, dim)) {
+    expr new_bounds = this_->mutate_buffer_field(nullptr, field_id::min, src, dim);
+    if (new_bounds.defined() && !is_buffer_field(new_bounds, field_id::min, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.min = max(result.min, new_bounds);
     }
   }
-  if (match_call(result.max, intrinsic::buffer_max, new_src, dim)) {
+  if (is_buffer_field(result.max, field_id::max, new_src, dim)) {
     result.max = expr();
-  } else if (!match_call(bounds.max, intrinsic::buffer_max, src, dim)) {
-    expr new_bounds = this_->mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_max, src, dim);
-    if (new_bounds.defined() && !match_call(new_bounds, intrinsic::buffer_max, new_src, dim)) {
+  } else if (!is_buffer_field(bounds.max, field_id::max, src, dim)) {
+    expr new_bounds = this_->mutate_buffer_field(nullptr, field_id::max, src, dim);
+    if (new_bounds.defined() && !is_buffer_field(new_bounds, field_id::max, new_src, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.max = min(result.max, new_bounds);
     }
@@ -574,42 +592,32 @@ void substitutor::visit(const call* op) {
     args.push_back(mutate(i));
     changed = changed || !args.back().same_as(i);
   }
-  if (is_buffer_intrinsic(op->intrinsic) && !args.empty() && args.front().defined()) {
+  if (op->intrinsic == intrinsic::buffer_at) {
     auto buf = as_variable(args[0]);
     assert(buf);
-    if (op->intrinsic == intrinsic::buffer_at) {
-      const std::size_t buf_rank = std::max(args.size() - 1, get_target_buffer_rank(*buf));
-      for (std::size_t d = 0; d < buf_rank; ++d) {
-        if (d + 1 >= args.size() || !args[d + 1].defined()) {
-          // buffer_at has an implicit buffer_min if it is not defined.
-          expr min = mutate_buffer_dim_intrinsic(nullptr, intrinsic::buffer_min, *buf, d);
-          if (min.defined()) {
-            assert(!match_call(min, intrinsic::buffer_min, *buf, d));
-            args.resize(std::max(args.size(), d + 2));
-            args[d + 1] = min;
-            changed = true;
-          }
-        } else if (d + 1 < args.size() && match_call(args[d + 1], intrinsic::buffer_min, *buf, d)) {
-          args[d + 1] = expr();
+    const std::size_t buf_rank = std::max(args.size() - 1, get_target_buffer_rank(*buf));
+    for (std::size_t d = 0; d < buf_rank; ++d) {
+      if (d + 1 >= args.size() || !args[d + 1].defined()) {
+        // buffer_at has an implicit buffer_min if it is not defined.
+        expr min = mutate_buffer_field(nullptr, field_id::min, *buf, d);
+        if (min.defined()) {
+          assert(!is_buffer_field(min, field_id::min, *buf, d));
+          args.resize(std::max(args.size(), d + 2));
+          args[d + 1] = min;
           changed = true;
         }
-      }
-
-      while (!args.empty() && !args.back().defined()) {
-        args.pop_back();
+      } else if (d + 1 < args.size() && is_buffer_field(args[d + 1], field_id::min, *buf, d)) {
+        args[d + 1] = expr();
         changed = true;
       }
-
-      if (changed) {
-        set_result(call::make(op->intrinsic, args));
-      } else {
-        set_result(expr(op));
-      }
-    } else {
-      expr result = changed ? call::make(op->intrinsic, args) : expr(op);
-      set_result(mutate_buffer_intrinsic(result.as<call>(), op->intrinsic, *buf, span<const expr>(args).subspan(1)));
     }
-  } else if (changed) {
+
+    while (!args.empty() && !args.back().defined()) {
+      args.pop_back();
+      changed = true;
+    }
+  }
+  if (changed) {
     set_result(call::make(op->intrinsic, std::move(args)));
   } else {
     set_result(op);
@@ -758,27 +766,19 @@ public:
 
   std::size_t get_target_buffer_rank(var x) override { return x == target ? dims.size() : 0; }
 
-  expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) override {
+  expr mutate_buffer_field(const variable* op, field_id field, var buf, int dim) override {
     if (buf != target) return expr(op);
 
-    if (fn == intrinsic::buffer_elem_size) {
-      if (elem_size.defined()) {
-        return elem_size;
-      }
-    } else if (is_buffer_dim_intrinsic(fn)) {
-      assert(args.size() == 1);
-      auto dim = as_constant(args[0]);
-      assert(dim);
-      return mutate_buffer_dim_intrinsic(op, fn, buf, *dim);
-    } else if (fn == intrinsic::buffer_size_bytes) {
-      std::cerr << "substituting buffer_size_bytes not implemented" << std::endl;
-      std::abort();
+    switch (field) {
+    case field_id::elem_size: return elem_size.defined() ? elem_size : expr(op);
+    case field_id::min:
+    case field_id::max:
+    case field_id::stride:
+    case field_id::fold_factor:
+      return dim < static_cast<index_t>(dims.size()) ? eval_buffer_field(field, dims[dim]) : expr(op);
+    default: std::cerr << "substituting " << field << " not implemented " << std::endl; std::abort();
     }
     return expr(op);
-  }
-  expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) override {
-    assert(is_buffer_dim_intrinsic(fn));
-    return buf == target && dim < static_cast<index_t>(dims.size()) ? eval_buffer_intrinsic(fn, dims[dim]) : expr(op);
   }
 };
 

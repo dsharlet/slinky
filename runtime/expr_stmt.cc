@@ -640,16 +640,31 @@ interval_expr align(interval_expr x, const expr& a) { return {align_down(std::mo
 expr and_then(std::vector<expr> args) { return call::make(intrinsic::and_then, std::move(args)); }
 expr or_else(std::vector<expr> args) { return call::make(intrinsic::or_else, std::move(args)); }
 
-expr buffer_rank(expr buf) { return call::make(intrinsic::buffer_rank, {std::move(buf)}); }
-expr buffer_elem_size(expr buf) { return call::make(intrinsic::buffer_elem_size, {std::move(buf)}); }
-expr buffer_min(expr buf, expr dim) { return call::make(intrinsic::buffer_min, {std::move(buf), std::move(dim)}); }
-expr buffer_max(expr buf, expr dim) { return call::make(intrinsic::buffer_max, {std::move(buf), std::move(dim)}); }
-expr buffer_extent(const expr& buf, const expr& dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
-expr buffer_stride(expr buf, expr dim) {
-  return call::make(intrinsic::buffer_stride, {std::move(buf), std::move(dim)});
+expr buffer_rank(var buf) {
+  return variable::make(buf, field_id::rank);
 }
-expr buffer_fold_factor(expr buf, expr dim) {
-  return call::make(intrinsic::buffer_fold_factor, {std::move(buf), std::move(dim)});
+expr buffer_elem_size(var buf) { return variable::make(buf, field_id::elem_size); }
+expr buffer_min(var buf, int dim) { return variable::make(buf, field_id::min, dim); }
+expr buffer_max(var buf, int dim) { return variable::make(buf, field_id::max, dim); }
+expr buffer_extent(var buf, int dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
+expr buffer_stride(var buf, int dim) {
+  return variable::make(buf, field_id::stride, dim);
+}
+expr buffer_fold_factor(var buf, int dim) {
+  return variable::make(buf, field_id::fold_factor, dim);
+}
+
+interval_expr buffer_bounds(var buf, int dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
+dim_expr buffer_dim(var buf, int dim) {
+  return {buffer_bounds(buf, dim), buffer_stride(buf, dim), buffer_fold_factor(buf, dim)};
+}
+std::vector<dim_expr> buffer_dims(var buf, int rank) {
+  std::vector<dim_expr> result;
+  result.reserve(rank);
+  for (int d = 0; d < rank; ++d) {
+    result.push_back(buffer_dim(buf, d));
+  }
+  return result;
 }
 
 expr buffer_at(expr buf, span<const expr> at) {
@@ -669,19 +684,6 @@ expr buffer_at(expr buf, span<const var> at) {
 }
 
 expr buffer_at(expr buf) { return call::make(intrinsic::buffer_at, {std::move(buf)}); }
-
-interval_expr buffer_bounds(const expr& buf, const expr& dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
-dim_expr buffer_dim(const expr& buf, const expr& dim) {
-  return {buffer_bounds(buf, dim), buffer_stride(buf, dim), buffer_fold_factor(buf, dim)};
-}
-std::vector<dim_expr> buffer_dims(const expr& buf, int rank) {
-  std::vector<dim_expr> result;
-  result.reserve(rank);
-  for (int d = 0; d < rank; ++d) {
-    result.push_back(buffer_dim(buf, d));
-  }
-  return result;
-}
 
 box_expr dims_bounds(span<const dim_expr> dims) {
   box_expr result(dims.size());

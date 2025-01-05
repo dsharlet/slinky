@@ -64,7 +64,7 @@ public:
       if (it != buffer_variables_emitted_.end()) {
         name_ = it->second;
       } else {
-        name_ = print_assignment_prefixed("_", "variable::make(" + name + "->sym())");
+        name_ = print_assignment_prefixed("_", name + "->sym()");
         buffer_variables_emitted_[op->sym] = name_;
       }
       return;
@@ -166,21 +166,20 @@ public:
           name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");
     }
 
-    expr bep_var = variable::make(bep->sym());
     for (std::size_t d = 0; d < bep->rank(); d++) {
-      if (!match(bep->dim(d).bounds.min, buffer_min(bep_var, d))) {
+      if (!is_buffer_field(bep->dim(d).bounds.min, field_id::min, bep->sym(), d)) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").bounds.min = " << e << ";\n";
       }
-      if (!match(bep->dim(d).bounds.max, buffer_max(bep_var, d))) {
+      if (!is_buffer_field(bep->dim(d).bounds.max, field_id::max, bep->sym(), d)) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").bounds.max = " << e << ";\n";
       }
-      if (!match(bep->dim(d).stride, buffer_stride(bep_var, d))) {
+      if (!is_buffer_field(bep->dim(d).stride, field_id::stride, bep->sym(), d)) {
         std::string e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
-      if (!match(bep->dim(d).fold_factor, buffer_fold_factor(bep_var, d))) {
+      if (!is_buffer_field(bep->dim(d).fold_factor, field_id::fold_factor, bep->sym(), d)) {
         std::string e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = (index_t) " << e << ";\n";
       }
