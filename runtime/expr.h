@@ -21,6 +21,19 @@ namespace slinky {
 class node_context;
 class expr;
 
+enum class field_id : unsigned {
+  none = 0,
+
+  rank,
+  elem_size,
+  size_bytes,
+
+  min,
+  max,
+  stride,
+  fold_factor,
+};
+
 class var {
 public:
   using type = std::size_t;
@@ -367,10 +380,13 @@ public:
 class variable : public expr_node<variable> {
 public:
   var sym;
+  field_id field;
+  int dim;
 
   void accept(expr_visitor* v) const override;
 
   static expr make(var sym);
+  static expr make(var sym, field_id field, int dim = -1);
 
   static constexpr expr_node_type static_type = expr_node_type::variable;
 };

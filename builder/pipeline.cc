@@ -954,6 +954,25 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
   return result;
 }
 
+class rewrite_buffer_meta : public node_mutator {
+public:
+  void visit(const call* op) override {
+    std::optional<var> sym = op->args.size() > 0 ? as_variable(op->args[0]) : std::nullopt;
+    std::optional<index_t> dim = op->args.size() == 2 ? as_constant(op->args[1]) : std::nullopt;
+    switch (op->intrinsic) {
+    case intrinsic::buffer_rank: set_result(variable::make(*sym, field_id::rank)); return;
+    case intrinsic::buffer_elem_size: set_result(variable::make(*sym, field_id::elem_size)); return;
+    case intrinsic::buffer_size_bytes: set_result(variable::make(*sym, field_id::size_bytes)); return;
+    case intrinsic::buffer_min: set_result(variable::make(*sym, field_id::min, *dim)); return;
+    case intrinsic::buffer_max: set_result(variable::make(*sym, field_id::max, *dim)); return;
+    case intrinsic::buffer_stride: set_result(variable::make(*sym, field_id::stride, *dim)); return;
+    case intrinsic::buffer_fold_factor: set_result(variable::make(*sym, field_id::fold_factor, *dim)); return;
+    default: break;
+    }
+    node_mutator::visit(op);
+  }
+};
+
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants,
     std::vector<std::pair<var, expr>> lets, const build_options& options) {
@@ -1015,6 +1034,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // `implement_copies` adds shadowed declarations, remove them before simplifying.
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
+  result = rewrite_buffer_meta().mutate(result);
 
   result = optimize_symbols(result, ctx);
 
@@ -1023,6 +1043,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   if (options.trace) {
     result = inject_traces(result, ctx, constants);
   }
+
+  result = rewrite_buffer_meta().mutate(result);
 
   if (is_verbose()) {
     std::cout << result << std::endl;

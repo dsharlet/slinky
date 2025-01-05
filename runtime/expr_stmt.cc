@@ -99,6 +99,8 @@ const constant* make_static_constant() {
 const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
+  n->field = field_id::none;
+  n->dim = -1;
   return n;
 }
 
@@ -124,6 +126,13 @@ expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return expr(make_variable(sym)); }
+expr variable::make(var sym, field_id field, int dim) { 
+  variable* n = new variable();
+  n->sym = sym;
+  n->field = field;
+  n->dim = dim;
+  return expr(n);
+}
 
 expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }

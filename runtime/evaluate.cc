@@ -81,13 +81,13 @@ public:
     switch (e.type()) {
     case expr_node_type::variable: return eval(static_cast<const variable*>(e.get()));
     case expr_node_type::constant: return eval(static_cast<const constant*>(e.get()));
-    case expr_node_type::call: return eval(static_cast<const call*>(e.get()));
     default: return eval_non_inlined(e);
     }
   }
 
   SLINKY_NO_INLINE index_t eval_non_inlined(const expr& e) {
     switch (e.type()) {
+    case expr_node_type::call: return eval(static_cast<const call*>(e.get()));
     case expr_node_type::let: return eval(static_cast<const let*>(e.get()));
     case expr_node_type::logical_not: return eval(static_cast<const logical_not*>(e.get()));
     case expr_node_type::select: return eval(static_cast<const class select*>(e.get()));
@@ -157,7 +157,19 @@ public:
   index_t eval(const variable* op) {
     auto value = context.lookup(op->sym);
     assert(value);
-    return *value;
+    const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*value);
+    switch (op->field) {
+    case field_id::none: return *value;
+    case field_id::rank: return buf->rank;
+    case field_id::elem_size: return buf->elem_size;
+    case field_id::size_bytes: return buf->size_bytes();
+    case field_id::min: return buf->dim(op->dim).min();
+    case field_id::max: return buf->dim(op->dim).max();
+    case field_id::stride: return buf->dim(op->dim).stride();
+    case field_id::fold_factor: return buf->dim(op->dim).fold_factor();
+    }
+    std::cout << "Unknown meta: " << op->field << " " << op->dim << std::endl;
+    std::abort();
   }
 
   static index_t eval(const constant* op) { return op->value; }

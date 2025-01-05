@@ -131,7 +131,9 @@ public:
 
   void visit(const variable* op) override {
     const variable* ev = static_cast<const variable*>(self);
-    try_match(ev->sym, op->sym);
+    if (!try_match(ev->sym, op->sym)) return;
+    if (!try_match(ev->field, op->field)) return;
+    if (!try_match(ev->dim, op->dim)) return;
   }
 
   void visit(const constant* op) override {
@@ -402,7 +404,7 @@ auto mutate_let(substitutor* this_, const T* op) {
 void substitutor::visit(const variable* op) {
   std::optional<var> new_sym = visit_symbol(op->sym);
   if (new_sym && *new_sym != op->sym) {
-    set_result(variable::make(*new_sym));
+    set_result(variable::make(*new_sym, op->field, op->dim));
   } else {
     set_result(op);
   }
@@ -703,7 +705,12 @@ public:
 
   void visit(const variable* v) override {
     if (v->sym == target) {
-      set_result(replacement);
+      if (v->field != field_id::none) {
+        // The replacement must be another var.
+        set_result(variable::make(replacement_symbol(replacement), v->field, v->dim));
+      } else {
+        set_result(replacement);
+      }
     } else {
       set_result(v);
     }

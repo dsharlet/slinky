@@ -41,7 +41,17 @@ public:
 
   void visit(const variable* op) override {
     if (depends_on_result* deps = find_deps(op->sym)) {
-      deps->var = true;
+      switch (op->field) {
+      case field_id::min:
+      case field_id::max:
+        deps->buffer_bounds = true;
+        deps->buffer_dims = true;
+        break;
+      case field_id::stride:
+      case field_id::fold_factor: deps->buffer_dims = true; break;
+      case field_id::size_bytes:
+      default: deps->var = true;
+      }
     }
   }
   void visit(const call* op) override {
