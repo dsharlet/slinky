@@ -804,7 +804,7 @@ public:
           // - The value is something we should substitute (it's simple and pure).
           // - The value is another buffer meta expression.
           // - We're trying to prove something (as opposed to producing a simplified expression).
-          if (!info->decl.defined() || should_substitute(x) || x.as<call>() || (proving && x.defined())) {
+          if (!info->decl.defined() || should_substitute(x) || x.as<variable>() || (proving && x.defined())) {
             if (!match(x, op)) {
               // This is a value we should substitute, and it's different from what we started with.
               mutate_and_set_result(x);
@@ -1120,7 +1120,9 @@ public:
     }
   }
 
-  static bool should_substitute(const expr& e) { return e.as<constant>() || e.as<variable>(); }
+  static bool should_substitute(const expr& e) {
+    return e.as<constant>() || (e.as<variable>() && e.as<variable>()->field == field_id::none);
+  }
 
   void visit(const call* op) override {
     std::vector<expr> args;
@@ -1153,7 +1155,8 @@ public:
           // - The value is something we should substitute (it's simple and pure).
           // - The value is another buffer meta expression.
           // - We're trying to prove something (as opposed to producing a simplified expression).
-          if (!info->decl.defined() || should_substitute(x) || x.as<call>() || (proving && x.defined())) {
+          if (!info->decl.defined() || should_substitute(x) || x.as<call>() || x.as<variable>() ||
+              (proving && x.defined())) {
             if (!match(x, op)) {
               // This is a value we should substitute, and it's different from what we started with.
               mutate_and_set_result(x);
