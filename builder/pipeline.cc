@@ -250,6 +250,23 @@ public:
     return let_stmt::make(std::move(lets), std::move(s));
   }
 
+  void visit(const variable* op) override {
+    if (op->field == field_id::none) {
+      node_mutator::visit(op);
+      return;
+    }
+
+    // Don't lift internally allocated buffer metadata expressions.
+    // TODO: This should be a proper API error.
+    assert(std::binary_search(external.begin(), external.end(), op->sym));
+
+    auto i = replacements.insert(std::pair<const expr, var>(op, 0));
+    if (i.second) {
+      i.first->second = ctx.insert_unique("g");
+    }
+    set_result(variable::make(i.first->second));
+  }
+
   void visit(const call* op) override {
     if (!is_buffer_intrinsic(op->intrinsic)) {
       node_mutator::visit(op);
