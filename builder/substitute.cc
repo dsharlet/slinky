@@ -420,6 +420,10 @@ auto mutate_let(substitutor* this_, const T* op) {
 
 void substitutor::visit(const variable* op) {
   var new_sym = visit_symbol(op->sym);
+  if (!new_sym.defined()) {
+    set_result(expr());
+    return;
+  }
   expr result = new_sym != op->sym ? variable::make(new_sym, op->field, op->dim) : expr(op);
   if (op->field != field_id::none) {
     set_result(mutate_buffer_field(result.as<variable>(), op->field, new_sym, op->dim));
@@ -592,7 +596,7 @@ void substitutor::visit(const call* op) {
     args.push_back(mutate(i));
     changed = changed || !args.back().same_as(i);
   }
-  if (op->intrinsic == intrinsic::buffer_at) {
+  if (op->intrinsic == intrinsic::buffer_at && !args.empty() && args[0].defined()) {
     auto buf = as_variable(args[0]);
     assert(buf);
     const std::size_t buf_rank = std::max(args.size() - 1, get_target_buffer_rank(*buf));

@@ -27,6 +27,7 @@ TEST(substitute, basic) {
   ASSERT_THAT(substitute(x + y, x, z), matches(z + y));
   ASSERT_THAT(substitute(buffer_min(x, 2), x, y), matches(buffer_min(y, 2)));
   ASSERT_THAT(substitute(buffer_min(x, 2), buffer_min(x, 2), buffer_max(x, 2)), matches(buffer_max(x, 2)));
+  ASSERT_THAT(substitute(buffer_at(x), x, expr()), matches(buffer_at(expr())));
   ASSERT_THAT(substitute(crop_dim::make(x, y, 0, {0, 0}, call_stmt::make(nullptr, {}, {x}, {})), y, z),
       matches(crop_dim::make(x, z, 0, interval_expr{0, 0}, call_stmt::make(nullptr, {}, {x}, {}))));
   ASSERT_THAT(substitute(crop_dim::make(y, z, 0, {0, 0}, call_stmt::make(nullptr, {x}, {y}, {})), x, w),
