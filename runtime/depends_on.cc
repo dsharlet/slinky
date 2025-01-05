@@ -40,8 +40,10 @@ public:
   depends_on_result* no_dummy(depends_on_result* deps) const { return deps != &dummy_deps ? deps : nullptr; }
 
   void visit(const variable* op) override {
+    if (is_pure && op->field != field_id::none) is_pure = false;
     if (depends_on_result* deps = find_deps(op->sym)) {
       switch (op->field) {
+      case field_id::none: deps->var = true; break;
       case field_id::min:
       case field_id::max:
         deps->buffer_bounds = true;
@@ -51,8 +53,7 @@ public:
       case field_id::fold_factor: deps->buffer_dims = true; break;
       case field_id::rank:
       case field_id::elem_size:
-      case field_id::size_bytes:
-      case field_id::none: deps->var = true; break;
+      case field_id::size_bytes: deps->var = true; break;
       default: std::abort();
       }
     }
