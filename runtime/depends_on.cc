@@ -49,8 +49,11 @@ public:
         break;
       case field_id::stride:
       case field_id::fold_factor: deps->buffer_dims = true; break;
+      case field_id::rank:
+      case field_id::elem_size:
       case field_id::size_bytes:
-      default: deps->var = true;
+      case field_id::none: deps->var = true; break;
+      default: std::abort();
       }
     }
   }
@@ -71,7 +74,8 @@ public:
           if (op->intrinsic == intrinsic::buffer_at) {
             deps->buffer_base = true;
           }
-          if (op->intrinsic == intrinsic::buffer_size_bytes) {
+          if (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::buffer_rank ||
+              op->intrinsic == intrinsic::buffer_elem_size) {
             deps->var = true;
           }
         }
