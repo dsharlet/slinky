@@ -599,13 +599,17 @@ void substitutor::visit(const call* op) {
         args.pop_back();
         changed = true;
       }
-    }
 
-    expr result = changed ? call::make(op->intrinsic, args) : expr(op);
-    set_result(mutate_buffer_intrinsic(result.as<call>(), op->intrinsic, *buf, span<const expr>(args).subspan(1)));
-    return;
-  }
-  if (changed) {
+      if (changed) {
+        set_result(call::make(op->intrinsic, args));
+      } else {
+        set_result(expr(op));
+      }
+    } else {
+      expr result = changed ? call::make(op->intrinsic, args) : expr(op);
+      set_result(mutate_buffer_intrinsic(result.as<call>(), op->intrinsic, *buf, span<const expr>(args).subspan(1)));
+    }
+  } else if (changed) {
     set_result(call::make(op->intrinsic, std::move(args)));
   } else {
     set_result(op);
