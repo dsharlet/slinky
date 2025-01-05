@@ -512,10 +512,15 @@ TEST(simplify, buffer_bounds) {
 
   ASSERT_THAT(simplify(decl_bounds(b0, {{0, select(1 < z, 127, 15)}},
                   loop::make(x, loop::parallel, {0, select((1 < z), 117, 0)}, y,
-                      crop_dim::make(b1, b0, 0, {x, ((min((x + y), select((1 < z), 118, 1)) + 15) / 16) * 16}, use_buffer(b1))))),
+                      crop_dim::make(
+                          b1, b0, 0, {x, ((min((x + y), select((1 < z), 118, 1)) + 15) / 16) * 16}, use_buffer(b1))))),
       matches(decl_bounds(b0, {{0, select(1 < z, 127, 15)}},
           loop::make(x, loop::parallel, {0, select((1 < z), 117, 0)}, y,
               crop_dim::make(b1, b0, 0, {x, (((x + y) + 15) / 16) * 16}, use_buffer(b1))))));
+
+  ASSERT_THAT(simplify(decl_bounds(b0, {{0, select(1 < x, y, 1) + -1}},
+                  crop_dim::make(b1, b0, 0, {0, select(1 < x, expr(), 0)}, use_buffer(b1)))),
+      matches(decl_bounds(b0, {{0, select(1 < x, y, 1) + -1}}, use_buffer(b0))));
 }
 
 TEST(simplify, crop_not_needed) {

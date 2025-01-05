@@ -1806,16 +1806,28 @@ public:
 
   template <typename T>
   static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds, index_t offset = 0) {
-    bounds.insert(offset ? simplify(static_cast<const class add*>(nullptr), x, offset) : x);
     if (const add* a = x.as<add>()) {
       if (auto c = as_constant(a->b)) {
+        // Remove constant adds and remember the offset for later.
         x = a->a;
         offset += *c;
       }
     }
+    auto add_offset = [offset](expr x) {
+      return offset ? simplify(static_cast<const class add*>(nullptr), std::move(x), offset) : x;
+    };
     if (const T* t = x.as<T>()) {
       enumerate_bounds<T>(t->a, bounds, offset);
       enumerate_bounds<T>(t->b, bounds, offset);
+    } else if (const class select* s = x.as<class select>()) {
+      // Move constants into select here.
+      if (offset) {
+        bounds.insert(select(s->condition, add_offset(s->true_value), add_offset(s->false_value)));
+      } else {
+        bounds.insert(x);
+      }
+    } else {
+      bounds.insert(add_offset(std::move(x)));
     }
   }
 
@@ -1829,6 +1841,7 @@ public:
       }
       return false;
     };
+    if (is_redundant(x)) return expr();
     if (const T* t = x.as<T>()) {
       bool a_redundant = is_redundant(t->a);
       bool b_redundant = is_redundant(t->b);
@@ -1895,7 +1908,7 @@ public:
         return select(xs->condition, std::move(t), std::move(f));
       }
     }
-    return is_redundant(x) ? expr() : x;
+    return x;
   }
 
   interval_expr mutate_crop_bounds(const interval_expr& crop, var buf, int dim, interval_expr& buffer) {
