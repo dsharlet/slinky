@@ -40,6 +40,7 @@ TEST(substitute, basic) {
   ASSERT_THAT(substitute_buffer(buffer_stride(x, 0), x, expr(), {}), matches(buffer_stride(x, 0)));
   ASSERT_THAT(substitute_buffer(buffer_stride(x, 0), x, expr(), {{{0, 1}, 2, 3}}), matches(2));
   ASSERT_THAT(substitute_buffer(buffer_stride(x, 0), x, expr(), {dim_expr()}), matches(expr()));
+  ASSERT_THAT(substitute_buffer(buffer_rank(x), x, expr(), {dim_expr(), dim_expr()}), matches(2));
 }
 
 TEST(substitute, shadowed) {

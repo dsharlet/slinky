@@ -726,6 +726,7 @@ public:
     if (buf != target) return expr(op);
 
     switch (field) {
+    case field_id::rank: return expr(dims.size());
     case field_id::elem_size: return elem_size.defined() ? elem_size : expr(op);
     case field_id::min:
     case field_id::max:
