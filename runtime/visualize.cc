@@ -40,7 +40,7 @@ public:
     return *this;
   }
 
-  std::string sanitize(std::string s) {
+  std::string sanitize(std::string s) const {
     std::replace(s.begin(), s.end(), '.', '_');
     std::replace(s.begin(), s.end(), '/', '_');
     std::replace(s.begin(), s.end(), '#', '_');
@@ -121,7 +121,18 @@ public:
 
   std::string indent(int extra = 0) const { return std::string((depth + extra) * 2, ' '); }
 
-  void visit(const variable* v) override { *this << v->sym; }
+  void visit(const variable* v) override {
+    switch (v->field) {
+    case buffer_field::none: *this << v->sym; return;
+    case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
+    case buffer_field::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
+    case buffer_field::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
+    default: std::abort();
+    }
+  }
   void visit(const constant* c) override { *this << c->value; }
 
   void visit(const let* l) override {
@@ -166,7 +177,9 @@ public:
     *this << "select(" << op->condition << ", " << op->true_value << ", " << op->false_value << ")";
   }
 
-  void visit(const call* op) override { *this << op->intrinsic << "(" << op->args << ")"; }
+  void visit(const call* op) override { 
+    *this << op->intrinsic << "(" << op->args << ")"; 
+  }
 
   void visit(const block* b) override {
     for (const auto& s : b->stmts) {

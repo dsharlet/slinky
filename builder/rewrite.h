@@ -543,18 +543,6 @@ template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
 // clang-format on
 
-template <int N1, int N2>
-using buffer_dim_meta = pattern_call<pattern_wildcard<N1>, pattern_wildcard<N2>>;
-
-template <int N1, int N2>
-SLINKY_UNIQUE auto buffer_min(pattern_wildcard<N1> buf, pattern_wildcard<N2> dim) {
-  return buffer_dim_meta<N1, N2>{intrinsic::buffer_min, {buf, dim}};
-}
-template <int N1, int N2>
-SLINKY_UNIQUE auto buffer_max(pattern_wildcard<N1> buf, pattern_wildcard<N2> dim) {
-  return buffer_dim_meta<N1, N2>{intrinsic::buffer_max, {buf, dim}};
-}
-
 template <typename T>
 SLINKY_UNIQUE auto eval(const T& x) {
   return replacement_eval<T>{x};

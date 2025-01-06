@@ -48,6 +48,10 @@ TEST(depends_on, basic) {
   ASSERT_EQ(depends_on(x + x, x), (depends_on_result{.var = true}));
   ASSERT_EQ(depends_on(buffer_at(x), x), (depends_on_result{.buffer_base = true}));
 
+  ASSERT_EQ(depends_on(buffer_min(x, 0), x), (depends_on_result{.buffer_dims = true, .buffer_bounds = true}));
+  ASSERT_EQ(depends_on(buffer_stride(x, 0), x), (depends_on_result{.buffer_dims = true}));
+  ASSERT_EQ(depends_on(buffer_elem_size(x), x), (depends_on_result{.var = true}));
+
   stmt loop_x = loop::make(x, loop::serial, {y, z}, 1, check::make(x && z));
   ASSERT_EQ(depends_on(loop_x, x), depends_on_result{});
   ASSERT_EQ(depends_on(loop_x, y), (depends_on_result{.var = true}));

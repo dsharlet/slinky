@@ -40,24 +40,29 @@ public:
   depends_on_result* no_dummy(depends_on_result* deps) const { return deps != &dummy_deps ? deps : nullptr; }
 
   void visit(const variable* op) override {
+    if (is_pure && op->field != buffer_field::none) is_pure = false;
     if (depends_on_result* deps = find_deps(op->sym)) {
-      deps->var = true;
+      switch (op->field) {
+      case buffer_field::none: deps->var = true; break;
+      case buffer_field::min:
+      case buffer_field::max:
+        deps->buffer_bounds = true;
+        deps->buffer_dims = true;
+        break;
+      case buffer_field::stride:
+      case buffer_field::fold_factor: deps->buffer_dims = true; break;
+      case buffer_field::rank:
+      case buffer_field::elem_size: deps->var = true; break;
+      default: std::abort();
+      }
     }
   }
   void visit(const call* op) override {
     if (is_buffer_intrinsic(op->intrinsic)) {
       is_pure = false;
       assert(op->args.size() >= 1);
-      if (op->args[0].defined()) {
-        auto buf = as_variable(op->args[0]);
-        assert(buf);
+      if (auto buf = as_variable(op->args[0])) {
         if (depends_on_result* deps = find_deps(*buf)) {
-          if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
-            deps->buffer_bounds = true;
-          }
-          if (is_buffer_dim_intrinsic(op->intrinsic)) {
-            deps->buffer_dims = true;
-          }
           if (op->intrinsic == intrinsic::buffer_at) {
             deps->buffer_base = true;
           }
@@ -65,10 +70,10 @@ public:
             deps->var = true;
           }
         }
+      }
 
-        for (std::size_t i = 1; i < op->args.size(); ++i) {
-          if (op->args[i].defined()) op->args[i].accept(this);
-        }
+      for (std::size_t i = 1; i < op->args.size(); ++i) {
+        if (op->args[i].defined()) op->args[i].accept(this);
       }
     } else {
       recursive_node_visitor::visit(op);

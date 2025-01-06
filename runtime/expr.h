@@ -101,16 +101,8 @@ enum class intrinsic {
   // `define_undef(x, def)` means that undefined expressions take the value `def` when evaluating `x`.
   define_undef,
 
-  // Functions with arguments (buf) that return buffer metadata.
-  buffer_rank,
-  buffer_elem_size,
+  // Returns the size of a buffer in bytes.
   buffer_size_bytes,
-
-  // Functions with arguments (buf, dim) that return dim metadata of a buffer.
-  buffer_min,
-  buffer_max,
-  buffer_stride,
-  buffer_fold_factor,
 
   // This function returns the address of the element x in (buf, x_0, x_1, ...). x can be any rank, including 0.
   buffer_at,
@@ -129,6 +121,18 @@ enum class intrinsic {
 
   // Free a buffer.
   free,
+};
+
+enum class buffer_field : unsigned {
+  none = 0,
+
+  rank,
+  elem_size,
+
+  min,
+  max,
+  stride,
+  fold_factor,
 };
 
 class expr_visitor;
@@ -366,11 +370,22 @@ public:
 
 class variable : public expr_node<variable> {
 public:
+  // The variable being referenced.
   var sym;
+
+  // The field of the variable being referenced, if any (field != buffer_field::none).
+  buffer_field field;
+
+  // If `field` is a per-dimension field, which dimension being referenced.
+  int dim;
 
   void accept(expr_visitor* v) const override;
 
+  // Make a scalar variable reference.
   static expr make(var sym);
+
+  // Make a reference to a field of a buffer.
+  static expr make(var sym, buffer_field field, int dim = -1);
 
   static constexpr expr_node_type static_type = expr_node_type::variable;
 };
@@ -510,6 +525,16 @@ struct dim_expr {
   bool same_as(const dim_expr& r) const {
     return bounds.same_as(r.bounds) && stride.same_as(r.stride) && fold_factor.same_as(r.fold_factor);
   }
+
+  const expr& get_field(buffer_field field) const {
+    switch (field) {
+    case buffer_field::min: return bounds.min;
+    case buffer_field::max: return bounds.max;
+    case buffer_field::stride: return stride;
+    case buffer_field::fold_factor: return fold_factor;
+    default: std::abort();
+    }
+  }
 };
 
 class expr_visitor {
@@ -568,9 +593,9 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<index_t> as_constant(expr_ref x
 }
 
 // If `x` is a variable, returns the `var` of the variable, otherwise `nullopt`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x, buffer_field field = buffer_field::none) {
   const variable* vx = x.as<variable>();
-  if (vx) {
+  if (vx && vx->field == field) {
     return vx->sym;
   } else {
     return std::nullopt;
@@ -578,10 +603,12 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym, buffer_field field = buffer_field::none) {
   const variable* vx = x.as<variable>();
-  return vx ? vx->sym == sym : false;
+  return vx ? vx->sym == sym && vx->field == field : false;
 }
+
+bool is_variable(expr_ref x, var b, buffer_field field, int dim);
 
 // Check if `x` is equal to the constant `value`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_constant(expr_ref x, index_t value) {
@@ -602,7 +629,6 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const call* as_intrinsic(expr_ref x, intrinsi
   return c && c->intrinsic == fn ? c : nullptr;
 }
 bool is_buffer_intrinsic(intrinsic fn);
-bool is_buffer_dim_intrinsic(intrinsic fn);
 
 bool is_positive_infinity(expr_ref x);
 bool is_negative_infinity(expr_ref x);
@@ -647,13 +673,18 @@ interval_expr align(interval_expr x, const expr& a);
 expr and_then(std::vector<expr> args);
 expr or_else(std::vector<expr> args);
 
-expr buffer_rank(expr buf);
-expr buffer_elem_size(expr buf);
-expr buffer_min(expr buf, expr dim);
-expr buffer_max(expr buf, expr dim);
-expr buffer_extent(const expr& buf, const expr& dim);
-expr buffer_stride(expr buf, expr dim);
-expr buffer_fold_factor(expr buf, expr dim);
+expr buffer_rank(var buf);
+expr buffer_elem_size(var buf);
+expr buffer_min(var buf, int dim);
+expr buffer_max(var buf, int dim);
+expr buffer_extent(var buf, int dim);
+expr buffer_stride(var buf, int dim);
+expr buffer_fold_factor(var buf, int dim);
+
+interval_expr buffer_bounds(var buf, int dim);
+dim_expr buffer_dim(var buf, int dim);
+std::vector<dim_expr> buffer_dims(var buf, int rank);
+
 expr buffer_at(expr buf, span<const expr> at);
 expr buffer_at(expr buf, span<const var> at);
 expr buffer_at(expr buf);
@@ -663,10 +694,6 @@ expr buffer_at(expr buf, expr at0, Args... at) {
   expr args[] = {at0, at...};
   return buffer_at(buf, args);
 }
-
-interval_expr buffer_bounds(const expr& buf, const expr& dim);
-dim_expr buffer_dim(const expr& buf, const expr& dim);
-std::vector<dim_expr> buffer_dims(const expr& buf, int rank);
 
 box_expr dims_bounds(span<const dim_expr> dims);
 

@@ -250,6 +250,23 @@ public:
     return let_stmt::make(std::move(lets), std::move(s));
   }
 
+  void visit(const variable* op) override {
+    if (op->field == buffer_field::none) {
+      node_mutator::visit(op);
+      return;
+    }
+
+    // Don't lift internally allocated buffer metadata expressions.
+    // TODO: This should be a proper API error.
+    assert(std::binary_search(external.begin(), external.end(), op->sym));
+
+    auto i = replacements.insert(std::pair<const expr, var>(op, 0));
+    if (i.second) {
+      i.first->second = ctx.insert_unique("g");
+    }
+    set_result(variable::make(i.first->second));
+  }
+
   void visit(const call* op) override {
     if (!is_buffer_intrinsic(op->intrinsic)) {
       node_mutator::visit(op);
@@ -575,22 +592,20 @@ class pipeline_builder {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
 
-        expr alloc_var = variable::make(b->sym());
-
         // First substitute the bounds.
         std::vector<std::pair<expr, expr>> substitutions;
         assert(allocation_bounds_[b->sym()]);
         const box_expr& bounds = *allocation_bounds_[b->sym()];
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
           const interval_expr& bounds_d = bounds[d];
-          substitutions.emplace_back(buffer_min(alloc_var, d), bounds_d.min);
-          substitutions.emplace_back(buffer_max(alloc_var, d), bounds_d.max);
+          substitutions.emplace_back(buffer_min(b->sym(), d), bounds_d.min);
+          substitutions.emplace_back(buffer_max(b->sym(), d), bounds_d.max);
         }
         std::vector<dim_expr> dims = substitute_from_map(b->dims(), substitutions);
 
         substitutions.clear();
         for (index_t d = 0; d < static_cast<index_t>(bounds.size()); ++d) {
-          substitutions.emplace_back(buffer_stride(alloc_var, d), expr());
+          substitutions.emplace_back(buffer_stride(b->sym(), d), expr());
         }
         dims = substitute_from_map(dims, substitutions);
 
@@ -872,20 +887,18 @@ public:
 
 void check_buffer(const buffer_expr_ptr& b, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
-  expr buf_var = variable::make(b->sym());
-  checks.push_back(check::make(buf_var != 0));
-  checks.push_back(check::make(buffer_rank(buf_var) == rank));
+  checks.push_back(check::make(expr(b->sym()) != 0));
+  checks.push_back(check::make(buffer_rank(b->sym()) == rank));
 }
 
 void check_buffer_constraints(const buffer_expr_ptr& b, bool output, std::vector<stmt>& checks) {
   int rank = static_cast<int>(b->rank());
-  expr buf_var = variable::make(b->sym());
-  checks.push_back(check::make(buffer_elem_size(buf_var) == b->elem_size()));
+  checks.push_back(check::make(buffer_elem_size(b->sym()) == b->elem_size()));
   for (int d = 0; d < rank; ++d) {
-    expr fold_factor = buffer_fold_factor(buf_var, d);
-    checks.push_back(check::make(b->dim(d).min() == buffer_min(buf_var, d)));
-    checks.push_back(check::make(b->dim(d).max() == buffer_max(buf_var, d)));
-    checks.push_back(check::make(b->dim(d).stride == buffer_stride(buf_var, d)));
+    expr fold_factor = buffer_fold_factor(b->sym(), d);
+    checks.push_back(check::make(b->dim(d).min() == buffer_min(b->sym(), d)));
+    checks.push_back(check::make(b->dim(d).max() == buffer_max(b->sym(), d)));
+    checks.push_back(check::make(b->dim(d).stride == buffer_stride(b->sym(), d)));
     checks.push_back(check::make(b->dim(d).fold_factor == fold_factor));
     if (output) {
       checks.push_back(check::make(or_else({fold_factor == dim::unfolded, b->dim(d).extent() <= fold_factor})));

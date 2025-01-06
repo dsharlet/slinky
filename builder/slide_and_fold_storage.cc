@@ -304,9 +304,8 @@ public:
     // TODO: Is this actually a good design...?
     const std::vector<dim_fold_info>& fold_info = *fold_factors[op->sym];
     std::vector<std::pair<expr, expr>> replacements;
-    expr alloc_var = variable::make(op->sym);
     for (index_t d = 0; d < static_cast<index_t>(op->dims.size()); ++d) {
-      replacements.emplace_back(buffer_fold_factor(alloc_var, d), fold_info[d].factor);
+      replacements.emplace_back(buffer_fold_factor(op->sym, d), fold_info[d].factor);
     }
     std::vector<dim_expr> dims = recursive_substitute(op->dims, replacements);
     // Replace infinite fold factors with undefined.

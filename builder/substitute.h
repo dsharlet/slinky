@@ -18,8 +18,6 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(index_t a, var b) { return false; 
 bool match(stmt_ref a, stmt_ref b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
-const call* match_call(expr_ref x, intrinsic fn, var a);
-const call* match_call(expr_ref x, intrinsic fn, var a, index_t b);
 
 // Compute a sort ordering of two nodes based on their structure (not their values).
 int compare(const var& a, const var& b);
@@ -39,11 +37,8 @@ public:
   // Implementation of substitution for vars.
   virtual var visit_symbol(var x) { return x; }
 
-  // Implementation of substitution for buffer intrinsics.
-  virtual expr mutate_buffer_intrinsic(const call* op, intrinsic fn, var buf, span<const expr> args) {
-    return expr(op);
-  }
-  virtual expr mutate_buffer_dim_intrinsic(const call* op, intrinsic fn, var buf, int dim) { return expr(op); }
+  // Implementation of substitution for buffer fields.
+  virtual expr mutate_variable(const variable* op, var buf, buffer_field field, int dim) { return expr(op); }
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }

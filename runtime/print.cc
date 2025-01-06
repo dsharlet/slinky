@@ -2,19 +2,31 @@
 
 #include <cassert>
 #include <string>
+#include <sstream>
 
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
 
 namespace slinky {
 
-std::string to_string(var sym) { return "<" + std::to_string(sym.id) + ">"; }
-
 const char* to_string(memory_type type) {
   switch (type) {
   case memory_type::stack: return "stack";
   case memory_type::heap: return "heap";
   default: return "<invalid memory_type>";
+  }
+}
+
+const char* to_string(buffer_field m) {
+  switch (m) {
+  case buffer_field::rank: return "rank";
+  case buffer_field::elem_size: return "elem_size";
+  case buffer_field::min: return "min";
+  case buffer_field::max: return "max";
+  case buffer_field::stride: return "stride";
+  case buffer_field::fold_factor: return "fold_factor";
+
+  default: return "<invalid buffer_field>";
   }
 }
 
@@ -26,13 +38,7 @@ const char* to_string(intrinsic fn) {
   case intrinsic::abs: return "abs";
   case intrinsic::and_then: return "and_then";
   case intrinsic::or_else: return "or_else";
-  case intrinsic::buffer_rank: return "buffer_rank";
-  case intrinsic::buffer_elem_size: return "buffer_elem_size";
   case intrinsic::buffer_size_bytes: return "buffer_size_bytes";
-  case intrinsic::buffer_min: return "buffer_min";
-  case intrinsic::buffer_max: return "buffer_max";
-  case intrinsic::buffer_stride: return "buffer_stride";
-  case intrinsic::buffer_fold_factor: return "buffer_fold_factor";
   case intrinsic::buffer_at: return "buffer_at";
   case intrinsic::semaphore_init: return "semaphore_init";
   case intrinsic::semaphore_signal: return "semaphore_signal";
@@ -45,9 +51,9 @@ const char* to_string(intrinsic fn) {
   }
 }
 
-std::ostream& operator<<(std::ostream& os, var sym) { return os << to_string(sym); }
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
+std::ostream& operator<<(std::ostream& os, buffer_field f) { return os << to_string(f); }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
@@ -84,7 +90,7 @@ public:
     if (context) {
       os << context->name(sym);
     } else {
-      os << sym;
+      os << "<" + std::to_string(sym.id) << ">";
     }
     return *this;
   }
@@ -144,7 +150,18 @@ public:
 
   std::string indent(int extra = 0) const { return std::string(depth + extra, ' '); }
 
-  void visit(const variable* v) override { *this << v->sym; }
+  void visit(const variable* v) override { 
+    switch (v->field) {
+    case buffer_field::none: *this << v->sym; return;
+    case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
+    case buffer_field::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
+    case buffer_field::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
+    default: std::abort();
+    }
+  }
   void visit(const constant* c) override { *this << c->value; }
 
   void visit(const let* l) override {
@@ -317,6 +334,11 @@ const node_context* set_default_print_context(const node_context* ctx) {
   return old;
 }
 
+void print(std::ostream& os, var x, const node_context* ctx) {
+  printer p(os, ctx ? ctx : default_context);
+  p << x;
+}
+
 void print(std::ostream& os, const expr& e, const node_context* ctx) {
   printer p(os, ctx ? ctx : default_context);
   p << e;
@@ -325,6 +347,18 @@ void print(std::ostream& os, const expr& e, const node_context* ctx) {
 void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   printer p(os, ctx ? ctx : default_context);
   p << s;
+}
+
+std::string to_string(var x) { 
+  std::stringstream ss;
+  printer p(ss, default_context);
+  p << x;
+  return ss.str();
+}
+
+std::ostream& operator<<(std::ostream& os, var sym) { 
+  print(os, sym);
+  return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const expr& e) {
