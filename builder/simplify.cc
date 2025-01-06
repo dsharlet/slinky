@@ -85,29 +85,6 @@ var find_buffer(const expr& e) {
   return finder.result;
 }
 
-template <typename T>
-bool match(const std::vector<T>& a, const std::vector<T>& b) {
-  if (a.size() != b.size()) return false;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (!match(a[i], b[i])) return false;
-  }
-  return true;
-}
-
-// Like the above, except `a` is represented by a single non-default value at index `idx`.
-template <typename T>
-bool match(int idx, const T& a, const std::vector<T>& b) {
-  if (idx >= static_cast<int>(b.size())) return false;
-  for (int i = 0; i < static_cast<int>(b.size()); ++i) {
-    if (i == idx) {
-      if (!match(a, b[idx])) return false;
-    } else {
-      if (!match(T(), b[i])) return false;
-    }
-  }
-  return true;
-}
-
 // Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
 // report the buffer as it is visible to the caller. So something like:
 //
