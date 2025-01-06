@@ -373,7 +373,7 @@ public:
   // The variable being referenced.
   var sym;
 
-  // THe field of the variable being referenced, if any (field != buffer_field::none).
+  // The field of the variable being referenced, if any (field != buffer_field::none).
   buffer_field field;
 
   // If `field` is a per-dimension field, which dimension being referenced.
