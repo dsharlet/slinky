@@ -561,7 +561,8 @@ public:
   }
 
   void visit(const allocate* op) override {
-    found[op->sym] = false;
+    auto s = set_value_in_scope(found, op->sym, false);
+    recursive_node_visitor::visit(op);
   }
 };
 
