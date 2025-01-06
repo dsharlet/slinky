@@ -57,7 +57,7 @@ public:
   }
 
   void visit(const variable* op) override {
-    const auto& name = ctx_.name(op->sym);
+    const std::string& name = ctx_.name(op->sym);
 
     if (buffers_emitted_.count(op->sym)) {
       auto it = buffer_variables_emitted_.find(op->sym);
@@ -67,10 +67,18 @@ public:
         name_ = print_assignment_prefixed("_", name + "->sym()");
         buffer_variables_emitted_[op->sym] = name_;
       }
-      return;
+    } else {
+      name_ = print(var(op->sym));
     }
 
-    name_ = print(var(op->sym));
+    if (op->field != field_id::none) {
+      name_ = std::string("(buffer_") + to_string(op->field) + "(" + name_;
+      if (op->dim >= 0) {
+        name_ += ", ";
+        name_ += std::to_string(op->dim);
+      }
+      name_ += "))";
+    }
   }
 
   void visit(const constant* op) override { name_ = to_string(op->value); }
