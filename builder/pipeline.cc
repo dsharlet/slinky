@@ -559,6 +559,12 @@ public:
     found[op->src] = true;
     found[op->dst] = true;
   }
+
+  void visit(const allocate* op) override {
+    auto s = set_value_in_scope(found, op->sym, false);
+    recursive_node_visitor::visit(op);
+  }
+
 };
 
 symbol_map<bool> buffers_used_inside(const stmt& body) {
@@ -814,16 +820,16 @@ class pipeline_builder {
 
     const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
     assert(allocation_bounds_[b->sym()]);
-    const box_expr& bounds = *allocation_bounds_[b->sym()];
+    // const box_expr& bounds = *allocation_bounds_[b->sym()];
     result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
-    std::vector<stmt> checks;
-    for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-      checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-      checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-    }
+    // std::vector<stmt> checks;
+    // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+    //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+    //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+    // }
 
-    result = block::make(std::move(checks), result);
+    // result = block::make(std::move(checks), result);
     return result;
   }
 
@@ -899,7 +905,7 @@ public:
       assert(compute_at != compute_at_levels_.end());
       std::set<buffer_expr_ptr> old_candidates = candidates_for_allocation_;
       if (compute_at->second == at) {
-        // std::cout << "Producing: " << f->attrs().name << std::endl;
+        std::cout << "Producing: " << f->attrs().name << std::endl;
         std::tuple<stmt, int, int> f_body = produce(f);
         // std::cout << "Candidates: " << old_candidates.size() << " " << candidates_for_allocation_.size() <<
         // std::endl;
@@ -909,7 +915,7 @@ public:
             if (old_candidates.count(b) > 0) continue;
             if (consumers_produced_[b->sym()] != deps_count_[b->sym()]) continue;
             if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-              // std::cout << "Function consumed and produced in the loop: " << expr(b->sym()) << std::endl;
+              std::cout << "Function consumed and produced in the loop: " << expr(b->sym()) << std::endl;
               std::get<0>(f_body) = produce_allocation(b, std::get<0>(f_body), uncropped_subs);
               to_remove.insert(b);
             }
@@ -930,11 +936,11 @@ public:
     // 2. Sort vector by (end - start) and then sym
     // 3. iterate over the vector
 
-    // for (const auto& f : ress) {
-    //   std::cout << "Stmt lifetime:\n" << std::get<0>(f) << "\n"
-    //             << std::get<1>(f) << " "
-    //             << std::get<2>(f) << std::endl;
-    // }
+    for (const auto& f : ress) {
+      std::cout << "Stmt lifetime:\n" << std::get<0>(f) << "\n"
+                << std::get<1>(f) << " "
+                << std::get<2>(f) << std::endl;
+    }
 
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
     for (const auto& b : candidates_for_allocation_) {
@@ -953,32 +959,32 @@ public:
           return std::get<2>(a) - std::get<1>(a) < std::get<2>(b) - std::get<1>(b);
         });
 
-    // for (const auto& v : lifetimes) {
-    //   std::cout << "Sorted list: " << expr(std::get<0>(v)->sym()) << " "
-    //       << std::get<1>(v) << " "
-    //       << std::get<2>(v) << std::endl;
-    // }
+    for (const auto& v : lifetimes) {
+      std::cout << "Sorted list: " << expr(std::get<0>(v)->sym()) << " "
+          << std::get<1>(v) << " "
+          << std::get<2>(v) << std::endl;
+    }
 
     int iteration_count = 0;
     while (true) {
-      // std::cout << "\n\n\n NEW ITERATION \n" << lifetimes.size() << " " << ress.size() << "\n\n\n";
+      std::cout << "\n\n\n NEW ITERATION \n" << lifetimes.size() << " " << ress.size() << "\n\n\n";
       std::vector<std::tuple<buffer_expr_ptr, int, int>> new_lifetimes;
       std::vector<std::tuple<stmt, int, int>> new_results;
 
       std::size_t result_index = 0;
       for (std::size_t ix = 0; ix < lifetimes.size() && result_index < ress.size();) {
-        // std::cout << "Starting: "
-        //     << std::get<1>(ress[result_index]) << " "
-        //     << std::get<2>(ress[result_index]) << " "
-        //     << std::get<1>(lifetimes[ix]) << " "
-        //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+        std::cout << "Starting: "
+            << std::get<1>(ress[result_index]) << " "
+            << std::get<2>(ress[result_index]) << " "
+            << std::get<1>(lifetimes[ix]) << " "
+            << std::get<2>(lifetimes[ix]) << " " << std::endl;
 
         while (result_index < ress.size() && std::get<2>(ress[result_index]) < std::get<1>(lifetimes[ix])) {
-          // std::cout << "Early skipping results: "
-          //     << std::get<1>(ress[result_index]) << " "
-          //     << std::get<2>(ress[result_index]) << " "
-          //     << std::get<1>(lifetimes[ix]) << " "
-          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+          std::cout << "Early skipping results: "
+              << std::get<1>(ress[result_index]) << " "
+              << std::get<2>(ress[result_index]) << " "
+              << std::get<1>(lifetimes[ix]) << " "
+              << std::get<2>(lifetimes[ix]) << " " << std::endl;
           new_results.push_back(ress[result_index]);
           result_index++;
         }
@@ -987,11 +993,11 @@ public:
         std::vector<stmt> new_block;
         while (result_index < ress.size() && std::get<1>(ress[result_index]) <= std::get<2>(lifetimes[ix]) &&
                std::get<1>(lifetimes[ix]) <= std::get<2>(ress[result_index])) {
-          // std::cout << "Overlaps results: "
-          //     << std::get<1>(ress[result_index]) << " "
-          //     << std::get<2>(ress[result_index]) << " "
-          //     << std::get<1>(lifetimes[ix]) << " "
-          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+          std::cout << "Overlaps results: "
+              << std::get<1>(ress[result_index]) << " "
+              << std::get<2>(ress[result_index]) << " "
+              << std::get<1>(lifetimes[ix]) << " "
+              << std::get<2>(lifetimes[ix]) << " " << std::endl;
           new_min = std::min(new_min, std::get<1>(ress[result_index]));
           new_max = std::max(new_max, std::get<2>(ress[result_index]));
           new_block.push_back(std::get<0>(ress[result_index]));
@@ -1008,11 +1014,11 @@ public:
           new_results.push_back(std::make_tuple(new_body, new_min, new_max));
         }
         ix++;
-        // std::cout << "new min/max: " << new_min << " " << new_max << "\n";
+        std::cout << "new min/max: " << new_min << " " << new_max << "\n";
         while (ix < lifetimes.size() && std::get<1>(lifetimes[ix]) <= new_max) {
-          // std::cout << "Late skipping results: "
-          //     << std::get<1>(lifetimes[ix]) << " "
-          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+          std::cout << "Late skipping results: "
+              << std::get<1>(lifetimes[ix]) << " "
+              << std::get<2>(lifetimes[ix]) << " " << std::endl;
           new_lifetimes.push_back(lifetimes[ix]);
           ix++;
         }
@@ -1051,20 +1057,20 @@ public:
 
           const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
           assert(allocation_bounds_[b->sym()]);
-          const box_expr& bounds = *allocation_bounds_[b->sym()];
+          // const box_expr& bounds = *allocation_bounds_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
           candidates_for_allocation_.erase(b);
           // std::cout << "Allocating: " << expr(b->sym()) << " "
           //     << allocation_lifetime_start_[b->sym()] << " "
           //     << allocation_lifetime_end_[b->sym()] << std::endl;
-          std::vector<stmt> checks;
-          for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-            checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-            checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          }
+          // std::vector<stmt> checks;
+          // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+          //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+          //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+          // }
 
-          result = block::make(std::move(checks), result);
+          // result = block::make(std::move(checks), result);
         }
       }
     }
@@ -1108,16 +1114,16 @@ public:
 
           const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
           assert(allocation_bounds_[b->sym()]);
-          const box_expr& bounds = *allocation_bounds_[b->sym()];
+          // const box_expr& bounds = *allocation_bounds_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
-          std::vector<stmt> checks;
-          for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-            checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-            checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          }
+          // std::vector<stmt> checks;
+          // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+          //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+          //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+          // }
 
-          result = block::make(std::move(checks), result);
+          // result = block::make(std::move(checks), result);
         }
       }
     }
