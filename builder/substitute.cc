@@ -320,22 +320,6 @@ bool match(stmt_ref a, stmt_ref b) { return matcher().try_match(a.get(), b.get()
 bool match(const interval_expr& a, const interval_expr& b) { return matcher().try_match(a, b); }
 bool match(const dim_expr& a, const dim_expr& b) { return matcher().try_match(a, b); }
 
-bool is_buffer_field(expr_ref x, field_id field, var b) {
-  if (const variable* v = x.as<variable>()) {
-    return v->sym == b && v->field == field;
-  } else {
-    return false;
-  }
-}
-
-bool is_buffer_field(expr_ref x, field_id field, var b, int dim) {
-  if (const variable* v = x.as<variable>()) {
-    return v->sym == b && v->field == field && v->dim == dim;
-  } else {
-    return false;
-  }
-}
-
 int compare(const var& a, const var& b) {
   matcher m;
   m.try_match(a, b);

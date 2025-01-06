@@ -577,7 +577,7 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<index_t> as_constant(expr_ref x
 // If `x` is a variable, returns the `var` of the variable, otherwise `nullopt`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
   const variable* vx = x.as<variable>();
-  if (vx) {
+  if (vx && vx->field == field_id::none) {
     return vx->sym;
   } else {
     return std::nullopt;
@@ -587,8 +587,11 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
 // Check if `x` is a variable equal to the symbol `sym`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym) {
   const variable* vx = x.as<variable>();
-  return vx ? vx->sym == sym : false;
+  return vx ? vx->sym == sym && vx->field == field_id::none : false;
 }
+
+bool is_buffer_field(expr_ref x, field_id field, var b);
+bool is_buffer_field(expr_ref x, field_id field, var b, int dim);
 
 // Check if `x` is equal to the constant `value`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_constant(expr_ref x, index_t value) {

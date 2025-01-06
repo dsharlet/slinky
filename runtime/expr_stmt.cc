@@ -632,6 +632,22 @@ bool is_non_positive(expr_ref x) {
   return c ? *c <= 0 : false;
 }
 
+bool is_buffer_field(expr_ref x, field_id field, var b) {
+  if (const variable* v = x.as<variable>()) {
+    return v->sym == b && v->field == field;
+  } else {
+    return false;
+  }
+}
+
+bool is_buffer_field(expr_ref x, field_id field, var b, int dim) {
+  if (const variable* v = x.as<variable>()) {
+    return v->sym == b && v->field == field && v->dim == dim;
+  } else {
+    return false;
+  }
+}
+
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
