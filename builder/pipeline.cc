@@ -559,6 +559,10 @@ public:
     found[op->src] = true;
     found[op->dst] = true;
   }
+
+  void visit(const allocate* op) override {
+    found[op->sym] = false;
+  }
 };
 
 symbol_map<bool> buffers_used_inside(const stmt& body) {
