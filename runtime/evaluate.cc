@@ -162,7 +162,6 @@ public:
     case field_id::none: return *value;
     case field_id::rank: return buf->rank;
     case field_id::elem_size: return buf->elem_size;
-    case field_id::size_bytes: return buf->size_bytes();
     case field_id::min: return buf->dim(op->dim).min();
     case field_id::max: return buf->dim(op->dim).max();
     case field_id::stride: return buf->dim(op->dim).stride();
@@ -346,7 +345,6 @@ public:
     case intrinsic::define_undef: return eval_define_undef(op);
 
     case intrinsic::buffer_size_bytes: return eval_buffer_metadata(op);
-
     case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));
 
     case intrinsic::semaphore_init: return eval_semaphore_init(op);

@@ -18,8 +18,6 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(index_t a, var b) { return false; 
 bool match(stmt_ref a, stmt_ref b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
-const call* match_call(expr_ref x, intrinsic fn, var a);
-const call* match_call(expr_ref x, intrinsic fn, var a, index_t b);
 bool is_buffer_field(expr_ref x, field_id field, var b);
 bool is_buffer_field(expr_ref x, field_id field, var b, int dim);
 

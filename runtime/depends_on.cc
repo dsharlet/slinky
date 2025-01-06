@@ -52,8 +52,7 @@ public:
       case field_id::stride:
       case field_id::fold_factor: deps->buffer_dims = true; break;
       case field_id::rank:
-      case field_id::elem_size:
-      case field_id::size_bytes: deps->var = true; break;
+      case field_id::elem_size: deps->var = true; break;
       default: std::abort();
       }
     }
@@ -62,28 +61,19 @@ public:
     if (is_buffer_intrinsic(op->intrinsic)) {
       is_pure = false;
       assert(op->args.size() >= 1);
-      if (op->args[0].defined()) {
-        auto buf = as_variable(op->args[0]);
-        assert(buf);
+      if (auto buf = as_variable(op->args[0])) {
         if (depends_on_result* deps = find_deps(*buf)) {
-          if (op->intrinsic == intrinsic::buffer_min || op->intrinsic == intrinsic::buffer_max) {
-            deps->buffer_bounds = true;
-          }
-          if (is_buffer_dim_intrinsic(op->intrinsic)) {
-            deps->buffer_dims = true;
-          }
           if (op->intrinsic == intrinsic::buffer_at) {
             deps->buffer_base = true;
           }
-          if (op->intrinsic == intrinsic::buffer_size_bytes || op->intrinsic == intrinsic::buffer_rank ||
-              op->intrinsic == intrinsic::buffer_elem_size) {
+          if (op->intrinsic == intrinsic::buffer_size_bytes) {
             deps->var = true;
           }
         }
+      }
 
-        for (std::size_t i = 1; i < op->args.size(); ++i) {
-          if (op->args[i].defined()) op->args[i].accept(this);
-        }
+      for (std::size_t i = 1; i < op->args.size(); ++i) {
+        if (op->args[i].defined()) op->args[i].accept(this);
       }
     } else {
       recursive_node_visitor::visit(op);

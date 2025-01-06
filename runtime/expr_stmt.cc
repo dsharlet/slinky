@@ -695,24 +695,8 @@ box_expr dims_bounds(span<const dim_expr> dims) {
 
 bool is_buffer_intrinsic(intrinsic fn) {
   switch (fn) {
-  case intrinsic::buffer_rank:
-  case intrinsic::buffer_elem_size:
   case intrinsic::buffer_size_bytes:
-  case intrinsic::buffer_min:
-  case intrinsic::buffer_max:
-  case intrinsic::buffer_stride:
-  case intrinsic::buffer_fold_factor:
   case intrinsic::buffer_at: return true;
-  default: return false;
-  }
-}
-
-bool is_buffer_dim_intrinsic(intrinsic fn) {
-  switch (fn) {
-  case intrinsic::buffer_min:
-  case intrinsic::buffer_max:
-  case intrinsic::buffer_stride:
-  case intrinsic::buffer_fold_factor: return true;
   default: return false;
   }
 }

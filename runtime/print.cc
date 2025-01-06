@@ -21,7 +21,6 @@ const char* to_string(field_id m) {
   switch (m) {
   case field_id::rank: return "rank";
   case field_id::elem_size: return "elem_size";
-  case field_id::size_bytes: return "size_bytes";
   case field_id::min: return "min";
   case field_id::max: return "max";
   case field_id::stride: return "stride";
@@ -39,13 +38,7 @@ const char* to_string(intrinsic fn) {
   case intrinsic::abs: return "abs";
   case intrinsic::and_then: return "and_then";
   case intrinsic::or_else: return "or_else";
-  case intrinsic::buffer_rank: return "buffer_rank";
-  case intrinsic::buffer_elem_size: return "buffer_elem_size";
   case intrinsic::buffer_size_bytes: return "buffer_size_bytes";
-  case intrinsic::buffer_min: return "buffer_min";
-  case intrinsic::buffer_max: return "buffer_max";
-  case intrinsic::buffer_stride: return "buffer_stride";
-  case intrinsic::buffer_fold_factor: return "buffer_fold_factor";
   case intrinsic::buffer_at: return "buffer_at";
   case intrinsic::semaphore_init: return "semaphore_init";
   case intrinsic::semaphore_signal: return "semaphore_signal";
@@ -162,7 +155,6 @@ public:
     case field_id::none: *this << v->sym; return;
     case field_id::rank: *this << "buffer_rank(" << v->sym << ")"; return;
     case field_id::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
-    case field_id::size_bytes: *this << "buffer_size_bytes(" << v->sym << ")"; return;
     case field_id::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
     case field_id::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
     case field_id::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;

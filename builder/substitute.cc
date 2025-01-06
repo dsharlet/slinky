@@ -320,33 +320,11 @@ bool match(stmt_ref a, stmt_ref b) { return matcher().try_match(a.get(), b.get()
 bool match(const interval_expr& a, const interval_expr& b) { return matcher().try_match(a, b); }
 bool match(const dim_expr& a, const dim_expr& b) { return matcher().try_match(a, b); }
 
-const call* match_call(expr_ref x, intrinsic fn, var a) {
-  const call* c = as_intrinsic(x, fn);
-  if (!c) return nullptr;
-
-  assert(c->args.size() >= 1);
-  auto av = as_variable(c->args[0]);
-  if (!av || *av != a) return nullptr;
-
-  return c;
-}
-
-const call* match_call(expr_ref x, intrinsic fn, var a, index_t b) {
-  const call* c = match_call(x, fn, a);
-  if (!c) return nullptr;
-
-  assert(c->args.size() >= 2);
-  auto bv = as_constant(c->args[1]);
-  if (!bv || *bv != b) return nullptr;
-
-  return c;
-}
-
 bool is_buffer_field(expr_ref x, field_id field, var b) {
   if (const variable* v = x.as<variable>()) {
     return v->sym == b && v->field == field;
   } else {
-    return match_call(x, to_intrinsic(field), b);
+    return false;
   }
 }
 
@@ -354,7 +332,7 @@ bool is_buffer_field(expr_ref x, field_id field, var b, int dim) {
   if (const variable* v = x.as<variable>()) {
     return v->sym == b && v->field == field && v->dim == dim;
   } else {
-    return match_call(x, to_intrinsic(field), b, dim);
+    return false;
   }
 }
 

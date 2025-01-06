@@ -37,16 +37,6 @@ expr strip_boolean(expr x) {
   return x;
 }
 
-const expr& eval_buffer_intrinsic(intrinsic fn, const dim_expr& d) {
-  switch (fn) {
-  case intrinsic::buffer_min: return d.bounds.min;
-  case intrinsic::buffer_max: return d.bounds.max;
-  case intrinsic::buffer_stride: return d.stride;
-  case intrinsic::buffer_fold_factor: return d.fold_factor;
-  default: std::abort();
-  }
-}
-
 const expr& eval_buffer_field(field_id field, const dim_expr& d) {
   switch (field) {
   case field_id::min: return d.bounds.min;
@@ -1137,7 +1127,7 @@ public:
       args_bounds.push_back(std::move(i_info.bounds));
     }
 
-    if (is_buffer_intrinsic(op->intrinsic)) {
+    if (op->intrinsic == intrinsic::buffer_at) {
       assert(args.size() >= 1);
       if (!args[0].defined()) {
         set_result(expr(), expr_info());
@@ -1147,46 +1137,13 @@ public:
       assert(buf);
       const std::optional<buffer_info>& info = buffers[*buf];
       if (info) {
-        // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
-        // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
-        auto visit_buffer_meta_value = [&, this](expr x) {
-          // There are many conditions in which we should substitute buffer meta:
-          // - We're being asked to substitute it (decl is undefined).
-          // - The value is something we should substitute (it's simple and pure).
-          // - The value is another buffer meta expression.
-          // - We're trying to prove something (as opposed to producing a simplified expression).
-          if (!info->decl.defined() || should_substitute(x) || x.as<call>() || x.as<variable>() ||
-              (proving && x.defined())) {
-            if (!match(x, op)) {
-              // This is a value we should substitute, and it's different from what we started with.
-              mutate_and_set_result(x);
-              return true;
-            }
-          }
-          if (!changed) {
-            set_result(op, {point(x), alignment_type()});
-            return true;
-          }
-          return false;
-        };
-        if (op->intrinsic == intrinsic::buffer_elem_size) {
-          if (visit_buffer_meta_value(info->elem_size)) return;
-        } else if (is_buffer_dim_intrinsic(op->intrinsic)) {
-          auto dim = as_constant(args[1]);
-          assert(dim);
-          if (*dim < static_cast<index_t>(info->dims.size())) {
-            const expr& value = eval_buffer_intrinsic(op->intrinsic, info->dims[*dim]);
-            if (visit_buffer_meta_value(value)) return;
-          }
-        } else if (op->intrinsic == intrinsic::buffer_at) {
-          for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {
-            if (!info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == info->dims[d].bounds.min)) {
-              // This argument is equal to the default value, and we know it is in bounds.
-              args[d + 1] = expr();
-            } else if (info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == 0)) {
-              // This argument is equal to the default value, and we know it is in bounds.
-              args[d + 1] = expr();
-            }
+        for (int d = 0; d < static_cast<int>(std::min(info->dims.size(), args.size() - 1)); ++d) {
+          if (!info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == info->dims[d].bounds.min)) {
+            // This argument is equal to the default value, and we know it is in bounds.
+            args[d + 1] = expr();
+          } else if (info->dims[d].fold_factor.defined() && prove_true(args[d + 1] == 0)) {
+            // This argument is equal to the default value, and we know it is in bounds.
+            args[d + 1] = expr();
           }
         }
       }
@@ -1664,19 +1621,13 @@ public:
 
   // If d is equal to buffer_dim(sym, x), return x, otherwise return -1.
   int is_buffer_dim(const dim_expr& d, var sym) {
-    int dim = -1;
     if (is_buffer_field(d.bounds.min, field_id::min, sym)) {
-      dim = d.bounds.min.as<variable>()->dim;
-    } else if (const call* min = match_call(d.bounds.min, intrinsic::buffer_min, sym)) {
-      assert(min->args.size() == 2);
-      dim = *as_constant(min->args[1]);
-    } else {
-      return -1;
-    }
-    if (is_buffer_field(d.bounds.max, field_id::max, sym, dim) &&
-        is_buffer_field(d.stride, field_id::stride, sym, dim) &&
-        is_buffer_field(d.fold_factor, field_id::fold_factor, sym, dim)) {
-      return dim;
+      int dim = d.bounds.min.as<variable>()->dim;
+      if (is_buffer_field(d.bounds.max, field_id::max, sym, dim) &&
+          is_buffer_field(d.stride, field_id::stride, sym, dim) &&
+          is_buffer_field(d.fold_factor, field_id::fold_factor, sym, dim)) {
+        return dim;
+      }
     }
     return -1;
   }

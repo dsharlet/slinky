@@ -26,7 +26,6 @@ enum class field_id : unsigned {
 
   rank,
   elem_size,
-  size_bytes,
 
   min,
   max,
@@ -114,16 +113,8 @@ enum class intrinsic {
   // `define_undef(x, def)` means that undefined expressions take the value `def` when evaluating `x`.
   define_undef,
 
-  // Functions with arguments (buf) that return buffer metadata.
-  buffer_rank,
-  buffer_elem_size,
+  // Returns the size of a buffer in bytes.
   buffer_size_bytes,
-
-  // Functions with arguments (buf, dim) that return dim metadata of a buffer.
-  buffer_min,
-  buffer_max,
-  buffer_stride,
-  buffer_fold_factor,
 
   // This function returns the address of the element x in (buf, x_0, x_1, ...). x can be any rank, including 0.
   buffer_at,
@@ -143,19 +134,6 @@ enum class intrinsic {
   // Free a buffer.
   free,
 };
-
-inline intrinsic to_intrinsic(field_id field) {
-  switch (field) {
-  case field_id::min: return intrinsic::buffer_min;
-  case field_id::max: return intrinsic::buffer_max;
-  case field_id::stride: return intrinsic::buffer_stride;
-  case field_id::fold_factor: return intrinsic::buffer_fold_factor;
-  case field_id::rank: return intrinsic::buffer_rank;
-  case field_id::elem_size: return intrinsic::buffer_elem_size;
-  case field_id::size_bytes: return intrinsic::buffer_size_bytes;
-  default: std::abort();
-  }
-}
 
 class expr_visitor;
 
@@ -631,7 +609,6 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const call* as_intrinsic(expr_ref x, intrinsi
   return c && c->intrinsic == fn ? c : nullptr;
 }
 bool is_buffer_intrinsic(intrinsic fn);
-bool is_buffer_dim_intrinsic(intrinsic fn);
 
 bool is_positive_infinity(expr_ref x);
 bool is_negative_infinity(expr_ref x);
