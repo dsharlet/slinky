@@ -48,23 +48,32 @@ void ensure_is_point(interval_expr& x) {
 
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
-stmt lift_decl_invariants(const std::vector<stmt>& stmts, var sym, Fn&& make_decl) {
-  std::vector<stmt> result;
-  result.reserve(stmts.size());
-  for (auto i = stmts.begin(); i != stmts.end();) {
-    if (depends_on(*i, sym).any()) {
-      std::vector<stmt> result_i;
-      result_i.reserve(stmts.size());
-      do {
-        result_i.push_back(*i++);
-      } while (i != stmts.end() && depends_on(*i, sym).any());
-      result.push_back(make_decl(block::make(std::move(result_i))));
-      if (i != stmts.end()) result.push_back(*i++);
-    } else {
-      result.push_back(*i++);
+stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
+  if (const block* b = body.as<block>()) {
+    std::vector<stmt> result;
+    result.reserve(b->stmts.size());
+    for (auto i = b->stmts.begin(); i != b->stmts.end();) {
+      if (depends_on(*i, sym).any()) {
+        std::vector<stmt> result_i;
+        result_i.reserve(b->stmts.size());
+        do {
+          result_i.push_back(*i++);
+        } while (i != b->stmts.end() && depends_on(*i, sym).any());
+        if (result.empty() && i == b->stmts.end()) {
+          // Every stmt in the body depended on the decl, we aren't changing it.
+          return make_decl(std::move(body));
+        } else {
+          result.push_back(make_decl(block::make(std::move(result_i))));
+        }
+        if (i != b->stmts.end()) result.push_back(*i++);
+      } else {
+        result.push_back(*i++);
+      }
     }
+    return block::make(std::move(result));
+  } else {
+    return make_decl(std::move(body));
   }
-  return block::make(std::move(result));
 }
 
 // Given an expression that produces a base pointer for a buffer, find the buffer the pointer is from.
@@ -308,6 +317,8 @@ public:
 
     // How many loops out is the `decl` found.
     int loop_depth = 0;
+
+    buffer_info() = default;
 
     buffer_info(expr elem_size) : elem_size(elem_size) {}
 
@@ -1524,30 +1535,23 @@ public:
   }
 
   template <typename T>
-  buffer_info mutate_buffer(const T* op) {
+  bool mutate_buffer(const T* op, buffer_info& info) {
     scoped_trace trace("mutate_buffer");
-    buffer_info info(mutate(op->elem_size));
+    info = buffer_info(mutate(op->elem_size));
+    bool changed = !info.elem_size.same_as(op->elem_size);
     info.dims.reserve(op->dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       info.dims.push_back(mutate(op->dims[d]));
+      changed = changed || !info.dims.back().same_as(op->dims[d]);
     }
     info.all_dims_known = true;
     info.decl = stmt(op);
-    return info;
-  }
-
-  template <typename T>
-  static bool buffer_changed(const T* op, const buffer_info& info) {
-    if (op->dims.size() != info.dims.size()) return true;
-    if (!info.elem_size.same_as(op->elem_size)) return true;
-    for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      if (!info.dims[d].same_as(op->dims[d])) return true;
-    }
-    return false;
+    return changed;
   }
 
   void visit(const allocate* op) override {
-    buffer_info info = mutate_buffer(op);
+    buffer_info info;
+    bool changed = mutate_buffer(op, info);
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);
     scoped_trace trace("visit(const allocate*)");
     auto deps = depends_on(body, op->sym);
@@ -1576,7 +1580,7 @@ public:
       }
     }
 
-    if (buffer_changed(op, info) || !body.same_as(op->body)) {
+    if (changed || !body.same_as(op->body)) {
       set_result(block::make({std::move(before),
           allocate::make(op->sym, op->storage, std::move(info.elem_size), std::move(info.dims), std::move(body)),
           std::move(after)}));
@@ -1642,7 +1646,8 @@ public:
 
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
-    buffer_info info = mutate_buffer(op);
+    buffer_info info;
+    bool changed = mutate_buffer(op, info);
 
     // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
     // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
@@ -1754,26 +1759,24 @@ public:
 
     stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
     scoped_trace trace("visit(const make_buffer*)");
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      // This make_buffer is unused.
-      set_result(std::move(body));
-      return;
-    } else if (can_substitute_buffer(deps)) {
-      // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
-      return;
-    }
 
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body)); }));
-    } else if (buffer_changed(op, info) || !base.same_as(op->base) || !body.same_as(op->body)) {
-      set_result(make_buffer::make(
-          op->sym, std::move(base), std::move(info.elem_size), std::move(info.dims), std::move(body)));
-    } else {
-      set_result(op);
-    }
+    changed = changed || !base.same_as(op->base);
+    auto make_make_buffer = [&](stmt body) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
+        // This make_buffer is unused.
+        return body;
+      } else if (can_substitute_buffer(deps)) {
+        // We only needed the buffer meta, not the buffer itself.
+        return mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info));
+      } else if (changed || !body.same_as(op->body)) {
+        return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
+      } else {
+        return stmt(op);
+      }
+    };
+
+    set_result(lift_decl_invariants(body, op->sym, make_make_buffer));
   }
 
   std::optional<buffer_info> get_buffer_info(var buf, int rank) {
@@ -2038,10 +2041,8 @@ public:
     if (bounds.empty()) {
       // This crop was a no-op.
       set_result(substitute(body, op_sym, op_src));
-    } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op_sym, make_crop));
     } else {
-      set_result(make_crop(body));
+      set_result(lift_decl_invariants(body, op_sym, make_crop));
     }
   }
 
@@ -2102,10 +2103,8 @@ public:
     if (at.empty()) {
       // This slice was a no-op.
       set_result(substitute(body, op_sym, op_src));
-    } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op_sym, make_slice));
     } else {
-      set_result(make_slice(body));
+      set_result(lift_decl_invariants(body, op_sym, make_slice));
     }
   }
 
@@ -2166,22 +2165,20 @@ public:
 
     stmt body = mutate_with_buffer(op, op->body, op->sym, src, std::move(sym_info));
 
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(
-          b->stmts, op->sym, [&](stmt body) { return transpose::make(op->sym, src, dims, std::move(body)); }));
-      return;
-    }
+    auto make_transpose = [&](stmt body) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
+        return body;
+      } else if (!deps.buffer_dims) {
+        return substitute(body, op->sym, src);
+      } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
+        return stmt(op);
+      } else {
+        return transpose::make(op->sym, src, dims, std::move(body));
+      }
+    };
 
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      set_result(std::move(body));
-    } else if (!deps.buffer_dims) {
-      set_result(substitute(body, op->sym, src));
-    } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
-      set_result(op);
-    } else {
-      set_result(transpose::make(op->sym, src, dims, std::move(body)));
-    }
+    set_result(lift_decl_invariants(body, op->sym, make_transpose));
   }
 
   void visit(const clone_buffer* op) override {
