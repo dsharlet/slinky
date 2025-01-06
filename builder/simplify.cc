@@ -413,12 +413,9 @@ public:
         }
       }
 
-      if (bounds.is_point()) {
-        auto c = as_constant(bounds.min);
-        if (c) {
-          alignment.modulus = 0;
-          alignment.remainder = *c;
-        }
+      if (auto c = as_constant(bounds.as_point())) {
+        alignment.modulus = 0;
+        alignment.remainder = *c;
       }
     }
   };
@@ -426,12 +423,14 @@ public:
 private:
   symbol_map<buffer_info> buffers;
   symbol_map<expr_info> vars;
+  bool proving = false;
 
   expr_info result_info;
 
   void set_result(expr e, expr_info info) {
     assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
     result_info = std::move(info);
+    ensure_is_point(result_info.bounds);
     node_mutator::set_result(std::move(e));
   }
   void set_result(const base_expr_node* e, expr_info info) { set_result(expr(e), std::move(info)); }
@@ -463,8 +462,7 @@ public:
 
   expr mutate(const expr& e, expr_info* info) {
     expr result = node_mutator::mutate(e);
-    if (info) {
-      ensure_is_point(result_info.bounds);
+    if (result.defined() && info) {
       if (info != &result_info) {
         *info = std::move(result_info);
       }
@@ -523,16 +521,25 @@ public:
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
     std::vector<scoped_value_in_symbol_map<expr_info>> vk;
     std::vector<scoped_value_in_symbol_map<buffer_info>> bk;
+    std::vector<std::pair<expr, expr>> facts;
 
     symbol_map<expr_info>& vars;
     symbol_map<buffer_info>& buffers;
 
-    void set_var_bounds(var x, interval_expr bounds) {
-      std::optional<expr_info> before = vars.lookup(x);
-      if (!bounds.min.defined() && before) bounds.min = before->bounds.min;
-      if (!bounds.max.defined() && before) bounds.max = before->bounds.max;
-      alignment_type alignment = before ? before->alignment : alignment_type();
-      vk.push_back(set_value_in_scope(vars, x, {std::move(bounds), alignment}));
+    void add_var_info(var x, interval_expr bounds, alignment_type alignment = {}) {
+      std::optional<expr_info> info = vars.lookup(x);
+      if (!info) {
+        ensure_is_point(bounds);
+        info = {std::move(bounds), alignment};
+      } else {
+        info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));
+        info->alignment = info->alignment & alignment;
+      }
+      if (auto value = as_constant(info->bounds.as_point())) {
+        // The bounds tell us this is a constant point.
+        info->replacement = *value;
+      }
+      vk.push_back(set_value_in_scope(vars, x, std::move(info)));
     }
 
     void set_call_value(const call* c, expr value) {
@@ -583,12 +590,13 @@ public:
       }
     }
 
-
   public:
     knowledge(symbol_map<expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
-    ~knowledge() {
+    ~knowledge() { exit_scope(); }
+
+    void exit_scope() {
       // Destroy our knowledge in reverse order.
       while (!vk.empty()) {
         vk.pop_back();
@@ -600,31 +608,67 @@ public:
 
     void learn_from_equal(const expr& a, const expr& b) {
       if (const variable* v = a.as<variable>()) {
-        set_var_bounds(v->sym, point(b));
+        add_var_info(v->sym, point(b));
       } else if (const call* c = a.as<call>()) {
         set_call_value(c, b);
+      } else if (const mod* md = a.as<mod>()) {
+        if (const variable* v = md->a.as<variable>()) {
+          if (auto m = as_constant(md->b)) {
+            if (auto r = as_constant(b)) {
+              add_var_info(v->sym, {}, {*m, *r});
+            }
+          }
+        }
+      } else {
+        // If a is not a variable, then b is not a variable (because we canonicalize variables to the left hand side),
+        // so if we're going to learn from this, we need to just learn it as a fact.
+        facts.push_back({a == b, true});
       }
       if (const variable* v = b.as<variable>()) {
-        set_var_bounds(v->sym, point(a));
+        add_var_info(v->sym, point(a));
       } else if (const call* c = b.as<call>()) {
         set_call_value(c, a);
       }
     }
 
     void learn_from_less(const expr& a, const expr& b) {
-      if (const variable* v = a.as<variable>()) {
-        set_var_bounds(v->sym, {expr(), b - 1});
-      }
-      if (const variable* v = b.as<variable>()) {
-        set_var_bounds(v->sym, {a + 1, expr()});
+      if (const class max* r = b.as<class max>()) {
+        // a < max(x, y) ==> a < x && a < y
+        learn_from_less(a, r->a);
+        learn_from_less(a, r->b);
+      } else if (const class min* l = a.as<class min>()) {
+        // min(x, y) < b ==> x < b && y < b
+        learn_from_less(l->a, b);
+        learn_from_less(l->b, b);
+      } else {
+        const variable* av = a.as<variable>();
+        const variable* bv = b.as<variable>();
+        if (av) add_var_info(av->sym, {expr(), simplify(static_cast<const add*>(nullptr), b, -1)});
+        if (bv) add_var_info(bv->sym, {simplify(static_cast<const add*>(nullptr), a, 1), expr()});
+        if (!(av || bv)) {
+          // We couldn't learn from this, just remember it as a fact.
+          facts.push_back({a < b, true});
+        }
       }
     }
     void learn_from_less_equal(const expr& a, const expr& b) {
-      if (const variable* v = a.as<variable>()) {
-        set_var_bounds(v->sym, {expr(), b});
-      }
-      if (const variable* v = b.as<variable>()) {
-        set_var_bounds(v->sym, {a, expr()});
+      if (const class max* r = b.as<class max>()) {
+        // a <= max(x, y) ==> a <= x && a <= y
+        learn_from_less_equal(a, r->a);
+        learn_from_less_equal(a, r->b);
+      } else if (const class min* l = a.as<class min>()) {
+        // min(x, y) <= b ==> x <= b && y <= b
+        learn_from_less_equal(l->a, b);
+        learn_from_less_equal(l->b, b);
+      } else {
+        const variable* av = a.as<variable>();
+        const variable* bv = b.as<variable>();
+        if (av) add_var_info(av->sym, {expr(), b});
+        if (bv) add_var_info(bv->sym, {a, expr()});
+        if (!(av || bv)) {
+          // We couldn't learn from this, just remember it as a fact.
+          facts.push_back({a <= b, true});
+        }
       }
     }
 
@@ -634,12 +678,16 @@ public:
         learn_from_true(a->b);
       } else if (const logical_not* n = c.as<logical_not>()) {
         learn_from_false(n->a);
-      } else if (const equal* eq = c.as<equal>()) {
-        learn_from_equal(eq->a, eq->b);
       } else if (const less* lt = c.as<less>()) {
         learn_from_less(lt->a, lt->b);
       } else if (const less_equal* lt = c.as<less_equal>()) {
         learn_from_less_equal(lt->a, lt->b);
+      } else if (const equal* eq = c.as<equal>()) {
+        learn_from_equal(eq->a, eq->b);
+      } else if (!as_constant(c) && !as_variable(c)) {
+        // We couldn't learn anything, just add the whole expression as a fact, if it isn't a constant or variable,
+        // which could rewrite the value from any x not zero to 1.
+        facts.push_back({c, expr(true)});
       }
     }
     void learn_from_false(const expr& c) {
@@ -648,13 +696,23 @@ public:
         learn_from_false(a->b);
       } else if (const logical_not* n = c.as<logical_not>()) {
         learn_from_true(n->a);
-      } else if (const not_equal* ne = c.as<not_equal>()) {
-        learn_from_equal(ne->a, ne->b);
       } else if (const less* lt = c.as<less>()) {
         learn_from_less_equal(lt->b, lt->a);
       } else if (const less_equal* lt = c.as<less_equal>()) {
         learn_from_less(lt->b, lt->a);
+      } else if (const not_equal* ne = c.as<not_equal>()) {
+        learn_from_equal(ne->a, ne->b);
+      } else if (!as_constant(c)) {
+        // We couldn't learn anything, just add the whole expression as a fact.
+        facts.push_back({c, expr(false)});
       }
+    }
+
+    expr substitute(expr x) const {
+      for (const auto& i : facts) {
+        x = slinky::substitute(x, i.first, i.second);
+      }
+      return x;
     }
   };
 
@@ -698,6 +756,7 @@ public:
     return *a == 0 && *b == 0;
   }
 
+  // Attempt to prove that the interval only contains true or false.
   static std::optional<bool> attempt_to_prove(const interval_expr& e) {
     if (prove_constant_true(e.min)) {
       return true;
@@ -708,28 +767,31 @@ public:
     }
   }
 
-  std::optional<bool> attempt_to_prove(const expr& e) {
-    scoped_trace trace("attempt_to_prove");
+  // Find the interval where `x` is true.
+  interval_expr where_true(const expr& x) {
+    scoped_trace trace("where_true");
     expr_info info;
-    mutate_boolean(e, &info);
-    return attempt_to_prove(info.bounds);
+    bool old_proving = proving;
+    proving = true;
+    mutate_boolean(x, &info);
+    proving = old_proving;
+    return info.bounds;
   }
 
-  bool prove_true(const expr& e) {
-    std::optional<bool> result = attempt_to_prove(e);
-    return result && *result;
-  }
-
-  bool prove_false(const expr& e) {
-    std::optional<bool> result = attempt_to_prove(e);
-    return result && !*result;
-  }
+  std::optional<bool> attempt_to_prove(const expr& e) { return attempt_to_prove(where_true(e)); }
+  bool prove_true(const expr& e) { return prove_constant_true(where_true(e).min); }
+  bool prove_false(const expr& e) { return prove_constant_false(where_true(e).max); }
 
   void visit(const variable* op) override {
     if (vars.contains(op->sym)) {
       expr_info info = *vars[op->sym];
       if (info.replacement.defined()) {
-        set_result(info.replacement, {std::move(info.bounds), std::move(info.alignment)});
+        // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment
+        // information.
+        // TODO: Maybe we should intersect any information we already had with this?
+        mutate_and_set_result(info.replacement);
+      } else if (auto c = as_constant(info.bounds.as_point())) {
+        set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
       } else {
         if (!info.bounds.min.defined()) info.bounds.min = expr(op);
         if (!info.bounds.max.defined()) info.bounds.max = expr(op);
@@ -768,19 +830,19 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    if (prove_constant_false(simplify(static_cast<const less*>(nullptr), b_info.bounds.min, a)) ||
-        prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_info.bounds.max)) ||
-        prove_constant_false(simplify(static_cast<const less*>(nullptr), b_info.bounds.min, a_info.bounds.max))) {
+    auto less_equal = [this](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
+      return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
+             (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
+             (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
+    };
+    if (less_equal(a, a_info.bounds.max, b, b_info.bounds.min)) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(a), std::move(a_info));
       } else {
         set_result(std::move(b), std::move(b_info));
       }
       return;
-    } else if (prove_constant_false(simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b)) ||
-               prove_constant_false(simplify(static_cast<const less*>(nullptr), a, b_info.bounds.max)) ||
-               prove_constant_false(
-                   simplify(static_cast<const less*>(nullptr), a_info.bounds.min, b_info.bounds.max))) {
+    } else if (less_equal(b, b_info.bounds.max, a, a_info.bounds.min)) {
       if (T::static_type == expr_node_type::min) {
         set_result(std::move(b), std::move(b_info));
       } else {
@@ -819,6 +881,25 @@ public:
       return;
     }
 
+    if (T::static_type == expr_node_type::mul) {
+      // TODO: This is really ugly, we should have a better way of expressing such simplifications.
+      if (auto c1 = as_constant(b)) {
+        if (const div* d = a.as<div>()) {
+          if (auto c0 = as_constant(d->b)) {
+            if (*c0 != 0) {
+              // This is (x/c0)*c1. If we know x is aligned to c0, the result is x*(c1/c0).
+              expr_info x_info;
+              expr x = mutate(d->a, &x_info);
+              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0) {
+                mutate_and_set_result((x * *c1) / *c0);
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+
     auto a_mod = a_info.alignment.modulus;
     auto a_rem = a_info.alignment.remainder;
 
@@ -834,6 +915,16 @@ public:
       // clang-format off
       if (r((x + c0) / c1, x / c1 + eval(a_rem / c1 - (a_rem - c0) / c1), eval(a_mod % c1 == 0)) ||
           r((c0 - x) / c1, eval(a_rem / c1 + (c0 - a_rem) / c1) - x / c1, eval(a_mod % c1 == 0)) ||
+          false) {
+        mutate_and_set_result(r.result);
+        return;
+      }
+      // clang-format on
+    } else if (T::static_type == expr_node_type::mod) {
+      auto r = rewrite::make_rewriter(rewrite::pattern_expr{a} % rewrite::pattern_expr{b});
+      // Taken from https://github.com/halide/Halide/blob/main/src/Simplify_Div.cpp#L125-L167.
+      // clang-format off
+      if (r(x % c0, eval(a_rem % c0), eval(a_mod % c0 == 0)) ||
           false) {
         mutate_and_set_result(r.result);
         return;
@@ -923,50 +1014,6 @@ public:
     }
   }
 
-  // substitute c = true into x.
-  static expr substitute_true(expr x, const expr& c) {
-    if (const logical_and* l = c.as<logical_and>()) {
-      // If we assume a && b is true, then a and b both must be true.
-      x = substitute_true(x, l->a);
-      x = substitute_true(x, l->b);
-    } else if (const logical_not* l = c.as<logical_not>()) {
-      x = substitute_false(x, l->a);
-    } else if (is_boolean(c) && !as_constant(c)) {
-      x = substitute(x, c, true);
-    }
-    // Do this separately because we might be able to substitute c and one side of an equals too.
-    if (const equal* e = c.as<equal>()) {
-      if (e->b.as<constant>()) {
-        x = substitute(x, e->a, e->b);
-      } else if (e->a.as<constant>()) {
-        x = substitute(x, e->b, e->a);
-      }
-    }
-    return x;
-  }
-
-  // substitute c = false into x.
-  static expr substitute_false(expr x, const expr& c) {
-    if (const logical_or* l = c.as<logical_or>()) {
-      // If we assume a || b is false, then a and b both must be false.
-      x = substitute_false(x, l->a);
-      x = substitute_false(x, l->b);
-    } else if (const logical_not* l = c.as<logical_not>()) {
-      x = substitute_true(x, l->a);
-    } else if (is_boolean(c) && !as_constant(c)) {
-      x = substitute(x, c, false);
-    }
-    // Do this separately because we might be able to substitute c and one side of an equals too.
-    if (const not_equal* e = c.as<not_equal>()) {
-      if (e->b.as<constant>()) {
-        x = substitute(x, e->a, e->b);
-      } else if (e->a.as<constant>()) {
-        x = substitute(x, e->b, e->a);
-      }
-    }
-    return x;
-  }
-
   void visit(const class select* op) override {
     expr_info c_info;
     // When simplifying expressions treated as bools, we need to force them to have the result 0 or 1.
@@ -979,31 +1026,23 @@ public:
       return;
     }
 
-    expr t = op->true_value;
-    expr f = op->false_value;
-
-    t = substitute_true(t, c);
-    f = substitute_false(f, c);
-
-    expr t_when_c_false = substitute_false(t, c);
-    expr f_when_c_true = substitute_true(f, c);
-    if (!t_when_c_false.same_as(t) && prove_true(t_when_c_false == f)) {
-      mutate_and_set_result(t);
-      return;
-    } else if (!f_when_c_true.same_as(f) && prove_true(f_when_c_true == t)) {
-      mutate_and_set_result(f);
-      return;
-    }
-
-    expr_info t_info;
+    expr t, f;
+    expr_info t_info, f_info;
     {
-      auto knowledge = learn_from_true(c);
-      t = mutate(t, &t_info);
+      auto k = learn_from_true(c);
+      t = mutate(op->true_value, &t_info);
+      expr learned = k.substitute(t);
+      if (!learned.same_as(t)) {
+        t = mutate(learned, &t_info);
+      }
     }
-    expr_info f_info;
     {
-      auto knowledge = learn_from_false(c);
-      f = mutate(f, &f_info);
+      auto k = learn_from_false(c);
+      f = mutate(op->false_value, &f_info);
+      expr learned = k.substitute(f);
+      if (!learned.same_as(f)) {
+        f = mutate(learned, &f_info);
+      }
     }
 
     if (!t.defined() && !f.defined()) {
@@ -1050,11 +1089,19 @@ public:
         // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
         // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
         auto visit_buffer_meta_value = [&, this](expr x) {
-          if ((!info->decl.defined() || should_substitute(x) || x.as<call>()) && !match(x, op)) {
-            // This is a value we should substitute, and it's different from what we started with.
-            mutate_and_set_result(x);
-            return true;
-          } else if (!changed) {
+          // There are many conditions in which we should substitute buffer meta:
+          // - We're being asked to substitute it (decl is undefined).
+          // - The value is something we should substitute (it's simple and pure).
+          // - The value is another buffer meta expression.
+          // - We're trying to prove something (as opposed to producing a simplified expression).
+          if (!info->decl.defined() || should_substitute(x) || x.as<call>() || (proving && x.defined())) {
+            if (!match(x, op)) {
+              // This is a value we should substitute, and it's different from what we started with.
+              mutate_and_set_result(x);
+              return true;
+            }
+          }
+          if (!changed) {
             set_result(op, {point(x), alignment_type()});
             return true;
           }
@@ -1175,9 +1222,9 @@ public:
     return mutate(body);
   }
 
-  stmt mutate_with_bounds(stmt body, var v, interval_expr bounds) {
+  stmt mutate_with_bounds(stmt body, var v, interval_expr bounds, alignment_type alignment = {}) {
     assert(!vars.contains(v));
-    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment_type()});
+    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment});
     return mutate(body);
   }
 
@@ -1269,7 +1316,10 @@ public:
     for (auto& i : buffers) {
       if (i) ++i->loop_depth;
     }
-    stmt body = mutate_with_bounds(op->body, op->sym, bounds);
+    alignment_type alignment;
+    if (auto cstep = as_constant(step)) alignment.modulus = *cstep;
+    if (auto cmin = as_constant(bounds.min)) alignment.remainder = *cmin;
+    stmt body = mutate_with_bounds(op->body, op->sym, bounds, alignment);
     for (auto& i : buffers) {
       if (i) --i->loop_depth;
     }
@@ -1418,20 +1468,17 @@ public:
     call_stmt::symbol_list inputs = op->inputs;
     call_stmt::symbol_list outputs = op->outputs;
     bool changed = false;
-    for (var& i : inputs) {
-      var new_i = visit_symbol(i);
-      if (new_i != i) {
-        i = new_i;
-        changed = true;
+    auto visit_symbol_list = [&, this](call_stmt::symbol_list& list) {
+      for (var& i : list) {
+        var new_i = visit_symbol(i);
+        if (new_i != i) {
+          i = new_i;
+          changed = true;
+        }
       }
-    }
-    for (var& i : outputs) {
-      var new_i = visit_symbol(i);
-      if (new_i != i) {
-        i = new_i;
-        changed = true;
-      }
-    }
+    };
+    visit_symbol_list(inputs);
+    visit_symbol_list(outputs);
     if (changed) {
       set_result(call_stmt::make(op->target, std::move(inputs), std::move(outputs), op->attrs));
     } else {
@@ -1647,24 +1694,25 @@ public:
       if (match(info.elem_size, buffer_elem_size(*src_buf))) {
         // To be a slice, we need every dimension that is present in the buffer_at call to be skipped, and the rest of
         // the dimensions to be identity.
-        int dim = 0;
-        std::size_t slice_rank = 0;
-        std::size_t at_rank =
-            std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
-        bool is_slice = true;
-        for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
-          if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
-            // Skip this dimension.
-            ++dim;
-          } else if (slice_rank < info.dims.size()) {
-            // This arg is undefined. We need to find the next dimension here to be a slice.
-            is_slice = is_slice && is_buffer_dim(info.dims[slice_rank++], *src_buf) == dim++;
-          } else {
-            is_slice = false;
-            break;
+        auto is_slice = [&]() {
+          int dim = 0;
+          std::size_t slice_rank = 0;
+          std::size_t at_rank =
+              std::count_if(bc->args.begin() + 1, bc->args.end(), [](const expr& i) { return i.defined(); });
+          for (int d = 0; d < static_cast<int>(info.dims.size() + at_rank); ++d) {
+            if (d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined()) {
+              // Skip this dimension.
+              ++dim;
+            } else if (slice_rank < info.dims.size()) {
+              // This arg is undefined. We need to find the next dimension here to be a slice.
+              if (is_buffer_dim(info.dims[slice_rank++], *src_buf) != dim++) return false;
+            } else {
+              return false;
+            }
           }
-        }
-        if (is_slice && slice_rank == info.dims.size()) {
+          return slice_rank == info.dims.size();
+        };
+        if (is_slice()) {
           // make_buffer drops trailing dims, do the same here.
           stmt body = make_truncate(op->sym, info.dims.size(), op->body);
           std::vector<expr> at(bc->args.begin() + 1, bc->args.end());
@@ -1673,49 +1721,49 @@ public:
         }
 
         // To be a crop, we need dimensions to either be identity, or the buffer_at argument is the same as the min.
-        bool is_crop = bc->args.size() <= info.dims.size() + 1;
-        box_expr crop_bounds(info.dims.size());
-        for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
-          if (!match_call(info.dims[d].stride, intrinsic::buffer_stride, *src_buf, d) ||
-              !match_call(info.dims[d].fold_factor, intrinsic::buffer_fold_factor, *src_buf, d)) {
-            is_crop = false;
-            break;
-          }
+        auto is_crop = [&]() {
+          if (bc->args.size() > info.dims.size() + 1) return false;
+          for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
+            if (!match_call(info.dims[d].stride, intrinsic::buffer_stride, *src_buf, d) ||
+                !match_call(info.dims[d].fold_factor, intrinsic::buffer_fold_factor, *src_buf, d)) {
+              return false;
+            }
 
-          // If the argument to buffer_at is defined, we need the min to be the same as the argument.
-          // If it is not defined, it must be buffer_min(buf, d).
-          bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
-          expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
-          if (match(info.dims[d].bounds.min, crop_min)) {
-            crop_bounds[d] = info.dims[d].bounds;
-          } else {
-            is_crop = false;
-            break;
+            // If the argument to buffer_at is defined, we need the min to be the same as the argument.
+            // If it is not defined, it must be buffer_min(buf, d).
+            bool has_at_d = d + 1 < static_cast<index_t>(bc->args.size()) && bc->args[d + 1].defined();
+            expr crop_min = has_at_d ? bc->args[d + 1] : buffer_min(*src_buf, d);
+            if (!match(info.dims[d].bounds.min, crop_min)) {
+              return false;
+            }
           }
-        }
-        if (is_crop) {
+          return true;
+        };
+        if (is_crop()) {
           // make_buffer drops trailing dims, do the same here.
           stmt body = make_truncate(op->sym, info.dims.size(), op->body);
-          set_result(mutate(crop_buffer::make(op->sym, *src_buf, std::move(crop_bounds), std::move(body))));
+          set_result(mutate(crop_buffer::make(op->sym, *src_buf, dims_bounds(info.dims), std::move(body))));
           return;
         }
 
         // To be a transpose, we need buffer_at to be the base of src_buf, and each dimension to be a dimension of the
         // original buffer.
         // TODO: This could probably be built into the slice check above.
-        bool is_transpose = bc->args.size() == 1;
         std::vector<int> permutation;
-        permutation.reserve(info.dims.size());
-        for (std::size_t d = 0; d < info.dims.size(); ++d) {
-          int dim = is_buffer_dim(info.dims[d], *src_buf);
-          if (dim >= 0) {
-            permutation.push_back(dim);
-          } else {
-            is_transpose = false;
-            break;
+        auto is_transpose = [&]() {
+          if (bc->args.size() != 1) return false;
+          permutation.reserve(info.dims.size());
+          for (std::size_t d = 0; d < info.dims.size(); ++d) {
+            int dim = is_buffer_dim(info.dims[d], *src_buf);
+            if (dim >= 0) {
+              permutation.push_back(dim);
+            } else {
+              return false;
+            }
           }
-        }
-        if (is_transpose) {
+          return true;
+        };
+        if (is_transpose()) {
           set_result(mutate(transpose::make(op->sym, *src_buf, std::move(permutation), op->body)));
           return;
         }
@@ -1757,25 +1805,51 @@ public:
   }
 
   template <typename T>
-  static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds) {
-    bounds.insert(x);
+  static void enumerate_bounds(expr x, std::set<expr, node_less>& bounds, index_t offset = 0) {
+    if (const add* a = x.as<add>()) {
+      if (auto c = as_constant(a->b)) {
+        // Remove constant adds and remember the offset for later.
+        x = a->a;
+        offset += *c;
+      }
+    }
+    auto add_offset = [offset](expr x) {
+      return offset ? simplify(static_cast<const class add*>(nullptr), std::move(x), offset) : x;
+    };
     if (const T* t = x.as<T>()) {
-      enumerate_bounds<T>(t->a, bounds);
-      enumerate_bounds<T>(t->b, bounds);
+      enumerate_bounds<T>(t->a, bounds, offset);
+      enumerate_bounds<T>(t->b, bounds, offset);
+    } else if (const class select* s = x.as<class select>()) {
+      // Move constants into select here.
+      if (offset) {
+        bounds.insert(select(s->condition, add_offset(s->true_value), add_offset(s->false_value)));
+      } else {
+        bounds.insert(x);
+      }
+    } else {
+      bounds.insert(add_offset(std::move(x)));
     }
   }
 
   template <typename T>
   expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
-    if (bounds.count(x)) return expr();
+    auto is_redundant = [&](const expr& x) {
+      // A bound x is redundant if the bounds already have a value i such that T(x, i) == i
+      for (const expr& i : bounds) {
+        if (std::is_same<T, class min>::value && prove_true(i <= x)) return true;
+        if (std::is_same<T, class max>::value && prove_true(i >= x)) return true;
+      }
+      return false;
+    };
+    if (is_redundant(x)) return expr();
     if (const T* t = x.as<T>()) {
-      bool a_is_bound = bounds.count(t->a);
-      bool b_is_bound = bounds.count(t->b);
-      if (a_is_bound && b_is_bound) {
+      bool a_redundant = is_redundant(t->a);
+      bool b_redundant = is_redundant(t->b);
+      if (a_redundant && b_redundant) {
         return expr();
-      } else if (a_is_bound) {
+      } else if (a_redundant) {
         return remove_redundant_bounds<T>(t->b, bounds);
-      } else if (b_is_bound) {
+      } else if (b_redundant) {
         return remove_redundant_bounds<T>(t->a, bounds);
       }
     } else if (const add* xa = x.as<add>()) {
@@ -1786,6 +1860,30 @@ public:
           expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)});
           if (!removed.same_as(xa->a)) {
             return std::move(removed) + xa->b;
+          }
+        }
+      }
+    } else if (const div* xa = x.as<div>()) {
+      if (as_constant(xa->b)) {
+        // We have T(x / y, b). We can rewrite to T(x, b * y) / y, and if we can eliminate the bound, the whole
+        // bound is redundant.
+        for (const expr& i : bounds) {
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i * xa->b)});
+          if (!removed.same_as(xa->a)) {
+            return std::move(removed) / xa->b;
+          }
+        }
+      }
+    } else if (const mul* xa = x.as<mul>()) {
+      if (as_constant(xa->b)) {
+        // We have T(x * y, b). We can do something similar to the above, but we need to be careful because division
+        // is not invertible. Since we're looking for bounds, we can use a conservative rounding. If we're looking for
+        // redundant mins, we should round up, and redundant maxes should round down.
+        for (const expr& i : bounds) {
+          expr rounded = std::is_same<T, class min>::value ? i + (xa->b - 1) : i;
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(rounded / xa->b)});
+          if (!removed.same_as(xa->a)) {
+            return std::move(removed) * xa->b;
           }
         }
       }
@@ -1847,17 +1945,24 @@ public:
 
     // We might have written a select into an interval that tries to preserve the empty-ness of the interval.
     // But this might be unnecessary. Try to remove unnecessary selects here.
-    rewrite::pattern_wildcard<0> b;
-    rewrite::pattern_wildcard<1> d;
-    rewrite::pattern_wildcard<2> empty_min;
-    rewrite::pattern_wildcard<3> new_min;
+    rewrite::pattern_wildcard<0> x;
+    rewrite::pattern_wildcard<1> y;
+    rewrite::pattern_wildcard<2> z;
+    rewrite::pattern_wildcard<3> w;
     rewrite::match_context ctx;
-    if (match(ctx, select(buffer_max(b, d) < buffer_min(b, d), empty_min, new_min), result.min)) {
-      if (is_variable(ctx.matched(b), buf) && is_constant(ctx.matched(d), dim)) {
+    if (match(ctx, select(buffer_max(x, y) < buffer_min(x, y), z, w), result.min)) {
+      if (is_variable(ctx.matched(x), buf) && is_constant(ctx.matched(y), dim)) {
         // This select is a check that the dimension we are cropping is empty.
         // If the buffer is empty, it doesn't matter what we do, the resulting crop will still be empty, so we can
         // just take the new min.
-        result.min = ctx.matched(new_min);
+        result.min = ctx.matched(w);
+      }
+    } else if (match(ctx, x + min(y, z), result.min)) {
+      // This is the same as above, but the select was simplified.
+      if (match_call(ctx.matched(y), intrinsic::buffer_max, buf, dim) || match(ctx.matched(y), result.max)) {
+        result.min = mutate(ctx.matched(x) + ctx.matched(z));
+      } else if (match_call(ctx.matched(z), intrinsic::buffer_max, buf, dim) || match(ctx.matched(z), result.max)) {
+        result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }
 

@@ -17,27 +17,40 @@ pattern_constant<0> c0;
 pattern_constant<1> c1;
 pattern_constant<2> c2;
 
+using op_simplified = std::true_type;
+
+template <typename T>
+expr simplify(op_simplified, const T* op, expr a, expr b) {
+  if (op && a.same_as(op->a) && b.same_as(op->b)) {
+    return expr(op);
+  } else {
+    return simplify(op, std::move(a), std::move(b));
+  }
+}
+
 template <typename T>
 interval_expr bounds_of_linear(const T* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
-    return {simplify(op, std::move(a.min), std::move(b.min)), simplify(op, std::move(a.max), std::move(b.max))};
+    return {
+        simplify(op_simplified(), op, std::move(a.min), std::move(b.min)),
+        simplify(op_simplified(), op, std::move(a.max), std::move(b.max)),
+    };
   }
 }
 
 template <typename T>
 interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     // This bit of genius comes from
     // https://github.com/halide/Halide/blob/61b8d384b2b799cd47634e4a3b67aa7c7f580a46/src/Bounds.cpp#L829
-    return {simplify(op, std::move(a.max), std::move(b.min)), simplify(op, std::move(a.min), std::move(b.max))};
+    return {
+        simplify(op_simplified(), op, std::move(a.max), std::move(b.min)),
+        simplify(op_simplified(), op, std::move(a.min), std::move(b.max)),
+    };
   }
 }
 
@@ -132,10 +145,8 @@ void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr&
 }  // namespace
 
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
     if (op) {
@@ -145,14 +156,12 @@ interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
   }
 }
 interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     interval_expr result = {
-        simplify(op, std::move(a.min), std::move(b.max)),
-        simplify(op, std::move(a.max), std::move(b.min)),
+        simplify(op_simplified(), op, std::move(a.min), std::move(b.max)),
+        simplify(op_simplified(), op, std::move(a.max), std::move(b.min)),
     };
     if (op) {
       tighten_correlated_bounds(result, op->a, op->b, -1);
@@ -179,38 +188,36 @@ interval_expr simple_or_unbounded(expr min, expr max) {
 
 interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   // TODO: I'm pretty sure there are cases missing here that would produce simpler bounds than the fallback cases.
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else if (is_non_negative(a.min) && is_non_negative(b.min)) {
     // Both are >= 0, neither intervals flip.
-    return {simplify(op, a.min, b.min), simplify(op, a.max, b.max)};
+    return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.max)};
   } else if (is_non_positive(a.max) && is_non_positive(b.max)) {
     // Both are <= 0, both intervals flip.
-    return {simplify(op, a.max, b.max), simplify(op, a.min, b.min)};
+    return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.min)};
   } else if (b.is_point()) {
     if (is_non_negative(b.min)) {
-      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
+      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
     } else if (is_non_positive(b.min)) {
-      return {simplify(op, a.max, b.min), simplify(op, a.min, b.min)};
+      return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.min)};
     } else {
       expr corners[] = {
-          simplify(op, a.min, b.min),
-          simplify(op, a.max, b.min),
+          simplify(op_simplified(), op, a.min, b.min),
+          simplify(op_simplified(), op, a.max, b.min),
       };
       return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
           simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]));
     }
   } else if (a.is_point()) {
     if (is_non_negative(a.min)) {
-      return {simplify(op, a.min, b.min), simplify(op, a.min, b.max)};
+      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.min, b.max)};
     } else if (is_non_positive(a.min)) {
-      return {simplify(op, a.min, b.max), simplify(op, a.min, b.min)};
+      return {simplify(op_simplified(), op, a.min, b.max), simplify(op_simplified(), op, a.min, b.min)};
     } else {
       expr corners[] = {
-          simplify(op, a.min, b.min),
-          simplify(op, a.min, b.max),
+          simplify(op_simplified(), op, a.min, b.min),
+          simplify(op_simplified(), op, a.min, b.max),
       };
       return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
           simplify(static_cast<const class max*>(nullptr), corners[0], corners[1]));
@@ -218,10 +225,10 @@ interval_expr bounds_of(const mul* op, interval_expr a, interval_expr b) {
   } else {
     // We don't know anything. The results is the union of all 4 possible intervals.
     expr corners[] = {
-        simplify(op, a.min, b.min),
-        simplify(op, a.min, b.max),
-        simplify(op, a.max, b.min),
-        simplify(op, a.max, b.max),
+        simplify(op_simplified(), op, a.min, b.min),
+        simplify(op_simplified(), op, a.min, b.max),
+        simplify(op_simplified(), op, a.max, b.min),
+        simplify(op_simplified(), op, a.max, b.max),
     };
     return simple_or_unbounded(simplify(static_cast<const class min*>(nullptr),
                                    simplify(static_cast<const class min*>(nullptr), corners[0], corners[1]),
@@ -256,46 +263,42 @@ interval_expr bounds_of(const div* op, interval_expr a, interval_expr b) {
   // Because b is an integer, the bounds of a will only be shrunk
   // (we define division by 0 to be 0). The absolute value of the
   // bounds are maximized when b is 1 or -1.
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (b.is_point()) {
+  if (b.is_point()) {
     if (is_zero(b.min)) {
       return {0, 0};
     } else if (a.is_point()) {
-      return point(simplify(op, a.min, b.min));
+      return point(simplify(op_simplified(), op, a.min, b.min));
     } else if (is_non_negative(b.min)) {
-      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
+      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
     } else if (is_non_positive(b.min)) {
-      return {simplify(op, a.max, b.min), simplify(op, a.min, b.min)};
+      return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.min)};
     }
   } else if (is_positive(b.min)) {
     // b > 0 => the biggest result in absolute value occurs at the min of b.
     if (is_non_negative(a.min)) {
-      return {simplify(op, a.min, b.max), simplify(op, a.max, b.min)};
+      return {simplify(op_simplified(), op, a.min, b.max), simplify(op_simplified(), op, a.max, b.min)};
     } else if (is_non_positive(a.max)) {
-      return {simplify(op, a.min, b.min), simplify(op, a.max, b.max)};
+      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
-      return {simplify(op, a.min, b.min), simplify(op, a.max, b.min)};
+      return {simplify(op_simplified(), op, a.min, b.min), simplify(op_simplified(), op, a.max, b.min)};
     }
   } else if (is_negative(b.max)) {
     // b < 0 => the biggest result in absolute value occurs at the max of b.
     if (is_non_negative(a.min)) {
-      return {simplify(op, a.max, b.max), simplify(op, a.min, b.min)};
+      return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.min)};
     } else if (is_non_positive(a.max)) {
-      return {simplify(op, a.max, b.min), simplify(op, a.min, b.max)};
+      return {simplify(op_simplified(), op, a.max, b.min), simplify(op_simplified(), op, a.min, b.max)};
     } else {
       a = union_x_negate_x(std::move(a));
-      return {simplify(op, a.max, b.max), simplify(op, a.min, b.max)};
+      return {simplify(op_simplified(), op, a.max, b.max), simplify(op_simplified(), op, a.min, b.max)};
     }
   }
   return union_x_negate_x(std::move(a));
 }
 interval_expr bounds_of(const mod* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   }
   expr max_b;
   if (is_non_negative(b.min)) {
@@ -334,10 +337,8 @@ interval_expr bounds_of(const less_equal* op, interval_expr a, interval_expr b) 
   return bounds_of_less(op, std::move(a), std::move(b));
 }
 interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     // This is can only be true if the intervals a and b overlap:
     //
@@ -350,10 +351,8 @@ interval_expr bounds_of(const equal* op, interval_expr a, interval_expr b) {
   }
 }
 interval_expr bounds_of(const not_equal* op, interval_expr a, interval_expr b) {
-  if (a.is_point(op) && b.is_point(op)) {
-    return point(expr(op));
-  } else if (a.is_point() && b.is_point()) {
-    return point(simplify(op, std::move(a.min), std::move(b.min)));
+  if (a.is_point() && b.is_point()) {
+    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
   } else {
     // This can only be false if the intervals a and b do not overlap.
     return {simplify(static_cast<const logical_or*>(nullptr), simplify(static_cast<const less*>(nullptr), a.max, b.min),
@@ -380,7 +379,11 @@ interval_expr bounds_of(const logical_not* op, interval_expr a) {
 
 interval_expr bounds_of(const class select* op, interval_expr c, interval_expr t, interval_expr f) {
   if (c.is_point() && t.is_point() && f.is_point()) {
-    return point(simplify(op, std::move(c.min), std::move(t.min), std::move(f.min)));
+    if (op && c.min.same_as(op->condition) && t.min.same_as(op->true_value) && f.min.same_as(op->false_value)) {
+      return point(expr(op));
+    } else {
+      return point(simplify(op, std::move(c.min), std::move(t.min), std::move(f.min)));
+    }
   } else if (is_true(c.min)) {
     return t;
   } else if (is_false(c.max)) {

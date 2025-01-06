@@ -815,14 +815,14 @@ namespace {
 
 class expr_substitutor : public node_mutator {
 public:
-  expr target;
-  expr replacement;
+  expr_ref target;
+  expr_ref replacement;
 
 public:
-  expr_substitutor(expr target, expr replacement) : target(target), replacement(replacement) {}
+  expr_substitutor(expr_ref target, expr_ref replacement) : target(target), replacement(replacement) {}
 
   expr mutate(const expr& op) override {
-    if (match(op, target)) {
+    if (matcher().try_match(op.get(), target.get())) {
       return replacement;
     }
     return node_mutator::mutate(op);
