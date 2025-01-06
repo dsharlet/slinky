@@ -575,7 +575,7 @@ class pipeline_builder {
 
   std::map<var, int> consumers_produced_;
   std::set<buffer_expr_ptr> candidates_for_allocation_;
-  
+
   std::map<var, int> allocation_lifetime_start_;
   std::map<var, int> allocation_lifetime_end_;
 
@@ -845,7 +845,7 @@ public:
 
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
-  
+
     for (const func* f : order_) {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
@@ -887,7 +887,8 @@ public:
       if (compute_at->second == at) {
         // std::cout << "Producing: " << f->attrs().name << std::endl;
         std::tuple<stmt, int, int> f_body = produce(f);
-        // std::cout << "Candidates: " << old_candidates.size() << " " << candidates_for_allocation_.size() << std::endl;
+        // std::cout << "Candidates: " << old_candidates.size() << " " << candidates_for_allocation_.size() <<
+        // std::endl;
         if (candidates_for_allocation_.size() > old_candidates.size() + 1) {
           std::set<buffer_expr_ptr> to_remove;
           for (buffer_expr_ptr b : candidates_for_allocation_) {
@@ -899,7 +900,7 @@ public:
               to_remove.insert(b);
             }
           }
-          for (buffer_expr_ptr b: to_remove) {
+          for (buffer_expr_ptr b : to_remove) {
             candidates_for_allocation_.erase(b);
           }
         }
@@ -913,36 +914,34 @@ public:
 
     // 1. Combine buffer sym, start and end times into a vector of tuples.
     // 2. Sort vector by (end - start) and then sym
-    // 3. iterate over the vector 
+    // 3. iterate over the vector
 
     // for (const auto& f : ress) {
-    //   std::cout << "Stmt lifetime:\n" << std::get<0>(f) << "\n" 
-    //             << std::get<1>(f) << " " 
+    //   std::cout << "Stmt lifetime:\n" << std::get<0>(f) << "\n"
+    //             << std::get<1>(f) << " "
     //             << std::get<2>(f) << std::endl;
     // }
 
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
-    for (const auto& b: candidates_for_allocation_) {
+    for (const auto& b : candidates_for_allocation_) {
       if (output_syms_.count(b->sym())) continue;
       if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-        lifetimes.push_back(std::make_tuple(b,
-                                            allocation_lifetime_start_[b->sym()], 
-                                            allocation_lifetime_end_[b->sym()]));
+        lifetimes.push_back(
+            std::make_tuple(b, allocation_lifetime_start_[b->sym()], allocation_lifetime_end_[b->sym()]));
       }
     }
 
-    std::sort(lifetimes.begin(), lifetimes.end(), 
-              [](std::tuple<buffer_expr_ptr, int, int> a,
-                 std::tuple<buffer_expr_ptr, int, int> b) {
-        if (std::get<2>(a) - std::get<1>(a) == std::get<2>(b) - std::get<1>(b)) {
-          return std::get<1>(a) < std::get<1>(b);
-        }
-        return std::get<2>(a) - std::get<1>(a) < std::get<2>(b) - std::get<1>(b);
-    });
+    std::sort(lifetimes.begin(), lifetimes.end(),
+        [](std::tuple<buffer_expr_ptr, int, int> a, std::tuple<buffer_expr_ptr, int, int> b) {
+          if (std::get<2>(a) - std::get<1>(a) == std::get<2>(b) - std::get<1>(b)) {
+            return std::get<1>(a) < std::get<1>(b);
+          }
+          return std::get<2>(a) - std::get<1>(a) < std::get<2>(b) - std::get<1>(b);
+        });
 
     // for (const auto& v : lifetimes) {
-    //   std::cout << "Sorted list: " << expr(std::get<0>(v)->sym()) << " " 
-    //       << std::get<1>(v) << " " 
+    //   std::cout << "Sorted list: " << expr(std::get<0>(v)->sym()) << " "
+    //       << std::get<1>(v) << " "
     //       << std::get<2>(v) << std::endl;
     // }
 
@@ -954,17 +953,16 @@ public:
 
       std::size_t result_index = 0;
       for (std::size_t ix = 0; ix < lifetimes.size() && result_index < ress.size();) {
-          // std::cout << "Starting: "
-          //     << std::get<1>(ress[result_index]) << " " 
-          //     << std::get<2>(ress[result_index]) << " " 
-          //     << std::get<1>(lifetimes[ix]) << " "
-          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+        // std::cout << "Starting: "
+        //     << std::get<1>(ress[result_index]) << " "
+        //     << std::get<2>(ress[result_index]) << " "
+        //     << std::get<1>(lifetimes[ix]) << " "
+        //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
 
-        while (result_index < ress.size() &&
-               std::get<2>(ress[result_index]) < std::get<1>(lifetimes[ix])) {
+        while (result_index < ress.size() && std::get<2>(ress[result_index]) < std::get<1>(lifetimes[ix])) {
           // std::cout << "Early skipping results: "
-          //     << std::get<1>(ress[result_index]) << " " 
-          //     << std::get<2>(ress[result_index]) << " " 
+          //     << std::get<1>(ress[result_index]) << " "
+          //     << std::get<2>(ress[result_index]) << " "
           //     << std::get<1>(lifetimes[ix]) << " "
           //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
           new_results.push_back(ress[result_index]);
@@ -973,13 +971,11 @@ public:
         int new_min = 1000000, new_max = -1;
         // if lifetime overlaps with result x_start <= y_end && y_start <= x_end
         std::vector<stmt> new_block;
-        while(result_index < ress.size()
-             && std::get<1>(ress[result_index]) <= std::get<2>(lifetimes[ix])
-             && std::get<1>(lifetimes[ix]) <= std::get<2>(ress[result_index])
-             ) {
+        while (result_index < ress.size() && std::get<1>(ress[result_index]) <= std::get<2>(lifetimes[ix]) &&
+               std::get<1>(lifetimes[ix]) <= std::get<2>(ress[result_index])) {
           // std::cout << "Overlaps results: "
-          //     << std::get<1>(ress[result_index]) << " " 
-          //     << std::get<2>(ress[result_index]) << " " 
+          //     << std::get<1>(ress[result_index]) << " "
+          //     << std::get<2>(ress[result_index]) << " "
           //     << std::get<1>(lifetimes[ix]) << " "
           //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
           new_min = std::min(new_min, std::get<1>(ress[result_index]));
@@ -989,7 +985,7 @@ public:
         }
         if (!new_block.empty()) {
           stmt new_body = block::make(new_block);
-          
+
           buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
           new_body = produce_allocation(b, new_body, uncropped_subs);
           candidates_for_allocation_.erase(b);
@@ -999,8 +995,7 @@ public:
         }
         ix++;
         // std::cout << "new min/max: " << new_min << " " << new_max << "\n";
-        while (ix < lifetimes.size() 
-               && std::get<1>(lifetimes[ix]) <= new_max) {
+        while (ix < lifetimes.size() && std::get<1>(lifetimes[ix]) <= new_max) {
           // std::cout << "Late skipping results: "
           //     << std::get<1>(lifetimes[ix]) << " "
           //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
@@ -1021,7 +1016,7 @@ public:
     }
 
     std::vector<stmt> ress_stmt;
-    for (const auto& rs: ress) {
+    for (const auto& rs : ress) {
       ress_stmt.push_back(std::get<0>(rs));
     }
 
@@ -1046,8 +1041,8 @@ public:
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
           candidates_for_allocation_.erase(b);
-          // std::cout << "Allocating: " << expr(b->sym()) << " " 
-          //     << allocation_lifetime_start_[b->sym()] << " " 
+          // std::cout << "Allocating: " << expr(b->sym()) << " "
+          //     << allocation_lifetime_start_[b->sym()] << " "
           //     << allocation_lifetime_end_[b->sym()] << std::endl;
           // std::vector<stmt> checks;
           // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
