@@ -11,7 +11,6 @@
 #include "builder/node_mutator.h"
 #include "runtime/depends_on.h"
 #include "runtime/expr.h"
-#include "runtime/print.h"
 
 namespace slinky {
 
@@ -733,7 +732,7 @@ public:
     case buffer_field::stride:
     case buffer_field::fold_factor:
       return dim < static_cast<index_t>(dims.size()) ? dims[dim].get_field(field) : expr(op);
-    default: std::cerr << "substituting " << field << " not implemented " << std::endl; std::abort();
+    case buffer_field::none: std::abort();
     }
     return expr(op);
   }
