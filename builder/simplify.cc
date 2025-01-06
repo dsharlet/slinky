@@ -313,7 +313,7 @@ public:
 
 private:
   symbol_map<buffer_info> buffers;
-  symbol_map<expr_info> vars;
+  std::map<var, expr_info> vars;
   bool proving = false;
 
   expr_info result_info;
@@ -343,11 +343,7 @@ public:
     for (size_t ix = 0; ix < alignment.size(); ix++) {
       var id = var(ix);
       if (!alignment[id]) continue;
-      if (vars[id]) {
-        vars[id]->alignment = *alignment[id];
-      } else {
-        vars[id] = {interval_expr(), *alignment[id]};
-      }
+      vars[id].alignment = *alignment[id];
     }
   }
 
@@ -410,27 +406,20 @@ public:
   // This class manages information learned from conditions that can be used to improve bounds.
   class knowledge {
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
-    std::vector<scoped_value_in_symbol_map<expr_info>> vk;
+    std::vector<scoped_value_in_map<var, expr_info>> vk;
     std::vector<scoped_value_in_symbol_map<buffer_info>> bk;
     std::vector<std::pair<expr, expr>> facts;
 
-    symbol_map<expr_info>& vars;
+    std::map<var, expr_info>& vars;
     symbol_map<buffer_info>& buffers;
 
     void add_var_info(const variable* x, interval_expr bounds, alignment_type alignment = {}) {
       if (x->field == buffer_field::none) {
-        std::optional<expr_info> info = vars.lookup(x->sym);
-        if (!info) {
-          ensure_is_point(bounds);
-          info = {std::move(bounds), alignment};
-        } else {
-          info->bounds = simplify_intersection(std::move(info->bounds), std::move(bounds));
-          info->alignment = info->alignment & alignment;
-        }
-        if (auto value = as_constant(info->bounds.as_point())) {
-          // The bounds tell us this is a constant point.
-          info->replacement = *value;
-        }
+        expr_info info;
+        auto i = vars.find(x->sym);
+        if (i != vars.end()) info = i->second;
+        info.bounds = simplify_intersection(std::move(info.bounds), std::move(bounds));
+        info.alignment = info.alignment & alignment;
         vk.push_back(set_value_in_scope(vars, x->sym, std::move(info)));
       } else {
         expr value = bounds.as_point();
@@ -477,7 +466,7 @@ public:
     }
 
   public:
-    knowledge(symbol_map<expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
+    knowledge(std::map<var, expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() { exit_scope(); }
@@ -665,10 +654,11 @@ public:
   bool prove_false(const expr& e) { return prove_constant_false(where_true(e).max); }
 
   void visit(const variable* op) override {
+    auto vars_i = vars.find(op->sym);
     if (op->field != buffer_field::none) {
       var new_sym = op->sym;
-      if (vars.contains(op->sym)) {
-        const expr_info& info = *vars[op->sym];
+      if (vars_i != vars.end()) {
+        const expr_info& info = vars_i->second;
         if (info.replacement.defined()) {
           new_sym = info.replacement_sym();
         }
@@ -718,32 +708,31 @@ public:
       case buffer_field::fold_factor: set_result(std::move(result), {{1, std::move(bounds)}, alignment_type()}); return;
       default: set_result(std::move(result), {point(std::move(bounds)), alignment_type()}); return;
       }
-    } else {
-      if (vars.contains(op->sym)) {
-        expr_info info = *vars[op->sym];
-        if (info.replacement.defined()) {
-          // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment
-          // information.
-          // TODO: Maybe we should intersect any information we already had with this?
-          mutate_and_set_result(info.replacement);
-          return;
-        } else if (auto c = as_constant(info.bounds.as_point())) {
-          set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
-          return;
-        } else {
-          if (!info.bounds.min.defined()) info.bounds.min = expr(op);
-          if (!info.bounds.max.defined()) info.bounds.max = expr(op);
-          set_result(op, std::move(info));
-          return;
-        }
+    } else if (vars_i != vars.end()) {
+      expr_info info = vars_i->second;
+      if (info.replacement.defined()) {
+        // TODO: This seems like it might be expensive, but it's the simplest way to get correct bounds and alignment
+        // information.
+        // TODO: Maybe we should intersect any information we already had with this?
+        mutate_and_set_result(info.replacement);
+        return;
+      } else if (auto c = as_constant(info.bounds.as_point())) {
+        set_result(info.bounds.min, {point(info.bounds.min), alignment_type()});
+        return;
+      } else {
+        if (!info.bounds.min.defined()) info.bounds.min = expr(op);
+        if (!info.bounds.max.defined()) info.bounds.max = expr(op);
+        set_result(op, std::move(info));
+        return;
       }
     }
     set_result(op, {point(expr(op)), alignment_type()});
   }
 
   var visit_symbol(var x) {
-    if (vars.contains(x)) {
-      const expr_info& info = *vars[x];
+    auto i = vars.find(x);
+    if (i != vars.end()) {
+      const expr_info& info = i->second;
       if (info.replacement.defined()) {
         return info.replacement_sym();
       }
@@ -1062,7 +1051,7 @@ public:
     std::vector<std::pair<var, expr>> lets;
     lets.reserve(op->lets.size());
 
-    using sv_type = scoped_value_in_symbol_map<expr_info>;
+    using sv_type = scoped_value_in_map<var, expr_info>;
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
@@ -1088,7 +1077,7 @@ public:
         values_changed = values_changed || !lets.back().second.same_as(s.second);
       }
 
-      assert(!vars.contains(s.first));
+      assert(vars.find(s.first) == vars.end());
       scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
     }
 
@@ -1138,7 +1127,7 @@ public:
       buffer->src = src;
     }
     auto set_buffer = set_value_in_scope(buffers, buf, std::move(buffer));
-    assert(!vars.contains(buf));
+    assert(vars.find(buf) == vars.end());
     return mutate(body);
   }
   // if `decl` is nullptr, the buffer will be substituted.
@@ -1149,7 +1138,7 @@ public:
   }
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds, alignment_type alignment = {}) {
-    assert(!vars.contains(v));
+    assert(vars.find(v) == vars.end());
     auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment});
     return mutate(body);
   }
@@ -1419,7 +1408,7 @@ public:
     var src = visit_symbol(op->src);
     var dst = visit_symbol(op->dst);
 
-    std::vector<scoped_value_in_symbol_map<expr_info>> decls;
+    std::vector<scoped_value_in_map<var, expr_info>> decls;
     for (var i : op->dst_x) {
       decls.push_back(set_value_in_scope(vars, i, expr_info()));
     }

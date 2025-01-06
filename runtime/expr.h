@@ -840,6 +840,73 @@ scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym
   return scoped_value_in_symbol_map<T>(context, sym, std::nullopt);
 }
 
+// Set a value in an eval_context upon construction, and restore the old value upon destruction.
+template <typename K, typename V>
+class scoped_value_in_map {
+  std::map<K, V>* context_;
+  typename std::map<K, V>::iterator i_;
+  std::optional<V> old_value_;
+
+public:
+  scoped_value_in_map(std::map<K, V>& context, const K& key) : context_(&context) {
+    i_ = context.find(key);
+    if (i_ != context.end()) {
+      old_value_ = std::move(i_->second);
+    }
+  }
+  scoped_value_in_map(std::map<K, V>& context, const K& key, V value) : context_(&context) {
+    auto inserted = context.insert(std::make_pair(key, value));
+    i_ = inserted.first;
+    if (!inserted.second) {
+      old_value_ = std::move(i_->second);
+      i_->second = std::move(value);
+    }
+  }
+
+  scoped_value_in_map(scoped_value_in_map&& other) noexcept
+      : context_(other.context_), i_(std::move(other.i_)), old_value_(std::move(other.old_value_)) {
+    // Don't let other.~scoped_value() unset this value.
+    other.context_ = nullptr;
+  }
+  scoped_value_in_map(const scoped_value_in_map&) = delete;
+  scoped_value_in_map& operator=(const scoped_value_in_map&) = delete;
+  scoped_value_in_map& operator=(scoped_value_in_map&& other) noexcept {
+    std::swap(context_, other.context_);
+    std::swap(i_, other.i_);
+    std::swap(old_value_, other.old_value_);
+    return *this;
+  }
+
+  const K& key() const { return i_->first; }
+  const std::optional<V>& old_value() const { return old_value_; }
+
+  void exit_scope() {
+    if (context_) {
+      if (old_value_) {
+        i_->second = std::move(*old_value_);
+      } else {
+        context_->erase(i_);
+      }
+      context_ = nullptr;
+    }
+  }
+
+  ~scoped_value_in_map() { exit_scope(); }
+};
+
+template <typename K, typename V>
+scoped_value_in_map<K, V> set_value_in_scope(std::map<K, V>& context, const K& key, V value) {
+  return scoped_value_in_map<K, V>(context, key, std::move(value));
+}
+template <typename K, typename V>
+scoped_value_in_map<K, V> set_value_in_scope(std::map<K, V>& context, const K& key, std::optional<V> value) {
+  if (value) {
+    return scoped_value_in_map<K, V>(context, key, std::move(*value));
+  } else {
+    return scoped_value_in_map<K, V>(context, key);
+  }
+}
+
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_EXPR_H
