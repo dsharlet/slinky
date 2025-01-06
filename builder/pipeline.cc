@@ -570,6 +570,17 @@ symbol_map<bool> buffers_used_inside(const stmt& body) {
 class pipeline_builder {
   node_context& ctx;
 
+  // Deps.
+  std::map<var, int> deps_count_;
+
+  std::map<var, int> consumers_produced_;
+  std::set<buffer_expr_ptr> candidates_for_allocation_;
+  
+  std::map<var, int> allocation_lifetime_start_;
+  std::map<var, int> allocation_lifetime_end_;
+
+  int functions_produced_ = 0;
+
   // Topologically sorted functions.
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
@@ -744,7 +755,8 @@ class pipeline_builder {
     }
   }
 
-  stmt produce(const func* f) {
+  std::tuple<stmt, int, int> produce(const func* f) {
+    int old_function_produced = functions_produced_;
     stmt result = sanitizer_.mutate(f->make_call());
 
     // Generate the loops that we want to be explicit.
@@ -752,6 +764,53 @@ class pipeline_builder {
       result = make_loop(result, f, loop);
     }
 
+    for (const func::output& o : f->outputs()) {
+      const buffer_expr_ptr& b = o.buffer;
+      if (output_syms_.count(b->sym())) continue;
+
+      candidates_for_allocation_.insert(b);
+      allocation_lifetime_start_[b->sym()] = functions_produced_;
+      consumers_produced_[b->sym()] = 0;
+    }
+
+    for (const auto& i : f->inputs()) {
+      const auto& input = i.buffer;
+      if (input->constant()) {
+        continue;
+      }
+      if (!input->producer()) {
+        continue;
+      }
+
+      consumers_produced_[input->sym()]++;
+
+      if (consumers_produced_[input->sym()] == deps_count_[input->sym()]) {
+        allocation_lifetime_end_[input->sym()] = functions_produced_;
+      }
+    }
+
+    functions_produced_++;
+
+    return std::make_tuple(result, old_function_produced, functions_produced_ - 1);
+  }
+
+  stmt produce_allocation(const buffer_expr_ptr& b, stmt body, symbol_map<var>& uncropped_subs) {
+    var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
+    uncropped_subs[b->sym()] = uncropped;
+    stmt result = clone_buffer::make(uncropped, b->sym(), body);
+
+    const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
+    assert(allocation_bounds_[b->sym()]);
+    // const box_expr& bounds = *allocation_bounds_[b->sym()];
+    result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
+
+    // std::vector<stmt> checks;
+    // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+    //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+    //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+    // }
+
+    // result = block::make(std::move(checks), result);
     return result;
   }
 
@@ -786,6 +845,20 @@ public:
 
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
+  
+    for (const func* f : order_) {
+      for (const auto& i : f->inputs()) {
+        const auto& input = i.buffer;
+        if (input->constant()) {
+          continue;
+        }
+        if (!input->producer()) {
+          continue;
+        }
+
+        deps_count_[input->sym()] += 1;
+      }
+    }
   }
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
@@ -802,27 +875,165 @@ public:
   //   of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
+    symbol_map<var> uncropped_subs;
     std::vector<stmt> results;
-
+    std::vector<std::tuple<stmt, int, int>> ress;
     // Build the functions computed at this loop level.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
+      std::set<buffer_expr_ptr> old_candidates = candidates_for_allocation_;
       if (compute_at->second == at) {
-        results.push_back(produce(f));
+        // std::cout << "Producing: " << f->attrs().name << std::endl;
+        std::tuple<stmt, int, int> f_body = produce(f);
+        // std::cout << "Candidates: " << old_candidates.size() << " " << candidates_for_allocation_.size() << std::endl;
+        if (candidates_for_allocation_.size() > old_candidates.size() + 1) {
+          std::set<buffer_expr_ptr> to_remove;
+          for (buffer_expr_ptr b : candidates_for_allocation_) {
+            if (old_candidates.count(b) > 0) continue;
+            if (consumers_produced_[b->sym()] != deps_count_[b->sym()]) continue;
+            if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
+              // std::cout << "Function consumed and produced in the loop: " << expr(b->sym()) << std::endl;
+              std::get<0>(f_body) = produce_allocation(b, std::get<0>(f_body), uncropped_subs);
+              to_remove.insert(b);
+            }
+          }
+          for (buffer_expr_ptr b: to_remove) {
+            candidates_for_allocation_.erase(b);
+          }
+        }
+
+        results.push_back(std::get<0>(f_body));
+        ress.push_back(f_body);
       }
     }
 
-    stmt result = block::make(std::move(results), body);
+    // stmt result = block::make(std::move(results), body);
 
-    symbol_map<var> uncropped_subs;
+    // 1. Combine buffer sym, start and end times into a vector of tuples.
+    // 2. Sort vector by (end - start) and then sym
+    // 3. iterate over the vector 
+
+    // for (const auto& f : ress) {
+    //   std::cout << "Stmt lifetime:\n" << std::get<0>(f) << "\n" 
+    //             << std::get<1>(f) << " " 
+    //             << std::get<2>(f) << std::endl;
+    // }
+
+    std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
+    for (const auto& b: candidates_for_allocation_) {
+      if (output_syms_.count(b->sym())) continue;
+      if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
+        lifetimes.push_back(std::make_tuple(b,
+                                            allocation_lifetime_start_[b->sym()], 
+                                            allocation_lifetime_end_[b->sym()]));
+      }
+    }
+
+    std::sort(lifetimes.begin(), lifetimes.end(), 
+              [](std::tuple<buffer_expr_ptr, int, int> a,
+                 std::tuple<buffer_expr_ptr, int, int> b) {
+        if (std::get<2>(a) - std::get<1>(a) == std::get<2>(b) - std::get<1>(b)) {
+          return std::get<1>(a) < std::get<1>(b);
+        }
+        return std::get<2>(a) - std::get<1>(a) < std::get<2>(b) - std::get<1>(b);
+    });
+
+    // for (const auto& v : lifetimes) {
+    //   std::cout << "Sorted list: " << expr(std::get<0>(v)->sym()) << " " 
+    //       << std::get<1>(v) << " " 
+    //       << std::get<2>(v) << std::endl;
+    // }
+
+    int iteration_count = 0;
+    while (true) {
+      // std::cout << "\n\n\n NEW ITERATION \n" << lifetimes.size() << " " << ress.size() << "\n\n\n";
+      std::vector<std::tuple<buffer_expr_ptr, int, int>> new_lifetimes;
+      std::vector<std::tuple<stmt, int, int>> new_results;
+
+      std::size_t result_index = 0;
+      for (std::size_t ix = 0; ix < lifetimes.size() && result_index < ress.size();) {
+          // std::cout << "Starting: "
+          //     << std::get<1>(ress[result_index]) << " " 
+          //     << std::get<2>(ress[result_index]) << " " 
+          //     << std::get<1>(lifetimes[ix]) << " "
+          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+
+        while (result_index < ress.size() &&
+               std::get<2>(ress[result_index]) < std::get<1>(lifetimes[ix])) {
+          // std::cout << "Early skipping results: "
+          //     << std::get<1>(ress[result_index]) << " " 
+          //     << std::get<2>(ress[result_index]) << " " 
+          //     << std::get<1>(lifetimes[ix]) << " "
+          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+          new_results.push_back(ress[result_index]);
+          result_index++;
+        }
+        int new_min = 1000000, new_max = -1;
+        // if lifetime overlaps with result x_start <= y_end && y_start <= x_end
+        std::vector<stmt> new_block;
+        while(result_index < ress.size()
+             && std::get<1>(ress[result_index]) <= std::get<2>(lifetimes[ix])
+             && std::get<1>(lifetimes[ix]) <= std::get<2>(ress[result_index])
+             ) {
+          // std::cout << "Overlaps results: "
+          //     << std::get<1>(ress[result_index]) << " " 
+          //     << std::get<2>(ress[result_index]) << " " 
+          //     << std::get<1>(lifetimes[ix]) << " "
+          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+          new_min = std::min(new_min, std::get<1>(ress[result_index]));
+          new_max = std::max(new_max, std::get<2>(ress[result_index]));
+          new_block.push_back(std::get<0>(ress[result_index]));
+          result_index++;
+        }
+        if (!new_block.empty()) {
+          stmt new_body = block::make(new_block);
+          
+          buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
+          new_body = produce_allocation(b, new_body, uncropped_subs);
+          candidates_for_allocation_.erase(b);
+
+          // std::cout << "new_body: \n" << new_body << "\n";
+          new_results.push_back(std::make_tuple(new_body, new_min, new_max));
+        }
+        ix++;
+        // std::cout << "new min/max: " << new_min << " " << new_max << "\n";
+        while (ix < lifetimes.size() 
+               && std::get<1>(lifetimes[ix]) <= new_max) {
+          // std::cout << "Late skipping results: "
+          //     << std::get<1>(lifetimes[ix]) << " "
+          //     << std::get<2>(lifetimes[ix]) << " " << std::endl;
+          new_lifetimes.push_back(lifetimes[ix]);
+          ix++;
+        }
+      }
+
+      for (std::size_t ix = result_index; ix < ress.size(); ix++) {
+        new_results.push_back(ress[ix]);
+      }
+      // std::cout << "Lifetimes count: " << lifetimes.size() << " " << new_lifetimes.size() << std::endl;
+      if (lifetimes.size() == new_lifetimes.size()) break;
+      lifetimes = new_lifetimes;
+      ress = new_results;
+      iteration_count++;
+      // if (iteration_count == 6) break;
+    }
+
+    std::vector<stmt> ress_stmt;
+    for (const auto& rs: ress) {
+      ress_stmt.push_back(std::get<0>(rs));
+    }
+
+    stmt result = block::make(std::move(ress_stmt), body);
+
     // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
     // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
     for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
+        if (candidates_for_allocation_.count(b) == 0) continue;
 
         if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
           var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
@@ -831,16 +1042,20 @@ public:
 
           const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
           assert(allocation_bounds_[b->sym()]);
-          const box_expr& bounds = *allocation_bounds_[b->sym()];
+          // const box_expr& bounds = *allocation_bounds_[b->sym()];
           result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
-          std::vector<stmt> checks;
-          for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-            checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-            checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          }
+          candidates_for_allocation_.erase(b);
+          // std::cout << "Allocating: " << expr(b->sym()) << " " 
+          //     << allocation_lifetime_start_[b->sym()] << " " 
+          //     << allocation_lifetime_end_[b->sym()] << std::endl;
+          // std::vector<stmt> checks;
+          // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+          //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+          //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+          // }
 
-          result = block::make(std::move(checks), result);
+          // result = block::make(std::move(checks), result);
         }
       }
     }
