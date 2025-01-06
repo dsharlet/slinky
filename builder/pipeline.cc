@@ -778,6 +778,7 @@ class pipeline_builder {
 
       candidates_for_allocation_.insert(b);
       allocation_lifetime_start_[b->sym()] = functions_produced_;
+      std::cout << "Lifetime start: " << expr(b->sym()) << " " << functions_produced_ << "\n";
       consumers_produced_[b->sym()] = 0;
     }
 
@@ -795,6 +796,7 @@ class pipeline_builder {
       if (consumers_produced_[input->sym()] == deps_count_[input->sym()]) {
         allocation_lifetime_end_[input->sym()] = functions_produced_;
       }
+      std::cout << "Lifetime end: " << expr(input->sym()) << " " << functions_produced_ << "\n";
     }
 
     functions_produced_++;
@@ -937,7 +939,8 @@ public:
     // 3. iterate over the vector
 
     for (const auto& f : ress) {
-      std::cout << "Stmt lifetime:\n" << std::get<0>(f) << "\n"
+      std::cout << "Stmt lifetime:\n" 
+      // << std::get<0>(f) << "\n"
                 << std::get<1>(f) << " "
                 << std::get<2>(f) << std::endl;
     }
@@ -1007,6 +1010,9 @@ public:
           stmt new_body = block::make(new_block);
 
           buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
+          assert(consumers_produced_[b->sym()] == deps_count_[b->sym()]);
+          
+          std::cout << "Allocating: " << expr(b->sym()) << "\n";
           new_body = produce_allocation(b, new_body, uncropped_subs);
           candidates_for_allocation_.erase(b);
 
