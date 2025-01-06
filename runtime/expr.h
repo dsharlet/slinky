@@ -517,6 +517,16 @@ struct dim_expr {
   bool same_as(const dim_expr& r) const {
     return bounds.same_as(r.bounds) && stride.same_as(r.stride) && fold_factor.same_as(r.fold_factor);
   }
+
+  const expr& get_field(field_id field) const {
+    switch (field) {
+    case field_id::min: return bounds.min;
+    case field_id::max: return bounds.max;
+    case field_id::stride: return stride;
+    case field_id::fold_factor: return fold_factor;
+    default: std::abort();
+    }
+  }
 };
 
 class expr_visitor {
@@ -575,9 +585,9 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<index_t> as_constant(expr_ref x
 }
 
 // If `x` is a variable, returns the `var` of the variable, otherwise `nullopt`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x, field_id field = field_id::none) {
   const variable* vx = x.as<variable>();
-  if (vx && vx->field == field_id::none) {
+  if (vx && vx->field == field) {
     return vx->sym;
   } else {
     return std::nullopt;
@@ -585,13 +595,12 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x) {
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym, field_id field = field_id::none) {
   const variable* vx = x.as<variable>();
-  return vx ? vx->sym == sym && vx->field == field_id::none : false;
+  return vx ? vx->sym == sym && vx->field == field : false;
 }
 
-bool is_buffer_field(expr_ref x, field_id field, var b);
-bool is_buffer_field(expr_ref x, field_id field, var b, int dim);
+bool is_variable(expr_ref x, var b, field_id field, int dim);
 
 // Check if `x` is equal to the constant `value`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_constant(expr_ref x, index_t value) {

@@ -349,7 +349,7 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
       auto buf = as_variable(args[0]);
       assert(buf);
       // buffer_at(b, buffer_min(b, 0)) is equivalent to buffer_at(b, <>)
-      if (args[d].defined() && is_buffer_field(args[d], field_id::min, *buf, d - 1)) {
+      if (args[d].defined() && is_variable(args[d], *buf, field_id::min, d - 1)) {
         args[d] = expr();
         changed = true;
       }

@@ -37,16 +37,6 @@ expr strip_boolean(expr x) {
   return x;
 }
 
-const expr& eval_buffer_field(field_id field, const dim_expr& d) {
-  switch (field) {
-  case field_id::min: return d.bounds.min;
-  case field_id::max: return d.bounds.max;
-  case field_id::stride: return d.stride;
-  case field_id::fold_factor: return d.fold_factor;
-  default: std::abort();
-  }
-}
-
 bool deep_is_point(const interval_expr& x) { return x.is_point() || match(x.min, x.max); }
 
 // Ensure that an interval that is a point in a deep equality sense is also a point in a shallow equality sense.
@@ -815,8 +805,7 @@ public:
         case field_id::stride:
         case field_id::fold_factor:
           if (op->dim < static_cast<index_t>(info->dims.size())) {
-            const expr& value = eval_buffer_field(op->field, info->dims[op->dim]);
-            if (visit_buffer_meta_value(value)) return;
+            if (visit_buffer_meta_value(info->dims[op->dim].get_field(op->field))) return;
           }
           break;
         default: break;
@@ -1621,39 +1610,39 @@ public:
 
   // If d is equal to buffer_dim(sym, x), return x, otherwise return -1.
   int is_buffer_dim(const dim_expr& d, var sym) {
-    if (is_buffer_field(d.bounds.min, field_id::min, sym)) {
+    if (is_variable(d.bounds.min, sym, field_id::min)) {
       int dim = d.bounds.min.as<variable>()->dim;
-      if (is_buffer_field(d.bounds.max, field_id::max, sym, dim) &&
-          is_buffer_field(d.stride, field_id::stride, sym, dim) &&
-          is_buffer_field(d.fold_factor, field_id::fold_factor, sym, dim)) {
+      if (is_variable(d.bounds.max, sym, field_id::max, dim) &&
+          is_variable(d.stride, sym, field_id::stride, dim) &&
+          is_variable(d.fold_factor, sym, field_id::fold_factor, dim)) {
         return dim;
       }
     }
     return -1;
   }
 
-  bool is_buffer_meta(const expr& x, const expr& value, field_id field, var sym, int dim) {
-    return (!x.defined() && !value.defined()) || is_buffer_field(x, field, sym, dim) || prove_true(x == value);
+  bool is_buffer_meta(const expr& x, const expr& value, var sym, field_id field, int dim) {
+    return (!x.defined() && !value.defined()) || is_variable(x, sym, field, dim) || prove_true(x == value);
   }
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
   bool is_buffer_dim(const dim_expr& d, const dim_expr& src, var sym, int dim) {
-    if (!is_buffer_meta(d.bounds.min, src.bounds.min, field_id::min, sym, dim)) return false;
-    if (!is_buffer_meta(d.bounds.max, src.bounds.max, field_id::max, sym, dim)) return false;
+    if (!is_buffer_meta(d.bounds.min, src.bounds.min, sym, field_id::min, dim)) return false;
+    if (!is_buffer_meta(d.bounds.max, src.bounds.max, sym, field_id::max, dim)) return false;
 
     if (prove_true(src.bounds.min == src.bounds.max)) {
       // The extent is 1, the stride and fold factor don't matter.
       return true;
     } else {
-      return is_buffer_meta(d.stride, src.stride, field_id::stride, sym, dim) &&
-             is_buffer_meta(d.fold_factor, src.fold_factor, field_id::fold_factor, sym, dim);
+      return is_buffer_meta(d.stride, src.stride, sym, field_id::stride, dim) &&
+             is_buffer_meta(d.fold_factor, src.fold_factor, sym, field_id::fold_factor, dim);
     }
   }
 
   // If we know that buffer metadata has some values, rewrite references to that dim to use buffer intrinsics
   // when those references use the same values.
   void canonicalize_buffer_meta(expr& x, const expr& value, field_id field, var sym) {
-    if (!is_buffer_field(x, field, sym) && prove_true(x == value)) x = variable::make(sym, field);
+    if (!is_variable(x, sym, field) && prove_true(x == value)) x = variable::make(sym, field);
   }
   void canonicalize_buffer(buffer_info& buf, const buffer_info& src, var sym) {
     scoped_trace trace("canonicalize_buffer");
@@ -1740,8 +1729,8 @@ public:
         auto is_crop = [&]() {
           if (bc->args.size() > info.dims.size() + 1) return false;
           for (index_t d = 0; d < static_cast<index_t>(info.dims.size()); ++d) {
-            if (!is_buffer_field(info.dims[d].stride, field_id::stride, *src_buf, d) ||
-                !is_buffer_field(info.dims[d].fold_factor, field_id::fold_factor, *src_buf, d)) {
+            if (!is_variable(info.dims[d].stride, *src_buf, field_id::stride, d) ||
+                !is_variable(info.dims[d].fold_factor, *src_buf, field_id::fold_factor, d)) {
               return false;
             }
 
@@ -1967,8 +1956,8 @@ public:
     rewrite::pattern_wildcard<3> w;
     rewrite::match_context ctx;
     if (match(ctx, select(x < y, z, w), result.min)) {
-      if (is_buffer_field(ctx.matched(x), field_id::max, buf, dim) &&
-          is_buffer_field(ctx.matched(y), field_id::min, buf, dim)) {
+      if (is_variable(ctx.matched(x), buf, field_id::max, dim) &&
+          is_variable(ctx.matched(y), buf, field_id::min, dim)) {
         // This select is a check that the dimension we are cropping is empty.
         // If the buffer is empty, it doesn't matter what we do, the resulting crop will still be empty, so we can
         // just take the new min.
@@ -1976,9 +1965,9 @@ public:
       }
     } else if (match(ctx, x + min(y, z), result.min)) {
       // This is the same as above, but the select was simplified.
-      if (is_buffer_field(ctx.matched(y), field_id::max, buf, dim) || match(ctx.matched(y), result.max)) {
+      if (is_variable(ctx.matched(y), buf, field_id::max, dim) || match(ctx.matched(y), result.max)) {
         result.min = mutate(ctx.matched(x) + ctx.matched(z));
-      } else if (is_buffer_field(ctx.matched(z), field_id::max, buf, dim) || match(ctx.matched(z), result.max)) {
+      } else if (is_variable(ctx.matched(z), buf, field_id::max, dim) || match(ctx.matched(z), result.max)) {
         result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }

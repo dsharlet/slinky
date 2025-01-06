@@ -632,15 +632,7 @@ bool is_non_positive(expr_ref x) {
   return c ? *c <= 0 : false;
 }
 
-bool is_buffer_field(expr_ref x, field_id field, var b) {
-  if (const variable* v = x.as<variable>()) {
-    return v->sym == b && v->field == field;
-  } else {
-    return false;
-  }
-}
-
-bool is_buffer_field(expr_ref x, field_id field, var b, int dim) {
+bool is_variable(expr_ref x, var b, field_id field, int dim) {
   if (const variable* v = x.as<variable>()) {
     return v->sym == b && v->field == field && v->dim == dim;
   } else {
