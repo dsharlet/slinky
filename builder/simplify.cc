@@ -643,8 +643,8 @@ public:
       } else {
         const variable* av = a.as<variable>();
         const variable* bv = b.as<variable>();
-        if (av) add_var_info(av->sym, {expr(), b - 1});
-        if (bv) add_var_info(bv->sym, {a + 1, expr()});
+        if (av) add_var_info(av->sym, {expr(), simplify(static_cast<const add*>(nullptr), b, -1)});
+        if (bv) add_var_info(bv->sym, {simplify(static_cast<const add*>(nullptr), a, 1), expr()});
         if (!(av || bv)) {
           // We couldn't learn from this, just remember it as a fact.
           facts.push_back({a < b, true});
