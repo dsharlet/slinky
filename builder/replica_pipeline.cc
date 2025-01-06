@@ -71,7 +71,7 @@ public:
       name_ = print(var(op->sym));
     }
 
-    if (op->field != field_id::none) {
+    if (op->field != buffer_field::none) {
       name_ = std::string("(buffer_") + to_string(op->field) + "(" + name_;
       if (op->dim >= 0) {
         name_ += ", ";
@@ -175,19 +175,19 @@ public:
     }
 
     for (std::size_t d = 0; d < bep->rank(); d++) {
-      if (!is_variable(bep->dim(d).bounds.min, bep->sym(), field_id::min, d)) {
+      if (!is_variable(bep->dim(d).bounds.min, bep->sym(), buffer_field::min, d)) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.min);
         os_ << "  " << name << "->dim(" << d << ").bounds.min = " << e << ";\n";
       }
-      if (!is_variable(bep->dim(d).bounds.max, bep->sym(), field_id::max, d)) {
+      if (!is_variable(bep->dim(d).bounds.max, bep->sym(), buffer_field::max, d)) {
         std::string e = print_expr_inlined(bep->dim(d).bounds.max);
         os_ << "  " << name << "->dim(" << d << ").bounds.max = " << e << ";\n";
       }
-      if (!is_variable(bep->dim(d).stride, bep->sym(), field_id::stride, d)) {
+      if (!is_variable(bep->dim(d).stride, bep->sym(), buffer_field::stride, d)) {
         std::string e = print_expr_inlined(bep->dim(d).stride);
         os_ << "  " << name << "->dim(" << d << ").stride = " << e << ";\n";
       }
-      if (!is_variable(bep->dim(d).fold_factor, bep->sym(), field_id::fold_factor, d)) {
+      if (!is_variable(bep->dim(d).fold_factor, bep->sym(), buffer_field::fold_factor, d)) {
         std::string e = print_expr_inlined(bep->dim(d).fold_factor);
         os_ << "  " << name << "->dim(" << d << ").fold_factor = (index_t) " << e << ";\n";
       }

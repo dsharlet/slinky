@@ -377,7 +377,7 @@ void substitutor::visit(const variable* op) {
     return;
   }
   expr result = new_sym != op->sym ? variable::make(new_sym, op->field, op->dim) : expr(op);
-  if (op->field != field_id::none) {
+  if (op->field != buffer_field::none) {
     set_result(mutate_variable(result.as<variable>(), new_sym, op->field, op->dim));
   } else {
     set_result(std::move(result));
@@ -484,20 +484,20 @@ interval_expr substitute_crop_bounds(substitutor* this_, var new_src, var src, i
   // When substituting crop bounds, we need to apply the implicit clamp, which uses buffer_min(src, dim) and
   // buffer_max(src, dim).
   interval_expr result = this_->mutate(bounds);
-  if (is_variable(result.min, new_src, field_id::min, dim)) {
+  if (is_variable(result.min, new_src, buffer_field::min, dim)) {
     result.min = expr();
-  } else if (!is_variable(bounds.min, src, field_id::min, dim)) {
-    expr new_bounds = this_->mutate_variable(nullptr, src, field_id::min, dim);
-    if (new_bounds.defined() && !is_variable(new_bounds, new_src, field_id::min, dim)) {
+  } else if (!is_variable(bounds.min, src, buffer_field::min, dim)) {
+    expr new_bounds = this_->mutate_variable(nullptr, src, buffer_field::min, dim);
+    if (new_bounds.defined() && !is_variable(new_bounds, new_src, buffer_field::min, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.min = max(result.min, new_bounds);
     }
   }
-  if (is_variable(result.max, new_src, field_id::max, dim)) {
+  if (is_variable(result.max, new_src, buffer_field::max, dim)) {
     result.max = expr();
-  } else if (!is_variable(bounds.max, src, field_id::max, dim)) {
-    expr new_bounds = this_->mutate_variable(nullptr, src, field_id::max, dim);
-    if (new_bounds.defined() && !is_variable(new_bounds, new_src, field_id::max, dim)) {
+  } else if (!is_variable(bounds.max, src, buffer_field::max, dim)) {
+    expr new_bounds = this_->mutate_variable(nullptr, src, buffer_field::max, dim);
+    if (new_bounds.defined() && !is_variable(new_bounds, new_src, buffer_field::max, dim)) {
       // The substitution changed the implicit clamp, include it.
       result.max = min(result.max, new_bounds);
     }
@@ -555,14 +555,14 @@ void substitutor::visit(const call* op) {
     for (std::size_t d = 0; d < buf_rank; ++d) {
       if (d + 1 >= args.size() || !args[d + 1].defined()) {
         // buffer_at has an implicit buffer_min if it is not defined.
-        expr min = mutate_variable(nullptr, *buf, field_id::min, d);
+        expr min = mutate_variable(nullptr, *buf, buffer_field::min, d);
         if (min.defined()) {
-          assert(!is_variable(min, *buf, field_id::min, d));
+          assert(!is_variable(min, *buf, buffer_field::min, d));
           args.resize(std::max(args.size(), d + 2));
           args[d + 1] = min;
           changed = true;
         }
-      } else if (d + 1 < args.size() && is_variable(args[d + 1], *buf, field_id::min, d)) {
+      } else if (d + 1 < args.size() && is_variable(args[d + 1], *buf, buffer_field::min, d)) {
         args[d + 1] = expr();
         changed = true;
       }
@@ -673,7 +673,7 @@ public:
 
   void visit(const variable* v) override {
     if (v->sym == target) {
-      if (v->field != field_id::none) {
+      if (v->field != buffer_field::none) {
         // The replacement must be another var.
         set_result(variable::make(replacement_symbol(replacement), v->field, v->dim));
       } else {
@@ -722,16 +722,16 @@ public:
 
   std::size_t get_target_buffer_rank(var x) override { return x == target ? dims.size() : 0; }
 
-  expr mutate_variable(const variable* op, var buf, field_id field, int dim) override {
+  expr mutate_variable(const variable* op, var buf, buffer_field field, int dim) override {
     if (buf != target) return expr(op);
 
     switch (field) {
-    case field_id::rank: return expr(dims.size());
-    case field_id::elem_size: return elem_size.defined() ? elem_size : expr(op);
-    case field_id::min:
-    case field_id::max:
-    case field_id::stride:
-    case field_id::fold_factor:
+    case buffer_field::rank: return expr(dims.size());
+    case buffer_field::elem_size: return elem_size.defined() ? elem_size : expr(op);
+    case buffer_field::min:
+    case buffer_field::max:
+    case buffer_field::stride:
+    case buffer_field::fold_factor:
       return dim < static_cast<index_t>(dims.size()) ? dims[dim].get_field(field) : expr(op);
     default: std::cerr << "substituting " << field << " not implemented " << std::endl; std::abort();
     }

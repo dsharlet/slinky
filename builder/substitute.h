@@ -38,7 +38,7 @@ public:
   virtual var visit_symbol(var x) { return x; }
 
   // Implementation of substitution for buffer fields.
-  virtual expr mutate_variable(const variable* op, var buf, field_id field, int dim) { return expr(op); }
+  virtual expr mutate_variable(const variable* op, var buf, buffer_field field, int dim) { return expr(op); }
 
   // The implementation must provide the maximum rank of any substitution of buffer metadata for x.
   virtual std::size_t get_target_buffer_rank(var x) { return 0; }

@@ -157,16 +157,16 @@ public:
   index_t eval(const variable* op) {
     auto value = context.lookup(op->sym);
     assert(value);
-    if (op->field == field_id::none) return *value;
+    if (op->field == buffer_field::none) return *value;
 
     const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*value);
     switch (op->field) {
-    case field_id::rank: return buf->rank;
-    case field_id::elem_size: return buf->elem_size;
-    case field_id::min: return buf->dim(op->dim).min();
-    case field_id::max: return buf->dim(op->dim).max();
-    case field_id::stride: return buf->dim(op->dim).stride();
-    case field_id::fold_factor: return buf->dim(op->dim).fold_factor();
+    case buffer_field::rank: return buf->rank;
+    case buffer_field::elem_size: return buf->elem_size;
+    case buffer_field::min: return buf->dim(op->dim).min();
+    case buffer_field::max: return buf->dim(op->dim).max();
+    case buffer_field::stride: return buf->dim(op->dim).stride();
+    case buffer_field::fold_factor: return buf->dim(op->dim).fold_factor();
     default: std::abort();
     }
   }

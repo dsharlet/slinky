@@ -99,7 +99,7 @@ const constant* make_static_constant() {
 const variable* make_variable(var sym) {
   auto n = new variable();
   n->sym = sym;
-  n->field = field_id::none;
+  n->field = buffer_field::none;
   n->dim = -1;
   return n;
 }
@@ -126,7 +126,7 @@ expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return expr(make_variable(sym)); }
-expr variable::make(var sym, field_id field, int dim) { 
+expr variable::make(var sym, buffer_field field, int dim) { 
   variable* n = new variable();
   n->sym = sym;
   n->field = field;
@@ -632,7 +632,7 @@ bool is_non_positive(expr_ref x) {
   return c ? *c <= 0 : false;
 }
 
-bool is_variable(expr_ref x, var b, field_id field, int dim) {
+bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
   if (const variable* v = x.as<variable>()) {
     return v->sym == b && v->field == field && v->dim == dim;
   } else {
@@ -649,17 +649,17 @@ expr and_then(std::vector<expr> args) { return call::make(intrinsic::and_then, s
 expr or_else(std::vector<expr> args) { return call::make(intrinsic::or_else, std::move(args)); }
 
 expr buffer_rank(var buf) {
-  return variable::make(buf, field_id::rank);
+  return variable::make(buf, buffer_field::rank);
 }
-expr buffer_elem_size(var buf) { return variable::make(buf, field_id::elem_size); }
-expr buffer_min(var buf, int dim) { return variable::make(buf, field_id::min, dim); }
-expr buffer_max(var buf, int dim) { return variable::make(buf, field_id::max, dim); }
+expr buffer_elem_size(var buf) { return variable::make(buf, buffer_field::elem_size); }
+expr buffer_min(var buf, int dim) { return variable::make(buf, buffer_field::min, dim); }
+expr buffer_max(var buf, int dim) { return variable::make(buf, buffer_field::max, dim); }
 expr buffer_extent(var buf, int dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
 expr buffer_stride(var buf, int dim) {
-  return variable::make(buf, field_id::stride, dim);
+  return variable::make(buf, buffer_field::stride, dim);
 }
 expr buffer_fold_factor(var buf, int dim) {
-  return variable::make(buf, field_id::fold_factor, dim);
+  return variable::make(buf, buffer_field::fold_factor, dim);
 }
 
 interval_expr buffer_bounds(var buf, int dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }

@@ -17,16 +17,16 @@ const char* to_string(memory_type type) {
   }
 }
 
-const char* to_string(field_id m) {
+const char* to_string(buffer_field m) {
   switch (m) {
-  case field_id::rank: return "rank";
-  case field_id::elem_size: return "elem_size";
-  case field_id::min: return "min";
-  case field_id::max: return "max";
-  case field_id::stride: return "stride";
-  case field_id::fold_factor: return "fold_factor";
+  case buffer_field::rank: return "rank";
+  case buffer_field::elem_size: return "elem_size";
+  case buffer_field::min: return "min";
+  case buffer_field::max: return "max";
+  case buffer_field::stride: return "stride";
+  case buffer_field::fold_factor: return "fold_factor";
 
-  default: return "<invalid field_id>";
+  default: return "<invalid buffer_field>";
   }
 }
 
@@ -53,7 +53,7 @@ const char* to_string(intrinsic fn) {
 
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
-std::ostream& operator<<(std::ostream& os, field_id f) { return os << to_string(f); }
+std::ostream& operator<<(std::ostream& os, buffer_field f) { return os << to_string(f); }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
@@ -152,13 +152,13 @@ public:
 
   void visit(const variable* v) override { 
     switch (v->field) {
-    case field_id::none: *this << v->sym; return;
-    case field_id::rank: *this << "buffer_rank(" << v->sym << ")"; return;
-    case field_id::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
-    case field_id::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
-    case field_id::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
-    case field_id::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
-    case field_id::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::none: *this << v->sym; return;
+    case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
+    case buffer_field::elem_size: *this << "buffer_elem_size(" << v->sym << ")"; return;
+    case buffer_field::min: *this << "buffer_min(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
+    case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
     default: std::abort();
     }
   }

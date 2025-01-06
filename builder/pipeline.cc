@@ -251,7 +251,7 @@ public:
   }
 
   void visit(const variable* op) override {
-    if (op->field == field_id::none) {
+    if (op->field == buffer_field::none) {
       node_mutator::visit(op);
       return;
     }

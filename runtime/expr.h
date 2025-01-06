@@ -21,18 +21,6 @@ namespace slinky {
 class node_context;
 class expr;
 
-enum class field_id : unsigned {
-  none = 0,
-
-  rank,
-  elem_size,
-
-  min,
-  max,
-  stride,
-  fold_factor,
-};
-
 class var {
 public:
   using type = std::size_t;
@@ -133,6 +121,18 @@ enum class intrinsic {
 
   // Free a buffer.
   free,
+};
+
+enum class buffer_field : unsigned {
+  none = 0,
+
+  rank,
+  elem_size,
+
+  min,
+  max,
+  stride,
+  fold_factor,
 };
 
 class expr_visitor;
@@ -370,14 +370,22 @@ public:
 
 class variable : public expr_node<variable> {
 public:
+  // The variable being referenced.
   var sym;
-  field_id field;
+
+  // THe field of the variable being referenced, if any (field != buffer_field::none).
+  buffer_field field;
+
+  // If `field` is a per-dimension field, which dimension being referenced.
   int dim;
 
   void accept(expr_visitor* v) const override;
 
+  // Make a scalar variable reference.
   static expr make(var sym);
-  static expr make(var sym, field_id field, int dim = -1);
+
+  // Make a reference to a field of a buffer.
+  static expr make(var sym, buffer_field field, int dim = -1);
 
   static constexpr expr_node_type static_type = expr_node_type::variable;
 };
@@ -518,12 +526,12 @@ struct dim_expr {
     return bounds.same_as(r.bounds) && stride.same_as(r.stride) && fold_factor.same_as(r.fold_factor);
   }
 
-  const expr& get_field(field_id field) const {
+  const expr& get_field(buffer_field field) const {
     switch (field) {
-    case field_id::min: return bounds.min;
-    case field_id::max: return bounds.max;
-    case field_id::stride: return stride;
-    case field_id::fold_factor: return fold_factor;
+    case buffer_field::min: return bounds.min;
+    case buffer_field::max: return bounds.max;
+    case buffer_field::stride: return stride;
+    case buffer_field::fold_factor: return fold_factor;
     default: std::abort();
     }
   }
@@ -585,7 +593,7 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<index_t> as_constant(expr_ref x
 }
 
 // If `x` is a variable, returns the `var` of the variable, otherwise `nullopt`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x, field_id field = field_id::none) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x, buffer_field field = buffer_field::none) {
   const variable* vx = x.as<variable>();
   if (vx && vx->field == field) {
     return vx->sym;
@@ -595,12 +603,12 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE std::optional<var> as_variable(expr_ref x, fi
 }
 
 // Check if `x` is a variable equal to the symbol `sym`.
-SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym, field_id field = field_id::none) {
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_variable(expr_ref x, var sym, buffer_field field = buffer_field::none) {
   const variable* vx = x.as<variable>();
   return vx ? vx->sym == sym && vx->field == field : false;
 }
 
-bool is_variable(expr_ref x, var b, field_id field, int dim);
+bool is_variable(expr_ref x, var b, buffer_field field, int dim);
 
 // Check if `x` is equal to the constant `value`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_constant(expr_ref x, index_t value) {

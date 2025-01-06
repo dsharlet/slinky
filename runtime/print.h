@@ -24,7 +24,7 @@ std::ostream& operator<<(std::ostream& os, var sym);
 std::ostream& operator<<(std::ostream& os, const interval_expr& i);
 std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
-std::ostream& operator<<(std::ostream& os, field_id f);
+std::ostream& operator<<(std::ostream& os, buffer_field f);
 std::ostream& operator<<(std::ostream& os, memory_type type);
 
 template <typename T>
@@ -40,7 +40,7 @@ std::ostream& operator<<(std::ostream& os, const dim& d);
 // to_string() calls.
 std::string to_string(var sym);
 const char* to_string(intrinsic fn);
-const char* to_string(field_id f);
+const char* to_string(buffer_field f);
 const char* to_string(memory_type type);
 
 }  // namespace slinky
