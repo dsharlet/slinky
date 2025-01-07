@@ -191,7 +191,10 @@ public:
   void visit(const call*) override { set_result(expr()); }
 };
 
-expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a); }
+expr add_constant(const expr& a, index_t b) { 
+  if (b == 0) return a;
+  return constant_adder(b).mutate(a); 
+}
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
@@ -753,7 +756,7 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    auto less_equal = [this](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
+    auto less_equal = [](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
       return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
              (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
              (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
@@ -1665,7 +1668,7 @@ public:
         return body;
       } else if (can_substitute_buffer(deps)) {
         // We only needed the buffer meta, not the buffer itself.
-        return mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_dependency(base), std::move(info));
+        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), std::move(info));
       } else if (changed || !body.same_as(op->body)) {
         return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
       } else {
@@ -1871,9 +1874,6 @@ public:
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
         op_bounds = c->bounds & op_bounds;
-        for (interval_expr& i : op_bounds) {
-          i = mutate(i);
-        }
         op_src = c->src;
         info = get_buffer_info(op_src, op_bounds.size());
         op = nullptr;
@@ -1885,7 +1885,7 @@ public:
         }
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max<int>(op_bounds.size(), c->dim + 1));
-        op_bounds[c->dim] = mutate(c->bounds & op_bounds[c->dim]);
+        op_bounds[c->dim] = c->bounds & op_bounds[c->dim];
         op_src = c->src;
         info = get_buffer_info(op_src, op_bounds.size());
         op = nullptr;
