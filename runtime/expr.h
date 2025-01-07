@@ -670,8 +670,9 @@ expr align_up(expr x, const expr& a);
 // Expand the interval to have a min and extent aligned to a multiple of a.
 interval_expr align(interval_expr x, const expr& a);
 
-expr and_then(std::vector<expr> args);
-expr or_else(std::vector<expr> args);
+// Short circuiting `and` and `or` ops.
+expr and_then(expr a, expr b);
+expr or_else(expr a, expr b);
 
 expr buffer_rank(var buf);
 expr buffer_elem_size(var buf);

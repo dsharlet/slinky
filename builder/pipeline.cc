@@ -900,7 +900,7 @@ void check_buffer_constraints(const buffer_expr_ptr& b, bool output, std::vector
     checks.push_back(check::make(b->dim(d).stride == buffer_stride(b->sym(), d)));
     checks.push_back(check::make(b->dim(d).fold_factor == fold_factor));
     if (output) {
-      checks.push_back(check::make(or_else({fold_factor == dim::unfolded, b->dim(d).extent() <= fold_factor})));
+      checks.push_back(check::make(or_else(fold_factor == dim::unfolded, b->dim(d).extent() <= fold_factor)));
     }
   }
 }

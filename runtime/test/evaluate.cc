@@ -56,13 +56,13 @@ TEST(evaluate, arithmetic) {
 
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 
-  ASSERT_EQ(evaluate(and_then({expr(true), expr(true)})), true);
-  ASSERT_EQ(evaluate(and_then({expr(true), expr(false)})), false);
-  ASSERT_EQ(evaluate(and_then({expr(false), indeterminate()})), false);
-  ASSERT_EQ(evaluate(or_else({expr(true), expr(true)})), true);
-  ASSERT_EQ(evaluate(or_else({expr(false), expr(true)})), true);
-  ASSERT_EQ(evaluate(or_else({expr(false), expr(false)})), false);
-  ASSERT_EQ(evaluate(or_else({expr(true), indeterminate()})), true);
+  ASSERT_EQ(evaluate(and_then(expr(true), expr(true))), true);
+  ASSERT_EQ(evaluate(and_then(expr(true), expr(false))), false);
+  ASSERT_EQ(evaluate(and_then(expr(false), indeterminate())), false);
+  ASSERT_EQ(evaluate(or_else(expr(true), expr(true))), true);
+  ASSERT_EQ(evaluate(or_else(expr(false), expr(true))), true);
+  ASSERT_EQ(evaluate(or_else(expr(false), expr(false))), false);
+  ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
 }
 
 TEST(evaluate, undef) {
