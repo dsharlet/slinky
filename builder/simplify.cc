@@ -756,7 +756,7 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    auto less_equal = [this](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
+    auto less_equal = [](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
       return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
              (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
              (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
