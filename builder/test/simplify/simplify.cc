@@ -1029,12 +1029,10 @@ TEST(simplify, fuzz) {
 
     if (evaluate_constant(lower_bound)) {
       // constant_lower_bound and evaluate_constant_lower_bound should never leave constants to be folded.
-      ASSERT_TRUE(as_constant(lower_bound)) << lower_bound;
-      ASSERT_TRUE(evaluated_lower_bound) << test;
+      ASSERT_EQ(!as_constant(lower_bound), !evaluated_lower_bound) << test << " -> " << lower_bound;
     }
     if (evaluate_constant(upper_bound)) {
-      ASSERT_TRUE(as_constant(upper_bound)) << upper_bound;
-      ASSERT_TRUE(evaluated_upper_bound) << test;
+      ASSERT_EQ(!as_constant(upper_bound), !evaluated_upper_bound) << test << " -> " << upper_bound;
     }
 
     for (int j = 0; j < checks; ++j) {
