@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "runtime/depends_on.h"
@@ -13,6 +14,8 @@ var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
+var u(symbols, "u");
+var v(symbols, "v");
 var xc(symbols, "xc");
 var yc(symbols, "yc");
 
@@ -101,6 +104,23 @@ TEST(depends_on, is_pure) {
   ASSERT_TRUE(is_pure(abs(x)));
   ASSERT_FALSE(is_pure(buffer_min(x, 0)));
   ASSERT_FALSE(is_pure(y + buffer_min(x, 0)));
+}
+
+TEST(find_buffer_dependencies, basic) {
+  ASSERT_EQ(find_buffer_dependency(buffer_at(x)), x);
+  ASSERT_EQ(find_buffer_dependency(buffer_at(x) + buffer_at(y)), var());
+
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(x, y, {}, call_stmt::make(nullptr, {y}, {x}, {}))),
+      testing::ElementsAre(y));
+
+  stmt test = block::make({
+      crop_buffer::make(z, x, {}, call_stmt::make(nullptr, {y}, {z}, {})),
+      slice_buffer::make(z, w, {}, call_stmt::make(nullptr, {y}, {z}, {})),
+      make_buffer::make(v, buffer_at(u), buffer_elem_size(u), {}, call_stmt::make(nullptr, {x}, {v}, {})),
+  });
+
+  ASSERT_THAT(find_buffer_dependencies(test, /*input=*/true, /*output=*/false), testing::ElementsAre(x, y));
+  ASSERT_THAT(find_buffer_dependencies(test, /*input=*/false, /*output=*/true), testing::ElementsAre(x, w, u));
 }
 
 }  // namespace slinky
