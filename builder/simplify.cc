@@ -2306,16 +2306,16 @@ public:
 
   template <typename T>
   void visit_logical_and_or(const T* op, int new_sign) {
-    expr a = mutate(op->a, new_sign);
-    expr b = mutate(op->b, new_sign);
+    expr a = strip_boolean(mutate(op->a, new_sign));
+    expr b = strip_boolean(mutate(op->b, new_sign));
 
     if (as_constant(b)) std::swap(a, b);
 
     if (auto ca = as_constant(a)) {
       if (*ca) {
-        set_result(std::is_same<T, logical_and>::value ? std::move(b) : std::move(a));
+        set_result(boolean(std::is_same<T, logical_and>::value ? std::move(b) : std::move(a)));
       } else {
-        set_result(std::is_same<T, logical_and>::value ? std::move(a) : std::move(b));
+        set_result(boolean(std::is_same<T, logical_and>::value ? std::move(a) : std::move(b)));
       }
     } else if (sign != 0) {
       // If we don't know anything about a logical op, the result is either 0 or 1.
@@ -2337,7 +2337,7 @@ public:
   void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
-    expr a = mutate(op->a, -sign);
+    expr a = strip_boolean(mutate(op->a, -sign));
     if (auto ca = as_constant(a)) {
       set_result(*ca != 0 ? 0 : 1);
     } else if (sign != 0) {
@@ -2351,7 +2351,7 @@ public:
     }
   }
   void visit(const class select* op) override {
-    expr c = mutate(op->condition, 0);
+    expr c = strip_boolean(mutate(op->condition, 0));
     if (auto cc = as_constant(c)) {
       set_result(mutate(*cc ? op->true_value : op->false_value));
       return;
@@ -2390,20 +2390,20 @@ public:
       // - We're constant folding.
       const bool is_and = op->intrinsic == intrinsic::and_then;
       const int new_sign = is_and ? std::min(sign, 0) : std::max(sign, 0);
-      expr a = mutate(op->args[0], new_sign);
-      expr b = mutate(op->args[1], new_sign);
+      expr a = strip_boolean(mutate(op->args[0], new_sign));
+      expr b = strip_boolean(mutate(op->args[1], new_sign));
 
       if (auto ca = as_constant(a)) {
         if (*ca) {
-          set_result(is_and ? std::move(b) : std::move(a));
+          set_result(boolean(is_and ? std::move(b) : std::move(a)));
         } else {
-          set_result(is_and ? std::move(a) : std::move(b));
+          set_result(boolean(is_and ? std::move(a) : std::move(b)));
         }
       } else if (auto cb = as_constant(b)) {
         if (*cb) {
-          set_result(is_and ? std::move(a) : std::move(b));
+          set_result(boolean(is_and ? std::move(a) : std::move(b)));
         } else {
-          set_result(is_and ? std::move(b) : std::move(a));
+          set_result(boolean(is_and ? std::move(b) : std::move(a)));
         }
       } else if (sign != 0) {
         // If we don't know anything about a logical op, the result is either 0 or 1.
