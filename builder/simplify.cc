@@ -191,7 +191,10 @@ public:
   void visit(const call*) override { set_result(expr()); }
 };
 
-expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a); }
+expr add_constant(const expr& a, index_t b) { 
+  if (b == 0) return a;
+  return constant_adder(b).mutate(a); 
+}
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {

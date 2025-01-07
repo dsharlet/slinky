@@ -674,7 +674,8 @@ public:
     if (v->sym == target) {
       if (v->field != buffer_field::none) {
         // The replacement must be another var.
-        set_result(variable::make(replacement_symbol(replacement), v->field, v->dim));
+        var new_sym = replacement_symbol(replacement);
+        set_result(new_sym == v->sym ? expr(v) : variable::make(new_sym, v->field, v->dim));
       } else {
         set_result(replacement);
       }
@@ -741,12 +742,15 @@ public:
 }  // namespace
 
 expr substitute(const expr& e, var target, const expr& replacement) {
+  if (is_variable(replacement, target)) return e;
   return var_substitutor(target, replacement).mutate(e);
 }
 interval_expr substitute(const interval_expr& x, var target, const expr& replacement) {
+  if (is_variable(replacement, target)) return x;
   return var_substitutor(target, replacement).mutate(x);
 }
 stmt substitute(const stmt& s, var target, const expr& replacement) {
+  if (is_variable(replacement, target)) return s;
   scoped_trace trace("substitute");
   return var_substitutor(target, replacement).mutate(s);
 }
