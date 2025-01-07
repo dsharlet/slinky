@@ -53,13 +53,15 @@ public:
   expr random_condition(int depth) {
     auto a = [&]() { return random_expr(depth - 1); };
     auto b = [&]() { return random_expr(depth - 1); };
+    auto ac = [&]() { return random_condition(depth - 1); };
+    auto bc = [&]() { return random_condition(depth - 1); };
     switch (rng_() % 7) {
     case 0: return a() == b();
     case 1: return a() < b();
     case 2: return a() <= b();
     case 3: return a() != b();
-    case 4: return random_condition(depth - 1) && random_condition(depth - 1);
-    case 5: return random_condition(depth - 1) || random_condition(depth - 1);
+    case 4: return rng_() % 8 != 0 ? ac() && bc() : and_then(ac(), bc());
+    case 5: return rng_() % 8 != 0 ? ac() || bc() : or_else(ac(), bc());
     case 6: return !random_condition(depth - 1);
     default: std::abort();
     }

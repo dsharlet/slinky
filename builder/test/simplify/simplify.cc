@@ -135,13 +135,12 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
 
   ASSERT_THAT(simplify(and_then(expr(false), x)), matches(false));
-  ASSERT_THAT(simplify(and_then(expr(true), x)), matches(x));
+  ASSERT_THAT(simplify(and_then(expr(true), x)), matches(boolean(x)));
   ASSERT_THAT(simplify(and_then(x, expr(false))), matches(and_then(x, expr(false))));
-  ASSERT_THAT(simplify(and_then(x, expr(true))), matches(x));
+  ASSERT_THAT(simplify(and_then(x, expr(true))), matches(boolean(x)));
   ASSERT_THAT(simplify(or_else(expr(true), x)), matches(true));
-  ASSERT_THAT(simplify(or_else(expr(false), x)), matches(x));
-  ASSERT_THAT(simplify(or_else(x, expr(true))), matches(x));
-  ASSERT_THAT(simplify(or_else(x, expr(false))), matches(or_else(x, false)));
+  ASSERT_THAT(simplify(or_else(expr(false), x)), matches(boolean(x)));
+  ASSERT_THAT(simplify(or_else(x, expr(false))), matches(boolean(x)));
 
   ASSERT_THAT(simplify((x != y) < 1), matches(y == x));
   ASSERT_THAT(simplify((x && y) < 2), matches(true));

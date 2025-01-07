@@ -541,6 +541,12 @@ template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
+
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
+SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::and_then, {a, b}}; }
+template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
+SLINKY_UNIQUE auto or_else(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::or_else, {a, b}}; }
+
 // clang-format on
 
 template <typename T>

@@ -366,24 +366,6 @@ expr simplify(const call* op, intrinsic fn, std::vector<expr> args) {
     } else if (is_non_positive(args[0])) {
       return simplify(static_cast<const sub*>(nullptr), 0, std::move(args[0]));
     }
-  } else if (fn == intrinsic::and_then) {
-    assert(args.size() == 2);
-    if (is_zero(args[0])) {
-      return false;
-    } else if (as_constant(args[0])) {
-      return args[1];
-    } else if (as_constant(args[1]) && !is_zero(args[1])) {
-      return args[0];
-    }
-  } else if (fn == intrinsic::or_else) {
-    assert(args.size() == 2);
-    if (is_zero(args[0])) {
-      return args[1];
-    } else if (as_constant(args[0])) {
-      return true;
-    } else if (as_constant(args[1]) && !is_zero(args[1])) {
-      return args[0];
-    }
   }
 
   expr e;
