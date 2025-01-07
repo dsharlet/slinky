@@ -19,6 +19,7 @@
 #include "builder/simplify.h"
 #include "builder/slide_and_fold_storage.h"
 #include "builder/substitute.h"
+#include "runtime/depends_on.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 #include "runtime/pipeline.h"
@@ -548,36 +549,6 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
   return m(subs).mutate(s);
 }
 
-// Find buffers used inside of the statement.
-class find_buffers : public recursive_node_visitor {
-public:
-  symbol_map<bool> found;
-  void visit(const call_stmt* op) override {
-    for (const auto& i : op->inputs) {
-      found[i] = true;
-    }
-
-    for (const auto& o : op->outputs) {
-      found[o] = true;
-    }
-  }
-  void visit(const copy_stmt* op) override {
-    found[op->src] = true;
-    found[op->dst] = true;
-  }
-
-  void visit(const allocate* op) override {
-    auto s = set_value_in_scope(found, op->sym, false);
-    recursive_node_visitor::visit(op);
-  }
-};
-
-symbol_map<bool> buffers_used_inside(const stmt& body) {
-  find_buffers f;
-  body.accept(&f);
-  return f.found;
-}
-
 class pipeline_builder {
   node_context& ctx;
 
@@ -693,14 +664,14 @@ class pipeline_builder {
       // Find which buffers are used inside of the body.
       // TODO(vksnk): recomputing this seems really wasteful, we can should be
       // able to maintain the list of buffers as we build the IR.
-      symbol_map<bool> buffer_used = buffers_used_inside(body);
+      std::vector<var> buffer_used = find_buffer_dependencies(body);
 
       // Add crops for the used buffers using previously inferred bounds.
       // Input syms should be the innermost.
       for (const auto& i : input_syms_) {
         var sym = i.first;
         if (!allocation_bounds_[sym]) continue;
-        if (!buffer_used[sym]) continue;
+        if (!std::binary_search(buffer_used.begin(), buffer_used.end(), sym)) continue;
         body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body);
       }
 
@@ -717,7 +688,7 @@ class pipeline_builder {
         for (const func::output& o : f->outputs()) {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
-          if (!buffer_used[b->sym()] || !*buffer_used[b->sym()]) continue;
+          if (!std::binary_search(buffer_used.begin(), buffer_used.end(), b->sym())) continue;
           body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
         }
       }

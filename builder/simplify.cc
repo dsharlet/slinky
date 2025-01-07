@@ -48,149 +48,32 @@ void ensure_is_point(interval_expr& x) {
 
 // Rewrite `make_decl(block::make(stmts))` to be `block::make(make_decl(i) for i in stmts if i depends on sym else i)`.
 template <class Fn>
-stmt lift_decl_invariants(const std::vector<stmt>& stmts, var sym, Fn&& make_decl) {
-  std::vector<stmt> result;
-  result.reserve(stmts.size());
-  for (auto i = stmts.begin(); i != stmts.end();) {
-    if (depends_on(*i, sym).any()) {
-      std::vector<stmt> result_i;
-      result_i.reserve(stmts.size());
-      do {
-        result_i.push_back(*i++);
-      } while (i != stmts.end() && depends_on(*i, sym).any());
-      result.push_back(make_decl(block::make(std::move(result_i))));
-      if (i != stmts.end()) result.push_back(*i++);
-    } else {
-      result.push_back(*i++);
-    }
-  }
-  return block::make(std::move(result));
-}
-
-// Given an expression that produces a base pointer for a buffer, find the buffer the pointer is from.
-var find_buffer(const expr& e) {
-  class v : public recursive_node_visitor {
-  public:
-    var result;
-
-    void visit(const call* op) override {
-      if (op->intrinsic == intrinsic::buffer_at) {
-        assert(!result.defined());
-        result = *as_variable(op->args[0]);
+stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
+  if (const block* b = body.as<block>()) {
+    std::vector<stmt> result;
+    result.reserve(b->stmts.size());
+    for (auto i = b->stmts.begin(); i != b->stmts.end();) {
+      if (depends_on(*i, sym).any()) {
+        std::vector<stmt> result_i;
+        result_i.reserve(b->stmts.size());
+        do {
+          result_i.push_back(*i++);
+        } while (i != b->stmts.end() && depends_on(*i, sym).any());
+        if (result.empty() && i == b->stmts.end()) {
+          // Every stmt in the body depended on the decl, we aren't changing it.
+          return make_decl(std::move(body));
+        } else {
+          result.push_back(make_decl(block::make(std::move(result_i))));
+        }
+        if (i != b->stmts.end()) result.push_back(*i++);
+      } else {
+        result.push_back(*i++);
       }
     }
-  };
-  v finder;
-  if (e.defined()) e.accept(&finder);
-  return finder.result;
-}
-
-template <typename T>
-bool match(const std::vector<T>& a, const std::vector<T>& b) {
-  if (a.size() != b.size()) return false;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (!match(a[i], b[i])) return false;
+    return block::make(std::move(result));
+  } else {
+    return make_decl(std::move(body));
   }
-  return true;
-}
-
-// Like the above, except `a` is represented by a single non-default value at index `idx`.
-template <typename T>
-bool match(int idx, const T& a, const std::vector<T>& b) {
-  if (idx >= static_cast<int>(b.size())) return false;
-  for (int i = 0; i < static_cast<int>(b.size()); ++i) {
-    if (i == idx) {
-      if (!match(a, b[idx])) return false;
-    } else {
-      if (!match(T(), b[i])) return false;
-    }
-  }
-  return true;
-}
-
-// Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
-// report the buffer as it is visible to the caller. So something like:
-//
-//   x = crop_dim(y, ...) {
-//     call(f, {x}, {})
-//   }
-//
-// Will report that y is consumed in the stmt, not x.
-class find_buffers_accessed : public recursive_node_visitor {
-  bool consumed;
-  symbol_map<var> aliases;
-
-public:
-  std::set<var> result;
-
-  find_buffers_accessed(bool consumed) : consumed(consumed) {}
-
-  std::optional<var> lookup_alias(var x) {
-    if (aliases.contains(x)) {
-      return aliases.lookup(x);
-    } else {
-      return x;
-    }
-  }
-
-  void visit_buffer(var i) {
-    if (aliases.contains(i)) {
-      if (aliases.lookup(i)->defined()) {
-        result.insert(*aliases.lookup(i));
-      }
-    } else {
-      result.insert(i);
-    }
-  }
-
-  void visit(const call_stmt* op) override {
-    if (consumed) {
-      for (const var& i : op->inputs) {
-        visit_buffer(i);
-      }
-    } else {
-      for (const var& i : op->outputs) {
-        visit_buffer(i);
-      }
-    }
-  }
-  void visit(const copy_stmt* op) override {
-    if (consumed) {
-      visit_buffer(op->src);
-    } else {
-      visit_buffer(op->dst);
-    }
-  }
-
-  void visit(const allocate* op) override {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, var());
-    op->body.accept(this);
-  }
-  void visit(const make_buffer* op) override {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer(op->base)));
-    op->body.accept(this);
-  }
-
-  template <typename T>
-  void visit_buffer_alias(const T* op) {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(op->src));
-    op->body.accept(this);
-  }
-  void visit(const crop_buffer* op) override { visit_buffer_alias(op); }
-  void visit(const crop_dim* op) override { visit_buffer_alias(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_alias(op); }
-  void visit(const slice_dim* op) override { visit_buffer_alias(op); }
-  void visit(const transpose* op) override { visit_buffer_alias(op); }
-  void visit(const clone_buffer* op) override { visit_buffer_alias(op); }
-};
-
-std::set<var> buffers_accessed(const stmt& s, bool consumed) {
-  find_buffers_accessed accessed(consumed);
-  if (s.defined()) s.accept(&accessed);
-  return accessed.result;
 }
 
 // The algorithm at https://en.cppreference.com/w/cpp/algorithm/set_intersection, but detects any intersection.
@@ -308,7 +191,10 @@ public:
   void visit(const call*) override { set_result(expr()); }
 };
 
-expr add_constant(const expr& a, index_t b) { return constant_adder(b).mutate(a); }
+expr add_constant(const expr& a, index_t b) { 
+  if (b == 0) return a;
+  return constant_adder(b).mutate(a); 
+}
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
 class simplifier : public node_mutator {
@@ -331,6 +217,8 @@ public:
 
     // How many loops out is the `decl` found.
     int loop_depth = 0;
+
+    buffer_info() = default;
 
     buffer_info(expr elem_size) : elem_size(elem_size) {}
 
@@ -868,7 +756,7 @@ public:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
     // TODO: This is quite expensive, we should try to find a better way.
-    auto less_equal = [this](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
+    auto less_equal = [](const expr& a, const expr& a_max, const expr& b, const expr& b_min) {
       return prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a_max)) ||
              (!match(a, a_max) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b_min, a))) ||
              (!match(b, b_min) && prove_constant_false(simplify(static_cast<const less*>(nullptr), b, a_max)));
@@ -1238,7 +1126,7 @@ public:
 
   // Find all buffers accessed in `s`, adding them, and all the aliases of them, to `bufs`.
   void buffers_accessed_via_aliases(const stmt& s, bool consumed, std::set<var>& bufs) {
-    std::set<var> raw = buffers_accessed(s, consumed);
+    std::vector<var> raw = find_buffer_dependencies(s, consumed, !consumed);
     for (var i : raw) {
       while (i.defined()) {
         bufs.insert(i);
@@ -1547,30 +1435,23 @@ public:
   }
 
   template <typename T>
-  buffer_info mutate_buffer(const T* op) {
+  bool mutate_buffer(const T* op, buffer_info& info) {
     scoped_trace trace("mutate_buffer");
-    buffer_info info(mutate(op->elem_size));
+    info = buffer_info(mutate(op->elem_size));
+    bool changed = !info.elem_size.same_as(op->elem_size);
     info.dims.reserve(op->dims.size());
     for (std::size_t d = 0; d < op->dims.size(); ++d) {
       info.dims.push_back(mutate(op->dims[d]));
+      changed = changed || !info.dims.back().same_as(op->dims[d]);
     }
     info.all_dims_known = true;
     info.decl = stmt(op);
-    return info;
-  }
-
-  template <typename T>
-  static bool buffer_changed(const T* op, const buffer_info& info) {
-    if (op->dims.size() != info.dims.size()) return true;
-    if (!info.elem_size.same_as(op->elem_size)) return true;
-    for (std::size_t d = 0; d < op->dims.size(); ++d) {
-      if (!info.dims[d].same_as(op->dims[d])) return true;
-    }
-    return false;
+    return changed;
   }
 
   void visit(const allocate* op) override {
-    buffer_info info = mutate_buffer(op);
+    buffer_info info;
+    bool changed = mutate_buffer(op, info);
     stmt body = mutate_with_buffer(op, op->body, op->sym, info);
     scoped_trace trace("visit(const allocate*)");
     auto deps = depends_on(body, op->sym);
@@ -1599,7 +1480,7 @@ public:
       }
     }
 
-    if (buffer_changed(op, info) || !body.same_as(op->body)) {
+    if (changed || !body.same_as(op->body)) {
       set_result(block::make({std::move(before),
           allocate::make(op->sym, op->storage, std::move(info.elem_size), std::move(info.dims), std::move(body)),
           std::move(after)}));
@@ -1665,14 +1546,15 @@ public:
 
   void visit(const make_buffer* op) override {
     expr base = mutate(op->base);
-    buffer_info info = mutate_buffer(op);
+    buffer_info info;
+    bool changed = mutate_buffer(op, info);
 
     // To avoid redundant nested simplifications, try to substitute the buffer both before and after mutating the body.
     // TODO: It may be impossible for depends_on_result::buffer_data() to change due to simplification, so the second
     // check below could be unnecessary.
     if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_dependency(base), std::move(info)));
       return;
     }
 
@@ -1775,28 +1657,26 @@ public:
       }
     }
 
-    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer_dependency(base), info);
     scoped_trace trace("visit(const make_buffer*)");
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      // This make_buffer is unused.
-      set_result(std::move(body));
-      return;
-    } else if (can_substitute_buffer(deps)) {
-      // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
-      return;
-    }
 
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op->sym,
-          [&](stmt body) { return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body)); }));
-    } else if (buffer_changed(op, info) || !base.same_as(op->base) || !body.same_as(op->body)) {
-      set_result(make_buffer::make(
-          op->sym, std::move(base), std::move(info.elem_size), std::move(info.dims), std::move(body)));
-    } else {
-      set_result(op);
-    }
+    changed = changed || !base.same_as(op->base);
+    auto make_make_buffer = [&](stmt body) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
+        // This make_buffer is unused.
+        return body;
+      } else if (can_substitute_buffer(deps)) {
+        // We only needed the buffer meta, not the buffer itself.
+        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), std::move(info));
+      } else if (changed || !body.same_as(op->body)) {
+        return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
+      } else {
+        return stmt(op);
+      }
+    };
+
+    set_result(lift_decl_invariants(body, op->sym, make_make_buffer));
   }
 
   std::optional<buffer_info> get_buffer_info(var buf, int rank) {
@@ -1994,9 +1874,6 @@ public:
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
         op_bounds = c->bounds & op_bounds;
-        for (interval_expr& i : op_bounds) {
-          i = mutate(i);
-        }
         op_src = c->src;
         info = get_buffer_info(op_src, op_bounds.size());
         op = nullptr;
@@ -2008,7 +1885,7 @@ public:
         }
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max<int>(op_bounds.size(), c->dim + 1));
-        op_bounds[c->dim] = mutate(c->bounds & op_bounds[c->dim]);
+        op_bounds[c->dim] = c->bounds & op_bounds[c->dim];
         op_src = c->src;
         info = get_buffer_info(op_src, op_bounds.size());
         op = nullptr;
@@ -2061,10 +1938,8 @@ public:
     if (bounds.empty()) {
       // This crop was a no-op.
       set_result(substitute(body, op_sym, op_src));
-    } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op_sym, make_crop));
     } else {
-      set_result(make_crop(body));
+      set_result(lift_decl_invariants(body, op_sym, make_crop));
     }
   }
 
@@ -2125,10 +2000,8 @@ public:
     if (at.empty()) {
       // This slice was a no-op.
       set_result(substitute(body, op_sym, op_src));
-    } else if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(b->stmts, op_sym, make_slice));
     } else {
-      set_result(make_slice(body));
+      set_result(lift_decl_invariants(body, op_sym, make_slice));
     }
   }
 
@@ -2189,22 +2062,20 @@ public:
 
     stmt body = mutate_with_buffer(op, op->body, op->sym, src, std::move(sym_info));
 
-    if (const block* b = body.as<block>()) {
-      set_result(lift_decl_invariants(
-          b->stmts, op->sym, [&](stmt body) { return transpose::make(op->sym, src, dims, std::move(body)); }));
-      return;
-    }
+    auto make_transpose = [&](stmt body) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
+        return body;
+      } else if (!deps.buffer_dims) {
+        return substitute(body, op->sym, src);
+      } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
+        return stmt(op);
+      } else {
+        return transpose::make(op->sym, src, dims, std::move(body));
+      }
+    };
 
-    auto deps = depends_on(body, op->sym);
-    if (!deps.any()) {
-      set_result(std::move(body));
-    } else if (!deps.buffer_dims) {
-      set_result(substitute(body, op->sym, src));
-    } else if (body.same_as(op->body) && src == op->src && dims == op->dims) {
-      set_result(op);
-    } else {
-      set_result(transpose::make(op->sym, src, dims, std::move(body)));
-    }
+    set_result(lift_decl_invariants(body, op->sym, make_transpose));
   }
 
   void visit(const clone_buffer* op) override {

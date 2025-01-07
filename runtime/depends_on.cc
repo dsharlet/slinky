@@ -319,4 +319,121 @@ bool is_pure(expr_ref x) {
   return v.is_pure;
 }
 
+namespace {
+
+// Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
+// report the buffer as it is visible to the caller. So something like:
+//
+//   x = crop_dim(y, ...) {
+//     call(f, {x}, {})
+//   }
+//
+// Will report that y is consumed in the stmt, not x.
+class dependency_finder : public recursive_node_visitor {
+  bool input, output;
+  
+  symbol_map<var> aliases;
+
+public:
+  std::vector<var> result;
+
+  dependency_finder() : dependency_finder(true, true) {}
+  dependency_finder(bool input, bool output) : input(input), output(output) {}
+
+  std::optional<var> lookup_alias(var x) {
+    if (aliases.contains(x)) {
+      return aliases.lookup(x);
+    } else {
+      return x;
+    }
+  }
+
+  void visit_buffer(var x) {
+    if (aliases.contains(x)) {
+      if (aliases.lookup(x)->defined()) {
+        x = *aliases.lookup(x);
+      } else {
+        return;
+      }
+    }
+    // Maintain result as a sorted unique list.
+    auto i = std::lower_bound(result.begin(), result.end(), x);
+    if (i == result.end() || *i != x) result.insert(i, x);
+  }
+
+  void visit(const variable* op) override {
+    if (op->field != buffer_field::none) {
+      visit_buffer(op->sym);
+    }
+  }
+
+  void visit(const call* op) override {
+    if (op->intrinsic == intrinsic::buffer_at) {
+      auto buf = as_variable(op->args[0]);
+      assert(buf);
+      visit_buffer(*buf);
+    }
+    recursive_node_visitor::visit(op);
+  }
+
+  void visit(const call_stmt* op) override {
+    if (input) {
+      for (const var& i : op->inputs) {
+        visit_buffer(i);
+      }
+    }
+    if (output) {
+      for (const var& i : op->outputs) {
+        visit_buffer(i);
+      }
+    }
+  }
+  void visit(const copy_stmt* op) override {
+    if (input) visit_buffer(op->src);
+    if (output) visit_buffer(op->dst);
+  }
+
+  void visit(const allocate* op) override {
+    if (!op->body.defined()) return;
+    auto s = set_value_in_scope(aliases, op->sym, var());
+    op->body.accept(this);
+  }
+  void visit(const make_buffer* op) override {
+    if (!op->body.defined()) return;
+    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer_dependency(op->base)));
+    op->body.accept(this);
+  }
+
+  template <typename T>
+  void visit_buffer_alias(const T* op) {
+    if (!op->body.defined()) return;
+    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(op->src));
+    op->body.accept(this);
+  }
+  void visit(const crop_buffer* op) override { visit_buffer_alias(op); }
+  void visit(const crop_dim* op) override { visit_buffer_alias(op); }
+  void visit(const slice_buffer* op) override { visit_buffer_alias(op); }
+  void visit(const slice_dim* op) override { visit_buffer_alias(op); }
+  void visit(const transpose* op) override { visit_buffer_alias(op); }
+  void visit(const clone_buffer* op) override { visit_buffer_alias(op); }
+};
+
+}  // namespace
+
+var find_buffer_dependency(expr_ref e) {
+  dependency_finder accessed;
+  if (e.defined()) e.accept(&accessed);
+  return accessed.result.size() == 1 ? accessed.result.front() : var();
+}
+
+std::vector<var> find_buffer_dependencies(stmt_ref s) { return find_buffer_dependencies(s, true, true); }
+
+std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output) {
+  dependency_finder accessed(input, output);
+  if (s.defined()) s.accept(&accessed);
+  return accessed.result;
+}
+
+
+
 }  // namespace slinky
