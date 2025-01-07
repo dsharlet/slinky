@@ -1339,6 +1339,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 
+  std::cout << "Before aliasing: \n" << result << "\n";
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
     // For the purposes of aliasing, constants and inputs are the same thing.
