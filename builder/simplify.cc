@@ -1668,7 +1668,7 @@ public:
         return body;
       } else if (can_substitute_buffer(deps)) {
         // We only needed the buffer meta, not the buffer itself.
-        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), std::move(info));
+        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), info);
       } else if (changed || !body.same_as(op->body)) {
         return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
       } else {
