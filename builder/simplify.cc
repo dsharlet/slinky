@@ -191,9 +191,9 @@ public:
   void visit(const call*) override { set_result(expr()); }
 };
 
-expr add_constant(const expr& a, index_t b) { 
+expr add_constant(const expr& a, index_t b) {
   if (b == 0) return a;
-  return constant_adder(b).mutate(a); 
+  return constant_adder(b).mutate(a);
 }
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
@@ -2150,15 +2150,15 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, c
 
 namespace {
 
-class constant_bound : public node_mutator {
+class constant_evaluator : public node_mutator {
   // > 0 -> we are looking for an upper bound
   // == 0 -> we are constant folding
   // < 0 -> we are looking for a lower bound
   int sign = 0;
-  bool constant_required = false;
+  bool constant_required = true;
 
 public:
-  constant_bound(bool constant_required) : constant_required(constant_required) {}
+  constant_evaluator(bool constant_required = true) : constant_required(constant_required) {}
 
   using node_mutator::mutate;
   expr mutate(const expr& x, int sign) {
@@ -2305,17 +2305,18 @@ public:
   void visit(const less_equal* op) override { visit_less(op); }
 
   template <typename T>
-  void visit_logical_and_or(const T* op, bool recurse) {
-    // We can recursively mutate if:
-    // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
-    // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-    expr a = recurse ? mutate(op->a) : op->a;
-    expr b = recurse ? mutate(op->b) : op->b;
+  void visit_logical_and_or(const T* op, int new_sign) {
+    expr a = mutate(op->a, new_sign);
+    expr b = mutate(op->b, new_sign);
 
-    auto ca = as_constant(a);
-    auto cb = as_constant(b);
-    if (ca && cb) {
-      set_result(make_binary<T>(*ca != 0, *cb != 0));
+    if (as_constant(b)) std::swap(a, b);
+
+    if (auto ca = as_constant(a)) {
+      if (*ca) {
+        set_result(std::is_same<T, logical_and>::value ? std::move(b) : std::move(a));
+      } else {
+        set_result(std::is_same<T, logical_and>::value ? std::move(a) : std::move(b));
+      }
     } else if (sign != 0) {
       // If we don't know anything about a logical op, the result is either 0 or 1.
       set_result(expr(sign < 0 ? 0 : 1));
@@ -2327,8 +2328,13 @@ public:
       set_result(T::make(std::move(a), std::move(b)));
     }
   }
-  void visit(const logical_and* op) override { visit_logical_and_or(op, /*recurse=*/sign >= 0); }
-  void visit(const logical_or* op) override { visit_logical_and_or(op, /*recurse=*/sign <= 0); }
+
+  // We can recursively look for bounds if:
+  // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
+  // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
+  // - We're constant folding.
+  void visit(const logical_and* op) override { visit_logical_and_or(op, std::min(sign, 0)); }
+  void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
     expr a = mutate(op->a, -sign);
@@ -2369,12 +2375,47 @@ public:
   }
   void visit(const call* op) override {
     if (op->intrinsic == intrinsic::abs) {
+      assert(op->args.size() == 1);
       expr equiv = max(0, max(op->args[0], -op->args[0]));
       expr result = mutate(equiv);
       if (!equiv.same_as(result)) {
         set_result(std::move(result));
         return;
       }
+    } else if (op->intrinsic == intrinsic::and_then || op->intrinsic == intrinsic::or_else) {
+      assert(op->args.size() == 2);
+      // We can recursively look for bounds if:
+      // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
+      // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
+      // - We're constant folding.
+      const bool is_and = op->intrinsic == intrinsic::and_then;
+      const int new_sign = is_and ? std::min(sign, 0) : std::max(sign, 0);
+      expr a = mutate(op->args[0], new_sign);
+      expr b = mutate(op->args[1], new_sign);
+
+      if (auto ca = as_constant(a)) {
+        if (*ca) {
+          set_result(is_and ? std::move(b) : std::move(a));
+        } else {
+          set_result(is_and ? std::move(a) : std::move(b));
+        }
+      } else if (auto cb = as_constant(b)) {
+        if (*cb) {
+          set_result(is_and ? std::move(a) : std::move(b));
+        } else {
+          set_result(is_and ? std::move(b) : std::move(a));
+        }
+      } else if (sign != 0) {
+        // If we don't know anything about a logical op, the result is either 0 or 1.
+        set_result(expr(sign < 0 ? 0 : 1));
+      } else if (!a.defined() || !b.defined()) {
+        set_result(expr());
+      } else if (a.same_as(op->args[0]) && b.same_as(op->args[1])) {
+        set_result(expr(op));
+      } else {
+        set_result(call::make(op->intrinsic, {std::move(a), std::move(b)}));
+      }
+      return;
     }
     if (constant_required) {
       set_result(expr());
@@ -2397,11 +2438,11 @@ bool can_evaluate(intrinsic fn) {
   }
 }
 
-expr constant_lower_bound(const expr& x) { return constant_bound(false).mutate(x, -1); }
-expr constant_upper_bound(const expr& x) { return constant_bound(false).mutate(x, 1); }
-std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_bound(true).mutate(x, 0)); }
-std::optional<index_t> evaluate_constant_lower_bound(const expr& x) { return as_constant(constant_bound(true).mutate(x, -1)); }
-std::optional<index_t> evaluate_constant_upper_bound(const expr& x) { return as_constant(constant_bound(true).mutate(x, 1)); }
+expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
+expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
+std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
+std::optional<index_t> evaluate_constant_lower_bound(const expr& x) { return as_constant(constant_evaluator().mutate(x, -1)); }
+std::optional<index_t> evaluate_constant_upper_bound(const expr& x) { return as_constant(constant_evaluator().mutate(x, 1)); }
 
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
