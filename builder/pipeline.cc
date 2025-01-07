@@ -559,6 +559,11 @@ public:
     found[op->src] = true;
     found[op->dst] = true;
   }
+
+  void visit(const allocate* op) override {
+    auto s = set_value_in_scope(found, op->sym, false);
+    recursive_node_visitor::visit(op);
+  }
 };
 
 symbol_map<bool> buffers_used_inside(const stmt& body) {
