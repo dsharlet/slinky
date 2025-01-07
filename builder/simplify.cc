@@ -76,109 +76,6 @@ stmt lift_decl_invariants(stmt body, var sym, Fn&& make_decl) {
   }
 }
 
-// Given an expression that produces a base pointer for a buffer, find the buffer the pointer is from.
-var find_buffer(const expr& e) {
-  class v : public recursive_node_visitor {
-  public:
-    var result;
-
-    void visit(const call* op) override {
-      if (op->intrinsic == intrinsic::buffer_at) {
-        assert(!result.defined());
-        result = *as_variable(op->args[0]);
-      }
-    }
-  };
-  v finder;
-  if (e.defined()) e.accept(&finder);
-  return finder.result;
-}
-
-// Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
-// report the buffer as it is visible to the caller. So something like:
-//
-//   x = crop_dim(y, ...) {
-//     call(f, {x}, {})
-//   }
-//
-// Will report that y is consumed in the stmt, not x.
-class find_buffers_accessed : public recursive_node_visitor {
-  bool consumed;
-  symbol_map<var> aliases;
-
-public:
-  std::set<var> result;
-
-  find_buffers_accessed(bool consumed) : consumed(consumed) {}
-
-  std::optional<var> lookup_alias(var x) {
-    if (aliases.contains(x)) {
-      return aliases.lookup(x);
-    } else {
-      return x;
-    }
-  }
-
-  void visit_buffer(var i) {
-    if (aliases.contains(i)) {
-      if (aliases.lookup(i)->defined()) {
-        result.insert(*aliases.lookup(i));
-      }
-    } else {
-      result.insert(i);
-    }
-  }
-
-  void visit(const call_stmt* op) override {
-    if (consumed) {
-      for (const var& i : op->inputs) {
-        visit_buffer(i);
-      }
-    } else {
-      for (const var& i : op->outputs) {
-        visit_buffer(i);
-      }
-    }
-  }
-  void visit(const copy_stmt* op) override {
-    if (consumed) {
-      visit_buffer(op->src);
-    } else {
-      visit_buffer(op->dst);
-    }
-  }
-
-  void visit(const allocate* op) override {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, var());
-    op->body.accept(this);
-  }
-  void visit(const make_buffer* op) override {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer(op->base)));
-    op->body.accept(this);
-  }
-
-  template <typename T>
-  void visit_buffer_alias(const T* op) {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(op->src));
-    op->body.accept(this);
-  }
-  void visit(const crop_buffer* op) override { visit_buffer_alias(op); }
-  void visit(const crop_dim* op) override { visit_buffer_alias(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_alias(op); }
-  void visit(const slice_dim* op) override { visit_buffer_alias(op); }
-  void visit(const transpose* op) override { visit_buffer_alias(op); }
-  void visit(const clone_buffer* op) override { visit_buffer_alias(op); }
-};
-
-std::set<var> buffers_accessed(const stmt& s, bool consumed) {
-  find_buffers_accessed accessed(consumed);
-  if (s.defined()) s.accept(&accessed);
-  return accessed.result;
-}
-
 // The algorithm at https://en.cppreference.com/w/cpp/algorithm/set_intersection, but detects any intersection.
 template <typename It>
 bool empty_intersection(It a_begin, It a_end, It b_begin, It b_end) {
@@ -1226,7 +1123,7 @@ public:
 
   // Find all buffers accessed in `s`, adding them, and all the aliases of them, to `bufs`.
   void buffers_accessed_via_aliases(const stmt& s, bool consumed, std::set<var>& bufs) {
-    std::set<var> raw = buffers_accessed(s, consumed);
+    std::vector<var> raw = find_buffer_dependencies(s, consumed, !consumed);
     for (var i : raw) {
       while (i.defined()) {
         bufs.insert(i);
@@ -1654,7 +1551,7 @@ public:
     // check below could be unnecessary.
     if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_dependency(base), std::move(info)));
       return;
     }
 
@@ -1757,7 +1654,7 @@ public:
       }
     }
 
-    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer(base), info);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer_dependency(base), info);
     scoped_trace trace("visit(const make_buffer*)");
 
     changed = changed || !base.same_as(op->base);
@@ -1768,7 +1665,7 @@ public:
         return body;
       } else if (can_substitute_buffer(deps)) {
         // We only needed the buffer meta, not the buffer itself.
-        return mutate_with_buffer(nullptr, op->body, op->sym, find_buffer(base), std::move(info));
+        return mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_dependency(base), std::move(info));
       } else if (changed || !body.same_as(op->body)) {
         return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
       } else {
