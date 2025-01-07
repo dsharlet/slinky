@@ -245,24 +245,4 @@ TEST(evaluate, semaphore) {
   ASSERT_EQ(state, 2);
 }
 
-TEST(evaluate_constant, arithmetic) {
-  ASSERT_EQ(evaluate_constant(x + 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x - 3), std::nullopt);
-  ASSERT_EQ(evaluate_constant(2 * x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x / 2), std::nullopt);
-  ASSERT_EQ(evaluate_constant(4 % x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x < 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x < 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(3 <= x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x <= 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x > 3), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x > 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x >= 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x >= 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x == 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x == 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x != 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x != 5), std::nullopt);
-}
-
 }  // namespace slinky

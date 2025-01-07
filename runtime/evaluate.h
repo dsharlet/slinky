@@ -49,12 +49,6 @@ index_t evaluate(const stmt& s, eval_context& context);
 index_t evaluate(const expr& e);
 index_t evaluate(const stmt& s);
 
-// Attempt to evaluate `e` as a constant. Returns `std::nullopt` if the expression is not constant.
-std::optional<index_t> evaluate_constant(const expr& e);
-
-// Returns true if `fn` can be evaluated.
-bool can_evaluate(intrinsic fn);
-
 }  // namespace slinky
 
 #endif  // SLINKY_RUNTIME_EVALUATE_H

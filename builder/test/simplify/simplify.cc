@@ -884,7 +884,7 @@ TEST(simplify, bounds_of) {
   }
 }
 
-TEST(simplify, constant_lower_bound) {
+TEST(constant_lower_bound, basic) {
   ASSERT_THAT(constant_lower_bound(min(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(min(x, 0) * 256 < 0), matches(0));
   ASSERT_THAT(constant_lower_bound(max(x, 0) < 0), matches(0));
@@ -896,7 +896,7 @@ TEST(simplify, constant_lower_bound) {
   ASSERT_THAT(constant_lower_bound(clamp(x, -2, 3)), matches(-2));
 }
 
-TEST(simplify, constant_upper_bound) {
+TEST(constant_upper_bound, basic) {
   ASSERT_THAT(constant_upper_bound(min(x, 4)), matches(4));
   ASSERT_THAT(constant_upper_bound(max(x, 4)), matches(max(x, 4)));
   ASSERT_THAT(constant_upper_bound(x - min(y, 4)), matches(x - min(y, 4)));
@@ -917,6 +917,41 @@ TEST(simplify, constant_upper_bound) {
   ASSERT_THAT(constant_upper_bound(min(x, 0) * 256 < 0), matches(1));
   ASSERT_THAT(constant_upper_bound(max(x, 0) < 0), matches(0));
   ASSERT_THAT(constant_upper_bound(max(x, 0) * 256 < 0), matches(0));
+}
+
+TEST(evaluate_constant_lower_bound, basic) {
+  ASSERT_EQ(evaluate_constant_lower_bound(min(x, 0) < 0), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(min(x, 0) * 256 < 0), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(max(x, 0) < 0), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(max(x, 0) * 256 < 0), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(x % 4), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(abs(x)), 0);
+  ASSERT_EQ(evaluate_constant_lower_bound(abs(min(x, -5))), 5);
+  ASSERT_EQ(evaluate_constant_lower_bound(min(1, max(x, 1))), 1);
+  ASSERT_EQ(evaluate_constant_lower_bound(clamp(x, -2, 3)), -2);
+}
+
+TEST(evaluate_constant_upper_bound, basic) {
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 4)), 4);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 4)), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x - min(y, 4)), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x - max(y, 4)), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(x * 3), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 4) * 2), 8);
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 4) * -2), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 4) * -2), -8);
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 4) / 2), 2);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 4) / 2), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 4) / -2), std::nullopt);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 4) / -2), -2);
+  ASSERT_EQ(evaluate_constant_upper_bound(select(x, 3, 1)), 3);
+  ASSERT_EQ(evaluate_constant_upper_bound(x % 4), 3);
+  ASSERT_EQ(evaluate_constant_upper_bound(clamp(x, -2, 3)), 3);
+
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 0) < 0), 1);
+  ASSERT_EQ(evaluate_constant_upper_bound(min(x, 0) * 256 < 0), 1);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) < 0), 0);
+  ASSERT_EQ(evaluate_constant_upper_bound(max(x, 0) * 256 < 0), 0);
 }
 
 TEST(simplify, modulus_remainder) {
@@ -946,6 +981,18 @@ TEST(simplify, fuzz) {
     interval_expr bounds = bounds_of(test, gen.var_bounds());
     expr lower_bound = constant_lower_bound(test);
     expr upper_bound = constant_upper_bound(test);
+    std::optional<int> evaluated_lower_bound = evaluate_constant_lower_bound(test);
+    std::optional<int> evaluated_upper_bound = evaluate_constant_upper_bound(test);
+
+    if (evaluate_constant(lower_bound)) {
+      // constant_lower_bound and evaluate_constant_lower_bound should never leave constants to be folded.
+      ASSERT_TRUE(as_constant(lower_bound)) << lower_bound;
+      ASSERT_TRUE(evaluated_lower_bound) << test;
+    }
+    if (evaluate_constant(upper_bound)) {
+      ASSERT_TRUE(as_constant(upper_bound)) << upper_bound;
+      ASSERT_TRUE(evaluated_upper_bound) << test;
+    }
 
     for (int j = 0; j < checks; ++j) {
       gen.init_context(ctx);
@@ -1006,6 +1053,24 @@ TEST(simplify, fuzz) {
           dump_context_for_expr(std::cerr, ctx, test, &symbols);
           std::cerr << std::endl;
           ASSERT_LE(constant_min, eval_test);
+        }
+        if (evaluated_upper_bound && eval_test > *evaluated_upper_bound) {
+          std::cerr << "evaluate_constant_upper_bound failure: " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << " -> " << eval_test << std::endl;
+          std::cerr << *evaluated_upper_bound << std::endl;
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          std::cerr << std::endl;
+          ASSERT_LE(eval_test, *evaluated_upper_bound);
+        }
+        if (evaluated_lower_bound && eval_test < *evaluated_lower_bound) {
+          std::cerr << "evaluate_constant_lower_bound failure: " << std::endl;
+          print(std::cerr, test, &symbols);
+          std::cerr << " -> " << eval_test << std::endl;
+          std::cerr << *evaluated_lower_bound << std::endl;
+          dump_context_for_expr(std::cerr, ctx, test, &symbols);
+          std::cerr << std::endl;
+          ASSERT_LE(constant_min, *evaluated_lower_bound);
         }
       }
     }
