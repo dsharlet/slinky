@@ -359,23 +359,28 @@ function pipeline(__in, out) {
     check((max(g, g_0) <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    { let softmax_in = allocate('softmax_in', 4, [
-        {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
+    { let softmax_out = allocate('softmax_out', 4, [
+        {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
         {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
       ]);
-      consume(__in);
-      produce(softmax_in);
-      __event_t++;
-      { let max_in = allocate('max_in', 4, [
+      { let sum_exp_in = allocate('sum_exp_in', 4, [
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
         ]);
-        consume(softmax_in);
-        produce(max_in);
-        __event_t++;
-        check(free(softmax_in));
-        { let sum_exp_in = allocate('sum_exp_in', 4, [
+        { let max_in = allocate('max_in', 4, [
             {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
           ]);
+          { let softmax_in = allocate('softmax_in', 4, [
+              {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
+              {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
+            ]);
+            consume(__in);
+            produce(softmax_in);
+            __event_t++;
+            consume(softmax_in);
+            produce(max_in);
+            __event_t++;
+            free(softmax_in);
+          }
           { let exp_in = allocate('exp_in', 4, [
               {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
               {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
@@ -386,28 +391,20 @@ function pipeline(__in, out) {
             produce(sum_exp_in);
             __event_t++;
             check(free(max_in));
-            { let softmax_out = allocate('softmax_out', 4, [
-                {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
-                {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
-              ]);
-              consume(exp_in);
-              consume(sum_exp_in);
-              produce(softmax_out);
-              __event_t++;
-              check(free(sum_exp_in));
-              check(free(exp_in));
-              consume(softmax_out);
-              produce(out);
-              __event_t++;
-              free(softmax_out);
-            }
+            consume(exp_in);
+            consume(sum_exp_in);
+            produce(softmax_out);
+            __event_t++;
             free(exp_in);
           }
-          free(sum_exp_in);
+          free(max_in);
         }
-        free(max_in);
+        free(sum_exp_in);
       }
-      free(softmax_in);
+      consume(softmax_out);
+      produce(out);
+      __event_t++;
+      free(softmax_out);
     }
   }
 }
