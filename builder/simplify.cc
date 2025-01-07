@@ -1871,9 +1871,6 @@ public:
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max(op_bounds.size(), c->bounds.size()));
         op_bounds = c->bounds & op_bounds;
-        for (interval_expr& i : op_bounds) {
-          i = mutate(i);
-        }
         op_src = c->src;
         info = get_buffer_info(op_src, op_bounds.size());
         op = nullptr;
@@ -1885,7 +1882,7 @@ public:
         }
         // Nested crops of the same buffer, and the crop isn't used.
         op_bounds.resize(std::max<int>(op_bounds.size(), c->dim + 1));
-        op_bounds[c->dim] = mutate(c->bounds & op_bounds[c->dim]);
+        op_bounds[c->dim] = c->bounds & op_bounds[c->dim];
         op_src = c->src;
         info = get_buffer_info(op_src, op_bounds.size());
         op = nullptr;
