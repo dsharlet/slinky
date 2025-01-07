@@ -2183,7 +2183,7 @@ public:
       set_result(std::move(a));
     } else if (take_constant && cb) {
       set_result(std::move(b));
-    } else if (constant_required) {
+    } else if (!(a.defined() && b.defined())) {
       set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
@@ -2200,7 +2200,7 @@ public:
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_or_eval_binary<T>(*ca, *cb));
-    } else if (constant_required) {
+    } else if (!(a.defined() && b.defined())) {
       set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
@@ -2234,7 +2234,7 @@ public:
       set_binary_result(op, std::move(a), mutate(op->b, sign * sign_a));
     } else if (sign_b != 0) {
       set_binary_result(op, mutate(op->a, sign * sign_b), std::move(b));
-    } else if (constant_required) {
+    } else if (!(a.defined() && b.defined())) {
       set_result(expr());
     } else {
       set_result(op);
