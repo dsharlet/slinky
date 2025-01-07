@@ -2154,7 +2154,7 @@ class constant_bound : public node_mutator {
   // > 0 -> we are looking for an upper bound
   // == 0 -> we are constant folding
   // < 0 -> we are looking for a lower bound
-  int sign = 1;
+  int sign = 0;
   bool constant_required = false;
 
 public:
@@ -2163,7 +2163,7 @@ public:
   using node_mutator::mutate;
   expr mutate(const expr& x, int sign) {
     int old_sign = this->sign;
-    this->sign *= sign;
+    this->sign = sign;
     expr result = mutate(x);
     this->sign = old_sign;
     return result;
@@ -2209,8 +2209,8 @@ public:
     }
   }
 
-  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, 1)); }
-  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -1)); }
+  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, sign)); }
+  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -sign)); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
@@ -2231,9 +2231,9 @@ public:
     int sign_b = sign_of(b);
     // TODO: We should be able to handle the numerator of div too, it's just tricky.
     if (std::is_same<T, mul>::value && sign_a != 0) {
-      set_binary_result(op, std::move(a), mutate(op->b, sign_a));
+      set_binary_result(op, std::move(a), mutate(op->b, sign * sign_a));
     } else if (sign_b != 0) {
-      set_binary_result(op, mutate(op->a, sign_b), std::move(b));
+      set_binary_result(op, mutate(op->a, sign * sign_b), std::move(b));
     } else if (constant_required) {
       set_result(expr());
     } else {
@@ -2283,7 +2283,7 @@ public:
     // lower bound of the rhs.
     // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
     // upper bound of the rhs.
-    expr a = mutate(op->a, -1);
+    expr a = mutate(op->a, -sign);
     expr b = mutate(op->b);
 
     auto ca = as_constant(a);
@@ -2331,7 +2331,7 @@ public:
   void visit(const logical_or* op) override { visit_logical_and_or(op, /*recurse=*/sign <= 0); }
 
   void visit(const logical_not* op) override {
-    expr a = mutate(op->a, -1);
+    expr a = mutate(op->a, -sign);
     if (auto ca = as_constant(a)) {
       set_result(*ca != 0 ? 0 : 1);
     } else if (sign != 0) {
