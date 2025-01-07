@@ -452,6 +452,7 @@ public:
         i.may_mutate = i.may_mutate || alias.may_mutate;
         i.assume_in_bounds = i.assume_in_bounds && alias.assume_in_bounds;
       }
+      target_info->uses += info.uses;
 
       if (elem_size.defined()) {
         result = block::make({check::make(elem_size == op->elem_size), result});
@@ -782,6 +783,23 @@ public:
   void visit(const transpose*) override {
     // TODO: We should be able to handle this.
     std::abort();
+  }
+
+  void visit(const block* op) override {
+    // Visit blocks in reverse order so we see uses of buffers before they are produced.
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (auto i = op->stmts.rbegin(); i != op->stmts.rend(); ++i) {
+      stmts.push_back(mutate(*i));
+      changed = changed || !stmts.back().same_as(*i);
+    }
+    if (!changed) {
+      set_result(op);
+    } else {
+      std::reverse(stmts.begin(), stmts.end());
+      set_result(block::make(std::move(stmts)));
+    }
   }
 };
 
