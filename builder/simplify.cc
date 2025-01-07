@@ -2209,13 +2209,8 @@ public:
     }
   }
 
-  template <typename T>
-  void visit_add_sub(const T* op, int rhs_sign) {
-    set_binary_result(op, mutate(op->a), mutate(op->b, rhs_sign));
-  }
-
-  void visit(const add* op) override { visit_add_sub(op, 1); }
-  void visit(const sub* op) override { visit_add_sub(op, -1); }
+  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, 1)); }
+  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -1)); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
