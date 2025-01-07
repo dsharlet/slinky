@@ -425,8 +425,7 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 }
 
 void compute_innermost_locations(const std::vector<const func*>& order,
-    const std::map<const func*, std::vector<const func*>> deps,
-    std::map<const func*, loop_id>& compute_at_levels,
+    const std::map<const func*, std::vector<const func*>> deps, std::map<const func*, loop_id>& compute_at_levels,
     std::map<const func*, loop_id>& realization_levels) {
   // A tree which stores loop nest.
   std::vector<loop_tree_node> loop_tree;
