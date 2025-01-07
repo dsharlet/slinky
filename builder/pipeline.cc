@@ -586,6 +586,11 @@ class pipeline_builder {
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
   std::map<const func*, loop_id> compute_at_levels_;
+  // A mapping between func's and the place where their actual call statement
+  // will be generated. This is different from the compute_at_levels_ map
+  // for the case when the func has loops. In this case compute_at will
+  // point to the loop_id at which loops should be placed and this structure
+  // will point to the func's own innermost loop.
   std::map<const func*, loop_id> realization_levels_;
 
   symbol_map<box_expr> allocation_bounds_;
@@ -729,7 +734,6 @@ class pipeline_builder {
   // Generate the loops that we want to be explicit.
   stmt make_loops(const func* f) {
     stmt result;
-    // Generate the loops that we want to be explicit.
     for (const auto& loop : f->loops()) {
       result = make_loop(result, f, loop);
     }
@@ -808,16 +812,17 @@ public:
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
-  // This function works together with the produce() function to
-  // build an initial IR. The high-level approach is the following:
+  // This function works together with the produce() and make_loops() functions
+  // to build an initial IR. The high-level approach is the following:
   // * the `build()` function looks through the list of func's
   //   to find funcs which need to be produced or allocated at given
   //   loop level `at`. If func need to be produced it calls the
   //   `produce()` function which actually produces the body of the
-  //   func.
-  // * the `produce()` for a given func produces it's body along
-  //   with the necessary loops defined for this function. For each
-  //   of the new loops, the `build()` is called for the case when there
+  //   func. If func has loops it calls the 'make_loops()' func to produce
+  //   corresponding loops.
+  // * the `produce()` for a given func produces it's body.
+  // * the `make_loops()` will produce the necessary loops defined for the function.
+  //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     std::vector<stmt> results;
