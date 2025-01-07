@@ -425,7 +425,9 @@ int lca(const std::vector<loop_tree_node>& loop_tree, const std::vector<int>& pa
 }
 
 void compute_innermost_locations(const std::vector<const func*>& order,
-    const std::map<const func*, std::vector<const func*>> deps, std::map<const func*, loop_id>& compute_at_levels) {
+    const std::map<const func*, std::vector<const func*>> deps,
+    std::map<const func*, loop_id>& compute_at_levels,
+    std::map<const func*, loop_id>& realization_levels) {
   // A tree which stores loop nest.
   std::vector<loop_tree_node> loop_tree;
   // Mapping between function and it's most innermost location.
@@ -484,6 +486,11 @@ void compute_innermost_locations(const std::vector<const func*>& order,
     for (auto l = f->loops().rbegin(); l != f->loops().rend(); ++l) {
       loop_tree.push_back({parent_id, {f, l->var}});
       parent_id = static_cast<int>(loop_tree.size()) - 1;
+    }
+    if (f->loops().empty()) {
+      realization_levels[f] = compute_at_levels[f];
+    } else {
+      realization_levels[f] = {f, f->loops().front().var};
     }
     func_to_loop_tree[f] = parent_id;
   }
@@ -579,6 +586,7 @@ class pipeline_builder {
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
   std::map<const func*, loop_id> compute_at_levels_;
+  std::map<const func*, loop_id> realization_levels_;
 
   symbol_map<box_expr> allocation_bounds_;
   symbol_map<std::vector<dim_expr>> inferred_dims_;
@@ -718,6 +726,16 @@ class pipeline_builder {
     return body;
   }
 
+  // Generate the loops that we want to be explicit.
+  stmt make_loops(const func* f) {
+    stmt result;
+    // Generate the loops that we want to be explicit.
+    for (const auto& loop : f->loops()) {
+      result = make_loop(result, f, loop);
+    }
+    return result;
+  }
+
   void compute_allocation_bounds() {
     for (const func* f : order_) {
       bounds_map output_bounds = get_output_bounds(f->outputs());
@@ -752,11 +770,6 @@ class pipeline_builder {
   stmt produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
 
-    // Generate the loops that we want to be explicit.
-    for (const auto& loop : f->loops()) {
-      result = make_loop(result, f, loop);
-    }
-
     return result;
   }
 
@@ -784,7 +797,7 @@ public:
     std::sort(sanitizer_.external.begin(), sanitizer_.external.end());
 
     // Build a loop nest tree and computes compute_at locations when neccessary.
-    compute_innermost_locations(order_, deps, compute_at_levels_);
+    compute_innermost_locations(order_, deps, compute_at_levels_, realization_levels_);
 
     // Compute allocation bounds.
     compute_allocation_bounds();
@@ -814,7 +827,13 @@ public:
       const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
-      if (compute_at->second == at) {
+
+      const auto& realize_at = realization_levels_.find(f);
+      assert(realize_at != realization_levels_.end());
+
+      if (compute_at->second == at && !f->loops().empty()) {
+        results.push_back(make_loops(f));
+      } else if (realize_at->second == at) {
         results.push_back(produce(f));
       }
     }
