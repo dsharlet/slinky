@@ -741,64 +741,47 @@ void optimize_dims(raw_buffer& buf, Bufs&... bufs) {
 
 namespace internal {
 
-// The following few helpers implement traversing a mult-dimensional loop nest and then calling a function.
-// We often will have two dimensions that traverse memory as if it was one loop, and it is valuable to do so
-// to reduce overhead/improve performance.
-// To implement this, we first examine the buffers and generate a "plan". The plan is a sequence of these objects
-// laid out in memory contiguous, like so:
-//
-// struct loop_desc {
-//   for_each_loop loop;
-//   union {
-//     dim* dim;
-//     index_t stride;
-//   } dim_or_stride[buffer_count];
-// };
-// loop_desc loops[rank];
-//
-// We don't actually have this struct, because buffer_count needs to be a runtime variable, but we can emulate
-// this memory layout with pointer arithmetic.
+template <std::size_t BufsSize = 0>
 struct for_each_loop {
+  // These are flags in the `impl` field.
   enum {
-    // Loop types are combinations of
-    call_f = 0x1,
-    folded = 0x2,  // Uses dim, extent
-    linear = 0,    // Uses stride, extent
+    // If this flag is set, the loop body should be called in this loop. If this flag is not set, then there is another
+    // loop inside this loop.
+    innermost = 0x1,
+
+    // If this flag is set, the `dims` field describes this loop. If this flag is not set, the loop is described by the
+    // `extent` and `strides` fields.
+    folded = 0x2,
   };
   int impl;
   index_t extent;
+  union {
+    index_t strides[BufsSize];
+    const dim* dims[BufsSize];
+  };
 };
-
-inline std::size_t size_of_plan(std::size_t rank, std::size_t bufs) {
-  return std::max<std::size_t>(rank, 1) * (sizeof(for_each_loop) + bufs * sizeof(dim*));
-}
 
 index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
 void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
 
-template <typename T>
-SLINKY_ALWAYS_INLINE inline const T* read_plan(const void*& x, std::size_t n = 1) {
-  const T* result = reinterpret_cast<const T*>(x);
-  x = offset_bytes_non_null(x, sizeof(T) * n);
-  return result;
-}
-
 template <typename F, std::size_t NumBufs>
-void for_each_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f);
+void for_each_impl(const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f);
 
 template <bool CallF, typename F, std::size_t NumBufs>
-void for_each_impl_linear(const std::array<void*, NumBufs>& bases, index_t extent, const void* plan, const F& f) {
-  const index_t* strides = read_plan<index_t>(plan, NumBufs);
+void for_each_impl_linear(const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
+  const index_t* strides = loop->strides;
+  index_t extent = loop->extent;
+  ++loop;
   std::array<void*, NumBufs> bases_i = bases;
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   assert(extent >= 1);
-  for (index_t i = extent;;) {
+  for (;;) {
     if (CallF) {
       f(bases_i);
     } else {
-      for_each_impl(bases_i, plan, f);
+      for_each_impl(bases_i, loop, f);
     }
-    if (--i <= 0) break;
+    if (--extent <= 0) break;
     bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
     // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
     if (1 < NumBufs) bases_i[1] = offset_bytes(bases_i[1], strides[1]);
@@ -810,11 +793,11 @@ void for_each_impl_linear(const std::array<void*, NumBufs>& bases, index_t exten
 }
 
 template <bool CallF, typename F, std::size_t NumBufs>
-void for_each_impl_folded(const std::array<void*, NumBufs>& bases, index_t extent, const void* plan, const F& f) {
-  if (extent <= 0) return;
-  dim* const* dims = read_plan<dim*>(plan, NumBufs);
+void for_each_impl_folded(const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
+  const dim* const* dims = loop->dims;
   index_t begin = dims[0]->begin();
-  index_t end = begin + extent;
+  index_t end = begin + loop->extent;
+  ++loop;
   std::array<void*, NumBufs> bases_i;
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   for (index_t i = begin; i < end; ++i) {
@@ -825,22 +808,23 @@ void for_each_impl_folded(const std::array<void*, NumBufs>& bases, index_t exten
     if (CallF) {
       f(bases_i);
     } else {
-      for_each_impl(bases_i, plan, f);
+      for_each_impl(bases_i, loop, f);
     }
   }
 }
 
 template <typename F, std::size_t NumBufs>
-SLINKY_ALWAYS_INLINE inline void for_each_impl(const std::array<void*, NumBufs>& bases, const void* plan, const F& f) {
-  const for_each_loop* loop = read_plan<for_each_loop>(plan);
-  if (loop->impl == (for_each_loop::linear | for_each_loop::call_f)) {
-    for_each_impl_linear<true>(bases, loop->extent, plan, f);
-  } else if (loop->impl == for_each_loop::linear) {
-    for_each_impl_linear<false>(bases, loop->extent, plan, f);
-  } else if (loop->impl == (for_each_loop::folded | for_each_loop::call_f)) {
-    for_each_impl_folded<true>(bases, loop->extent, plan, f);
+SLINKY_ALWAYS_INLINE inline void for_each_impl(
+    const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
+  if (loop->impl == for_each_loop<>::innermost) {
+    for_each_impl_linear<true>(bases, loop, f);
+  } else if (loop->impl == 0) {
+    for_each_impl_linear<false>(bases, loop, f);
+  } else if (loop->impl == (for_each_loop<>::folded | for_each_loop<>::innermost)) {
+    for_each_impl_folded<true>(bases, loop, f);
   } else {
-    for_each_impl_folded<false>(bases, loop->extent, plan, f);
+    assert(loop->impl == for_each_loop<>::folded);
+    for_each_impl_folded<false>(bases, loop, f);
   }
 }
 
@@ -862,8 +846,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
+  auto* plan = SLINKY_ALLOCA(internal::for_each_loop<BufsSize>, std::max<std::size_t>(1, buf.rank));
   std::array<void*, BufsSize> bases;
   index_t slice_extent = internal::make_for_each_contiguous_slice_loops(buf_ptrs, bases.data(), plan);
 
@@ -881,12 +864,11 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  // We might need a slice dim for each dimension in the buffer, plus one for the call to f.
-  auto* plan = SLINKY_ALLOCA(char, internal::size_of_plan(buf.rank, BufsSize));
+  auto* plan = SLINKY_ALLOCA(internal::for_each_loop<BufsSize>, std::max<std::size_t>(1, buf.rank));
   std::array<void*, BufsSize> bases;
   internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
 
-  internal::for_each_impl(bases, plan, [&](const std::array<void*, BufsSize>& bases) {
+  internal::for_each_impl(bases, plan, [&f](const std::array<void*, BufsSize>& bases) {
     std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
                       bases, std::make_index_sequence<BufsSize>()));
   });
