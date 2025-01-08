@@ -26,20 +26,18 @@
 namespace slinky {
 
 void dump_context_for_expr(
-    std::ostream& s, const symbol_map<index_t>& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
+    std::ostream& s, const eval_context& ctx, const expr& deps_of, const node_context* symbols = nullptr) {
   for (std::size_t i = 0; i < ctx.size(); ++i) {
     std::string sym = symbols ? symbols->name(var(i)) : "<" + std::to_string(i) + ">";
     auto deps = depends_on(deps_of, var(i));
     if (!deps_of.defined() || deps.var) {
-      if (ctx[i]) {
-        s << "  " << sym << " = " << *ctx[i] << std::endl;
-      } else {
-        s << "  " << sym << " = <>" << std::endl;
-      }
+      s << "  " << sym << " = " << ctx[var(i)] << std::endl;
     } else if (!deps_of.defined() || deps.buffer_dims || deps.buffer_bounds) {
-      if (ctx[i]) {
-        const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*ctx[i]);
+      const raw_buffer* buf = ctx.lookup_buffer(var(i));
+      if (buf) {
         s << "  " << sym << " = " << *buf << std::endl;
+      } else {
+        s << "  " << sym << " = <null buffer>" << std::endl;
       }
     }
   }
@@ -145,11 +143,10 @@ public:
   }
 
   index_t eval(const variable* op) {
-    auto value = context.lookup(op->sym);
-    assert(value);
-    if (op->field == buffer_field::none) return *value;
+    index_t value = context.lookup(op->sym);
+    if (op->field == buffer_field::none) return value;
 
-    const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(*value);
+    const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
     switch (op->field) {
     case buffer_field::rank: return buf->rank;
     case buffer_field::elem_size: return buf->elem_size;
@@ -166,8 +163,7 @@ public:
   SLINKY_NO_STACK_PROTECTOR index_t eval(const let* op) {
     // This is a bit ugly but we really want to avoid heap allocations here.
     const size_t size = op->lets.size();
-    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
-    (void)new (old_values) std::optional<index_t>[ size ];
+    index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
@@ -176,8 +172,7 @@ public:
     }
     index_t result = eval(op->body);
     for (size_t i = 0; i < size; ++i) {
-      const auto& let = op->lets[i];
-      context[let.first] = old_values[i];
+      context[op->lets[i].first] = old_values[i];
     }
     return result;
   }
@@ -224,7 +219,7 @@ public:
     assert(op->args.size() == 1);
     auto sym = as_variable(op->args[0]);
     assert(sym);
-    raw_buffer* buf = reinterpret_cast<raw_buffer*>(*context.lookup(*sym));
+    const raw_buffer* buf = context.lookup_buffer(*sym);
     assert(buf);
     switch (op->intrinsic) {
     case intrinsic::buffer_size_bytes: return buf->size_bytes();
@@ -315,7 +310,7 @@ public:
   index_t eval_free(const call* op) {
     assert(op->args.size() == 1);
     var sym = *as_variable(op->args[0]);
-    allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(*context.lookup(sym));
+    allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(context.lookup(sym));
     context.free(sym, buf, buf->allocation);
     buf->allocation = nullptr;
     return 1;
@@ -362,6 +357,16 @@ public:
     }
   }
 
+  SLINKY_ALWAYS_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value) {
+    index_t& ctx_value = context[sym];
+    index_t old_value = ctx_value;
+    ctx_value = value;
+    index_t result = eval(op);
+    // context might have grown and invalidated the ctx_value reference.
+    context[sym] = old_value;
+    return result;
+  }
+
   SLINKY_NO_INLINE index_t eval_non_inlined(const stmt& op) {
     switch (op.type()) {
     case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()));
@@ -381,8 +386,7 @@ public:
   SLINKY_NO_STACK_PROTECTOR index_t eval(const let_stmt* op) {
     // This is a bit ugly but we really want to avoid heap allocations here.
     const size_t size = op->lets.size();
-    std::optional<index_t>* old_values = SLINKY_ALLOCA(std::optional<index_t>, size);
-    (void)new (old_values) std::optional<index_t>[ size ];
+    index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
@@ -429,7 +433,7 @@ public:
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
       // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
       // not clear this optimization is necessary yet.
-      std::optional<index_t> old_value = context[op->sym];
+      index_t old_value = context[op->sym];
       index_t result = 0;
       for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
         context[op->sym] = i;
@@ -479,8 +483,7 @@ public:
       buffer.allocation = context.allocate(op->sym, &buffer);
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
-    index_t result = eval(op->body);
+    index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
 
     if (op->storage == memory_type::heap) {
       context.free(op->sym, &buffer, buffer.allocation);
@@ -501,24 +504,22 @@ public:
       buffer.dim(d) = eval(op->dims[d]);
     }
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&buffer));
-    return eval(op->body);
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
   }
 
   index_t eval(const clone_buffer* op) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
 
     raw_buffer clone = *src_buf;
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
-    return eval(op->body);
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&clone));
   }
 
   // For these evaluators, it's easier to assume the op is always shadowed.
   SLINKY_NO_STACK_PROTECTOR index_t eval_shadowed(const crop_buffer* op) {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(context.lookup(op->sym));
     assert(buffer);
 
     std::size_t crop_rank = op->bounds.size();
@@ -547,7 +548,7 @@ public:
   }
 
   index_t eval_shadowed(const crop_dim* op) {
-    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(*context.lookup(op->sym));
+    raw_buffer* buffer = reinterpret_cast<raw_buffer*>(context.lookup(op->sym));
     assert(buffer);
     slinky::dim& dim = buffer->dims[op->dim];
     index_t old_min = dim.min();
@@ -567,15 +568,19 @@ public:
   template <typename T>
   SLINKY_NO_STACK_PROTECTOR index_t eval_unshadowed(const T* op) {
     // The operation is not shadowed. Make a clone and use eval_shadowed on the clone.
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
 
     raw_buffer clone = *src_buf;
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
 
-    auto set_buffer = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&clone));
-    return eval_shadowed(op);
+    index_t& ctx_value = context[op->sym];
+    index_t old_value = ctx_value;
+    ctx_value = reinterpret_cast<index_t>(&clone);
+    index_t result = eval_shadowed(op);
+    context[op->sym] = old_value;
+    return result;
   }
 
   template <typename T>
@@ -587,7 +592,7 @@ public:
   index_t eval(const crop_dim* op) { return eval_maybe_shadowed(op); }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const slice_buffer* op) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
     assert(op->at.size() <= src_buf->rank);
 
@@ -613,12 +618,11 @@ public:
       }
     }
 
-    auto set_sym = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&sym_buf));
-    return eval(op->body);
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
   }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const slice_dim* op) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
     assert(op->dim < static_cast<int>(src_buf->rank));
 
@@ -641,12 +645,11 @@ public:
       sym_buf.dims[d] = src_buf->dims[d + 1];
     }
 
-    auto set_sym = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&sym_buf));
-    return eval(op->body);
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
   }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const transpose* op) {
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(*context.lookup(op->src));
+    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
 
     if (op->sym == op->src && op->is_truncate()) {
@@ -678,8 +681,7 @@ public:
         sym_buf.elem_size = src_buf->elem_size;
         sym_buf.rank = op->dims.size();
         sym_buf.dims = dims;
-        auto set_sym = set_value_in_scope(context, op->sym, reinterpret_cast<index_t>(&sym_buf));
-        return eval(op->body);
+        return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
       }
     }
   }

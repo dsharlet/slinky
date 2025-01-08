@@ -81,7 +81,7 @@ TEST(evaluate, call) {
   std::vector<index_t> calls;
   stmt c = call_stmt::make(
       [&](const call_stmt*, eval_context& ctx) -> index_t {
-        calls.push_back(*ctx[x]);
+        calls.push_back(ctx[x]);
         return 0;
       },
       {}, {}, {});
@@ -104,7 +104,7 @@ TEST(evaluate, loop) {
     std::atomic<index_t> sum_x = 0;
     stmt c = call_stmt::make(
         [&](const call_stmt*, eval_context& ctx) -> index_t {
-          sum_x += *ctx[x];
+          sum_x += ctx[x];
           return 0;
         },
         {}, {}, {});

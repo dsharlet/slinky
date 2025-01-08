@@ -16,7 +16,7 @@ namespace slinky {
 
 // Hackily get at this function in evaluate.cc that we don't want to put in the public API.
 void dump_context_for_expr(
-    std::ostream&, const symbol_map<index_t>&, const expr& = expr(), const node_context* symbols = nullptr);
+    std::ostream&, const eval_context&, const expr& = expr(), const node_context* symbols = nullptr);
 
 namespace {
 

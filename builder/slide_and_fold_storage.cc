@@ -687,7 +687,7 @@ public:
       init_sems_attrs.name = "init_semaphores";
       stmt init_sems = call_stmt::make(
           [stage_count](const call_stmt* s, eval_context& ctx) -> index_t {
-            buffer<index_t>& sems = *reinterpret_cast<buffer<index_t>*>(*ctx.lookup(s->outputs[0]));
+            const buffer<index_t>& sems = *ctx.lookup_buffer<index_t>(s->outputs[0]);
             assert(sems.rank == 2);
             assert(sems.dim(0).min() == 0);
             assert(sems.dim(0).extent() == stage_count);

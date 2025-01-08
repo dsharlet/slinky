@@ -15,6 +15,7 @@ namespace slinky {
 namespace {
 
 dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
+dim empty_dim(0, -1, 0);
 
 }  // namespace
 
@@ -452,9 +453,10 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
 
 // Helper function to write a plan that does nothing when interpreted by for_each_impl.
 void write_empty_plan(void* plan, std::size_t bufs_size) {
-  for_each_loop* next = increment_plan<for_each_loop>(plan);
-  next->impl = for_each_loop::linear | for_each_loop::call_f;
+  for_each_loop<>* next = increment_plan<for_each_loop<>>(plan);
+  next->impl = for_each_loop<>::folded;
   next->extent = 0;
+  next->dims[0] = &empty_dim;
 }
 
 template <bool SkipContiguous, std::size_t BufsSize>
@@ -468,30 +470,13 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
   }
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
-  for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan_base);
-  prev_loop->impl = for_each_loop::linear;
+  for_each_loop<>* prev_loop = reinterpret_cast<for_each_loop<>*>(plan_base);
+  prev_loop->impl = 0;
   prev_loop->extent = 1;
 
   void* plan = plan_base;
   index_t slice_extent = 1;
   index_t extent = 1;
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-  if (buf->rank == 0) {
-    // This is here mainly to ensure that the strides[] array is initialized
-    // properly for the zero-dimensional case; we don't use the results of
-    // adding these strides, but in certain Sanitizer modes we could fail
-    // if we added garbage to a pointer and it overflowed.
-    for_each_loop* loop = increment_plan<for_each_loop>(plan);
-    loop->impl = for_each_loop::linear | for_each_loop::call_f;
-    loop->extent = 1;
-
-    index_t* strides = increment_plan<index_t>(plan, bufs_size);
-    for (std::size_t n = 0; n < bufs_size; n++) {
-      strides[n] = 0;
-    }
-    return 1;
-  }
-#endif
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
 
@@ -501,8 +486,8 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       if (use_folded_loop(bufs, bufs_size, d)) {
         // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
         assert(extent == 1);
-        for_each_loop* loop = increment_plan<for_each_loop>(plan);
-        loop->impl = for_each_loop::folded;
+        for_each_loop<>* loop = increment_plan<for_each_loop<>>(plan);
+        loop->impl = for_each_loop<>::folded;
         loop->extent = buf_dim.extent();
         prev_loop = loop;
 
@@ -555,8 +540,8 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
 
-      for_each_loop* loop = increment_plan<for_each_loop>(plan);
-      loop->impl = for_each_loop::linear;
+      for_each_loop<>* loop = increment_plan<for_each_loop<>>(plan);
+      loop->impl = 0;
       loop->extent = extent;
       prev_loop = loop;
       extent = 1;
@@ -568,7 +553,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       }
     }
   }
-  prev_loop->impl |= for_each_loop::call_f;
+  prev_loop->impl |= for_each_loop<>::innermost;
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
 }
