@@ -8,9 +8,30 @@ namespace slinky {
 
 class thread_pool;
 
-// TODO: Probably shouldn't inherit here.
-class eval_context : public symbol_map<index_t> {
+class eval_context {
+  // TODO: This should be uninitialized memory, not just for performance, but so we can detect uninitialized memory
+  // usage when evaluating.
+  std::vector<index_t> values_;
+
 public:
+  index_t& operator[](var id) {
+    if (id.id >= values_.size()) {
+      values_.resize(std::max(values_.size() * 2, id.id + 1));
+    }
+    return values_[id.id];
+  }
+  index_t operator[](var id) const { return values_[id.id]; }
+
+  index_t lookup(var id) const { return values_[id.id]; }
+  const raw_buffer* lookup_buffer(var id) const { return reinterpret_cast<const raw_buffer*>(lookup(id)); }
+  template <typename T>
+  const buffer<T>* lookup_buffer(var id) const {
+    const raw_buffer* buf = lookup_buffer(id);
+    return buf ? &buf->cast<T>() : nullptr;
+  }
+
+  std::size_t size() const { return values_.size(); }
+
   // These two functions implement allocation. `allocate` is called before
   // running the body, and should assign `base` of the buffer to the address
   // of the min in each dimension. `free` is called after running the body,
@@ -40,8 +61,6 @@ public:
   // Functions called every time a stmt begins or ends evaluation.
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
-
-  const raw_buffer* lookup_buffer(var id) const { return reinterpret_cast<const raw_buffer*>(*lookup(id)); }
 };
 
 index_t evaluate(const expr& e, eval_context& context);
