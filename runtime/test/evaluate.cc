@@ -56,13 +56,13 @@ TEST(evaluate, arithmetic) {
 
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 
-  ASSERT_EQ(evaluate(and_then({expr(true), expr(true)})), true);
-  ASSERT_EQ(evaluate(and_then({expr(true), expr(false)})), false);
-  ASSERT_EQ(evaluate(and_then({expr(false), indeterminate()})), false);
-  ASSERT_EQ(evaluate(or_else({expr(true), expr(true)})), true);
-  ASSERT_EQ(evaluate(or_else({expr(false), expr(true)})), true);
-  ASSERT_EQ(evaluate(or_else({expr(false), expr(false)})), false);
-  ASSERT_EQ(evaluate(or_else({expr(true), indeterminate()})), true);
+  ASSERT_EQ(evaluate(and_then(expr(true), expr(true))), true);
+  ASSERT_EQ(evaluate(and_then(expr(true), expr(false))), false);
+  ASSERT_EQ(evaluate(and_then(expr(false), indeterminate())), false);
+  ASSERT_EQ(evaluate(or_else(expr(true), expr(true))), true);
+  ASSERT_EQ(evaluate(or_else(expr(false), expr(true))), true);
+  ASSERT_EQ(evaluate(or_else(expr(false), expr(false))), false);
+  ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
 }
 
 TEST(evaluate, undef) {
@@ -81,7 +81,7 @@ TEST(evaluate, call) {
   std::vector<index_t> calls;
   stmt c = call_stmt::make(
       [&](const call_stmt*, eval_context& ctx) -> index_t {
-        calls.push_back(*ctx[x]);
+        calls.push_back(ctx[x]);
         return 0;
       },
       {}, {}, {});
@@ -104,7 +104,7 @@ TEST(evaluate, loop) {
     std::atomic<index_t> sum_x = 0;
     stmt c = call_stmt::make(
         [&](const call_stmt*, eval_context& ctx) -> index_t {
-          sum_x += *ctx[x];
+          sum_x += ctx[x];
           return 0;
         },
         {}, {}, {});
@@ -243,26 +243,6 @@ TEST(evaluate, semaphore) {
   evaluate(make_signal(sem3), ctx);
   th.join();
   ASSERT_EQ(state, 2);
-}
-
-TEST(evaluate_constant, arithmetic) {
-  ASSERT_EQ(evaluate_constant(x + 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x - 3), std::nullopt);
-  ASSERT_EQ(evaluate_constant(2 * x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x / 2), std::nullopt);
-  ASSERT_EQ(evaluate_constant(4 % x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x < 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x < 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(3 <= x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x <= 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x > 3), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x > 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x >= 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x >= 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x == 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x == 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x != 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x != 5), std::nullopt);
 }
 
 }  // namespace slinky

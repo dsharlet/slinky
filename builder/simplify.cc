@@ -191,9 +191,9 @@ public:
   void visit(const call*) override { set_result(expr()); }
 };
 
-expr add_constant(const expr& a, index_t b) { 
+expr add_constant(const expr& a, index_t b) {
   if (b == 0) return a;
-  return constant_adder(b).mutate(a); 
+  return constant_adder(b).mutate(a);
 }
 
 // This is based on the simplifier in Halide: https://github.com/halide/Halide/blob/main/src/Simplify_Internal.h
@@ -605,9 +605,9 @@ public:
     if (ec) return *ec != 0;
 
     // e is constant true if we know it has bounds that don't include zero.
-    std::optional<index_t> a = evaluate_constant(constant_lower_bound(e));
+    std::optional<index_t> a = as_constant(constant_lower_bound(e));
     if (a && *a > 0) return true;
-    std::optional<index_t> b = evaluate_constant(constant_upper_bound(e));
+    std::optional<index_t> b = as_constant(constant_upper_bound(e));
     return b && *b < 0;
   }
 
@@ -618,9 +618,9 @@ public:
     if (ec) return *ec == 0;
 
     // e is constant false if we know its bounds are [0, 0].
-    std::optional<index_t> a = evaluate_constant(constant_lower_bound(e));
+    std::optional<index_t> a = as_constant(constant_lower_bound(e));
     if (!a) return false;
-    std::optional<index_t> b = evaluate_constant(constant_upper_bound(e));
+    std::optional<index_t> b = as_constant(constant_upper_bound(e));
     if (!b) return false;
     return *a == 0 && *b == 0;
   }
@@ -1502,8 +1502,14 @@ public:
     return -1;
   }
 
-  bool is_buffer_meta(const expr& x, const expr& value, var sym, buffer_field field, int dim) {
-    return (!x.defined() && !value.defined()) || is_variable(x, sym, field, dim) || prove_true(x == value);
+  // Returns true if x is equivalent to a variable (sym, field, dim).
+  bool is_buffer_meta(
+      const expr& x, const expr& value, var sym, buffer_field field, int dim, const expr& def = expr()) {
+    if (!x.defined() && !value.defined()) return true;
+    if (is_variable(x, sym, field, dim)) return true;
+    if (prove_true(x == value)) return true;
+    if (!x.defined() && def.defined() && prove_true(value == def)) return true;
+    return false;
   }
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
@@ -1515,8 +1521,8 @@ public:
       // The extent is 1, the stride and fold factor don't matter.
       return true;
     } else {
-      return is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim) &&
-             is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim);
+      return is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim, slinky::dim::auto_stride) &&
+             is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim, slinky::dim::unfolded);
     }
   }
 
@@ -1668,7 +1674,7 @@ public:
         return body;
       } else if (can_substitute_buffer(deps)) {
         // We only needed the buffer meta, not the buffer itself.
-        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), std::move(info));
+        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), info);
       } else if (changed || !body.same_as(op->body)) {
         return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
       } else {
@@ -2150,13 +2156,26 @@ interval_expr bounds_of(const interval_expr& x, const bounds_map& expr_bounds, c
 
 namespace {
 
-class constant_bound : public node_mutator {
+class constant_evaluator : public node_mutator {
   // > 0 -> we are looking for an upper bound
+  // == 0 -> we are constant folding
   // < 0 -> we are looking for a lower bound
-  int sign;
+  int sign = 0;
+  bool constant_required = true;
 
 public:
-  constant_bound(int sign) : sign(sign) {}
+  constant_evaluator(bool constant_required = true) : constant_required(constant_required) {}
+
+  using node_mutator::mutate;
+  expr mutate(const expr& x, int sign) {
+    int old_sign = this->sign;
+    this->sign = sign;
+    expr result = mutate(x);
+    this->sign = old_sign;
+    return result;
+  }
+
+  void visit(const variable* op) override { set_result(constant_required ? expr() : expr(op)); }
 
   template <typename T>
   void visit_min_max(const T* op, bool take_constant) {
@@ -2170,6 +2189,8 @@ public:
       set_result(std::move(a));
     } else if (take_constant && cb) {
       set_result(std::move(b));
+    } else if (!(a.defined() && b.defined())) {
+      set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
@@ -2180,16 +2201,13 @@ public:
   void visit(const class max* op) override { visit_min_max(op, /*take_constant=*/sign < 0); }
 
   template <typename T>
-  void visit_add_sub(const T* op, int rhs_sign) {
-    expr a = mutate(op->a);
-    // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
-    sign *= rhs_sign;
-    expr b = mutate(op->b);
-    sign *= rhs_sign;
+  void set_binary_result(const T* op, expr a, expr b) {
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_or_eval_binary<T>(*ca, *cb));
+    } else if (!(a.defined() && b.defined())) {
+      set_result(expr());
     } else if (a.same_as(op->a) && b.same_as(op->b)) {
       set_result(op);
     } else {
@@ -2197,8 +2215,8 @@ public:
     }
   }
 
-  void visit(const add* op) override { visit_add_sub(op, 1); }
-  void visit(const sub* op) override { visit_add_sub(op, -1); }
+  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, sign)); }
+  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -sign)); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
@@ -2208,39 +2226,22 @@ public:
 
   template <typename T>
   void visit_mul_div(const T* op) {
-    auto make = [](expr a, expr b) {
-      auto ac = as_constant(a);
-      auto bc = as_constant(b);
-      if (ac && bc) {
-        return make_or_eval_binary<T>(*ac, *bc);
-      } else {
-        return T::make(std::move(a), std::move(b));
-      }
-    };
+    expr a = mutate(op->a, 0);
+    expr b = mutate(op->b, 0);
+    if (sign == 0 || is_constant(a, 0) || is_constant(b, 0) || (as_constant(a) && as_constant(b))) {
+      set_binary_result(op, std::move(a), std::move(b));
+      return;
+    }
     // When we multiply by a negative number, we need to flip whether we are looking for an upper or lower bound.
-    int sign_a = sign_of(op->a);
-    int sign_b = sign_of(op->b);
+    int sign_a = sign_of(a);
+    int sign_b = sign_of(b);
     // TODO: We should be able to handle the numerator of div too, it's just tricky.
     if (std::is_same<T, mul>::value && sign_a != 0) {
-      int old_sign = sign;
-      sign *= sign_a;
-      expr b = mutate(op->b);
-      sign = old_sign;
-      if (b.same_as(op->b)) {
-        set_result(op);
-      } else {
-        set_result(make(op->a, std::move(b)));
-      }
+      set_binary_result(op, std::move(a), mutate(op->b, sign * sign_a));
     } else if (sign_b != 0) {
-      int old_sign = sign;
-      sign *= sign_b;
-      expr a = mutate(op->a);
-      sign = old_sign;
-      if (a.same_as(op->a)) {
-        set_result(op);
-      } else {
-        set_result(make(std::move(a), op->b));
-      }
+      set_binary_result(op, mutate(op->a, sign * sign_b), std::move(b));
+    } else if (!(a.defined() && b.defined())) {
+      set_result(expr());
     } else {
       set_result(op);
     }
@@ -2250,27 +2251,36 @@ public:
   void visit(const div* op) override { visit_mul_div(op); }
 
   void visit(const mod* op) override {
-    // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
-    // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
-    if (sign < 0) {
+    if (sign == 0) {
+      set_binary_result(op, mutate(op->a), mutate(op->b));
+    } else if (sign < 0) {
+      // We know that 0 <= a % b < upper_bound(abs(b)). We might be able to do better if a is constant, but even that is
+      // not easy, because an upper bound of a is not necessarily an upper bound of a % b.
       set_result(expr(0));
-      return;
-    }
-    expr equiv = max(0, max(-op->b, op->b) - 1);
-    expr result = mutate(equiv);
-    if (!equiv.same_as(result)) {
-      set_result(std::move(result));
     } else {
-      set_result(op);
+      expr equiv = max(0, max(-op->b, op->b) - 1);
+      expr result = mutate(equiv);
+      if (!equiv.same_as(result)) {
+        set_result(std::move(result));
+      } else if (constant_required) {
+        set_result(expr());
+      } else {
+        set_result(op);
+      }
     }
   }
 
-  void visit_logical() {
-    // If we don't know anything about a logical op, the result is either 0 or 1.
-    set_result(expr(sign < 0 ? 0 : 1));
+  template <typename T>
+  void visit_logical(const T* op) {
+    if (sign == 0) {
+      set_binary_result(op, mutate(op->a), mutate(op->b));
+    } else {
+      // If we don't know anything about a logical op, the result is either 0 or 1.
+      set_result(expr(sign < 0 ? 0 : 1));
+    }
   }
-  void visit(const equal* op) override { visit_logical(); }
-  void visit(const not_equal* op) override { visit_logical(); }
+  void visit(const equal* op) override { visit_logical(op); }
+  void visit(const not_equal* op) override { visit_logical(op); }
 
   template <typename T>
   void visit_less(const T* op) {
@@ -2279,54 +2289,80 @@ public:
     // lower bound of the rhs.
     // - For an upper bound, we want to know if this can ever be true, so we want the lower bound of the lhs and the
     // upper bound of the rhs.
-    sign = -sign;
-    expr a = mutate(op->a);
-    sign = -sign;
+    expr a = mutate(op->a, -sign);
     expr b = mutate(op->b);
 
     auto ca = as_constant(a);
     auto cb = as_constant(b);
     if (ca && cb) {
       set_result(make_binary<T>(*ca, *cb));
+    } else if (sign != 0) {
+      // If we don't know anything about a logical op, the result is either 0 or 1.
+      set_result(expr(sign < 0 ? 0 : 1));
+    } else if (!a.defined() || !b.defined()) {
+      set_result(expr());
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(expr(op));
     } else {
-      visit_logical();
+      set_result(T::make(std::move(a), std::move(b)));
     }
   }
   void visit(const less* op) override { visit_less(op); }
   void visit(const less_equal* op) override { visit_less(op); }
 
   template <typename T>
-  void visit_logical_and_or(const T* op, bool recurse) {
-    // We can recursively mutate if:
-    // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
-    // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
-    expr a = recurse ? mutate(op->a) : op->a;
-    expr b = recurse ? mutate(op->b) : op->b;
+  void visit_logical_and_or(const T* op, int new_sign) {
+    expr a = strip_boolean(mutate(op->a, new_sign));
+    expr b = strip_boolean(mutate(op->b, new_sign));
 
-    auto ca = as_constant(a);
-    auto cb = as_constant(b);
+    if (as_constant(b)) std::swap(a, b);
 
-    if (ca && cb) {
-      set_result(make_binary<T>(*ca != 0, *cb != 0));
+    if (auto ca = as_constant(a)) {
+      if (*ca) {
+        set_result(boolean(std::is_same<T, logical_and>::value ? std::move(b) : std::move(a)));
+      } else {
+        set_result(boolean(std::is_same<T, logical_and>::value ? std::move(a) : std::move(b)));
+      }
+    } else if (sign != 0) {
+      // If we don't know anything about a logical op, the result is either 0 or 1.
+      set_result(expr(sign < 0 ? 0 : 1));
+    } else if (!a.defined() || !b.defined()) {
+      set_result(expr());
+    } else if (a.same_as(op->a) && b.same_as(op->b)) {
+      set_result(expr(op));
     } else {
-      visit_logical();
+      set_result(T::make(std::move(a), std::move(b)));
     }
   }
-  void visit(const logical_and* op) override { visit_logical_and_or(op, /*recurse=*/sign > 0); }
-  void visit(const logical_or* op) override { visit_logical_and_or(op, /*recurse=*/sign < 0); }
+
+  // We can recursively look for bounds if:
+  // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
+  // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
+  // - We're constant folding.
+  void visit(const logical_and* op) override { visit_logical_and_or(op, std::min(sign, 0)); }
+  void visit(const logical_or* op) override { visit_logical_and_or(op, std::max(sign, 0)); }
 
   void visit(const logical_not* op) override {
-    sign = -sign;
-    expr a = mutate(op->a);
-    sign = -sign;
-    auto ca = as_constant(a);
-    if (ca) {
+    expr a = strip_boolean(mutate(op->a, -sign));
+    if (auto ca = as_constant(a)) {
       set_result(*ca != 0 ? 0 : 1);
+    } else if (sign != 0) {
+      set_result(expr(sign < 0 ? 0 : 1));
+    } else if (!a.defined()) {
+      set_result(expr());
+    } else if (a.same_as(op->a)) {
+      set_result(expr(op));
     } else {
-      visit_logical();
+      set_result(logical_not::make(std::move(a)));
     }
   }
   void visit(const class select* op) override {
+    expr c = strip_boolean(mutate(op->condition, 0));
+    if (auto cc = as_constant(c)) {
+      set_result(mutate(*cc ? op->true_value : op->false_value));
+      return;
+    }
+
     expr t = mutate(op->true_value);
     expr f = mutate(op->false_value);
     auto ct = as_constant(t);
@@ -2335,29 +2371,84 @@ public:
       set_result(expr(std::min(*ct, *cf)));
     } else if (sign > 0 && ct && cf) {
       set_result(expr(std::max(*ct, *cf)));
-    } else if (t.same_as(op->true_value) && f.same_as(op->false_value)) {
+    } else if (!c.defined() || !t.defined() || !f.defined()) {
+      set_result(expr());
+    } else if (c.same_as(op->condition) && t.same_as(op->true_value) && f.same_as(op->false_value)) {
       set_result(op);
     } else {
-      set_result(select::make(op->condition, std::move(t), std::move(f)));
+      set_result(select::make(std::move(c), std::move(t), std::move(f)));
     }
   }
   void visit(const call* op) override {
     if (op->intrinsic == intrinsic::abs) {
+      assert(op->args.size() == 1);
       expr equiv = max(0, max(op->args[0], -op->args[0]));
       expr result = mutate(equiv);
       if (!equiv.same_as(result)) {
         set_result(std::move(result));
         return;
       }
+    } else if (op->intrinsic == intrinsic::and_then || op->intrinsic == intrinsic::or_else) {
+      assert(op->args.size() == 2);
+      // We can recursively look for bounds if:
+      // - We're looking for the upper bound of &&, because if either operand is definitely false, the result is false.
+      // - We're looking for the lower bound of ||, because if either operand is definitely true, the result is true.
+      // - We're constant folding.
+      const bool is_and = op->intrinsic == intrinsic::and_then;
+      const int new_sign = is_and ? std::min(sign, 0) : std::max(sign, 0);
+      expr a = strip_boolean(mutate(op->args[0], new_sign));
+      expr b = strip_boolean(mutate(op->args[1], new_sign));
+
+      if (auto ca = as_constant(a)) {
+        if (*ca) {
+          set_result(boolean(is_and ? std::move(b) : std::move(a)));
+        } else {
+          set_result(boolean(is_and ? std::move(a) : std::move(b)));
+        }
+      } else if (auto cb = as_constant(b)) {
+        if (*cb) {
+          set_result(boolean(is_and ? std::move(a) : std::move(b)));
+        } else {
+          set_result(boolean(is_and ? std::move(b) : std::move(a)));
+        }
+      } else if (sign != 0) {
+        // If we don't know anything about a logical op, the result is either 0 or 1.
+        set_result(expr(sign < 0 ? 0 : 1));
+      } else if (!a.defined() || !b.defined()) {
+        set_result(expr());
+      } else if (a.same_as(op->args[0]) && b.same_as(op->args[1])) {
+        set_result(expr(op));
+      } else {
+        set_result(call::make(op->intrinsic, {std::move(a), std::move(b)}));
+      }
+      return;
     }
-    set_result(op);
+    if (constant_required) {
+      set_result(expr());
+    } else if (sign == 0) {
+      node_mutator::visit(op);
+    } else {
+      set_result(op);
+    }
   }
 };
 
 }  // namespace
 
-expr constant_lower_bound(const expr& x) { return constant_bound(/*sign=*/-1).mutate(x); }
-expr constant_upper_bound(const expr& x) { return constant_bound(/*sign=*/1).mutate(x); }
+bool can_evaluate(intrinsic fn) {
+  switch (fn) {
+  case intrinsic::abs:
+  case intrinsic::and_then:
+  case intrinsic::or_else: return true;
+  default: return false;
+  }
+}
+
+expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
+expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
+std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
+std::optional<index_t> evaluate_constant_lower_bound(const expr& x) { return as_constant(constant_evaluator().mutate(x, -1)); }
+std::optional<index_t> evaluate_constant_upper_bound(const expr& x) { return as_constant(constant_evaluator().mutate(x, 1)); }
 
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {

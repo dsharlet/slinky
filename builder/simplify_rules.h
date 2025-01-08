@@ -1046,6 +1046,13 @@ bool apply_select_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_call_rules(Fn&& apply) {
   return 
+      apply(and_then(x, c0), boolean(x), c0 != 0) ||
+      apply(and_then(c0, x), boolean(x), c0 != 0) ||
+      apply(and_then(false, x), false) ||
+      apply(or_else(x, false), boolean(x)) ||
+      apply(or_else(c0, x), true, c0 != 0) ||
+      apply(or_else(false, x), boolean(x)) ||
+
       apply(abs(x*c0), abs(x)*c0, c0 > 0) ||
       apply(abs(x*c0), abs(x)*eval(-c0), c0 < 0) ||
       apply(abs(c0 - x), abs(x + eval(-c0))) ||
