@@ -894,7 +894,6 @@ public:
   #ifdef GOOD_STUFF
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     symbol_map<var> uncropped_subs;
-    std::vector<stmt> results;
     std::vector<std::tuple<stmt, int, int>> ress;
     // Build the functions computed at this loop level.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
@@ -924,7 +923,6 @@ public:
           }
         }
 
-        results.push_back(std::get<0>(f_body));
         ress.push_back(f_body);
       } else if (realize_at->second == at) {
         // std::cout << "Producing: " << f->attrs().name << std::endl;
@@ -932,7 +930,6 @@ public:
         // std::cout << "Candidates: " << old_candidates.size() << " " << candidates_for_allocation_.size() <<
         // std::endl;
 
-        results.push_back(std::get<0>(f_body));
         ress.push_back(f_body);
       }
     }
