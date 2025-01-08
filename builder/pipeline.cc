@@ -1053,39 +1053,6 @@ public:
 
     stmt result = block::make(std::move(ress_stmt), body);
 
-    // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
-    // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
-    for (const func* f : order_) {
-      for (const func::output& o : f->outputs()) {
-        const buffer_expr_ptr& b = o.buffer;
-        if (output_syms_.count(b->sym())) continue;
-        if (candidates_for_allocation_.count(b) == 0) continue;
-
-        if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
-          uncropped_subs[b->sym()] = uncropped;
-          result = clone_buffer::make(uncropped, b->sym(), result);
-
-          const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
-          assert(allocation_bounds_[b->sym()]);
-          // const box_expr& bounds = *allocation_bounds_[b->sym()];
-          result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
-
-          candidates_for_allocation_.erase(b);
-          // std::cout << "Allocating: " << expr(b->sym()) << " "
-          //     << allocation_lifetime_start_[b->sym()] << " "
-          //     << allocation_lifetime_end_[b->sym()] << std::endl;
-          // std::vector<stmt> checks;
-          // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-          //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-          //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          // }
-
-          // result = block::make(std::move(checks), result);
-        }
-      }
-    }
-
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
@@ -1278,7 +1245,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
-  std::cout << "Initial IR: \n" << result << "\n";
+  // std::cout << "Initial IR: \n" << result << "\n";
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
@@ -1310,7 +1277,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 
-  std::cout << "Before aliasing: \n" << result << "\n";
+  // std::cout << "Before aliasing: \n" << result << "\n";
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
     // For the purposes of aliasing, constants and inputs are the same thing.
