@@ -446,7 +446,7 @@ public:
       }
       stmt result = make_buffer::make(sym, buffer_at(alloc_var, alias.at), elem_size, alias.dims, std::move(body));
       // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
-      result = make_buffer::make(sym, expr(), elem_size, op->dims, result);
+      result = make_buffer::make(sym, expr(), elem_size, op->dims, std::move(result));
 
       for (auto& i : target_info->aliases) {
         i.may_mutate = i.may_mutate || alias.may_mutate;
@@ -469,7 +469,10 @@ public:
         // original allocation a crop of the expanded allocation.
         body = crop_buffer::make(op->sym, info.shared_alloc_sym, dims_bounds(op->dims), std::move(body));
       }
-      set_result(allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body)));
+      stmt result = allocate::make(sym, op->storage, op->elem_size, std::move(info.dims), std::move(body));
+      // Wrap with the original buffer in case we want to use the metadata in the construction of the buffer.
+      result = make_buffer::make(op->sym, expr(), op->elem_size, op->dims, std::move(result));
+      set_result(std::move(result));
     } else {
       set_result(op);
     }
