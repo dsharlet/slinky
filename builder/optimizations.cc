@@ -633,6 +633,7 @@ public:
     a.target = op->dst;
     a.at.resize(op->dst_x.size());
     a.dims.resize(op->src_x.size());
+    a.permutation.resize(op->dst_x.size());
     assert(op->src_x.size() == info->dims.size());
     for (int dst_d = 0; dst_d < static_cast<int>(op->dst_x.size()); ++dst_d) {
       int src_d;
@@ -658,6 +659,7 @@ public:
           buffer_fold_factor(op->dst, dst_d),
       };
       a.at[dst_d] = info->dims[src_d].bounds.min - offset;
+      a.permutation[dst_d] = src_d;
     }
 
     for (const dim_expr& d : a.dims) {
@@ -666,10 +668,6 @@ public:
         return;
       }
     }
-
-    // In this case, we just want an identity permutation, because the alias dims are already in the src order.
-    a.permutation.resize(op->dst_x.size());
-    std::iota(a.permutation.begin(), a.permutation.end(), 0);
 
     a.is_copy = true;
     a.may_mutate = false;
