@@ -791,12 +791,14 @@ void for_each_impl_linear(const std::array<void*, NumBufs>& bases, index_t exten
   const index_t* strides = read_plan<index_t>(plan, NumBufs);
   std::array<void*, NumBufs> bases_i = bases;
   // If the next step is to call f, do that eagerly here to avoid an extra call.
-  for (index_t i = extent; i > 0; --i) {
+  assert(extent >= 1);
+  for (index_t i = extent;;) {
     if (CallF) {
       f(bases_i);
     } else {
       for_each_impl(bases_i, plan, f);
     }
+    if (--i <= 0) break;
     bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
     // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
     if (1 < NumBufs) bases_i[1] = offset_bytes(bases_i[1], strides[1]);
@@ -809,6 +811,7 @@ void for_each_impl_linear(const std::array<void*, NumBufs>& bases, index_t exten
 
 template <bool CallF, typename F, std::size_t NumBufs>
 void for_each_impl_folded(const std::array<void*, NumBufs>& bases, index_t extent, const void* plan, const F& f) {
+  if (extent <= 0) return;
   dim* const* dims = read_plan<dim*>(plan, NumBufs);
   index_t begin = dims[0]->begin();
   index_t end = begin + extent;
