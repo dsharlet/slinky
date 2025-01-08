@@ -370,17 +370,17 @@ function pipeline(in1, in2, out) {
     consume(in1);
     produce(intm1);
     __event_t++;
-    { let intm2 = allocate('intm2', 2, [
-        {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
-        {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:6}
+    { let intm4 = allocate('intm4', 2, [
+        {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
+        {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:2}
       ]);
-      { let intm4 = allocate('intm4', 2, [
+      { let intm3 = allocate('intm3', 2, [
           {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:2}
         ]);
-        { let intm3 = allocate('intm3', 2, [
-            {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
-            {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:2}
+        { let intm2 = allocate('intm2', 2, [
+            {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:6}
           ]);
           let __loop_min = (buffer_min(out, 1) + -4);
           let __loop_max = buffer_max(out, 1);
@@ -412,11 +412,11 @@ function pipeline(in1, in2, out) {
               __event_t++;
             }}
           }
-          free(intm3);
+          free(intm2);
         }
-        free(intm4);
+        free(intm3);
       }
-      free(intm2);
+      free(intm4);
     }
     free(intm1);
   }

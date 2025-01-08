@@ -358,13 +358,13 @@ function pipeline(__in, out) {
     check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
     check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
     check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-    { let add_result = allocate('add_result', 2, [
-        {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
-        {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:6}
+    { let stencil1_result = allocate('stencil1_result', 2, [
+        {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+        {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:6}
       ]);
-      { let stencil1_result = allocate('stencil1_result', 2, [
-          {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-          {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:6}
+      { let add_result = allocate('add_result', 2, [
+          {bounds:[(buffer_min(stencil1_result, 0) + -1), (buffer_max(stencil1_result, 0) + 1)], stride:NaN, fold_factor:NaN},
+          {bounds:[(buffer_min(stencil1_result, 1) + -1), (buffer_max(stencil1_result, 1) + 1)], stride:NaN, fold_factor:6}
         ]);
         {
           let __trace_token = trace_begin(buffer_at(__trace_names, 21));
@@ -409,9 +409,9 @@ function pipeline(__in, out) {
           }
           check(trace_end(__trace_token));
         }
-        free(stencil1_result);
+        free(add_result);
       }
-      free(add_result);
+      free(stencil1_result);
     }
     check(trace_end(__trace_token));
   }

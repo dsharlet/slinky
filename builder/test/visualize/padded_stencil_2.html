@@ -357,13 +357,13 @@ function pipeline(__in, out) {
     let g_1 = buffer_min(__in, 1);
     let g_0 = buffer_max(__in, 0);
     let g_2 = buffer_max(__in, 1);
-    { let intm = allocate('intm', 2, [
-        {bounds:[max(g, (buffer_min(out, 0) + -1)), min(g_0, (buffer_max(out, 0) + 1))], stride:NaN, fold_factor:NaN},
-        {bounds:[max(g_1, (buffer_min(out, 1) + -1)), min(g_2, (buffer_max(out, 1) + 1))], stride:NaN, fold_factor:1}
+    { let padded_intm = allocate('padded_intm', 2, [
+        {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+        {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
       ]);
-      { let padded_intm = allocate('padded_intm', 2, [
-          {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-          {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
+      { let intm = allocate('intm', 2, [
+          {bounds:[max(buffer_min(padded_intm, 0), g), min(buffer_max(padded_intm, 0), g_0)], stride:NaN, fold_factor:NaN},
+          {bounds:[max(buffer_min(padded_intm, 1), g_1), min(buffer_max(padded_intm, 1), g_2)], stride:NaN, fold_factor:1}
         ]);
         let __loop_min = (buffer_min(out, 1) + -2);
         let __loop_max = buffer_max(out, 1);
@@ -388,9 +388,9 @@ function pipeline(__in, out) {
             __event_t++;
           }}
         }
-        free(padded_intm);
+        free(intm);
       }
-      free(intm);
+      free(padded_intm);
     }
   }
 }
