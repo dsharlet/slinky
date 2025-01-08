@@ -363,15 +363,15 @@ function pipeline(__in, out) {
         {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
         {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
       ]);
-      { let sum_exp_in = allocate('sum_exp_in', 4, [
+      { let softmax_out = allocate('softmax_out', 4, [
+          {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
         ]);
         { let softmax_in = allocate('softmax_in', 4, [
             {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
             {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
           ]);
-          { let softmax_out = allocate('softmax_out', 4, [
-              {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
+          { let sum_exp_in = allocate('sum_exp_in', 4, [
               {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:4}
             ]);
             { let max_in = allocate('max_in', 4, [
@@ -420,11 +420,11 @@ function pipeline(__in, out) {
               }
               free(max_in);
             }
-            free(softmax_out);
+            free(sum_exp_in);
           }
           free(softmax_in);
         }
-        free(sum_exp_in);
+        free(softmax_out);
       }
       free(exp_in);
     }
