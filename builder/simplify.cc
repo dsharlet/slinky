@@ -1502,8 +1502,14 @@ public:
     return -1;
   }
 
-  bool is_buffer_meta(const expr& x, const expr& value, var sym, buffer_field field, int dim) {
-    return (!x.defined() && !value.defined()) || is_variable(x, sym, field, dim) || prove_true(x == value);
+  // Returns true if x is equivalent to a variable (sym, field, dim).
+  bool is_buffer_meta(
+      const expr& x, const expr& value, var sym, buffer_field field, int dim, const expr& def = expr()) {
+    if (!x.defined() && !value.defined()) return true;
+    if (is_variable(x, sym, field, dim)) return true;
+    if (prove_true(x == value)) return true;
+    if (!x.defined() && def.defined() && prove_true(value == def)) return true;
+    return false;
   }
 
   // Returns true if d can be represented as buffer_dim(sym, dim)
@@ -1515,8 +1521,8 @@ public:
       // The extent is 1, the stride and fold factor don't matter.
       return true;
     } else {
-      return is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim) &&
-             is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim);
+      return is_buffer_meta(d.stride, src.stride, sym, buffer_field::stride, dim, slinky::dim::auto_stride) &&
+             is_buffer_meta(d.fold_factor, src.fold_factor, sym, buffer_field::fold_factor, dim, slinky::dim::unfolded);
     }
   }
 
