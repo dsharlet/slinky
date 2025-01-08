@@ -645,8 +645,8 @@ expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
 interval_expr align(interval_expr x, const expr& a) { return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1}; }
 
-expr and_then(std::vector<expr> args) { return call::make(intrinsic::and_then, std::move(args)); }
-expr or_else(std::vector<expr> args) { return call::make(intrinsic::or_else, std::move(args)); }
+expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
+expr or_else(expr a, expr b) { return call::make(intrinsic::or_else, {std::move(a), std::move(b)}); }
 
 expr buffer_rank(var buf) {
   return variable::make(buf, buffer_field::rank);

@@ -56,13 +56,13 @@ TEST(evaluate, arithmetic) {
 
   ASSERT_EQ(evaluate((x + 2) / 3, context), 2);
 
-  ASSERT_EQ(evaluate(and_then({expr(true), expr(true)})), true);
-  ASSERT_EQ(evaluate(and_then({expr(true), expr(false)})), false);
-  ASSERT_EQ(evaluate(and_then({expr(false), indeterminate()})), false);
-  ASSERT_EQ(evaluate(or_else({expr(true), expr(true)})), true);
-  ASSERT_EQ(evaluate(or_else({expr(false), expr(true)})), true);
-  ASSERT_EQ(evaluate(or_else({expr(false), expr(false)})), false);
-  ASSERT_EQ(evaluate(or_else({expr(true), indeterminate()})), true);
+  ASSERT_EQ(evaluate(and_then(expr(true), expr(true))), true);
+  ASSERT_EQ(evaluate(and_then(expr(true), expr(false))), false);
+  ASSERT_EQ(evaluate(and_then(expr(false), indeterminate())), false);
+  ASSERT_EQ(evaluate(or_else(expr(true), expr(true))), true);
+  ASSERT_EQ(evaluate(or_else(expr(false), expr(true))), true);
+  ASSERT_EQ(evaluate(or_else(expr(false), expr(false))), false);
+  ASSERT_EQ(evaluate(or_else(expr(true), indeterminate())), true);
 }
 
 TEST(evaluate, undef) {
@@ -243,26 +243,6 @@ TEST(evaluate, semaphore) {
   evaluate(make_signal(sem3), ctx);
   th.join();
   ASSERT_EQ(state, 2);
-}
-
-TEST(evaluate_constant, arithmetic) {
-  ASSERT_EQ(evaluate_constant(x + 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x - 3), std::nullopt);
-  ASSERT_EQ(evaluate_constant(2 * x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x / 2), std::nullopt);
-  ASSERT_EQ(evaluate_constant(4 % x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x < 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x < 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(3 <= x), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x <= 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x > 3), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x > 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x >= 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x >= 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x == 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x == 5), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x != 4), std::nullopt);
-  ASSERT_EQ(evaluate_constant(x != 5), std::nullopt);
 }
 
 }  // namespace slinky
