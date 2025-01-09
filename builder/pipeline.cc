@@ -496,7 +496,7 @@ void compute_innermost_locations(const std::vector<const func*>& order,
   }
 }
 
-// Update dims vector by substittuting expresultsion from the map.
+// Update dims vector by substittuting expression from the map.
 std::vector<dim_expr> substitute_from_map(std::vector<dim_expr> dims, span<const std::pair<expr, expr>> substitutions) {
   for (dim_expr& dim : dims) {
     dim_expr new_dim = dim;
