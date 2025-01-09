@@ -552,7 +552,7 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
 class pipeline_builder {
   node_context& ctx;
 
-  // Deps.
+  // Various structures to track lifetimes of the buffers.
   std::map<var, int> deps_count_;
 
   std::map<var, int> consumers_produced_;
@@ -713,6 +713,7 @@ class pipeline_builder {
   }
 
   // Generate the loops that we want to be explicit.
+  // Returns generated statement as well as the lifetime range covered by it.
   std::tuple<stmt, int, int> make_loops(const func* f) {
     int old_function_produced = functions_produced_;
 
@@ -755,6 +756,8 @@ class pipeline_builder {
     }
   }
 
+  // Returns generated statement for this function, as well as the 
+  // lifetime range covered by it.
   std::tuple<stmt, int, int> produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
 
@@ -788,6 +791,7 @@ class pipeline_builder {
     return std::make_tuple(result, functions_produced_ - 1, functions_produced_ - 1);
   }
 
+  // Wraps provided body statement with the allocation node for the given buffer.
   stmt produce_allocation(const buffer_expr_ptr& b, stmt body, symbol_map<var>& uncropped_subs) {
     var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
     uncropped_subs[b->sym()] = uncropped;
@@ -808,6 +812,7 @@ class pipeline_builder {
     return result;
   }
 
+  // Computes number of consumers for each of the buffers.
   void compute_deps_count() {
     for (const func* f : order_) {
       for (const auto& i : f->inputs()) {
@@ -889,6 +894,8 @@ public:
 
       if (compute_at->second == at && !f->loops().empty()) {
         std::tuple<stmt, int, int> f_body = make_loops(f);
+        // This is a special case for the buffers which are produced and consumed inside
+        // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_.size() > old_candidates.size() + 1) {
           std::map<var, buffer_expr_ptr> to_remove;
           for (auto b : candidates_for_allocation_) {
@@ -912,10 +919,18 @@ public:
       }
     }
 
-    // 1. Combine buffer sym, start and end times into a vector of tuples.
-    // 2. Sort vector by (end - start) and then sym
-    // 3. iterate over the vector
+    // This attempts to lay out allocation nodes such that the nesting
+    // is minimized. The general idea is to iteratively build up a tree of
+    // allocations starting from the allocations with the allocations with the
+    // shortest life time as the lowest level of the tree. This is not always possible
+    // in general to do and there are corner cases where nesting of allocations will
+    // have depth N regardless of the approach, but in most practical situations this
+    // will produce a structure close to the tree (for example, for the linear pipeline it
+    // should build a perfect tree of depth ~log(N)). Similarly, the complexity of this
+    // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
+    // should be O(N*log(N)).
 
+     // Combine buffer sym, start and end of the lifetime into a vector of tuples.
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
     for (const auto& b : candidates_for_allocation_) {
       if (output_syms_.count(b.first)) continue;
@@ -925,6 +940,7 @@ public:
       }
     }
 
+    // Sort vector by (end - start) and then sym.
     std::sort(lifetimes.begin(), lifetimes.end(),
         [](std::tuple<buffer_expr_ptr, int, int> a, std::tuple<buffer_expr_ptr, int, int> b) {
           if (std::get<2>(a) - std::get<1>(a) == std::get<2>(b) - std::get<1>(b)) {
@@ -935,20 +951,21 @@ public:
 
     int iteration_count = 0;
     while (true) {
-      // std::cout << "\n\n\n NEW ITERATION \n" << lifetimes.size() << " " << results.size() << "\n\n\n";
       std::vector<std::tuple<buffer_expr_ptr, int, int>> new_lifetimes;
       std::vector<std::tuple<stmt, int, int>> new_results;
 
       std::size_t result_index = 0;
       for (std::size_t ix = 0; ix < lifetimes.size() && result_index < results.size();) {
+        // Skip function bodies which go before the current buffer.
         while (result_index < results.size() && std::get<2>(results[result_index]) < std::get<1>(lifetimes[ix])) {
           new_results.push_back(results[result_index]);
           result_index++;
         }
 
-        int new_min = 1000000, new_max = -1;
+        int new_min = std::numeric_limits<int>::max();
+        int new_max = std::numeric_limits<int>::min();
 
-        // if lifetime overlaps with result x_start <= y_end && y_start <= x_end
+        // Find which function bodies overlap with the lifetime of the buffer.
         std::vector<stmt> new_block;
         while (result_index < results.size() && std::get<1>(results[result_index]) <= std::get<2>(lifetimes[ix]) &&
                std::get<1>(lifetimes[ix]) <= std::get<2>(results[result_index])) {
@@ -957,6 +974,8 @@ public:
           new_block.push_back(std::get<0>(results[result_index]));
           result_index++;
         }
+
+        // Combine overlapping function bodies and wrap them into current buffer allocation.
         if (!new_block.empty()) {
           stmt new_body = block::make(new_block);
 
@@ -969,8 +988,10 @@ public:
           new_results.push_back(std::make_tuple(new_body, new_min, new_max));
         }
 
+        // Move to the next buffer.
         ix++;
 
+        // Skip buffers which go before the next statement range/.
         while (ix < lifetimes.size() && std::get<1>(lifetimes[ix]) <= new_max) {
           new_lifetimes.push_back(lifetimes[ix]);
           ix++;
@@ -980,12 +1001,16 @@ public:
       for (std::size_t ix = result_index; ix < results.size(); ix++) {
         new_results.push_back(results[ix]);
       }
+
+      // No changes, so go for the next iteration.
       if (lifetimes.size() == new_lifetimes.size()) break;
+      
       lifetimes = new_lifetimes;
       results = new_results;
       iteration_count++;
     }
 
+    // Combine into one statement.
     std::vector<stmt> results_stmt;
     for (const auto& rs : results) {
       results_stmt.push_back(std::get<0>(rs));
