@@ -562,7 +562,16 @@ class pipeline_builder {
     explicit allocation_candidate(buffer_expr_ptr b) : buffer(b) {}
   };
 
-  std::set<var> candidates_for_allocation_;
+  struct loop_id_less {
+    bool operator()(const loop_id& a, const loop_id& b) const {
+      if (a.root() && b.root()) return false;
+      if (a.root()) return true;
+      if (b.root()) return false;
+      if (a.func == b.func) return a.var < b.var;
+      return a.func < b.func;
+    }
+  };
+  std::map<loop_id, std::set<var>, loop_id_less> candidates_for_allocation_;
   // Information tracking the lifetimes of the buffers.
   symbol_map<allocation_candidate> allocation_info_;
 
@@ -770,7 +779,11 @@ class pipeline_builder {
       const buffer_expr_ptr& b = o.buffer;
       if (output_syms_.count(b->sym())) continue;
 
-      candidates_for_allocation_.insert(b->sym());
+      if (b->store_at()) {
+        candidates_for_allocation_[*b->store_at()].insert(b->sym());
+      } else {
+        candidates_for_allocation_[loop_id()].insert(b->sym());
+      }
 
       allocation_info_[b->sym()]->buffer = b;
       allocation_info_[b->sym()]->lifetime_start = functions_produced_;
@@ -779,7 +792,7 @@ class pipeline_builder {
         allocation_info_[b->sym()]->lifetime_end = functions_produced_;
       }
     }
- 
+
     for (const auto& i : f->inputs()) {
       const auto& input = i.buffer;
       if (input->constant()) {
@@ -907,7 +920,7 @@ public:
       const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
-      std::set<var> old_candidates = candidates_for_allocation_;
+      std::set<var> old_candidates = candidates_for_allocation_[at];
 
       const auto& realize_at = realization_levels_.find(f);
       assert(realize_at != realization_levels_.end());
@@ -916,18 +929,20 @@ public:
         std::tuple<stmt, int, int> f_body = make_loops(f);
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
-        if (candidates_for_allocation_.size() > old_candidates.size() + 1) {
+        if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
           std::set<var> to_remove;
-          for (auto b : candidates_for_allocation_) {
+          for (auto b : candidates_for_allocation_[at]) {
             if (old_candidates.count(b) > 0) continue;
             if (allocation_info_[b]->consumers_produced != allocation_info_[b]->deps_count) continue;
-            if ((allocation_info_[b]->buffer->store_at() && *allocation_info_[b]->buffer->store_at() == at) || (!allocation_info_[b]->buffer->store_at() && at.root())) {
-              std::get<0>(f_body) = produce_allocation(allocation_info_[b]->buffer, std::get<0>(f_body), uncropped_subs);
+            if ((allocation_info_[b]->buffer->store_at() && *allocation_info_[b]->buffer->store_at() == at) ||
+                (!allocation_info_[b]->buffer->store_at() && at.root())) {
+              std::get<0>(f_body) =
+                  produce_allocation(allocation_info_[b]->buffer, std::get<0>(f_body), uncropped_subs);
               to_remove.insert(b);
             }
           }
           for (auto b : to_remove) {
-            candidates_for_allocation_.erase(b);
+            candidates_for_allocation_[at].erase(b);
           }
         }
 
@@ -952,9 +967,10 @@ public:
 
     // Combine buffer sym, start and end of the lifetime into a vector of tuples.
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
-    for (const auto& b : candidates_for_allocation_) {
+    for (const auto& b : candidates_for_allocation_[at]) {
       if (output_syms_.count(b)) continue;
-      if ((allocation_info_[b]->buffer->store_at() && *(allocation_info_[b]->buffer->store_at()) == at) || (!allocation_info_[b]->buffer->store_at() && at.root())) {
+      if ((allocation_info_[b]->buffer->store_at() && *(allocation_info_[b]->buffer->store_at()) == at) ||
+          (!allocation_info_[b]->buffer->store_at() && at.root())) {
         lifetimes.push_back(std::make_tuple(
             allocation_info_[b]->buffer, allocation_info_[b]->lifetime_start, allocation_info_[b]->lifetime_end));
       }
@@ -1000,10 +1016,11 @@ public:
           stmt new_body = block::make(new_block);
 
           buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
-          // assert(candidates_for_allocation_[b->sym()]->consumers_produced == candidates_for_allocation_[b->sym()]->deps_count);
+          // assert(candidates_for_allocation_[b->sym()]->consumers_produced ==
+          // candidates_for_allocation_[b->sym()]->deps_count);
 
           new_body = produce_allocation(b, new_body, uncropped_subs);
-          candidates_for_allocation_.erase(b->sym());
+          candidates_for_allocation_[at].erase(b->sym());
 
           new_results.push_back(std::make_tuple(new_body, new_min, new_max));
         }
