@@ -713,8 +713,6 @@ class pipeline_builder {
   }
 
   // Generate the loops that we want to be explicit.
-  #define GOOD_STUFF
-  #ifdef GOOD_STUFF
   std::tuple<stmt, int, int> make_loops(const func* f) {
     int old_function_produced = functions_produced_;
 
@@ -725,16 +723,6 @@ class pipeline_builder {
 
     return std::make_tuple(result, old_function_produced, functions_produced_);
   }
-  #else
-    // Generate the loops that we want to be explicit.
-  stmt make_loops(const func* f) {
-    stmt result;
-    for (const auto& loop : f->loops()) {
-      result = make_loop(result, f, loop);
-    }
-    return result;
-  }
-  #endif
 
   void compute_allocation_bounds() {
     for (const func* f : order_) {
@@ -766,7 +754,7 @@ class pipeline_builder {
       }
     }
   }
-#ifdef GOOD_STUFF
+
   std::tuple<stmt, int, int> produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
 
@@ -821,14 +809,6 @@ class pipeline_builder {
     // result = block::make(std::move(checks), result);
     return result;
   }
-
-#else
-  stmt produce(const func* f) {
-    stmt result = sanitizer_.mutate(f->make_call());
-
-    return result;
-  }
-#endif
 
 public:
   pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
@@ -891,7 +871,6 @@ public:
   // * the `make_loops()` will produce the necessary loops defined for the function.
   //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  #ifdef GOOD_STUFF
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     symbol_map<var> uncropped_subs;
     std::vector<std::tuple<stmt, int, int>> results;
@@ -1058,66 +1037,6 @@ public:
 
     return result;
   }
-  #else
-    stmt build(const stmt& body, const func* base_f, const loop_id& at) {
-    std::vector<stmt> results;
-
-    // Build the functions computed at this loop level.
-    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
-      const func* f = *i;
-      const auto& compute_at = compute_at_levels_.find(f);
-      assert(compute_at != compute_at_levels_.end());
-
-      const auto& realize_at = realization_levels_.find(f);
-      assert(realize_at != realization_levels_.end());
-
-      if (compute_at->second == at && !f->loops().empty()) {
-        results.push_back(make_loops(f));
-      } else if (realize_at->second == at) {
-        results.push_back(produce(f));
-      }
-    }
-
-    stmt result = block::make(std::move(results), body);
-
-    symbol_map<var> uncropped_subs;
-    // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
-    // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
-    for (const func* f : order_) {
-      for (const func::output& o : f->outputs()) {
-        const buffer_expr_ptr& b = o.buffer;
-        if (output_syms_.count(b->sym())) continue;
-
-        if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
-          uncropped_subs[b->sym()] = uncropped;
-          result = clone_buffer::make(uncropped, b->sym(), result);
-
-          const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
-          assert(allocation_bounds_[b->sym()]);
-          // const box_expr& bounds = *allocation_bounds_[b->sym()];
-          result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
-
-          // std::vector<stmt> checks;
-          // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-          //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-          //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          // }
-
-          // result = block::make(std::move(checks), result);
-        }
-      }
-    }
-
-    // Substitute references to the intermediate buffers with the 'name.uncropped' when they
-    // are used as an input arguments. This does a batch substitution by replacing multiple
-    // buffer names at once and relies on the fact that the same var can't be written
-    // by two different funcs.
-    result = substitute_inputs(result, uncropped_subs);
-
-    return result;
-  }
-  #endif
 
   stmt define_sanitized_replacements(const stmt& body) { return sanitizer_.define_replacements(body); }
 
