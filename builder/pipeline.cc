@@ -764,7 +764,6 @@ class pipeline_builder {
 
       candidates_for_allocation_[b->sym()] = b;
       allocation_lifetime_start_[b->sym()] = functions_produced_;
-      // std::cout << "Lifetime start: " << expr(b->sym()) << " " << functions_produced_ << "\n";
       consumers_produced_[b->sym()] = 0;
     }
 
@@ -782,7 +781,6 @@ class pipeline_builder {
       if (consumers_produced_[input->sym()] == deps_count_[input->sym()]) {
         allocation_lifetime_end_[input->sym()] = functions_produced_;
       }
-      // std::cout << "Lifetime end: " << expr(input->sym()) << " " << functions_produced_ << "\n";
     }
 
     functions_produced_++;
