@@ -552,14 +552,19 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
 class pipeline_builder {
   node_context& ctx;
 
-  // Various structures to track lifetimes of the buffers.
-  std::map<var, int> deps_count_;
+  struct allocation_candidate {
+    buffer_expr_ptr buffer;
+    int deps_count = 0;
+    int consumers_produced = 0;
+    int lifetime_start = -1;
+    int lifetime_end = -1;
 
-  std::map<var, int> consumers_produced_;
-  std::map<var, buffer_expr_ptr> candidates_for_allocation_;
+    explicit allocation_candidate(buffer_expr_ptr b) : buffer(b) {}
+  };
 
-  std::map<var, int> allocation_lifetime_start_;
-  std::map<var, int> allocation_lifetime_end_;
+  std::set<var> candidates_for_allocation_;
+  // Information tracking the lifetimes of the buffers.
+  symbol_map<allocation_candidate> allocation_info_;
 
   int functions_produced_ = 0;
 
@@ -765,11 +770,16 @@ class pipeline_builder {
       const buffer_expr_ptr& b = o.buffer;
       if (output_syms_.count(b->sym())) continue;
 
-      candidates_for_allocation_[b->sym()] = b;
-      allocation_lifetime_start_[b->sym()] = functions_produced_;
-      consumers_produced_[b->sym()] = 0;
-    }
+      candidates_for_allocation_.insert(b->sym());
 
+      allocation_info_[b->sym()]->buffer = b;
+      allocation_info_[b->sym()]->lifetime_start = functions_produced_;
+
+      if (allocation_info_[b->sym()]->consumers_produced == allocation_info_[b->sym()]->deps_count) {
+        allocation_info_[b->sym()]->lifetime_end = functions_produced_;
+      }
+    }
+ 
     for (const auto& i : f->inputs()) {
       const auto& input = i.buffer;
       if (input->constant()) {
@@ -779,10 +789,10 @@ class pipeline_builder {
         continue;
       }
 
-      consumers_produced_[input->sym()]++;
+      allocation_info_[input->sym()]->consumers_produced++;
 
-      if (consumers_produced_[input->sym()] == deps_count_[input->sym()]) {
-        allocation_lifetime_end_[input->sym()] = functions_produced_;
+      if (allocation_info_[input->sym()]->consumers_produced == allocation_info_[input->sym()]->deps_count) {
+        allocation_info_[input->sym()]->lifetime_end = functions_produced_;
       }
     }
 
@@ -815,6 +825,17 @@ class pipeline_builder {
   // Computes number of consumers for each of the buffers.
   void compute_deps_count() {
     for (const func* f : order_) {
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (output_syms_.count(b->sym())) continue;
+
+        if (!allocation_info_[b->sym()]) {
+          allocation_info_[b->sym()].emplace(b);
+        }
+      }
+    }
+
+    for (const func* f : order_) {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
         if (input->constant()) {
@@ -823,8 +844,7 @@ class pipeline_builder {
         if (!input->producer()) {
           continue;
         }
-
-        deps_count_[input->sym()] += 1;
+        allocation_info_[input->sym()]->deps_count++;
       }
     }
   }
@@ -887,7 +907,7 @@ public:
       const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
-      std::map<var, buffer_expr_ptr> old_candidates = candidates_for_allocation_;
+      std::set<var> old_candidates = candidates_for_allocation_;
 
       const auto& realize_at = realization_levels_.find(f);
       assert(realize_at != realization_levels_.end());
@@ -897,17 +917,17 @@ public:
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_.size() > old_candidates.size() + 1) {
-          std::map<var, buffer_expr_ptr> to_remove;
+          std::set<var> to_remove;
           for (auto b : candidates_for_allocation_) {
-            if (old_candidates.count(b.first) > 0) continue;
-            if (consumers_produced_[b.first] != deps_count_[b.first]) continue;
-            if ((b.second->store_at() && *b.second->store_at() == at) || (!b.second->store_at() && at.root())) {
-              std::get<0>(f_body) = produce_allocation(b.second, std::get<0>(f_body), uncropped_subs);
+            if (old_candidates.count(b) > 0) continue;
+            if (allocation_info_[b]->consumers_produced != allocation_info_[b]->deps_count) continue;
+            if ((allocation_info_[b]->buffer->store_at() && *allocation_info_[b]->buffer->store_at() == at) || (!allocation_info_[b]->buffer->store_at() && at.root())) {
+              std::get<0>(f_body) = produce_allocation(allocation_info_[b]->buffer, std::get<0>(f_body), uncropped_subs);
               to_remove.insert(b);
             }
           }
           for (auto b : to_remove) {
-            candidates_for_allocation_.erase(b.first);
+            candidates_for_allocation_.erase(b);
           }
         }
 
@@ -933,10 +953,10 @@ public:
     // Combine buffer sym, start and end of the lifetime into a vector of tuples.
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
     for (const auto& b : candidates_for_allocation_) {
-      if (output_syms_.count(b.first)) continue;
-      if ((b.second->store_at() && *b.second->store_at() == at) || (!b.second->store_at() && at.root())) {
+      if (output_syms_.count(b)) continue;
+      if ((allocation_info_[b]->buffer->store_at() && *(allocation_info_[b]->buffer->store_at()) == at) || (!allocation_info_[b]->buffer->store_at() && at.root())) {
         lifetimes.push_back(std::make_tuple(
-            b.second, allocation_lifetime_start_[b.second->sym()], allocation_lifetime_end_[b.second->sym()]));
+            allocation_info_[b]->buffer, allocation_info_[b]->lifetime_start, allocation_info_[b]->lifetime_end));
       }
     }
 
@@ -980,7 +1000,7 @@ public:
           stmt new_body = block::make(new_block);
 
           buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
-          assert(consumers_produced_[b->sym()] == deps_count_[b->sym()]);
+          // assert(candidates_for_allocation_[b->sym()]->consumers_produced == candidates_for_allocation_[b->sym()]->deps_count);
 
           new_body = produce_allocation(b, new_body, uncropped_subs);
           candidates_for_allocation_.erase(b->sym());
@@ -1150,6 +1170,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
+  // std::cout << "Initial IR:\n" << result << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
