@@ -756,7 +756,7 @@ class pipeline_builder {
     }
   }
 
-  // Returns generated statement for this function, as well as the 
+  // Returns generated statement for this function, as well as the
   // lifetime range covered by it.
   std::tuple<stmt, int, int> produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
@@ -930,13 +930,13 @@ public:
     // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
     // should be O(N*log(N)).
 
-     // Combine buffer sym, start and end of the lifetime into a vector of tuples.
+    // Combine buffer sym, start and end of the lifetime into a vector of tuples.
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
     for (const auto& b : candidates_for_allocation_) {
       if (output_syms_.count(b.first)) continue;
       if ((b.second->store_at() && *b.second->store_at() == at) || (!b.second->store_at() && at.root())) {
-        lifetimes.push_back(
-            std::make_tuple(b.second, allocation_lifetime_start_[b.second->sym()], allocation_lifetime_end_[b.second->sym()]));
+        lifetimes.push_back(std::make_tuple(
+            b.second, allocation_lifetime_start_[b.second->sym()], allocation_lifetime_end_[b.second->sym()]));
       }
     }
 
@@ -981,7 +981,7 @@ public:
 
           buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
           assert(consumers_produced_[b->sym()] == deps_count_[b->sym()]);
-          
+
           new_body = produce_allocation(b, new_body, uncropped_subs);
           candidates_for_allocation_.erase(b->sym());
 
@@ -1004,7 +1004,7 @@ public:
 
       // No changes, so go for the next iteration.
       if (lifetimes.size() == new_lifetimes.size()) break;
-      
+
       lifetimes = new_lifetimes;
       results = new_results;
       iteration_count++;
