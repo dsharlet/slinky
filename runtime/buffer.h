@@ -521,8 +521,10 @@ public:
   }
 
   void free() {
-    ::free(to_free);
-    to_free = nullptr;
+    if (to_free) {
+      ::free(to_free);
+      to_free = nullptr;
+    }
   }
 };
 
