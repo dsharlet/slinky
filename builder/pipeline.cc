@@ -791,7 +791,7 @@ class pipeline_builder {
     return std::make_tuple(result, functions_produced_ - 1, functions_produced_ - 1);
   }
 
-  // Wraps provided body statement with the allocation node for the given buffer.
+  // Wraps provided body statement with the allocation node for a given buffer.
   stmt produce_allocation(const buffer_expr_ptr& b, stmt body, symbol_map<var>& uncropped_subs) {
     var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
     uncropped_subs[b->sym()] = uncropped;
