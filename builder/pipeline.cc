@@ -810,6 +810,22 @@ class pipeline_builder {
     return result;
   }
 
+  void compute_deps_count() {
+    for (const func* f : order_) {
+      for (const auto& i : f->inputs()) {
+        const auto& input = i.buffer;
+        if (input->constant()) {
+          continue;
+        }
+        if (!input->producer()) {
+          continue;
+        }
+
+        deps_count_[input->sym()] += 1;
+      }
+    }
+  }
+
 public:
   pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
       const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants)
@@ -842,19 +858,8 @@ public:
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
 
-    for (const func* f : order_) {
-      for (const auto& i : f->inputs()) {
-        const auto& input = i.buffer;
-        if (input->constant()) {
-          continue;
-        }
-        if (!input->producer()) {
-          continue;
-        }
-
-        deps_count_[input->sym()] += 1;
-      }
-    }
+    // Compute number of consumers for each of the buffers.
+    compute_deps_count();
   }
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
