@@ -1242,7 +1242,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build(result, nullptr, loop_id());
-  // std::cout << "Initial IR: \n" << result << "\n";
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
@@ -1270,11 +1269,9 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = block::make(std::move(buffer_checks), std::move(result));
 
   result = slide_and_fold_storage(result, ctx);
-
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 
-  // std::cout << "Before aliasing: \n" << result << "\n";
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
     // For the purposes of aliasing, constants and inputs are the same thing.
