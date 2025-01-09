@@ -51,7 +51,7 @@ class dim {
   index_t fold_factor_;
 
 public:
-  static constexpr index_t auto_stride = std::numeric_limits<index_t>::min();
+  static constexpr index_t auto_stride = std::numeric_limits<index_t>::max();
   static constexpr index_t unfolded = std::numeric_limits<index_t>::max();
 
   dim() : min_(0), max_(-1), stride_(auto_stride), fold_factor_(unfolded) {}
@@ -521,8 +521,10 @@ public:
   }
 
   void free() {
-    ::free(to_free);
-    to_free = nullptr;
+    if (to_free) {
+      ::free(to_free);
+      to_free = nullptr;
+    }
   }
 };
 

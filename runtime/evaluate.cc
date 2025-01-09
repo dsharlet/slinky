@@ -133,15 +133,6 @@ public:
     }
   }
 
-  dim eval(const dim_expr& x) {
-    dim result;
-    interval bounds = eval(x.bounds);
-    result.set_bounds(bounds.min, bounds.max);
-    result.set_stride(eval(x.stride, dim::auto_stride));
-    result.set_fold_factor(eval(x.fold_factor, dim::unfolded));
-    return result;
-  }
-
   index_t eval(const variable* op) {
     index_t value = context.lookup(op->sym);
     if (op->field == buffer_field::none) return value;
@@ -471,7 +462,12 @@ public:
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t d = 0; d < rank; ++d) {
-      buffer.dim(d) = eval(op->dims[d]);
+      const dim_expr& op_d = op->dims[d];
+      dim& buf_d = buffer.dim(d);
+      interval bounds = eval(op_d.bounds);
+      buf_d.set_bounds(bounds.min, bounds.max);
+      buf_d.set_stride(eval(op_d.stride, dim::auto_stride));
+      buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
     }
 
     if (op->storage == memory_type::stack) {
@@ -501,7 +497,12 @@ public:
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
     for (std::size_t d = 0; d < rank; ++d) {
-      buffer.dim(d) = eval(op->dims[d]);
+      const dim_expr& op_d = op->dims[d];
+      dim& buf_d = buffer.dim(d);
+      interval bounds = eval(op_d.bounds);
+      buf_d.set_bounds(bounds.min, bounds.max);
+      buf_d.set_stride(eval(op_d.stride));
+      buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
     }
 
     return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
