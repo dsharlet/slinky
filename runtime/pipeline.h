@@ -23,6 +23,14 @@ public:
   using scalars = span<const index_t>;
   using buffers = span<const raw_buffer*>;
 
+  // Set up the context to run the pipeline, but do not run it.
+  void setup(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const;
+  void setup(buffers inputs, buffers outputs, eval_context& ctx) const;
+
+  // Run an already set up pipeline.
+  index_t evaluate(eval_context& ctx) const;
+
+  // Combines setup + evaluate.
   index_t evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const;
   index_t evaluate(buffers inputs, buffers outputs, eval_context& ctx) const;
   index_t evaluate(scalars args, buffers inputs, buffers outputs) const;
