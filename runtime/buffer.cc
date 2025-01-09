@@ -94,33 +94,26 @@ namespace {
 
 // A proposed stride is "OK" w.r.t. `dim` if the proposed stride does not cause this dimension's memory to overlap with
 // any other dimension's memory.
-bool is_stride_ok(index_t stride, index_t extent, const dim& dim) {
+SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t abs_stride, index_t extent, const dim& dim) {
   if (dim.stride() == dim::auto_stride) {
     // If the dimension has an unknown stride, it's OK, we're
     // resolving the current dim first.
     return true;
-  } else if (extent == 1 && std::abs(stride) == std::abs(dim.stride()) && alloc_extent(dim) > 1) {
-    // If a dimension is extent 1, avoid giving this dimension the same stride
-    // as another dimension with extent greater than 1. This doesn't affect the
-    // results of most programs (because the stride only ever multiplied with
-    // zero), but it makes the strides less objectionable to asserts in some
-    // other libraries that make extra assumptions about images, and may be
-    // easier to understand.
-    return false;
-  } else if (alloc_extent(dim) * std::abs(dim.stride()) <= stride) {
-    // The dim is completely inside the proposed stride.
-    return true;
-  } else if (std::abs(dim.stride()) >= extent * stride) {
+  } else if (std::abs(dim.stride()) >= extent * abs_stride) {
     // The dim is completely outside the proposed stride.
+    return true;
+  } else if (alloc_extent(dim) * std::abs(dim.stride()) <= abs_stride) {
+    // The dim is completely inside the proposed stride.
     return true;
   } else {
     return false;
   }
 }
 
-bool is_stride_ok(index_t stride, index_t extent, span<const dim> dims) {
+SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t stride, index_t extent, span<const dim> dims) {
+  index_t abs_stride = std::abs(stride);
   for (const dim& i : dims) {
-    if (!is_stride_ok(stride, extent, i)) {
+    if (!is_stride_ok(abs_stride, extent, i)) {
       return false;
     }
   }
@@ -135,7 +128,7 @@ void raw_buffer::init_strides(index_t alignment) {
 
     index_t alloc_extent_i = alloc_extent(dim(i));
 
-    if (is_stride_ok(elem_size, alloc_extent_i, {dims, rank})) {
+    if (alloc_extent_i <= 1 || is_stride_ok(elem_size, alloc_extent_i, {dims, rank})) {
       // This dimension can have stride elem_size, no other stride could be better.
       dim(i).set_stride(elem_size);
       continue;
@@ -147,10 +140,6 @@ void raw_buffer::init_strides(index_t alignment) {
       if (dim(j).stride() == dim::auto_stride) {
         // We don't know the stride of this dimension, it can't help us decide a stride for this dimension.
         continue;
-      } else if (dim(j).max() < dim(j).min()) {
-        // This dimension (and this buffer) is empty.
-        min = 0;
-        break;
       }
 
       index_t candidate = align_up(std::abs(dim(j).stride()) * alloc_extent(dim(j)), alignment);
