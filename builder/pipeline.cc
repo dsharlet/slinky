@@ -797,16 +797,16 @@ class pipeline_builder {
 
     const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
     assert(allocation_bounds_[b->sym()]);
-    // const box_expr& bounds = *allocation_bounds_[b->sym()];
+    const box_expr& bounds = *allocation_bounds_[b->sym()];
     result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
 
-    // std::vector<stmt> checks;
-    // for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-    //   checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-    //   checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-    // }
+    std::vector<stmt> checks;
+    for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+      checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+      checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+    }
 
-    // result = block::make(std::move(checks), result);
+    result = block::make(std::move(checks), result);
     return result;
   }
 
