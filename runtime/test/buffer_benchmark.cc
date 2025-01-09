@@ -390,4 +390,19 @@ void BM_for_each_element_batch_dims(benchmark::State& state) {
 
 BENCHMARK(BM_for_each_element_batch_dims);
 
+void BM_init_strides(benchmark::State& state) {
+
+  for (auto _ : state) {
+    buffer<int, 4> buf;
+    buf.dim(0).set_min_extent(0, 44);
+    buf.dim(1).set_min_extent(0, 1);
+    buf.dim(2).set_min_extent(0, 1);
+    buf.dim(3).set_min_extent(0, 1);
+
+    buf.init_strides();
+  }
+}
+
+BENCHMARK(BM_init_strides);
+
 }  // namespace slinky
