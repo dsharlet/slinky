@@ -961,33 +961,31 @@ public:
     // should be O(N*log(N)).
 
     // Combine buffer sym, start and end of the lifetime into a vector of tuples.
-    std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
+    std::vector<allocation_candidate> lifetimes;
     for (const auto& b : candidates_for_allocation_[at]) {
       if (output_syms_.count(b)) continue;
-      std::optional<allocation_candidate>& info = allocation_info_[b];
 
-      lifetimes.push_back(std::make_tuple(
-          info->buffer, info->lifetime_start, info->lifetime_end));
+      lifetimes.push_back(*allocation_info_[b]);
     }
 
-    // Sort vector by (end - start) and then sym.
+    // Sort vector by (end - start) and then start.
     std::sort(lifetimes.begin(), lifetimes.end(),
-        [](std::tuple<buffer_expr_ptr, int, int> a, std::tuple<buffer_expr_ptr, int, int> b) {
-          if (std::get<2>(a) - std::get<1>(a) == std::get<2>(b) - std::get<1>(b)) {
-            return std::get<1>(a) < std::get<1>(b);
+        [](allocation_candidate a, allocation_candidate b) {
+          if ((a.lifetime_end - a.lifetime_start) == (b.lifetime_end - b.lifetime_start)) {
+            return a.lifetime_start < b.lifetime_start;
           }
-          return std::get<2>(a) - std::get<1>(a) < std::get<2>(b) - std::get<1>(b);
+          return (a.lifetime_end - a.lifetime_start) < (b.lifetime_end - b.lifetime_start);
         });
 
     int iteration_count = 0;
     while (true) {
-      std::vector<std::tuple<buffer_expr_ptr, int, int>> new_lifetimes;
+      std::vector<allocation_candidate> new_lifetimes;
       std::vector<std::tuple<stmt, int, int>> new_results;
 
       std::size_t result_index = 0;
       for (std::size_t ix = 0; ix < lifetimes.size() && result_index < results.size();) {
         // Skip function bodies which go before the current buffer.
-        while (result_index < results.size() && std::get<2>(results[result_index]) < std::get<1>(lifetimes[ix])) {
+        while (result_index < results.size() && std::get<2>(results[result_index]) < lifetimes[ix].lifetime_start) {
           new_results.push_back(results[result_index]);
           result_index++;
         }
@@ -997,8 +995,8 @@ public:
 
         // Find which function bodies overlap with the lifetime of the buffer.
         std::vector<stmt> new_block;
-        while (result_index < results.size() && std::get<1>(results[result_index]) <= std::get<2>(lifetimes[ix]) &&
-               std::get<1>(lifetimes[ix]) <= std::get<2>(results[result_index])) {
+        while (result_index < results.size() && std::get<1>(results[result_index]) <= lifetimes[ix].lifetime_end &&
+               lifetimes[ix].lifetime_start <= std::get<2>(results[result_index])) {
           new_min = std::min(new_min, std::get<1>(results[result_index]));
           new_max = std::max(new_max, std::get<2>(results[result_index]));
           new_block.push_back(std::get<0>(results[result_index]));
@@ -1009,7 +1007,7 @@ public:
         if (!new_block.empty()) {
           stmt new_body = block::make(new_block);
 
-          buffer_expr_ptr b = std::get<0>(lifetimes[ix]);
+          buffer_expr_ptr b = lifetimes[ix].buffer;
           // assert(candidates_for_allocation_[b->sym()]->consumers_produced ==
           // candidates_for_allocation_[b->sym()]->deps_count);
 
@@ -1023,7 +1021,7 @@ public:
         ix++;
 
         // Skip buffers which go before the next statement range/.
-        while (ix < lifetimes.size() && std::get<1>(lifetimes[ix]) <= new_max) {
+        while (ix < lifetimes.size() && lifetimes[ix].lifetime_start <= new_max) {
           new_lifetimes.push_back(lifetimes[ix]);
           ix++;
         }
