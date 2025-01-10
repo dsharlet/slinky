@@ -933,12 +933,10 @@ public:
             if (old_candidates.count(b) > 0) continue;
             std::optional<allocation_candidate>& info = allocation_info_[b];
             if (info->consumers_produced != info->deps_count) continue;
-            if ((info->buffer->store_at() && *info->buffer->store_at() == at) ||
-                (!info->buffer->store_at() && at.root())) {
-              std::get<0>(f_body) =
-                  produce_allocation(info->buffer, std::get<0>(f_body), uncropped_subs);
-              to_remove.push_back(b);
-            }
+
+            std::get<0>(f_body) =
+                produce_allocation(info->buffer, std::get<0>(f_body), uncropped_subs);
+            to_remove.push_back(b);
           }
           for (auto b : to_remove) {
             candidates_for_allocation_[at].erase(b);
@@ -967,11 +965,9 @@ public:
     for (const auto& b : candidates_for_allocation_[at]) {
       if (output_syms_.count(b)) continue;
       std::optional<allocation_candidate>& info = allocation_info_[b];
-      if ((info->buffer->store_at() && *(info->buffer->store_at()) == at) ||
-          (!info->buffer->store_at() && at.root())) {
-        lifetimes.push_back(std::make_tuple(
-            info->buffer, info->lifetime_start, info->lifetime_end));
-      }
+
+      lifetimes.push_back(std::make_tuple(
+          info->buffer, info->lifetime_start, info->lifetime_end));
     }
 
     // Sort vector by (end - start) and then sym.
