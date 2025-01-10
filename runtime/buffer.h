@@ -380,13 +380,15 @@ template <typename T, std::size_t DimsSize>
 class buffer : public raw_buffer {
 private:
   void* to_free;
-  slinky::dim dims_storage[DimsSize];
+
+  // Avoid default constructor of slinky::dim, we might not use this.
+  alignas(slinky::dim) char dims_storage[sizeof(slinky::dim) * DimsSize];
 
   void assign_dims(int rank, const slinky::dim* src = nullptr) {
     assert(rank <= static_cast<int>(DimsSize));
     this->rank = rank;
     if (DimsSize > 0) {
-      dims = dims_storage;
+      dims = reinterpret_cast<slinky::dim*>(dims_storage);
       if (src) {
         internal::copy_small_n(src, rank, dims);
       } else {
@@ -505,7 +507,8 @@ public:
   // Insert a new dimension `dim` at index d, increasing the rank by 1.
   buffer<T, DimsSize>& unslice(std::size_t d, const slinky::dim& dim) {
     assert(d <= rank);
-    if (d == 0 && &dims_storage[0] <= dims - 1) {
+    slinky::dim* dims_storage = reinterpret_cast<slinky::dim*>(this->dims_storage);
+    if (d == 0 && &dims_storage[0] < dims) {
       assert(dims < &dims_storage[DimsSize]);
       dims -= 1;
     } else {
