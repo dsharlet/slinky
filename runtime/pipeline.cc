@@ -7,7 +7,7 @@
 
 namespace slinky {
 
-index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
+void pipeline::setup(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
   assert(args.size() == this->args.size());
   assert(inputs.size() == this->inputs.size());
   assert(outputs.size() == this->outputs.size());
@@ -24,12 +24,22 @@ index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_c
   for (const auto& i : constants) {
     ctx[i.first] = reinterpret_cast<index_t>(i.second.get());
   }
+}
 
+void pipeline::setup(buffers inputs, buffers outputs, eval_context& ctx) const {
+  setup({}, inputs, outputs, ctx);
+}
+
+index_t pipeline::evaluate(eval_context& ctx) const { return slinky::evaluate(body, ctx); }
+
+index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs, eval_context& ctx) const {
+  setup(args, inputs, outputs, ctx);
   return slinky::evaluate(body, ctx);
 }
 
 index_t pipeline::evaluate(buffers inputs, buffers outputs, eval_context& ctx) const {
-  return evaluate({}, inputs, outputs, ctx);
+  setup(inputs, outputs, ctx);
+  return slinky::evaluate(body, ctx);
 }
 
 index_t pipeline::evaluate(scalars args, buffers inputs, buffers outputs) const {
