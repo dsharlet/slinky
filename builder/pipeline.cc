@@ -726,9 +726,15 @@ class pipeline_builder {
     return body;
   }
 
+  struct statement_with_range {
+    stmt body;
+    int start;
+    int end;
+  };
+
   // Generate the loops that we want to be explicit.
   // Returns generated statement as well as the lifetime range covered by it.
-  std::tuple<stmt, int, int> make_loops(const func* f) {
+  statement_with_range make_loops(const func* f) {
     int old_function_produced = functions_produced_;
 
     stmt result;
@@ -736,7 +742,7 @@ class pipeline_builder {
       result = make_loop(result, f, loop);
     }
 
-    return std::make_tuple(result, old_function_produced, functions_produced_);
+    return {result, old_function_produced, functions_produced_};
   }
 
   void compute_allocation_bounds() {
@@ -772,7 +778,7 @@ class pipeline_builder {
 
   // Returns generated statement for this function, as well as the
   // lifetime range covered by it.
-  std::tuple<stmt, int, int> produce(const func* f) {
+  statement_with_range produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
 
     for (const func::output& o : f->outputs()) {
@@ -810,7 +816,7 @@ class pipeline_builder {
 
     functions_produced_++;
 
-    return std::make_tuple(result, functions_produced_ - 1, functions_produced_ - 1);
+    return {result, functions_produced_ - 1, functions_produced_ - 1};
   }
 
   // Wraps provided body statement with the allocation node for a given buffer.
@@ -911,7 +917,7 @@ public:
   //   are func which need to be produced in that new loop.
   stmt build(const stmt& body, const func* base_f, const loop_id& at) {
     symbol_map<var> uncropped_subs;
-    std::vector<std::tuple<stmt, int, int>> results;
+    std::vector<statement_with_range> results;
     // Build the functions computed at this loop level.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
@@ -923,7 +929,7 @@ public:
       assert(realize_at != realization_levels_.end());
 
       if (compute_at->second == at && !f->loops().empty()) {
-        std::tuple<stmt, int, int> f_body = make_loops(f);
+        statement_with_range f_body = make_loops(f);
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
@@ -934,8 +940,8 @@ public:
             std::optional<allocation_candidate>& info = allocation_info_[b];
             if (info->consumers_produced != info->deps_count) continue;
 
-            std::get<0>(f_body) =
-                produce_allocation(info->buffer, std::get<0>(f_body), uncropped_subs);
+            f_body.body =
+                produce_allocation(info->buffer, f_body.body, uncropped_subs);
             to_remove.push_back(b);
           }
           for (auto b : to_remove) {
@@ -980,12 +986,12 @@ public:
     int iteration_count = 0;
     while (true) {
       std::vector<allocation_candidate> new_lifetimes;
-      std::vector<std::tuple<stmt, int, int>> new_results;
+      std::vector<statement_with_range> new_results;
 
       std::size_t result_index = 0;
       for (std::size_t ix = 0; ix < lifetimes.size() && result_index < results.size();) {
         // Skip function bodies which go before the current buffer.
-        while (result_index < results.size() && std::get<2>(results[result_index]) < lifetimes[ix].lifetime_start) {
+        while (result_index < results.size() && results[result_index].end < lifetimes[ix].lifetime_start) {
           new_results.push_back(results[result_index]);
           result_index++;
         }
@@ -995,11 +1001,11 @@ public:
 
         // Find which function bodies overlap with the lifetime of the buffer.
         std::vector<stmt> new_block;
-        while (result_index < results.size() && std::get<1>(results[result_index]) <= lifetimes[ix].lifetime_end &&
-               lifetimes[ix].lifetime_start <= std::get<2>(results[result_index])) {
-          new_min = std::min(new_min, std::get<1>(results[result_index]));
-          new_max = std::max(new_max, std::get<2>(results[result_index]));
-          new_block.push_back(std::get<0>(results[result_index]));
+        while (result_index < results.size() && results[result_index].start <= lifetimes[ix].lifetime_end &&
+               lifetimes[ix].lifetime_start <= results[result_index].end) {
+          new_min = std::min(new_min, results[result_index].start);
+          new_max = std::max(new_max, results[result_index].end);
+          new_block.push_back(results[result_index].body);
           result_index++;
         }
 
@@ -1014,7 +1020,7 @@ public:
           new_body = produce_allocation(b, new_body, uncropped_subs);
           candidates_for_allocation_[at].erase(b->sym());
 
-          new_results.push_back(std::make_tuple(new_body, new_min, new_max));
+          new_results.push_back({new_body, new_min, new_max});
         }
 
         // Move to the next buffer.
@@ -1040,7 +1046,7 @@ public:
     // Combine into one statement.
     std::vector<stmt> results_stmt;
     for (const auto& rs : results) {
-      results_stmt.push_back(std::get<0>(rs));
+      results_stmt.push_back(rs.body);
     }
 
     stmt result = block::make(std::move(results_stmt), body);
