@@ -89,6 +89,29 @@ public:
   static void destroy(buffer_expr* p) { delete p; }
 };
 
+namespace internal {
+
+template <typename T>
+struct buffer_converter {
+  static SLINKY_ALWAYS_INLINE const auto& convert(const raw_buffer* buffer) {
+    return buffer->cast<typename std::remove_cv<typename std::remove_reference<T>::type>::type::element>();
+  }
+};
+template <>
+struct buffer_converter<raw_buffer> {
+  static SLINKY_ALWAYS_INLINE const raw_buffer& convert(const raw_buffer* buffer) { return *buffer; }
+};
+template <>
+struct buffer_converter<const raw_buffer&> {
+  static SLINKY_ALWAYS_INLINE const raw_buffer& convert(const raw_buffer* buffer) { return *buffer; }
+};
+template <>
+struct buffer_converter<const raw_buffer*> {
+  static SLINKY_ALWAYS_INLINE const raw_buffer* convert(const raw_buffer* buffer) { return buffer; }
+};
+
+}  // namespace internal
+
 // Represents a node of computation in a pipeline.
 class func {
 public:
@@ -204,10 +227,8 @@ private:
   template <typename ArgTypes, typename Fn, std::size_t... Indices>
   static SLINKY_ALWAYS_INLINE index_t call_impl_tuple(
       const Fn& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
-    return impl(
-        ctx.lookup_buffer(Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()])
-            ->template cast<typename std::remove_cv<typename std::remove_reference<
-                typename std::tuple_element<Indices, ArgTypes>::type>::type>::type::element>()...);
+    return impl(internal::buffer_converter<typename std::tuple_element<Indices, ArgTypes>::type>::convert(ctx.lookup_buffer(
+        Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()]))...);
   }
 
   template <typename Lambda>
