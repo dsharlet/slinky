@@ -784,28 +784,27 @@ class pipeline_builder {
       } else {
         candidates_for_allocation_[loop_id()].insert(b->sym());
       }
+      std::optional<allocation_candidate>& info = allocation_info_[b->sym()];
+      info->buffer = b;
+      info->lifetime_start = functions_produced_;
 
-      allocation_info_[b->sym()]->buffer = b;
-      allocation_info_[b->sym()]->lifetime_start = functions_produced_;
-
-      if (allocation_info_[b->sym()]->consumers_produced == allocation_info_[b->sym()]->deps_count) {
-        allocation_info_[b->sym()]->lifetime_end = functions_produced_;
+      if (info->consumers_produced == info->deps_count) {
+        info->lifetime_end = functions_produced_;
       }
     }
 
     for (const auto& i : f->inputs()) {
       const auto& input = i.buffer;
-      if (input->constant()) {
-        continue;
-      }
+
       if (!input->producer()) {
         continue;
       }
 
-      allocation_info_[input->sym()]->consumers_produced++;
+      std::optional<allocation_candidate>& info = allocation_info_[input->sym()];
+      info->consumers_produced++;
 
-      if (allocation_info_[input->sym()]->consumers_produced == allocation_info_[input->sym()]->deps_count) {
-        allocation_info_[input->sym()]->lifetime_end = functions_produced_;
+      if (info->consumers_produced == info->deps_count) {
+        info->lifetime_end = functions_produced_;
       }
     }
 
@@ -851,9 +850,7 @@ class pipeline_builder {
     for (const func* f : order_) {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
-        if (input->constant()) {
-          continue;
-        }
+
         if (!input->producer()) {
           continue;
         }
@@ -930,15 +927,17 @@ public:
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
-          std::set<var> to_remove;
+          std::vector<var> to_remove;
           for (auto b : candidates_for_allocation_[at]) {
+            // We only want candidates which are not in the old_candidates list.
             if (old_candidates.count(b) > 0) continue;
-            if (allocation_info_[b]->consumers_produced != allocation_info_[b]->deps_count) continue;
-            if ((allocation_info_[b]->buffer->store_at() && *allocation_info_[b]->buffer->store_at() == at) ||
-                (!allocation_info_[b]->buffer->store_at() && at.root())) {
+            std::optional<allocation_candidate>& info = allocation_info_[b];
+            if (info->consumers_produced != info->deps_count) continue;
+            if ((info->buffer->store_at() && *info->buffer->store_at() == at) ||
+                (!info->buffer->store_at() && at.root())) {
               std::get<0>(f_body) =
-                  produce_allocation(allocation_info_[b]->buffer, std::get<0>(f_body), uncropped_subs);
-              to_remove.insert(b);
+                  produce_allocation(info->buffer, std::get<0>(f_body), uncropped_subs);
+              to_remove.push_back(b);
             }
           }
           for (auto b : to_remove) {
@@ -948,9 +947,7 @@ public:
 
         results.push_back(f_body);
       } else if (realize_at->second == at) {
-        std::tuple<stmt, int, int> f_body = produce(f);
-
-        results.push_back(f_body);
+        results.push_back(produce(f));
       }
     }
 
@@ -969,10 +966,11 @@ public:
     std::vector<std::tuple<buffer_expr_ptr, int, int>> lifetimes;
     for (const auto& b : candidates_for_allocation_[at]) {
       if (output_syms_.count(b)) continue;
-      if ((allocation_info_[b]->buffer->store_at() && *(allocation_info_[b]->buffer->store_at()) == at) ||
-          (!allocation_info_[b]->buffer->store_at() && at.root())) {
+      std::optional<allocation_candidate>& info = allocation_info_[b];
+      if ((info->buffer->store_at() && *(info->buffer->store_at()) == at) ||
+          (!info->buffer->store_at() && at.root())) {
         lifetimes.push_back(std::make_tuple(
-            allocation_info_[b]->buffer, allocation_info_[b]->lifetime_start, allocation_info_[b]->lifetime_end));
+            info->buffer, info->lifetime_start, info->lifetime_end));
       }
     }
 
@@ -1035,15 +1033,13 @@ public:
         }
       }
 
-      for (std::size_t ix = result_index; ix < results.size(); ix++) {
-        new_results.push_back(results[ix]);
-      }
+      new_results.insert(new_results.end(), results.begin() + result_index, results.end());
 
       // No changes, so go for the next iteration.
       if (lifetimes.size() == new_lifetimes.size()) break;
 
-      lifetimes = new_lifetimes;
-      results = new_results;
+      lifetimes = std::move(new_lifetimes);
+      results = std::move(new_results);
       iteration_count++;
     }
 
