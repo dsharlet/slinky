@@ -379,6 +379,8 @@ template <typename T, std::size_t DimsSize>
 class buffer : public raw_buffer {
 private:
   void* to_free;
+
+  // Avoid default constructor of slinky::dim, we might not use this.
   alignas(slinky::dim) char dims_storage[sizeof(slinky::dim) * DimsSize];
 
   void assign_dims(int rank, const slinky::dim* src = nullptr) {
