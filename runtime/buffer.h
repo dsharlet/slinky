@@ -174,6 +174,7 @@ protected:
   }
 
 public:
+  using element = void;
   using pointer = void*;
 
   void* base;
@@ -414,6 +415,7 @@ private:
   }
 
 public:
+  using element = T;
   using pointer = T*;
 
   using raw_buffer::cast;

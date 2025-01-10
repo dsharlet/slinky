@@ -1,6 +1,8 @@
 #ifndef SLINKY_BUILDER_PIPELINE_H
 #define SLINKY_BUILDER_PIPELINE_H
 
+#include <type_traits>
+
 #include "base/ref_count.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
@@ -192,11 +194,20 @@ public:
 
 private:
   template <typename... T, std::size_t... Indices>
-  static inline index_t call_impl(
+  static SLINKY_ALWAYS_INLINE index_t call_impl(
       const func::callable<T...>& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
     return impl(
         ctx.lookup_buffer(Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()])
             ->template cast<T>()...);
+  }
+
+  template <typename ArgTypes, typename Fn, std::size_t... Indices>
+  static SLINKY_ALWAYS_INLINE index_t call_impl_tuple(
+      const Fn& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
+    return impl(
+        ctx.lookup_buffer(Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()])
+            ->template cast<typename std::remove_cv<typename std::remove_reference<
+                typename std::tuple_element<Indices, ArgTypes>::type>::type>::type::element>()...);
   }
 
   template <typename Lambda>
@@ -234,14 +245,17 @@ public:
   template <typename Lambda>
   static func make(
       Lambda&& lambda, std::vector<input> inputs, std::vector<output> outputs, call_stmt::attributes attrs = {}) {
+    using sig = lambda_call_signature<Lambda>;
     // Verify that the lambda returns an index_t; a different return type will fail to match
     // the std::function call and just call this same function in an endless death spiral.
-    using sig = lambda_call_signature<Lambda>;
     static_assert(std::is_same_v<typename sig::ret_type, index_t>);
 
-    using std_function_type = typename sig::std_function_type;
-    std_function_type impl = std::move(lambda);
-    return make_impl(std::move(impl), std::move(inputs), std::move(outputs), std::move(attrs));
+    auto wrapper = [lambda = std::move(lambda)](const call_stmt* op, eval_context& ctx) -> index_t {
+      return call_impl_tuple<typename sig::arg_types>(
+          lambda, ctx, op, std::make_index_sequence<std::tuple_size<typename sig::arg_types>::value>());
+    };
+
+    return func(std::move(wrapper), std::move(inputs), std::move(outputs), std::move(attrs));
   }
 
   // Version for plain old function ptrs
