@@ -107,8 +107,8 @@ public:
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
   index_t eval(const expr& e, index_t def) {
-    undef = false;
     if (e.defined()) {
+      undef = false;
       index_t result = eval(e);
       return undef ? def : result;
     } else {
