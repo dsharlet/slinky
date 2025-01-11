@@ -146,14 +146,15 @@ void raw_buffer::init_strides(index_t alignment) {
 
     const index_t alloc_extent_i = alloc_extent(dim(i));
 
-    span<const init_stride_dim> known_dims{dims, dims_end};
-
     if (alloc_extent_i <= 1) {
       // This dimension can have stride elem_size, no other stride could be better.
       dim(i).set_stride(elem_size);
       // We don't need to consider strides proposed by extent 1 dimensions, we always consider that below.
       continue;
-    } else if (is_stride_ok(elem_size, alloc_extent_i, known_dims)) {
+    }
+
+    span<const init_stride_dim> known_dims{dims, dims_end};
+    if (is_stride_ok(elem_size, alloc_extent_i, known_dims)) {
       // This dimension can have stride elem_size, no other stride could be better.
       dim(i).set_stride(elem_size);
       learn_dim(init_stride_dim(elem_size, alloc_extent_i));
