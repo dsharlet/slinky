@@ -446,15 +446,19 @@ public:
     }
   }
 
-  index_t eval(const call_stmt* op) {
+  SLINKY_NO_INLINE void call_failed(index_t result, const call_stmt* op) {
+    if (context.call_failed) {
+      context.call_failed(op);
+    } else {
+      std::cerr << "call_stmt failed: " << stmt(op) << "->" << result << std::endl;
+      std::abort();
+    }
+  }
+
+  SLINKY_ALWAYS_INLINE index_t eval(const call_stmt* op) {
     index_t result = op->target(op, context);
     if (result) {
-      if (context.call_failed) {
-        context.call_failed(op);
-      } else {
-        std::cerr << "call_stmt failed: " << stmt(op) << "->" << result << std::endl;
-        std::abort();
-      }
+      call_failed(result, op);
     }
     return result;
   }
@@ -700,17 +704,21 @@ public:
     }
   }
 
+  SLINKY_NO_INLINE index_t check_failed(const check* op) {
+    if (context.check_failed) {
+      context.check_failed(op->condition);
+    } else {
+      std::cerr << "Check failed: " << op->condition << std::endl;
+      std::cerr << "Context: " << std::endl;
+      dump_context_for_expr(std::cerr, context, op->condition);
+      std::abort();
+    }
+    return 1;
+  }
+
   index_t eval(const check* op) {
-    if (!eval(op->condition, 0)) {
-      if (context.check_failed) {
-        context.check_failed(op->condition);
-      } else {
-        std::cerr << "Check failed: " << op->condition << std::endl;
-        std::cerr << "Context: " << std::endl;
-        dump_context_for_expr(std::cerr, context, op->condition);
-        std::abort();
-      }
-      return 1;
+    if (!eval(op->condition)) {
+      return check_failed(op);
     } else {
       return 0;
     }
