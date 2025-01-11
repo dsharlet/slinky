@@ -399,40 +399,50 @@ public:
     return 0;
   }
 
-  index_t eval(const loop* op) {
+  SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
+    std::atomic<index_t> result = 0;
+    std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
+    index_t old_value = context.set(op->sym, 0);
+    context.thread_pool->parallel_for(
+        n,
+        [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
+          context.set(op->sym, i * step + min);
+          // Evaluate the parallel loop body with our copy of the context.
+          index_t result_i = evaluate(op->body, context);
+          if (result_i != 0) {
+            index_t zero = 0;
+            result.compare_exchange_strong(zero, result_i);
+          }
+        },
+        op->max_workers);
+    context.set(op->sym, old_value);
+    return result;
+  }
+
+  SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op) {
+    interval bounds = eval(op->bounds);
+    index_t step = eval(op->step, 1);
+    // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
+    // because the context could grow and invalidate the reference. This could be fixed by having evaluate
+    // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
+    // not clear this optimization is necessary yet.
+    index_t old_value = context.set(op->sym, 0);
+    index_t result = 0;
+    for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
+      context.set(op->sym, i);
+      result = eval(op->body);
+    }
+    context.set(op->sym, old_value);
+    return result;
+  }
+
+  index_t eval(const loop* op) {
     if (op->max_workers > 1) {
-      std::atomic<index_t> result = 0;
-      std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
-      index_t old_value = context.set(op->sym, 0);
-      context.thread_pool->parallel_for(
-          n,
-          [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
-            context.set(op->sym, i * step + min);
-            // Evaluate the parallel loop body with our copy of the context.
-            index_t result_i = evaluate(op->body, context);
-            if (result_i != 0) {
-              index_t zero = 0;
-              result.compare_exchange_strong(zero, result_i);
-            }
-          },
-          op->max_workers);
-      context.set(op->sym, old_value);
-      return result;
+      return eval_loop_parallel(op);
     } else {
-      // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
-      // because the context could grow and invalidate the reference. This could be fixed by having evaluate
-      // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
-      // not clear this optimization is necessary yet.
-      index_t old_value = context.set(op->sym, 0);
-      index_t result = 0;
-      for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
-        context.set(op->sym, i);
-        result = eval(op->body);
-      }
-      context.set(op->sym, old_value);
-      return result;
+      return eval_loop_serial(op);
     }
   }
 
