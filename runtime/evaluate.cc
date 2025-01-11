@@ -494,7 +494,12 @@ public:
     std::size_t rank = op->dims.size();
     raw_buffer buffer;
     buffer.elem_size = eval(op->elem_size, 0);
-    buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
+    // The base is very likely a buffer_at call, try to skip the eval overhead.
+    if (const call* c = op->base.as<call>()) {
+      buffer.base = reinterpret_cast<void*>(eval(c));
+    } else {
+      buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
+    }
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
