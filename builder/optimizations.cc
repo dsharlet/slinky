@@ -781,7 +781,7 @@ public:
 
   void visit(const transpose*) override {
     // TODO: We should be able to handle this.
-    std::abort();
+    SLINKY_UNREACHABLE << "transpose not handled by buffer_aliaser";
   }
 };
 

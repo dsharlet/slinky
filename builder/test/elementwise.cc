@@ -128,9 +128,9 @@ public:
     result_funcs.push_back(std::move(r));
   }
 
-  void visit(const let*) override { std::abort(); }
-  void visit(const call*) override { std::abort(); }
-  void visit(const logical_not*) override { std::abort(); }
+  void visit(const let*) override { SLINKY_UNREACHABLE; }
+  void visit(const call*) override { SLINKY_UNREACHABLE; }
+  void visit(const logical_not*) override { SLINKY_UNREACHABLE; }
 };
 
 template <typename T, std::size_t Rank>
@@ -203,9 +203,9 @@ public:
     for_each_element([&](T* result, const T* c, const T* t) { *result = *c ? *t : *result; }, result, c_buf, t_buf);
   }
 
-  void visit(const let*) override { std::abort(); }
-  void visit(const call*) override { std::abort(); }
-  void visit(const logical_not*) override { std::abort(); }
+  void visit(const let*) override { SLINKY_UNREACHABLE; }
+  void visit(const call*) override { SLINKY_UNREACHABLE; }
+  void visit(const logical_not*) override { SLINKY_UNREACHABLE; }
 };
 
 template <typename T, std::size_t Rank>

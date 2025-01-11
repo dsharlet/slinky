@@ -101,7 +101,7 @@ public:
     case expr_node_type::less_equal: return make_binary<less_equal>(a, b);
     case expr_node_type::logical_and: return make_binary<logical_and>(a, b);
     case expr_node_type::logical_or: return make_binary<logical_or>(a, b);
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(op->type);
     }
   }
 
@@ -145,7 +145,7 @@ public:
     case buffer_field::max: return buf->dim(op->dim).max();
     case buffer_field::stride: return buf->dim(op->dim).stride();
     case buffer_field::fold_factor: return buf->dim(op->dim).fold_factor();
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unkonwn var field " << to_string(op->field);
     }
   }
 
@@ -214,7 +214,7 @@ public:
     assert(buf);
     switch (op->intrinsic) {
     case intrinsic::buffer_size_bytes: return buf->size_bytes();
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown buffer metadata intrinsic " << to_string(op->intrinsic);
     }
   }
 
@@ -309,9 +309,9 @@ public:
 
   SLINKY_NO_INLINE index_t eval(const call* op) {
     switch (op->intrinsic) {
-    case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
-    case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
-    case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
+    case intrinsic::positive_infinity: SLINKY_UNREACHABLE << "cannot evaluate positive_infinity";
+    case intrinsic::negative_infinity: SLINKY_UNREACHABLE << "cannot evaluate negative_infinity";
+    case intrinsic::indeterminate: SLINKY_UNREACHABLE << "cannot evaluate indeterminate";
 
     case intrinsic::abs: assert(op->args.size() == 1); return std::abs(eval(op->args[0]));
 
@@ -332,7 +332,7 @@ public:
 
     case intrinsic::free: return eval_free(op);
 
-    default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
+    default: SLINKY_UNREACHABLE << "unknown intrinsic: " << to_string(op->intrinsic);
     }
   }
 
@@ -341,9 +341,7 @@ public:
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (op.type()) {
     case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()));
-    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
     case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()));
-    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
     default: return eval_non_inlined(op);
     }
   }
@@ -360,6 +358,7 @@ public:
 
   SLINKY_NO_INLINE index_t eval_non_inlined(const stmt& op) {
     switch (op.type()) {
+    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
     case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()));
     case stmt_node_type::block: return eval(reinterpret_cast<const block*>(op.get()));
     case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()));
@@ -368,9 +367,10 @@ public:
     case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()));
     case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()));
     case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
+    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
     case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()));
     case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()));
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown stmt type " << to_string(op.type());
     }
   }
 
@@ -449,8 +449,7 @@ public:
   }
 
   index_t eval(const copy_stmt* op) {
-    std::cerr << "copy_stmt should have been implemented by calls to copy/pad." << std::endl;
-    std::abort();
+    SLINKY_UNREACHABLE << "copy_stmt should have been implemented by calls to copy/pad.";
   }
 
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
