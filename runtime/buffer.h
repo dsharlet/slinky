@@ -331,6 +331,7 @@ public:
   std::size_t elem_count() const;
 
   // If any strides are `auto_stride`, replace them with automatically determined strides.
+  // `alignment` must be a power of 2.
   void init_strides(index_t alignment = 1);
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
@@ -371,6 +372,18 @@ void copy_small_n(const T* src, std::size_t n, T* dst) {
   case 1: *dst++ = *src++;
   case 0: return;
   default: std::copy_n(src, n, dst); return;
+  }
+}
+
+template <typename T>
+void copy_small_n_backward(const T* src, std::size_t n, T* dst) {
+  switch (n) {
+  case 4: *(--dst) = *(--src);
+  case 3: *(--dst) = *(--src);
+  case 2: *(--dst) = *(--src);
+  case 1: *(--dst) = *(--src);
+  case 0: return;
+  default: std::copy_backward(src, src + n, dst + n); return;
   }
 }
 

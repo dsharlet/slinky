@@ -94,26 +94,23 @@ namespace {
 
 // A proposed stride is "OK" w.r.t. `dim` if the proposed stride does not cause this dimension's memory to overlap with
 // any other dimension's memory.
-SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t abs_stride, index_t extent, const dim& dim) {
-  if (dim.stride() == dim::auto_stride) {
-    // If the dimension has an unknown stride, it's OK, we're
-    // resolving the current dim first.
-    return true;
-  } else if (std::abs(dim.stride()) >= extent * abs_stride) {
-    // The dim is completely outside the proposed stride.
-    return true;
-  } else if (alloc_extent(dim) * std::abs(dim.stride()) <= abs_stride) {
-    // The dim is completely inside the proposed stride.
-    return true;
-  } else {
-    return false;
-  }
-}
+struct init_stride_dim {
+  index_t stride;
+  index_t dim_stride;  // stride * extent
 
-SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t stride, index_t extent, span<const dim> dims) {
-  index_t abs_stride = std::abs(stride);
-  for (const dim& i : dims) {
-    if (!is_stride_ok(abs_stride, extent, i)) {
+  init_stride_dim(index_t stride, index_t extent) : stride(stride), dim_stride(stride * extent) {}
+
+  bool operator<(const init_stride_dim& r) const { return dim_stride < r.dim_stride; }
+};
+
+SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t stride, index_t extent, span<const init_stride_dim> dims) {
+  const index_t dim_stride = stride * extent;
+  for (const init_stride_dim& d : dims) {
+    if (d.stride >= dim_stride) {
+      // The dim is completely outside the proposed stride.
+    } else if (d.dim_stride <= stride) {
+      // The dim is completely inside the proposed stride.
+    } else {
       return false;
     }
   }
@@ -123,36 +120,62 @@ SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t stride, index_t extent, sp
 }  // namespace
 
 void raw_buffer::init_strides(index_t alignment) {
+  // We remember the strides of the dims we know about, in sorted order.
+  init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
+  init_stride_dim* dims_end = dims;
+  // Insert d into dims, sorted by dim_stride.
+  auto learn_dim = [&](const init_stride_dim& d) {
+    init_stride_dim* at = std::lower_bound(dims, dims_end, d);
+    internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
+    *at = d;
+    ++dims_end;
+  };
+  for (std::size_t i = 0; i < rank; ++i) {
+    if (dim(i).stride() != dim::auto_stride) {
+      index_t alloc_extent_i = alloc_extent(dim(i));
+      if (alloc_extent_i > 1) {
+        learn_dim(init_stride_dim(std::abs(dim(i).stride()), alloc_extent_i));
+      } else {
+        // We don't need to learn extent 1 dimensions, because they can't fail is_stride_ok checks.
+      }
+    }
+  }
+
   for (std::size_t i = 0; i < rank; ++i) {
     if (dim(i).stride() != dim::auto_stride) continue;
 
-    index_t alloc_extent_i = alloc_extent(dim(i));
+    const index_t alloc_extent_i = alloc_extent(dim(i));
 
-    if (alloc_extent_i <= 1 || is_stride_ok(elem_size, alloc_extent_i, {dims, rank})) {
+    span<const init_stride_dim> known_dims{dims, dims_end};
+
+    if (alloc_extent_i <= 1) {
       // This dimension can have stride elem_size, no other stride could be better.
       dim(i).set_stride(elem_size);
+      // We don't need to consider strides proposed by extent 1 dimensions, we always consider that below.
+      continue;
+    } else if (is_stride_ok(elem_size, alloc_extent_i, known_dims)) {
+      // This dimension can have stride elem_size, no other stride could be better.
+      dim(i).set_stride(elem_size);
+      learn_dim(init_stride_dim(elem_size, alloc_extent_i));
       continue;
     }
 
     // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
     index_t min = std::numeric_limits<index_t>::max();
-    for (std::size_t j = 0; j < rank; ++j) {
-      if (dim(j).stride() == dim::auto_stride) {
-        // We don't know the stride of this dimension, it can't help us decide a stride for this dimension.
-        continue;
-      }
-
-      index_t candidate = align_up(std::abs(dim(j).stride()) * alloc_extent(dim(j)), alignment);
+    for (const init_stride_dim& dim_j : known_dims) {
+      const index_t candidate = (dim_j.dim_stride + (alignment - 1)) & ~(alignment - 1);
       if (candidate >= min) {
-        // This candidate stride is not better than the current stride.
-        continue;
-      } else if (!is_stride_ok(candidate, alloc_extent_i, {dims, rank})) {
+        // This candidate stride is not better than the current stride. Since the dims are sorted, none of our remaining
+        // candidates will pass this check.
+        break;
+      } else if (!is_stride_ok(candidate, alloc_extent_i, known_dims)) {
         continue;
       }
       min = candidate;
     }
     assert(min < std::numeric_limits<index_t>::max());
     dim(i).set_stride(min);
+    learn_dim(init_stride_dim(min, alloc_extent_i));
   }
 }
 
@@ -234,9 +257,7 @@ void copy_impl(raw_buffer& src, raw_buffer& dst, const void* padding) {
              dst_dim0.stride() != elem_size || src_dim0.stride() != elem_size) {
     // The inner copy dimension is not a linear copy, let for_each_element handle it.
     for_each_element(
-        [elem_size, padding](void* dst, const void* src) {
-          memcpy(dst, padding && !src ? padding : src, elem_size);
-        },
+        [elem_size, padding](void* dst, const void* src) { memcpy(dst, padding && !src ? padding : src, elem_size); },
         dst, src);
   } else {
     // The inner dimension is a linear copy. Slice off that dimension and handle it ourselves.

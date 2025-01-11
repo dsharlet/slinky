@@ -391,18 +391,26 @@ void BM_for_each_element_batch_dims(benchmark::State& state) {
 BENCHMARK(BM_for_each_element_batch_dims);
 
 void BM_init_strides(benchmark::State& state) {
+  int extent0 = state.range(0);
+  int extent1 = state.range(1);
+  int extent2 = state.range(2);
+  int extent3 = state.range(3);
 
   for (auto _ : state) {
     buffer<int, 4> buf;
-    buf.dim(0).set_min_extent(0, 44);
-    buf.dim(1).set_min_extent(0, 1);
-    buf.dim(2).set_min_extent(0, 1);
-    buf.dim(3).set_min_extent(0, 1);
+    buf.dim(0).set_min_extent(0, extent0);
+    buf.dim(1).set_min_extent(0, extent1);
+    buf.dim(2).set_min_extent(0, extent2);
+    buf.dim(3).set_min_extent(0, extent3);
 
     buf.init_strides();
   }
 }
 
-BENCHMARK(BM_init_strides);
+BENCHMARK(BM_init_strides)->Args({5, 4, 3, 2});
+BENCHMARK(BM_init_strides)->Args({4, 3, 2, 1});
+BENCHMARK(BM_init_strides)->Args({3, 2, 1, 1});
+BENCHMARK(BM_init_strides)->Args({2, 1, 1, 1});
+BENCHMARK(BM_init_strides)->Args({1, 1, 1, 1});
 
 }  // namespace slinky
