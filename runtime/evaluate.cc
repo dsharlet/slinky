@@ -106,7 +106,7 @@ public:
   }
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
-  index_t eval(const expr& e, index_t def) {
+  SLINKY_ALWAYS_INLINE index_t eval(const expr& e, index_t def) {
     if (e.defined()) {
       undef = false;
       index_t result = eval(e);
@@ -116,7 +116,7 @@ public:
     }
   }
 
-  interval eval(const interval_expr& x) {
+  SLINKY_ALWAYS_INLINE interval eval(const interval_expr& x) {
     index_t min = eval(x.min);
     if (x.is_point()) {
       return {min, min};
@@ -124,8 +124,8 @@ public:
       return {min, eval(x.max)};
     }
   }
-  interval eval(const interval_expr& x, interval def) {
-    if (x.is_point() && x.min.defined()) {
+  SLINKY_ALWAYS_INLINE interval eval(const interval_expr& x, interval def) {
+    if (x.is_point()) {
       index_t result = eval(x.min);
       return {result, result};
     } else {
