@@ -575,7 +575,8 @@ class pipeline_builder {
   std::map<loop_id, std::set<var>, loop_id_less> candidates_for_allocation_;
   // Information tracking the lifetimes of the buffers.
   symbol_map<allocation_candidate> allocation_info_;
-  std::set<var> outer_allocations_;
+  std::set<var> copy_inputs_;
+  std::map<var, std::vector<var>> copy_deps_;
 
   int functions_produced_ = 0;
 
@@ -732,6 +733,8 @@ class pipeline_builder {
     stmt body;
     int start;
     int end;
+    // Stores every allocation inside of the range.
+    std::set<var> allocations;
   };
 
   // Generate the loops that we want to be explicit.
@@ -744,7 +747,7 @@ class pipeline_builder {
       result = make_loop(result, f, loop);
     }
 
-    return {result, old_function_produced, functions_produced_};
+    return {result, old_function_produced, functions_produced_ - 1};
   }
 
   void compute_allocation_bounds() {
@@ -864,7 +867,14 @@ class pipeline_builder {
         }
 
         if (!f->impl()) {
-          outer_allocations_.insert(input->sym());
+          // Collect all buffers which are inputs to the copy
+          // and the outputs of the copy as their dependencies.
+          copy_inputs_.insert(input->sym());
+          for (const func::output& o : f->outputs()) {
+            const buffer_expr_ptr& b = o.buffer;
+            if (output_syms_.count(b->sym())) continue;
+            copy_deps_[input->sym()].push_back(b->sym());
+          }
         }
 
         allocation_info_[input->sym()]->deps_count++;
@@ -944,7 +954,7 @@ public:
           for (auto b : candidates_for_allocation_[at]) {
             // We only want candidates which are not in the old_candidates list.
             if (old_candidates.count(b) > 0) continue;
-            if (outer_allocations_.count(b) > 0) continue;
+            if (copy_inputs_.count(b) > 0) continue;
             std::optional<allocation_candidate>& info = allocation_info_[b];
             if (info->consumers_produced != info->deps_count) continue;
 
@@ -974,22 +984,29 @@ public:
     // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
     // should be O(N*log(N)).
 
-    // Combine buffer sym, start and end of the lifetime into a vector of tuples.
+    // The vector of allocations at this loop level.
     std::vector<allocation_candidate> lifetimes;
+    // The same as above, but also has a set of special dependencies to
+    // satisfy.
+    std::vector<allocation_candidate> special;
     for (const auto& b : candidates_for_allocation_[at]) {
       if (output_syms_.count(b)) continue;
-      if (outer_allocations_.count(b) > 0) continue;
-      lifetimes.push_back(*allocation_info_[b]);
+      if (copy_inputs_.count(b) > 0) {
+        special.push_back(*allocation_info_[b]);
+      } else {
+        lifetimes.push_back(*allocation_info_[b]);
+      }
     }
 
-    // Sort vector by (end - start) and then start.
-    std::sort(lifetimes.begin(), lifetimes.end(),
-        [](allocation_candidate a, allocation_candidate b) {
+    auto lifetime_less = [](allocation_candidate a, allocation_candidate b) {
           if ((a.lifetime_end - a.lifetime_start) == (b.lifetime_end - b.lifetime_start)) {
             return a.lifetime_start < b.lifetime_start;
           }
           return (a.lifetime_end - a.lifetime_start) < (b.lifetime_end - b.lifetime_start);
-        });
+        };
+    // Sort vector by (end - start) and then start.
+    std::sort(lifetimes.begin(), lifetimes.end(), lifetime_less);
+    std::sort(special.begin(), special.end(), lifetime_less);
 
     int iteration_count = 0;
     while (true) {
@@ -1009,11 +1026,13 @@ public:
 
         // Find which function bodies overlap with the lifetime of the buffer.
         std::vector<stmt> new_block;
+        std::set<var> combined_allocs;
         while (result_index < results.size() && results[result_index].start <= lifetimes[ix].lifetime_end &&
                lifetimes[ix].lifetime_start <= results[result_index].end) {
           new_min = std::min(new_min, results[result_index].start);
           new_max = std::max(new_max, results[result_index].end);
           new_block.push_back(results[result_index].body);
+          combined_allocs.insert(results[result_index].allocations.begin(), results[result_index].allocations.end());
           result_index++;
         }
 
@@ -1026,10 +1045,10 @@ public:
           // candidates_for_allocation_[b->sym()]->deps_count);
 
           new_body = produce_allocation(b, new_body, uncropped_subs);
-          // combined_allocs.insert(b->sym());
+          combined_allocs.insert(b->sym());
           candidates_for_allocation_[at].erase(b->sym());
 
-          new_results.push_back({new_body, new_min, new_max});
+          new_results.push_back({new_body, new_min, new_max, std::move(combined_allocs)});
         }
 
         // Move to the next buffer.
@@ -1044,10 +1063,46 @@ public:
 
       new_results.insert(new_results.end(), results.begin() + result_index, results.end());
 
+      std::vector<allocation_candidate> new_special;
+      // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
+      // This only can happen if all of it's dependencies are inside of the block.
+      for (int iy = 0; iy < special.size(); iy++) {
+        bool found = false;
+        for (int ix = 0; ix < new_results.size(); ix++) {
+          buffer_expr_ptr candidate = special[iy].buffer;
+          bool is_ready = true;
+          // Check dependencies first.
+          for (var b: copy_deps_[candidate->sym()]) {
+            if (new_results[ix].allocations.count(b) == 0) {
+              is_ready = false;
+              break;
+            }
+          }
+
+          if (!is_ready) {
+            continue;
+          }
+
+          // The block range must fully cover the allocation range.
+          if (new_results[ix].start <= special[iy].lifetime_start &&
+               special[iy].lifetime_end <= new_results[ix].end) {
+            new_results[ix].body = produce_allocation(candidate, new_results[ix].body, uncropped_subs);
+            new_results[ix].allocations.insert(candidate->sym());
+            candidates_for_allocation_[at].erase(candidate->sym());
+            found = true;
+            break;
+          }
+        }
+
+        if (found) continue;
+        new_special.push_back(special[iy]);
+      }
+
       // No changes, so leave the loop.
-      if (lifetimes.size() == new_lifetimes.size()) break;
+      if (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size()) break;
 
       lifetimes = std::move(new_lifetimes);
+      special = std::move(new_special);
       results = std::move(new_results);
 
       iteration_count++;
