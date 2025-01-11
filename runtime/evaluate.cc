@@ -31,7 +31,7 @@ void dump_context_for_expr(
     std::string sym = symbols ? symbols->name(var(i)) : "<" + std::to_string(i) + ">";
     auto deps = depends_on(deps_of, var(i));
     if (!deps_of.defined() || deps.var) {
-      s << "  " << sym << " = " << ctx[var(i)] << std::endl;
+      s << "  " << sym << " = " << ctx.lookup(var(i)) << std::endl;
     } else if (!deps_of.defined() || deps.buffer_dims || deps.buffer_bounds) {
       const raw_buffer* buf = ctx.lookup_buffer(var(i));
       if (buf) {
@@ -158,12 +158,11 @@ public:
 
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      old_values[i] = context[let.first];
-      context[let.first] = eval(let.second);
+      old_values[i] = context.set(let.first, eval(let.second));
     }
     index_t result = eval(op->body);
     for (size_t i = 0; i < size; ++i) {
-      context[op->lets[i].first] = old_values[i];
+      context.set(op->lets[i].first, old_values[i]);
     }
     return result;
   }
@@ -350,12 +349,10 @@ public:
   }
 
   SLINKY_ALWAYS_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value) {
-    index_t& ctx_value = context[sym];
-    index_t old_value = ctx_value;
-    ctx_value = value;
+    index_t old_value = context.set(sym, value);
     index_t result = eval(op);
     // context might have grown and invalidated the ctx_value reference.
-    context[sym] = old_value;
+    context.set(sym, old_value);
     return result;
   }
 
@@ -384,13 +381,12 @@ public:
 
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      old_values[i] = context[let.first];
-      context[let.first] = eval(let.second);
+      old_values[i] = context.set(let.first, eval(let.second));
     }
     index_t result = eval(op->body);
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      context[let.first] = old_values[i];
+      context.set(let.first, old_values[i]);
     }
     return result;
   }
@@ -409,10 +405,11 @@ public:
     if (op->max_workers > 1) {
       std::atomic<index_t> result = 0;
       std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
+      index_t old_value = context.set(op->sym, 0);
       context.thread_pool->parallel_for(
           n,
           [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
-            context[op->sym] = i * step + min;
+            context.set(op->sym, i * step + min);
             // Evaluate the parallel loop body with our copy of the context.
             index_t result_i = evaluate(op->body, context);
             if (result_i != 0) {
@@ -421,19 +418,20 @@ public:
             }
           },
           op->max_workers);
+      context.set(op->sym, old_value);
       return result;
     } else {
       // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
       // because the context could grow and invalidate the reference. This could be fixed by having evaluate
       // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
       // not clear this optimization is necessary yet.
-      index_t old_value = context[op->sym];
+      index_t old_value = context.set(op->sym, 0);
       index_t result = 0;
       for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
-        context[op->sym] = i;
+        context.set(op->sym, i);
         result = eval(op->body);
       }
-      context[op->sym] = old_value;
+      context.set(op->sym, old_value);
       return result;
     }
   }
@@ -583,11 +581,9 @@ public:
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
 
-    index_t& ctx_value = context[op->sym];
-    index_t old_value = ctx_value;
-    ctx_value = reinterpret_cast<index_t>(&clone);
+    index_t old_value = context.set(op->sym, reinterpret_cast<index_t>(&clone));
     index_t result = eval_shadowed(op);
-    context[op->sym] = old_value;
+    context.set(op->sym, old_value);
     return result;
   }
 
