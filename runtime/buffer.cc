@@ -176,7 +176,9 @@ void raw_buffer::init_strides(index_t alignment) {
     }
     assert(min < std::numeric_limits<index_t>::max());
     dim(i).set_stride(min);
-    learn_dim(init_stride_dim(min, alloc_extent_i));
+    if (i + 1 < rank) {
+      learn_dim(init_stride_dim(min, alloc_extent_i));
+    }
   }
 }
 
