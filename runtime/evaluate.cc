@@ -220,7 +220,10 @@ public:
 
   void* eval_buffer_at(const call* op) {
     assert(op->args.size() >= 1);
-    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval(op->args[0]));
+    auto sym = as_variable(op->args[0]);
+    assert(sym);
+    const raw_buffer* buf = context.lookup_buffer(*sym);
+    assert(buf);
     void* result = buf->base;
     assert(op->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
