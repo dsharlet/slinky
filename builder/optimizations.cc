@@ -200,7 +200,7 @@ stmt remove_copy(const stmt& s, var a, var b) {
 bool dim_has_stride(const dim_expr& d) { return d.stride.defined(); }
 bool any_stride_defined(span<const dim_expr> dims) { return std::any_of(dims.begin(), dims.end(), dim_has_stride); }
 
-class buffer_aliaser : public stmt_mutator {
+class copy_aliaser : public stmt_mutator {
   node_context& ctx;
 
   struct alias_info {
@@ -218,11 +218,6 @@ class buffer_aliaser : public stmt_mutator {
 
     // If true, we know this alias is a subset of the aliased buffer.
     bool assume_in_bounds = false;
-
-    // If true, we want to write to this alias. This will prevent aliasing an input.
-    bool may_mutate = true;
-
-    bool is_copy = false;
 
     bool is_contiguous_copy = false;
 
@@ -245,8 +240,6 @@ class buffer_aliaser : public stmt_mutator {
     // this symbol, but make a crop of it for the original bounds.
     var shared_alloc_sym;
 
-    int uses = 0;
-
     buffer_info(std::vector<dim_expr> dims, expr elem_size, bool is_input = false, bool is_output = false)
         : dims(std::move(dims)), elem_size(std::move(elem_size)), is_input(is_input), is_output(is_output) {}
 
@@ -262,28 +255,16 @@ class buffer_aliaser : public stmt_mutator {
 
   // Checks if `op` can safely be replaced by `alias` targeting a buffer `target` described by `target_info`.
   // This updates some fields of `alias` from what we learn from `target_info`.
-  static bool alias_compatible(const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info) {
+  static bool alias_compatible(
+      const buffer_info& alloc_info, alias_info& alias, var target, const buffer_info& target_info) {
     scoped_trace trace("alias_compatible");
     assert(alloc_info.dims.size() == alias.dims.size());
-
-    if ((alloc_info.uses > 1 || target_info.uses > 1) && alias.may_mutate) {
-      // We can't use a mutating alias on a buffer that is used more than once.
-      // TODO: We could do better here: if the mutating alias is the *last* use, we can still use that alias.
-      // This is tricky to figure out especially when loops are involved.
-      return false;
-    }
 
     if (alias.is_contiguous_copy) {
       assert(alias.assume_in_bounds);
       // We just assume flat copies are OK.
       return true;
     }
-    if (alias.may_mutate && target_info.is_input) {
-      // We can't write to the input.
-      // TODO: Maybe having an option that allows writing to the input would be useful.
-      return false;
-    }
-
     const bool target_has_stride = any_stride_defined(target_info.dims);
     const bool alloc_has_stride = any_stride_defined(alloc_info.dims);
 
@@ -357,7 +338,7 @@ class buffer_aliaser : public stmt_mutator {
   }
 
 public:
-  buffer_aliaser(
+  copy_aliaser(
       node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
       : ctx(ctx) {
     for (const buffer_expr_ptr& i : inputs) {
@@ -449,7 +430,6 @@ public:
       result = make_buffer::make(sym, expr(), elem_size, op->dims, std::move(result));
 
       for (auto& i : target_info->aliases) {
-        i.may_mutate = i.may_mutate || alias.may_mutate;
         i.assume_in_bounds = i.assume_in_bounds && alias.assume_in_bounds;
       }
 
@@ -491,7 +471,6 @@ public:
   }
 
   void visit(const call_stmt* op) override {
-    scoped_trace trace("visit(const call_stmt*)");
     set_result(op);
     if (op->attrs.name == "memcpy") {
       assert(op->inputs.size() == 1);
@@ -499,7 +478,6 @@ public:
       var in = op->inputs[0];
       var out = op->outputs[0];
       std::optional<buffer_info>& input_info = buffers[in];
-      if (input_info) input_info->uses++;
       std::optional<buffer_info>& output_info = buffers[out];
       if (input_info && output_info) {
         alias_info fwd;
@@ -517,53 +495,6 @@ public:
         back.is_contiguous_copy = true;
         back.assume_in_bounds = true;
         output_info->aliases.push_back(std::move(back));
-      }
-    } else {
-      // If input is repeated, we don't want to add into the alias info again.
-      std::set<var> unique_inputs(op->inputs.begin(), op->inputs.end());
-      for (var i : unique_inputs) {
-        std::optional<buffer_info>& input_info = buffers[i];
-        if (!input_info) continue;
-        input_info->uses++;
-
-        if (!op->attrs.allow_in_place || input_info->is_input) {
-          // We can't write to this buffer.
-          continue;
-        }
-        for (var o : op->outputs) {
-          std::optional<buffer_info>& output_info = buffers[o];
-          if (!output_info) continue;
-
-          if (input_info->dims.size() != output_info->dims.size()) {
-            // This is allow_in_place, but appears to not be elementwise?
-            continue;
-          }
-          size_t rank = input_info->dims.size();
-
-          alias_info fwd;
-          fwd.target = o;
-          fwd.dims = buffer_dims(o, rank);
-          fwd.at = buffer_mins(i, rank);
-          fwd.assume_in_bounds = true;
-          fwd.may_mutate = true;
-          fwd.permutation.resize(rank);
-          std::iota(fwd.permutation.begin(), fwd.permutation.end(), 0);
-          input_info->aliases.push_back(std::move(fwd));
-
-          alias_info back;
-          back.target = i;
-          // Use the bounds of the output, but the memory layout of the input.
-          back.dims.resize(rank);
-          for (int d = 0; d < static_cast<int>(rank); ++d) {
-            back.dims[d] = {buffer_bounds(o, d), buffer_stride(i, d), buffer_fold_factor(i, d)};
-          }
-          back.at = buffer_mins(o, rank);
-          back.assume_in_bounds = true;
-          back.may_mutate = true;
-          back.permutation.resize(rank);
-          std::iota(back.permutation.begin(), back.permutation.end(), 0);
-          output_info->aliases.push_back(std::move(back));
-        }
       }
     }
   }
@@ -607,9 +538,6 @@ public:
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
     a.assume_in_bounds = !op->padding || op->padding->empty();
-    // If we can't assume the input is in bounds, we might write padding.
-    a.may_mutate = !a.assume_in_bounds;
-    a.is_copy = true;
 
     a.elem_size = buffer_elem_size(op->src);
 
@@ -668,8 +596,6 @@ public:
       }
     }
 
-    a.is_copy = true;
-    a.may_mutate = false;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->aliases.push_back(std::move(a));
@@ -677,9 +603,6 @@ public:
 
   void visit(const copy_stmt* op) override {
     set_result(op);
-
-    std::optional<buffer_info>& src_info = buffers[op->src];
-    if (src_info) src_info->uses++;
 
     alias_copy_dst(op);
     alias_copy_src(op);
@@ -722,7 +645,6 @@ public:
         assert(!old_info->shared_alloc_sym.defined() || old_info->shared_alloc_sym == info->shared_alloc_sym);
         old_info->shared_alloc_sym = info->shared_alloc_sym;
       }
-      old_info->uses += info->uses;
       for (alias_info& a : info->aliases) {
         if (a.target == sym) {
           a.target = src;
@@ -787,10 +709,10 @@ public:
 
 }  // namespace
 
-stmt alias_buffers(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs) {
-  scoped_trace trace("alias_buffers");
-  return buffer_aliaser(ctx, inputs, outputs).mutate(s);
+  scoped_trace trace("alias_copies");
+  return copy_aliaser(ctx, inputs, outputs).mutate(s);
 }
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
