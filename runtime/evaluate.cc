@@ -170,20 +170,12 @@ public:
   index_t eval(const logical_not* op) { return eval(op->a) == 0; }
 
   index_t eval(const class select* op) {
-    if (eval(op->condition)) {
-      if (op->true_value.defined()) {
-        return eval(op->true_value);
-      } else {
-        undef = true;
-        return 0;
-      }
+    const expr& value = eval(op->condition) ? op->true_value : op->false_value;
+    if (value.defined()) {
+      return eval(value);
     } else {
-      if (op->false_value.defined()) {
-        return eval(op->false_value);
-      } else {
-        undef = true;
-        return 0;
-      }
+      undef = true;
+      return 0;
     }
   }
 
