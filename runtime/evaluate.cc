@@ -135,10 +135,9 @@ public:
 
   index_t eval(const variable* op) {
     index_t value = context.lookup(op->sym);
-    if (op->field == buffer_field::none) return value;
-
     const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
     switch (op->field) {
+    case buffer_field::none: return value;
     case buffer_field::rank: return buf->rank;
     case buffer_field::elem_size: return buf->elem_size;
     case buffer_field::min: return buf->dim(op->dim).min();
@@ -462,9 +461,9 @@ public:
 
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
   index_t eval(const allocate* op) {
-    std::size_t rank = op->dims.size();
     allocated_buffer buffer;
     buffer.elem_size = eval(op->elem_size);
+    std::size_t rank = op->dims.size();
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
@@ -496,7 +495,6 @@ public:
   }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const make_buffer* op) {
-    std::size_t rank = op->dims.size();
     raw_buffer buffer;
     buffer.elem_size = eval(op->elem_size, 0);
     // The base is very likely a buffer_at call, try to skip the eval overhead.
@@ -505,6 +503,7 @@ public:
     } else {
       buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
     }
+    std::size_t rank = op->dims.size();
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
