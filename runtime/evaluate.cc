@@ -191,7 +191,8 @@ public:
     return op->intrinsic == intrinsic::and_then;
   }
 
-  index_t eval_define_undef(const call* op) {
+  // Only used for testing, should not inline.
+  SLINKY_NO_INLINE index_t eval_define_undef(const call* op) {
     assert(op->args.size() == 2);
     index_t def = eval(op->args[1]);
     return eval(op->args[0], def);
