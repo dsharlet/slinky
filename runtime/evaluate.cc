@@ -155,6 +155,12 @@ public:
     const size_t size = op->lets.size();
     index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
+    std::size_t context_size = 0;
+    for (const auto& let : op->lets) {
+      context_size = std::max(context_size, let.first.id);
+    }
+    context.reserve(context_size + 1);
+
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
       old_values[i] = context.set(let.first, eval(let.second));
@@ -341,6 +347,7 @@ public:
   }
 
   SLINKY_ALWAYS_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value) {
+    context.reserve(sym.id + 1);
     index_t old_value = context.set(sym, value);
     index_t result = eval(op);
     // context might have grown and invalidated the ctx_value reference.
@@ -371,6 +378,12 @@ public:
     const size_t size = op->lets.size();
     index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
+    std::size_t context_size = 0;
+    for (const auto& let : op->lets) {
+      context_size = std::max(context_size, let.first.id);
+    }
+    context.reserve(context_size + 1);
+
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
       old_values[i] = context.set(let.first, eval(let.second));
@@ -396,6 +409,7 @@ public:
     index_t step = eval(op->step, 1);
     std::atomic<index_t> result = 0;
     std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
+    context.reserve(op->sym.id + 1);
     index_t old_value = context.set(op->sym, 0);
     context.thread_pool->parallel_for(
         n,
@@ -420,6 +434,7 @@ public:
     // because the context could grow and invalidate the reference. This could be fixed by having evaluate
     // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
     // not clear this optimization is necessary yet.
+    context.reserve(op->sym.id + 1);
     index_t old_value = context.set(op->sym, 0);
     index_t result = 0;
     for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
@@ -587,6 +602,7 @@ public:
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
 
+    context.reserve(op->sym.id + 1);
     index_t old_value = context.set(op->sym, reinterpret_cast<index_t>(&clone));
     index_t result = eval_shadowed(op);
     context.set(op->sym, old_value);

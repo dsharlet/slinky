@@ -13,21 +13,20 @@ class eval_context {
   // usage when evaluating.
   std::vector<index_t> values_;
 
-  void grow(std::size_t size) {
+public:
+  void reserve(std::size_t size) {
     if (size > values_.size()) {
       values_.resize(std::max(values_.size() * 2, size));
     }
   }
 
-public:
   index_t& operator[](var id) {
-    grow(id.id + 1);
+    reserve(id.id + 1);
     return values_[id.id];
   }
   index_t operator[](var id) const { return values_[id.id]; }
 
   index_t set(var id, index_t value) {
-    grow(id.id + 1);
     index_t& value_ref = values_[id.id];
     index_t old_value = value_ref;
     value_ref = value;
