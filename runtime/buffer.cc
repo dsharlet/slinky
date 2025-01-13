@@ -15,7 +15,6 @@ namespace slinky {
 namespace {
 
 dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
-dim empty_dim(0, -1, 0);
 
 }  // namespace
 
@@ -468,14 +467,6 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
   return result;
 }
 
-// Helper function to write a plan that does nothing when interpreted by for_each_impl.
-void write_empty_plan(void* plan, std::size_t bufs_size) {
-  for_each_loop<>* next = increment_plan<for_each_loop<>>(plan);
-  next->impl = for_each_loop<>::folded;
-  next->extent = 0;
-  next->dims[0] = &empty_dim;
-}
-
 template <bool SkipContiguous, std::size_t BufsSize>
 SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
@@ -499,30 +490,24 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
 
     if (buf_dim.min() == buf_dim.max()) {
       // extent 1, we don't need any of the logic here, skip to below.
-    } else if (buf_dim.max() > buf_dim.min()) {
-      if (use_folded_loop(bufs, bufs_size, d)) {
-        // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers.
-        assert(extent == 1);
-        for_each_loop<>* loop = increment_plan<for_each_loop<>>(plan);
-        loop->impl = for_each_loop<>::folded;
-        loop->extent = buf_dim.extent();
-        prev_loop = loop;
+    } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs, bufs_size, d)) {
+      // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
+      // loops are empty.
+      assert(extent == 1 || buf_dim.max() < buf_dim.min());
+      for_each_loop<>* loop = increment_plan<for_each_loop<>>(plan);
+      loop->impl = for_each_loop<>::folded;
+      loop->extent = buf_dim.extent();
+      prev_loop = loop;
 
-        const dim** dims = increment_plan<const dim*>(plan, bufs_size);
-        dims[0] = &buf->dim(d);
-        for (std::size_t n = 1; n < bufs_size; n++) {
-          dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
-        }
-        continue;
-      } else {
-        // Not folded, use a linear, possibly fused loop below.
-        extent *= buf_dim.extent();
+      const dim** dims = increment_plan<const dim*>(plan, bufs_size);
+      dims[0] = &buf->dim(d);
+      for (std::size_t n = 1; n < bufs_size; n++) {
+        dims[n] = d < static_cast<index_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
       }
+      continue;
     } else {
-      // extent <= 0.
-      assert(buf_dim.empty());
-      write_empty_plan(plan_base, bufs_size);
-      return 0;
+      // Not folded, use a linear, possibly fused loop below.
+      extent *= buf_dim.max() - buf_dim.min() + 1;
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
