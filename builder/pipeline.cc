@@ -1020,13 +1020,15 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
 
-  if (options.no_checks) {
-    result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
-  }
-
   // `implement_copies` adds shadowed declarations, remove them before simplifying.
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
+
+  if (options.no_checks) {
+    result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
+    // Simplify again, in case there are lets that the checks used that are now dead.
+    result = simplify(result);
+  }
 
   result = optimize_symbols(result, ctx);
 
