@@ -801,7 +801,7 @@ void for_each_impl_linear(const std::array<void*, NumBufs>& bases, const for_eac
     } else {
       for_each_impl(bases_i, loop, f);
     }
-    if (--extent <= 0) break;
+    if (SLINKY_UNLIKELY(--extent <= 0)) break;
     bases_i[0] = offset_bytes_non_null(bases_i[0], strides[0]);
     // This is a critical loop, and it seems we can't trust the compiler to unroll it. These ifs are constexpr.
     if (1 < NumBufs) bases_i[1] = offset_bytes(bases_i[1], strides[1]);
@@ -836,7 +836,7 @@ void for_each_impl_folded(const std::array<void*, NumBufs>& bases, const for_eac
 template <typename F, std::size_t NumBufs>
 SLINKY_ALWAYS_INLINE inline void for_each_impl(
     const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
-  if (loop->impl == for_each_loop<>::innermost) {
+  if (SLINKY_LIKELY(loop->impl == for_each_loop<>::innermost)) {
     for_each_impl_linear<true>(bases, loop, f);
   } else if (loop->impl == 0) {
     for_each_impl_linear<false>(bases, loop, f);

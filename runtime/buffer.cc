@@ -526,16 +526,16 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
-    if (bases[0]) {
+    if (SLINKY_LIKELY(bases[0])) {
       // This function is expected to adjust all bases to point to the min of `buf_dim`. For non-folded dimensions, that
       // is true by construction, but not for folded dimensions.
       index_t offset = buf_dim.flat_offset_bytes(buf_dim.min());
       bases[0] = offset_bytes_non_null(bases[0], offset);
     }
     for (std::size_t n = 1; n < bufs_size; n++) {
-      if (bases[n] && d < static_cast<index_t>(bufs[n]->rank)) {
+      if (SLINKY_LIKELY(bases[n] && d < static_cast<index_t>(bufs[n]->rank))) {
         const dim& buf_n_dim = bufs[n]->dim(d);
-        if (buf_n_dim.contains(buf_dim)) {
+        if (SLINKY_LIKELY(buf_n_dim.contains(buf_dim))) {
           index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
           bases[n] = offset_bytes_non_null(bases[n], offset);
         } else {

@@ -40,6 +40,14 @@ namespace slinky {
 #define SLINKY_NO_STACK_PROTECTOR /* nothing */
 #endif
 
+#if defined(__GNUC__)
+#define SLINKY_LIKELY(condition) (__builtin_expect(!!(condition), 1))
+#define SLINKY_UNLIKELY(condition) (__builtin_expect(!!(condition), 0))
+#else
+#define SLINKY_LIKELY(condition) (!!(condition))
+#define SLINKY_UNLIKELY(condition) (!!(condition))
+#endif
+
 class unreachable {
 public:
   unreachable() = default;
