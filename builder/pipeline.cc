@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <list>
 #include <map>
 #include <optional>
@@ -562,6 +563,25 @@ class pipeline_builder {
     explicit allocation_candidate(buffer_expr_ptr b) : buffer(b) {}
   };
 
+  struct statement_with_range {
+    stmt body;
+    int start;
+    int end;
+    // Stores every allocation inside of the range.
+    std::set<var> allocations;
+
+    static statement_with_range merge(const statement_with_range& a, const statement_with_range& b) {
+      assert(a.end + 1 == b.start);
+      statement_with_range r;
+      r.body = block::make({a.body, b.body});
+      r.start = a.start;
+      r.end = b.end;
+      std::set_union(a.allocations.begin(), a.allocations.end(), b.allocations.begin(), b.allocations.end(),
+          std::inserter(r.allocations, r.allocations.begin()));
+      return r;
+    }
+  };
+
   struct loop_id_less {
     bool operator()(const loop_id& a, const loop_id& b) const {
       if (a.root() && b.root()) return false;
@@ -671,7 +691,8 @@ class pipeline_builder {
     return simplify(bounds);
   }
 
-  stmt make_loop(stmt body, const func* base_f, const func::loop_info& loop = func::loop_info()) {
+  statement_with_range make_loop(
+      statement_with_range body, const func* base_f, const func::loop_info& loop = func::loop_info()) {
     loop_id here = {base_f, loop.var};
 
     body = build(body, base_f, here);
@@ -680,7 +701,7 @@ class pipeline_builder {
       // Find which buffers are used inside of the body.
       // TODO(vksnk): recomputing this seems really wasteful, we can should be
       // able to maintain the list of buffers as we build the IR.
-      std::vector<var> buffer_used = find_buffer_dependencies(body);
+      std::vector<var> buffer_used = find_buffer_dependencies(body.body);
 
       // Add crops for the used buffers using previously inferred bounds.
       // Input syms should be the innermost.
@@ -688,7 +709,7 @@ class pipeline_builder {
         var sym = i.first;
         if (!allocation_bounds_[sym]) continue;
         if (!std::binary_search(buffer_used.begin(), buffer_used.end(), sym)) continue;
-        body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body);
+        body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
       }
 
       // Followed by intermediate buffers in the reverse topological order
@@ -705,12 +726,12 @@ class pipeline_builder {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
           if (!std::binary_search(buffer_used.begin(), buffer_used.end(), b->sym())) continue;
-          body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
+          body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
         }
       }
 
       // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, base_f, loop);
+      body.body = crop_for_loop(body.body, base_f, loop);
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
       interval_expr loop_bounds = get_loop_bounds(base_f, loop);
@@ -721,32 +742,22 @@ class pipeline_builder {
       }
       loop_var_name += ctx.name(loop.sym());
       var loop_var = ctx.insert_unique(loop_var_name);
-      body = substitute(body, loop.sym(), loop_var);
-      body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body);
+      body.body = substitute(body.body, loop.sym(), loop_var);
+      body.body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body.body);
     }
 
     return body;
   }
 
-  struct statement_with_range {
-    stmt body;
-    int start;
-    int end;
-    // Stores every allocation inside of the range.
-    std::set<var> allocations;
-  };
-
   // Generate the loops that we want to be explicit.
   // Returns generated statement as well as the lifetime range covered by it.
   statement_with_range make_loops(const func* f) {
-    int old_function_produced = functions_produced_;
-
-    stmt result;
+    statement_with_range result;
     for (const auto& loop : f->loops()) {
       result = make_loop(result, f, loop);
     }
 
-    return {result, old_function_produced, functions_produced_ - 1};
+    return result;
   }
 
   void compute_allocation_bounds() {
@@ -824,15 +835,16 @@ class pipeline_builder {
   }
 
   // Wraps provided body statement with the allocation node for a given buffer.
-  stmt produce_allocation(const buffer_expr_ptr& b, stmt body, symbol_map<var>& uncropped_subs) {
+  statement_with_range produce_allocation(
+      const buffer_expr_ptr& b, statement_with_range s, symbol_map<var>& uncropped_subs) {
     var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
     uncropped_subs[b->sym()] = uncropped;
-    stmt result = clone_buffer::make(uncropped, b->sym(), body);
+    s.body = clone_buffer::make(uncropped, b->sym(), s.body);
 
     const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
     assert(allocation_bounds_[b->sym()]);
     const box_expr& bounds = *allocation_bounds_[b->sym()];
-    result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
+    s.body = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, s.body);
 
     std::vector<stmt> checks;
     for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
@@ -840,8 +852,9 @@ class pipeline_builder {
       checks.push_back(check::make(dims[d].max() >= bounds[d].max));
     }
 
-    result = block::make(std::move(checks), result);
-    return result;
+    s.body = block::make(std::move(checks), s.body);
+    s.allocations.insert(b->sym());
+    return s;
   }
 
   // Computes number of consumers for each of the buffers.
@@ -931,7 +944,7 @@ public:
   // * the `make_loops()` will produce the necessary loops defined for the function.
   //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  stmt build(const stmt& body, const func* base_f, const loop_id& at) {
+  statement_with_range build(const statement_with_range& body, const func* base_f, const loop_id& at) {
     symbol_map<var> uncropped_subs;
     std::vector<statement_with_range> results;
     // Build the functions computed at this loop level.
@@ -957,8 +970,7 @@ public:
             std::optional<allocation_candidate>& info = allocation_info_[b];
             if (info->consumers_produced != info->deps_count) continue;
 
-            f_body.body =
-                produce_allocation(info->buffer, f_body.body, uncropped_subs);
+            f_body = produce_allocation(info->buffer, f_body, uncropped_subs);
             to_remove.push_back(b);
           }
           for (auto b : to_remove) {
@@ -998,11 +1010,11 @@ public:
     }
 
     auto lifetime_less = [](allocation_candidate a, allocation_candidate b) {
-          if ((a.lifetime_end - a.lifetime_start) == (b.lifetime_end - b.lifetime_start)) {
-            return a.lifetime_start < b.lifetime_start;
-          }
-          return (a.lifetime_end - a.lifetime_start) < (b.lifetime_end - b.lifetime_start);
-        };
+      if ((a.lifetime_end - a.lifetime_start) == (b.lifetime_end - b.lifetime_start)) {
+        return a.lifetime_start < b.lifetime_start;
+      }
+      return (a.lifetime_end - a.lifetime_start) < (b.lifetime_end - b.lifetime_start);
+    };
     // Sort vector by (end - start) and then start.
     std::sort(lifetimes.begin(), lifetimes.end(), lifetime_less);
     std::sort(special.begin(), special.end(), lifetime_less);
@@ -1043,11 +1055,11 @@ public:
           // assert(candidates_for_allocation_[b->sym()]->consumers_produced ==
           // candidates_for_allocation_[b->sym()]->deps_count);
 
-          new_body = produce_allocation(b, new_body, uncropped_subs);
-          combined_allocs.insert(b->sym());
-          candidates_for_allocation_[at].erase(b->sym());
+          statement_with_range new_result = {new_body, new_min, new_max, std::move(combined_allocs)};
+          new_result = produce_allocation(b, new_result, uncropped_subs);
+          new_results.push_back(new_result);
 
-          new_results.push_back({new_body, new_min, new_max, std::move(combined_allocs)});
+          candidates_for_allocation_[at].erase(b->sym());
         }
 
         // Move to the next buffer.
@@ -1071,7 +1083,7 @@ public:
           buffer_expr_ptr candidate = special[iy].buffer;
           bool is_ready = true;
           // Check dependencies first.
-          for (var b: copy_deps_[candidate->sym()]) {
+          for (var b : copy_deps_[candidate->sym()]) {
             if (new_results[ix].allocations.count(b) == 0) {
               is_ready = false;
               break;
@@ -1083,10 +1095,8 @@ public:
           }
 
           // The block range must fully cover the allocation range.
-          if (new_results[ix].start <= special[iy].lifetime_start &&
-               special[iy].lifetime_end <= new_results[ix].end) {
-            new_results[ix].body = produce_allocation(candidate, new_results[ix].body, uncropped_subs);
-            new_results[ix].allocations.insert(candidate->sym());
+          if (new_results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= new_results[ix].end) {
+            new_results[ix] = produce_allocation(candidate, new_results[ix], uncropped_subs);
             candidates_for_allocation_[at].erase(candidate->sym());
             found = true;
             break;
@@ -1107,13 +1117,19 @@ public:
       iteration_count++;
     }
 
-    // Combine into one statement.
-    std::vector<stmt> results_stmt;
-    for (const auto& rs : results) {
-      results_stmt.push_back(rs.body);
+    assert(!results.empty() || body.body.defined());
+    statement_with_range result;
+    if (results.empty()) {
+      result = body;
+    } else {
+      result = results.front();
+      for (std::size_t ix = 1; ix < results.size(); ix++) {
+        result = statement_with_range::merge(result, results[ix]);
+      }
+      if (body.body.defined()) {
+        result = statement_with_range::merge(result, body);
+      }
     }
-
-    stmt result = block::make(std::move(results_stmt), body);
 
     // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
     // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
@@ -1132,7 +1148,7 @@ public:
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
     // by two different funcs.
-    result = substitute_inputs(result, uncropped_subs);
+    result.body = substitute_inputs(result.body, uncropped_subs);
 
     return result;
   }
@@ -1259,7 +1275,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
-  result = builder.build(result, nullptr, loop_id());
+  result = builder.build({}, nullptr, loop_id()).body;
   std::cout << "Initial IR:\n" << result << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
