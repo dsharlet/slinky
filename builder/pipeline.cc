@@ -1036,6 +1036,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = inject_traces(result, ctx, constants);
   }
 
+  result = canonicalize_nodes(result);
+
   if (is_verbose()) {
     std::cout << result << std::endl;
   }
