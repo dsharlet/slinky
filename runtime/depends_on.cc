@@ -4,6 +4,7 @@
 
 #include "base/chrome_trace.h"
 #include "runtime/expr.h"
+#include "runtime/print.h"
 
 namespace slinky {
 
@@ -53,7 +54,7 @@ public:
       case buffer_field::fold_factor: deps->buffer_dims = true; break;
       case buffer_field::rank:
       case buffer_field::elem_size: deps->var = true; break;
-      default: std::abort();
+      default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(op->field);
       }
     }
   }

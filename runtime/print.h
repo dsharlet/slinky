@@ -26,6 +26,8 @@ std::ostream& operator<<(std::ostream& os, const box_expr& i);
 std::ostream& operator<<(std::ostream& os, intrinsic fn);
 std::ostream& operator<<(std::ostream& os, buffer_field f);
 std::ostream& operator<<(std::ostream& os, memory_type type);
+std::ostream& operator<<(std::ostream& os, stmt_node_type type);
+std::ostream& operator<<(std::ostream& os, expr_node_type type);
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const modulus_remainder<T>& i) {
@@ -39,9 +41,11 @@ std::ostream& operator<<(std::ostream& os, const dim& d);
 // intended usage here is to do `using std::to_string;` followed by naked
 // to_string() calls.
 std::string to_string(var sym);
-const char* to_string(intrinsic fn);
-const char* to_string(buffer_field f);
-const char* to_string(memory_type type);
+SLINKY_PURE const char* to_string(intrinsic fn);
+SLINKY_PURE const char* to_string(buffer_field f);
+SLINKY_PURE const char* to_string(memory_type type);
+SLINKY_PURE const char* to_string(stmt_node_type type);
+SLINKY_PURE const char* to_string(expr_node_type type);
 
 }  // namespace slinky
 

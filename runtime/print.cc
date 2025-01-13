@@ -51,9 +51,60 @@ const char* to_string(intrinsic fn) {
   }
 }
 
+const char* to_string(stmt_node_type type) {
+  switch (type) {
+  case stmt_node_type::none: return "none";
+  case stmt_node_type::call_stmt: return "call_stmt";
+  case stmt_node_type::copy_stmt: return "copy_stmt";
+  case stmt_node_type::let_stmt: return "let_stmt";
+  case stmt_node_type::block: return "block";
+  case stmt_node_type::loop: return "loop";
+  case stmt_node_type::allocate: return "allocate";
+  case stmt_node_type::make_buffer: return "make_buffer";
+  case stmt_node_type::clone_buffer: return "clone_buffer";
+  case stmt_node_type::crop_buffer: return "crop_buffer";
+  case stmt_node_type::crop_dim: return "crop_dim";
+  case stmt_node_type::slice_buffer: return "slice_buffer";
+  case stmt_node_type::slice_dim: return "slice_dim";
+  case stmt_node_type::transpose: return "transpose";
+  case stmt_node_type::check: return "check";
+
+  default: return "<invalid stmt_node_type>";
+  }
+}
+
+const char* to_string(expr_node_type type) {
+  switch (type) {
+  case expr_node_type::none: return "none";
+  case expr_node_type::variable: return "variable";
+  case expr_node_type::let: return "let";
+  case expr_node_type::add: return "add";
+  case expr_node_type::sub: return "sub";
+  case expr_node_type::mul: return "mul";
+  case expr_node_type::div: return "div";
+  case expr_node_type::mod: return "mod";
+  case expr_node_type::min: return "min";
+  case expr_node_type::max: return "max";
+  case expr_node_type::equal: return "equal";
+  case expr_node_type::not_equal: return "not_equal";
+  case expr_node_type::less: return "less";
+  case expr_node_type::less_equal: return "less_equal";
+  case expr_node_type::logical_and: return "logical_and";
+  case expr_node_type::logical_or: return "logical_or";
+  case expr_node_type::logical_not: return "logical_not";
+  case expr_node_type::select: return "select";
+  case expr_node_type::call: return "call";
+  case expr_node_type::constant: return "constant";
+
+  default: return "<invalid expr_node_type>";
+  }
+}
+
 std::ostream& operator<<(std::ostream& os, memory_type type) { return os << to_string(type); }
 std::ostream& operator<<(std::ostream& os, intrinsic fn) { return os << to_string(fn); }
 std::ostream& operator<<(std::ostream& os, buffer_field f) { return os << to_string(f); }
+std::ostream& operator<<(std::ostream& os, stmt_node_type t) { return os << to_string(t); }
+std::ostream& operator<<(std::ostream& os, expr_node_type t) { return os << to_string(t); }
 
 std::ostream& operator<<(std::ostream& os, const interval_expr& i) {
   return os << "[" << i.min << ", " << i.max << "]";
@@ -159,7 +210,7 @@ public:
     case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(v->field);
     }
   }
   void visit(const constant* c) override { *this << c->value; }

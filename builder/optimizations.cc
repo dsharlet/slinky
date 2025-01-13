@@ -705,7 +705,7 @@ public:
 
   void visit(const transpose*) override {
     // TODO: We should be able to handle this.
-    std::abort();
+    SLINKY_UNREACHABLE << "transpose not handled by buffer_aliaser";
   }
 
   // This
@@ -1079,6 +1079,35 @@ stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
   return reuse_shadows().mutate(s);
+}
+
+namespace {
+
+class node_canonicalizer : public node_mutator {
+  std::map<expr, expr, node_less> exprs;
+  std::map<stmt, stmt, node_less> stmts;
+
+public:
+  using node_mutator::mutate;
+
+  stmt mutate(const stmt& s) override {
+    stmt& result = stmts[s];
+    if (!result.defined()) result = node_mutator::mutate(s);
+    return result;
+  }
+
+  expr mutate(const expr& e) override {
+    expr& result = exprs[e];
+    if (!result.defined()) result = node_mutator::mutate(e);
+    return result;
+  }
+};
+
+}  // namespace
+
+stmt canonicalize_nodes(const stmt& s) {
+  scoped_trace trace("canonicalize_nodes");
+  return node_canonicalizer().mutate(s);
 }
 
 }  // namespace slinky

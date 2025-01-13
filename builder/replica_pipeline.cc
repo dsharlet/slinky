@@ -51,11 +51,6 @@ class pipeline_replicator : public expr_visitor {
 public:
   explicit pipeline_replicator(node_context& ctx) : ctx_(ctx) {}
 
-  void fail(const char* msg) {
-    std::cerr << "Unimplemented/TODO: " << msg << "\n";
-    std::abort();
-  }
-
   void visit(const variable* op) override {
     const std::string& name = ctx_.name(op->sym);
 
@@ -82,7 +77,7 @@ public:
   }
 
   void visit(const constant* op) override { name_ = to_string(op->value); }
-  void visit(const let* op) override { fail("unimplemented let"); }
+  void visit(const let* op) override { SLINKY_UNREACHABLE; }
   void visit(const add* op) override { visit_binary_op(op, "+"); }
   void visit(const sub* op) override { visit_binary_op(op, "-"); }
   void visit(const mul* op) override { visit_binary_op(op, "*"); }
@@ -616,7 +611,8 @@ struct rph_handler {
     case 0x82: DO_XOR(uint64_t, uint16_t); break;
     case 0x84: DO_XOR(uint64_t, uint32_t); break;
     case 0x88: DO_XOR(uint64_t, uint64_t); break;
-    default: std::cerr << "Unsupported elem_size combination\n"; std::abort();
+
+    default: SLINKY_UNREACHABLE << "Unsupported elem_size combination";
     }
 
 #undef DO_XOR
