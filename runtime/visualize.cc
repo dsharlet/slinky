@@ -130,7 +130,7 @@ public:
     case buffer_field::max: *this << "buffer_max(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::stride: *this << "buffer_stride(" << v->sym << ", " << v->dim << ")"; return;
     case buffer_field::fold_factor: *this << "buffer_fold_factor(" << v->sym << ", " << v->dim << ")"; return;
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown buffer_field " << to_string(v->field);
     }
   }
   void visit(const constant* c) override { *this << c->value; }

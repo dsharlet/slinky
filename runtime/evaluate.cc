@@ -31,7 +31,7 @@ void dump_context_for_expr(
     std::string sym = symbols ? symbols->name(var(i)) : "<" + std::to_string(i) + ">";
     auto deps = depends_on(deps_of, var(i));
     if (!deps_of.defined() || deps.var) {
-      s << "  " << sym << " = " << ctx[var(i)] << std::endl;
+      s << "  " << sym << " = " << ctx.lookup(var(i)) << std::endl;
     } else if (!deps_of.defined() || deps.buffer_dims || deps.buffer_bounds) {
       const raw_buffer* buf = ctx.lookup_buffer(var(i));
       if (buf) {
@@ -101,14 +101,14 @@ public:
     case expr_node_type::less_equal: return make_binary<less_equal>(a, b);
     case expr_node_type::logical_and: return make_binary<logical_and>(a, b);
     case expr_node_type::logical_or: return make_binary<logical_or>(a, b);
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown binary operator " << to_string(op->type);
     }
   }
 
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
-  index_t eval(const expr& e, index_t def) {
-    undef = false;
+  SLINKY_ALWAYS_INLINE index_t eval(const expr& e, index_t def) {
     if (e.defined()) {
+      undef = false;
       index_t result = eval(e);
       return undef ? def : result;
     } else {
@@ -116,7 +116,7 @@ public:
     }
   }
 
-  interval eval(const interval_expr& x) {
+  SLINKY_ALWAYS_INLINE interval eval(const interval_expr& x) {
     index_t min = eval(x.min);
     if (x.is_point()) {
       return {min, min};
@@ -124,8 +124,8 @@ public:
       return {min, eval(x.max)};
     }
   }
-  interval eval(const interval_expr& x, interval def) {
-    if (x.is_point() && x.min.defined()) {
+  SLINKY_ALWAYS_INLINE interval eval(const interval_expr& x, interval def) {
+    if (x.is_point()) {
       index_t result = eval(x.min);
       return {result, result};
     } else {
@@ -135,17 +135,16 @@ public:
 
   index_t eval(const variable* op) {
     index_t value = context.lookup(op->sym);
-    if (op->field == buffer_field::none) return value;
-
     const raw_buffer* buf = reinterpret_cast<const raw_buffer*>(value);
     switch (op->field) {
+    case buffer_field::none: return value;
     case buffer_field::rank: return buf->rank;
     case buffer_field::elem_size: return buf->elem_size;
     case buffer_field::min: return buf->dim(op->dim).min();
     case buffer_field::max: return buf->dim(op->dim).max();
     case buffer_field::stride: return buf->dim(op->dim).stride();
     case buffer_field::fold_factor: return buf->dim(op->dim).fold_factor();
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unkonwn var field " << to_string(op->field);
     }
   }
 
@@ -156,14 +155,19 @@ public:
     const size_t size = op->lets.size();
     index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
+    std::size_t context_size = 0;
+    for (const auto& let : op->lets) {
+      context_size = std::max(context_size, let.first.id);
+    }
+    context.reserve(context_size + 1);
+
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      old_values[i] = context[let.first];
-      context[let.first] = eval(let.second);
+      old_values[i] = context.set(let.first, eval(let.second));
     }
     index_t result = eval(op->body);
     for (size_t i = 0; i < size; ++i) {
-      context[op->lets[i].first] = old_values[i];
+      context.set(op->lets[i].first, old_values[i]);
     }
     return result;
   }
@@ -171,20 +175,12 @@ public:
   index_t eval(const logical_not* op) { return eval(op->a) == 0; }
 
   index_t eval(const class select* op) {
-    if (eval(op->condition)) {
-      if (op->true_value.defined()) {
-        return eval(op->true_value);
-      } else {
-        undef = true;
-        return 0;
-      }
+    const expr& value = eval(op->condition) ? op->true_value : op->false_value;
+    if (value.defined()) {
+      return eval(value);
     } else {
-      if (op->false_value.defined()) {
-        return eval(op->false_value);
-      } else {
-        undef = true;
-        return 0;
-      }
+      undef = true;
+      return 0;
     }
   }
 
@@ -200,7 +196,8 @@ public:
     return op->intrinsic == intrinsic::and_then;
   }
 
-  index_t eval_define_undef(const call* op) {
+  // Only used for testing, should not inline.
+  SLINKY_NO_INLINE index_t eval_define_undef(const call* op) {
     assert(op->args.size() == 2);
     index_t def = eval(op->args[1]);
     return eval(op->args[0], def);
@@ -214,13 +211,16 @@ public:
     assert(buf);
     switch (op->intrinsic) {
     case intrinsic::buffer_size_bytes: return buf->size_bytes();
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown buffer metadata intrinsic " << to_string(op->intrinsic);
     }
   }
 
   void* eval_buffer_at(const call* op) {
     assert(op->args.size() >= 1);
-    raw_buffer* buf = reinterpret_cast<raw_buffer*>(eval(op->args[0]));
+    auto sym = as_variable(op->args[0]);
+    assert(sym);
+    const raw_buffer* buf = context.lookup_buffer(*sym);
+    assert(buf);
     void* result = buf->base;
     assert(op->args.size() <= buf->rank + 1);
     for (std::size_t d = 0; d < op->args.size() - 1; ++d) {
@@ -309,9 +309,9 @@ public:
 
   SLINKY_NO_INLINE index_t eval(const call* op) {
     switch (op->intrinsic) {
-    case intrinsic::positive_infinity: std::cerr << "Cannot evaluate positive_infinity" << std::endl; std::abort();
-    case intrinsic::negative_infinity: std::cerr << "Cannot evaluate negative_infinity" << std::endl; std::abort();
-    case intrinsic::indeterminate: std::cerr << "Cannot evaluate indeterminate" << std::endl; std::abort();
+    case intrinsic::positive_infinity: SLINKY_UNREACHABLE << "cannot evaluate positive_infinity";
+    case intrinsic::negative_infinity: SLINKY_UNREACHABLE << "cannot evaluate negative_infinity";
+    case intrinsic::indeterminate: SLINKY_UNREACHABLE << "cannot evaluate indeterminate";
 
     case intrinsic::abs: assert(op->args.size() == 1); return std::abs(eval(op->args[0]));
 
@@ -332,7 +332,7 @@ public:
 
     case intrinsic::free: return eval_free(op);
 
-    default: std::cerr << "Unknown intrinsic: " << op->intrinsic << std::endl; std::abort();
+    default: SLINKY_UNREACHABLE << "unknown intrinsic: " << to_string(op->intrinsic);
     }
   }
 
@@ -341,25 +341,23 @@ public:
     // we handle common node types here, and call a non-inlined handler for the less common nodes below.
     switch (op.type()) {
     case stmt_node_type::call_stmt: return eval(reinterpret_cast<const call_stmt*>(op.get()));
-    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
     case stmt_node_type::crop_dim: return eval(reinterpret_cast<const crop_dim*>(op.get()));
-    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
     default: return eval_non_inlined(op);
     }
   }
 
   SLINKY_ALWAYS_INLINE index_t eval_with_value(const stmt& op, var sym, index_t value) {
-    index_t& ctx_value = context[sym];
-    index_t old_value = ctx_value;
-    ctx_value = value;
+    context.reserve(sym.id + 1);
+    index_t old_value = context.set(sym, value);
     index_t result = eval(op);
     // context might have grown and invalidated the ctx_value reference.
-    context[sym] = old_value;
+    context.set(sym, old_value);
     return result;
   }
 
   SLINKY_NO_INLINE index_t eval_non_inlined(const stmt& op) {
     switch (op.type()) {
+    case stmt_node_type::copy_stmt: return eval(reinterpret_cast<const copy_stmt*>(op.get()));
     case stmt_node_type::let_stmt: return eval(reinterpret_cast<const let_stmt*>(op.get()));
     case stmt_node_type::block: return eval(reinterpret_cast<const block*>(op.get()));
     case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()));
@@ -368,9 +366,10 @@ public:
     case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()));
     case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()));
     case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
+    case stmt_node_type::slice_dim: return eval(reinterpret_cast<const slice_dim*>(op.get()));
     case stmt_node_type::transpose: return eval(reinterpret_cast<const transpose*>(op.get()));
     case stmt_node_type::check: return eval(reinterpret_cast<const check*>(op.get()));
-    default: std::abort();
+    default: SLINKY_UNREACHABLE << "unknown stmt type " << to_string(op.type());
     }
   }
 
@@ -379,15 +378,20 @@ public:
     const size_t size = op->lets.size();
     index_t* old_values = SLINKY_ALLOCA(index_t, size);
 
+    std::size_t context_size = 0;
+    for (const auto& let : op->lets) {
+      context_size = std::max(context_size, let.first.id);
+    }
+    context.reserve(context_size + 1);
+
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      old_values[i] = context[let.first];
-      context[let.first] = eval(let.second);
+      old_values[i] = context.set(let.first, eval(let.second));
     }
     index_t result = eval(op->body);
     for (size_t i = 0; i < size; ++i) {
       const auto& let = op->lets[i];
-      context[let.first] = old_values[i];
+      context.set(let.first, old_values[i]);
     }
     return result;
   }
@@ -400,64 +404,81 @@ public:
     return 0;
   }
 
-  index_t eval(const loop* op) {
+  SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
+    std::atomic<index_t> result = 0;
+    std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
+    context.reserve(op->sym.id + 1);
+    index_t old_value = context.set(op->sym, 0);
+    context.thread_pool->parallel_for(
+        n,
+        [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
+          context.set(op->sym, i * step + min);
+          // Evaluate the parallel loop body with our copy of the context.
+          index_t result_i = evaluate(op->body, context);
+          if (result_i != 0) {
+            index_t zero = 0;
+            result.compare_exchange_strong(zero, result_i);
+          }
+        },
+        op->max_workers);
+    context.set(op->sym, old_value);
+    return result;
+  }
+
+  SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op) {
+    interval bounds = eval(op->bounds);
+    index_t step = eval(op->step, 1);
+    // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
+    // because the context could grow and invalidate the reference. This could be fixed by having evaluate
+    // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
+    // not clear this optimization is necessary yet.
+    context.reserve(op->sym.id + 1);
+    index_t old_value = context.set(op->sym, 0);
+    index_t result = 0;
+    for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
+      context.set(op->sym, i);
+      result = eval(op->body);
+    }
+    context.set(op->sym, old_value);
+    return result;
+  }
+
+  index_t eval(const loop* op) {
     if (op->max_workers > 1) {
-      std::atomic<index_t> result = 0;
-      std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
-      context.thread_pool->parallel_for(
-          n,
-          [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
-            context[op->sym] = i * step + min;
-            // Evaluate the parallel loop body with our copy of the context.
-            index_t result_i = evaluate(op->body, context);
-            if (result_i != 0) {
-              index_t zero = 0;
-              result.compare_exchange_strong(zero, result_i);
-            }
-          },
-          op->max_workers);
-      return result;
+      return eval_loop_parallel(op);
     } else {
-      // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
-      // because the context could grow and invalidate the reference. This could be fixed by having evaluate
-      // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
-      // not clear this optimization is necessary yet.
-      index_t old_value = context[op->sym];
-      index_t result = 0;
-      for (index_t i = bounds.min; result == 0 && bounds.min <= i && i <= bounds.max; i += step) {
-        context[op->sym] = i;
-        result = eval(op->body);
-      }
-      context[op->sym] = old_value;
-      return result;
+      return eval_loop_serial(op);
     }
   }
 
-  index_t eval(const call_stmt* op) {
+  SLINKY_NO_INLINE void call_failed(index_t result, const call_stmt* op) {
+    if (context.call_failed) {
+      context.call_failed(op);
+    } else {
+      std::cerr << "call_stmt failed: " << stmt(op) << "->" << result << std::endl;
+      std::abort();
+    }
+  }
+
+  SLINKY_ALWAYS_INLINE index_t eval(const call_stmt* op) {
     index_t result = op->target(op, context);
     if (result) {
-      if (context.call_failed) {
-        context.call_failed(op);
-      } else {
-        std::cerr << "call_stmt failed: " << stmt(op) << "->" << result << std::endl;
-        std::abort();
-      }
+      call_failed(result, op);
     }
     return result;
   }
 
   index_t eval(const copy_stmt* op) {
-    std::cerr << "copy_stmt should have been implemented by calls to copy/pad." << std::endl;
-    std::abort();
+    SLINKY_UNREACHABLE << "copy_stmt should have been implemented by calls to copy/pad.";
   }
 
   // Not using SLINKY_NO_STACK_PROTECTOR here because this actually could allocate a lot of memory on the stack.
   index_t eval(const allocate* op) {
-    std::size_t rank = op->dims.size();
     allocated_buffer buffer;
     buffer.elem_size = eval(op->elem_size);
+    std::size_t rank = op->dims.size();
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
@@ -470,13 +491,13 @@ public:
       buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
     }
 
-    if (op->storage == memory_type::stack) {
-      buffer.init_strides();
-      buffer.base = __builtin_alloca(buffer.size_bytes());
-      buffer.allocation = nullptr;
-    } else {
-      assert(op->storage == memory_type::heap);
+    if (op->storage == memory_type::heap) {
       buffer.allocation = context.allocate(op->sym, &buffer);
+    } else {
+      assert(op->storage == memory_type::stack);
+      std::size_t size = buffer.init_strides();
+      buffer.base = __builtin_alloca(size);
+      buffer.allocation = nullptr;
     }
 
     index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
@@ -489,10 +510,15 @@ public:
   }
 
   SLINKY_NO_STACK_PROTECTOR index_t eval(const make_buffer* op) {
-    std::size_t rank = op->dims.size();
     raw_buffer buffer;
     buffer.elem_size = eval(op->elem_size, 0);
-    buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
+    // The base is very likely a buffer_at call, try to skip the eval overhead.
+    if (const call* c = op->base.as<call>()) {
+      buffer.base = reinterpret_cast<void*>(eval(c));
+    } else {
+      buffer.base = reinterpret_cast<void*>(eval(op->base, 0));
+    }
+    std::size_t rank = op->dims.size();
     buffer.rank = rank;
     buffer.dims = SLINKY_ALLOCA(dim, rank);
 
@@ -576,11 +602,10 @@ public:
     clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
     internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
 
-    index_t& ctx_value = context[op->sym];
-    index_t old_value = ctx_value;
-    ctx_value = reinterpret_cast<index_t>(&clone);
+    context.reserve(op->sym.id + 1);
+    index_t old_value = context.set(op->sym, reinterpret_cast<index_t>(&clone));
     index_t result = eval_shadowed(op);
-    context[op->sym] = old_value;
+    context.set(op->sym, old_value);
     return result;
   }
 
@@ -687,17 +712,21 @@ public:
     }
   }
 
+  SLINKY_NO_INLINE index_t check_failed(const check* op) {
+    if (context.check_failed) {
+      context.check_failed(op->condition);
+    } else {
+      std::cerr << "Check failed: " << op->condition << std::endl;
+      std::cerr << "Context: " << std::endl;
+      dump_context_for_expr(std::cerr, context, op->condition);
+      std::abort();
+    }
+    return 1;
+  }
+
   index_t eval(const check* op) {
-    if (!eval(op->condition, 0)) {
-      if (context.check_failed) {
-        context.check_failed(op->condition);
-      } else {
-        std::cerr << "Check failed: " << op->condition << std::endl;
-        std::cerr << "Context: " << std::endl;
-        dump_context_for_expr(std::cerr, context, op->condition);
-        std::abort();
-      }
-      return 1;
+    if (!eval(op->condition)) {
+      return check_failed(op);
     } else {
       return 0;
     }

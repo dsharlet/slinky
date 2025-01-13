@@ -602,7 +602,7 @@ public:
       set_result(clone_with(op, std::move(body)));
     }
   }
-  void visit(const transpose*) override { std::abort(); }
+  void visit(const transpose*) override { SLINKY_UNREACHABLE << "transpose not handled by slide_and_fold_storage"; }
   void visit(const clone_buffer* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
     stmt_mutator::visit(op);

@@ -526,15 +526,7 @@ struct dim_expr {
     return bounds.same_as(r.bounds) && stride.same_as(r.stride) && fold_factor.same_as(r.fold_factor);
   }
 
-  const expr& get_field(buffer_field field) const {
-    switch (field) {
-    case buffer_field::min: return bounds.min;
-    case buffer_field::max: return bounds.max;
-    case buffer_field::stride: return stride;
-    case buffer_field::fold_factor: return fold_factor;
-    default: std::abort();
-    }
-  }
+  const expr& get_field(buffer_field field) const;
 };
 
 class expr_visitor {

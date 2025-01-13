@@ -28,6 +28,10 @@ stmt deshadow(const stmt& s, span<var> external_symbols, node_context& ctx);
 // - Symbols are indexed such that there are no unused symbol indices.
 stmt optimize_symbols(const stmt& s, node_context& ctx);
 
+// Guarantees that if match(a, b) is true, then a.same_as(b) is true, i.e. it rewrites matching nodes to be the same
+// object.
+stmt canonicalize_nodes(const stmt& s);
+
 }  // namespace slinky
 
 #endif  // SLINKY_BUILDER_OPTIMIZATIONS_H

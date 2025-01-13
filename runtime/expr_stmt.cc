@@ -1,5 +1,6 @@
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
+#include "runtime/print.h"
 
 #include <algorithm>
 #include <cassert>
@@ -699,6 +700,17 @@ box_expr dims_bounds(span<const dim_expr> dims) {
     result[d] = dims[d].bounds;
   }
   return result;
+}
+
+
+const expr& dim_expr::get_field(buffer_field field) const {
+  switch (field) {
+  case buffer_field::min: return bounds.min;
+  case buffer_field::max: return bounds.max;
+  case buffer_field::stride: return stride;
+  case buffer_field::fold_factor: return fold_factor;
+  default: SLINKY_UNREACHABLE << "buffer_field " << to_string(field) << " is not a dim field";
+  }
 }
 
 bool is_buffer_intrinsic(intrinsic fn) {

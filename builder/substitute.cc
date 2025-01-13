@@ -714,8 +714,7 @@ public:
   var enter_decl(var x) override { return x != target ? x : var(); }
 
   stmt mutate(const stmt& s) override {
-    // We don't support substituting buffers into stmts.
-    std::abort();
+    SLINKY_UNREACHABLE << "can't substitute buffer into stmt";
   }
   dim_expr mutate(const dim_expr& e) { return {mutate(e.bounds), mutate(e.stride), mutate(e.fold_factor)}; }
   using substitutor::mutate;
@@ -733,7 +732,7 @@ public:
     case buffer_field::stride:
     case buffer_field::fold_factor:
       return dim < static_cast<index_t>(dims.size()) ? dims[dim].get_field(field) : expr(op);
-    case buffer_field::none: std::abort();
+    default: SLINKY_UNREACHABLE << "got scalar var instead of buffer";
     }
     return expr(op);
   }
@@ -800,7 +799,7 @@ public:
   }
   stmt mutate(const stmt& op) override {
     // We don't support substituting exprs into stmts.
-    std::abort();
+    SLINKY_UNREACHABLE << "can't substitute expr into stmt";
   }
   using node_mutator::mutate;
 };
