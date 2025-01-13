@@ -119,39 +119,43 @@ SLINKY_ALWAYS_INLINE inline bool is_stride_ok(index_t stride, index_t extent, sp
 
 }  // namespace
 
-void raw_buffer::init_strides(index_t alignment) {
+std::size_t raw_buffer::init_strides(index_t alignment) {
   // We remember the strides of the dims we know about, in sorted order.
   init_stride_dim* dims = SLINKY_ALLOCA(init_stride_dim, rank);
   init_stride_dim* dims_end = dims;
-  // Insert d into dims, sorted by dim_stride.
+  // Insert d into dims, sorted by dim_stride. Also track the flat max index of the buffer, to compute the size.
+  std::size_t flat_max = 0;
   auto learn_dim = [&](const init_stride_dim& d) {
     init_stride_dim* at = std::lower_bound(dims, dims_end, d);
     internal::copy_small_n_backward(dims_end, dims_end - at, dims_end + 1);
     *at = d;
+    flat_max += d.dim_stride - d.stride;
     ++dims_end;
   };
+
+  std::size_t min_unknown = rank;
   for (std::size_t i = 0; i < rank; ++i) {
-    if (dim(i).stride() != dim::auto_stride) {
-      index_t alloc_extent_i = alloc_extent(dim(i));
-      if (alloc_extent_i > 1) {
-        learn_dim(init_stride_dim(std::abs(dim(i).stride()), alloc_extent_i));
-      } else {
-        // We don't need to learn extent 1 dimensions, because they can't fail is_stride_ok checks.
-      }
+    if (dim(i).stride() == 0) continue;
+
+    index_t alloc_extent_i = alloc_extent(dim(i));
+    if (alloc_extent_i == 0) {
+      // The buffer is empty, we don't care about the strides.
+      return 0;
+    } else if (alloc_extent_i == 1) {
+      if (dim(i).stride() == dim::auto_stride) dim(i).set_stride(0);
+    } else if (dim(i).stride() != dim::auto_stride) {
+      learn_dim(init_stride_dim(std::abs(dim(i).stride()), alloc_extent_i));
+    } else {
+      // Track the range of dimensions we need to find the stride of.
+      min_unknown = std::min(min_unknown, i);
     }
   }
 
-  for (std::size_t i = 0; i < rank; ++i) {
+  for (std::size_t i = min_unknown; i < rank; ++i) {
     if (dim(i).stride() != dim::auto_stride) continue;
 
     const index_t alloc_extent_i = alloc_extent(dim(i));
-
-    if (alloc_extent_i <= 1) {
-      // This dimension can have stride elem_size, no other stride could be better.
-      dim(i).set_stride(elem_size);
-      // We don't need to consider strides proposed by extent 1 dimensions, we always consider that below.
-      continue;
-    }
+    assert(alloc_extent_i > 1);
 
     span<const init_stride_dim> known_dims{dims, dims_end};
     if (is_stride_ok(elem_size, alloc_extent_i, known_dims)) {
@@ -176,15 +180,15 @@ void raw_buffer::init_strides(index_t alignment) {
     }
     assert(min < std::numeric_limits<index_t>::max());
     dim(i).set_stride(min);
-    if (i + 1 < rank) {
-      learn_dim(init_stride_dim(min, alloc_extent_i));
-    }
+    learn_dim(init_stride_dim(min, alloc_extent_i));
   }
+
+  return (flat_max + elem_size + (alignment - 1)) & ~(alignment - 1);
 }
 
 void* raw_buffer::allocate() {
-  init_strides();
-  void* allocation = malloc(size_bytes());
+  std::size_t size = init_strides();
+  void* allocation = malloc(size);
   base = allocation;
   return allocation;
 }

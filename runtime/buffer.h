@@ -332,7 +332,7 @@ public:
 
   // If any strides are `auto_stride`, replace them with automatically determined strides.
   // `alignment` must be a power of 2.
-  void init_strides(index_t alignment = 1);
+  std::size_t init_strides(index_t alignment = 1);
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
   // be deallocated with `free`.

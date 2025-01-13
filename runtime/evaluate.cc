@@ -477,8 +477,8 @@ public:
     }
 
     if (op->storage == memory_type::stack) {
-      buffer.init_strides();
-      buffer.base = __builtin_alloca(buffer.size_bytes());
+      std::size_t size = buffer.init_strides();
+      buffer.base = __builtin_alloca(size);
       buffer.allocation = nullptr;
     } else {
       assert(op->storage == memory_type::heap);
