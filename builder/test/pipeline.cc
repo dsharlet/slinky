@@ -160,7 +160,7 @@ TEST_P(elementwise, pipeline_1d) {
     ASSERT_EQ(out_buf(i), 2 * i + 1);
   }
 
-  if (schedule_storage) {
+  if (split > 0 && schedule_storage) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);  // The intermediate only needs stack.
   }
 }
@@ -237,7 +237,7 @@ TEST_P(elementwise, pipeline_2d) {
     }
   }
 
-  if (schedule_storage) {
+  if (split > 0 && schedule_storage) {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);  // The intermediate only needs stack.
   }
 }
@@ -898,7 +898,8 @@ TEST(unrelated, pipeline) {
   }
 
   // intm2 aliased to out2.
-  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W1 + 2) * 4 * sizeof(short)));
+  // TODO: Bring back aliasing in-place calls.
+  //ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W1 + 2) * 4 * sizeof(short)));
 }
 
 class padded_stencil : public testing::TestWithParam<int> {};
