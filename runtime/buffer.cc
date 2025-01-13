@@ -547,7 +547,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       }
     }
 
-    if (d > 0 && (extent == 1 || can_fuse(bufs, bufs_size, d))) {
+    if (extent == 1 || (d > 0 && can_fuse(bufs, bufs_size, d))) {
       // Let this fuse with the next dimension.
     } else if (SkipContiguous && is_contiguous_slice(bufs, bufs_size, d)) {
       // This is the slice dimension.
@@ -564,7 +564,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       extent = 1;
 
       index_t* strides = increment_plan<index_t>(plan, bufs_size);
-      strides[0] = buf->dim(d).stride();
+      strides[0] = buf_dim.stride();
       for (std::size_t n = 1; n < bufs_size; n++) {
         strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
       }
