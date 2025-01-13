@@ -1065,9 +1065,9 @@ public:
       std::vector<allocation_candidate> new_special;
       // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
       // This only can happen if all of it's dependencies are inside of the block.
-      for (int iy = 0; iy < special.size(); iy++) {
+      for (std::size_t iy = 0; iy < special.size(); iy++) {
         bool found = false;
-        for (int ix = 0; ix < new_results.size(); ix++) {
+        for (std::size_t ix = 0; ix < new_results.size(); ix++) {
           buffer_expr_ptr candidate = special[iy].buffer;
           bool is_ready = true;
           // Check dependencies first.
