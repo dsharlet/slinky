@@ -476,13 +476,13 @@ public:
       buf_d.set_fold_factor(eval(op_d.fold_factor, dim::unfolded));
     }
 
-    if (op->storage == memory_type::stack) {
+    if (op->storage == memory_type::heap) {
+      buffer.allocation = context.allocate(op->sym, &buffer);
+    } else {
+      assert(op->storage == memory_type::stack);
       std::size_t size = buffer.init_strides();
       buffer.base = __builtin_alloca(size);
       buffer.allocation = nullptr;
-    } else {
-      assert(op->storage == memory_type::heap);
-      buffer.allocation = context.allocate(op->sym, &buffer);
     }
 
     index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
