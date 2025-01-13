@@ -357,11 +357,11 @@ function pipeline(__in, out) {
     let g_1 = buffer_min(__in, 1);
     let g_0 = buffer_max(__in, 0);
     let g_2 = buffer_max(__in, 1);
-    { let padded_intm_intm = allocate('padded_intm/intm', 2, [
+    { let intm_padded_intm = allocate('intm/padded_intm', 2, [
         {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
         {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
       ]);
-      { let __intm_3 = crop_buffer(padded_intm_intm, [
+      { let __intm_3 = crop_buffer(intm_padded_intm, [
           [g, g_0],
           [g_1, g_2]
       ]); {
@@ -370,13 +370,13 @@ function pipeline(__in, out) {
         produce(intm_3);
         __event_t++;
         produce(intm_3);
-        produce(padded_intm_intm);
+        produce(intm_padded_intm);
         __event_t++;
       }}
-      consume(padded_intm_intm);
+      consume(intm_padded_intm);
       produce(out);
       __event_t++;
-      free(padded_intm_intm);
+      free(intm_padded_intm);
     }
   }
 }
