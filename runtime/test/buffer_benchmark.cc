@@ -183,11 +183,8 @@ void BM_for_each_element_fused_1x(benchmark::State& state, Fn fn) {
   buffer<char, 3> buf;
   allocate_buffer(buf, extents, padding_size);
 
-  slinky::dim buf_fused_dims[3];
   for (auto _ : state) {
-    raw_buffer buf_fused = buf;
-    buf_fused.dims = &buf_fused_dims[0];
-    std::copy_n(buf.dims, buf.rank, buf_fused.dims);
+    buffer<char, 3> buf_fused(buf);
     // TODO: If this can be made as fast as `for_each_contiguous_slice`, maybe we should just get rid of that helper in
     // favor of this combination.
     optimize_dims(buf_fused);
@@ -283,16 +280,9 @@ void BM_for_each_element_fused_2x(benchmark::State& state, Fn fn) {
   char x = 42;
   fill(src, &x);
 
-  slinky::dim dst_fused_dims[3];
-  slinky::dim src_fused_dims[3];
-
   for (auto _ : state) {
-    raw_buffer dst_fused = dst;
-    raw_buffer src_fused = src;
-    dst_fused.dims = &dst_fused_dims[0];
-    src_fused.dims = &src_fused_dims[0];
-    std::copy_n(dst.dims, dst.rank, dst_fused.dims);
-    std::copy_n(src.dims, src.rank, src_fused.dims);
+    buffer<char, 3> src_fused(src);
+    buffer<char, 3> dst_fused(dst);
     // TODO: If this can be made as fast as `for_each_contiguous_slice`, maybe we should just get rid of that helper in
     // favor of this combination.
     optimize_dims(dst_fused, src_fused);
