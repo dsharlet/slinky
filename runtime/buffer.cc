@@ -469,7 +469,7 @@ SLINKY_ALWAYS_INLINE inline T* increment_plan(void*& x, std::size_t n = 1) {
 
 template <bool SkipContiguous, std::size_t BufsSize>
 SLINKY_NO_INLINE index_t make_for_each_loops_impl(
-    const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan_base) {
+    const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
   const auto* buf = bufs[0];
   bases[0] = buf->base;
@@ -478,11 +478,9 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
   }
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
-  for_each_loop<>* prev_loop = reinterpret_cast<for_each_loop<>*>(plan_base);
+  for_each_loop<>* prev_loop = reinterpret_cast<for_each_loop<>*>(plan);
   prev_loop->impl = 0;
   prev_loop->extent = 1;
-
-  void* plan = plan_base;
   index_t slice_extent = 1;
   index_t extent = 1;
   for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
