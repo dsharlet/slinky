@@ -867,6 +867,21 @@ class pipeline_builder {
         if (!allocation_info_[b->sym()]) {
           allocation_info_[b->sym()].emplace(b);
         }
+
+        if (!f->impl() && f->padding()) {
+          // Collect all buffers which are outputs of the copy
+          // and the inputs of the copy as their dependencies.
+          copy_inputs_.insert(b->sym());
+          for (const auto& i : f->inputs()) {
+            const auto& input = i.buffer;
+
+            if (!input->producer()) {
+              continue;
+            }
+
+            copy_deps_[b->sym()].push_back(input->sym());
+          }
+        }
       }
     }
 
@@ -878,7 +893,7 @@ class pipeline_builder {
           continue;
         }
 
-        if (!f->impl()) {
+        if (!f->impl() && !f->padding()) {
           // Collect all buffers which are inputs to the copy
           // and the outputs of the copy as their dependencies.
           copy_inputs_.insert(input->sym());
@@ -1276,7 +1291,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   stmt result;
   result = builder.build({}, nullptr, loop_id()).body;
-  std::cout << "Initial IR:\n" << result << std::endl;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
