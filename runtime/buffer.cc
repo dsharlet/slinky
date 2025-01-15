@@ -139,7 +139,7 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
     index_t alloc_extent_i = alloc_extent(dim(i));
     if (alloc_extent_i <= 1) {
       // The buffer is empty or has extent 1, we don't care about the stride.
-      if (dim(i).stride() == dim::auto_stride) dim(i).set_stride(0);
+      if (dim(i).stride() == dim::auto_stride) dim(i).set_stride(elem_size);
     } else if (dim(i).stride() != dim::auto_stride) {
       learn_dim(init_stride_dim(std::abs(dim(i).stride()), alloc_extent_i));
     } else {
