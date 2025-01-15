@@ -624,21 +624,19 @@ inline void fuse(int inner, int outer, raw_buffer& buf) {
     } else {
       id = od;
     }
-  } else if (id.stride() == 0) {
-    if (id.unbounded()) {
-      // Already fused
-    } else if (od.unbounded()) {
-      id.set_unbounded();
-    } else {
-      id.set_range(od.begin() * id.extent(), od.end() * id.extent());
-    }
+  } else if (id.unbounded()) {
+    // Already fused
   } else {
     const index_t id_extent = id.extent();
     if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
       assert(id.fold_factor() == dim::unfolded);
       id.set_fold_factor(od.fold_factor() * id_extent);
     }
-    id.set_range(od.begin() * id_extent, od.end() * id_extent);
+    if (od.unbounded()) {
+      id.set_unbounded();
+    } else {
+      id.set_range(od.begin() * id_extent, od.end() * id_extent);
+    }
   }
   if (type == fuse_type::keep) {
     od.set_point(0);
