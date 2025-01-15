@@ -458,6 +458,25 @@ public:
     }
   }
 
+  void visit(const loop* op) override {
+    stmt body = mutate(op->body);
+    if (body.same_as(op->body)) {
+      set_result(op);
+    } else {
+      set_result(clone_with(op, std::move(body)));
+    }
+
+    symbol_map<interval_expr> loop_bounds;
+    loop_bounds[op->sym] = op->bounds;
+
+    for (std::optional<buffer_info>& i : buffers) {
+      if (!i) continue;
+      for (dim_expr& d : i->dims) {
+        d.bounds = bounds_of(d.bounds, loop_bounds);
+      }
+    }
+  }
+
   // Make dimensions that assign strides that are contiguous and ascending.
   static std::vector<dim_expr> make_contiguous_dims(var buf, std::size_t rank) {
     std::vector<dim_expr> dims(rank);
