@@ -588,7 +588,8 @@ void fill(const raw_buffer& dst, const T& padding) {
 }
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.max() == outer.min() && outer.stride() != 0) return true;
+  if (inner.min() == inner.max()) return true;
+  if (outer.min() == outer.max()) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
@@ -616,7 +617,14 @@ inline void fuse(int inner, int outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
-  if (id.stride() == 0) {
+  if (id.min() == id.max()) {
+    if (type == fuse_type::remove) {
+      buf.slice(inner);
+      return;
+    } else {
+      id = od;
+    }
+  } else if (id.stride() == 0) {
     if (id.unbounded()) {
       // Already fused
     } else if (od.unbounded()) {

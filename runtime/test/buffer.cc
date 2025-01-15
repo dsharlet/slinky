@@ -785,6 +785,22 @@ TEST(fuse_contiguous_dims, fuse_broadcasted) {
   ASSERT_EQ(b.dim(1).stride(), 0);
 }
 
+TEST(fuse_contiguous_dims, fuse_extent1) {
+  buffer<char, 3> a({1, 4, 3}), b({1, 3, 4});
+
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 2);
+  ASSERT_EQ(a.dim(0).extent(), 4);
+  ASSERT_EQ(a.dim(0).stride(), 1);
+  ASSERT_EQ(a.dim(1).extent(), 3);
+  ASSERT_EQ(a.dim(1).stride(), 4);
+  ASSERT_EQ(b.dim(0).extent(), 3);
+  ASSERT_EQ(b.dim(0).stride(), 1);
+  ASSERT_EQ(b.dim(1).extent(), 4);
+  ASSERT_EQ(b.dim(1).stride(), 3);
+}
+
 TEST(fuse_contiguous_dims, cant_fuse) {
   buffer<int, 4> a({2, 3, 4, 5}), b({2, 3, 4, 5});
   ASSERT_NE(a.dim(0).stride(), 0);
