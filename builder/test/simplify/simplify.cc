@@ -234,6 +234,9 @@ TEST(simplify, let) {
   ASSERT_THAT(simplify(let::make({{x, y * 2}, {z, y}}, z)), matches(y));
   ASSERT_THAT(simplify(let::make({{x, y}, {z, (x + 1) / x}}, (z + 1) / z)),
       matches(let::make({{z, (y + 1) / y}}, (z + 1) / z)));
+
+  // Duplicate lets
+  ASSERT_THAT(simplify(let::make({{x, y * 2}, {z, y * 2}}, x + z)), matches(let::make(x, y * 2, x * 2)));
 }
 
 TEST(simplify, loop) {

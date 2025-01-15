@@ -1053,10 +1053,20 @@ public:
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
+    std::map<expr, var, node_less> reverse_lets;
+
     bool values_changed = false;
     for (const auto& s : op->lets) {
       expr_info value_info;
       expr value = mutate(s.second, &value_info);
+
+      var& name = reverse_lets[value];
+      if (name.defined()) {
+        // This value is the same as another let value, use that variable instead.
+        value = expr(name);
+      } else {
+        name = s.first;
+      }
       if (should_substitute(value)) {
         value_info = expr_info::substitution(std::move(value));
         values_changed = true;
