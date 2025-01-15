@@ -2,6 +2,7 @@
 #define SLINKY_RUNTIME_EXPR_H
 
 #include "base/arithmetic.h"
+#include "base/embedded_vector.h"
 #include "base/modulus_remainder.h"
 #include "base/ref_count.h"
 #include "base/span.h"
@@ -501,13 +502,16 @@ public:
 };
 
 class call : public expr_node<call> {
+  call(std::size_t size);
+
 public:
   slinky::intrinsic intrinsic;
-  std::vector<expr> args;
+  embedded_vector<expr> args;
 
   void accept(expr_visitor* v) const override;
 
-  static expr make(slinky::intrinsic i, std::vector<expr> args);
+  static expr make(slinky::intrinsic i, span<const expr> args);
+  static expr make(slinky::intrinsic i, std::initializer_list<expr> args);
 
   static constexpr expr_node_type static_type = expr_node_type::call;
 };

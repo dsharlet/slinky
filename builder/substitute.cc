@@ -112,13 +112,23 @@ public:
   }
 
   template <typename T>
-  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+  bool try_match_vector(const T& self, const T& op) {
     if (!try_match(self.size(), op.size())) return false;
     for (std::size_t i = 0; i < self.size(); ++i) {
       if (!try_match(self[i], op[i])) return false;
     }
 
     return true;
+  }
+
+  template <typename T>
+  bool try_match(const std::vector<T>& self, const std::vector<T>& op) {
+    return try_match_vector(self, op);
+  }
+
+  template <typename T>
+  bool try_match(const embedded_vector<T>& self, const embedded_vector<T>& op) {
+    return try_match_vector(self, op);
   }
 
   template <typename T>

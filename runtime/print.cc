@@ -173,6 +173,16 @@ public:
     }
   }
 
+  template <typename T>
+  void print_vector(const embedded_vector<T>& v, const std::string& sep = ", ") {
+    for (std::size_t i = 0; i < v.size(); ++i) {
+      *this << v[i];
+      if (i + 1 < v.size()) {
+        *this << sep;
+      }
+    }
+  }
+
   void print_vector(const std::vector<char>& v, const std::string& sep = ", ") {
     *this << std::hex;
     for (std::size_t i = 0; i < v.size(); ++i) {
@@ -186,6 +196,12 @@ public:
 
   template <typename T>
   printer& operator<<(const std::vector<T>& v) {
+    print_vector(v);
+    return *this;
+  }
+
+  template <typename T>
+  printer& operator<<(const embedded_vector<T>& v) {
     print_vector(v);
     return *this;
   }

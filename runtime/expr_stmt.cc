@@ -403,10 +403,22 @@ expr select::make(expr condition, expr true_value, expr false_value) {
   return expr(n);
 }
 
-expr call::make(slinky::intrinsic i, std::vector<expr> args) {
-  auto n = new call();
+call::call(std::size_t args_size)
+    : args(reinterpret_cast<expr*>(reinterpret_cast<char*>(this) + sizeof(call)), args_size) {}
+
+expr call::make(slinky::intrinsic i, span<const expr> args) {
+  void* buffer = ::operator new(sizeof(call) + sizeof(expr) * args.size());
+  auto n = new (buffer) call(args.size());
   n->intrinsic = i;
-  n->args = std::move(args);
+  std::copy(args.begin(), args.end(), n->args.begin());
+  return expr(n);
+}
+
+expr call::make(slinky::intrinsic i, std::initializer_list<expr> args) {
+  void* buffer = ::operator new(sizeof(call) + sizeof(expr) * args.size());
+  auto n = new (buffer) call(args.size());
+  n->intrinsic = i;
+  std::copy(args.begin(), args.end(), n->args.begin());
   return expr(n);
 }
 

@@ -7,8 +7,9 @@ cc_library(
     name = "base",
     hdrs = [
         "arithmetic.h",
-        "ref_count.h",
+        "embedded_vector.h",
         "modulus_remainder.h",
+        "ref_count.h",
         "span.h",
         "util.h",
     ],

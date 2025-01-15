@@ -110,6 +110,12 @@ public:
     return *this;
   }
 
+  template <typename T>
+  js_printer& operator<<(const embedded_vector<T>& v) {
+    print_vector(v);
+    return *this;
+  }
+
   js_printer& operator<<(const stmt& s) {
     if (s.defined()) {
       ++depth;
