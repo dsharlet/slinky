@@ -1067,8 +1067,6 @@ public:
           stmt new_body = block::make(new_block);
 
           buffer_expr_ptr b = lifetimes[ix].buffer;
-          // assert(candidates_for_allocation_[b->sym()]->consumers_produced ==
-          // candidates_for_allocation_[b->sym()]->deps_count);
 
           statement_with_range new_result = {new_body, new_min, new_max, std::move(combined_allocs)};
           new_result = produce_allocation(b, new_result, uncropped_subs);
