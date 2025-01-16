@@ -201,18 +201,10 @@ TEST_P(copy_sequence, pipeline) {
   }
 
   if (pad_mask == 0) {
-    // TODO(vksnk): the number of allocs can be 0 for the intermidate count > 2 tests as well,
-    // but simplifier needs to be able to use buffer bounds to prove it.
-    // if (intermediate_count < 2) {
-      ASSERT_EQ(eval_ctx.copy_calls, 1);
-      ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
-    // }
+    ASSERT_EQ(eval_ctx.copy_calls, 1);
+    ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
   } else {
-    // TODO(vksnk): the number of allocs can be 1 for the four_intermediate test as well,
-    // but simplifier needs to be able to use buffer bounds to prove it.
-    // if (intermediate_count != 4) {
-      ASSERT_LE(eval_ctx.heap.allocs.size(), 1);
-    // }
+    ASSERT_LE(eval_ctx.heap.allocs.size(), 1);
     // TODO: Try to eliminate more copies when the padding appears between other copies.
   }
 }
@@ -684,8 +676,6 @@ TEST_P(broadcasted_elementwise, internal) {
   }
 
   if (!no_alias_buffers) {
-    // TODO(vksnk): the number of allocs can be 1 here, but simplifier
-    // needs to be able to use buffer bounds to prove it.
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
     ASSERT_EQ(eval_ctx.copy_calls, 0);
   }
