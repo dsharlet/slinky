@@ -1038,6 +1038,8 @@ public:
     while (true) {
       std::vector<allocation_candidate> new_lifetimes;
       std::vector<statement_with_range> new_results;
+      new_lifetimes.reserve(lifetimes.size());
+      new_results.reserve(results.size());
 
       std::size_t result_index = 0;
       for (std::size_t ix = 0; ix < lifetimes.size() && result_index < results.size();) {
