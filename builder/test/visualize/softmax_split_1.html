@@ -359,22 +359,22 @@ function pipeline(__in, out) {
     check((max(g, g_0) <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    { let softmax_in = allocate('softmax_in', 4, [
-        {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
+    { let softmax_out = allocate('softmax_out', 4, [
+        {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
         {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
       ]);
-      { let max_in = allocate('max_in', 4, [
+      { let sum_exp_in = allocate('sum_exp_in', 4, [
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
         ]);
-        { let sum_exp_in = allocate('sum_exp_in', 4, [
+        { let exp_in = allocate('exp_in', 4, [
+            {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
             {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
           ]);
-          { let exp_in = allocate('exp_in', 4, [
-              {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
+          { let max_in = allocate('max_in', 4, [
               {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
             ]);
-            { let softmax_out = allocate('softmax_out', 4, [
-                {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
+            { let softmax_in = allocate('softmax_in', 4, [
+                {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
                 {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:1}
               ]);
               let __loop_min = buffer_min(out, 1);
@@ -418,15 +418,15 @@ function pipeline(__in, out) {
                   __event_t++;
                 }}
               }
-              free(softmax_out);
+              free(softmax_in);
             }
-            free(exp_in);
+            free(max_in);
           }
-          free(sum_exp_in);
+          free(exp_in);
         }
-        free(max_in);
+        free(sum_exp_in);
       }
-      free(softmax_in);
+      free(softmax_out);
     }
   }
 }

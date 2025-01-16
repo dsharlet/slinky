@@ -363,9 +363,9 @@ function pipeline(in1, in2, out) {
   check(((buffer_max(out, 0) + 2) <= buffer_max(in2, 0)));
   check(((buffer_min(in2, 1) + 2) <= buffer_min(out, 1)));
   check(((buffer_max(out, 1) + 2) <= buffer_max(in2, 1)));
-  { let intm1 = allocate('intm1', 2, [
-      {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-      {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:4}
+  { let intm4 = allocate('intm4', 2, [
+      {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
+      {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:2}
     ]);
     { let intm3 = allocate('intm3', 2, [
         {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
@@ -375,9 +375,9 @@ function pipeline(in1, in2, out) {
           {bounds:[(buffer_min(out, 0) + -2), (buffer_max(out, 0) + 2)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -2), (buffer_max(out, 1) + 2)], stride:NaN, fold_factor:6}
         ]);
-        { let intm4 = allocate('intm4', 2, [
-            {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
-            {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:2}
+        { let intm1 = allocate('intm1', 2, [
+            {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:4}
           ]);
           let __loop_min = (buffer_min(out, 1) + -6);
           let __loop_max = buffer_max(out, 1);
@@ -415,13 +415,13 @@ function pipeline(in1, in2, out) {
               __event_t++;
             }}
           }
-          free(intm4);
+          free(intm1);
         }
         free(intm2);
       }
       free(intm3);
     }
-    free(intm1);
+    free(intm4);
   }
 }
 let in1 = allocate('in1', 2, [{bounds: [-1, 20], stride:2, fold_factor:NaN}, {bounds: [-1, 30], stride:44, fold_factor:NaN}], true);

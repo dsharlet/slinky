@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <list>
 #include <map>
 #include <optional>
@@ -552,6 +553,52 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
 class pipeline_builder {
   node_context& ctx;
 
+  struct allocation_candidate {
+    buffer_expr_ptr buffer;
+    int deps_count = 0;
+    int consumers_produced = 0;
+    int lifetime_start = -1;
+    int lifetime_end = -1;
+
+    explicit allocation_candidate(buffer_expr_ptr b) : buffer(b) {}
+  };
+
+  struct statement_with_range {
+    stmt body;
+    int start;
+    int end;
+    // Stores every allocation inside of the range.
+    std::set<var> allocations;
+
+    static statement_with_range merge(const statement_with_range& a, const statement_with_range& b) {
+      assert(a.end + 1 == b.start);
+      statement_with_range r;
+      r.body = block::make({a.body, b.body});
+      r.start = a.start;
+      r.end = b.end;
+      std::set_union(a.allocations.begin(), a.allocations.end(), b.allocations.begin(), b.allocations.end(),
+          std::inserter(r.allocations, r.allocations.begin()));
+      return r;
+    }
+  };
+
+  struct loop_id_less {
+    bool operator()(const loop_id& a, const loop_id& b) const {
+      if (a.root() && b.root()) return false;
+      if (a.root()) return true;
+      if (b.root()) return false;
+      if (a.func == b.func) return a.var < b.var;
+      return a.func < b.func;
+    }
+  };
+  std::map<loop_id, std::set<var>, loop_id_less> candidates_for_allocation_;
+  // Information tracking the lifetimes of the buffers.
+  symbol_map<allocation_candidate> allocation_info_;
+  std::set<var> copy_inputs_;
+  std::map<var, std::vector<var>> copy_deps_;
+
+  int functions_produced_ = 0;
+
   // Topologically sorted functions.
   std::vector<const func*> order_;
   // A mapping between func's and their compute_at locations.
@@ -644,7 +691,8 @@ class pipeline_builder {
     return simplify(bounds);
   }
 
-  stmt make_loop(stmt body, const func* base_f, const func::loop_info& loop = func::loop_info()) {
+  statement_with_range make_loop(
+      statement_with_range body, const func* base_f, const func::loop_info& loop = func::loop_info()) {
     loop_id here = {base_f, loop.var};
 
     body = build(body, base_f, here);
@@ -653,7 +701,7 @@ class pipeline_builder {
       // Find which buffers are used inside of the body.
       // TODO(vksnk): recomputing this seems really wasteful, we can should be
       // able to maintain the list of buffers as we build the IR.
-      std::vector<var> buffer_used = find_buffer_dependencies(body);
+      std::vector<var> buffer_used = find_buffer_dependencies(body.body);
 
       // Add crops for the used buffers using previously inferred bounds.
       // Input syms should be the innermost.
@@ -661,7 +709,7 @@ class pipeline_builder {
         var sym = i.first;
         if (!allocation_bounds_[sym]) continue;
         if (!std::binary_search(buffer_used.begin(), buffer_used.end(), sym)) continue;
-        body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body);
+        body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
       }
 
       // Followed by intermediate buffers in the reverse topological order
@@ -678,12 +726,12 @@ class pipeline_builder {
           const buffer_expr_ptr& b = o.buffer;
           if (!inferred_bounds_[b->sym()]) continue;
           if (!std::binary_search(buffer_used.begin(), buffer_used.end(), b->sym())) continue;
-          body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body);
+          body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
         }
       }
 
       // The loop body is done, and we have an actual loop to make here. Crop the body.
-      body = crop_for_loop(body, base_f, loop);
+      body.body = crop_for_loop(body.body, base_f, loop);
       // And make the actual loop.
       expr loop_step = sanitizer_.mutate(loop.step);
       interval_expr loop_bounds = get_loop_bounds(base_f, loop);
@@ -694,19 +742,21 @@ class pipeline_builder {
       }
       loop_var_name += ctx.name(loop.sym());
       var loop_var = ctx.insert_unique(loop_var_name);
-      body = substitute(body, loop.sym(), loop_var);
-      body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body);
+      body.body = substitute(body.body, loop.sym(), loop_var);
+      body.body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body.body);
     }
 
     return body;
   }
 
   // Generate the loops that we want to be explicit.
-  stmt make_loops(const func* f) {
-    stmt result;
+  // Returns generated statement as well as the lifetime range covered by it.
+  statement_with_range make_loops(const func* f) {
+    statement_with_range result;
     for (const auto& loop : f->loops()) {
       result = make_loop(result, f, loop);
     }
+
     return result;
   }
 
@@ -741,10 +791,122 @@ class pipeline_builder {
     }
   }
 
-  stmt produce(const func* f) {
+  // Returns generated statement for this function, as well as the
+  // lifetime range covered by it.
+  statement_with_range produce(const func* f) {
     stmt result = sanitizer_.mutate(f->make_call());
 
-    return result;
+    for (const func::output& o : f->outputs()) {
+      const buffer_expr_ptr& b = o.buffer;
+      if (output_syms_.count(b->sym())) continue;
+
+      if (b->store_at()) {
+        candidates_for_allocation_[*b->store_at()].insert(b->sym());
+      } else {
+        candidates_for_allocation_[loop_id()].insert(b->sym());
+      }
+      std::optional<allocation_candidate>& info = allocation_info_[b->sym()];
+      info->buffer = b;
+      info->lifetime_start = functions_produced_;
+
+      if (info->consumers_produced == info->deps_count) {
+        info->lifetime_end = functions_produced_;
+      }
+    }
+
+    for (const auto& i : f->inputs()) {
+      const auto& input = i.buffer;
+
+      if (!input->producer()) {
+        continue;
+      }
+
+      std::optional<allocation_candidate>& info = allocation_info_[input->sym()];
+      info->consumers_produced++;
+
+      if (info->consumers_produced == info->deps_count) {
+        info->lifetime_end = functions_produced_;
+      }
+    }
+
+    functions_produced_++;
+
+    return {result, functions_produced_ - 1, functions_produced_ - 1};
+  }
+
+  // Wraps provided body statement with the allocation node for a given buffer.
+  statement_with_range produce_allocation(
+      const buffer_expr_ptr& b, statement_with_range s, symbol_map<var>& uncropped_subs) {
+    var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
+    uncropped_subs[b->sym()] = uncropped;
+    s.body = clone_buffer::make(uncropped, b->sym(), s.body);
+
+    const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
+    assert(allocation_bounds_[b->sym()]);
+    const box_expr& bounds = *allocation_bounds_[b->sym()];
+    s.body = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, s.body);
+
+    std::vector<stmt> checks;
+    for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
+      checks.push_back(check::make(dims[d].min() <= bounds[d].min));
+      checks.push_back(check::make(dims[d].max() >= bounds[d].max));
+    }
+
+    s.body = block::make(std::move(checks), s.body);
+    s.allocations.insert(b->sym());
+    return s;
+  }
+
+  // Computes number of consumers for each of the buffers.
+  void compute_deps_count() {
+    for (const func* f : order_) {
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (output_syms_.count(b->sym())) continue;
+
+        if (!allocation_info_[b->sym()]) {
+          allocation_info_[b->sym()].emplace(b);
+        }
+
+        if (!f->impl() && f->padding()) {
+          // Collect all buffers which are outputs of the copy
+          // and the inputs of the copy as their dependencies.
+          copy_inputs_.insert(b->sym());
+          for (const auto& i : f->inputs()) {
+            const auto& input = i.buffer;
+
+            if (!input->producer()) {
+              continue;
+            }
+
+            copy_deps_[b->sym()].push_back(input->sym());
+          }
+        }
+      }
+    }
+
+    for (const func* f : order_) {
+      for (const auto& i : f->inputs()) {
+        const auto& input = i.buffer;
+
+        if (!input->producer()) {
+          continue;
+        }
+
+        if (!f->impl() && !f->padding()) {
+          // Collect all buffers which are inputs to the copy
+          // and the outputs of the copy as their dependencies.
+          copy_inputs_.insert(input->sym());
+          for (const func::output& o : f->outputs()) {
+            const buffer_expr_ptr& b = o.buffer;
+            if (output_syms_.count(b->sym())) continue;
+            copy_deps_[input->sym()].push_back(b->sym());
+          }
+        }
+
+        allocation_info_[input->sym()]->deps_count++;
+      }
+    }
   }
 
 public:
@@ -778,6 +940,9 @@ public:
 
     // Substitute inferred bounds into user provided dims.
     substitute_buffer_dims();
+
+    // Compute number of consumers for each of the buffers.
+    compute_deps_count();
   }
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
@@ -794,53 +959,203 @@ public:
   // * the `make_loops()` will produce the necessary loops defined for the function.
   //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  stmt build(const stmt& body, const func* base_f, const loop_id& at) {
-    std::vector<stmt> results;
-
+  statement_with_range build(const statement_with_range& body, const func* base_f, const loop_id& at) {
+    symbol_map<var> uncropped_subs;
+    std::vector<statement_with_range> results;
     // Build the functions computed at this loop level.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       const auto& compute_at = compute_at_levels_.find(f);
       assert(compute_at != compute_at_levels_.end());
+      std::set<var> old_candidates = candidates_for_allocation_[at];
 
       const auto& realize_at = realization_levels_.find(f);
       assert(realize_at != realization_levels_.end());
 
       if (compute_at->second == at && !f->loops().empty()) {
-        results.push_back(make_loops(f));
+        statement_with_range f_body = make_loops(f);
+        // This is a special case for the buffers which are produced and consumed inside
+        // of this loop. In this case we simply wrap loop body with corresponding allocations.
+        if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
+          std::vector<var> to_remove;
+          for (auto b : candidates_for_allocation_[at]) {
+            // We only want candidates which are not in the old_candidates list.
+            if (old_candidates.count(b) > 0) continue;
+            if (copy_inputs_.count(b) > 0) continue;
+            std::optional<allocation_candidate>& info = allocation_info_[b];
+            if (info->consumers_produced != info->deps_count) continue;
+
+            f_body = produce_allocation(info->buffer, f_body, uncropped_subs);
+            to_remove.push_back(b);
+          }
+          for (auto b : to_remove) {
+            candidates_for_allocation_[at].erase(b);
+          }
+        }
+
+        results.push_back(f_body);
       } else if (realize_at->second == at) {
         results.push_back(produce(f));
       }
     }
 
-    stmt result = block::make(std::move(results), body);
+    // This attempts to lay out allocation nodes such that the nesting
+    // is minimized. The general idea is to iteratively build up a tree of
+    // allocations starting from the allocations with the allocations with the
+    // shortest life time as the lowest level of the tree. This is not always possible
+    // in general to do and there are corner cases where nesting of allocations will
+    // have depth N regardless of the approach, but in most practical situations this
+    // will produce a structure close to the tree (for example, for the linear pipeline it
+    // should build a perfect tree of depth ~log(N)). Similarly, the complexity of this
+    // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
+    // should be O(N*log(N)).
 
-    symbol_map<var> uncropped_subs;
+    // The vector of allocations at this loop level.
+    std::vector<allocation_candidate> lifetimes;
+    // The same as above, but also has a set of special dependencies to
+    // satisfy.
+    std::vector<allocation_candidate> special;
+    for (const auto& b : candidates_for_allocation_[at]) {
+      if (output_syms_.count(b)) continue;
+      if (copy_inputs_.count(b) > 0) {
+        special.push_back(*allocation_info_[b]);
+      } else {
+        lifetimes.push_back(*allocation_info_[b]);
+      }
+    }
+
+    auto lifetime_less = [](allocation_candidate a, allocation_candidate b) {
+      if ((a.lifetime_end - a.lifetime_start) == (b.lifetime_end - b.lifetime_start)) {
+        return a.lifetime_start < b.lifetime_start;
+      }
+      return (a.lifetime_end - a.lifetime_start) < (b.lifetime_end - b.lifetime_start);
+    };
+    // Sort vector by (end - start) and then start.
+    std::sort(lifetimes.begin(), lifetimes.end(), lifetime_less);
+    std::sort(special.begin(), special.end(), lifetime_less);
+
+    int iteration_count = 0;
+    while (true) {
+      std::vector<allocation_candidate> new_lifetimes;
+      std::vector<statement_with_range> new_results;
+      new_lifetimes.reserve(lifetimes.size());
+      new_results.reserve(results.size());
+
+      std::size_t result_index = 0;
+      for (std::size_t ix = 0; ix < lifetimes.size() && result_index < results.size();) {
+        // Skip function bodies which go before the current buffer.
+        while (result_index < results.size() && results[result_index].end < lifetimes[ix].lifetime_start) {
+          new_results.push_back(results[result_index]);
+          result_index++;
+        }
+
+        int new_min = std::numeric_limits<int>::max();
+        int new_max = std::numeric_limits<int>::min();
+
+        // Find which function bodies overlap with the lifetime of the buffer.
+        std::vector<stmt> new_block;
+        std::set<var> combined_allocs;
+        while (result_index < results.size() && results[result_index].start <= lifetimes[ix].lifetime_end &&
+               lifetimes[ix].lifetime_start <= results[result_index].end) {
+          new_min = std::min(new_min, results[result_index].start);
+          new_max = std::max(new_max, results[result_index].end);
+          new_block.push_back(results[result_index].body);
+          combined_allocs.insert(results[result_index].allocations.begin(), results[result_index].allocations.end());
+          result_index++;
+        }
+
+        // Combine overlapping function bodies and wrap them into current buffer allocation.
+        if (!new_block.empty()) {
+          stmt new_body = block::make(new_block);
+
+          buffer_expr_ptr b = lifetimes[ix].buffer;
+
+          statement_with_range new_result = {new_body, new_min, new_max, std::move(combined_allocs)};
+          new_result = produce_allocation(b, new_result, uncropped_subs);
+          new_results.push_back(new_result);
+
+          candidates_for_allocation_[at].erase(b->sym());
+        }
+
+        // Move to the next buffer.
+        ix++;
+
+        // Skip buffers which go before the next statement range/.
+        while (ix < lifetimes.size() && lifetimes[ix].lifetime_start <= new_max) {
+          new_lifetimes.push_back(lifetimes[ix]);
+          ix++;
+        }
+      }
+
+      new_results.insert(new_results.end(), results.begin() + result_index, results.end());
+
+      std::vector<allocation_candidate> new_special;
+      // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
+      // This only can happen if all of it's dependencies are inside of the block.
+      for (std::size_t iy = 0; iy < special.size(); iy++) {
+        bool found = false;
+        for (std::size_t ix = 0; ix < new_results.size(); ix++) {
+          buffer_expr_ptr candidate = special[iy].buffer;
+          bool is_ready = true;
+          // Check dependencies first.
+          for (var b : copy_deps_[candidate->sym()]) {
+            if (new_results[ix].allocations.count(b) == 0) {
+              is_ready = false;
+              break;
+            }
+          }
+
+          if (!is_ready) {
+            continue;
+          }
+
+          // The block range must fully cover the allocation range.
+          if (new_results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= new_results[ix].end) {
+            new_results[ix] = produce_allocation(candidate, new_results[ix], uncropped_subs);
+            candidates_for_allocation_[at].erase(candidate->sym());
+            found = true;
+            break;
+          }
+        }
+
+        if (found) continue;
+        new_special.push_back(special[iy]);
+      }
+
+      // No changes, so leave the loop.
+      if (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size()) break;
+
+      lifetimes = std::move(new_lifetimes);
+      special = std::move(new_special);
+      results = std::move(new_results);
+
+      iteration_count++;
+    }
+
+    assert(!results.empty() || body.body.defined());
+    statement_with_range result;
+    if (results.empty()) {
+      result = body;
+    } else {
+      result = results.front();
+      for (std::size_t ix = 1; ix < results.size(); ix++) {
+        result = statement_with_range::merge(result, results[ix]);
+      }
+      if (body.body.defined()) {
+        result = statement_with_range::merge(result, body);
+      }
+    }
+
     // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
     // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
     for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (output_syms_.count(b->sym())) continue;
+        if (candidates_for_allocation_[at].count(b->sym()) == 0) continue;
 
-        if ((b->store_at() && *b->store_at() == at) || (!b->store_at() && at.root())) {
-          var uncropped = ctx.insert_unique(ctx.name(b->sym()) + ".uncropped");
-          uncropped_subs[b->sym()] = uncropped;
-          result = clone_buffer::make(uncropped, b->sym(), result);
-
-          const std::vector<dim_expr>& dims = *inferred_dims_[b->sym()];
-          assert(allocation_bounds_[b->sym()]);
-          const box_expr& bounds = *allocation_bounds_[b->sym()];
-          result = allocate::make(b->sym(), b->storage(), b->elem_size(), dims, result);
-
-          std::vector<stmt> checks;
-          for (std::size_t d = 0; d < std::min(dims.size(), bounds.size()); ++d) {
-            checks.push_back(check::make(dims[d].min() <= bounds[d].min));
-            checks.push_back(check::make(dims[d].max() >= bounds[d].max));
-          }
-
-          result = block::make(std::move(checks), result);
-        }
+        result = produce_allocation(b, result, uncropped_subs);
+        candidates_for_allocation_[at].erase(b->sym());
       }
     }
 
@@ -848,7 +1163,7 @@ public:
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
     // by two different funcs.
-    result = substitute_inputs(result, uncropped_subs);
+    result.body = substitute_inputs(result.body, uncropped_subs);
 
     return result;
   }
@@ -975,7 +1290,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   pipeline_builder builder(ctx, inputs, outputs, constants);
 
   stmt result;
-  result = builder.build(result, nullptr, loop_id());
+  result = builder.build({}, nullptr, loop_id()).body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
@@ -1003,7 +1318,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = block::make(std::move(buffer_checks), std::move(result));
 
   result = slide_and_fold_storage(result, ctx);
-
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 

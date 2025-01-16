@@ -1005,6 +1005,7 @@ TEST_P(padded_stencil_separable, pipeline) {
   auto stencil_intm = buffer_expr::make(ctx, "stencil_intm", 2, sizeof(short));
 
   if (require_dense_x) {
+    intm->dim(0).stride = sizeof(short);
     padded_intm_t->dim(0).stride = sizeof(short);
     padded_intm->dim(0).stride = sizeof(short);
     stencil_intm->dim(0).stride = sizeof(short);
@@ -1018,7 +1019,11 @@ TEST_P(padded_stencil_separable, pipeline) {
   int stencil_ys = 0;
 
   func add = func::make(
-      [&](const buffer<const short>& a, const buffer<short>& b) {
+      [&](const buffer<const short>& a, const buffer<short>& b) -> index_t {
+        if (require_dense_x) {
+          // Make sure we've respected the stride constraints, which prevent the transposes from aliasing.
+          if (a.dim(0).stride() != sizeof(short) || b.dim(0).stride() != sizeof(short)) return 1;
+        }
         auto result = add_1<short>(a, b);
         adds += b.elem_count();
         return result;
