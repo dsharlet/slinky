@@ -16,6 +16,9 @@ namespace slinky {
 // It is not directly used by anything except for testing.
 class thread_pool {
 public:
+  static constexpr std::size_t max_worker_states = 1;
+  static constexpr int cache_line_size = 64;
+
   using task_id = const void*;
   static task_id unique_task_id;
   using task = std::function<void()>;
@@ -48,32 +51,60 @@ public:
       return;
     }
 
+    const std::size_t workers = std::min<std::size_t>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
+
+
     struct shared_state {
-      // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
-      // iterations completed. This allows us to check if the loop is done without relying on the workers actually
-      // running. If the thread pool is busy, then we might enqueue workers that never run until after the loop is
-      // done. Waiting for these to return (after doing nothing) would risk deadlock.
-      std::atomic<std::size_t> i = 0;
+      std::size_t workers;
+      std::atomic<std::size_t> next_worker_id = 0;
+
+      struct worker_state {
+        alignas(cache_line_size) std::atomic<std::size_t> i = 0;
+        std::atomic<std::size_t> done = 0;
+        
+        std::size_t begin = 0;
+        std::size_t n = 0;
+      };
+
+      worker_state worker_states[max_worker_states];
+
       std::atomic<std::size_t> done = 0;
-    };
-    auto state = std::make_shared<shared_state>();
-    // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [this, state, n, body = std::move(body)]() mutable {
-      while (true) {
-        std::size_t i = state->i++;
-        if (i >= n) {
-          // There are no more iterations to run.
-          if (i == n) {
-            // We hit the end of the loop, cancel any queued workers to save ourselves some work.
-            cancel(state.get());
-          }
-          break;
+
+      shared_state(std::size_t workers, std::size_t n) : workers(workers) {
+        std::size_t state_count = std::min(workers, max_worker_states);
+        std::size_t prev_end = 0;
+        for (std::size_t i = 0; i < state_count; ++i) {
+          worker_state& w = worker_states[i];
+          w.begin = prev_end;
+          prev_end = (n * (i + 1)) / state_count;
+          w.n = prev_end - w.begin;
         }
-        body(i);
-        ++state->done;
       }
     };
-    int workers = std::min<int>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
+    auto state = std::make_shared<shared_state>(workers, n);
+    // Capture n by value becuase this may run after the parallel_for call returns.
+    auto worker = [this, state, n, body = std::move(body)]() mutable {
+      std::size_t worker_id = state->next_worker_id.fetch_add(1, std::memory_order_relaxed);
+      for (std::size_t wi = 0; wi < max_worker_states; ++wi) {
+        auto& w = state->worker_states[(wi + worker_id) & ~max_worker_states];
+        while (true) {
+          std::size_t i = w.i.fetch_add(1, std::memory_order_relaxed);
+          if (i >= w.n) {
+            // There are no more iterations to run in this worker state.
+            break;
+          }
+          body(w.begin + i);
+          std::size_t done = w.done.fetch_add(1, std::memory_order_relaxed) + 1;
+          if (done == w.n) {
+            // We executed the last item from this worker state. update the shared state.
+            std::size_t global_done = state->done.fetch_add(w.n) + w.n;
+            if (global_done == n) {
+              cancel(state.get());
+            }
+          }
+        }
+      }
+    };
     if (workers > 1) {
       enqueue(workers - 1, worker, state.get());
     }
