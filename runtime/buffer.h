@@ -412,18 +412,31 @@ private:
     }
   }
 
-  buffer& shallow_copy(const raw_buffer& c) {
-    if (static_cast<void*>(this) == static_cast<const void*>(&c)) return *this;
-    free();
+  void copy_construct(const raw_buffer& c) {
     raw_buffer::base = c.base;
     elem_size = c.elem_size;
     assign_dims(c.rank, c.dims);
+    to_free = nullptr;
+  }
+
+  buffer& assign(const raw_buffer& c) {
+    if (static_cast<void*>(this) == static_cast<const void*>(&c)) return *this;
+    free();
+    copy_construct(c);
     return *this;
   }
 
   template <std::size_t OtherDimsSize>
+  void move_construct(buffer<T, OtherDimsSize>&& m) {
+    copy_construct(m);
+    // Take ownership of the data.
+    to_free = m.to_free;
+    m.to_free = nullptr;
+  }
+
+  template <std::size_t OtherDimsSize>
   buffer& move(buffer<T, OtherDimsSize>&& m) {
-    shallow_copy(m);
+    assign(m);
     // Take ownership of the data.
     std::swap(to_free, m.to_free);
     return *this;
@@ -474,24 +487,24 @@ public:
   ~buffer() { free(); }
 
   // All buffer copy/assignment operators are shallow copies.
-  buffer(const raw_buffer& c) : buffer() { shallow_copy(c); }
-  buffer(const buffer& c) : buffer() { shallow_copy(c); }
-  buffer(buffer&& m) : buffer() { move(std::move(m)); }
+  buffer(const raw_buffer& c) { copy_construct(c); }
+  buffer(const buffer& c) { copy_construct(c); }
+  buffer(buffer&& m) { move_construct(std::move(m)); }
   template <std::size_t OtherDimsSize>
-  buffer(const buffer<T, OtherDimsSize>& c) : buffer() {
-    shallow_copy(c);
+  buffer(const buffer<T, OtherDimsSize>& c) {
+    copy_construct(c);
   }
   template <std::size_t OtherDimsSize>
-  buffer(buffer<T, OtherDimsSize>&& m) : buffer() {
-    move(std::move(m));
+  buffer(buffer<T, OtherDimsSize>&& m) {
+    move_construct(std::move(m));
   }
 
-  buffer& operator=(const raw_buffer& c) { return shallow_copy(c); }
-  buffer& operator=(const buffer& c) { return shallow_copy(c); }
+  buffer& operator=(const raw_buffer& c) { return assign(c); }
+  buffer& operator=(const buffer& c) { return assign(c); }
   buffer& operator=(buffer&& m) { return move(std::move(m)); }
   template <std::size_t OtherDimsSize>
   buffer& operator=(const buffer<T, OtherDimsSize>& c) {
-    return shallow_copy(c);
+    return assign(c);
   }
   template <std::size_t OtherDimsSize>
   buffer& operator=(buffer<T, OtherDimsSize>&& m) {
@@ -575,7 +588,8 @@ void fill(const raw_buffer& dst, const T& padding) {
 }
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (outer.max() == outer.min() && outer.stride() != 0) return true;
+  if (inner.min() == inner.max()) return true;
+  if (outer.min() == outer.max()) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
@@ -603,21 +617,26 @@ inline void fuse(int inner, int outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
-  if (id.stride() == 0) {
-    if (id.unbounded()) {
-      // Already fused
-    } else if (od.unbounded()) {
-      id.set_unbounded();
+  if (id.min() == id.max()) {
+    if (type == fuse_type::remove) {
+      buf.slice(inner);
+      return;
     } else {
-      id.set_range(od.begin() * id.extent(), od.end() * id.extent());
+      id = od;
     }
+  } else if (id.unbounded()) {
+    // Already fused
   } else {
     const index_t id_extent = id.extent();
     if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
       assert(id.fold_factor() == dim::unfolded);
       id.set_fold_factor(od.fold_factor() * id_extent);
     }
-    id.set_range(od.begin() * id_extent, od.end() * id_extent);
+    if (od.unbounded()) {
+      id.set_unbounded();
+    } else {
+      id.set_range(od.begin() * id_extent, od.end() * id_extent);
+    }
   }
   if (type == fuse_type::keep) {
     od.set_point(0);
