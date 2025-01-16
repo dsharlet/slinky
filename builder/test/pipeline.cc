@@ -464,8 +464,7 @@ TEST_P(stencil, pipeline) {
   }
 
   if (split > 0) {
-    const int parallel_extra = max_workers != loop::serial ? split : 0;
-    const int intm_size = (W + 2) * (split + parallel_extra + 2) * sizeof(short);
+    const int intm_size = (W + 2) * (split + 2) * sizeof(short);
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size));
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
@@ -624,9 +623,8 @@ TEST_P(stencil_chain, pipeline) {
   }
 
   if (split > 0) {
-    const int parallel_extra = max_workers != loop::serial ? split * 2 : 0;
-    const int intm_size = (W + 2) * (split + parallel_extra + 2) * sizeof(short);
-    const int intm2_size = (W + 4) * (split + parallel_extra + 2) * sizeof(short);
+    const int intm_size = (W + 2) * (split + 2) * sizeof(short);
+    const int intm2_size = (W + 4) * (split + 2) * sizeof(short);
     ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(intm_size, intm2_size));
   } else {
     ASSERT_EQ(eval_ctx.heap.allocs.size(), 2);
