@@ -216,4 +216,33 @@ TEST(evaluate, clone_buffer) {
   ASSERT_EQ(buf_before, buf);
 }
 
+TEST(evaluate, semaphore) {
+  eval_context ctx;
+  thread_pool_impl t;
+  ctx.thread_pool = &t;
+
+  index_t sem1 = 0;
+  index_t sem2 = 0;
+  index_t sem3 = 0;
+  auto make_wait = [&](index_t& sem) { return check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))); };
+  auto make_signal = [&](index_t& sem) { return check::make(semaphore_signal(reinterpret_cast<index_t>(&sem))); };
+
+  std::atomic<int> state = 0;
+
+  std::thread th([&]() {
+    evaluate(make_wait(sem1), ctx);
+    state++;
+    evaluate(make_signal(sem2), ctx);
+    evaluate(make_wait(sem3), ctx);
+    state++;
+  });
+  ASSERT_EQ(state, 0);
+  evaluate(make_signal(sem1), ctx);
+  evaluate(make_wait(sem2), ctx);
+  ASSERT_EQ(state, 1);
+  evaluate(make_signal(sem3), ctx);
+  th.join();
+  ASSERT_EQ(state, 2);
+}
+
 }  // namespace slinky

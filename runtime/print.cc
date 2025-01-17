@@ -40,6 +40,9 @@ const char* to_string(intrinsic fn) {
   case intrinsic::or_else: return "or_else";
   case intrinsic::buffer_size_bytes: return "buffer_size_bytes";
   case intrinsic::buffer_at: return "buffer_at";
+  case intrinsic::semaphore_init: return "semaphore_init";
+  case intrinsic::semaphore_signal: return "semaphore_signal";
+  case intrinsic::semaphore_wait: return "semaphore_wait";
   case intrinsic::trace_begin: return "trace_begin";
   case intrinsic::trace_end: return "trace_end";
   case intrinsic::free: return "free";

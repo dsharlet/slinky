@@ -195,12 +195,41 @@ public:
     std::unique_ptr<symbol_map<modulus_remainder<index_t>>> expr_alignment =
         std::make_unique<symbol_map<modulus_remainder<index_t>>>();
 
+    // The next few fields relate to implementing synchronization in pipelined loops. In a pipelined loop, we
+    // treat a sequence of stmts as "stages" in the pipeline, where we add synchronization to cause the loop
+    // to appear to be executed serially to the stages: a stage can assume the same stage for a previous iteration has
+    // completed, and can assume that all previous stages for the same iteration have completed.
+    var semaphores;
+    var worker_count;
+
+    // How many stages we've added synchronization for in total so far.
+    int sync_stages = 0;
+    // We only track the stage we're currently working on. This optional being present indicates the current stage needs
+    // synchronization, and the value indicates which stage it is.
+    std::optional<int> stage;
+
     // Unique loop ID.
     std::size_t loop_id = -1;
 
+    bool add_synchronization() {
+      if (sync_stages + 1 >= max_workers) {
+        // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
+        // add more synchronization overhead.
+        return false;
+      }
+
+      // We need synchronization, but we might already have it.
+      if (!stage) {
+        stage = sync_stages++;
+      }
+      return true;
+    }
+
     loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step,
         int max_workers)
-        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers), loop_id(loop_id) {}
+        : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
+          semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"),
+          loop_id(loop_id) {}
   };
   std::vector<loop_info> loops;
 
@@ -215,6 +244,29 @@ public:
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
     loops.emplace_back(ctx, var(), loop_counter++, expr(), interval_expr::none(), expr(), loop::serial);
+  }
+
+  stmt mutate(const stmt& s) override {
+    stmt result = stmt_mutator::mutate(s);
+
+    // The loop at the back of the loops vector is the immediately containing loop. So, we know there are no
+    // intervening loops, and we can add any synchronization that has been requested. Doing so completes the current
+    // pipeline stage.
+    loop_info& l = loops.back();
+    if (l.stage) {
+      result = block::make({
+          // Wait for the previous iteration of this stage to complete.
+          // The l.sym here is equal to l.min + x * l.step, so dividing l.sym by l.step we  get floor_div(l.min) + x.
+          // This works even if l.min is not divisible by l.step, because it remains constant w.r.t to the loop index.
+          check::make(semaphore_wait(buffer_at(l.semaphores, *l.stage, floor_div(expr(l.sym), l.step) - 1))),
+          result,
+          // Signal we've done this iteration.
+          check::make(semaphore_signal(buffer_at(l.semaphores, *l.stage, floor_div(expr(l.sym), l.step)))),
+      });
+      l.stage = std::nullopt;
+    }
+
+    return result;
   }
 
   void visit(const let_stmt* op) override {
@@ -321,9 +373,6 @@ public:
         fold_factor = simplify(constant_upper_bound(fold_factor), *loop.expr_bounds, *loop.expr_alignment);
         if (is_finite(fold_factor) && !depends_on(fold_factor, loop.sym).any()) {
           vector_at(fold_factors[output], d) = {fold_factor, fold_factor, loops.back().loop_id};
-
-          // This loop has a dependency between loop iterations, mark it as not data parallel.
-          loop.data_parallel = false;
         } else {
           // The fold factor didn't simplify to something that doesn't depend on the loop variable.
         }
@@ -412,6 +461,7 @@ public:
     for (var output : outputs) {
       for (loop_info& loop : loops) {
         if (!fold_factors[output]) continue;
+        loop.add_synchronization();
 
         expr loop_var = variable::make(loop.sym);
         for (int d = 0; d < static_cast<int>(fold_factors[output]->size()); ++d) {
@@ -423,6 +473,24 @@ public:
           expr fold_factor = (*fold_factors[output])[d].factor;
           if (!is_finite(fold_factor)) {
             continue;
+          }
+
+          if (!depends_on(fold_factor, loop.sym).any()) {
+            // We need an extra fold per worker when parallelizing the loop.
+            // TODO: This extra folding seems excessive, it allows all workers to execute any stage.
+            // If we can figure out how to add some synchronization to limit the number of workers that
+            // work on a single stage at a time, we should be able to reduce this extra folding.
+            // TODO: In this case, we currently need synchronization, but we should find a way to eliminate it.
+            // This synchronization will cause the loop to run only as fast as the slowest stage, which is
+            // unnecessary in the case of a fully data parallel loop. In order to avoid this, we need to avoid race
+            // conditions. The synchronization avoids the race condition by only allowing a window of max_workers to
+            // run at once, so the storage folding here works as intended. If we could instead find a way to give
+            // each worker its own slice of this buffer, we could avoid this synchronization. I think this might be
+            // doable by making the worker index available to the loop body, and using that to grab a slice of this
+            // buffer, so each worker can get its own fold.
+
+            fold_factor += (loop.worker_count - 1) * (*fold_factors[output])[d].overlap;
+            vector_at(fold_factors[output], d).factor = simplify(fold_factor);
           }
         }
       }
@@ -584,8 +652,68 @@ public:
     }
 
     const loop_info& l = loops.back();
-    const int max_workers = l.data_parallel ? op->max_workers : 1;
+    const int stage_count = l.sync_stages;
+    const int max_workers = l.data_parallel ? op->max_workers : std::max(1, stage_count);
     stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
+
+    // Substitute the placeholder worker_count.
+    result = substitute(result, l.worker_count, max_workers);
+    // We need to do this in the fold factors too.
+    for (std::optional<std::vector<dim_fold_info>>& i : fold_factors) {
+      if (!i) continue;
+      for (dim_fold_info& j : *i) {
+        if (!depends_on(j.factor, l.worker_count).any()) continue;
+
+        if (l.data_parallel && max_workers == loop::parallel) {
+          // This is a data parallel loop, remove the folding.
+          // TODO: We have other options that would be better:
+          // - Move the allocation into the loop.
+          // - Rewrite accesses to this dimension to be a function of a thread ID (and rewrite the fold factor to the
+          // max thread ID).
+          j.factor = expr();
+        } else {
+          // This is a serial or pipelined loop, we can still fold.
+          j.factor = substitute(j.factor, l.worker_count, max_workers);
+        }
+      }
+    }
+
+    if (!l.data_parallel && stage_count > 1) {
+      // We added synchronization in the loop, we need to allocate a buffer for the semaphores.
+      interval_expr sem_bounds = {0, stage_count - 1};
+
+      index_t sem_size = sizeof(index_t);
+      call_stmt::attributes init_sems_attrs;
+      init_sems_attrs.name = "init_semaphores";
+      stmt init_sems = call_stmt::make(
+          [stage_count](const call_stmt* s, eval_context& ctx) -> index_t {
+            const buffer<index_t>& sems = *ctx.lookup_buffer<index_t>(s->outputs[0]);
+            assert(sems.rank == 2);
+            assert(sems.dim(0).min() == 0);
+            assert(sems.dim(0).extent() == stage_count);
+            memset(sems.base(), 0, sems.size_bytes());
+            // Initialize the first semaphore for each stage (the one before the loop min) to 1,
+            // unblocking the first iteration.
+            assert(sems.dim(0).stride() == sizeof(index_t));
+            std::fill_n(&sems(0, sems.dim(1).min()), stage_count, 1);
+            return 0;
+          },
+          {}, {l.semaphores}, std::move(init_sems_attrs));
+      // We can fold the semaphores array by the number of threads we'll use.
+      // TODO: Use the loop index and not the loop variable directly for semaphores so we don't need to do this.
+      expr sem_fold_factor = stage_count;
+      std::vector<dim_expr> sem_dims = {
+          {sem_bounds, sem_size},
+          // TODO: We should just let dimensions like this have undefined bounds.
+          {{floor_div(loop_bounds.min, op->step) - 1, floor_div(loop_bounds.max, op->step)},
+              sem_size * sem_bounds.extent(), sem_fold_factor},
+      };
+      result = allocate::make(
+          l.semaphores, memory_type::stack, sem_size, std::move(sem_dims), block::make({init_sems, result}));
+    } else {
+      // We only have one stage, there's no need for semaphores.
+      result = substitute(result, l.semaphores, expr());
+    }
 
     if (!is_variable(loop_bounds.min, orig_min) || depends_on(result, orig_min).any()) {
       // We rewrote or used the loop min.
