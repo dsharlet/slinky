@@ -1225,7 +1225,8 @@ public:
     alignment_type alignment;
     if (auto cstep = as_constant(step)) alignment.modulus = *cstep;
     if (auto cmin = as_constant(bounds.min)) alignment.remainder = *cmin;
-    stmt body = mutate_with_bounds(op->body, op->sym, bounds, alignment);
+    // If we're in the body of the loop, then we know that bounds.max >= bounds.min.
+    stmt body = mutate_with_bounds(op->body, op->sym, {bounds.min, mutate(max(bounds.min, bounds.max))}, alignment);
     for (auto& i : buffers) {
       if (i) --i->loop_depth;
     }
