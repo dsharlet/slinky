@@ -103,6 +103,7 @@ bool empty_intersection(const std::set<T>& a, const std::set<T>& b) {
 class constant_adder : public node_mutator {
 public:
   index_t c;
+  bool cancelled = false;
 
   constant_adder(index_t c) : c(c) {}
 
@@ -120,6 +121,11 @@ public:
 
   template <typename T>
   void visit_add_sub(const T* op, int sign_b) {
+    if (is_constant(op->b, c * -sign_b)) {
+      set_result(op->a);
+      cancelled = true;
+      return;
+    }
     expr a = mutate(op->a);
     if (a.defined()) {
       set_result(T::make(std::move(a), op->b));
@@ -140,15 +146,22 @@ public:
 
   template <typename T>
   void visit_min_max(const T* op) {
+    // Here, we want to rewrite something like max(x + 2, y) - 2 to max(x, y - 2), but we don't want to rewrite
+    // something like max(x, 2) - 2 to max(x - 2, 0). To do this, we need to know if we cancelled something.
+    bool old_cancelled = cancelled;
+    cancelled = false;
     expr a = mutate(op->a);
-    if (a.defined()) {
-      expr b = mutate(op->b);
-      if (b.defined()) {
-        set_result(T::make(std::move(a), std::move(b)));
-        return;
-      }
+    expr b = mutate(op->b);
+    cancelled = old_cancelled || cancelled;
+    if (a.defined() && b.defined()) {
+      set_result(T::make(std::move(a), std::move(b)));
+    } else if (a.defined() && cancelled) {
+      set_result(T::make(std::move(a), add::make(op->b, c)));
+    } else if (b.defined() && cancelled) {
+      set_result(T::make(add::make(op->a, c), std::move(b)));
+    } else {
+      set_result(expr());
     }
-    set_result(expr());
   }
   void visit(const class min* op) override { visit_min_max(op); }
   void visit(const class max* op) override { visit_min_max(op); }
@@ -2458,8 +2471,12 @@ bool can_evaluate(intrinsic fn) {
 expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
 expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
 std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
-std::optional<index_t> evaluate_constant_lower_bound(const expr& x) { return as_constant(constant_evaluator().mutate(x, -1)); }
-std::optional<index_t> evaluate_constant_upper_bound(const expr& x) { return as_constant(constant_evaluator().mutate(x, 1)); }
+std::optional<index_t> evaluate_constant_lower_bound(const expr& x) {
+  return as_constant(constant_evaluator().mutate(x, -1));
+}
+std::optional<index_t> evaluate_constant_upper_bound(const expr& x) {
+  return as_constant(constant_evaluator().mutate(x, 1));
+}
 
 std::optional<bool> attempt_to_prove(
     const expr& condition, const bounds_map& expr_bounds, const alignment_map& alignment) {
