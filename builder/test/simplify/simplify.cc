@@ -204,6 +204,10 @@ TEST(simplify, basic) {
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(slice_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
+
+  ASSERT_THAT(simplify(max(select(z <= 0, -1, select(1 <= y, min(x, z + -1), 0)) + 1, select((1 <= y), z, 0))),
+      matches(select((1 <= y), max(z, 0), (0 < z))));
+  
 }
 
 TEST(simplify, let) {

@@ -14,7 +14,7 @@ namespace slinky {
 namespace rewrite {
 
 // The maximum number of values pattern_wildcard::idx and pattern_constant::idx can have, starting from 0.
-constexpr int symbol_count = 6;
+constexpr int symbol_count = 7;
 constexpr int constant_count = 5;
 
 template <int N>
