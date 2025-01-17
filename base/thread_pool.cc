@@ -35,9 +35,19 @@ void thread_pool_impl::run_worker(const predicate& condition) {
   --worker_count_;
 }
 
+namespace {
+
+thread_local std::vector<thread_pool::task_id> task_stack;
+
+}  // namespace
+
 thread_pool::task_id thread_pool_impl::dequeue(task& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
     task_id id = std::get<2>(*i);
+    if (id != unique_task_id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
+      // Don't enqueue the same task multiple times on the same thread.
+      continue;
+    }
     int& task_count = std::get<0>(*i);
     if (task_count == 1) {
       t = std::move(std::get<1>(*i));
@@ -61,9 +71,11 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::co
   std::unique_lock l(mutex_);
   while (!condition()) {
     task t;
-    if (dequeue(t)) {
+    if (task_id id = dequeue(t)) {
       l.unlock();
+      task_stack.push_back(id);
       t();
+      task_stack.pop_back();
       l.lock();
       // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
       cv_helper_.notify_all();
@@ -102,7 +114,10 @@ void thread_pool_impl::enqueue(task t, task_id id) {
 }
 
 void thread_pool_impl::run(const task& t, task_id id) {
+  assert(id == unique_task_id || std::find(task_stack.begin(), task_stack.end(), id) == task_stack.end());
+  task_stack.push_back(id);
   t();
+  task_stack.pop_back();
 }
 
 void thread_pool_impl::cancel(task_id id) {
