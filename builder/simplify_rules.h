@@ -39,7 +39,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
       // This might be the only rule that doesn't have an analogous max rule.
-      apply(min(max(x, c0), c1), max(min(x, c1), c0), c0 <= c1) ||
+      apply(min(max(x, c0), c1), 
+        c0, c0 == c1,
+        max(min(x, c1), c0), c0 < c1) ||
 
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
