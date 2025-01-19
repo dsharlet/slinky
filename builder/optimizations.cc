@@ -682,6 +682,7 @@ public:
     // Copy the buffer info, but not alias candidates, we'll copy those back later below.
     for (std::size_t i = 0; i < old_buffers.size(); ++i) {
       if (old_buffers[i]) {
+        // TODO: I think slices need to slice this info here, and unslice it upon exiting this mutator.
         buffers[i] = buffer_info(
             old_buffers[i]->dims, old_buffers[i]->elem_size, old_buffers[i]->is_input, old_buffers[i]->is_output);
         buffers[i]->shared_alloc_sym = old_buffers[i]->shared_alloc_sym;
@@ -693,6 +694,15 @@ public:
 
     scoped_trace trace("visit_buffer_mutator");
     merge_buffer_info(old_buffers, op->sym, op->src, handler);
+  }
+
+  void substitute_alloc_dims(var sym, const std::vector<dim_expr>& dims) {
+    for (std::optional<buffer_info>& i : buffers) {
+      if (!i) continue;
+      for (dim_expr& d : i->dims) {
+        d.bounds = substitute_buffer(d.bounds, sym, dims);
+      }
+    }
   }
 
   void visit(const slice_buffer* op) override {
@@ -710,10 +720,20 @@ public:
 
   void visit(const crop_buffer* op) override {
     visit_buffer_mutator(op, [](alias_info&) {});
+
+    std::vector<dim_expr> subs(op->bounds.size());
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+      subs[i].bounds = op->bounds[i] & buffer_bounds(op->src, i);
+    }
+    substitute_alloc_dims(op->sym, subs);
   }
 
   void visit(const crop_dim* op) override {
     visit_buffer_mutator(op, [](alias_info&) {});
+
+    std::vector<dim_expr> subs(op->dim + 1);
+    subs[op->dim].bounds = op->bounds & buffer_bounds(op->src, op->dim);
+    substitute_alloc_dims(op->sym, subs);
   }
 
   void visit(const clone_buffer* op) override {

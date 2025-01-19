@@ -56,7 +56,7 @@ class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, int
 auto offsets = testing::Values(0, 1, -1, 10, -10);
 
 INSTANTIATE_TEST_SUITE_P(offsets, padded_copy,
-    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(0, 1)),
+    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(0, 1, 2)),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
