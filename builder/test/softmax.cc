@@ -233,7 +233,7 @@ TEST_P(softmax, pipeline) {
     if (copy_at_the_end == 2) {
       ASSERT_EQ(eval_ctx.heap.allocs.size(), 6);
     } else {
-      ASSERT_EQ(eval_ctx.heap.allocs.size(), 5);
+      ASSERT_EQ(eval_ctx.heap.allocs.size(), split_c ? 5 : 4);
     }
   }
 

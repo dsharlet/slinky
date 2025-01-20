@@ -22,6 +22,54 @@ MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
 }  // namespace
 
+TEST(optimizations, fuse_siblings) {
+  auto use_buffer = [](var x) { return call_stmt::make(nullptr, {}, {x}, {}); };
+
+  ASSERT_THAT(fuse_siblings(block::make({
+                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+                  allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+              })),
+      matches(allocate::make(x, memory_type::heap, 1, {}, block::make({use_buffer(x), use_buffer(x)}))));
+
+  ASSERT_THAT(fuse_siblings(block::make({
+                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+                  allocate::make(y, memory_type::heap, 2, {}, use_buffer(y)),
+              })),
+      matches(fuse_siblings(block::make({
+          allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+          allocate::make(y, memory_type::heap, 2, {}, use_buffer(y)),
+      }))));
+
+  ASSERT_THAT(fuse_siblings(block::make({
+                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+                  allocate::make(y, memory_type::stack, 1, {}, use_buffer(y)),
+              })),
+      matches(fuse_siblings(block::make({
+          allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+          allocate::make(y, memory_type::stack, 1, {}, use_buffer(y)),
+      }))));
+
+  ASSERT_THAT(fuse_siblings(block::make({
+                  allocate::make(x, memory_type::heap, 1, {{}}, use_buffer(x)),
+                  allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+              })),
+      matches(fuse_siblings(block::make({
+          allocate::make(x, memory_type::heap, 1, {{}}, use_buffer(x)),
+          allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+      }))));
+
+  ASSERT_THAT(fuse_siblings(block::make({
+                  allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+                  use_buffer(z),
+                  allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+              })),
+      matches(block::make({
+          allocate::make(x, memory_type::heap, 1, {}, use_buffer(x)),
+          use_buffer(z),
+          allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
+      })));
+}
+
 TEST(optimizations, optimize_symbols) {
   auto make_dummy_decl = [](var x, stmt body) { return allocate::make(x, memory_type::heap, 1, {}, body); };
 
