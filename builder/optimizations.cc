@@ -796,19 +796,28 @@ public:
     if (src) used[*src] = true;
   }
 
+  // TODO: We can handle some of these buffer mutators here.
+  template <typename T>
+  void visit_opaque_buffer_decl(const T* op) {
+    // These are buffer declarations that we don't want to allow aliasing through.
+    auto s = set_value_in_scope(aliases, op->sym, std::nullopt);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const make_buffer* op) override { visit_opaque_buffer_decl(op); }
+  void visit(const slice_buffer* op) override { visit_opaque_buffer_decl(op); }
+  void visit(const slice_dim* op) override { visit_opaque_buffer_decl(op); }
+  void visit(const transpose* op) override { visit_opaque_buffer_decl(op); }
+
   template <typename T>
   void visit_buffer_decl(const T* op, var src) {
     auto s = set_value_in_scope(aliases, op->sym, aliases.lookup(src));
     stmt_mutator::visit(op);
   }
 
-  void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_dependency(op->base)); }
-  void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
-  void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
   void visit(const crop_buffer* op) override { visit_buffer_decl(op, op->src); }
   void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
   void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
-  void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
 
   void visit(const block* op) override {
     std::vector<stmt> stmts;
