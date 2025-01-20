@@ -718,8 +718,14 @@ stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_exp
 namespace {
 
 class in_place_aliaser : public stmt_mutator {
+  // Tracks buffer symbols that are actually the same buffer.
   symbol_map<var> aliases;
+
+  // Tracks buffers that we intend to replace with a crop.
   symbol_map<var> replace;
+
+  // Tracks if a buffer is used. Buffers start out unused, and we visit block stmts in reverse order, so the first use
+  // we encounter is the last use of the buffer.
   symbol_map<bool> used;
 
 public:
@@ -731,18 +737,12 @@ public:
 
     std::optional<var> replacement = replace[op->sym];
     if (replacement && replacement->defined() && aliases.lookup(*replacement)) {
+      // We want to replace this allocation, and the buffer we want to use is still in scope. Make the buffer a crop with our bounds instead.
       set_result(crop_buffer::make(op->sym, *replacement, dims_bounds(op->dims), std::move(body)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
       set_result(op);
-    }
-  }
-
-  void visit_use(var i) {
-    std::optional<var> i_root = aliases.lookup(i);
-    if (i_root) {
-      used[*i_root] = true;
     }
   }
 
@@ -770,7 +770,6 @@ public:
         var out = op->outputs[output++];
         std::optional<var> output_root = aliases.lookup(out);
         replace[i] = output_root ? *output_root : out;
-        
       }
 
       used[i] = true;
@@ -779,7 +778,8 @@ public:
 
   void visit(const copy_stmt* op) override {
     set_result(op);
-    visit_use(op->src);
+    std::optional<var> src = aliases.lookup(op->src);
+    if (src) used[*src] = true;
   }
 
   template <typename T>
