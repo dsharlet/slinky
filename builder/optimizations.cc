@@ -722,7 +722,8 @@ class in_place_aliaser : public stmt_mutator {
   symbol_map<var> aliases;
 
   // Tracks buffers that we intend to replace with a crop.
-  symbol_map<var> replace;
+  symbol_map<var> backward;
+  symbol_map<var> forward;
 
   // Tracks if a buffer is used. Buffers start out unused, and we visit block stmts in reverse order, so the first use
   // we encounter is the last use of the buffer.
@@ -737,14 +738,19 @@ public:
 
   void visit(const allocate* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->sym);
-    auto set_replace = set_value_in_scope(replace, op->sym, var());
+    auto set_back = set_value_in_scope(backward, op->sym, var());
+    auto set_fwd = set_value_in_scope(forward, op->sym, var());
     auto set_used = set_value_in_scope(used, op->sym, false);
     stmt body = mutate(op->body);
 
-    std::optional<var> replacement = replace[op->sym];
-    if (replacement && replacement->defined() && aliases.lookup(*replacement)) {
-      // We want to replace this allocation, and the buffer we want to use is still in scope. Make the buffer a crop with our bounds instead.
-      set_result(crop_buffer::make(op->sym, *replacement, dims_bounds(op->dims), std::move(body)));
+    std::optional<var> back = backward[op->sym];
+    std::optional<var> fwd = forward[op->sym];
+    if (back && back->defined() && aliases.lookup(*back)) {
+      forward.erase(*back);
+      set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
+    } else if (fwd && fwd->defined() && aliases.lookup(*fwd)) {
+      backward.erase(*fwd);
+      set_result(crop_buffer::make(op->sym, *fwd, dims_bounds(op->dims), std::move(body)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
@@ -775,7 +781,9 @@ public:
         // Alias this input to the next output.
         var out = op->outputs[output++];
         std::optional<var> output_root = aliases.lookup(out);
-        replace[i] = output_root ? *output_root : out;
+        out = output_root ? *output_root : out;
+        backward[out] = i;
+        forward[i] = out;
       }
 
       used[i] = true;

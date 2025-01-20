@@ -755,6 +755,12 @@ public:
     return values[i];
   }
 
+  void erase(var v) {
+    if (v.id < values.size()) {
+      values[v.id] = std::nullopt;
+    }
+  }
+
   std::size_t size() const { return values.size(); }
   void reserve(std::size_t size) { values.resize(std::max(values.size(), size)); }
   auto begin() { return values.begin(); }
