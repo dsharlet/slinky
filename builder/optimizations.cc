@@ -729,6 +729,12 @@ class in_place_aliaser : public stmt_mutator {
   symbol_map<bool> used;
 
 public:
+  in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
+    for (const buffer_expr_ptr& i : outputs) {
+      aliases[i->sym()] = i->sym();
+    }
+  }
+
   void visit(const allocate* op) override {
     auto set_alias = set_value_in_scope(aliases, op->sym, op->sym);
     auto set_replace = set_value_in_scope(replace, op->sym, var());
@@ -815,9 +821,9 @@ public:
 
 }  // namespace
 
-stmt alias_in_place(const stmt& s) {
+stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs) {
   scoped_trace trace("alias_in_place");
-  return in_place_aliaser().mutate(s);
+  return in_place_aliaser(outputs).mutate(s);
 }
 
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
