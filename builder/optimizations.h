@@ -10,7 +10,9 @@ namespace slinky {
 stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs);
 
-// Given a copy_stmt, produce an implementation that calls `slinky::copy`, possibly inside loops that implement copy
+stmt alias_in_place(const stmt& s);
+
+  // Given a copy_stmt, produce an implementation that calls `slinky::copy`, possibly inside loops that implement copy
 // operations that `slinky::copy` cannot express.
 stmt implement_copy(const copy_stmt* c, node_context& ctx);
 

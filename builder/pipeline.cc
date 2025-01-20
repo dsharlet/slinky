@@ -1329,6 +1329,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     inputs_and_constants.insert(inputs_and_constants.end(), inputs.begin(), inputs.end());
     inputs_and_constants.insert(inputs_and_constants.end(), constants.begin(), constants.end());
     result = alias_copies(result, ctx, inputs_and_constants, outputs);
+    result = alias_in_place(result);
   }
 
   // `evaluate` currently can't handle `copy_stmt`, so this is required.

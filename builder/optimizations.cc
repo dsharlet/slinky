@@ -715,6 +715,111 @@ stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_exp
   return copy_aliaser(ctx, inputs, outputs).mutate(s);
 }
 
+namespace {
+
+class in_place_aliaser : public stmt_mutator {
+  symbol_map<var> aliases;
+  symbol_map<var> replace;
+  symbol_map<bool> used;
+
+public:
+  void visit(const allocate* op) override {
+    auto set_alias = set_value_in_scope(aliases, op->sym, op->sym);
+    auto set_replace = set_value_in_scope(replace, op->sym, var());
+    auto set_used = set_value_in_scope(used, op->sym, false);
+    stmt body = mutate(op->body);
+
+    std::optional<var> replacement = replace[op->sym];
+    if (replacement && replacement->defined() && aliases.lookup(*replacement)) {
+      set_result(crop_buffer::make(op->sym, *replacement, dims_bounds(op->dims), std::move(body)));
+    } else if (!body.same_as(op->body)) {
+      set_result(clone_with(op, std::move(body)));
+    } else {
+      set_result(op);
+    }
+  }
+
+  void visit_use(var i) {
+    std::optional<var> i_root = aliases.lookup(i);
+    if (i_root) {
+      used[*i_root] = true;
+    }
+  }
+
+  void visit(const call_stmt* op) override {
+    set_result(op);
+
+    std::size_t output = 0;
+    for (var i : op->inputs) {
+      std::optional<var> i_root = aliases.lookup(i);
+      if (!i_root) {
+        // This was an input to the pipeline, we can't alias it.
+        continue;
+      }
+
+      i = *i_root;
+
+      if (used[i] && *used[i]) {
+        // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we can't
+        // alias it.
+        continue;
+      }
+
+      if (op->attrs.allow_in_place && output < op->outputs.size()) {
+        // Alias this input to the next output.
+        var out = op->outputs[output++];
+        std::optional<var> output_root = aliases.lookup(out);
+        replace[i] = output_root ? *output_root : out;
+        
+      }
+
+      used[i] = true;
+    }
+  }
+
+  void visit(const copy_stmt* op) override {
+    set_result(op);
+    visit_use(op->src);
+  }
+
+  template <typename T>
+  void visit_buffer_decl(const T* op, var src) {
+    auto s = set_value_in_scope(aliases, op->sym, aliases.lookup(src));
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const make_buffer* op) override { visit_buffer_decl(op, find_buffer_dependency(op->base)); }
+  void visit(const slice_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const crop_dim* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const clone_buffer* op) override { visit_buffer_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_buffer_decl(op, op->src); }
+
+  void visit(const block* op) override {
+    std::vector<stmt> stmts;
+    stmts.reserve(op->stmts.size());
+    bool changed = false;
+    for (auto i = op->stmts.rbegin(); i != op->stmts.rend(); ++i) {
+      stmts.push_back(mutate(*i));
+      changed = changed || !stmts.back().same_as(*i);
+    }
+    if (!changed) {
+      set_result(op);
+    } else {
+      std::reverse(stmts.begin(), stmts.end());
+      set_result(block::make(std::move(stmts)));
+    }
+  }
+};
+
+}  // namespace
+
+stmt alias_in_place(const stmt& s) {
+  scoped_trace trace("alias_in_place");
+  return in_place_aliaser().mutate(s);
+}
+
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   scoped_trace trace("implement_copy");
   // Start by making a call to copy.
