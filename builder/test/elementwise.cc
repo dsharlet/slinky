@@ -30,7 +30,6 @@ class elementwise_pipeline_builder : public expr_visitor {
   node_context& ctx;
 
   std::vector<interval_expr> bounds;
-  std::vector<var> dims;
 
   std::string name(const buffer_expr_ptr& b) const { return ctx.name(b->sym()); }
 
@@ -45,6 +44,7 @@ public:
     }
   }
 
+  std::vector<var> dims;
   std::vector<func> result_funcs;
   std::vector<buffer_expr_ptr> inputs;
   buffer_expr_ptr result;
@@ -209,9 +209,13 @@ public:
 };
 
 template <typename T, std::size_t Rank>
-void test_expr_pipeline(node_context& ctx, const expr& e) {
+void test_expr_pipeline(node_context& ctx, int split, const expr& e) {
   elementwise_pipeline_builder<T, Rank> builder(ctx);
   e.accept(&builder);
+
+  if (split > 0) {
+    builder.result_funcs.back().loops({{builder.dims.back(), split}});
+  }
 
   pipeline p = build_pipeline(ctx, builder.inputs, {builder.result});
 
@@ -270,23 +274,27 @@ expr pow(expr x, int n) {
 
 }  // namespace
 
-TEST(elementwise, add_xy) { test_expr_pipeline<int, 1>(ctx, x + y); }
-TEST(elementwise, mul_add) { test_expr_pipeline<int, 1>(ctx, x * y + z); }
-TEST(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, max(x + y, 0) * z); }
-TEST(elementwise, exp1) { test_expr_pipeline<int, 1>(ctx, 1 + x); }
-TEST(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2)); }
-TEST(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3)); }
-TEST(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
-TEST(elementwise, exp8) {
+class elementwise : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(split, elementwise, testing::Range(0, 3));
+
+TEST_P(elementwise, add_xy) { test_expr_pipeline<int, 1>(ctx, GetParam(), x + y); }
+TEST_P(elementwise, mul_add) { test_expr_pipeline<int, 1>(ctx, GetParam(), x * y + z); }
+TEST_P(elementwise, add_max_mul) { test_expr_pipeline<int, 1>(ctx, GetParam(), max(x + y, 0) * z); }
+TEST_P(elementwise, exp1) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x); }
+TEST_P(elementwise, exp2) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x + pow(x, 2)); }
+TEST_P(elementwise, exp3) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x + pow(x, 2) + pow(x, 3)); }
+TEST_P(elementwise, exp4) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4)); }
+TEST_P(elementwise, exp8) {
   test_expr_pipeline<int, 1>(
-      ctx, 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4) + pow(x, 5) + pow(x, 6) + pow(x, 7) + pow(x, 8));
+      ctx, GetParam(), 1 + x + pow(x, 2) + pow(x, 3) + pow(x, 4) + pow(x, 5) + pow(x, 6) + pow(x, 7) + pow(x, 8));
 }
 
-TEST(elementwise, exp2_horners) { test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x)); }
-TEST(elementwise, exp3_horners) { test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x * (1 + x))); }
-TEST(elementwise, exp4_horners) { test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x * (1 + x * (1 + x)))); }
-TEST(elementwise, exp8_horners) {
-  test_expr_pipeline<int, 1>(ctx, 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
+TEST_P(elementwise, exp2_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x)); }
+TEST_P(elementwise, exp3_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x))); }
+TEST_P(elementwise, exp4_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x)))); }
+TEST_P(elementwise, exp8_horners) {
+  test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
 }
 
 }  // namespace slinky
