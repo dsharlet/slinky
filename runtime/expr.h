@@ -755,6 +755,12 @@ public:
     return values[i];
   }
 
+  void erase(var v) {
+    if (v.id < values.size()) {
+      values[v.id] = std::nullopt;
+    }
+  }
+
   std::size_t size() const { return values.size(); }
   void reserve(std::size_t size) { values.resize(std::max(values.size(), size)); }
   auto begin() { return values.begin(); }
@@ -822,6 +828,10 @@ scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym
 template <typename T>
 scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym, std::optional<T> value) {
   return scoped_value_in_symbol_map<T>(context, sym, std::move(value));
+}
+template <typename T>
+scoped_value_in_symbol_map<T> set_value_in_scope(symbol_map<T>& context, var sym, std::nullopt_t) {
+  return scoped_value_in_symbol_map<T>(context, sym, std::nullopt);
 }
 
 }  // namespace slinky

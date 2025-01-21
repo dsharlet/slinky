@@ -1444,8 +1444,8 @@ TEST(split, pipeline) {
       },
       {{intm, {point(x + W), point(y)}}}, {{intm2, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
 
-  func sum_out =
-      func::make(subtract<short>, {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}}, {{out, {x, y}}});
+  func sum_out = func::make(subtract<short>, {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}},
+      {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
