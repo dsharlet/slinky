@@ -379,23 +379,17 @@ function pipeline(__in, out) {
             consume(softmax_in);
             produce(max_in);
             __event_t++;
-            free(softmax_in);
-          }
-          { let exp_in = allocate('exp_in', 4, [
-              {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
-              {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
-            ]);
             consume(__in);
             consume(max_in);
-            produce(exp_in);
+            produce(softmax_in);
             produce(sum_exp_in);
             __event_t++;
             check(free(max_in));
-            consume(exp_in);
+            consume(softmax_in);
             consume(sum_exp_in);
             produce(softmax_out);
             __event_t++;
-            free(exp_in);
+            free(softmax_in);
           }
           free(max_in);
         }

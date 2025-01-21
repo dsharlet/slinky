@@ -882,6 +882,92 @@ stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs) 
   return in_place_aliaser(outputs).mutate(s);
 }
 
+namespace {
+
+template <typename T>
+bool match(span<const T> a, span<const T> b) {
+  if (a.size() != b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    if (!match(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+class sibling_fuser : public stmt_mutator {
+  // Sibling buffer declarations can be fused if they produce the same buffer (same parameters).
+  static bool can_fuse(const allocate* a, const allocate* b) {
+    return a->storage == b->storage && match(a->elem_size, b->elem_size) && match<dim_expr>(a->dims, b->dims);
+  }
+  static bool can_fuse(const make_buffer* a, const make_buffer* b) {
+    return match(a->base, b->base) && match(a->elem_size, b->elem_size) && match<dim_expr>(a->dims, b->dims);
+  }
+  static bool can_fuse(const crop_dim* a, const crop_dim* b) {
+    return a->src == b->src && a->dim == b->dim && match(a->bounds, b->bounds);
+  }
+  static bool can_fuse(const crop_buffer* a, const crop_buffer* b) {
+    return a->src == b->src && match<interval_expr>(a->bounds, b->bounds);
+  }
+  static bool can_fuse(const slice_dim* a, const slice_dim* b) {
+    return a->src == b->src && a->dim == b->dim && match(a->at, b->at);
+  }
+  static bool can_fuse(const slice_buffer* a, const slice_buffer* b) {
+    return a->src == b->src && match<expr>(a->at, b->at);
+  }
+  static bool can_fuse(const transpose* a, const transpose* b) { return a->src == b->src && a->dims == b->dims; }
+
+  template <typename T>
+  static bool fuse(const T* a, const T* b, stmt& result) {
+    if (!a || !b || !can_fuse(a, b)) return false;
+
+    stmt body = block::make({a->body, substitute(b->body, b->sym, a->sym)});
+    result = clone_with(a, std::move(body));
+    return true;
+  }
+
+  static bool fuse(stmt& a, const stmt& b) {
+    return fuse(a.as<allocate>(), b.as<allocate>(), a) || fuse(a.as<make_buffer>(), b.as<make_buffer>(), a) ||
+           fuse(a.as<crop_dim>(), b.as<crop_dim>(), a) || fuse(a.as<crop_buffer>(), b.as<crop_buffer>(), a) ||
+           fuse(a.as<slice_dim>(), b.as<slice_dim>(), a) || fuse(a.as<slice_buffer>(), b.as<slice_buffer>(), a) ||
+           fuse(a.as<transpose>(), b.as<transpose>(), a);
+  }
+
+public:
+  void visit(const block* op) override {
+    std::vector<stmt> result;
+    result.reserve(op->stmts.size());
+    bool changed = false;
+    for (const stmt& s : op->stmts) {
+      result.push_back(mutate(s));
+      changed = changed || !result.back().same_as(s);
+    }
+
+    // TODO: This currently only looks for immediately adjacent nodes that can be fused. We can also try to fuse
+    // ops with intervening ops, but this isn't obviously a simplification, and in the case of allocations, may
+    // increase peak memory usage.
+    for (std::size_t i = 0; i + 1 < result.size();) {
+      if (fuse(result[i], result[i + 1])) {
+        result.erase(result.begin() + i + 1);
+        changed = true;
+      } else {
+        ++i;
+      }
+    }
+
+    if (changed) {
+      set_result(block::make(std::move(result)));
+    } else {
+      set_result(op);
+    }
+  }
+};
+
+}  // namespace
+
+stmt fuse_siblings(const stmt& s) {
+  scoped_trace trace("fuse_siblings");
+  return sibling_fuser().mutate(s);
+}
+
 stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   scoped_trace trace("implement_copy");
   // Start by making a call to copy.

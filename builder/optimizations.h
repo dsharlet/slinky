@@ -13,6 +13,9 @@ stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_exp
 // Replace allocations of input buffers to calls that can be computed in place with crops of the output buffer.
 stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs);
 
+// Replace sibling stmts with a single stmt of a block where possible.
+stmt fuse_siblings(const stmt& s);
+
 // Given a copy_stmt, produce an implementation that calls `slinky::copy`, possibly inside loops that implement copy
 // operations that `slinky::copy` cannot express.
 stmt implement_copy(const copy_stmt* c, node_context& ctx);

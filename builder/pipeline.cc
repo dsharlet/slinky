@@ -1339,6 +1339,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
 
+  result = fuse_siblings(result);
+
   if (options.no_checks) {
     result = recursive_mutate<check>(result, [](const check* op) { return stmt(); });
     // Simplify again, in case there are lets that the checks used that are now dead.
