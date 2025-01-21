@@ -894,6 +894,7 @@ bool match(span<const T> a, span<const T> b) {
 }
 
 class sibling_fuser : public stmt_mutator {
+  // Sibling buffer declarations can be fused if they produce the same buffer (same parameters).
   static bool can_fuse(const allocate* a, const allocate* b) {
     return a->storage == b->storage && match(a->elem_size, b->elem_size) && match<dim_expr>(a->dims, b->dims);
   }
