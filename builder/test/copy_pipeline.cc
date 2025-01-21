@@ -51,18 +51,19 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, bool>> {};
+class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, int>> {};
 
 auto offsets = testing::Values(0, 1, -1, 10, -10);
 
 INSTANTIATE_TEST_SUITE_P(offsets, padded_copy,
-    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(false, true)),
+    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(0, 1, 2)),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
   int offset_x = std::get<0>(GetParam());
   int offset_y = std::get<1>(GetParam());
   bool in_bounds = std::get<2>(GetParam());
+  int split_y = std::get<3>(GetParam());
   std::vector<int> permutation = {0, 1};
   if (std::get<3>(GetParam())) {
     std::swap(permutation[0], permutation[1]);
@@ -84,6 +85,12 @@ TEST_P(padded_copy, pipeline) {
       {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
       {padded_intm, {x, y}}, {3});
   func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  if (split_y > 0) {
+    copy_in.compute_root();
+    copy_out.loops({{y, split_y}});
+    padded_intm->store_at({&copy_out, y});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -116,7 +123,7 @@ TEST_P(padded_copy, pipeline) {
   }
 
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
+  ASSERT_EQ(eval_ctx.copy_calls, split_y == 0 ? 1 : ceil_div(H, split_y));
 }
 
 class copy_sequence : public testing::TestWithParam<std::tuple<int, int>> {};
