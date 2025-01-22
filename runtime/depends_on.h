@@ -48,7 +48,7 @@ bool can_substitute_buffer(const depends_on_result& r);
 bool is_pure(expr_ref x);
 
 // Find the buffers used by a stmt or expr. Returns the vars accessed in sorted order.
-var find_buffer_dependency(expr_ref e);
+var find_buffer_data_dependency(expr_ref e);
 std::vector<var> find_buffer_dependencies(stmt_ref s);
 std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output);
 

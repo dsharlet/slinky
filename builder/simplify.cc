@@ -1586,7 +1586,7 @@ public:
     // check below could be unnecessary.
     if (can_substitute_buffer(depends_on(op->body, op->sym))) {
       // We only needed the buffer meta, not the buffer itself.
-      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_dependency(base), std::move(info)));
+      set_result(mutate_with_buffer(nullptr, op->body, op->sym, find_buffer_data_dependency(base), std::move(info)));
       return;
     }
 
@@ -1689,7 +1689,7 @@ public:
       }
     }
 
-    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer_dependency(base), info);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, find_buffer_data_dependency(base), info);
     scoped_trace trace("visit(const make_buffer*)");
 
     changed = changed || !base.same_as(op->base);
@@ -1700,7 +1700,7 @@ public:
         return body;
       } else if (can_substitute_buffer(deps)) {
         // We only needed the buffer meta, not the buffer itself.
-        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_dependency(base), info);
+        return mutate_with_buffer(nullptr, body, op->sym, find_buffer_data_dependency(base), info);
       } else if (changed || !body.same_as(op->body)) {
         return make_buffer::make(op->sym, base, info.elem_size, info.dims, std::move(body));
       } else {

@@ -331,15 +331,18 @@ namespace {
 //
 // Will report that y is consumed in the stmt, not x.
 class dependency_finder : public recursive_node_visitor {
-  bool input, output;
+  bool input = true;
+  bool output = true;
+  bool data_only = false;
   
   symbol_map<var> aliases;
 
 public:
   std::vector<var> result;
 
-  dependency_finder() : dependency_finder(true, true) {}
+  dependency_finder() {}
   dependency_finder(bool input, bool output) : input(input), output(output) {}
+  dependency_finder(bool data_only) : data_only(data_only) {}
 
   std::optional<var> lookup_alias(var x) {
     if (aliases.contains(x)) {
@@ -363,7 +366,7 @@ public:
   }
 
   void visit(const variable* op) override {
-    if (op->field != buffer_field::none) {
+    if (op->field != buffer_field::none && !data_only) {
       visit_buffer(op->sym);
     }
   }
@@ -401,7 +404,7 @@ public:
   }
   void visit(const make_buffer* op) override {
     if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer_dependency(op->base)));
+    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer_data_dependency(op->base)));
     op->body.accept(this);
   }
 
@@ -421,8 +424,8 @@ public:
 
 }  // namespace
 
-var find_buffer_dependency(expr_ref e) {
-  dependency_finder accessed;
+var find_buffer_data_dependency(expr_ref e) {
+  dependency_finder accessed(true);
   if (e.defined()) e.accept(&accessed);
   return accessed.result.size() == 1 ? accessed.result.front() : var();
 }

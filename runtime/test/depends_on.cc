@@ -107,8 +107,9 @@ TEST(depends_on, is_pure) {
 }
 
 TEST(find_buffer_dependencies, basic) {
-  ASSERT_EQ(find_buffer_dependency(buffer_at(x)), x);
-  ASSERT_EQ(find_buffer_dependency(buffer_at(x) + buffer_at(y)), var());
+  ASSERT_EQ(find_buffer_data_dependency(buffer_at(x)), x);
+  ASSERT_EQ(find_buffer_data_dependency(buffer_at(x, buffer_min(y, 0))), x);
+  ASSERT_EQ(find_buffer_data_dependency(buffer_at(x) + buffer_at(y)), var());
 
   ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(x, y, {}, call_stmt::make(nullptr, {y}, {x}, {}))),
       testing::ElementsAre(y));
