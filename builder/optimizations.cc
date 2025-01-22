@@ -790,8 +790,8 @@ public:
     auto set_fwd = set_value_in_scope(forward, op->sym, var());
     stmt body = mutate(op->body);
 
-    std::optional<var> back = backward[op->sym];
-    std::optional<var> fwd = forward[op->sym];
+    std::optional<var> back = backward.lookup(op->sym);
+    std::optional<var> fwd = forward.lookup(op->sym);
     if (back && back->defined() && buffers.lookup(*back)) {
       forward.erase(*back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
@@ -808,6 +808,11 @@ public:
   void visit(const call_stmt* op) override {
     set_result(op);
 
+    if (op->attrs.name == "memcpy") {
+      // We can't handle this, it should have been handled by copy_aliaser if it could be aliased.
+      return;
+    }
+
     for (std::size_t o = 0; o < op->outputs.size(); ++o) {
       std::optional<buffer_info> output_alloc = buffers.lookup(op->outputs[o]);
       if (!output_alloc || !output_alloc->allow_alias) {
@@ -822,7 +827,7 @@ public:
         }
 
         std::optional<buffer_info>& input_alloc = buffers[op->inputs[i]];
-        if (!input_alloc || (used[input_alloc->root] && *used[input_alloc->root])) {
+        if (!input_alloc || !input_alloc->allow_alias || (used[input_alloc->root] && *used[input_alloc->root])) {
           // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
           // can't alias it.
           continue;
