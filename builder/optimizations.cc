@@ -598,9 +598,11 @@ public:
         return;
       }
 
-      // We want the bounds of the src buffer, but with dst's memory layout.
+      // We want the intersection of the bounds of the src and dst, but with dst's memory layout.
+      // Conceptually, we really just want the bounds of the src, but including the bounds of the dst enables us to
+      // detect when the dst is smaller than the src, which makes the alias invalid.
       a.dims[src_d] = {
-          info->dims[src_d].bounds,
+          info->dims[src_d].bounds & (buffer_bounds(op->dst, dst_d) + offset),
           buffer_stride(op->dst, dst_d),
           buffer_fold_factor(op->dst, dst_d),
       };
@@ -615,6 +617,7 @@ public:
       }
     }
 
+    a.assume_in_bounds = false;
     a.elem_size = buffer_elem_size(op->dst);
 
     info->aliases.push_back(std::move(a));
