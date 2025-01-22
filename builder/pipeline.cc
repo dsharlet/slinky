@@ -1024,13 +1024,18 @@ public:
       }
     }
 
+    // Sort vector by (end - start) and then start and then buffer sym.
     auto lifetime_less = [](allocation_candidate a, allocation_candidate b) {
       if ((a.lifetime_end - a.lifetime_start) == (b.lifetime_end - b.lifetime_start)) {
+        if (a.lifetime_start == b.lifetime_start) {
+          return a.buffer->sym() < b.buffer->sym();
+        }
         return a.lifetime_start < b.lifetime_start;
       }
+
       return (a.lifetime_end - a.lifetime_start) < (b.lifetime_end - b.lifetime_start);
     };
-    // Sort vector by (end - start) and then start.
+
     std::sort(lifetimes.begin(), lifetimes.end(), lifetime_less);
     std::sort(special.begin(), special.end(), lifetime_less);
 
