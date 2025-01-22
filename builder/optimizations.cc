@@ -775,12 +775,13 @@ class in_place_aliaser : public stmt_mutator {
 
   // Tracks if a buffer is used. Buffers start out unused, and we visit block stmts in reverse order, so the first use
   // we encounter is the last use of the buffer.
-  symbol_map<bool> used;
+  symbol_map<int> use_count;
 
 public:
   in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
     for (const buffer_expr_ptr& i : outputs) {
       buffers[i->sym()] = {i->sym()};
+      use_count[i->sym()] = 0;
     }
   }
 
@@ -788,14 +789,20 @@ public:
     auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym});
     auto set_back = set_value_in_scope(backward, op->sym, var());
     auto set_fwd = set_value_in_scope(forward, op->sym, var());
+    auto set_used = set_value_in_scope(use_count, op->sym, 0);
     stmt body = mutate(op->body);
 
     std::optional<var> back = backward.lookup(op->sym);
     std::optional<var> fwd = forward.lookup(op->sym);
-    if (back && back->defined() && buffers.lookup(*back)) {
+    int uses = *use_count.lookup(op->sym);
+
+    // TODO: Try to relax constraint that there is only one use. We already limit aliases to be the last use. The
+    // problem with multiple uses is the buffer we use instead of this allocation might be bigger, and the other use
+    // needs those values missing from this allocation.
+    if (uses == 1 && back && back->defined() && buffers.lookup(*back)) {
       forward.erase(*back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
-    } else if (fwd && fwd->defined() && buffers.lookup(*fwd)) {
+    } else if (uses == 1 && fwd && fwd->defined() && buffers.lookup(*fwd)) {
       backward.erase(*fwd);
       set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
     } else if (!body.same_as(op->body)) {
@@ -805,12 +812,24 @@ public:
     }
   }
 
+  void add_use(var buf) {
+    std::optional<int>& uses = use_count[buf];
+    if (!uses) uses = 0;
+    ++(*uses);
+  }
+
   void visit(const call_stmt* op) override {
     set_result(op);
 
     if (op->attrs.name == "memcpy") {
       // We can't handle this, it should have been handled by copy_aliaser if it could be aliased.
       return;
+    }
+
+    for (var i : op->inputs) {
+      std::optional<buffer_info>& input_alloc = buffers[i];
+      if (!input_alloc) continue;
+      add_use(input_alloc->root);
     }
 
     for (std::size_t o = 0; o < op->outputs.size(); ++o) {
@@ -827,7 +846,8 @@ public:
         }
 
         std::optional<buffer_info>& input_alloc = buffers[op->inputs[i]];
-        if (!input_alloc || !input_alloc->allow_alias || (used[input_alloc->root] && *used[input_alloc->root])) {
+        if (!input_alloc || !input_alloc->allow_alias || !use_count[input_alloc->root] ||
+            *use_count[input_alloc->root] > 1) {
           // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
           // can't alias it.
           continue;
@@ -835,22 +855,15 @@ public:
 
         backward[output_alloc->root] = input_alloc->root;
         forward[input_alloc->root] = output_alloc->root;
-
-        used[input_alloc->root] = true;
         break;
       }
-    }
-
-    for (var i : op->inputs) {
-      std::optional<buffer_info>& input_alloc = buffers[i];
-      if (input_alloc) used[input_alloc->root] = true;
     }
   }
 
   void visit(const copy_stmt* op) override {
     set_result(op);
     std::optional<buffer_info> src = buffers.lookup(op->src);
-    if (src) used[src->root] = true;
+    if (src) add_use(src->root);
   }
 
   // TODO: We can handle some of these buffer mutators here.
