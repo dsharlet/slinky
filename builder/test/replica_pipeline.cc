@@ -187,7 +187,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x, y}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}}, {.allow_in_place = true, .name = "add1"});
+  auto _fn_1 = func::make(std::move(_replica_fn_2), {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}}, {.allow_in_place = 1, .name = "add1"});
   auto _replica_fn_3 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -207,7 +207,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_5 = func::make(std::move(_replica_fn_6), {{in2, {point(x)}}}, {{intm2, {x}}}, {.allow_in_place = true, .name = "mul2"});
+  auto _fn_5 = func::make(std::move(_replica_fn_6), {{in2, {point(x)}}}, {{intm2, {x}}}, {.allow_in_place = 1, .name = "mul2"});
   auto _replica_fn_7 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};
     const buffer<void>* output_buffers[] = {&o0};
@@ -215,7 +215,7 @@ auto p = []() -> ::slinky::pipeline {
     const std::vector<var> outputs[] = {{x}};
     return ::slinky::internal::replica_pipeline_handler(input_buffers, output_buffers, inputs, outputs);
   };
-  auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}}, {.allow_in_place = true, .name = "add2"});
+  auto _fn_4 = func::make(std::move(_replica_fn_7), {{intm2, {point(x)}}}, {{out2, {x}}}, {.allow_in_place = 1, .name = "add2"});
   auto p = build_pipeline(ctx, {}, {in1, in2}, {out1, out2}, {}, {});
   return p;
 };

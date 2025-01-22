@@ -397,9 +397,9 @@ TEST_P(multiple_uses, cannot_alias) {
 
   func in_a = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{a, {x, y}}});
   func a_b = func::make(add_1<short>, {{a, {point(x), point(y)}}}, {{b, {x, y}}},
-      call_stmt::attributes{.allow_in_place = in_place == 0, .name = "a_b"});
+      call_stmt::attributes{.allow_in_place = in_place == 0 ? 0x1 : 0, .name = "a_b"});
   func a_c = func::make(add_1<short>, {{a, {point(x), point(y)}}}, {{c, {x, y}}},
-      call_stmt::attributes{.allow_in_place = in_place == 1, .name = "a_c"});
+      call_stmt::attributes{.allow_in_place = in_place == 1 ? 0x1 : 0, .name = "a_c"});
 
   func sub = func::make(subtract<short>, {{b, {point(x), point(y)}}, {c, {point(x), point(y)}}}, {{out, {x, y}}});
 
@@ -458,9 +458,9 @@ TEST_P(multiple_uses, cannot_alias_output) {
 
   func in_a = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{a, {x, y}}});
   func a_b = func::make(add_1<short>, {{a, {point(x), point(y)}}}, {{b, {x, y}}},
-      call_stmt::attributes{.allow_in_place = in_place == 0, .name = "a_b"});
+      call_stmt::attributes{.allow_in_place = in_place == 0 ? 0x1 : 0, .name = "a_b"});
   func a_c = func::make(add_1<short>, {{a, {point(x), point(y)}}}, {{c, {x, y}}},
-      call_stmt::attributes{.allow_in_place = in_place == 1, .name = "a_c"});
+      call_stmt::attributes{.allow_in_place = in_place == 1 ? 0x1 : 0, .name = "a_c"});
 
   pipeline p = build_pipeline(ctx, {in}, {b, c});
 

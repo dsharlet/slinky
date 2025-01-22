@@ -800,35 +800,38 @@ public:
     }
   }
 
+  var alloc_of_buffer(var i) const {
+    std::optional<var> alloc = aliases.lookup(i);
+    return alloc ? *alloc : i;
+  }
+
   void visit(const call_stmt* op) override {
     set_result(op);
 
-    std::size_t output = 0;
+    for (std::size_t o = 0; o < op->outputs.size(); ++o) {
+      for (std::size_t i = 0; i < op->inputs.size(); ++i) {
+        if ((op->attrs.allow_in_place & (1 << (o * op->inputs.size() + i))) == 0) {
+          continue;
+        }
+
+        var input_alloc = alloc_of_buffer(op->inputs[i]);
+        if (used[input_alloc] && *used[input_alloc]) {
+          // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
+          // can't alias it.
+          continue;
+        }
+
+        var output_alloc = alloc_of_buffer(op->outputs[o]);
+        backward[output_alloc] = input_alloc;
+        forward[input_alloc] = output_alloc;
+
+        used[input_alloc] = true;
+        break;
+      }
+    }
+
     for (var i : op->inputs) {
-      std::optional<var> i_root = aliases.lookup(i);
-      if (!i_root) {
-        // This was an input to the pipeline, we can't alias it.
-        continue;
-      }
-
-      i = *i_root;
-
-      if (used[i] && *used[i]) {
-        // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we can't
-        // alias it.
-        continue;
-      }
-
-      if (op->attrs.allow_in_place && output < op->outputs.size()) {
-        // Alias this input to the next output.
-        var out = op->outputs[output++];
-        std::optional<var> output_root = aliases.lookup(out);
-        out = output_root ? *output_root : out;
-        backward[out] = i;
-        forward[i] = out;
-      }
-
-      used[i] = true;
+      used[alloc_of_buffer(i)] = true;
     }
   }
 

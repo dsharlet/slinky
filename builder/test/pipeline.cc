@@ -58,7 +58,7 @@ TEST_P(trivial, pipeline) {
   var x(ctx, "x");
 
   func mul =
-      func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true});
+      func::make(multiply_2<int>, {{in, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = 0x1});
   if (split > 0) {
     mul.loops({{x, split, max_workers}});
   }
@@ -124,9 +124,9 @@ TEST_P(elementwise, pipeline_1d) {
   func::callable<const int, int> a1 = add_1<int>;
 
   func mul = func::make(
-      std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "mul"});
+      std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "mul"});
   func add = func::make(
-      std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = true, .name = "add"});
+      std::move(a1), {{intm, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
 
   if (split > 0) {
     add.loops({{x, split, max_workers}});
@@ -196,9 +196,9 @@ TEST_P(elementwise, pipeline_2d) {
   };
 
   func mul = func::make(
-      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x1});
   func add = func::make(
-      std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x1});
 
   if (split > 0) {
     add.loops({{x, split, max_workers}, {y, split, max_workers}});
@@ -261,9 +261,9 @@ TEST(elementwise, outside_fold) {
   auto a1 = [](const buffer<const int>& a, const buffer<int>& b) -> index_t { return add_1<int>(a, b); };
 
   func mul = func::make(
-      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      std::move(m2), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x1});
   func add = func::make(
-      std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      std::move(a1), {{intm, {point(x), point(y)}}}, {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x1});
 
   mul.loops({{y, 1}});
   mul.compute_root();
@@ -837,13 +837,12 @@ TEST(unrelated, pipeline) {
     var y(ctx, "y");
 
     func add1 = func::make(add_1<short>, {{in1, {point(x), point(y)}}}, {{intm1, {x, y}}},
-        call_stmt::attributes{.allow_in_place = true, .name = "add1"});
+        call_stmt::attributes{.allow_in_place = 0x1, .name = "add1"});
     func stencil1 = func::make(sum3x3<short>, {{intm1, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out1, {x, y}}});
 
     func mul2 = func::make(multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}},
-        call_stmt::attributes{.allow_in_place = true, .name = "mul2"});
-    func add2 = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}},
-        call_stmt::attributes{.allow_in_place = true, .name = "add2"});
+        call_stmt::attributes{.allow_in_place = 0x1, .name = "mul2"});
+    func add2 = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add2"});
 
     stencil1.loops({{y, 2}});
 
@@ -1432,7 +1431,7 @@ TEST(split, pipeline) {
   // the input, but the bounds of the output.
   func add_in = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func add1 = func::make(
-      add_1<short>, {{intm, {point(x), point(y)}}}, {{intm1, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      add_1<short>, {{intm, {point(x), point(y)}}}, {{intm1, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x1});
   func add2 = func::make(
       [](const buffer<const short>& in, const buffer<short>& out) -> index_t {
         for (index_t y = out.dim(1).min(); y <= out.dim(1).max(); ++y) {
@@ -1442,10 +1441,10 @@ TEST(split, pipeline) {
         }
         return 0;
       },
-      {{intm, {point(x + W), point(y)}}}, {{intm2, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      {{intm, {point(x + W), point(y)}}}, {{intm2, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x1});
 
   func sum_out = func::make(subtract<short>, {{intm1, {point(x), point(y)}}, {intm2, {point(x), point(y)}}},
-      {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = true});
+      {{out, {x, y}}}, call_stmt::attributes{.allow_in_place = 0x2});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
