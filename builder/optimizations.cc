@@ -792,7 +792,7 @@ public:
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
     } else if (fwd && fwd->defined() && aliases.lookup(*fwd)) {
       backward.erase(*fwd);
-      set_result(crop_buffer::make(op->sym, *fwd, dims_bounds(op->dims), std::move(body)));
+      set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
@@ -800,15 +800,15 @@ public:
     }
   }
 
-  var alloc_of_buffer(var i) const {
-    std::optional<var> alloc = aliases.lookup(i);
-    return alloc ? *alloc : i;
-  }
-
   void visit(const call_stmt* op) override {
     set_result(op);
 
     for (std::size_t o = 0; o < op->outputs.size(); ++o) {
+      std::optional<var> output_alloc = aliases.lookup(op->outputs[o]);
+      if (!output_alloc) {
+        // We don't know the allocation of this output, we can't alias it.
+        continue;
+      }
       for (std::size_t i = 0; i < op->inputs.size(); ++i) {
         const std::size_t bit = o * op->inputs.size() + i;
         assert(bit < 32);
@@ -816,24 +816,24 @@ public:
           continue;
         }
 
-        var input_alloc = alloc_of_buffer(op->inputs[i]);
-        if (used[input_alloc] && *used[input_alloc]) {
+        std::optional<var> input_alloc = aliases.lookup(op->inputs[i]);
+        if (!input_alloc || (used[*input_alloc] && *used[*input_alloc])) {
           // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
           // can't alias it.
           continue;
         }
 
-        var output_alloc = alloc_of_buffer(op->outputs[o]);
-        backward[output_alloc] = input_alloc;
-        forward[input_alloc] = output_alloc;
+        backward[*output_alloc] = *input_alloc;
+        forward[*input_alloc] = *output_alloc;
 
-        used[input_alloc] = true;
+        used[*input_alloc] = true;
         break;
       }
     }
 
     for (var i : op->inputs) {
-      used[alloc_of_buffer(i)] = true;
+      std::optional<var> input_alloc = aliases.lookup(i);
+      if (input_alloc) used[*input_alloc] = true;
     }
   }
 
