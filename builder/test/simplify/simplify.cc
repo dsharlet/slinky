@@ -204,6 +204,10 @@ TEST(simplify, basic) {
       matches(call_stmt::make(nullptr, {}, {x}, {})));
   ASSERT_THAT(simplify(slice_buffer::make(y, x, {}, call_stmt::make(nullptr, {}, {y}, {}))),
       matches(call_stmt::make(nullptr, {}, {x}, {})));
+
+  ASSERT_THAT(simplify(max(select(z <= 0, -1, select(1 <= y, min(x, z + -1), 0)) + 1, select((1 <= y), z, 0))),
+      matches(select((1 <= y), max(z, 0), (0 < z))));
+  
 }
 
 TEST(simplify, let) {
@@ -520,6 +524,11 @@ TEST(simplify, buffer_bounds) {
   ASSERT_THAT(simplify(decl_bounds(b0, {{0, select(1 < x, y, 1) + -1}},
                   crop_dim::make(b1, b0, 0, {0, select(1 < x, expr(), 0)}, use_buffer(b1)))),
       matches(decl_bounds(b0, {{0, select(1 < x, y, 1) + -1}}, use_buffer(b0))));
+
+  ASSERT_THAT(simplify(loop::make(x, loop::serial, {0, y}, z,
+                  crop_dim::make(b1, b0, 0, {select(x <= 0, x, expr()), y}, use_buffer(b1)))),
+      matches(loop::make(
+          x, loop::serial, {0, y}, z, crop_dim::make(b1, b0, 0, {select(x <= 0, 0, expr()), y}, use_buffer(b1)))));
 }
 
 TEST(simplify, crop_not_needed) {
@@ -794,6 +803,8 @@ TEST(simplify, knowledge) {
                   make_buffer::make(b0, expr(), expr(), {{{0, max(abs(x), 1) - 1}}},
                       check::make(buffer_max(b0, 0) <= ((buffer_max(b0, 0) + 16) / 16) * 16 - 1)))),
       matches(stmt()));
+
+  ASSERT_THAT(simplify(let::make(x, clamp(y, 0, 10), select(x <= 0, x, 0))), matches(0));
 
   expr huge_select = 1;
   for (int i = 0; i < 100; ++i) {

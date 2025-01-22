@@ -13,6 +13,7 @@ rewrite::pattern_wildcard<2> z;
 rewrite::pattern_wildcard<3> w;
 rewrite::pattern_wildcard<4> u;
 rewrite::pattern_wildcard<5> v;
+rewrite::pattern_wildcard<6> t;
 
 rewrite::pattern_constant<0> c0;
 rewrite::pattern_constant<1> c1;
@@ -39,7 +40,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
       // This might be the only rule that doesn't have an analogous max rule.
-      apply(min(max(x, c0), c1), max(min(x, c1), c0), c0 <= c1) ||
+      apply(min(max(x, c0), c1), 
+        c0, c0 == c1,
+        max(min(x, c1), c0), c0 < c1) ||
 
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
@@ -103,6 +106,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
+
+      apply(min(select(x, y, select(z, w, u)), select(z, v, t)), select(z, min(v, select(x, y, w)), min(t, select(x, y, u)))) ||
+      apply(min(select(x, select(z, w, u), y), select(z, v, t)), select(z, min(v, select(x, w, y)), min(t, select(x, u, y)))) ||
 
       apply(min(x + c2, select(c0 < x, y, c1)), select(c0 < x, min(x, y - c2), x) + c2, c1 >= c0 + c2) ||
       apply(min(x + c2, select(c0 < x, c1, y)), select(c0 < x, c1, min(y, x + c2)), c1 <= c0 + c2) ||
@@ -271,6 +277,9 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
+    
+      apply(max(select(x, y, select(z, w, u)), select(z, v, t)), select(z, max(v, select(x, y, w)), max(t, select(x, y, u)))) ||
+      apply(max(select(x, select(z, w, u), y), select(z, v, t)), select(z, max(v, select(x, w, y)), max(t, select(x, u, y)))) ||
 
       apply(max(x + c2, select(c0 < x, y, c1)), select(c0 < x, max(y, x + c2), c1), c1 >= c0 + c2) ||
       apply(max(x + c2, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y - c2)) + c2, c1 <= c0 + c2) ||
