@@ -184,10 +184,8 @@ TEST_P(may_alias, aligned) {
     }
   }
 
-  // TODO: This test actually currently requires that the input and output are aligned, so it can alias.
-  // I think there should be a similar pipeline where this would not be true, and in that case it should not alias.
-  // ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
+  ASSERT_EQ(eval_ctx.copy_calls, may_alias ? 0 : 1);
 }
 
 TEST_P(may_alias, same_bounds) {
@@ -248,10 +246,9 @@ TEST_P(may_alias, same_bounds) {
     }
   }
 
-  // TODO: This test actually currently requires that the input and output bounds are the same, so it can alias.
-  // I think there should be a similar pipeline where this would not be true, and in that case it should not alias.
-  // ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  // TODO: This requires the buffer_aliaser mutator to learn from checks to prove some predicates it needs to be true.
+  //ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
+  //ASSERT_EQ(eval_ctx.copy_calls, may_alias ? 0 : 2);
 }
 
 TEST_P(may_alias, unfolded) {
@@ -307,6 +304,67 @@ TEST_P(may_alias, unfolded) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
+}
+
+TEST(split_output, cannot_alias) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(short));
+  auto out1 = buffer_expr::make(ctx, "out1", 2, sizeof(short));
+  auto out2 = buffer_expr::make(ctx, "out2", 2, sizeof(short));
+
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  for (auto i : {in, out1, out2}) {
+    i->dim(0).fold_factor = dim::unfolded;
+    i->dim(1).fold_factor = dim::unfolded;
+  }
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  // This pipeline is tempted to alias the intermediate to the output, but it isn't safe because we don't know it's big
+  // enough.
+  func add = func::make(add_1<short>, {{{in, {point(x), point(y)}}}}, {{{intm, {x, y}}}});
+  func split1 = func::make_copy({intm, {point(x), point(y)}}, {out1, {x, y}});
+  func split2 = func::make_copy({intm, {point(x), point(y) + out1->dim(1).extent()}}, {out2, {x, y}});
+  pipeline p = build_pipeline(ctx, {in}, {out1, out2});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H1 = 4;
+  const int H2 = 7;
+  buffer<short, 2> in_buf({W, H1 + H2});
+  init_random(in_buf);
+
+  buffer<short, 2> out1_buf({W, H1});
+  buffer<short, 2> out2_buf({W, H2});
+  out1_buf.allocate();
+  out2_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out1_buf, &out2_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H1; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out1_buf(x, y), in_buf(x, y) + 1);
+    }
+  }
+
+  for (int y = 0; y < H2; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out2_buf(x, y), in_buf(x, y + H1) + 1);
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 1);
+  ASSERT_EQ(eval_ctx.copy_calls, 2);
 }
 
 class multiple_uses : public testing::TestWithParam<std::tuple<int, bool>> {};
