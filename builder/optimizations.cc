@@ -810,7 +810,9 @@ public:
 
     for (std::size_t o = 0; o < op->outputs.size(); ++o) {
       for (std::size_t i = 0; i < op->inputs.size(); ++i) {
-        if ((op->attrs.allow_in_place & (1 << (o * op->inputs.size() + i))) == 0) {
+        const std::size_t bit = o * op->inputs.size() + i;
+        assert(bit < 32);
+        if ((op->attrs.allow_in_place & (1 << bit)) == 0) {
           continue;
         }
 
