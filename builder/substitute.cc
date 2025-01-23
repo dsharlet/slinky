@@ -16,6 +16,12 @@ namespace slinky {
 
 namespace {
 
+template <typename T, typename... U>
+std::uintptr_t get_target(const std::function<T(U...)>& f) {
+  typedef T(*fn)(U...);
+  return reinterpret_cast<std::uintptr_t>(f.template target<fn>());
+}
+
 class matcher : public expr_visitor, public stmt_visitor {
   // In this class, we visit the pattern, and manually traverse the expression being matched.
   union {
@@ -209,6 +215,7 @@ public:
 
     if (!try_match(cs->inputs, op->inputs)) return;
     if (!try_match(cs->outputs, op->outputs)) return;
+    if (!try_match(get_target(cs->target), get_target(op->target))) return;
   }
 
   void visit(const copy_stmt* op) override {
@@ -713,9 +720,7 @@ public:
 
   var enter_decl(var x) override { return x != target ? x : var(); }
 
-  stmt mutate(const stmt& s) override {
-    SLINKY_UNREACHABLE << "can't substitute buffer into stmt";
-  }
+  stmt mutate(const stmt& s) override { SLINKY_UNREACHABLE << "can't substitute buffer into stmt"; }
   dim_expr mutate(const dim_expr& e) { return {mutate(e.bounds), mutate(e.stride), mutate(e.fold_factor)}; }
   using substitutor::mutate;
 
