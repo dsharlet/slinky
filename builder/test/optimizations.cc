@@ -17,6 +17,7 @@ node_context symbols;
 var x(symbols, "x");
 var y(symbols, "y");
 var z(symbols, "z");
+var w(symbols, "w");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
@@ -68,6 +69,12 @@ TEST(optimizations, fuse_siblings) {
           use_buffer(z),
           allocate::make(y, memory_type::heap, 1, {}, use_buffer(y)),
       })));
+  ASSERT_THAT(fuse_siblings(block::make({
+                  crop_dim::make(x, y, 0, {0, 10}, crop_dim::make(z, x, 1, {0, 10}, use_buffer(z))),
+                  crop_dim::make(z, y, 0, {0, 10}, crop_dim::make(w, z, 1, {0, 10}, use_buffer(w))),
+              })),
+      matches(crop_dim::make(
+          x, y, 0, {0, 10}, crop_dim::make(z, x, 1, {0, 10}, block::make({use_buffer(z), use_buffer(z)})))));
 }
 
 TEST(optimizations, optimize_symbols) {
