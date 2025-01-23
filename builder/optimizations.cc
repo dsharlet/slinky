@@ -936,25 +936,34 @@ class sibling_fuser : public stmt_mutator {
 
 public:
   void visit(const block* op) override {
+    if (op->stmts.empty()) {
+      set_result(op);
+      return;
+    }
     std::vector<stmt> result;
     result.reserve(op->stmts.size());
-    bool changed = false;
-    for (const stmt& s : op->stmts) {
-      result.push_back(mutate(s));
-      changed = changed || !result.back().same_as(s);
-    }
 
     // TODO: This currently only looks for immediately adjacent nodes that can be fused. We can also try to fuse
     // ops with intervening ops, but this isn't obviously a simplification, and in the case of allocations, may
     // increase peak memory usage.
-    for (std::size_t i = 0; i + 1 < result.size();) {
-      if (fuse(result[i], result[i + 1])) {
-        result.erase(result.begin() + i + 1);
+    result.push_back(op->stmts.front());
+    bool changed = false;
+    auto mutate_back = [&]() {
+      stmt m = mutate(result.back());
+      if (!m.same_as(result.back())) {
+        result.back() = std::move(m);
         changed = true;
+      }
+    };
+    for (std::size_t i = 1; i < op->stmts.size(); ++i) {
+      if (!fuse(result.back(), op->stmts[i])) {
+        mutate_back();
+        result.push_back(op->stmts[i]);
       } else {
-        ++i;
+        changed = true;
       }
     }
+    mutate_back();
 
     if (changed) {
       set_result(block::make(std::move(result)));
