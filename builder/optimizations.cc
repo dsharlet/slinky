@@ -821,15 +821,15 @@ public:
   void visit(const call_stmt* op) override {
     set_result(op);
 
-    if (op->attrs.name == "memcpy") {
-      // We can't handle this, it should have been handled by copy_aliaser if it could be aliased.
-      return;
-    }
-
     for (var i : op->inputs) {
       std::optional<buffer_info>& input_alloc = buffers[i];
       if (!input_alloc) continue;
       add_use(input_alloc->root);
+    }
+
+    if (op->attrs.name == "memcpy") {
+      // We can't handle this, it should have been handled by copy_aliaser if it could be aliased.
+      return;
     }
 
     for (std::size_t o = 0; o < op->outputs.size(); ++o) {
