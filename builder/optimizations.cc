@@ -796,13 +796,23 @@ public:
     std::optional<var> fwd = forward.lookup(op->sym);
     int uses = *use_count.lookup(op->sym);
 
-    // TODO: Try to relax constraint that there is only one use. We already limit aliases to be the last use. The
-    // problem with multiple uses is the buffer we use instead of this allocation might be bigger, and the other use
-    // needs those values missing from this allocation.
-    if (uses == 1 && back && back->defined() && buffers.lookup(*back)) {
+    bool can_alias = true;
+    if (uses != 1) {
+      // TODO: Try to relax constraint that there is only one use. We already limit aliases to be the last use. The
+      // problem with multiple uses is the buffer we use instead of this allocation might be bigger, and the other use
+      // needs those values missing from this allocation.
+      can_alias = false;
+    } else if (std::any_of(op->dims.begin(), op->dims.end(),
+                   [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); })) {
+      // Don't alias if doing so could drop a stride or fold factor constraint.
+      // TODO: We could relax this check to allow aliasing if we know that the stride and fold factor of the buffer we are aliasing is the same.
+      can_alias = false;
+    }
+
+    if (can_alias && back && back->defined() && buffers.lookup(*back)) {
       forward.erase(*back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
-    } else if (uses == 1 && fwd && fwd->defined() && buffers.lookup(*fwd)) {
+    } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd)) {
       backward.erase(*fwd);
       set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
     } else if (!body.same_as(op->body)) {
