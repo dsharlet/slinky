@@ -127,8 +127,10 @@ public:
   using symbol_list = std::vector<var>;
 
   struct attributes {
-    // Allow inputs and outputs to this call to be aliased to the same buffer.
-    bool allow_in_place = false;
+    // A bit mask where the bit `o * inputs.size() + i` being set to 1 indicates that the input `i` may be computed in
+    // place with the output `o`.
+    // TODO: This being a bitmask limits the number of inputs and outputs that can indicate `allow_in_place` is true...
+    int allow_in_place = 0;
 
     // A name for the callable. This is only a tag that is passed through slinky and used for printing, it doesn't
     // affect any slinky logic, *except* for if this is named `memcpy`, slinky assumes that the implementation of this

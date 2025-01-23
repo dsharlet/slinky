@@ -87,7 +87,7 @@ public:
       return 0;
     };
     func r = func::make<const T, const T, T>(
-        std::move(fn), {{a, bounds}, {b, bounds}}, {{result, dims}}, call_stmt::attributes{.allow_in_place = true});
+        std::move(fn), {{a, bounds}, {b, bounds}}, {{result, dims}}, call_stmt::attributes{.allow_in_place = 0x3});
     result_funcs.push_back(std::move(r));
   }
 
@@ -124,7 +124,7 @@ public:
       return 0;
     };
     func r = func::make<const T, const T, const T, T>(std::move(fn), {{c, bounds}, {t, bounds}, {f, bounds}},
-        {{result, dims}}, call_stmt::attributes{.allow_in_place = true});
+        {{result, dims}}, call_stmt::attributes{.allow_in_place = 0xf});
     result_funcs.push_back(std::move(r));
   }
 

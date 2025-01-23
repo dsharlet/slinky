@@ -273,8 +273,8 @@ public:
 
   std::string print(const call_stmt::attributes& attrs) {
     std::string a;
-    if (attrs.allow_in_place != false) {
-      a += ".allow_in_place = true";
+    if (attrs.allow_in_place != 0) {
+      a += ".allow_in_place = " + std::to_string(attrs.allow_in_place);
     }
     if (!attrs.name.empty()) {
       if (!a.empty()) a += ", ";

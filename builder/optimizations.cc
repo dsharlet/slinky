@@ -760,8 +760,14 @@ stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_exp
 namespace {
 
 class in_place_aliaser : public stmt_mutator {
+  struct buffer_info {
+    // The name of the allocation or output variable that this buffer is derived from.
+    var root;
+
+    bool allow_alias = true;
+  };
   // Tracks buffer symbols that are actually the same buffer.
-  symbol_map<var> aliases;
+  symbol_map<buffer_info> buffers;
 
   // Tracks buffers that we intend to replace with a crop.
   symbol_map<var> backward;
@@ -769,30 +775,47 @@ class in_place_aliaser : public stmt_mutator {
 
   // Tracks if a buffer is used. Buffers start out unused, and we visit block stmts in reverse order, so the first use
   // we encounter is the last use of the buffer.
-  symbol_map<bool> used;
+  symbol_map<int> use_count;
 
 public:
   in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
     for (const buffer_expr_ptr& i : outputs) {
-      aliases[i->sym()] = i->sym();
+      buffers[i->sym()] = {i->sym()};
+      use_count[i->sym()] = 0;
     }
   }
 
   void visit(const allocate* op) override {
-    auto set_alias = set_value_in_scope(aliases, op->sym, op->sym);
+    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym});
     auto set_back = set_value_in_scope(backward, op->sym, var());
     auto set_fwd = set_value_in_scope(forward, op->sym, var());
-    auto set_used = set_value_in_scope(used, op->sym, false);
+    auto set_used = set_value_in_scope(use_count, op->sym, 0);
     stmt body = mutate(op->body);
 
-    std::optional<var> back = backward[op->sym];
-    std::optional<var> fwd = forward[op->sym];
-    if (back && back->defined() && aliases.lookup(*back)) {
+    std::optional<var> back = backward.lookup(op->sym);
+    std::optional<var> fwd = forward.lookup(op->sym);
+    int uses = *use_count.lookup(op->sym);
+
+    bool can_alias = true;
+    if (uses != 1) {
+      // TODO: Try to relax constraint that there is only one use. We already limit aliases to be the last use. The
+      // problem with multiple uses is the buffer we use instead of this allocation might be bigger, and the other use
+      // needs those values missing from this allocation.
+      can_alias = false;
+    } else if (std::any_of(op->dims.begin(), op->dims.end(),
+                   [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); })) {
+      // Don't alias if doing so could drop a stride or fold factor constraint.
+      // TODO: We could relax this check to allow aliasing if we know that the stride and fold factor of the buffer we
+      // are aliasing is the same.
+      can_alias = false;
+    }
+
+    if (can_alias && back && back->defined() && buffers.lookup(*back)) {
       forward.erase(*back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
-    } else if (fwd && fwd->defined() && aliases.lookup(*fwd)) {
+    } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd)) {
       backward.erase(*fwd);
-      set_result(crop_buffer::make(op->sym, *fwd, dims_bounds(op->dims), std::move(body)));
+      set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
@@ -800,60 +823,78 @@ public:
     }
   }
 
+  void add_use(var buf) {
+    std::optional<int>& uses = use_count[buf];
+    if (!uses) uses = 0;
+    ++(*uses);
+  }
+
   void visit(const call_stmt* op) override {
     set_result(op);
 
-    std::size_t output = 0;
     for (var i : op->inputs) {
-      std::optional<var> i_root = aliases.lookup(i);
-      if (!i_root) {
-        // This was an input to the pipeline, we can't alias it.
+      std::optional<buffer_info>& input_alloc = buffers[i];
+      if (!input_alloc) continue;
+      add_use(input_alloc->root);
+    }
+
+    if (op->attrs.name == "memcpy") {
+      // We can't handle this, it should have been handled by copy_aliaser if it could be aliased.
+      return;
+    }
+
+    for (std::size_t o = 0; o < op->outputs.size(); ++o) {
+      std::optional<buffer_info> output_alloc = buffers.lookup(op->outputs[o]);
+      if (!output_alloc || !output_alloc->allow_alias) {
+        // We don't know how to alias this buffer.
         continue;
       }
+      for (std::size_t i = 0; i < op->inputs.size(); ++i) {
+        const std::size_t bit = o * op->inputs.size() + i;
+        assert(bit < 32);
+        if ((op->attrs.allow_in_place & (1 << bit)) == 0) {
+          continue;
+        }
 
-      i = *i_root;
+        std::optional<buffer_info>& input_alloc = buffers[op->inputs[i]];
+        if (!input_alloc || !input_alloc->allow_alias || !use_count[input_alloc->root] ||
+            *use_count[input_alloc->root] > 1) {
+          // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
+          // can't alias it.
+          continue;
+        }
 
-      if (used[i] && *used[i]) {
-        // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we can't
-        // alias it.
-        continue;
+        backward[output_alloc->root] = input_alloc->root;
+        forward[input_alloc->root] = output_alloc->root;
+        break;
       }
-
-      if (op->attrs.allow_in_place && output < op->outputs.size()) {
-        // Alias this input to the next output.
-        var out = op->outputs[output++];
-        std::optional<var> output_root = aliases.lookup(out);
-        out = output_root ? *output_root : out;
-        backward[out] = i;
-        forward[i] = out;
-      }
-
-      used[i] = true;
     }
   }
 
   void visit(const copy_stmt* op) override {
     set_result(op);
-    std::optional<var> src = aliases.lookup(op->src);
-    if (src) used[*src] = true;
+    std::optional<buffer_info> src = buffers.lookup(op->src);
+    if (src) add_use(src->root);
   }
 
   // TODO: We can handle some of these buffer mutators here.
   template <typename T>
-  void visit_opaque_buffer_decl(const T* op) {
+  void visit_opaque_buffer_decl(const T* op, var src) {
     // These are buffer declarations that we don't want to allow aliasing through.
-    auto s = set_value_in_scope(aliases, op->sym, std::nullopt);
+    std::optional<buffer_info> info = buffers.lookup(src);
+    if (info) info->allow_alias = false;
+    auto s = set_value_in_scope(buffers, op->sym, std::move(info));
     stmt_mutator::visit(op);
   }
 
-  void visit(const make_buffer* op) override { visit_opaque_buffer_decl(op); }
-  void visit(const slice_buffer* op) override { visit_opaque_buffer_decl(op); }
-  void visit(const slice_dim* op) override { visit_opaque_buffer_decl(op); }
-  void visit(const transpose* op) override { visit_opaque_buffer_decl(op); }
+  void visit(const make_buffer* op) override { visit_opaque_buffer_decl(op, find_buffer_data_dependency(op->base)); }
+  void visit(const slice_buffer* op) override { visit_opaque_buffer_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_opaque_buffer_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_opaque_buffer_decl(op, op->src); }
 
   template <typename T>
   void visit_buffer_decl(const T* op, var src) {
-    auto s = set_value_in_scope(aliases, op->sym, aliases.lookup(src));
+    auto s = set_value_in_scope(buffers, op->sym, buffers.lookup(src));
     stmt_mutator::visit(op);
   }
 
