@@ -1276,13 +1276,15 @@ public:
           buffers_accessed_via_aliases(i, /*consumed=*/false, produced_by_i);
 
           // The loop invariants might depend on i. If so, we need to figure out what to do.
-          for (auto j = lifted.begin(); j != lifted.end();) {
+          // We need to start with the first statement we lifted (lifted is in reverse order, so we insert this before
+          // the first dependency.
+          for (std::size_t j = lifted.size(); j > 0 && j <= lifted.size();) {
             std::set<var> consumed_by_j;
-            buffers_accessed_via_aliases(j->first, /*consumed=*/true, consumed_by_j);
+            buffers_accessed_via_aliases(lifted[j - 1].first, /*consumed=*/true, consumed_by_j);
 
             if (empty_intersection(produced_by_i, consumed_by_j)) {
               // This loop invariant is independent of i.
-              ++j;
+              --j;
               continue;
             }
 
@@ -1291,15 +1293,15 @@ public:
             stmt i_lifted = remove_loop_var_in_crop_bounds(i, op->sym);
             if (!depends_on(i_lifted, op->sym).var) {
               // We made i loop invariant, add it to the loop invariant result before it is used.
-              ++j;
-              lifted.insert(j, {mutate(i_lifted), i});
+              lifted.insert(lifted.begin() + j, {mutate(i_lifted), i});
+              --j;
               i = stmt();
               break;
             } else {
               // We can't delete the references to the loop variable here, so j is not loop invariant. Put the original
               // stmt back in the loop.
-              loop_body.push_back(j->second);
-              j = lifted.erase(j);
+              loop_body.push_back(lifted[j - 1].second);
+              lifted.erase(lifted.begin() + j - 1);
             }
           }
 

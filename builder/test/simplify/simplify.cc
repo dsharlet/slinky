@@ -348,15 +348,17 @@ TEST(simplify, licm) {
                   make_loop_x(block::make({
                       make_crop_x(b1, 0, make_call(b0, b1)),
                       make_call(b1, b2),
-                      make_crop_x(b3, 0, make_call(b0, b3)),
+                      make_call(b1, b3),
+                      make_crop_x(b4, 0, make_call(b0, b4)),
                   })))),
       matches(block::make({
           allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
               block::make({
                   make_call(b0, b1),
                   make_call(b1, b2),
+                  make_call(b1, b3),
               })),
-          make_loop_x(make_crop_x(b3, 0, make_call(b0, b3))),
+          make_loop_x(make_crop_x(b4, 0, make_call(b0, b4))),
       })));
   // A call at the end of the loop does not depend on the loop, but each call depends on the previous, and the first
   // call writes a folded buffer.
