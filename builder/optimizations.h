@@ -36,6 +36,7 @@ stmt optimize_symbols(const stmt& s, node_context& ctx);
 
 // Guarantees that if match(a, b) is true, then a.same_as(b) is true, i.e. it rewrites matching nodes to be the same
 // object.
+expr canonicalize_nodes(const expr& s);
 stmt canonicalize_nodes(const stmt& s);
 
 }  // namespace slinky

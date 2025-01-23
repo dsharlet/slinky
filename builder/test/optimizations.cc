@@ -21,6 +21,36 @@ var w(symbols, "w");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
+class node_counter : public node_mutator {
+public:
+  std::set<const void*> visited;
+
+  expr mutate(const expr& e) override {
+    if (visited.count(e.get())) return e;
+    visited.insert(e.get());
+    return node_mutator::mutate(e);
+  }
+  stmt mutate(const stmt& s) override {
+    if (visited.count(s.get())) return s;
+    visited.insert(s.get());
+    return node_mutator::mutate(s);
+  }
+  using node_mutator::mutate;
+};
+
+int count_unique_nodes(const stmt& s) {
+  node_counter c;
+  c.mutate(s);
+  return c.visited.size();
+}
+int count_unique_nodes(const expr& s) {
+  node_counter c;
+  c.mutate(s);
+  return c.visited.size();
+}
+
+MATCHER_P(unique_node_count_is, n, "") { return count_unique_nodes(arg) == n; }
+
 }  // namespace
 
 TEST(optimizations, fuse_siblings) {
@@ -116,6 +146,17 @@ TEST(optimizations, deshadow_speed) {
     s = crop_dim::make(y, y, 0, {0, 0}, s);
   }
   stmt s2 = deshadow(s, {}, ctx);
+}
+
+TEST(optimizations, canonicalize_nodes) {
+  ASSERT_THAT(canonicalize_nodes(x + x), unique_node_count_is(2));
+  ASSERT_THAT(canonicalize_nodes(x + y), unique_node_count_is(3));
+  ASSERT_THAT(canonicalize_nodes(
+                  block::make({copy_stmt::make(x, {z, w}, y, {z, w}, {}), copy_stmt::make(x, {z, w}, y, {z, w}, {})})),
+      unique_node_count_is(4));
+  ASSERT_THAT(
+      canonicalize_nodes(block::make({call_stmt::make(nullptr, {x}, {y}, {}), call_stmt::make(nullptr, {x}, {y}, {})})),
+      unique_node_count_is(3));
 }
 
 }  // namespace slinky

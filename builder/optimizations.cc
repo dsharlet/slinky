@@ -1377,6 +1377,10 @@ public:
   using node_mutator::mutate;
 
   stmt mutate(const stmt& s) override {
+    if (s.as<call_stmt>()) {
+      // calls can capture state in their target that we can't compare for equality here.
+      return s;
+    }
     stmt& result = stmts[s];
     if (!result.defined()) result = node_mutator::mutate(s);
     return result;
@@ -1391,6 +1395,9 @@ public:
 
 }  // namespace
 
+expr canonicalize_nodes(const expr& e) {
+  return node_canonicalizer().mutate(e);
+}
 stmt canonicalize_nodes(const stmt& s) {
   scoped_trace trace("canonicalize_nodes");
   return node_canonicalizer().mutate(s);
