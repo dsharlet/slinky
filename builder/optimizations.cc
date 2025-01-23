@@ -805,7 +805,8 @@ public:
     } else if (std::any_of(op->dims.begin(), op->dims.end(),
                    [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); })) {
       // Don't alias if doing so could drop a stride or fold factor constraint.
-      // TODO: We could relax this check to allow aliasing if we know that the stride and fold factor of the buffer we are aliasing is the same.
+      // TODO: We could relax this check to allow aliasing if we know that the stride and fold factor of the buffer we
+      // are aliasing is the same.
       can_alias = false;
     }
 
