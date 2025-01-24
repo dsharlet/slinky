@@ -678,9 +678,11 @@ public:
       const std::optional<buffer_info>& info = buffers[new_sym];
       expr result = new_sym == op->sym ? expr(op) : variable::make(new_sym, op->field, op->dim);
       interval_expr bounds = point(result);
+      alignment_type alignment;
       vars_i = vars.find(op);
       if (vars_i != vars.end()) {
         bounds = simplify_intersection(bounds, vars_i->second.bounds);
+        alignment = vars_i->second.alignment;
       }
       if (info) {
         // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
@@ -722,13 +724,13 @@ public:
       case buffer_field::rank:
       case buffer_field::elem_size:
         set_result(std::move(result),
-            {bounds_of(static_cast<const class max*>(nullptr), point(0), std::move(bounds)), alignment_type()});
+            {bounds_of(static_cast<const class max*>(nullptr), point(0), std::move(bounds)), alignment});
         return;
       case buffer_field::fold_factor:
         set_result(std::move(result),
-            {bounds_of(static_cast<const class max*>(nullptr), point(1), std::move(bounds)), alignment_type()});
+            {bounds_of(static_cast<const class max*>(nullptr), point(1), std::move(bounds)), alignment});
         return;
-      default: set_result(std::move(result), {std::move(bounds), alignment_type()}); return;
+      default: set_result(std::move(result), {std::move(bounds), alignment}); return;
       }
     } else if (vars_i != vars.end()) {
       expr_info info = vars_i->second;
