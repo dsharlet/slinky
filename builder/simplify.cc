@@ -681,7 +681,7 @@ public:
       alignment_type alignment;
       vars_i = vars.find(op);
       if (vars_i != vars.end()) {
-        bounds = simplify_intersection(bounds, vars_i->second.bounds);
+        bounds = vars_i->second.bounds;
         alignment = vars_i->second.alignment;
       }
       if (info) {
