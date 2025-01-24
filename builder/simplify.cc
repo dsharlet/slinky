@@ -314,11 +314,10 @@ public:
 private:
   struct var_key {
     var sym;
-    buffer_field field = buffer_field::none;
-    int dim = 0;
+    buffer_field field;
+    int dim;
 
-    var_key() = default;
-    var_key(var sym, buffer_field field = buffer_field::none, int dim = 0) : sym(sym), field(field), dim(dim) {}
+    var_key(var sym = {}, buffer_field field = buffer_field::none, int dim = -1) : sym(sym), field(field), dim(dim) {}
     var_key(const variable* v) : sym(v->sym), field(v->field), dim(v->dim) {}
 
     bool operator<(const var_key& r) const {
@@ -427,14 +426,14 @@ public:
     symbol_map<buffer_info>& buffers;
 
     void add_var_info(const var_key& x, interval_expr bounds, alignment_type alignment = {}) {
-      if (x.field == buffer_field::none) {
-        expr_info info;
-        auto i = vars.find(x.sym);
-        if (i != vars.end()) info = i->second;
-        info.bounds = simplify_intersection(std::move(info.bounds), std::move(bounds));
-        info.alignment = info.alignment & alignment;
-        vk.push_back(set_value_in_scope(vars, var_key(x.sym), std::move(info)));
-      } else {
+      expr_info info;
+      auto i = vars.find(x);
+      if (i != vars.end()) info = i->second;
+      info.bounds = simplify_intersection(std::move(info.bounds), bounds);
+      info.alignment = info.alignment & alignment;
+      vk.push_back(set_value_in_scope(vars, x, std::move(info)));
+
+      if (x.field != buffer_field::none) {
         expr value = bounds.as_point();
         if (!value.defined() || !is_pure(value)) {
           // TODO: Try to resolve the circular dependency that can result if we relax this constraint.
@@ -678,7 +677,11 @@ public:
       }
       const std::optional<buffer_info>& info = buffers[new_sym];
       expr result = new_sym == op->sym ? expr(op) : variable::make(new_sym, op->field, op->dim);
-      expr bounds = result;
+      interval_expr bounds = point(result);
+      vars_i = vars.find(op);
+      if (vars_i != vars.end()) {
+        bounds = simplify_intersection(bounds, vars_i->second.bounds);
+      }
       if (info) {
         // TODO: We substitute here because we can't prove things like buffer_elem_size(x) == buffer_elem_size(y) where
         // x is a crop of y. If we can fix that, we don't need to substitute here, which seems better.
@@ -696,7 +699,7 @@ public:
             }
           }
           if (x.defined()) {
-            bounds = x;
+            bounds = point(x);
           }
           return false;
         };
@@ -717,9 +720,15 @@ public:
       }
       switch (op->field) {
       case buffer_field::rank:
-      case buffer_field::elem_size: set_result(std::move(result), {{0, std::move(bounds)}, alignment_type()}); return;
-      case buffer_field::fold_factor: set_result(std::move(result), {{1, std::move(bounds)}, alignment_type()}); return;
-      default: set_result(std::move(result), {point(std::move(bounds)), alignment_type()}); return;
+      case buffer_field::elem_size:
+        set_result(std::move(result),
+            {bounds_of(static_cast<const class max*>(nullptr), point(0), std::move(bounds)), alignment_type()});
+        return;
+      case buffer_field::fold_factor:
+        set_result(std::move(result),
+            {bounds_of(static_cast<const class max*>(nullptr), point(1), std::move(bounds)), alignment_type()});
+        return;
+      default: set_result(std::move(result), {std::move(bounds), alignment_type()}); return;
       }
     } else if (vars_i != vars.end()) {
       expr_info info = vars_i->second;

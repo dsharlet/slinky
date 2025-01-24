@@ -800,6 +800,10 @@ TEST(simplify, knowledge) {
 
   ASSERT_THAT(simplify(block::make({check::make(x == 3), check::make(x == 3)})), matches(check::make(x == 3)));
   ASSERT_THAT(simplify(block::make({check::make(x < 3), check::make(x < 4)})), matches(check::make(x < 3)));
+  ASSERT_THAT(simplify(block::make({check::make(buffer_max(x, 0) == 3), check::make(buffer_max(x, 0) == 3)})),
+      matches(check::make(buffer_max(x, 0) == 3)));
+  ASSERT_THAT(simplify(block::make({check::make(buffer_max(x, 0) < 3), check::make(buffer_max(x, 0) < 4)})),
+      matches(check::make(buffer_max(x, 0) < 3)));
   ASSERT_THAT(simplify(block::make({
                   check::make(buffer_min(b0, 0) == 0),
                   check::make(buffer_max(b0, 1) == 10),
