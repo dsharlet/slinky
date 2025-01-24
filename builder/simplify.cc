@@ -312,8 +312,21 @@ public:
   };
 
 private:
+  struct var_key {
+    var sym;
+    buffer_field field = buffer_field::none;
+    int dim = 0;
+
+    var_key() = default;
+    var_key(var sym, buffer_field field = buffer_field::none, int dim = 0) : sym(sym), field(field), dim(dim) {}
+    var_key(const variable* v) : sym(v->sym), field(v->field), dim(v->dim) {}
+
+    bool operator<(const var_key& r) const {
+      return std::make_tuple(sym, field, dim) < std::make_tuple(r.sym, r.field, r.dim);
+    }
+  };
   symbol_map<buffer_info> buffers;
-  std::map<var, expr_info> vars;
+  std::map<var_key, expr_info> vars;
   bool proving = false;
 
   expr_info result_info;
@@ -406,53 +419,53 @@ public:
   // This class manages information learned from conditions that can be used to improve bounds.
   class knowledge {
     // This could be made a variant if we need to be able to update more than one kind of symbol_map.
-    std::vector<scoped_value_in_map<var, expr_info>> vk;
+    std::vector<scoped_value_in_map<var_key, expr_info>> vk;
     std::vector<scoped_value_in_symbol_map<buffer_info>> bk;
     std::vector<std::pair<expr, expr>> facts;
 
-    std::map<var, expr_info>& vars;
+    std::map<var_key, expr_info>& vars;
     symbol_map<buffer_info>& buffers;
 
-    void add_var_info(const variable* x, interval_expr bounds, alignment_type alignment = {}) {
-      if (x->field == buffer_field::none) {
+    void add_var_info(const var_key& x, interval_expr bounds, alignment_type alignment = {}) {
+      if (x.field == buffer_field::none) {
         expr_info info;
-        auto i = vars.find(x->sym);
+        auto i = vars.find(x.sym);
         if (i != vars.end()) info = i->second;
         info.bounds = simplify_intersection(std::move(info.bounds), std::move(bounds));
         info.alignment = info.alignment & alignment;
-        vk.push_back(set_value_in_scope(vars, x->sym, std::move(info)));
+        vk.push_back(set_value_in_scope(vars, var_key(x.sym), std::move(info)));
       } else {
         expr value = bounds.as_point();
         if (!value.defined() || !is_pure(value)) {
           // TODO: Try to resolve the circular dependency that can result if we relax this constraint.
           return;
         }
-        var buf = x->sym;
+        var buf = x.sym;
         if (std::find_if(bk.begin(), bk.end(), [buf](const auto& i) { return i.sym() == buf; }) == bk.end()) {
           // Save the value if we haven't already, but we set the new values below.
           bk.push_back(scoped_value_in_symbol_map<buffer_info>(buffers, buf));
         }
         std::optional<buffer_info>& info = buffers[buf];
-        if (x->dim >= 0) {
+        if (x.dim >= 0) {
           if (!info) {
-            info = buffer_info(buf, x->dim + 1);
+            info = buffer_info(buf, x.dim + 1);
           } else {
-            info->init_dims(buf, x->dim + 1);
+            info->init_dims(buf, x.dim + 1);
           }
-          switch (x->field) {
-          case buffer_field::min: info->dims[x->dim].bounds.min = std::move(value); break;
-          case buffer_field::max: info->dims[x->dim].bounds.max = std::move(value); break;
-          case buffer_field::stride: info->dims[x->dim].stride = std::move(value); break;
-          case buffer_field::fold_factor: info->dims[x->dim].fold_factor = std::move(value); break;
+          switch (x.field) {
+          case buffer_field::min: info->dims[x.dim].bounds.min = std::move(value); break;
+          case buffer_field::max: info->dims[x.dim].bounds.max = std::move(value); break;
+          case buffer_field::stride: info->dims[x.dim].stride = std::move(value); break;
+          case buffer_field::fold_factor: info->dims[x.dim].fold_factor = std::move(value); break;
           default: break;
           }
-        } else if (x->field == buffer_field::elem_size) {
+        } else if (x.field == buffer_field::elem_size) {
           if (!info) {
             info = buffer_info(std::move(value));
           } else {
             info->elem_size = std::move(value);
           }
-        } else if (x->field == buffer_field::rank) {
+        } else if (x.field == buffer_field::rank) {
           if (auto rank = as_constant(value)) {
             if (!info) {
               info = buffer_info(buf, *rank);
@@ -466,7 +479,7 @@ public:
     }
 
   public:
-    knowledge(std::map<var, expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
+    knowledge(std::map<var_key, expr_info>& vars, symbol_map<buffer_info>& buffers) : vars(vars), buffers(buffers) {}
     knowledge(const knowledge&) = delete;
     knowledge(knowledge&&) = default;
     ~knowledge() { exit_scope(); }
@@ -1051,7 +1064,7 @@ public:
     std::vector<std::pair<var, expr>> lets;
     lets.reserve(op->lets.size());
 
-    using sv_type = scoped_value_in_map<var, expr_info>;
+    using sv_type = scoped_value_in_map<var_key, expr_info>;
     std::vector<sv_type> scoped_values;
     scoped_values.reserve(op->lets.size());
 
@@ -1078,7 +1091,7 @@ public:
       }
 
       assert(vars.find(s.first) == vars.end());
-      scoped_values.push_back(set_value_in_scope(vars, s.first, std::move(value_info)));
+      scoped_values.push_back(set_value_in_scope(vars, var_key(s.first), std::move(value_info)));
     }
 
     expr_info body_info;
@@ -1139,7 +1152,7 @@ public:
 
   stmt mutate_with_bounds(stmt body, var v, interval_expr bounds, alignment_type alignment = {}) {
     assert(vars.find(v) == vars.end());
-    auto set_bounds = set_value_in_scope(vars, v, {std::move(bounds), alignment});
+    auto set_bounds = set_value_in_scope(vars, var_key(v), {std::move(bounds), alignment});
     return mutate(body);
   }
 
@@ -1223,7 +1236,7 @@ public:
     } else if (prove_true(bounds.min + step > bounds.max)) {
       // The loop only runs at most once. It's safe to run the body even if the loop is empty, because we assume we can
       // move loops freely in and out of calls, even if the buffers are empty.
-      auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(bounds.min));
+      auto s = set_value_in_scope(vars, var_key(op->sym), expr_info::substitution(bounds.min));
       set_result(mutate(op->body));
       return;
     }
@@ -1339,7 +1352,7 @@ public:
           // clamps that make this proof hard only exist in one direction.
           interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
           interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
-          auto set_bounds_of_sym = set_value_in_scope(vars, op->sym, {bounds, alignment_type()});
+          auto set_bounds_of_sym = set_value_in_scope(vars, var_key(op->sym), {bounds, alignment_type()});
           // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
           if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
                          (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
@@ -1408,9 +1421,9 @@ public:
     var src = visit_symbol(op->src);
     var dst = visit_symbol(op->dst);
 
-    std::vector<scoped_value_in_map<var, expr_info>> decls;
+    std::vector<scoped_value_in_map<var_key, expr_info>> decls;
     for (var i : op->dst_x) {
-      decls.push_back(set_value_in_scope(vars, i, expr_info()));
+      decls.push_back(set_value_in_scope(vars, var_key(i), expr_info()));
     }
 
     std::vector<expr> src_x;
@@ -2098,7 +2111,7 @@ public:
         // transpose can't add dimensions.
         assert((*src_info)->dims.size() == dims.size());
         // This truncate is a no-op.
-        auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
+        auto s = set_value_in_scope(vars, var_key(op->sym), expr_info::substitution(variable::make(src)));
         set_result(mutate(op->body));
         return;
       }
@@ -2139,7 +2152,7 @@ public:
     // Because we disallow shadowing (i.e. mutating buffers in place), clone_buffer can always be removed :)
     // Essentially, every operation is also a clone here.
     var src = visit_symbol(op->src);
-    auto s = set_value_in_scope(vars, op->sym, expr_info::substitution(variable::make(src)));
+    auto s = set_value_in_scope(vars, var_key(op->sym), expr_info::substitution(variable::make(src)));
     set_result(mutate(op->body));
   }
 
