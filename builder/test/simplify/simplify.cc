@@ -207,7 +207,6 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(max(select(z <= 0, -1, select(1 <= y, min(x, z + -1), 0)) + 1, select((1 <= y), z, 0))),
       matches(select((1 <= y), max(z, 0), (0 < z))));
-  
 }
 
 TEST(simplify, let) {
@@ -767,6 +766,15 @@ TEST(simplify, knowledge) {
   ASSERT_THAT(simplify(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0), check::make(x % 6 == 0)})),
       matches(block::make({check::make(x % 2 == 0), check::make(x % 3 == 0)})));
   ASSERT_THAT(simplify(let::make(x, y % 2 == 0, x && y % 2 == 1)), matches(false));
+
+  ASSERT_THAT(simplify(block::make({check::make(x % 2 == 0), check::make((x / 2) * 2 == x)})),
+      matches(check::make(x % 2 == 0)));
+  ASSERT_THAT(simplify(block::make({check::make(x % 2 == 1), check::make((x / 2) * 2 != x)})),
+      matches(check::make(x % 2 == 1)));
+  ASSERT_THAT(simplify(block::make({check::make(x % 6 == 4), check::make((x / 2) * 2 == x)})),
+      matches(check::make(x % 6 == 4)));
+  ASSERT_THAT(simplify(block::make({check::make(x % 6 == 3), check::make((x / 2) * 2 != x)})),
+      matches(check::make(x % 6 == 3)));
 
   ASSERT_THAT(
       simplify(block::make({check::make(3 <= max(x, y)), check::make(3 <= x)})), matches(check::make(3 <= max(x, y))));

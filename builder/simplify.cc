@@ -829,7 +829,7 @@ public:
               // This is (x/c0)*c1. If we know x is aligned to c0, the result is x*(c1/c0).
               expr_info x_info;
               expr x = mutate(d->a, &x_info);
-              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0) {
+              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0 && x_info.alignment.remainder % *c0 == 0) {
                 mutate_and_set_result((x * *c1) / *c0);
                 return;
               }
