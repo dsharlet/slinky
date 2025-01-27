@@ -1711,6 +1711,34 @@ public:
     set_result(lift_decl_invariants(body, op->sym, make_make_buffer));
   }
 
+  void visit(const constant_buffer* op) override {
+    buffer_info info(op->value->elem_size);
+    info.dims.resize(op->value->rank);
+    for (std::size_t d = 0; d < op->value->rank; ++d) {
+      info.dims[d] = dim_expr(op->value->dim(d));
+    }
+    info.all_dims_known = true;
+    info.decl = stmt(op);
+    stmt body = mutate_with_buffer(op, op->body, op->sym, info);
+
+    auto make_constant_buffer = [&](stmt body) {
+      auto deps = depends_on(body, op->sym);
+      if (!deps.any()) {
+        // This make_buffer is unused.
+        return body;
+      } else if (can_substitute_buffer(deps)) {
+        // We only needed the buffer meta, not the buffer itself.
+        return mutate_with_buffer(nullptr, body, op->sym, info);
+      } else if (!body.same_as(op->body)) {
+        return constant_buffer::make(op->sym, op->value, std::move(body));
+      } else {
+        return stmt(op);
+      }
+    };
+
+    set_result(lift_decl_invariants(body, op->sym, make_constant_buffer));
+  }
+
   std::optional<buffer_info> get_buffer_info(var buf, int rank) {
     std::optional<buffer_info> info = buffers[buf];
     if (!info) {

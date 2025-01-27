@@ -1328,9 +1328,8 @@ public:
   }
 
   template <typename T>
-  void visit_buffer_decl(const T* op) {
-    // Buffers start out mutable.
-    can_mutate[op->sym] = true;
+  void visit_buffer_decl(const T* op, bool decl_mutable = true) {
+    can_mutate[op->sym] = decl_mutable;
     stmt_mutator::visit(op);
   }
 
@@ -1348,6 +1347,7 @@ public:
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op); }
+  void visit(const constant_buffer* op) override { visit_buffer_decl(op, false); }
 
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const crop_dim* op) override { visit_buffer_mutator(op); }

@@ -16,7 +16,6 @@ public:
   std::vector<var> args;
   std::vector<var> inputs;
   std::vector<var> outputs;
-  std::vector<std::pair<var, const_raw_buffer_ptr>> constants;
 
   stmt body;
 

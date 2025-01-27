@@ -61,6 +61,7 @@ const char* to_string(stmt_node_type type) {
   case stmt_node_type::loop: return "loop";
   case stmt_node_type::allocate: return "allocate";
   case stmt_node_type::make_buffer: return "make_buffer";
+  case stmt_node_type::constant_buffer: return "constant_buffer";
   case stmt_node_type::clone_buffer: return "clone_buffer";
   case stmt_node_type::crop_buffer: return "crop_buffer";
   case stmt_node_type::crop_dim: return "crop_dim";
@@ -182,6 +183,16 @@ public:
       }
     }
     *this << std::dec;
+  }
+
+  template <typename T>
+  void print_vector(span<const T> v, const std::string& sep = ", ") {
+    for (std::size_t i = 0; i < v.size(); ++i) {
+      *this << v[i];
+      if (i + 1 < v.size()) {
+        *this << sep;
+      }
+    }
   }
 
   template <typename T>
@@ -319,6 +330,19 @@ public:
     if (!n->dims.empty()) {
       *this << "\n" << indent(2);
       print_vector(n->dims, ",\n" + indent(2));
+      *this << "\n" << indent();
+    }
+    *this << "}) {\n";
+    *this << n->body;
+    *this << indent() << "}\n";
+  }
+
+  void visit(const constant_buffer* n) override {
+    const raw_buffer& buf = *n->value;
+    *this << indent() << n->sym << " = constant_buffer(" << buf.base << ", " << buf.elem_size << ", {";
+    if (buf.rank > 0) {
+      *this << "\n" << indent(2);
+      print_vector(span<const dim>{buf.dims, buf.rank}, ",\n" + indent(2));
       *this << "\n" << indent();
     }
     *this << "}) {\n";

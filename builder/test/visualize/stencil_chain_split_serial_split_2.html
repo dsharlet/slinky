@@ -344,76 +344,81 @@ function trace_begin(x) { return x; }
 function trace_end(x) { return 1; }
 let __trace_names = allocate('__trace_names', 1, [{bounds:[0, 0], stride:1, fold_factor:1}], true);
 function pipeline(__in, out) {
-  {
-    let __trace_token = trace_begin(buffer_at(__trace_names, 45));
-    check(__in);
-    check((buffer_rank(__in) == 2));
-    check(out);
-    check((buffer_rank(out) == 2));
-    check((buffer_elem_size(__in) == 2));
-    check((buffer_elem_size(out) == 2));
-    check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
-    check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
-    check(((buffer_min(__in, 0) + 2) <= buffer_min(out, 0)));
-    check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
-    check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
-    check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-    { let stencil1_result = allocate('stencil1_result', 2, [
-        {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-        {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:4}
-      ]);
-      { let add_result = allocate('add_result', 2, [
-          {bounds:[(buffer_min(stencil1_result, 0) + -1), (buffer_max(stencil1_result, 0) + 1)], stride:NaN, fold_factor:NaN},
-          {bounds:[(buffer_min(stencil1_result, 1) + -1), (buffer_max(stencil1_result, 1) + 1)], stride:NaN, fold_factor:4}
+  { let __trace_names = allocate('__trace_names', 1, [
+      {bounds:[0, 53], stride:1, fold_factor:9223372036854775807}
+    ]);
+    {
+      let __trace_token = trace_begin(buffer_at(__trace_names, 45));
+      check(__in);
+      check((buffer_rank(__in) == 2));
+      check(out);
+      check((buffer_rank(out) == 2));
+      check((buffer_elem_size(__in) == 2));
+      check((buffer_elem_size(out) == 2));
+      check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
+      check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
+      check(((buffer_min(__in, 0) + 2) <= buffer_min(out, 0)));
+      check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
+      check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
+      check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
+      { let stencil1_result = allocate('stencil1_result', 2, [
+          {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+          {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:4}
         ]);
-        {
-          let __trace_token = trace_begin(buffer_at(__trace_names, 21));
-          let __loop_min = (buffer_min(out, 1) + -4);
-          let __loop_max = buffer_max(out, 1);
-          let __loop_step = 2;
-          for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
-            {
-              let __trace_token = trace_begin(buffer_at(__trace_names, 0));
-              { let __add_result = crop_dim(add_result, 1, [(out_y + 2), (out_y + 3)]); {
-                let add_result = __add_result;
-                {
-                  let __trace_token = trace_begin(buffer_at(__trace_names, 32));
-                  consume(__in);
-                  produce(add_result);
-                  __event_t++;
-                  check(trace_end(__trace_token));
-                }
-              }}
-              { let __stencil1_result = crop_dim(stencil1_result, 1, [(out_y + 1), (out_y + 2)]); {
-                let stencil1_result = __stencil1_result;
-                {
-                  let __trace_token = trace_begin(buffer_at(__trace_names, 38));
-                  consume(add_result);
-                  produce(stencil1_result);
-                  __event_t++;
-                  check(trace_end(__trace_token));
-                }
-              }}
-              { let __out_out_y = crop_dim(out, 1, [out_y, (out_y + 1)]); {
-                let out_out_y = __out_out_y;
-                {
-                  let __trace_token = trace_begin(buffer_at(__trace_names, 38));
-                  consume(stencil1_result);
-                  produce(out_out_y);
-                  __event_t++;
-                  check(trace_end(__trace_token));
-                }
-              }}
-              check(trace_end(__trace_token));
+        { let add_result = allocate('add_result', 2, [
+            {bounds:[(buffer_min(stencil1_result, 0) + -1), (buffer_max(stencil1_result, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(stencil1_result, 1) + -1), (buffer_max(stencil1_result, 1) + 1)], stride:NaN, fold_factor:4}
+          ]);
+          {
+            let __trace_token = trace_begin(buffer_at(__trace_names, 21));
+            let __loop_min = (buffer_min(out, 1) + -4);
+            let __loop_max = buffer_max(out, 1);
+            let __loop_step = 2;
+            for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
+              {
+                let __trace_token = trace_begin(buffer_at(__trace_names, 0));
+                { let __add_result = crop_dim(add_result, 1, [(out_y + 2), (out_y + 3)]); {
+                  let add_result = __add_result;
+                  {
+                    let __trace_token = trace_begin(buffer_at(__trace_names, 32));
+                    consume(__in);
+                    produce(add_result);
+                    __event_t++;
+                    check(trace_end(__trace_token));
+                  }
+                }}
+                { let __stencil1_result = crop_dim(stencil1_result, 1, [(out_y + 1), (out_y + 2)]); {
+                  let stencil1_result = __stencil1_result;
+                  {
+                    let __trace_token = trace_begin(buffer_at(__trace_names, 38));
+                    consume(add_result);
+                    produce(stencil1_result);
+                    __event_t++;
+                    check(trace_end(__trace_token));
+                  }
+                }}
+                { let __out_out_y = crop_dim(out, 1, [out_y, (out_y + 1)]); {
+                  let out_out_y = __out_out_y;
+                  {
+                    let __trace_token = trace_begin(buffer_at(__trace_names, 38));
+                    consume(stencil1_result);
+                    produce(out_out_y);
+                    __event_t++;
+                    check(trace_end(__trace_token));
+                  }
+                }}
+                check(trace_end(__trace_token));
+              }
             }
+            check(trace_end(__trace_token));
           }
-          check(trace_end(__trace_token));
+          free(add_result);
         }
-        free(add_result);
+        free(stencil1_result);
       }
-      free(stencil1_result);
+      check(trace_end(__trace_token));
     }
-    check(trace_end(__trace_token));
+    free(__trace_names);
   }
 }
 let __in = allocate('in', 2, [{bounds: [-2, 21], stride:2, fold_factor:NaN}, {bounds: [-2, 31], stride:48, fold_factor:NaN}], true);

@@ -334,8 +334,7 @@ bool operator==(const loop_id& a, const loop_id& b) {
 }
 
 void topological_sort_impl(const func* f, std::set<const func*>& processing, std::set<const func*>& visited,
-    std::vector<const func*>& order, std::map<const func*, std::vector<const func*>>& deps,
-    std::set<buffer_expr_ptr>& constants) {
+    std::vector<const func*>& order, std::map<const func*, std::vector<const func*>>& deps) {
   if (visited.count(f) > 0) {
     return;
   }
@@ -344,17 +343,13 @@ void topological_sort_impl(const func* f, std::set<const func*>& processing, std
   processing.insert(f);
   for (const auto& i : f->inputs()) {
     const auto& input = i.buffer;
-    if (input->constant()) {
-      constants.insert(input);
-      continue;
-    }
     if (!input->producer()) {
       continue;
     }
     // Record that f is consumer of input->producer.
     deps[input->producer()].push_back(f);
 
-    topological_sort_impl(input->producer(), processing, visited, order, deps, constants);
+    topological_sort_impl(input->producer(), processing, visited, order, deps);
   }
   processing.erase(f);
   visited.insert(f);
@@ -362,11 +357,11 @@ void topological_sort_impl(const func* f, std::set<const func*>& processing, std
 }
 
 void topological_sort(const std::vector<buffer_expr_ptr>& outputs, std::vector<const func*>& order,
-    std::map<const func*, std::vector<const func*>>& deps, std::set<buffer_expr_ptr>& constants) {
+    std::map<const func*, std::vector<const func*>>& deps) {
   std::set<const func*> processing;
   std::set<const func*> visited;
   for (const auto& i : outputs) {
-    topological_sort_impl(i->producer(), processing, visited, order, deps, constants);
+    topological_sort_impl(i->producer(), processing, visited, order, deps);
   }
 
   // Reverse the order, so outputs go first.
@@ -816,7 +811,9 @@ class pipeline_builder {
 
     for (const auto& i : f->inputs()) {
       const auto& input = i.buffer;
-
+      if (input->constant()) {
+        result = constant_buffer::make(input->sym(), input->constant(), result);
+      }
       if (!input->producer()) {
         continue;
       }
@@ -911,22 +908,18 @@ class pipeline_builder {
 
 public:
   pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-      const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants)
+      const std::vector<buffer_expr_ptr>& outputs)
       : ctx(ctx), sanitizer_(ctx) {
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
-    topological_sort(outputs, order_, deps, constants);
+    topological_sort(outputs, order_, deps);
 
-    sanitizer_.external.reserve(outputs.size() + inputs.size() + constants.size());
+    sanitizer_.external.reserve(outputs.size() + inputs.size());
     for (auto& i : outputs) {
       output_syms_[i->sym()] = i;
       sanitizer_.external.push_back(i->sym());
     }
     for (const buffer_expr_ptr& i : inputs) {
-      input_syms_[i->sym()] = i;
-      sanitizer_.external.push_back(i->sym());
-    }
-    for (const buffer_expr_ptr& i : constants) {
       input_syms_[i->sym()] = i;
       sanitizer_.external.push_back(i->sym());
     }
@@ -1231,7 +1224,7 @@ bool is_verbose() {
 }
 
 // This function inserts calls to trace_begin and trace_end around calls and loops.
-stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& constants) {
+stmt inject_traces(const stmt& s, node_context& ctx) {
   class injector : public stmt_mutator {
   public:
     node_context& ctx;
@@ -1282,17 +1275,17 @@ stmt inject_traces(const stmt& s, node_context& ctx, std::set<buffer_expr_ptr>& 
   stmt result = m.mutate(s);
   result = m.add_trace(result, m.get_trace_arg("pipeline"));
   buffer<char, 1> names_const_buf(m.names.data(), m.names.size());
-  constants.insert(buffer_expr::make(m.names_buf, raw_buffer::make_copy(names_const_buf)));
+  result = constant_buffer::make(m.names_buf, raw_buffer::make_copy(names_const_buf), result);
   return result;
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs, std::set<buffer_expr_ptr>& constants,
+    const std::vector<buffer_expr_ptr>& outputs,
     std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
-  pipeline_builder builder(ctx, inputs, outputs, constants);
+  pipeline_builder builder(ctx, inputs, outputs);
 
   stmt result;
   result = builder.build({}, nullptr, loop_id()).body;
@@ -1328,12 +1321,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
 
   // Try to reuse buffers and eliminate copies where possible.
   if (!options.no_alias_buffers) {
-    // For the purposes of aliasing, constants and inputs are the same thing.
-    std::vector<buffer_expr_ptr> inputs_and_constants;
-    inputs_and_constants.reserve(inputs.size() + constants.size());
-    inputs_and_constants.insert(inputs_and_constants.end(), inputs.begin(), inputs.end());
-    inputs_and_constants.insert(inputs_and_constants.end(), constants.begin(), constants.end());
-    result = alias_copies(result, ctx, inputs_and_constants, outputs);
+    result = alias_copies(result, ctx, inputs, outputs);
     result = alias_in_place(result, outputs);
   }
 
@@ -1357,7 +1345,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = insert_early_free(result);
 
   if (options.trace) {
-    result = inject_traces(result, ctx, constants);
+    result = inject_traces(result, ctx);
   }
 
   result = canonicalize_nodes(result);
@@ -1380,26 +1368,15 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
   return result;
 }
 
-std::vector<std::pair<var, const_raw_buffer_ptr>> constant_map(const std::set<buffer_expr_ptr>& constants) {
-  std::vector<std::pair<var, const_raw_buffer_ptr>> result;
-  result.reserve(constants.size());
-  for (const buffer_expr_ptr& i : constants) {
-    result.push_back({i->sym(), i->constant()});
-  }
-  return result;
-}
-
 }  // namespace
 
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
-  std::set<buffer_expr_ptr> constants;
-  stmt body = build_pipeline(ctx, inputs, outputs, constants, lets, options);
+  stmt body = build_pipeline(ctx, inputs, outputs, lets, options);
   pipeline p;
   p.args = args;
   p.inputs = vars(inputs);
   p.outputs = vars(outputs);
-  p.constants = constant_map(constants);
   p.body = std::move(body);
   return p;
 }

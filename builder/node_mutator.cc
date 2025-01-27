@@ -49,6 +49,9 @@ stmt clone_with(const allocate* op, var sym, stmt new_body) {
 stmt clone_with(const make_buffer* op, var sym, stmt new_body) {
   return make_buffer::make(sym, op->base, op->elem_size, op->dims, std::move(new_body));
 }
+stmt clone_with(const constant_buffer* op, var sym, stmt new_body) {
+  return constant_buffer::make(sym, op->value, std::move(new_body));
+}
 stmt clone_with(const clone_buffer* op, var sym, stmt new_body) {
   return clone_buffer::make(sym, op->src, std::move(new_body));
 }
@@ -73,6 +76,7 @@ stmt clone_with(const let_stmt* op, stmt new_body) { return let_stmt::make(op->l
 stmt clone_with(const loop* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const allocate* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const make_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
+stmt clone_with(const constant_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const clone_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const crop_buffer* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const crop_dim* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
@@ -117,6 +121,7 @@ void stmt_mutator::visit(const let_stmt* op) { set_result(mutate_decl(this, op))
 void stmt_mutator::visit(const loop* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const allocate* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const make_buffer* op) { set_result(mutate_decl(this, op)); }
+void stmt_mutator::visit(const constant_buffer* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const clone_buffer* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const crop_buffer* op) { set_result(mutate_decl(this, op)); }
 void stmt_mutator::visit(const crop_dim* op) { set_result(mutate_decl(this, op)); }

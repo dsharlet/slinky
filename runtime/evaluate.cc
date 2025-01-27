@@ -363,6 +363,7 @@ public:
     case stmt_node_type::loop: return eval(reinterpret_cast<const loop*>(op.get()));
     case stmt_node_type::allocate: return eval(reinterpret_cast<const allocate*>(op.get()));
     case stmt_node_type::make_buffer: return eval(reinterpret_cast<const make_buffer*>(op.get()));
+    case stmt_node_type::constant_buffer: return eval(reinterpret_cast<const constant_buffer*>(op.get()));
     case stmt_node_type::clone_buffer: return eval(reinterpret_cast<const clone_buffer*>(op.get()));
     case stmt_node_type::crop_buffer: return eval(reinterpret_cast<const crop_buffer*>(op.get()));
     case stmt_node_type::slice_buffer: return eval(reinterpret_cast<const slice_buffer*>(op.get()));
@@ -532,6 +533,10 @@ public:
     }
 
     return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
+  }
+
+  SLINKY_NO_STACK_PROTECTOR index_t eval(const constant_buffer* op) {
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&*op->value));
   }
 
   index_t eval(const clone_buffer* op) {

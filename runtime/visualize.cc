@@ -250,6 +250,12 @@ public:
     *this << indent() << "}\n";
   }
 
+  void visit(const constant_buffer* n) override {
+    // For visualization purposes, just make an equivalent allocation.
+    stmt equiv = allocate::make(n->sym, memory_type::heap, n->value->elem_size, buffer_dims(*n->value), n->body);
+    equiv.accept(this);
+  }
+
   void visit(const clone_buffer* n) override {
     *this << indent() << "{ let " << n->sym << " = clone_buffer(" << n->src << ");\n";
     *this << n->body;
