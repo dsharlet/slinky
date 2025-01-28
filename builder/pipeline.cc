@@ -305,9 +305,8 @@ bounds_map get_output_bounds(const std::vector<func::output>& outputs) {
 
 box_expr compute_input_bounds(
     const func* f, const func::input& i, const bounds_map& output_bounds, sanitize_user_exprs& sanitizer) {
-  assert(i.bounds.size() == i.buffer->rank());
   box_expr crop(i.buffer->rank());
-  for (std::size_t d = 0; d < crop.size(); ++d) {
+  for (std::size_t d = 0; d < std::min(crop.size(), i.bounds.size()); ++d) {
     crop[d] = bounds_of(sanitizer.mutate(i.bounds[d]), output_bounds);
 
     if (d < i.input_crop.size()) {
