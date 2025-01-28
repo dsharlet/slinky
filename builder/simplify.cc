@@ -1724,7 +1724,7 @@ public:
     auto make_constant_buffer = [&](stmt body) {
       auto deps = depends_on(body, op->sym);
       if (!deps.any()) {
-        // This make_buffer is unused.
+        // This constant_buffer is unused.
         return body;
       } else if (can_substitute_buffer(deps)) {
         // We only needed the buffer meta, not the buffer itself.
