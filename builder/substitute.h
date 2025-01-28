@@ -54,6 +54,7 @@ public:
   void visit(const loop* op) override;
   void visit(const allocate* op) override;
   void visit(const make_buffer* op) override;
+  void visit(const constant_buffer* op) override;
   void visit(const slice_buffer* op) override;
   void visit(const slice_dim* op) override;
   void visit(const crop_buffer* op) override;
