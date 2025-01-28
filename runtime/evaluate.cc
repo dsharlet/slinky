@@ -408,6 +408,7 @@ public:
   SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
+    assert(step != 0);
     std::atomic<index_t> result = 0;
     std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
     context.reserve(op->sym.id + 1);
@@ -431,6 +432,7 @@ public:
   SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
+    assert(step != 0);
     // TODO(https://github.com/dsharlet/slinky/issues/3): We don't get a reference to context[op->sym] here
     // because the context could grow and invalidate the reference. This could be fixed by having evaluate
     // fully traverse the expression to find the max var, and pre-allocate the context up front. It's
