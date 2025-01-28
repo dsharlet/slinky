@@ -693,6 +693,69 @@ TEST_P(broadcasted_elementwise, internal) {
   }
 }
 
+TEST_P(broadcasted_elementwise, constant) {
+  bool no_alias_buffers = std::get<0>(GetParam());
+  const int broadcast_dim = std::get<1>(GetParam());
+  const int split_y = std::get<2>(GetParam());
+
+  // Make the pipeline
+  node_context ctx;
+
+  const int W = 20;
+  const int H = 4;
+
+  buffer<int, 2> in2_buf({W, H});
+  in2_buf.dim(broadcast_dim).set_extent(1);
+  init_random(in2_buf);
+
+  auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
+  auto in2 = buffer_expr::make(ctx, "in2", raw_buffer::make_copy(in2_buf));
+  auto in2_broadcasted = buffer_expr::make(ctx, "in2_broadcasted", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  box_expr bounds = {
+      select(in2->dim(0).extent() == 1, point(in2->dim(0).min()), point(x)),
+      select(in2->dim(1).extent() == 1, point(in2->dim(1).min()), point(y)),
+  };
+  func broadcast = func::make_copy({in2, bounds}, {in2_broadcasted, {x, y}});
+  func f = func::make(
+      subtract<int>, {{in1, {point(x), point(y)}}, {in2_broadcasted, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  if (split_y > 0) {
+    f.loops({{y, split_y}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in1}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
+
+  // Run the pipeline.
+  buffer<int, 2> in1_buf({W, H});
+  init_random(in1_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in1_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      index_t i[] = {x, y};
+      i[broadcast_dim] = 0;
+      ASSERT_EQ(out_buf(x, y), in1_buf(x, y) - in2_buf(i));
+    }
+  }
+  // TODO(vksnk): doesn't fold because mins of the folded buffers are not aligned.
+  // if (!no_alias_buffers ) {
+  //   ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);
+  // }
+}
+
 class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(dim, constrained_transpose,
