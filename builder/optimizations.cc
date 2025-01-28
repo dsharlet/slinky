@@ -349,6 +349,16 @@ public:
     }
   }
 
+  void visit(const constant_buffer* op) override {
+    auto s = set_value_in_scope(buffers, op->sym, buffer_info(buffer_dims(*op->value), op->value->elem_size));
+    stmt_mutator::visit(op);
+
+    // When an allocation goes out of scope, we should remove it as an aliasing candidate.
+    for (std::optional<buffer_info>& i : buffers) {
+      if (i) i->do_not_alias(op->sym);
+    }
+  }
+
   void visit(const allocate* op) override {
     auto s = set_value_in_scope(buffers, op->sym, buffer_info(op->dims, op->elem_size));
     stmt body = mutate(op->body);
