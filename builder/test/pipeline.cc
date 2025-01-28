@@ -1150,13 +1150,15 @@ TEST(constant, pipeline) {
   fill_random(constant_buf->cast<short>());
 
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(short));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(short));
 
   auto constant = buffer_expr::make(ctx, "constant", std::move(constant_buf));
 
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func add = func::make(add_1<short>, {{constant, {point(x), point(y)}}}, {{out, {x, y}}});
+  func add = func::make(add_1<short>, {{constant, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func sub = func::make(subtract<short>, {{buffer_expr::make_null()}, {intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   pipeline p = build_pipeline(ctx, {}, {out});
 
@@ -1171,7 +1173,7 @@ TEST(constant, pipeline) {
 
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
-      ASSERT_EQ(out_buf(x, y), *reinterpret_cast<short*>(constant->constant()->address_at(x, y)) + 1);
+      ASSERT_EQ(out_buf(x, y), -(*reinterpret_cast<short*>(constant->constant()->address_at(x, y)) + 1));
     }
   }
 }

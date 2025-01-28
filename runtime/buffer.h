@@ -174,6 +174,9 @@ protected:
   }
 
 public:
+  // The null buffer is a buffer with rank 0 and a null base pointer.
+  static const raw_buffer& null();
+
   using element = void;
   using pointer = void*;
 

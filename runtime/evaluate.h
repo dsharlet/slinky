@@ -11,7 +11,8 @@ class thread_pool;
 class eval_context {
   // TODO: This should be uninitialized memory, not just for performance, but so we can detect uninitialized memory
   // usage when evaluating.
-  std::vector<index_t> values_;
+  // var(0) is always the null buffer.
+  std::vector<index_t> values_{reinterpret_cast<index_t>(&raw_buffer::null())};
 
 public:
   void reserve(std::size_t size) {
@@ -27,6 +28,7 @@ public:
   index_t operator[](var id) const { return values_[id.id]; }
 
   index_t set(var id, index_t value) {
+    assert(id.id > 0);
     index_t& value_ref = values_[id.id];
     index_t old_value = value_ref;
     value_ref = value;

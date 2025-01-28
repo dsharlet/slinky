@@ -48,6 +48,7 @@ class buffer_expr : public ref_counted<buffer_expr> {
   void set_producer(func* f);
 
 public:
+  static buffer_expr_ptr make_null() { return make(var(0), 0, 0); }
   static buffer_expr_ptr make(var sym, std::size_t rank, expr elem_size);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size);
   // Make a constant buffer_expr. It takes ownership of the buffer from the caller.

@@ -16,9 +16,15 @@ namespace {
 
 dim broadcast_dim(std::numeric_limits<index_t>::min(), std::numeric_limits<index_t>::max(), 0);
 
+raw_buffer null_buffer{nullptr, 0, 0, nullptr};
+
 }  // namespace
 
 const dim& dim::broadcast() { return broadcast_dim; }
+
+const raw_buffer& raw_buffer::null() {
+  return null_buffer;
+}
 
 namespace {
 

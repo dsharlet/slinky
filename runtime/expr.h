@@ -47,8 +47,8 @@ public:
 // We don't want to be doing string lookups in the inner loops. A node_context
 // uniquely maps strings to var.
 class node_context {
-  std::vector<std::string> sym_to_name;
-  std::map<std::string, var> name_to_sym;
+  std::vector<std::string> sym_to_name = {"<null>"};
+  std::map<std::string, var> name_to_sym = {{"<null>", var(0)}};
 
 public:
   // Get the name of a var.
