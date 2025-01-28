@@ -21,9 +21,6 @@ void pipeline::setup(scalars args, buffers inputs, buffers outputs, eval_context
   for (std::size_t i = 0; i < outputs.size(); ++i) {
     ctx[this->outputs[i]] = reinterpret_cast<index_t>(outputs[i]);
   }
-  for (const auto& i : constants) {
-    ctx[i.first] = reinterpret_cast<index_t>(i.second.get());
-  }
 }
 
 void pipeline::setup(buffers inputs, buffers outputs, eval_context& ctx) const {

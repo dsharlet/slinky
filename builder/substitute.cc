@@ -250,6 +250,15 @@ public:
     if (!try_match(mbs->body, op->body)) return;
   }
 
+  void visit(const constant_buffer* op) override {
+    const constant_buffer* mbs = static_cast<const constant_buffer*>(self);
+    assert(mbs);
+
+    if (!try_match(mbs->sym, op->sym)) return;
+    if (!try_match(mbs->value, op->value)) return;
+    if (!try_match(mbs->body, op->body)) return;
+  }
+
   void visit(const clone_buffer* op) override {
     const clone_buffer* mbs = static_cast<const clone_buffer*>(self);
     assert(mbs);

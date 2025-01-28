@@ -512,6 +512,14 @@ stmt make_buffer::make(var sym, expr base, expr elem_size, std::vector<dim_expr>
   return stmt(n);
 }
 
+stmt constant_buffer::make(var sym, const_raw_buffer_ptr value, stmt body) {
+  auto n = new constant_buffer();
+  n->sym = sym;
+  n->value = value;
+  n->body = std::move(body);
+  return stmt(n);
+}
+
 stmt clone_buffer::make(var sym, var src, stmt body) {
   auto n = new clone_buffer();
   n->sym = sym;
@@ -672,6 +680,14 @@ std::vector<dim_expr> buffer_dims(var buf, int rank) {
   result.reserve(rank);
   for (int d = 0; d < rank; ++d) {
     result.push_back(buffer_dim(buf, d));
+  }
+  return result;
+}
+std::vector<dim_expr> buffer_dims(const raw_buffer& buf) {
+  std::vector<dim_expr> result;
+  result.reserve(buf.rank);
+  for (std::size_t d = 0; d < buf.rank; ++d) {
+    result.push_back(buf.dim(d));
   }
   return result;
 }
@@ -869,6 +885,9 @@ void recursive_node_visitor::visit(const make_buffer* op) {
     i.stride.accept(this);
     if (i.fold_factor.defined()) i.fold_factor.accept(this);
   }
+  if (op->body.defined()) op->body.accept(this);
+}
+void recursive_node_visitor::visit(const constant_buffer* op) {
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const clone_buffer* op) {

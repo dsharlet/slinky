@@ -518,6 +518,11 @@ struct dim_expr {
   expr stride;
   expr fold_factor;
 
+  dim_expr() = default;
+  dim_expr(interval_expr bounds, expr stride = expr(), expr fold_factor = expr())
+      : bounds(std::move(bounds)), stride(std::move(stride)), fold_factor(std::move(fold_factor)) {}
+  dim_expr(const dim& d) : bounds(d.min(), d.max()), stride(d.stride()), fold_factor(d.fold_factor()) {}
+
   const expr& min() const { return bounds.min; }
   const expr& max() const { return bounds.max; }
   expr extent() const { return bounds.extent(); }
@@ -677,6 +682,7 @@ expr buffer_fold_factor(var buf, int dim);
 interval_expr buffer_bounds(var buf, int dim);
 dim_expr buffer_dim(var buf, int dim);
 std::vector<dim_expr> buffer_dims(var buf, int rank);
+std::vector<dim_expr> buffer_dims(const raw_buffer& buf);
 
 expr buffer_at(expr buf, span<const expr> at);
 expr buffer_at(expr buf, span<const var> at);

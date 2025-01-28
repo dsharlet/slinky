@@ -21,6 +21,7 @@ enum class stmt_node_type {
   loop,
   allocate,
   make_buffer,
+  constant_buffer,
   clone_buffer,
   crop_buffer,
   crop_dim,
@@ -266,6 +267,20 @@ public:
   static constexpr stmt_node_type static_type = stmt_node_type::make_buffer;
 };
 
+// Similar to `make_buffer`, but takes its buffer parameters from a pointer to a `raw_buffer` object.
+class constant_buffer : public stmt_node<constant_buffer> {
+public:
+  var sym;
+  const_raw_buffer_ptr value;
+  stmt body;
+
+  void accept(stmt_visitor* v) const override;
+
+  static stmt make(var sym, const_raw_buffer_ptr value, stmt body);
+
+  static constexpr stmt_node_type static_type = stmt_node_type::constant_buffer;
+};
+
 // Makes a clone of an existing buffer.
 class clone_buffer : public stmt_node<clone_buffer> {
 public:
@@ -392,6 +407,7 @@ public:
   virtual void visit(const copy_stmt*) = 0;
   virtual void visit(const allocate*) = 0;
   virtual void visit(const make_buffer*) = 0;
+  virtual void visit(const constant_buffer*) = 0;
   virtual void visit(const clone_buffer*) = 0;
   virtual void visit(const crop_buffer*) = 0;
   virtual void visit(const crop_dim*) = 0;
@@ -431,6 +447,7 @@ public:
   void visit(const copy_stmt* op) override;
   void visit(const allocate* op) override;
   void visit(const make_buffer* op) override;
+  void visit(const constant_buffer* op) override;
   void visit(const clone_buffer* op) override;
   void visit(const crop_buffer* op) override;
   void visit(const crop_dim* op) override;
@@ -447,6 +464,7 @@ inline void call_stmt::accept(stmt_visitor* v) const { v->visit(this); }
 inline void copy_stmt::accept(stmt_visitor* v) const { v->visit(this); }
 inline void allocate::accept(stmt_visitor* v) const { v->visit(this); }
 inline void make_buffer::accept(stmt_visitor* v) const { v->visit(this); }
+inline void constant_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void clone_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void crop_buffer::accept(stmt_visitor* v) const { v->visit(this); }
 inline void crop_dim::accept(stmt_visitor* v) const { v->visit(this); }
