@@ -612,6 +612,7 @@ class pipeline_builder {
 
   std::map<var, buffer_expr_ptr> input_syms_;
   std::map<var, buffer_expr_ptr> output_syms_;
+  std::map<var, buffer_expr_ptr> constants_;
 
   sanitize_user_exprs sanitizer_;
 
@@ -812,7 +813,7 @@ class pipeline_builder {
     for (const auto& i : f->inputs()) {
       const auto& input = i.buffer;
       if (input->constant()) {
-        result = constant_buffer::make(input->sym(), input->constant(), result);
+        constants_[input->sym()] = input;
       }
       if (!input->producer()) {
         continue;
@@ -1184,6 +1185,9 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
+    for (std::pair<var, buffer_expr_ptr> i : constants_) {
+      body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
+    }
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       for (const func::output& o : f->outputs()) {
