@@ -225,6 +225,8 @@ public:
       return true;
     }
 
+    loop_info() = default;
+
     loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step,
         int max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
@@ -243,7 +245,7 @@ public:
   symbol_map<modulus_remainder<index_t>>& current_expr_alignment() { return *loops.back().expr_alignment; }
 
   slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(ctx, var(), loop_counter++, expr(), interval_expr::none(), expr(), loop::serial);
+    loops.emplace_back(loop_info());
   }
 
   stmt mutate(const stmt& s) override {

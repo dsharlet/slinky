@@ -1357,7 +1357,10 @@ public:
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op); }
-  void visit(const constant_buffer* op) override { visit_buffer_decl(op, false); }
+  void visit(const constant_buffer* op) override {
+    // Constant buffers are not mutable, because the raw_buffer object we use is not allocated by a declaration.
+    visit_buffer_decl(op, false);
+  }
 
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
@@ -1405,9 +1408,7 @@ public:
 
 }  // namespace
 
-expr canonicalize_nodes(const expr& e) {
-  return node_canonicalizer().mutate(e);
-}
+expr canonicalize_nodes(const expr& e) { return node_canonicalizer().mutate(e); }
 stmt canonicalize_nodes(const stmt& s) {
   scoped_trace trace("canonicalize_nodes");
   return node_canonicalizer().mutate(s);

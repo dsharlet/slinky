@@ -455,6 +455,17 @@ void substitutor::visit(const make_buffer* op) {
   }
   exit_decls();
 }
+void substitutor::visit(const constant_buffer* op) {
+  var sym = enter_decl(op->sym);
+  stmt body = sym.defined() ? mutate(op->body) : op->body;
+  sym = sym.defined() ? sym : op->sym;
+  if (sym == op->sym && body.same_as(op->body)) {
+    set_result(op);
+  } else {
+    set_result(constant_buffer::make(sym, op->value, std::move(body)));
+  }
+  exit_decls();
+}
 
 void substitutor::visit(const slice_buffer* op) {
   var src = visit_symbol(op->src);
