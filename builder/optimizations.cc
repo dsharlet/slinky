@@ -1305,68 +1305,199 @@ public:
   using node_mutator::visit;
 };
 
-// This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
-// efficient when performed in place.
-class reuse_shadows : public stmt_mutator {
-  // Buffers that can be mutated in place are true in this map.
-  symbol_map<bool> can_mutate;
-
+class vars_used : public recursive_node_visitor {
 public:
-  template <typename T>
-  void visit_buffer_mutator(const T* op) {
-    stmt body = op->body;
-    var sym = op->sym;
-    // If we don't know about a buffer, we assume we cannot mutate it in place. This covers input and output buffers.
-    bool can_mutate_src = can_mutate[op->src] && *can_mutate[op->src];
-    // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
-    if (can_mutate_src && !depends_on(body, op->src).any()) {
-      // We can re-use the src because the body doesn't use it, and it will not create a data race.
-      sym = op->src;
-      body = substitute(body, op->sym, sym);
-    }
+  var target;
+  std::vector<var>& used;
+  std::vector<var> decls;
 
-    // Buffers start out mutable.
-    can_mutate[op->sym] = true;
+  vars_used(var target, std::vector<var>& used) : target(target), used(used) {}
 
-    body = mutate(body);
-
-    if (sym == op->sym && body.same_as(op->body)) {
-      set_result(op);
+  void use(var x) {
+    if (x == target) {
+      // We're using the target variable. Mark all declarations in scope as used, because they would shadow a symbol
+      // with that name.
+      for (var j : decls) {
+        auto i = std::lower_bound(used.begin(), used.end(), j);
+        if (i == used.end() || *i != j) used.insert(i, j);
+      }
     } else {
-      set_result(clone_with(op, sym, std::move(body)));
+      auto i = std::lower_bound(used.begin(), used.end(), x);
+      if (i == used.end() || *i != x) used.insert(i, x);
     }
   }
 
+  void visit(const variable* op) override { use(op->sym); }
+
   template <typename T>
-  void visit_buffer_decl(const T* op, bool decl_mutable = true) {
-    can_mutate[op->sym] = decl_mutable;
-    stmt_mutator::visit(op);
+  void visit_let(const T* op) {
+    std::size_t decls_size = decls.size();
+    decls.reserve(decls.size() + op->lets.size());
+    for (auto i = op->lets.rbegin(); i != op->lets.rend(); ++i) {
+      if (i->first == target) {
+        decls.resize(decls_size);
+        return;
+      }
+      decls.push_back(i->first);
+      i->second.accept(this);
+    }
+    if (op->body.defined()) op->body.accept(this);
+    decls.resize(decls_size);
+  }
+
+  void visit(const let* op) override { visit_let(op); }
+  void visit(const let_stmt* op) override { visit_let(op); }
+
+  void visit(const call_stmt* op) override {
+    for (var i : op->inputs) {
+      use(i);
+    }
+    for (var i : op->outputs) {
+      use(i);
+    }
+  }
+
+  void visit(const copy_stmt* op) override {
+    use(op->src);
+    use(op->dst);
+    decls.insert(decls.end(), op->dst_x.begin(), op->dst_x.end());
+    for (const expr& i : op->src_x) {
+      i.accept(this);
+    }
+    decls.erase(decls.begin() + decls.size() - op->dst_x.size(), decls.end());
+  }
+
+  void visit_decl_body(var sym, const stmt& body) {
+    if (sym == target || !body.defined()) {
+      // This declaration shadows our target variable, don't recurse.
+      return;
+    }
+    decls.push_back(sym);
+    body.accept(this);
+    decls.pop_back();
   }
 
   void visit(const loop* op) override {
-    if (op->max_workers != loop::serial) {
-      // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
-      symbol_map<bool> old_can_mutate;
-      std::swap(can_mutate, old_can_mutate);
-      stmt_mutator::visit(op);
-      can_mutate = std::move(old_can_mutate);
-    } else {
-      stmt_mutator::visit(op);
+    if (op->bounds.min.defined()) op->bounds.min.accept(this);
+    if (op->bounds.max.defined()) op->bounds.max.accept(this);
+    visit_decl_body(op->sym, op->body);
+  }
+  void visit(const allocate* op) override {
+    for (const dim_expr& i : op->dims) {
+      if (i.bounds.min.defined()) i.bounds.min.accept(this);
+      if (i.bounds.max.defined()) i.bounds.max.accept(this);
+      if (i.stride.defined()) i.stride.accept(this);
+      if (i.fold_factor.defined()) i.fold_factor.accept(this);
     }
+    op->elem_size.accept(this);
+    visit_decl_body(op->sym, op->body);
+  }
+  void visit(const make_buffer* op) override {
+    for (const dim_expr& i : op->dims) {
+      if (i.bounds.min.defined()) i.bounds.min.accept(this);
+      if (i.bounds.max.defined()) i.bounds.max.accept(this);
+      if (i.stride.defined()) i.stride.accept(this);
+      if (i.fold_factor.defined()) i.fold_factor.accept(this);
+    }
+    if (op->base.defined()) op->base.accept(this);
+    if (op->elem_size.defined()) op->elem_size.accept(this);
+    visit_decl_body(op->sym, op->body);
   }
 
-  void visit(const allocate* op) override { visit_buffer_decl(op); }
-  void visit(const make_buffer* op) override { visit_buffer_decl(op); }
-  void visit(const constant_buffer* op) override {
-    // Constant buffers are not mutable, because the raw_buffer object we use is not allocated by a declaration.
-    visit_buffer_decl(op, false);
+  void visit(const crop_buffer* op) override {
+    use(op->src);
+    for (const interval_expr& i : op->bounds) {
+      if (i.min.defined()) i.min.accept(this);
+      if (i.max.defined()) i.max.accept(this);
+    }
+    visit_decl_body(op->sym, op->body);
+  }
+  void visit(const crop_dim* op) override {
+    use(op->src);
+    if (op->bounds.min.defined()) op->bounds.min.accept(this);
+    if (op->bounds.max.defined()) op->bounds.max.accept(this);
+    visit_decl_body(op->sym, op->body);
+  }
+  void visit(const slice_buffer* op) override {
+    use(op->src);
+    for (const expr& i : op->at) {
+      if (i.defined()) i.accept(this);
+    }
+    visit_decl_body(op->sym, op->body);
+  }
+  void visit(const slice_dim* op) override {
+    use(op->src);
+    if (op->at.defined()) op->at.accept(this);
+    visit_decl_body(op->sym, op->body);
+  }
+  void visit(const transpose* op) override {
+    use(op->src);
+    visit_decl_body(op->sym, op->body);
+  }
+};
+
+var find_free_sym(stmt s, var x, var src = var()) {
+  std::vector<var> vars;
+  vars_used used(x, vars);
+  if (src != x) {
+    used.use(src);
+  }
+  s.accept(&used);
+
+  var next(1);
+  for (var i : vars) {
+    if (i == x) {
+      return x;
+    }
+    if (i.id > next.id) {
+      return next;
+    }
+    next = var(i.id + 1);
+  }
+  return next;
+}
+
+// This mutator rewrites all sym declarations to use the smallest symbol id value that isn't used in the body of that
+// declaration.
+class symbol_optimizer : public stmt_mutator {
+public:
+  template <typename T>
+  void visit_let(const T* op) {
+    auto body = mutate(op->body);
+
+    std::vector<std::pair<var, expr>> lets;
+    lets.reserve(op->lets.size());
+
+    for (auto i = op->lets.rbegin(); i != op->lets.rend(); ++i) {
+      var sym = find_free_sym(T::make(lets, body), i->first);
+      body = substitute(body, i->first, sym);
+      lets.push_back(std::make_pair(sym, i->second));
+      for (std::pair<var, expr>& j : lets) {
+        j.second = substitute(j.second, i->first, sym);
+      }
+    }
+    std::reverse(lets.begin(), lets.end());
+    set_result(T::make(std::move(lets), std::move(body)));
   }
 
-  void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
-  void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
-  void visit(const transpose* op) override { visit_buffer_mutator(op); }
+  void visit(const let_stmt* op) override { visit_let(op); }
+
+  template <typename T>
+  void visit_decl(const T* op, var src = var()) {
+    stmt body = mutate(op->body);
+    var sym = find_free_sym(body, op->sym, src);
+    set_result(clone_with(op, sym, substitute(body, op->sym, sym)));
+  }
+
+  void visit(const loop* op) override { visit_decl(op); }
+  void visit(const allocate* op) override { visit_decl(op); }
+  void visit(const make_buffer* op) override { visit_decl(op); }
+  void visit(const constant_buffer* op) override { visit_decl(op); }
+  void visit(const crop_buffer* op) override { visit_decl(op, op->src); }
+  void visit(const crop_dim* op) override { visit_decl(op, op->src); }
+  void visit(const slice_buffer* op) override { visit_decl(op, op->src); }
+  void visit(const slice_dim* op) override { visit_decl(op, op->src); }
+  void visit(const transpose* op) override { visit_decl(op, op->src); }
 };
 
 }  // namespace
@@ -1377,7 +1508,7 @@ stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
 }
 stmt optimize_symbols(const stmt& s, node_context& ctx) {
   scoped_trace trace("optimize_symbols");
-  return reuse_shadows().mutate(s);
+  return symbol_optimizer().mutate(s);
 }
 
 namespace {

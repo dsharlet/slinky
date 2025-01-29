@@ -356,35 +356,35 @@ function pipeline(__in, out) {
     let g = buffer_min(__in, 0);
     let g_1 = buffer_min(__in, 1);
     let g_0 = buffer_max(__in, 0);
-    let g_2 = buffer_max(__in, 1);
+    let y = buffer_max(__in, 1);
     { let padded_intm = allocate('padded_intm', 2, [
         {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
         {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
       ]);
       { let intm = allocate('intm', 2, [
           {bounds:[max(buffer_min(padded_intm, 0), g), min(buffer_max(padded_intm, 0), g_0)], stride:NaN, fold_factor:NaN},
-          {bounds:[max(buffer_min(padded_intm, 1), g_1), min(buffer_max(padded_intm, 1), g_2)], stride:NaN, fold_factor:1}
+          {bounds:[max(buffer_min(padded_intm, 1), g_1), min(buffer_max(padded_intm, 1), y)], stride:NaN, fold_factor:1}
         ]);
         let __loop_min = (buffer_min(out, 1) + -2);
         let __loop_max = buffer_max(out, 1);
         let __loop_step = 1;
-        for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
-          { let __intm = crop_dim(intm, 1, [(out_y + 1), (out_y + 1)]); {
-            let intm = __intm;
+        for(let x = __loop_min; x <= __loop_max; x += __loop_step) {
+          { let __out = crop_dim(intm, 1, [(x + 1), (x + 1)]); {
+            let out = __out;
             consume(__in);
-            produce(intm);
+            produce(out);
             __event_t++;
           }}
-          { let __padded_intm = crop_dim(padded_intm, 1, [(out_y + 1), (out_y + 1)]); {
-            let padded_intm = __padded_intm;
+          { let __out = crop_dim(padded_intm, 1, [(x + 1), (x + 1)]); {
+            let out = __out;
             produce(intm);
-            produce(padded_intm);
+            produce(out);
             __event_t++;
           }}
-          { let __out_out_y = crop_dim(out, 1, [out_y, out_y]); {
-            let out_out_y = __out_out_y;
+          { let __intm = crop_dim(out, 1, [x, x]); {
+            let intm = __intm;
             consume(padded_intm);
-            produce(out_out_y);
+            produce(intm);
             __event_t++;
           }}
         }

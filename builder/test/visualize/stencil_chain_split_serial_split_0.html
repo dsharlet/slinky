@@ -361,38 +361,38 @@ function pipeline(__in, out) {
       check(((buffer_max(out, 0) + 2) <= buffer_max(__in, 0)));
       check(((buffer_min(__in, 1) + 2) <= buffer_min(out, 1)));
       check(((buffer_max(out, 1) + 2) <= buffer_max(__in, 1)));
-      { let stencil1_result = allocate('stencil1_result', 2, [
+      { let add_result = allocate('add_result', 2, [
           {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
           {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
         ]);
-        { let add_result = allocate('add_result', 2, [
-            {bounds:[(buffer_min(stencil1_result, 0) + -1), (buffer_max(stencil1_result, 0) + 1)], stride:NaN, fold_factor:NaN},
-            {bounds:[(buffer_min(stencil1_result, 1) + -1), (buffer_max(stencil1_result, 1) + 1)], stride:NaN, fold_factor:NaN}
+        { let out = allocate('out', 2, [
+            {bounds:[(buffer_min(add_result, 0) + -1), (buffer_max(add_result, 0) + 1)], stride:NaN, fold_factor:NaN},
+            {bounds:[(buffer_min(add_result, 1) + -1), (buffer_max(add_result, 1) + 1)], stride:NaN, fold_factor:NaN}
           ]);
           {
             let __trace_token = trace_begin(buffer_at(__trace_names, 0));
             consume(__in);
-            produce(add_result);
+            produce(out);
             __event_t++;
             check(trace_end(__trace_token));
           }
           {
             let __trace_token = trace_begin(buffer_at(__trace_names, 6));
-            consume(add_result);
-            produce(stencil1_result);
+            consume(out);
+            produce(add_result);
             __event_t++;
             check(trace_end(__trace_token));
           }
-          free(add_result);
+          free(out);
         }
         {
           let __trace_token = trace_begin(buffer_at(__trace_names, 6));
-          consume(stencil1_result);
+          consume(add_result);
           produce(out);
           __event_t++;
           check(trace_end(__trace_token));
         }
-        free(stencil1_result);
+        free(add_result);
       }
       check(trace_end(__trace_token));
     }

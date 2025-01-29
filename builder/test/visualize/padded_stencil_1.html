@@ -354,29 +354,29 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
     let g = buffer_min(__in, 0);
-    let g_1 = buffer_min(__in, 1);
-    let g_0 = buffer_max(__in, 0);
-    let g_2 = buffer_max(__in, 1);
-    { let padded_intm_intm = allocate('padded_intm/intm', 2, [
+    let y = buffer_min(__in, 1);
+    let x = buffer_max(__in, 0);
+    let padded_intm = buffer_max(__in, 1);
+    { let intm = allocate('intm', 2, [
         {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
         {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
       ]);
-      { let __intm_3 = crop_buffer(padded_intm_intm, [
-          [g, g_0],
-          [g_1, g_2]
+      { let __out = crop_buffer(intm, [
+          [g, x],
+          [y, padded_intm]
       ]); {
-        let intm_3 = __intm_3;
+        let out = __out;
         consume(__in);
-        produce(intm_3);
+        produce(out);
         __event_t++;
-        produce(intm_3);
-        produce(padded_intm_intm);
+        produce(out);
+        produce(intm);
         __event_t++;
       }}
-      consume(padded_intm_intm);
+      consume(intm);
       produce(out);
       __event_t++;
-      free(padded_intm_intm);
+      free(intm);
     }
   }
 }
