@@ -933,6 +933,31 @@ class pipeline_builder {
 #endif
   }
 
+  void place_constant_buffers(statement_with_range* results, std::size_t num_results) {
+    std::vector<var> constants_to_remove;
+    for (std::size_t ix = 0; ix < num_results; ix++) {
+      for (std::pair<var, buffer_expr_ptr> i : constants_) {
+        buffer_expr_ptr candidate = i.second;
+
+        bool is_ready = std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
+            [&](var b) { return results[ix].allocations.count(b) > 0; });
+
+        if (!is_ready) {
+          continue;
+        }
+        // std::cout << new_results[ix].body << std::endl;
+        results[ix].body = constant_buffer::make(i.first, i.second->constant(), results[ix].body);
+        // std::cout << new_results[ix].body << std::endl;
+        constants_to_remove.push_back(i.first);
+        break;
+      }
+    }
+
+    for (var b : constants_to_remove) {
+      constants_.erase(b);
+    }
+  }
+
 public:
   pipeline_builder(
       node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
@@ -1063,6 +1088,8 @@ public:
     while (true) {
       std::vector<allocation_candidate> new_lifetimes;
       std::vector<statement_with_range> new_results;
+      std::vector<allocation_candidate> new_special;
+
       new_lifetimes.reserve(lifetimes.size());
       new_results.reserve(results.size());
 
@@ -1114,21 +1141,15 @@ public:
 
       new_results.insert(new_results.end(), results.begin() + result_index, results.end());
 
-      std::vector<allocation_candidate> new_special;
       // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
       // This only can happen if all of it's dependencies are inside of the block.
       for (std::size_t iy = 0; iy < special.size(); iy++) {
         bool found = false;
         for (std::size_t ix = 0; ix < new_results.size(); ix++) {
           buffer_expr_ptr candidate = special[iy].buffer;
-          bool is_ready = true;
-          // Check dependencies first.
-          for (var b : copy_deps_[candidate->sym()]) {
-            if (new_results[ix].allocations.count(b) == 0) {
-              is_ready = false;
-              break;
-            }
-          }
+
+          bool is_ready = std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
+              [&](var b) { return new_results[ix].allocations.count(b) > 0; });
 
           if (!is_ready) {
             continue;
@@ -1147,36 +1168,7 @@ public:
         new_special.push_back(special[iy]);
       }
 #ifdef GOOD_STUFF
-      // std::cout << "constants_.size() = " << constants_.size() << std::endl;
-
-      std::vector<var> constants_to_remove;
-      for (std::pair<var, buffer_expr_ptr> i : constants_) {
-        // body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
-        for (std::size_t ix = 0; ix < new_results.size(); ix++) {
-          buffer_expr_ptr candidate = i.second;
-          bool is_ready = true;
-          // Check dependencies first.
-          for (var b : copy_deps_[candidate->sym()]) {
-            if (new_results[ix].allocations.count(b) == 0) {
-              is_ready = false;
-              break;
-            }
-          }
-
-          if (!is_ready) {
-            continue;
-          }
-          // std::cout << new_results[ix].body << std::endl;
-          new_results[ix].body = constant_buffer::make(i.first, i.second->constant(), new_results[ix].body);
-          // std::cout << new_results[ix].body << std::endl;
-          constants_to_remove.push_back(i.first);
-          break;
-        }
-      }
-
-      for (var b : constants_to_remove) {
-        constants_.erase(b);
-      }
+      place_constant_buffers(new_results.data(), new_results.size());
 #endif
       // No changes, so leave the loop.
       bool no_changes = (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size());
@@ -1192,23 +1184,20 @@ public:
 
     assert(!results.empty() || body.body.defined());
     statement_with_range result;
-    // std::cout << "Before merging: " << results.size() << std::endl << results[0].body << std::endl;
     if (results.empty()) {
       result = body;
     } else {
       result = results.front();
       for (std::size_t ix = 1; ix < results.size(); ix++) {
-        // std::cout << "Merging: " << results[ix].body << std::endl;
         result = statement_with_range::merge(result, results[ix]);
       }
       if (body.body.defined()) {
         result = statement_with_range::merge(result, body);
       }
-      // std::cout << "After merging: " << result.body << std::endl;
     }
 
-    // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
-    // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
+    // Add all remaining allocations at this loop level. The allocations can be added in any order. This order enables
+    // aliasing copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
     for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
@@ -1220,31 +1209,7 @@ public:
       }
     }
 #ifdef GOOD_STUFF
-    std::vector<var> constants_to_remove;
-    // std::cout << "constants_.size() = " << constants_.size() << std::endl;
-    for (std::pair<var, buffer_expr_ptr> i : constants_) {
-      buffer_expr_ptr candidate = i.second;
-      bool is_ready = true;
-      // std::cout << expr(candidate->sym()) << " " << copy_deps_[candidate->sym()].size() << std::endl;
-      // Check dependencies first.
-      for (var b : copy_deps_[candidate->sym()]) {
-        if (result.allocations.count(b) == 0) {
-          is_ready = false;
-          break;
-        }
-      }
-
-      if (!is_ready) {
-        continue;
-      }
-      result.body = constant_buffer::make(i.first, i.second->constant(), result.body);
-      constants_to_remove.push_back(i.first);
-      break;
-    }
-
-    for (var b : constants_to_remove) {
-      constants_.erase(b);
-    }
+    place_constant_buffers(&result, 1);
 #endif
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
@@ -1273,11 +1238,10 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
-    // #ifndef GOOD_STUFF
+    // Place all remaining constant_buffer-s.
     for (std::pair<var, buffer_expr_ptr> i : constants_) {
       body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
     }
-    // #endif
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       for (const func::output& o : f->outputs()) {
