@@ -49,8 +49,12 @@ void for_each_index(span<const dim> dims, int d, index_t* is, const F& f) {
 
 template <typename F>
 SLINKY_NO_STACK_PROTECTOR void for_each_index(span<const dim> dims, const F& f) {
-  index_t* i = SLINKY_ALLOCA(index_t, dims.size());
-  for_each_index(dims, dims.size() - 1, i, f);
+  if (dims.empty()) {
+    f(span<const index_t>{});
+  } else {
+    index_t* i = SLINKY_ALLOCA(index_t, dims.size());
+    for_each_index(dims, dims.size() - 1, i, f);
+  }
 }
 template <typename F>
 void for_each_index(const raw_buffer& buf, const F& f) {
