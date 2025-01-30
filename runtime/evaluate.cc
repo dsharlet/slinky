@@ -709,7 +709,7 @@ public:
       return result;
     } else {
       // Make the transposed dims.
-      dim* dims = SLINKY_ALLOCA(dim, src_buf->rank);
+      dim* dims = SLINKY_ALLOCA(dim, op->dims.size());
       for (std::size_t i = 0; i < op->dims.size(); ++i) {
         dims[i] = src_buf->dims[op->dims[i]];
       }
