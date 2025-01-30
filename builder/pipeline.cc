@@ -958,14 +958,15 @@ class pipeline_builder {
   }
 
 public:
-  pipeline_builder(
-      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
+  pipeline_builder(node_context& ctx, const std::vector<var>& args, const std::vector<buffer_expr_ptr>& inputs,
+      const std::vector<buffer_expr_ptr>& outputs)
       : ctx(ctx), sanitizer_(ctx) {
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
     topological_sort(outputs, order_, deps);
 
-    sanitizer_.external.reserve(outputs.size() + inputs.size());
+    sanitizer_.external.reserve(args.size() + outputs.size() + inputs.size());
+    sanitizer_.external.insert(sanitizer_.external.begin(), args.begin(), args.end());
     for (auto& i : outputs) {
       output_syms_[i->sym()] = i;
       sanitizer_.external.push_back(i->sym());
@@ -1315,12 +1316,12 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
   return result;
 }
 
-stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
+stmt build_pipeline_impl(node_context& ctx, const std::vector<var>& args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
-  pipeline_builder builder(ctx, inputs, outputs);
+  pipeline_builder builder(ctx, args, inputs, outputs);
 
   stmt result;
   result = builder.build({}, nullptr, loop_id()).body;
@@ -1375,7 +1376,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = simplify(result);
   }
 
-  result = optimize_symbols(result, ctx);
+  result = optimize_symbols(result, ctx, builder.external_symbols());
 
   result = insert_early_free(result);
 
@@ -1407,7 +1408,7 @@ std::vector<var> vars(const std::vector<buffer_expr_ptr>& bufs) {
 
 pipeline build_pipeline(node_context& ctx, std::vector<var> args, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
-  stmt body = build_pipeline(ctx, inputs, outputs, lets, options);
+  stmt body = build_pipeline_impl(ctx, args, inputs, outputs, lets, options);
   pipeline p;
   p.args = args;
   p.inputs = vars(inputs);

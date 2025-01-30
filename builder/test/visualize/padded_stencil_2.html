@@ -353,44 +353,44 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
   check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
-    let g = buffer_min(__in, 0);
-    let g_1 = buffer_min(__in, 1);
-    let g_0 = buffer_max(__in, 0);
-    let g_2 = buffer_max(__in, 1);
-    { let padded_intm = allocate('padded_intm', 2, [
+    let intm = buffer_min(__in, 0);
+    let padded_intm = buffer_min(__in, 1);
+    let x = buffer_max(__in, 0);
+    let y = buffer_max(__in, 1);
+    { let g = allocate('g', 2, [
         {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
         {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:3}
       ]);
-      { let intm = allocate('intm', 2, [
-          {bounds:[max(buffer_min(padded_intm, 0), g), min(buffer_max(padded_intm, 0), g_0)], stride:NaN, fold_factor:NaN},
-          {bounds:[max(buffer_min(padded_intm, 1), g_1), min(buffer_max(padded_intm, 1), g_2)], stride:NaN, fold_factor:1}
+      { let g_0 = allocate('g#0', 2, [
+          {bounds:[max(buffer_min(g, 0), intm), min(buffer_max(g, 0), x)], stride:NaN, fold_factor:NaN},
+          {bounds:[max(buffer_min(g, 1), padded_intm), min(buffer_max(g, 1), y)], stride:NaN, fold_factor:1}
         ]);
         let __loop_min = (buffer_min(out, 1) + -2);
         let __loop_max = buffer_max(out, 1);
         let __loop_step = 1;
-        for(let out_y = __loop_min; out_y <= __loop_max; out_y += __loop_step) {
-          { let __intm = crop_dim(intm, 1, [(out_y + 1), (out_y + 1)]); {
-            let intm = __intm;
+        for(let g_1 = __loop_min; g_1 <= __loop_max; g_1 += __loop_step) {
+          { let __g_2 = crop_dim(g_0, 1, [(g_1 + 1), (g_1 + 1)]); {
+            let g_2 = __g_2;
             consume(__in);
-            produce(intm);
+            produce(g_2);
             __event_t++;
           }}
-          { let __padded_intm = crop_dim(padded_intm, 1, [(out_y + 1), (out_y + 1)]); {
-            let padded_intm = __padded_intm;
-            produce(intm);
-            produce(padded_intm);
+          { let __g_2 = crop_dim(g, 1, [(g_1 + 1), (g_1 + 1)]); {
+            let g_2 = __g_2;
+            produce(g_0);
+            produce(g_2);
             __event_t++;
           }}
-          { let __out_out_y = crop_dim(out, 1, [out_y, out_y]); {
-            let out_out_y = __out_out_y;
-            consume(padded_intm);
-            produce(out_out_y);
+          { let __g_2 = crop_dim(out, 1, [g_1, g_1]); {
+            let g_2 = __g_2;
+            consume(g);
+            produce(g_2);
             __event_t++;
           }}
         }
-        free(intm);
+        free(g_0);
       }
-      free(padded_intm);
+      free(g);
     }
   }
 }

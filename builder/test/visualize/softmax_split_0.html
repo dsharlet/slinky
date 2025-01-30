@@ -353,52 +353,52 @@ function pipeline(__in, out) {
   check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))));
   check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))));
   {
-    let g = buffer_min(out, 0);
-    let g_0 = buffer_max(out, 0);
-    check((buffer_min(__in, 0) <= min(g, g_0)));
-    check((max(g, g_0) <= buffer_max(__in, 0)));
+    let softmax_in = buffer_min(out, 0);
+    let max_in = buffer_max(out, 0);
+    check((buffer_min(__in, 0) <= min(softmax_in, max_in)));
+    check((max(softmax_in, max_in) <= buffer_max(__in, 0)));
     check((buffer_min(__in, 1) <= buffer_min(out, 1)));
     check((buffer_max(out, 1) <= buffer_max(__in, 1)));
-    { let softmax_out = allocate('softmax_out', 4, [
+    { let exp_in = allocate('exp_in', 4, [
         {bounds:[buffer_min(out, 0), buffer_max(out, 0)], stride:NaN, fold_factor:NaN},
         {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
       ]);
       { let sum_exp_in = allocate('sum_exp_in', 4, [
           {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
         ]);
-        { let max_in = allocate('max_in', 4, [
+        { let softmax_out = allocate('softmax_out', 4, [
             {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
           ]);
-          { let softmax_in = allocate('softmax_in', 4, [
-              {bounds:[min(g, g_0), max(g, g_0)], stride:NaN, fold_factor:NaN},
+          { let add_out = allocate('add_out', 4, [
+              {bounds:[min(softmax_in, max_in), max(softmax_in, max_in)], stride:NaN, fold_factor:NaN},
               {bounds:[buffer_min(out, 1), buffer_max(out, 1)], stride:NaN, fold_factor:NaN}
             ]);
             consume(__in);
-            produce(softmax_in);
+            produce(add_out);
             __event_t++;
-            consume(softmax_in);
-            produce(max_in);
-            __event_t++;
-            consume(__in);
-            consume(max_in);
-            produce(softmax_in);
-            produce(sum_exp_in);
-            __event_t++;
-            check(free(max_in));
-            consume(softmax_in);
-            consume(sum_exp_in);
+            consume(add_out);
             produce(softmax_out);
             __event_t++;
-            free(softmax_in);
+            consume(__in);
+            consume(softmax_out);
+            produce(add_out);
+            produce(sum_exp_in);
+            __event_t++;
+            check(free(softmax_out));
+            consume(add_out);
+            consume(sum_exp_in);
+            produce(exp_in);
+            __event_t++;
+            free(add_out);
           }
-          free(max_in);
+          free(softmax_out);
         }
         free(sum_exp_in);
       }
-      consume(softmax_out);
+      consume(exp_in);
       produce(out);
       __event_t++;
-      free(softmax_out);
+      free(exp_in);
     }
   }
 }

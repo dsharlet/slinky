@@ -1307,40 +1307,46 @@ public:
 
 // This mutator attempts to re-write buffer mutators to be performed in-place when possible. Most mutators are more
 // efficient when performed in place.
-class reuse_shadows : public stmt_mutator {
+class symbol_optimizer : public substitutor {
+  node_context& ctx;
+
   // Buffers that can be mutated in place are true in this map.
   symbol_map<bool> can_mutate;
+  
+  symbol_map<bool> used;
+  symbol_map<var> subs;
+
+  std::vector<scoped_value_in_symbol_map<var>> subs_stack;
+  std::vector<scoped_value_in_symbol_map<bool>> used_stack;
+
+  var alloc_sym() const {
+    for (std::size_t i = 0; i < used.size(); ++i) {
+      if (!used.contains(var(i))) {
+        return var(i);
+      }
+    }
+    return var(used.size());
+  }
 
 public:
-  template <typename T>
-  void visit_buffer_mutator(const T* op) {
-    stmt body = op->body;
-    var sym = op->sym;
-    // If we don't know about a buffer, we assume we cannot mutate it in place. This covers input and output buffers.
-    bool can_mutate_src = can_mutate[op->src] && *can_mutate[op->src];
-    // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
-    if (can_mutate_src && !depends_on(body, op->src).any()) {
-      // We can re-use the src because the body doesn't use it, and it will not create a data race.
-      sym = op->src;
-      body = substitute(body, op->sym, sym);
-    }
-
-    // Buffers start out mutable.
-    can_mutate[op->sym] = true;
-
-    body = mutate(body);
-
-    if (sym == op->sym && body.same_as(op->body)) {
-      set_result(op);
-    } else {
-      set_result(clone_with(op, sym, std::move(body)));
+  symbol_optimizer(node_context& ctx, const std::vector<var>& external) : ctx(ctx) {
+    for (var i : external) {
+      used[i] = true;
+      subs[i] = i;
     }
   }
 
-  template <typename T>
-  void visit_buffer_decl(const T* op, bool decl_mutable = true) {
-    can_mutate[op->sym] = decl_mutable;
-    stmt_mutator::visit(op);
+  // Implementation of substitutor
+  virtual var visit_symbol(var x) override { return *subs[x]; }
+  virtual var enter_decl(var sym) override { 
+    var result = alloc_sym();
+    subs_stack.push_back(set_value_in_scope(subs, sym, result));
+    used_stack.push_back(set_value_in_scope(used, result, true));
+    return result;
+  }
+  virtual void exit_decls(int n) override {
+    subs_stack.erase(subs_stack.begin() + subs_stack.size() - n, subs_stack.end());
+    used_stack.erase(used_stack.begin() + used_stack.size() - n, used_stack.end());
   }
 
   void visit(const loop* op) override {
@@ -1348,12 +1354,22 @@ public:
       // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
       symbol_map<bool> old_can_mutate;
       std::swap(can_mutate, old_can_mutate);
-      stmt_mutator::visit(op);
+      substitutor::visit(op);
       can_mutate = std::move(old_can_mutate);
     } else {
-      stmt_mutator::visit(op);
+      substitutor::visit(op);
     }
   }
+  /*
+  template <typename T>
+  void visit_buffer_decl(const T* op, bool decl_mutable = true) {
+    can_mutate[op->sym] = decl_mutable;
+    var sym = alloc_sym();
+    auto sub = set_value_in_scope(subs, op->sym, sym);
+    auto use = set_value_in_scope(used, sym, true);
+    substitutor::visit(op);
+  }
+
 
   void visit(const allocate* op) override { visit_buffer_decl(op); }
   void visit(const make_buffer* op) override { visit_buffer_decl(op); }
@@ -1362,11 +1378,34 @@ public:
     visit_buffer_decl(op, false);
   }
 
+  template <typename T>
+  void visit_buffer_mutator(const T* op) {
+    var src = *subs[op->src];
+    // If we don't know about a buffer, we assume we cannot mutate it in place. This covers input and output buffers.
+    bool can_mutate_src = can_mutate[src] && *can_mutate[src];
+    // TODO: This mutator has quadratic complexity. It's hard to do this in one pass...
+    var sym;
+    if (can_mutate_src && !depends_on(op->body, src).any()) {
+      // We can re-use the src because the body doesn't use it, and it will not create a data race.
+      sym = src;
+    } else {
+      sym = alloc_sym();
+    }
+
+    auto sub = set_value_in_scope(subs, op->sym, sym);
+    auto use = set_value_in_scope(used, sym, true);
+    // Buffers start out mutable.
+    can_mutate[sym] = true;
+    substitutor::visit(op);
+  }
+
   void visit(const crop_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const crop_dim* op) override { visit_buffer_mutator(op); }
   void visit(const slice_buffer* op) override { visit_buffer_mutator(op); }
   void visit(const slice_dim* op) override { visit_buffer_mutator(op); }
   void visit(const transpose* op) override { visit_buffer_mutator(op); }
+  void visit(const clone_buffer* op) override { visit_buffer_mutator(op); }
+  */
 };
 
 }  // namespace
@@ -1375,9 +1414,9 @@ stmt deshadow(const stmt& s, span<var> symbols, node_context& ctx) {
   scoped_trace trace("deshadow");
   return deshadower(ctx, symbols).mutate(s);
 }
-stmt optimize_symbols(const stmt& s, node_context& ctx) {
+stmt optimize_symbols(const stmt& s, node_context& ctx, const std::vector<var>& external) {
   scoped_trace trace("optimize_symbols");
-  return reuse_shadows().mutate(s);
+  return symbol_optimizer(ctx, external).mutate(s);
 }
 
 namespace {

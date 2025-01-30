@@ -113,29 +113,53 @@ TEST(optimizations, optimize_symbols) {
   {
     // We don't know about x, we can't mutate it.
     node_context ctx = symbols;
-    ASSERT_THAT(optimize_symbols(crop_dim::make(y, x, 0, {0, 0}, check::make(y)), ctx),
+    ASSERT_THAT(optimize_symbols(crop_dim::make(y, x, 0, {0, 0}, check::make(y)), ctx, {}),
         matches(crop_dim::make(y, x, 0, {0, 0}, check::make(y))));
   }
 
   {
     // We know about x, we can mutate it.
     node_context ctx = symbols;
-    ASSERT_THAT(optimize_symbols(make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, check::make(y))), ctx),
+    ASSERT_THAT(optimize_symbols(make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, check::make(y))), ctx, {}),
         matches(make_dummy_decl(x, crop_dim::make(x, x, 0, {0, 0}, check::make(x)))));
   }
 
   {
     node_context ctx = symbols;
     ASSERT_THAT(
-        optimize_symbols(
-            make_dummy_decl(x, crop_dim::make(y, x, 0, {0, 0}, crop_dim::make(z, y, 0, {0, 0}, check::make(z)))), ctx),
+        optimize_symbols(make_dummy_decl(x,
+                                     crop_dim::make(y, x, 0, {0, 0}, crop_dim::make(z, y, 0, {0, 0}, check::make(z)))),
+                    ctx, {}),
         matches(make_dummy_decl(x, crop_dim::make(x, x, 0, {0, 0}, crop_dim::make(x, x, 0, {0, 0}, check::make(x))))));
   }
 
   {
     node_context ctx = symbols;
-    ASSERT_THAT(optimize_symbols(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))), ctx),
+    ASSERT_THAT(optimize_symbols(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y))), ctx, {}),
         matches(make_dummy_decl(y, crop_dim::make(x, y, 0, {0, 0}, check::make(y)))));
+  }
+
+  {
+    node_context ctx;
+    ASSERT_THAT(optimize_symbols(check::make(var(1)), symbols, {}), matches(check::make(var(1))));
+  }
+  {
+    node_context ctx;
+    ASSERT_THAT(optimize_symbols(let_stmt::make(var(3), var(2), check::make(var(3))), ctx, {}),
+        matches(let_stmt::make(var(0), var(2), check::make(var(0)))));
+  }
+  {
+    node_context ctx;
+    ASSERT_THAT(optimize_symbols(let_stmt::make({{var(3), var(2)}, {var(5), var(4)}}, check::make(var(3) + var(5))),
+                    ctx, {}),
+        matches(let_stmt::make({{var(0), var(2)}, {var(1), var(4)}}, check::make(var(0) + var(1)))));
+  }
+  {
+    node_context ctx;
+    ASSERT_THAT(
+        optimize_symbols(let_stmt::make({{var(3), var(2)}, {var(5), var(4) + var(3)}}, check::make(var(3) + var(5))),
+            ctx, {}),
+        matches(let_stmt::make({{var(0), var(2)}, {var(1), var(4) + var(0)}}, check::make(var(0) + var(1)))));
   }
 }
 
