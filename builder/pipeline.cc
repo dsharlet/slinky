@@ -916,10 +916,10 @@ class pipeline_builder {
         if (!is_ready) {
           continue;
         }
-        // std::cout << new_results[ix].body << std::endl;
+
         results[ix].body = constant_buffer::make(i.first, i.second->constant(), results[ix].body);
-        // std::cout << new_results[ix].body << std::endl;
         constants_to_remove.push_back(i.first);
+
         break;
       }
     }
