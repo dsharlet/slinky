@@ -854,7 +854,6 @@ class pipeline_builder {
     return s;
   }
 
-#define GOOD_STUFF
   // Computes number of consumers for each of the buffers.
   void compute_deps_count() {
     for (const func* f : order_) {
@@ -882,7 +881,7 @@ class pipeline_builder {
         }
       }
     }
-#ifdef GOOD_STUFF
+
     for (const func* f : order_) {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
@@ -907,30 +906,6 @@ class pipeline_builder {
         }
       }
     }
-#else
-    for (const func* f : order_) {
-      for (const auto& i : f->inputs()) {
-        const auto& input = i.buffer;
-
-        if (!input->producer()) {
-          continue;
-        }
-
-        if (!f->impl() && !f->padding()) {
-          // Collect all buffers which are inputs to the copy
-          // and the outputs of the copy as their dependencies.
-          copy_inputs_.insert(input->sym());
-          for (const func::output& o : f->outputs()) {
-            const buffer_expr_ptr& b = o.buffer;
-            if (output_syms_.count(b->sym())) continue;
-            copy_deps_[input->sym()].push_back(b->sym());
-          }
-        }
-
-        allocation_info_[input->sym()]->deps_count++;
-      }
-    }
-#endif
   }
 
   void place_constant_buffers(statement_with_range* results, std::size_t num_results) {
@@ -1167,9 +1142,10 @@ public:
         if (found) continue;
         new_special.push_back(special[iy]);
       }
-#ifdef GOOD_STUFF
+
+      // Attempt to place constant buffers as close to their usage location as possible.
       place_constant_buffers(new_results.data(), new_results.size());
-#endif
+
       // No changes, so leave the loop.
       bool no_changes = (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size());
 
@@ -1208,9 +1184,10 @@ public:
         candidates_for_allocation_[at].erase(b->sym());
       }
     }
-#ifdef GOOD_STUFF
+
+    // Try again for the combined statement.
     place_constant_buffers(&result, 1);
-#endif
+
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
