@@ -854,6 +854,7 @@ class pipeline_builder {
     return s;
   }
 
+#define GOOD_STUFF
   // Computes number of consumers for each of the buffers.
   void compute_deps_count() {
     for (const func* f : order_) {
@@ -881,7 +882,32 @@ class pipeline_builder {
         }
       }
     }
+#ifdef GOOD_STUFF
+    for (const func* f : order_) {
+      for (const auto& i : f->inputs()) {
+        const auto& input = i.buffer;
 
+        // if (!input->producer()) {
+        //   continue;
+        // }
+
+        if ((!f->impl() && !f->padding()) || (input->constant())) {
+          // Collect all buffers which are inputs to the copy
+          // and the outputs of the copy as their dependencies.
+          copy_inputs_.insert(input->sym());
+          for (const func::output& o : f->outputs()) {
+            const buffer_expr_ptr& b = o.buffer;
+            if (!input->constant() && output_syms_.count(b->sym())) continue;
+            copy_deps_[input->sym()].push_back(b->sym());
+          }
+        }
+
+        if (allocation_info_[input->sym()]) {
+          allocation_info_[input->sym()]->deps_count++;
+        }
+      }
+    }
+#else
     for (const func* f : order_) {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
@@ -904,11 +930,12 @@ class pipeline_builder {
         allocation_info_[input->sym()]->deps_count++;
       }
     }
+#endif
   }
 
 public:
-  pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-      const std::vector<buffer_expr_ptr>& outputs)
+  pipeline_builder(
+      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
       : ctx(ctx), sanitizer_(ctx) {
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
@@ -1119,29 +1146,65 @@ public:
         if (found) continue;
         new_special.push_back(special[iy]);
       }
+#ifdef GOOD_STUFF
+      // std::cout << "constants_.size() = " << constants_.size() << std::endl;
 
+      std::vector<var> constants_to_remove;
+      for (std::pair<var, buffer_expr_ptr> i : constants_) {
+        // body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
+        for (std::size_t ix = 0; ix < new_results.size(); ix++) {
+          buffer_expr_ptr candidate = i.second;
+          bool is_ready = true;
+          // Check dependencies first.
+          for (var b : copy_deps_[candidate->sym()]) {
+            if (new_results[ix].allocations.count(b) == 0) {
+              is_ready = false;
+              break;
+            }
+          }
+
+          if (!is_ready) {
+            continue;
+          }
+          // std::cout << new_results[ix].body << std::endl;
+          new_results[ix].body = constant_buffer::make(i.first, i.second->constant(), new_results[ix].body);
+          // std::cout << new_results[ix].body << std::endl;
+          constants_to_remove.push_back(i.first);
+          break;
+        }
+      }
+
+      for (var b : constants_to_remove) {
+        constants_.erase(b);
+      }
+#endif
       // No changes, so leave the loop.
-      if (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size()) break;
+      bool no_changes = (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size());
 
       lifetimes = std::move(new_lifetimes);
       special = std::move(new_special);
       results = std::move(new_results);
+
+      if (no_changes) break;
 
       iteration_count++;
     }
 
     assert(!results.empty() || body.body.defined());
     statement_with_range result;
+    // std::cout << "Before merging: " << results.size() << std::endl << results[0].body << std::endl;
     if (results.empty()) {
       result = body;
     } else {
       result = results.front();
       for (std::size_t ix = 1; ix < results.size(); ix++) {
+        // std::cout << "Merging: " << results[ix].body << std::endl;
         result = statement_with_range::merge(result, results[ix]);
       }
       if (body.body.defined()) {
         result = statement_with_range::merge(result, body);
       }
+      // std::cout << "After merging: " << result.body << std::endl;
     }
 
     // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
@@ -1156,7 +1219,33 @@ public:
         candidates_for_allocation_[at].erase(b->sym());
       }
     }
+#ifdef GOOD_STUFF
+    std::vector<var> constants_to_remove;
+    // std::cout << "constants_.size() = " << constants_.size() << std::endl;
+    for (std::pair<var, buffer_expr_ptr> i : constants_) {
+      buffer_expr_ptr candidate = i.second;
+      bool is_ready = true;
+      // std::cout << expr(candidate->sym()) << " " << copy_deps_[candidate->sym()].size() << std::endl;
+      // Check dependencies first.
+      for (var b : copy_deps_[candidate->sym()]) {
+        if (result.allocations.count(b) == 0) {
+          is_ready = false;
+          break;
+        }
+      }
 
+      if (!is_ready) {
+        continue;
+      }
+      result.body = constant_buffer::make(i.first, i.second->constant(), result.body);
+      constants_to_remove.push_back(i.first);
+      break;
+    }
+
+    for (var b : constants_to_remove) {
+      constants_.erase(b);
+    }
+#endif
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
@@ -1184,9 +1273,11 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
+    // #ifndef GOOD_STUFF
     for (std::pair<var, buffer_expr_ptr> i : constants_) {
       body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
     }
+    // #endif
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
       const func* f = *i;
       for (const func::output& o : f->outputs()) {
@@ -1283,8 +1374,7 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs,
-    std::vector<std::pair<var, expr>> lets, const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
@@ -1294,6 +1384,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.build({}, nullptr, loop_id()).body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
+  std::cout << result << std::endl;
   result = builder.define_sanitized_replacements(result);
 
   std::vector<stmt> constraint_checks;
