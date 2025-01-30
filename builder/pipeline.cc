@@ -886,29 +886,80 @@ class pipeline_builder {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
 
-        if (!input->producer()) {
-          continue;
-        }
-
-        if (!f->impl() && !f->padding()) {
+        if ((!f->impl() && !f->padding()) || (input->constant())) {
           // Collect all buffers which are inputs to the copy
           // and the outputs of the copy as their dependencies.
           copy_inputs_.insert(input->sym());
           for (const func::output& o : f->outputs()) {
             const buffer_expr_ptr& b = o.buffer;
-            if (output_syms_.count(b->sym())) continue;
+            if (!input->constant() && output_syms_.count(b->sym())) continue;
             copy_deps_[input->sym()].push_back(b->sym());
           }
         }
 
-        allocation_info_[input->sym()]->deps_count++;
+        if (allocation_info_[input->sym()]) {
+          allocation_info_[input->sym()]->deps_count++;
+        }
+      }
+    }
+  }
+
+  bool has_all_allocations(buffer_expr_ptr candidate, std::set<var>& allocations) {
+    for (const auto& b : copy_deps_[candidate->sym()]) {
+      if (allocations.count(b) == 0) return false;
+    }
+
+    return true;
+  }
+
+  void place_constrained_buffers(std::vector<statement_with_range>& results, std::set<var>& candidates,
+      const std::vector<allocation_candidate>& special, std::vector<allocation_candidate>& new_special,
+      symbol_map<var>& uncropped_subs) {
+    new_special.reserve(special.size());
+    for (std::size_t iy = 0; iy < special.size(); iy++) {
+      bool found = false;
+      for (std::size_t ix = 0; ix < results.size(); ix++) {
+        const buffer_expr_ptr& candidate = special[iy].buffer;
+
+        if (!has_all_allocations(candidate, results[ix].allocations)) continue;
+
+        // The block range must fully cover the allocation range.
+        if (results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= results[ix].end) {
+          results[ix] = produce_allocation(candidate, results[ix], uncropped_subs);
+          candidates.erase(candidate->sym());
+          found = true;
+          break;
+        }
+      }
+
+      if (found) continue;
+      new_special.push_back(special[iy]);
+    }
+  }
+
+  void place_constant_buffers(statement_with_range* results, std::size_t num_results) {
+    for (std::size_t ix = 0; ix < num_results; ix++) {
+      std::vector<var> constants_to_remove;
+      constants_to_remove.reserve(constants_.size());
+
+      for (const auto& i : constants_) {
+        const buffer_expr_ptr& candidate = i.second;
+
+        if (!has_all_allocations(candidate, results[ix].allocations)) continue;
+
+        results[ix].body = constant_buffer::make(candidate->sym(), candidate->constant(), results[ix].body);
+        constants_to_remove.push_back(i.first);
+      }
+
+      for (var b : constants_to_remove) {
+        constants_.erase(b);
       }
     }
   }
 
 public:
-  pipeline_builder(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-      const std::vector<buffer_expr_ptr>& outputs)
+  pipeline_builder(
+      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
       : ctx(ctx), sanitizer_(ctx) {
     // Dependencies between the functions.
     std::map<const func*, std::vector<const func*>> deps;
@@ -1036,6 +1087,8 @@ public:
     while (true) {
       std::vector<allocation_candidate> new_lifetimes;
       std::vector<statement_with_range> new_results;
+      std::vector<allocation_candidate> new_special;
+
       new_lifetimes.reserve(lifetimes.size());
       new_results.reserve(results.size());
 
@@ -1087,45 +1140,21 @@ public:
 
       new_results.insert(new_results.end(), results.begin() + result_index, results.end());
 
-      std::vector<allocation_candidate> new_special;
       // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
       // This only can happen if all of it's dependencies are inside of the block.
-      for (std::size_t iy = 0; iy < special.size(); iy++) {
-        bool found = false;
-        for (std::size_t ix = 0; ix < new_results.size(); ix++) {
-          buffer_expr_ptr candidate = special[iy].buffer;
-          bool is_ready = true;
-          // Check dependencies first.
-          for (var b : copy_deps_[candidate->sym()]) {
-            if (new_results[ix].allocations.count(b) == 0) {
-              is_ready = false;
-              break;
-            }
-          }
+      place_constrained_buffers(new_results, candidates_for_allocation_[at], special, new_special, uncropped_subs);
 
-          if (!is_ready) {
-            continue;
-          }
-
-          // The block range must fully cover the allocation range.
-          if (new_results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= new_results[ix].end) {
-            new_results[ix] = produce_allocation(candidate, new_results[ix], uncropped_subs);
-            candidates_for_allocation_[at].erase(candidate->sym());
-            found = true;
-            break;
-          }
-        }
-
-        if (found) continue;
-        new_special.push_back(special[iy]);
-      }
+      // Attempt to place constant buffers as close to their usage location as possible.
+      place_constant_buffers(new_results.data(), new_results.size());
 
       // No changes, so leave the loop.
-      if (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size()) break;
+      bool no_changes = (lifetimes.size() == new_lifetimes.size() && special.size() == new_special.size());
 
       lifetimes = std::move(new_lifetimes);
       special = std::move(new_special);
       results = std::move(new_results);
+
+      if (no_changes) break;
 
       iteration_count++;
     }
@@ -1144,8 +1173,8 @@ public:
       }
     }
 
-    // Add all allocations at this loop level. The allocations can be added in any order. This order enables aliasing
-    // copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
+    // Add all remaining allocations at this loop level. The allocations can be added in any order. This order enables
+    // aliasing copy dsts to srcs, which is more flexible than aliasing srcs to dsts.
     for (const func* f : order_) {
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
@@ -1156,6 +1185,9 @@ public:
         candidates_for_allocation_[at].erase(b->sym());
       }
     }
+
+    // Try again for the combined statement.
+    place_constant_buffers(&result, 1);
 
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
@@ -1184,6 +1216,7 @@ public:
 
   // Wrap the statement into make_buffer-s to define the bounds of allocations.
   stmt make_buffers(stmt body) {
+    // Place all remaining constant_buffer-s.
     for (std::pair<var, buffer_expr_ptr> i : constants_) {
       body = constant_buffer::make(i.first, i.second->constant(), std::move(body));
     }
@@ -1283,8 +1316,7 @@ stmt inject_traces(const stmt& s, node_context& ctx) {
 }
 
 stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
-    const std::vector<buffer_expr_ptr>& outputs,
-    std::vector<std::pair<var, expr>> lets, const build_options& options) {
+    const std::vector<buffer_expr_ptr>& outputs, std::vector<std::pair<var, expr>> lets, const build_options& options) {
   scoped_trace trace("build_pipeline");
   const node_context* old_context = set_default_print_context(&ctx);
 
