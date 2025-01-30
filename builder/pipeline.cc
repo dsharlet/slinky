@@ -905,17 +905,21 @@ class pipeline_builder {
   }
 
   bool has_all_allocations(buffer_expr_ptr candidate, std::set<var>& allocations) {
-    return std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
-        [&](var b) { return allocations.count(b) > 0; });
+    for (const auto& b : copy_deps_[candidate->sym()]) {
+      if (allocations.count(b) == 0) return false;
+    }
+
+    return true;
   }
 
   void place_constrained_buffers(std::vector<statement_with_range>& results, std::set<var>& candidates,
       const std::vector<allocation_candidate>& special, std::vector<allocation_candidate>& new_special,
       symbol_map<var>& uncropped_subs) {
+    new_special.reserve(special.size());
     for (std::size_t iy = 0; iy < special.size(); iy++) {
       bool found = false;
       for (std::size_t ix = 0; ix < results.size(); ix++) {
-        buffer_expr_ptr candidate = special[iy].buffer;
+        const buffer_expr_ptr& candidate = special[iy].buffer;
 
         if (!has_all_allocations(candidate, results[ix].allocations)) continue;
 
@@ -934,22 +938,22 @@ class pipeline_builder {
   }
 
   void place_constant_buffers(statement_with_range* results, std::size_t num_results) {
-    std::vector<var> constants_to_remove;
     for (std::size_t ix = 0; ix < num_results; ix++) {
-      for (std::pair<var, buffer_expr_ptr> i : constants_) {
-        buffer_expr_ptr candidate = i.second;
+      std::vector<var> constants_to_remove;
+      constants_to_remove.reserve(constants_.size());
+
+      for (const auto& i : constants_) {
+        const buffer_expr_ptr& candidate = i.second;
 
         if (!has_all_allocations(candidate, results[ix].allocations)) continue;
 
         results[ix].body = constant_buffer::make(candidate->sym(), candidate->constant(), results[ix].body);
         constants_to_remove.push_back(i.first);
-
-        break;
       }
-    }
 
-    for (var b : constants_to_remove) {
-      constants_.erase(b);
+      for (var b : constants_to_remove) {
+        constants_.erase(b);
+      }
     }
   }
 
