@@ -210,6 +210,7 @@ TEST(evaluate, transpose) {
   evaluate(transpose::make(x, x, {3, 1}, make_check(x, {40, 20})), ctx);
   evaluate(transpose::make(y, x, {0, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {10, 20})})), ctx);
   evaluate(transpose::make(y, x, {2, 1}, block::make({make_check(x, {10, 20, 30, 40}), make_check(y, {30, 20})})), ctx);
+  evaluate(transpose::make(y, x, {0, 1, 2, 3, 0}, make_check(y, {10, 20, 30, 40, 10})), ctx);
   ASSERT_EQ(buf_before, buf);
 }
 
