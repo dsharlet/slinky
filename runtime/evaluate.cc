@@ -586,17 +586,14 @@ public:
     const raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
 
-    std::size_t crop_rank = op->bounds.size();
-
     raw_buffer sym_buf = *src_buf;
     sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
-    for (std::size_t d = 0; d < crop_rank; ++d) {
-      slinky::dim& dim = sym_buf.dims[d];
-      dim = src_buf->dims[d];
+    internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
+    for (std::size_t d = 0; d < op->bounds.size(); ++d) {
+      const slinky::dim& dim = sym_buf.dims[d];
       interval bounds = eval(op->bounds[d], {dim.min(), dim.max()});
       sym_buf.crop(d, bounds.min, bounds.max);
     }
-    internal::copy_small_n(src_buf->dims + crop_rank, src_buf->rank - crop_rank, sym_buf.dims + crop_rank);
 
     return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
   }
