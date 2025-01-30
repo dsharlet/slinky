@@ -904,6 +904,11 @@ class pipeline_builder {
     }
   }
 
+  bool has_all_allocations(buffer_expr_ptr candidate, std::set<var>& allocations) {
+    return std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
+        [&](var b) { return allocations.count(b) > 0; });
+  }
+
   void place_constrained_buffers(std::vector<statement_with_range>& results, std::set<var>& candidates,
       const std::vector<allocation_candidate>& special, std::vector<allocation_candidate>& new_special,
       symbol_map<var>& uncropped_subs) {
@@ -912,12 +917,7 @@ class pipeline_builder {
       for (std::size_t ix = 0; ix < results.size(); ix++) {
         buffer_expr_ptr candidate = special[iy].buffer;
 
-        bool is_ready = std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
-            [&](var b) { return results[ix].allocations.count(b) > 0; });
-
-        if (!is_ready) {
-          continue;
-        }
+        if (!has_all_allocations(candidate, results[ix].allocations)) continue;
 
         // The block range must fully cover the allocation range.
         if (results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= results[ix].end) {
@@ -939,14 +939,9 @@ class pipeline_builder {
       for (std::pair<var, buffer_expr_ptr> i : constants_) {
         buffer_expr_ptr candidate = i.second;
 
-        bool is_ready = std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
-            [&](var b) { return results[ix].allocations.count(b) > 0; });
+        if (!has_all_allocations(candidate, results[ix].allocations)) continue;
 
-        if (!is_ready) {
-          continue;
-        }
-
-        results[ix].body = constant_buffer::make(i.first, i.second->constant(), results[ix].body);
+        results[ix].body = constant_buffer::make(candidate->sym(), candidate->constant(), results[ix].body);
         constants_to_remove.push_back(i.first);
 
         break;
