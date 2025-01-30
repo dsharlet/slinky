@@ -886,10 +886,6 @@ class pipeline_builder {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
 
-        // if (!input->producer()) {
-        //   continue;
-        // }
-
         if ((!f->impl() && !f->padding()) || (input->constant())) {
           // Collect all buffers which are inputs to the copy
           // and the outputs of the copy as their dependencies.
@@ -1325,7 +1321,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   result = builder.build({}, nullptr, loop_id()).body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
-  std::cout << result << std::endl;
   result = builder.define_sanitized_replacements(result);
 
   std::vector<stmt> constraint_checks;
