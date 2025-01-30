@@ -514,15 +514,15 @@ public:
     if (bounds) {
       define_undef_bounds(*bounds, op->sym);
       substitute_bounds(*bounds, current_buffer_bounds());
-      // Now do the reverse substitution, because the updated bounds can be used in other
-      // bounds.
-      substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
-
       // This simplify can be heavy, but is really useful in reducing the size of the
       // expressions.
       for (auto& b : *bounds) {
         b = simplify(b);
       }
+
+      // Now do the reverse substitution, because the updated bounds can be used in other
+      // bounds.
+      substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
     }
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
@@ -545,14 +545,15 @@ public:
     merge_crop(bounds, op->dim, op->bounds);
     define_undef_bounds(*bounds, op->sym);
     substitute_bounds(*bounds, current_buffer_bounds());
-    // Now do the reverse substitution, because the updated bounds can be used in other
-    // bounds.
-    substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
     // This simplify can be heavy, but is really useful in reducing the size of the
     // expressions.
     for (auto& b : *bounds) {
       b = simplify(b);
     }
+
+    // Now do the reverse substitution, because the updated bounds can be used in other
+    // bounds.
+    substitute_bounds(current_buffer_bounds(), op->sym, *bounds);
 
     auto set_bounds = set_value_in_scope(current_buffer_bounds(), op->sym, bounds);
     auto set_alias = set_value_in_scope(aliases, op->sym, op->src);
