@@ -904,6 +904,35 @@ class pipeline_builder {
     }
   }
 
+  void place_constrained_buffers(std::vector<statement_with_range>& results, std::set<var>& candidates,
+      const std::vector<allocation_candidate>& special, std::vector<allocation_candidate>& new_special,
+      symbol_map<var>& uncropped_subs) {
+    for (std::size_t iy = 0; iy < special.size(); iy++) {
+      bool found = false;
+      for (std::size_t ix = 0; ix < results.size(); ix++) {
+        buffer_expr_ptr candidate = special[iy].buffer;
+
+        bool is_ready = std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
+            [&](var b) { return results[ix].allocations.count(b) > 0; });
+
+        if (!is_ready) {
+          continue;
+        }
+
+        // The block range must fully cover the allocation range.
+        if (results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= results[ix].end) {
+          results[ix] = produce_allocation(candidate, results[ix], uncropped_subs);
+          candidates.erase(candidate->sym());
+          found = true;
+          break;
+        }
+      }
+
+      if (found) continue;
+      new_special.push_back(special[iy]);
+    }
+  }
+
   void place_constant_buffers(statement_with_range* results, std::size_t num_results) {
     std::vector<var> constants_to_remove;
     for (std::size_t ix = 0; ix < num_results; ix++) {
@@ -1114,30 +1143,7 @@ public:
 
       // See if any of the blocks can be wrapped in the allocations which are inputs to the copy.
       // This only can happen if all of it's dependencies are inside of the block.
-      for (std::size_t iy = 0; iy < special.size(); iy++) {
-        bool found = false;
-        for (std::size_t ix = 0; ix < new_results.size(); ix++) {
-          buffer_expr_ptr candidate = special[iy].buffer;
-
-          bool is_ready = std::all_of(copy_deps_[candidate->sym()].begin(), copy_deps_[candidate->sym()].end(),
-              [&](var b) { return new_results[ix].allocations.count(b) > 0; });
-
-          if (!is_ready) {
-            continue;
-          }
-
-          // The block range must fully cover the allocation range.
-          if (new_results[ix].start <= special[iy].lifetime_start && special[iy].lifetime_end <= new_results[ix].end) {
-            new_results[ix] = produce_allocation(candidate, new_results[ix], uncropped_subs);
-            candidates_for_allocation_[at].erase(candidate->sym());
-            found = true;
-            break;
-          }
-        }
-
-        if (found) continue;
-        new_special.push_back(special[iy]);
-      }
+      place_constrained_buffers(new_results, candidates_for_allocation_[at], special, new_special, uncropped_subs);
 
       // Attempt to place constant buffers as close to their usage location as possible.
       place_constant_buffers(new_results.data(), new_results.size());
