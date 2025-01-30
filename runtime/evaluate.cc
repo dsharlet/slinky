@@ -581,6 +581,26 @@ public:
     return result;
   }
 
+  SLINKY_NO_STACK_PROTECTOR index_t eval_unshadowed(const crop_buffer* op) {
+    // The operation is not shadowed. Make a clone and use eval_shadowed on the clone.
+    const raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
+    assert(src_buf);
+
+    std::size_t crop_rank = op->bounds.size();
+
+    raw_buffer sym_buf = *src_buf;
+    sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+    for (std::size_t d = 0; d < crop_rank; ++d) {
+      slinky::dim& dim = sym_buf.dims[d];
+      dim = src_buf->dims[d];
+      interval bounds = eval(op->bounds[d], {dim.min(), dim.max()});
+      sym_buf.crop(d, bounds.min, bounds.max);
+    }
+    internal::copy_small_n(src_buf->dims + crop_rank, src_buf->rank - crop_rank, sym_buf.dims + crop_rank);
+
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
+  }
+
   index_t eval_shadowed(const crop_dim* op) {
     raw_buffer* buffer = reinterpret_cast<raw_buffer*>(context.lookup(op->sym));
     assert(buffer);
@@ -599,21 +619,19 @@ public:
     return result;
   }
 
-  template <typename T>
-  SLINKY_NO_STACK_PROTECTOR index_t eval_unshadowed(const T* op) {
+  SLINKY_NO_STACK_PROTECTOR index_t eval_unshadowed(const crop_dim* op) {
     // The operation is not shadowed. Make a clone and use eval_shadowed on the clone.
-    raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
+    const raw_buffer* src_buf = reinterpret_cast<raw_buffer*>(context.lookup(op->src));
     assert(src_buf);
 
-    raw_buffer clone = *src_buf;
-    clone.dims = SLINKY_ALLOCA(dim, src_buf->rank);
-    internal::copy_small_n(src_buf->dims, src_buf->rank, clone.dims);
+    raw_buffer sym_buf = *src_buf;
+    sym_buf.dims = SLINKY_ALLOCA(dim, src_buf->rank);
+    internal::copy_small_n(src_buf->dims, src_buf->rank, sym_buf.dims);
+    slinky::dim& dim = sym_buf.dims[op->dim];
+    interval bounds = eval(op->bounds, {dim.min(), dim.max()});
+    sym_buf.crop(op->dim, bounds.min, bounds.max);
 
-    context.reserve(op->sym.id + 1);
-    index_t old_value = context.set(op->sym, reinterpret_cast<index_t>(&clone));
-    index_t result = eval_shadowed(op);
-    context.set(op->sym, old_value);
-    return result;
+    return eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&sym_buf));
   }
 
   template <typename T>
