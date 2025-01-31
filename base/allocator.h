@@ -7,7 +7,8 @@
 
 namespace slinky {
 
-// https://howardhinnant.github.io/allocator_boilerplate.html, modified to not default construct.
+// This is an STL allocator that doesn't default construct, enabling an STL container to manage uninitialized memory.
+// https://howardhinnant.github.io/allocator_boilerplate.html
 template <class T>
 class uninitialized_allocator {
 public:
