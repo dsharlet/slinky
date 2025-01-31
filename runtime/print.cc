@@ -233,10 +233,11 @@ public:
   }
 
   void visit(const let_stmt* l) override {
+    const char* tag = l->is_closure ? "closure" : "let";
     if (l->lets.size() == 1) {
-      *this << indent() << "let " << l->lets.front().first << " = " << l->lets.front().second << " in {\n";
+      *this << indent() << tag << " " << l->lets.front().first << " = " << l->lets.front().second << " in {\n";
     } else {
-      *this << indent() << "let {\n";
+      *this << indent() << tag << " {\n";
       *this << indent(2);
       print_vector(l->lets, ",\n" + indent(2));
       *this << "\n" << indent() << "} in {\n";

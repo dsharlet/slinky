@@ -183,9 +183,12 @@ public:
   std::vector<std::pair<var, expr>> lets;
   stmt body;
 
+  // If this is true, then the body does not access any symbols outside of those defined by `lets`.
+  bool is_closure;
+
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(std::vector<std::pair<var, expr>> lets, stmt body);
+  static stmt make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure = false);
 
   static stmt make(var sym, expr value, stmt body);
 
@@ -395,6 +398,11 @@ public:
 
   static constexpr stmt_node_type static_type = stmt_node_type::check;
 };
+
+SLINKY_ALWAYS_INLINE inline const let_stmt* is_closure(const stmt& s) {
+  const let_stmt* let = s.as<let_stmt>();
+  return let && let->is_closure ? let : nullptr;
+}
 
 class stmt_visitor {
 public:

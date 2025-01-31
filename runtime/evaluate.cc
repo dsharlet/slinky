@@ -417,10 +417,24 @@ public:
     std::atomic<index_t> result = 0;
     std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
     context.reserve(op->sym.id + 1);
-    index_t old_value = context.set(op->sym, 0);
     context.config->thread_pool->parallel_for(
         n,
-        [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
+        [parent_context = &context, step, min = bounds.min, op, &result](index_t i) mutable {
+          eval_context context;
+          if (const let_stmt* closure = is_closure(op->body)) {
+            // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
+            context.reserve(parent_context->size());
+            context.config = parent_context->config;
+
+            // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent context,
+            // but assign them to our local context.
+            for (const std::pair<var, expr>& i : closure->lets) {
+              context[i.first] = evaluate(i.second, *parent_context);
+            }
+          } else {
+            // We don't have a closure, just copy the whole context.
+            context = *parent_context;
+          }
           context.set(op->sym, i * step + min);
           // Evaluate the parallel loop body with our copy of the context.
           index_t result_i = evaluate(op->body, context);
@@ -430,7 +444,6 @@ public:
           }
         },
         op->max_workers);
-    context.set(op->sym, old_value);
     return result;
   }
 

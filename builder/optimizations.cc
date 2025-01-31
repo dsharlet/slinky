@@ -1348,7 +1348,16 @@ public:
       // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
       symbol_map<bool> old_can_mutate;
       std::swap(can_mutate, old_can_mutate);
-      stmt_mutator::visit(op);
+
+      stmt body = mutate(op->body);
+      std::vector<var> referenced = find_dependencies(body);
+      std::vector<std::pair<var, expr>> lets;
+      for (var i : referenced) {
+        lets.push_back({i, expr(i)});
+      }
+      body = let_stmt::make(std::move(lets), std::move(body), /*is_closure=*/true);
+      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
+
       can_mutate = std::move(old_can_mutate);
     } else {
       stmt_mutator::visit(op);
