@@ -1,6 +1,7 @@
 #ifndef SLINKY_RUNTIME_EVALUATE_H
 #define SLINKY_RUNTIME_EVALUATE_H
 
+#include "base/allocator.h"
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
 
@@ -9,9 +10,8 @@ namespace slinky {
 class thread_pool;
 
 class eval_context {
-  // TODO: This should be uninitialized memory, not just for performance, but so we can detect uninitialized memory
-  // usage when evaluating.
-  std::vector<index_t> values_;
+  // Leave uninitialized to avoid overhead and to detect uninitialized memory access via msan.
+  std::vector<index_t, uninitialized_allocator<index_t>> values_;
 
 public:
   void reserve(std::size_t size) {
