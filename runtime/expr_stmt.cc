@@ -65,12 +65,7 @@ template <typename T, typename Body>
 T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   auto n = new T();
   n->lets = std::move(lets);
-  if (const T* l = body.template as<T>()) {
-    n->lets.insert(n->lets.end(), l->lets.begin(), l->lets.end());
-    n->body = l->body;
-  } else {
-    n->body = std::move(body);
-  }
+  n->body = std::move(body);
   return n;
 }
 

@@ -240,6 +240,10 @@ TEST(simplify, let) {
 
   // Duplicate lets
   ASSERT_THAT(simplify(let::make({{x, y * 2}, {z, y * 2}}, x + z)), matches(let::make(x, y * 2, x * 2)));
+
+  // Nested lets
+  ASSERT_THAT(
+      simplify(let::make(x, y * 2, let::make(z, w + 2, x + z))), matches(let::make({{x, y * 2}, {z, w + 2}}, x + z)));
 }
 
 TEST(simplify, loop) {
