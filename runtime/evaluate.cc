@@ -419,7 +419,7 @@ public:
     context.reserve(op->sym.id + 1);
     context.config->thread_pool->parallel_for(
         n,
-        [parent_context = &context, step, min = bounds.min, op, &result](index_t i) mutable {
+        [parent_context = &context, step, min = bounds.min, op, &result](index_t i) {
           eval_context context;
           if (const let_stmt* closure = is_closure(op->body)) {
             // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
