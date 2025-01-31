@@ -599,9 +599,9 @@ TEST_P(stencil_chain, pipeline) {
 
   std::string test_name = "stencil_chain_split_" + std::string(max_workers == loop::serial ? "serial" : "parallel") +
                           "_split_" + std::to_string(split);
-  setup_tracing(eval_ctx, test_name + ".json");
+  setup_tracing(eval_ctx.config, test_name + ".json");
 
-  p.evaluate(inputs, outputs, eval_ctx);
+  p.evaluate(inputs, outputs, eval_ctx); 
 
   // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});

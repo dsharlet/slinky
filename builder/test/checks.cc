@@ -30,7 +30,9 @@ TEST(pipeline, checks) {
   int checks_failed = 0;
 
   eval_context eval_ctx;
-  eval_ctx.check_failed = [&](const expr& c) { checks_failed++; };
+  eval_config eval_cfg;
+  eval_cfg.check_failed = [&](const expr& c) { checks_failed++; };
+  eval_ctx.config = &eval_cfg;
 
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});

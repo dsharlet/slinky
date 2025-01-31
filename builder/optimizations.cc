@@ -1045,7 +1045,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
         const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
         const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
-        ctx.copy(*src_buf, *dst_buf, pad_value);
+        ctx.config->copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
       {}, {op->src, dst}, std::move(copy_attrs));

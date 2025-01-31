@@ -9,7 +9,7 @@
 
 namespace slinky {
 
-void setup_tracing(eval_context& ctx, const std::string& filename);
+void setup_tracing(eval_config& config, const std::string& filename);
 
 struct memory_info {
   std::atomic<index_t> live_count = 0;
@@ -36,6 +36,8 @@ public:
   int copy_calls = 0;
   int copy_elements = 0;
   int pad_calls = 0;
+
+  eval_config config;
 
   test_context();
 };
