@@ -6,6 +6,7 @@ package(
 cc_library(
     name = "base",
     hdrs = [
+        "allocator.h",
         "arithmetic.h",
         "ref_count.h",
         "modulus_remainder.h",

@@ -107,11 +107,20 @@ TEST(depends_on, is_pure) {
 }
 
 TEST(find_buffer_dependencies, basic) {
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, {}, call_stmt::make(nullptr, {x}, {z}, {})),
+                  /*input=*/false, /*output=*/true),
+      testing::ElementsAre(y));
   ASSERT_EQ(find_buffer_data_dependency(buffer_at(x)), x);
   ASSERT_EQ(find_buffer_data_dependency(buffer_at(x, buffer_min(y, 0))), x);
   ASSERT_EQ(find_buffer_data_dependency(buffer_at(x) + buffer_at(y)), var());
 
   ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(x, y, {}, call_stmt::make(nullptr, {y}, {x}, {}))),
+      testing::ElementsAre(y));
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, {}, call_stmt::make(nullptr, {x}, {z}, {})),
+                  /*input=*/true, /*output=*/false),
+      testing::ElementsAre(x));
+  ASSERT_THAT(find_buffer_dependencies(crop_buffer::make(z, y, {}, call_stmt::make(nullptr, {x}, {z}, {})),
+                  /*input=*/false, /*output=*/true),
       testing::ElementsAre(y));
 
   stmt test = block::make({
@@ -121,7 +130,16 @@ TEST(find_buffer_dependencies, basic) {
   });
 
   ASSERT_THAT(find_buffer_dependencies(test, /*input=*/true, /*output=*/false), testing::ElementsAre(x, y));
-  ASSERT_THAT(find_buffer_dependencies(test, /*input=*/false, /*output=*/true), testing::ElementsAre(x, w, u));
+  ASSERT_THAT(find_buffer_dependencies(test, /*input=*/false, /*output=*/true), testing::ElementsAre(x, w));
+}
+
+TEST(find_dependencies, basic) {
+  ASSERT_THAT(find_dependencies(buffer_at(x)), testing::ElementsAre(x));
+  ASSERT_THAT(find_dependencies(x + y), testing::ElementsAre(x, y));
+  ASSERT_THAT(find_dependencies(let::make(x, y, x + z)), testing::ElementsAre(y, z));
+  ASSERT_THAT(find_dependencies(crop_dim::make(x, y, 0, {z, z}, call_stmt::make(nullptr, {w}, {u}, {}))),
+      testing::ElementsAre(y, z, w, u));
+  ASSERT_THAT(find_dependencies(block::make({check::make(x), check::make(y)})), testing::ElementsAre(x, y));
 }
 
 }  // namespace slinky

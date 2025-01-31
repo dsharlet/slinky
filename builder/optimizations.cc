@@ -1045,7 +1045,7 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
         const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
         const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
-        ctx.copy(*src_buf, *dst_buf, pad_value);
+        ctx.config->copy(*src_buf, *dst_buf, pad_value);
         return 0;
       },
       {}, {op->src, dst}, std::move(copy_attrs));
@@ -1348,7 +1348,16 @@ public:
       // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
       symbol_map<bool> old_can_mutate;
       std::swap(can_mutate, old_can_mutate);
-      stmt_mutator::visit(op);
+
+      stmt body = mutate(op->body);
+      std::vector<var> referenced = find_dependencies(body);
+      std::vector<std::pair<var, expr>> lets;
+      for (var i : referenced) {
+        lets.push_back({i, expr(i)});
+      }
+      body = let_stmt::make(std::move(lets), std::move(body), /*is_closure=*/true);
+      set_result(loop::make(op->sym, op->max_workers, op->bounds, op->step, std::move(body)));
+
       can_mutate = std::move(old_can_mutate);
     } else {
       stmt_mutator::visit(op);

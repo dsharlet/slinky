@@ -62,26 +62,23 @@ expr make_bin_op(expr a, expr b) {
 }
 
 template <typename T, typename Body>
-Body make_let(std::vector<std::pair<var, expr>> lets, Body body) {
+T* make_let(std::vector<std::pair<var, expr>> lets, Body body) {
   auto n = new T();
   n->lets = std::move(lets);
-  if (const T* l = body.template as<T>()) {
-    n->lets.insert(n->lets.end(), l->lets.begin(), l->lets.end());
-    n->body = l->body;
-  } else {
-    n->body = std::move(body);
-  }
-  return Body(n);
+  n->body = std::move(body);
+  return n;
 }
 
 expr let::make(std::vector<std::pair<var, expr>> lets, expr body) {
-  return make_let<let>(std::move(lets), std::move(body));
+  return expr(make_let<let>(std::move(lets), std::move(body)));
 }
 
 expr let::make(var sym, expr value, expr body) { return make({{sym, std::move(value)}}, std::move(body)); }
 
-stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body) {
-  return make_let<let_stmt>(std::move(lets), std::move(body));
+stmt let_stmt::make(std::vector<std::pair<var, expr>> lets, stmt body, bool is_closure) {
+  let_stmt* n = make_let<let_stmt>(std::move(lets), std::move(body));
+  n->is_closure = is_closure;
+  return stmt(n);
 }
 
 stmt let_stmt::make(var sym, expr value, stmt body) { return make({{sym, std::move(value)}}, std::move(body)); }

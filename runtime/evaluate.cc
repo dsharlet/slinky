@@ -43,6 +43,11 @@ void dump_context_for_expr(
   }
 }
 
+eval_context::eval_context()  {
+  static eval_config default_config;
+  config = &default_config;
+}
+
 namespace {
 
 struct allocated_buffer : public raw_buffer {
@@ -240,7 +245,7 @@ public:
     assert(op->args.size() == 2);
     index_t* sem = reinterpret_cast<index_t*>(eval(op->args[0]));
     index_t count = eval(op->args[1], 0);
-    context.thread_pool->atomic_call([=]() { *sem = count; });
+    context.config->thread_pool->atomic_call([=]() { *sem = count; });
     return 1;
   }
 
@@ -253,7 +258,7 @@ public:
       sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
       counts[i] = eval(op->args[i * 2 + 1], 1);
     }
-    context.thread_pool->atomic_call([=]() {
+    context.config->thread_pool->atomic_call([=]() {
       for (std::size_t i = 0; i < sem_count; ++i) {
         *sems[i] += counts[i];
       }
@@ -270,7 +275,7 @@ public:
       sems[i] = reinterpret_cast<index_t*>(eval(op->args[i * 2 + 0]));
       counts[i] = eval(op->args[i * 2 + 1], 1);
     }
-    context.thread_pool->wait_for([=]() {
+    context.config->thread_pool->wait_for([=]() {
       // Check we can acquire all of the semaphores before acquiring any of them.
       for (std::size_t i = 0; i < sem_count; ++i) {
         if (*sems[i] < counts[i]) return false;
@@ -287,13 +292,13 @@ public:
   index_t eval_trace_begin(const call* op) {
     assert(op->args.size() == 1);
     const char* name = reinterpret_cast<const char*>(eval(op->args[0]));
-    return context.trace_begin ? context.trace_begin(name) : 0;
+    return context.config->trace_begin ? context.config->trace_begin(name) : 0;
   }
 
   index_t eval_trace_end(const call* op) {
     assert(op->args.size() == 1);
-    if (context.trace_end) {
-      context.trace_end(eval(op->args[0]));
+    if (context.config->trace_end) {
+      context.config->trace_end(eval(op->args[0]));
     }
     return 1;
   }
@@ -302,7 +307,7 @@ public:
     assert(op->args.size() == 1);
     var sym = *as_variable(op->args[0]);
     allocated_buffer* buf = reinterpret_cast<allocated_buffer*>(context.lookup(sym));
-    context.free(sym, buf, buf->allocation);
+    context.config->free(sym, buf, buf->allocation);
     buf->allocation = nullptr;
     return 1;
   }
@@ -412,10 +417,24 @@ public:
     std::atomic<index_t> result = 0;
     std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
     context.reserve(op->sym.id + 1);
-    index_t old_value = context.set(op->sym, 0);
-    context.thread_pool->parallel_for(
+    context.config->thread_pool->parallel_for(
         n,
-        [context = this->context, step, min = bounds.min, op, &result](index_t i) mutable {
+        [parent_context = &context, step, min = bounds.min, op, &result](index_t i) mutable {
+          eval_context context;
+          if (const let_stmt* closure = is_closure(op->body)) {
+            // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
+            context.reserve(parent_context->size());
+            context.config = parent_context->config;
+
+            // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent context,
+            // but assign them to our local context.
+            for (const std::pair<var, expr>& i : closure->lets) {
+              context[i.first] = evaluate(i.second, *parent_context);
+            }
+          } else {
+            // We don't have a closure, just copy the whole context.
+            context = *parent_context;
+          }
           context.set(op->sym, i * step + min);
           // Evaluate the parallel loop body with our copy of the context.
           index_t result_i = evaluate(op->body, context);
@@ -425,7 +444,6 @@ public:
           }
         },
         op->max_workers);
-    context.set(op->sym, old_value);
     return result;
   }
 
@@ -457,8 +475,8 @@ public:
   }
 
   SLINKY_NO_INLINE void call_failed(index_t result, const call_stmt* op) {
-    if (context.call_failed) {
-      context.call_failed(op);
+    if (context.config->call_failed) {
+      context.config->call_failed(op);
     } else {
       std::cerr << "call_stmt failed: " << stmt(op) << "->" << result << std::endl;
       std::abort();
@@ -495,7 +513,7 @@ public:
     }
 
     if (op->storage == memory_type::heap) {
-      buffer.allocation = context.allocate(op->sym, &buffer);
+      buffer.allocation = context.config->allocate(op->sym, &buffer);
     } else {
       assert(op->storage == memory_type::stack);
       std::size_t size = buffer.init_strides();
@@ -506,7 +524,7 @@ public:
     index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
 
     if (op->storage == memory_type::heap) {
-      context.free(op->sym, &buffer, buffer.allocation);
+      context.config->free(op->sym, &buffer, buffer.allocation);
     }
 
     return result;
@@ -735,8 +753,8 @@ public:
   }
 
   SLINKY_NO_INLINE index_t check_failed(const check* op) {
-    if (context.check_failed) {
-      context.check_failed(op->condition);
+    if (context.config->check_failed) {
+      context.config->check_failed(op->condition);
     } else {
       std::cerr << "Check failed: " << op->condition << std::endl;
       std::cerr << "Context: " << std::endl;

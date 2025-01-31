@@ -1112,6 +1112,13 @@ public:
       }
     }
 
+    while (const T* let_body = body.template as<T>()) {
+      // Flatten nested lets
+      lets.insert(lets.end(), let_body->lets.begin(), let_body->lets.end());
+      body = let_body->body;
+      values_changed = true;
+    }
+
     if (lets.empty()) {
       // All lets were removed.
       set_result(std::move(body), std::move(body_info));

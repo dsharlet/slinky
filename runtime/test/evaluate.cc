@@ -98,7 +98,9 @@ TEST(evaluate, call) {
 TEST(evaluate, loop) {
   eval_context ctx;
   thread_pool_impl t;
-  ctx.thread_pool = &t;
+  eval_config cfg;
+  cfg.thread_pool = &t;
+  ctx.config = &cfg;
 
   for (int max_workers : {loop::serial, 2, 3, loop::parallel}) {
     std::atomic<index_t> sum_x = 0;
@@ -229,7 +231,9 @@ TEST(evaluate, clone_buffer) {
 TEST(evaluate, semaphore) {
   eval_context ctx;
   thread_pool_impl t;
-  ctx.thread_pool = &t;
+  eval_config cfg;
+  cfg.thread_pool = &t;
+  ctx.config = &cfg;
 
   index_t sem1 = 0;
   index_t sem2 = 0;

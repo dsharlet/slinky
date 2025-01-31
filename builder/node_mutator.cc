@@ -9,8 +9,8 @@ namespace slinky {
 
 namespace {
 
-template <typename T>
-auto mutate_let(node_mutator* this_, const T* op) {
+template <typename T, typename... Args>
+auto mutate_let(node_mutator* this_, const T* op, Args... args) {
   std::vector<std::pair<var, expr>> lets;
   lets.reserve(op->lets.size());
   bool changed = false;
@@ -23,7 +23,7 @@ auto mutate_let(node_mutator* this_, const T* op) {
   if (!changed) {
     return decltype(body){op};
   } else {
-    return T::make(std::move(lets), std::move(body));
+    return T::make(std::move(lets), std::move(body), args...);
   }
 }
 
@@ -71,7 +71,7 @@ stmt clone_with(const transpose* op, var sym, stmt new_body) {
   return transpose::make(sym, op->src, op->dims, std::move(new_body));
 }
 
-stmt clone_with(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body)); }
+stmt clone_with(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body), op->is_closure); }
 
 stmt clone_with(const loop* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const allocate* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
@@ -132,7 +132,7 @@ void stmt_mutator::visit(const transpose* op) { set_result(mutate_decl(this, op)
 void node_mutator::visit(const variable* op) { set_result(op); }
 void node_mutator::visit(const constant* op) { set_result(op); }
 void node_mutator::visit(const let* op) { set_result(mutate_let(this, op)); }
-void node_mutator::visit(const let_stmt* op) { set_result(mutate_let(this, op)); }
+void node_mutator::visit(const let_stmt* op) { set_result(mutate_let(this, op, op->is_closure)); }
 void node_mutator::visit(const add* op) { set_result(mutate_binary(this, op)); }
 void node_mutator::visit(const sub* op) { set_result(mutate_binary(this, op)); }
 void node_mutator::visit(const mul* op) { set_result(mutate_binary(this, op)); }

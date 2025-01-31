@@ -1375,13 +1375,14 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
     result = simplify(result);
   }
 
-  result = optimize_symbols(result, ctx);
-
   result = insert_early_free(result);
 
   if (options.trace) {
     result = inject_traces(result, ctx);
   }
+
+  // This pass adds closures around parallel loop bodies, any following passes need to maintain this closure.
+  result = optimize_symbols(result, ctx);
 
   result = canonicalize_nodes(result);
 
