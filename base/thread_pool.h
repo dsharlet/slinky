@@ -89,6 +89,7 @@ public:
 // It is not directly used by anything except for testing.
 class thread_pool_impl : public thread_pool {
 private:
+  int expected_thread_count_ = 0;
   std::atomic<int> worker_count_{0};
   std::vector<std::thread> threads_;
   std::atomic<bool> stop_;
@@ -118,8 +119,11 @@ public:
 
   // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
   void run_worker(const predicate& condition);
+  // Because the above API allows adding workers to the thread pool, we might not know how many threads there will be when
+  // starting up a task. This allows communicating that information.
+  void expect_workers(int n) { expected_thread_count_ = n; }
 
-  int thread_count() const override { return worker_count_; }
+  int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
   void enqueue(int n, task t, task_id id = unique_task_id) override;
   void enqueue(task t, task_id id = unique_task_id) override;
