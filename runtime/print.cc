@@ -1,8 +1,8 @@
 #include "runtime/print.h"
 
 #include <cassert>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
@@ -162,7 +162,13 @@ public:
     return *this << "{" << d.bounds << ", " << d.stride << ", " << d.fold_factor << "}";
   }
 
-  printer& operator<<(const std::pair<var, expr>& let) { return *this << let.first << " = " << let.second; }
+  printer& operator<<(const std::pair<var, expr>& let) {
+    if (is_variable(let.second, let.first)) {
+      return *this << let.first;
+    } else {
+      return *this << let.first << " = " << let.second;
+    }
+  }
 
   template <typename T>
   void print_vector(const std::vector<T>& v, const std::string& sep = ", ") {
@@ -212,7 +218,7 @@ public:
 
   std::string indent(int extra = 0) const { return std::string(depth + extra, ' '); }
 
-  void visit(const variable* v) override { 
+  void visit(const variable* v) override {
     switch (v->field) {
     case buffer_field::none: *this << v->sym; return;
     case buffer_field::rank: *this << "buffer_rank(" << v->sym << ")"; return;
@@ -234,7 +240,11 @@ public:
 
   void visit(const let_stmt* l) override {
     const char* tag = l->is_closure ? "closure" : "let";
-    if (l->lets.size() == 1) {
+    if (std::all_of(l->lets.begin(), l->lets.end(), [&](const auto& i) { return as_variable(i.second); })) {
+      *this << indent() << tag << " {";
+      print_vector(l->lets, ", ");
+      *this << "} in {\n";
+    } else if (l->lets.size() == 1) {
       *this << indent() << tag << " " << l->lets.front().first << " = " << l->lets.front().second << " in {\n";
     } else {
       *this << indent() << tag << " {\n";
@@ -246,9 +256,7 @@ public:
     *this << indent() << "}\n";
   }
 
-  void visit_bin_op(const expr& a, const char* s, const expr& b) {
-    *this << "(" << a << s << b << ")";
-  }
+  void visit_bin_op(const expr& a, const char* s, const expr& b) { *this << "(" << a << s << b << ")"; }
 
   void visit(const add* op) override { visit_bin_op(op->a, " + ", op->b); }
   void visit(const sub* op) override { visit_bin_op(op->a, " - ", op->b); }
@@ -425,14 +433,14 @@ void print(std::ostream& os, const stmt& s, const node_context* ctx) {
   p << s;
 }
 
-std::string to_string(var x) { 
+std::string to_string(var x) {
   std::stringstream ss;
   printer p(ss, default_context);
   p << x;
   return ss.str();
 }
 
-std::ostream& operator<<(std::ostream& os, var sym) { 
+std::ostream& operator<<(std::ostream& os, var sym) {
   print(os, sym);
   return os;
 }
