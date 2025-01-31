@@ -47,8 +47,14 @@ bool can_substitute_buffer(const depends_on_result& r);
 // Check if the node depends on anything that may change value.
 bool is_pure(expr_ref x);
 
-// Find the buffers used by a stmt or expr. Returns the vars accessed in sorted order.
+// Find all the variables used by a node.
+std::vector<var> find_dependencies(expr_ref e);
+std::vector<var> find_dependencies(stmt_ref s);
+
+// Find a single buffer data dependency in e.
 var find_buffer_data_dependency(expr_ref e);
+
+// Find the buffers used by a stmt or expr. Returns the vars accessed in sorted order.
 std::vector<var> find_buffer_dependencies(stmt_ref s);
 std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output);
 

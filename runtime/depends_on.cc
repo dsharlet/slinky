@@ -21,7 +21,11 @@ public:
   std::vector<std::pair<var, depends_on_result*>> var_deps;
   depends_on_result dummy_deps;
 
+  // If non-null, we'll also add dependencies of variables as we find them.
+  std::map<var, depends_on_result>* unknown_deps = nullptr;
+
   dependencies() {}
+  dependencies(std::map<var, depends_on_result>& unknown_deps) : unknown_deps(&unknown_deps) {}
   dependencies(std::vector<std::pair<var, depends_on_result*>> var_deps) : var_deps(var_deps) {}
   dependencies(span<const std::pair<var, depends_on_result&>> deps) {
     var_deps.reserve(deps.size());
@@ -35,7 +39,21 @@ public:
     for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
       if (i->first == s) return i->second;
     }
+
+    if (unknown_deps) {
+      return &(*unknown_deps)[s];
+    }
     return nullptr;
+  }
+
+  // Check if we need to shadow a declaration.
+  bool decl_needs_shadow(var s) const {
+    // Go in reverse order to handle shadowed declarations properly.
+    for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
+      if (i->first == s) return i->second != &dummy_deps;
+    }
+
+    return unknown_deps != nullptr;
   }
 
   depends_on_result* no_dummy(depends_on_result* deps) const { return deps != &dummy_deps ? deps : nullptr; }
@@ -86,7 +104,7 @@ public:
     size_t var_deps_count = var_deps.size();
     for (const auto& p : op->lets) {
       p.second.accept(this);
-      if (no_dummy(find_deps(p.first))) {
+      if (decl_needs_shadow(p.first)) {
         var_deps.push_back({p.first, &dummy_deps});
       }
     }
@@ -94,13 +112,16 @@ public:
     var_deps.resize(var_deps_count);
   }
 
+  void visit(const let* op) override { visit_let(op); }
+  void visit(const let_stmt* op) override { visit_let(op); }
+
   void visit_sym_body(var sym, depends_on_result* src_deps, const stmt& body) {
     if (!body.defined()) return;
     size_t var_deps_count = var_deps.size();
     if (no_dummy(src_deps)) {
       // We have src_deps we want to transitively add to via this declaration.
       var_deps.push_back({sym, src_deps});
-    } else if (no_dummy(find_deps(sym))) {
+    } else if (decl_needs_shadow(sym)) {
       // We are shadowing something we are finding the dependencies of. Point at the dummy instead to avoid
       // contaminating the dependencies.
       var_deps.push_back({sym, &dummy_deps});
@@ -163,7 +184,7 @@ public:
     // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
     size_t var_deps_count = var_deps.size();
     for (std::size_t i = 0; i < op->dst_x.size(); ++i) {
-      if (no_dummy(find_deps(op->dst_x[i]))) {
+      if (decl_needs_shadow(op->dst_x[i])) {
         var_deps.push_back({op->dst_x[i], &dummy_deps});
       }
     }
@@ -322,122 +343,64 @@ bool is_pure(expr_ref x) {
 
 namespace {
 
-// Find the buffers accessed in a stmt. This is trickier than it seems, we need to track the lineage of buffers and
-// report the buffer as it is visible to the caller. So something like:
-//
-//   x = crop_dim(y, ...) {
-//     call(f, {x}, {})
-//   }
-//
-// Will report that y is consumed in the stmt, not x.
-class dependency_finder : public recursive_node_visitor {
-  bool input = true;
-  bool output = true;
-  bool data_only = false;
-  
-  symbol_map<var> aliases;
-
-public:
-  std::vector<var> result;
-
-  dependency_finder() {}
-  dependency_finder(bool input, bool output) : input(input), output(output) {}
-  dependency_finder(bool data_only) : data_only(data_only) {}
-
-  std::optional<var> lookup_alias(var x) {
-    if (aliases.contains(x)) {
-      return aliases.lookup(x);
-    } else {
-      return x;
-    }
+std::vector<var> keys(const std::map<var, depends_on_result>& m) { std::vector<var> result;
+  result.reserve(m.size());
+  for (const auto& i : m) {
+    result.push_back(i.first);
   }
-
-  void visit_buffer(var x) {
-    if (aliases.contains(x)) {
-      if (aliases.lookup(x)->defined()) {
-        x = *aliases.lookup(x);
-      } else {
-        return;
-      }
-    }
-    // Maintain result as a sorted unique list.
-    auto i = std::lower_bound(result.begin(), result.end(), x);
-    if (i == result.end() || *i != x) result.insert(i, x);
-  }
-
-  void visit(const variable* op) override {
-    if (op->field != buffer_field::none && !data_only) {
-      visit_buffer(op->sym);
-    }
-  }
-
-  void visit(const call* op) override {
-    if (op->intrinsic == intrinsic::buffer_at) {
-      auto buf = as_variable(op->args[0]);
-      assert(buf);
-      visit_buffer(*buf);
-    }
-    recursive_node_visitor::visit(op);
-  }
-
-  void visit(const call_stmt* op) override {
-    if (input) {
-      for (const var& i : op->inputs) {
-        visit_buffer(i);
-      }
-    }
-    if (output) {
-      for (const var& i : op->outputs) {
-        visit_buffer(i);
-      }
-    }
-  }
-  void visit(const copy_stmt* op) override {
-    if (input) visit_buffer(op->src);
-    if (output) visit_buffer(op->dst);
-  }
-
-  void visit(const allocate* op) override {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, var());
-    op->body.accept(this);
-  }
-  void visit(const make_buffer* op) override {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(find_buffer_data_dependency(op->base)));
-    op->body.accept(this);
-  }
-
-  template <typename T>
-  void visit_buffer_alias(const T* op) {
-    if (!op->body.defined()) return;
-    auto s = set_value_in_scope(aliases, op->sym, lookup_alias(op->src));
-    op->body.accept(this);
-  }
-  void visit(const crop_buffer* op) override { visit_buffer_alias(op); }
-  void visit(const crop_dim* op) override { visit_buffer_alias(op); }
-  void visit(const slice_buffer* op) override { visit_buffer_alias(op); }
-  void visit(const slice_dim* op) override { visit_buffer_alias(op); }
-  void visit(const transpose* op) override { visit_buffer_alias(op); }
-  void visit(const clone_buffer* op) override { visit_buffer_alias(op); }
-};
+  return result;
+}
 
 }  // namespace
 
-var find_buffer_data_dependency(expr_ref e) {
-  dependency_finder accessed(true);
-  if (e.defined()) e.accept(&accessed);
-  return accessed.result.size() == 1 ? accessed.result.front() : var();
+std::vector<var> find_dependencies(expr_ref e) {
+  std::map<var, depends_on_result> deps;
+  dependencies v(deps);
+  if (e.defined()) e.accept(&v);
+  return keys(deps);
+}
+std::vector<var> find_dependencies(stmt_ref s) {
+  std::map<var, depends_on_result> deps;
+  dependencies v(deps);
+  if (s.defined()) s.accept(&v);
+  return keys(deps);
 }
 
 std::vector<var> find_buffer_dependencies(stmt_ref s) { return find_buffer_dependencies(s, true, true); }
 
 std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output) {
-  dependency_finder accessed(input, output);
-  if (s.defined()) s.accept(&accessed);
-  return accessed.result;
+  std::map<var, depends_on_result> deps;
+  dependencies v(deps);
+  if (s.defined()) s.accept(&v);
+  
+  std::vector<var> result;
+  result.reserve(deps.size());
+  for (const auto& i : deps) {
+    if ((input && (i.second.buffer_input || i.second.buffer_src)) ||
+        (output && (i.second.buffer_output || i.second.buffer_dst))) {
+      result.push_back(i.first);
+    }
+  }
+  return result;
 }
 
+var find_buffer_data_dependency(expr_ref e) {
+  std::map<var, depends_on_result> deps;
+  dependencies v(deps);
+  if (e.defined()) e.accept(&v);
 
+  var result;
+  for (const auto& i : deps) {
+    if (i.second.buffer_base) {
+      if (result.defined()) {
+        // More than one data dependency
+        return var();
+      } else {
+        result = i.first;
+      }
+    }
+  }
+  return result;
+}
 
 }  // namespace slinky
