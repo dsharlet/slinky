@@ -60,6 +60,9 @@ test_context::test_context() {
 
   config.thread_pool = &threads;
 
+  // Many tests count the number of allocations that go on the heap, don't let memory_type::automatic corrupt those counts.
+  config.auto_stack_threshold = 0;
+
   eval_context::config = &config;
 }
 

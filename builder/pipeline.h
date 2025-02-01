@@ -33,7 +33,7 @@ class buffer_expr : public ref_counted<buffer_expr> {
   func* producer_;
   const_raw_buffer_ptr constant_;
 
-  memory_type storage_ = memory_type::heap;
+  memory_type storage_ = memory_type::automatic;
   std::optional<loop_id> store_at_;
 
   buffer_expr(var sym, std::size_t rank, expr elem_size);

@@ -39,6 +39,9 @@ struct eval_config {
   // Functions implementing the `trace_begin` and `trace_end` intrinsics.
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
+
+  // Allocations that have memory_type::automatic and are not greater than this size will be placed on the stack.
+  std::size_t auto_stack_threshold = 4 * 1024;
 };
 
 class eval_context {

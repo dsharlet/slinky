@@ -515,15 +515,18 @@ public:
     if (op->storage == memory_type::heap) {
       buffer.allocation = context.config->allocate(op->sym, &buffer);
     } else {
-      assert(op->storage == memory_type::stack);
       std::size_t size = buffer.init_strides();
-      buffer.base = __builtin_alloca(size);
-      buffer.allocation = nullptr;
+      if (op->storage == memory_type::stack || size <= context.config->auto_stack_threshold) {
+        buffer.base = __builtin_alloca(size);
+        buffer.allocation = nullptr;
+      } else {
+        buffer.allocation = context.config->allocate(op->sym, &buffer);
+      }
     }
 
     index_t result = eval_with_value(op->body, op->sym, reinterpret_cast<index_t>(&buffer));
 
-    if (op->storage == memory_type::heap) {
+    if (buffer.allocation) {
       context.config->free(op->sym, &buffer, buffer.allocation);
     }
 

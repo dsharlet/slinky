@@ -32,6 +32,8 @@ enum class stmt_node_type {
 };
 
 enum class memory_type {
+  // Automatically place small stack allocations on the heap, as determined by `eval_config::auto_stack_threshold`.
+  automatic,
   stack,
   heap,
 };
