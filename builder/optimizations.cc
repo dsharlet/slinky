@@ -1199,7 +1199,9 @@ class early_free_inserter : public stmt_mutator {
 public:
   void visit(const allocate* op) override {
     stmt body = mutate(op->body);
-    body = insert_free_into_allocate(op->sym).mutate(body);
+    if (op->storage == memory_type::heap) {
+      body = insert_free_into_allocate(op->sym).mutate(body);
+    }
     if (body.same_as(op->body)) {
       set_result(op);
     } else {
