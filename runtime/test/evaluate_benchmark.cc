@@ -206,7 +206,7 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
   const int workers = state.range(0);
 
   std::atomic<int> calls = 0;
-  stmt body = make_call_counter(calls);
+  stmt body = let_stmt::make({{x, x}}, make_call_counter(calls), /*is_closure=*/true);
 
   index_t sem = workers;
   if (synchronize) {
