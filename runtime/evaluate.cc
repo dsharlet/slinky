@@ -43,7 +43,7 @@ void dump_context_for_expr(
   }
 }
 
-eval_context::eval_context()  {
+eval_context::eval_context() {
   static eval_config default_config;
   config = &default_config;
 }
@@ -429,7 +429,12 @@ public:
             // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent context,
             // but assign them to our local context.
             for (const std::pair<var, expr>& i : closure->lets) {
-              context[i.first] = evaluate(i.second, *parent_context);
+              if (i.first == op->sym) {
+                // The loop variable is part of the closure, because it is defined outside the closure and used inside it.
+                // However, we are going to overwrite it below.
+                continue;
+              }
+              context.set(i.first, evaluate(i.second, *parent_context));
             }
           } else {
             // We don't have a closure, just copy the whole context.
