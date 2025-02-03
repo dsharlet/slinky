@@ -289,7 +289,7 @@ TEST(elementwise, outside_fold) {
   // Not having span(std::initializer_list<T>) is unfortunate.
   const raw_buffer* inputs[] = {&in_buf};
   const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
+  eval_context eval_ctx;
   p.evaluate(inputs, outputs, eval_ctx);
 
   for (int y = 0; y < H; ++y) {

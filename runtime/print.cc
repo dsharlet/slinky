@@ -11,6 +11,7 @@ namespace slinky {
 
 const char* to_string(memory_type type) {
   switch (type) {
+  case memory_type::automatic: return "automatic";
   case memory_type::stack: return "stack";
   case memory_type::heap: return "heap";
   default: return "<invalid memory_type>";

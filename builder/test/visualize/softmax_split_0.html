@@ -384,7 +384,6 @@ function pipeline(__in, out) {
             produce(softmax_in);
             produce(sum_exp_in);
             __event_t++;
-            check(free(max_in));
             consume(softmax_in);
             consume(sum_exp_in);
             produce(softmax_out);
