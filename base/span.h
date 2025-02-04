@@ -42,6 +42,8 @@ public:
   const value_type* end() const { return data_ + size_; }
 
   const value_type& operator[](std::size_t i) const { return data_[i]; }
+  const value_type& front() { return data_[0]; }
+  const value_type& back() { return data_[size_ - 1]; }
 
   span subspan(std::size_t offset) const { return span(data_ + offset, size_ - offset); }
   span subspan(std::size_t offset, std::size_t size) const { return span(data_ + offset, size); }
