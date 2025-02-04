@@ -12,6 +12,76 @@
 
 namespace slinky {
 
+constexpr std::size_t cache_line_size = 64;
+
+// This is a helper class for implementing a work stealing scheduler for a parallel for loop. It divides the work among
+// `K` task objects, which can be executed independently by separate threads. When the task is complete, the thread will
+// try to steal work from other tasks.
+template <size_t K = 1>
+class parallel_for {
+  struct task {
+    // i is the next iteration to run.
+    alignas(cache_line_size) std::atomic<std::size_t> i;
+
+    // The last iteration to run in this task.
+    std::size_t end;
+  };
+  task tasks_[K];
+  alignas(cache_line_size) std::atomic<std::size_t> worker_ = 0;
+  std::atomic<std::size_t> todo_ = 0;
+
+public:
+  // Set up a parallel for loop over `n` items.
+  parallel_for(std::size_t n) : todo_(n) {
+    // Divide the work evenly among the tasks we have.
+    if (K > 1 && n < K) {
+      for (std::size_t i = 0; i < n; ++i) {
+        task& k = tasks_[i];
+        k.i = i;
+        k.end = i + 1;
+      }
+      for (std::size_t i = n; i < K; ++i) {
+        task& k = tasks_[i];
+        k.i = 0;
+        k.end = 0;
+      }
+    } else {
+      std::size_t begin = 0;
+      for (std::size_t i = 0; i < K; ++i) {
+        task& k = tasks_[i];
+        k.i = begin;
+        k.end = ((i + 1) * n) / K;
+        begin = k.end;
+      }
+    }
+  }
+
+  // Work on the loop. This returns when work on all items in the loop has started, but may return before all items are
+  // complete.
+  template <typename Fn>
+  void run(const Fn& body) {
+    std::size_t w = K == 1 ? 0 : worker_++;
+    std::size_t done = 0;
+    // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
+    // stealing work from other workers.
+    for (std::size_t i = 0; i < K; ++i) {
+      task& k = tasks_[(i + w) % K];
+      while (true) {
+        std::size_t i = k.i++;
+        if (i >= k.end) {
+          // There are no more iterations to run.
+          break;
+        }
+        body(i);
+        ++done;
+      }
+    }
+    todo_ -= done;
+  }
+
+  bool done() const { return todo_ == 0; }
+};
+
 // This implements a simple thread pool that maps easily to the eval_context thread pool interface.
 // It is not directly used by anything except for testing.
 class thread_pool {
@@ -48,40 +118,19 @@ public:
       return;
     }
 
-    struct shared_state {
-      // We track the loop progress with two variables: `i` is the next iteration to run, and `done` is the number of
-      // iterations completed. This allows us to check if the loop is done without relying on the workers actually
-      // running. If the thread pool is busy, then we might enqueue workers that never run until after the loop is
-      // done. Waiting for these to return (after doing nothing) would risk deadlock.
-      std::atomic<std::size_t> i = 0;
-      std::atomic<std::size_t> done = 0;
-    };
-    auto state = std::make_shared<shared_state>();
+    auto loop = std::make_shared<slinky::parallel_for<>>(n);
+
     // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [this, state, n, body = std::move(body)]() mutable {
-      while (true) {
-        std::size_t i = state->i++;
-        if (i >= n) {
-          // There are no more iterations to run.
-          if (i == n) {
-            // We hit the end of the loop, cancel any queued workers to save ourselves some work.
-            cancel(state.get());
-          }
-          break;
-        }
-        body(i);
-        ++state->done;
-      }
-    };
+    auto worker = [this, loop, body = std::move(body)]() mutable { loop->run(body); };
     int workers = std::min<int>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
     if (workers > 1) {
-      enqueue(workers - 1, worker, state.get());
+      enqueue(workers - 1, worker, loop.get());
     }
     // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
     // available.
-    run(worker, state.get());
+    run(worker, loop.get());
     // While the loop still isn't done, work on other tasks.
-    wait_for([&]() { return state->done >= n; });
+    wait_for([&]() { return loop->done(); });
   }
 };
 
@@ -112,15 +161,15 @@ private:
 public:
   // `workers` indicates how many worker threads the thread pool will have.
   // `init` is a task that is run on each newly created thread.
-  // Pass workers = 0 to have a thread pool with no worker threads and 
+  // Pass workers = 0 to have a thread pool with no worker threads and
   // use `run_worker` to enter a thread into the thread pool.
   thread_pool_impl(int workers = 3, const task& init = nullptr);
   ~thread_pool_impl() override;
 
   // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
   void run_worker(const predicate& condition);
-  // Because the above API allows adding workers to the thread pool, we might not know how many threads there will be when
-  // starting up a task. This allows communicating that information.
+  // Because the above API allows adding workers to the thread pool, we might not know how many threads there will be
+  // when starting up a task. This allows communicating that information.
   void expect_workers(int n) { expected_thread_count_ = n; }
 
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }

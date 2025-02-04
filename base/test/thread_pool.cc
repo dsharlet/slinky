@@ -9,6 +9,25 @@ namespace slinky {
 
 int sum_arithmetic_sequence(int n) { return n * (n - 1) / 2; }
 
+template <std::size_t K>
+bool test_parallel_for_done(int n) {
+  std::vector<bool> ran(n);
+
+  parallel_for<K> p(n);
+  p.run([&](int i) { ran[i] = true; });
+  return std::all_of(ran.begin(), ran.end(), [](bool i) { return i; });
+}
+
+TEST(parallel_for, done) {
+  for (int n : {0, 1, 2, 10, 20, 30}) {
+    ASSERT_TRUE(test_parallel_for_done<1>(n));
+    ASSERT_TRUE(test_parallel_for_done<2>(n));
+    ASSERT_TRUE(test_parallel_for_done<3>(n));
+    ASSERT_TRUE(test_parallel_for_done<4>(n));
+    ASSERT_TRUE(test_parallel_for_done<16>(n));
+  }
+}
+
 TEST(parallel_for, sum) {
   thread_pool_impl t;
   for (int n = 0; n < 100; ++n) {
