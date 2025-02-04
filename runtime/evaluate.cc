@@ -58,6 +58,10 @@ struct interval {
   index_t min, max;
 };
 
+void* align_pointer(void* x, std::size_t align) {
+  return reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(x) + align - 1) & ~(align - 1));
+}
+
 class evaluator {
 public:
   eval_context& context;
@@ -430,8 +434,8 @@ public:
             // but assign them to our local context.
             for (const std::pair<var, expr>& i : closure->lets) {
               if (i.first == op->sym) {
-                // The loop variable is part of the closure, because it is defined outside the closure and used inside it.
-                // However, we are going to overwrite it below.
+                // The loop variable is part of the closure, because it is defined outside the closure and used inside
+                // it. However, we are going to overwrite it below.
                 continue;
               }
               context.set(i.first, evaluate(i.second, *parent_context));
@@ -522,7 +526,9 @@ public:
     } else {
       std::size_t size = buffer.init_strides();
       if (op->storage == memory_type::stack || size <= context.config->auto_stack_threshold) {
-        buffer.base = __builtin_alloca(size);
+        const int alignment = context.config->stack_alignment;
+        // Assume alloca aligns to sizeof(void*) already.
+        buffer.base = align_pointer(__builtin_alloca(size + alignment - sizeof(void*)), alignment);
         buffer.allocation = nullptr;
       } else {
         buffer.allocation = context.config->allocate(op->sym, &buffer);

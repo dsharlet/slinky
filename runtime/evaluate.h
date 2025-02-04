@@ -40,6 +40,9 @@ struct eval_config {
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
 
+  // Alignment to give stack allocations.
+  std::size_t stack_alignment = 16;
+
   // Allocations with storage `memory_type::automatic` not bigger than this size (bytes) will be placed on the stack.
   std::size_t auto_stack_threshold = 4 * 1024;
 };
