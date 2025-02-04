@@ -58,10 +58,6 @@ struct interval {
   index_t min, max;
 };
 
-void* align_pointer(void* x, std::size_t align) {
-  return reinterpret_cast<void*>((reinterpret_cast<uintptr_t>(x) + align - 1) & ~(align - 1));
-}
-
 class evaluator {
 public:
   eval_context& context;
@@ -524,11 +520,10 @@ public:
     if (op->storage == memory_type::heap) {
       buffer.allocation = context.config->allocate(op->sym, &buffer);
     } else {
-      std::size_t size = buffer.init_strides();
+      const int alignment = context.config->alignment;
+      std::size_t size = buffer.init_strides(alignment);
       if (op->storage == memory_type::stack || size <= context.config->auto_stack_threshold) {
-        const int alignment = context.config->stack_alignment;
-        // Assume alloca aligns to sizeof(void*) already.
-        buffer.base = align_pointer(__builtin_alloca(size + alignment - sizeof(void*)), alignment);
+        buffer.base = align_up(__builtin_alloca(size + alignment - 1), alignment);
         buffer.allocation = nullptr;
       } else {
         buffer.allocation = context.config->allocate(op->sym, &buffer);
