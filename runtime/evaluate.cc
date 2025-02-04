@@ -430,8 +430,8 @@ public:
             // but assign them to our local context.
             for (const std::pair<var, expr>& i : closure->lets) {
               if (i.first == op->sym) {
-                // The loop variable is part of the closure, because it is defined outside the closure and used inside it.
-                // However, we are going to overwrite it below.
+                // The loop variable is part of the closure, because it is defined outside the closure and used inside
+                // it. However, we are going to overwrite it below.
                 continue;
               }
               context.set(i.first, evaluate(i.second, *parent_context));
@@ -520,9 +520,10 @@ public:
     if (op->storage == memory_type::heap) {
       buffer.allocation = context.config->allocate(op->sym, &buffer);
     } else {
-      std::size_t size = buffer.init_strides();
+      const int alignment = context.config->alignment;
+      std::size_t size = buffer.init_strides(alignment);
       if (op->storage == memory_type::stack || size <= context.config->auto_stack_threshold) {
-        buffer.base = __builtin_alloca(size);
+        buffer.base = align_up(__builtin_alloca(size + alignment - 1), alignment);
         buffer.allocation = nullptr;
       } else {
         buffer.allocation = context.config->allocate(op->sym, &buffer);

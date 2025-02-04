@@ -42,6 +42,15 @@ const T* offset_bytes(const T* x, std::ptrdiff_t bytes) {
   return x ? reinterpret_cast<const T*>(reinterpret_cast<const char*>(x) + bytes) : x;
 }
 
+template <typename T>
+T* align_up(T* x, std::size_t align) {
+  return reinterpret_cast<T*>((reinterpret_cast<uintptr_t>(x) + align - 1) & ~(align - 1));
+}
+template <typename T>
+const T* align_up(const T* x, std::size_t align) {
+  return reinterpret_cast<const T*>((reinterpret_cast<uintptr_t>(x) + align - 1) & ~(align - 1));
+}
+
 // TODO(https://github.com/dsharlet/slinky/issues/1): This and buffer_expr in pipeline.h should have the same API
 // (except for expr instead of index_t).
 class dim {
@@ -335,8 +344,8 @@ public:
   std::size_t init_strides(index_t alignment = 1);
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
-  // be deallocated with `free`.
-  void* allocate();
+  // be deallocated with `aligned_free`. `alignment` must be a power of 2.
+  void* allocate(index_t alignment = 1);
 
   template <typename NewT>
   const buffer<NewT>& cast() const;

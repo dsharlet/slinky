@@ -183,10 +183,10 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
   return (flat_max + elem_size + (alignment - 1)) & ~(alignment - 1);
 }
 
-void* raw_buffer::allocate() {
-  std::size_t size = init_strides();
-  void* allocation = malloc(size);
-  base = allocation;
+void* raw_buffer::allocate(index_t alignment) {
+  std::size_t size = init_strides(alignment);
+  void* allocation = malloc(size + alignment - 1);
+  base = align_up(allocation, alignment);
   return allocation;
 }
 
