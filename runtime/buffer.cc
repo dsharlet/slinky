@@ -132,7 +132,8 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
     ++dims_end;
   };
 
-  std::size_t min_unknown = rank;
+  std::size_t unknown_begin = rank;
+  std::size_t unknown_end = 0;
   for (std::size_t i = 0; i < rank; ++i) {
     if (dim(i).stride() == 0) continue;
 
@@ -144,11 +145,12 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
       learn_dim(init_stride_dim(std::abs(dim(i).stride()), alloc_extent_i));
     } else {
       // Track the range of dimensions we need to find the stride of.
-      min_unknown = std::min(min_unknown, i);
+      unknown_begin = std::min(unknown_begin, i);
+      unknown_end = i + 1;
     }
   }
 
-  for (std::size_t i = min_unknown; i < rank; ++i) {
+  for (std::size_t i = unknown_begin; i < unknown_end; ++i) {
     if (dim(i).stride() != dim::auto_stride) continue;
 
     const index_t alloc_extent_i = alloc_extent(dim(i));
@@ -163,21 +165,16 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
     }
 
     // Loop through all the dimensions and see if a stride that is just outside any dimension is OK.
-    index_t min = std::numeric_limits<index_t>::max();
     for (const init_stride_dim& dim_j : known_dims) {
       const index_t candidate = (dim_j.dim_stride + (alignment - 1)) & ~(alignment - 1);
-      if (candidate >= min) {
-        // This candidate stride is not better than the current stride. Since the dims are sorted, none of our remaining
-        // candidates will pass this check.
+      if (&dim_j == &known_dims.back() || is_stride_ok(candidate, alloc_extent_i, known_dims)) {
+        dim(i).set_stride(candidate);
+        learn_dim(init_stride_dim(candidate, alloc_extent_i));
+        // The dims are sorted, so no subsequent candidate will be better.
         break;
-      } else if (!is_stride_ok(candidate, alloc_extent_i, known_dims)) {
-        continue;
       }
-      min = candidate;
     }
-    assert(min < std::numeric_limits<index_t>::max());
-    dim(i).set_stride(min);
-    learn_dim(init_stride_dim(min, alloc_extent_i));
+    assert(dim(i).stride() != dim::auto_stride);
   }
 
   return (flat_max + elem_size + (alignment - 1)) & ~(alignment - 1);
