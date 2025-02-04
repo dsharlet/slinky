@@ -7,8 +7,6 @@
 
 namespace slinky {
 
-constexpr int cache_line_size = 64;
-
 struct unshared {
   alignas(cache_line_size) int value;
 };
