@@ -121,7 +121,11 @@ public:
     auto loop = std::make_shared<slinky::parallel_for<>>(n);
 
     // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [this, loop, body = std::move(body)]() mutable { loop->run(body); };
+    auto worker = [this, loop, body = std::move(body)]() mutable { 
+      loop->run(body); 
+      // If we get here, there's no more work to start. Cancel any remaining tasks.
+      cancel(loop.get());
+    };
     int workers = std::min<int>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
     if (workers > 1) {
       enqueue(workers - 1, worker, loop.get());
