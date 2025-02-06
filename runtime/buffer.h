@@ -812,15 +812,16 @@ struct for_each_loop {
 index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
 void make_for_each_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
 
-template <typename F, std::size_t NumBufs>
-void for_each_impl(const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f);
+template <std::size_t NumBufs, typename F>
+void for_each_impl(void** bases, const for_each_loop<NumBufs>* loop, const F& f);
 
-template <bool CallF, typename F, std::size_t NumBufs>
-void for_each_impl_linear(const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
+template <std::size_t NumBufs, bool CallF, typename F>
+void for_each_impl_linear(void** bases, const for_each_loop<NumBufs>* loop, const F& f) {
   const index_t* strides = loop->strides;
   index_t extent = loop->extent;
   ++loop;
-  std::array<void*, NumBufs> bases_i = bases;
+  void* bases_i[NumBufs];
+  std::copy_n(bases, NumBufs, bases_i);
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   assert(extent >= 1);
   for (;;) {
@@ -840,13 +841,13 @@ void for_each_impl_linear(const std::array<void*, NumBufs>& bases, const for_eac
   }
 }
 
-template <bool CallF, typename F, std::size_t NumBufs>
-void for_each_impl_folded(const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
+template <std::size_t NumBufs, bool CallF, typename F>
+void for_each_impl_folded(void** bases, const for_each_loop<NumBufs>* loop, const F& f) {
   const dim* const* dims = loop->dims;
   index_t begin = dims[0]->begin();
   index_t end = begin + loop->extent;
   ++loop;
-  std::array<void*, NumBufs> bases_i;
+  void* bases_i[NumBufs];
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   for (index_t i = begin; i < end; ++i) {
     bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
@@ -861,24 +862,23 @@ void for_each_impl_folded(const std::array<void*, NumBufs>& bases, const for_eac
   }
 }
 
-template <typename F, std::size_t NumBufs>
-SLINKY_ALWAYS_INLINE inline void for_each_impl(
-    const std::array<void*, NumBufs>& bases, const for_each_loop<NumBufs>* loop, const F& f) {
+template <std::size_t NumBufs, typename F>
+SLINKY_ALWAYS_INLINE inline void for_each_impl(void** bases, const for_each_loop<NumBufs>* loop, const F& f) {
   if (SLINKY_LIKELY(loop->impl == for_each_loop<>::innermost)) {
-    for_each_impl_linear<true>(bases, loop, f);
+    for_each_impl_linear<NumBufs, true>(bases, loop, f);
   } else if (loop->impl == 0) {
-    for_each_impl_linear<false>(bases, loop, f);
+    for_each_impl_linear<NumBufs, false>(bases, loop, f);
   } else if (loop->impl == (for_each_loop<>::folded | for_each_loop<>::innermost)) {
-    for_each_impl_folded<true>(bases, loop, f);
+    for_each_impl_folded<NumBufs, true>(bases, loop, f);
   } else {
     assert(loop->impl == for_each_loop<>::folded);
-    for_each_impl_folded<false>(bases, loop, f);
+    for_each_impl_folded<NumBufs, false>(bases, loop, f);
   }
 }
 
-template <typename... Ts, typename T, std::size_t... Is>
-auto tuple_cast(const T& x, std::index_sequence<Is...>) {
-  return std::make_tuple(static_cast<Ts>(std::get<Is>(x))...);
+template <typename... Ts, std::size_t... Is>
+auto array_to_tuple(void** x, std::index_sequence<Is...>) {
+  return std::make_tuple(static_cast<Ts>(x[Is])...);
 }
 
 }  // namespace internal
@@ -895,12 +895,12 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
   auto* plan = SLINKY_ALLOCA(internal::for_each_loop<BufsSize>, std::max<std::size_t>(1, buf.rank));
-  std::array<void*, BufsSize> bases;
-  index_t slice_extent = internal::make_for_each_contiguous_slice_loops(buf_ptrs, bases.data(), plan);
+  void* bases[BufsSize];
+  index_t slice_extent = internal::make_for_each_contiguous_slice_loops(buf_ptrs, bases, plan);
 
-  internal::for_each_impl(bases, plan, [&f, slice_extent](const std::array<void*, BufsSize>& bases) {
+  internal::for_each_impl(bases, plan, [&f, slice_extent](void** bases) {
     std::apply(f, std::tuple_cat(std::make_tuple(slice_extent),
-                      internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
+                      internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
                           bases, std::make_index_sequence<BufsSize>())));
   });
 }
@@ -913,11 +913,11 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
   auto* plan = SLINKY_ALLOCA(internal::for_each_loop<BufsSize>, std::max<std::size_t>(1, buf.rank));
-  std::array<void*, BufsSize> bases;
-  internal::make_for_each_loops(buf_ptrs, bases.data(), plan);
+  void* bases[BufsSize];
+  internal::make_for_each_loops(buf_ptrs, bases, plan);
 
-  internal::for_each_impl(bases, plan, [&f](const std::array<void*, BufsSize>& bases) {
-    std::apply(f, internal::tuple_cast<typename Buf::pointer, typename Bufs::pointer...>(
+  internal::for_each_impl(bases, plan, [&f](void** bases) {
+    std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
                       bases, std::make_index_sequence<BufsSize>()));
   });
 }
