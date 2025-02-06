@@ -569,12 +569,11 @@ SLINKY_ALWAYS_INLINE inline index_t make_for_each_loops_impl(
 }
 
 template <std::size_t BufsSize>
-void for_each_impl(std::size_t n, void** bases, const for_each_loop* loop,
-    const std::function<void(void**, index_t extent, const index_t* strides)>& f);
+void for_each_impl(std::size_t n, void** bases, const for_each_loop* loop, const for_each_element_callback& f);
 
 template <std::size_t BufsSize>
-void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_loop* loop,
-    const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
+void for_each_impl_linear(
+    std::size_t bufs_size, void** bases, const for_each_loop* loop, const for_each_element_callback& f) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
   index_t extent = loop->extent;
   loop = offset_bytes(loop, sizeof(for_each_loop));
@@ -591,8 +590,8 @@ void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_lo
 }
 
 template <std::size_t BufsSize, bool CallF>
-void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_loop* loop,
-    const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
+void for_each_impl_folded(
+    std::size_t bufs_size, void** bases, const for_each_loop* loop, const for_each_element_callback& f) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
   index_t extent = loop->extent;
   loop = offset_bytes(loop, sizeof(for_each_loop));
@@ -617,8 +616,8 @@ void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_lo
 }
 
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline void for_each_impl(std::size_t bufs_size, void** bases, const for_each_loop* loop,
-    const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
+SLINKY_ALWAYS_INLINE inline void for_each_impl(
+    std::size_t bufs_size, void** bases, const for_each_loop* loop, const for_each_element_callback& f) {
   if (SLINKY_LIKELY(loop->impl == for_each_loop::innermost)) {
     void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
     std::copy_n(bases, bufs_size, bases_i);
