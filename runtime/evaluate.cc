@@ -429,6 +429,7 @@ public:
       // We want to minimize the size of the worker lambda below. We need to make an std::shared_ptr<parallel_for<>>
       // anyways, so let's just extend that object with the extra shared state we need.
       struct parallel_loop : public parallel_for<1> {
+        const eval_context& context;
         const var sym;
         const let_stmt* closure;
         const stmt& body;
@@ -436,25 +437,25 @@ public:
         const index_t step;
         std::atomic<index_t> result{0};
 
-        parallel_loop(std::size_t n, const loop* op, index_t min, index_t step)
-            : parallel_for(n), sym(op->sym), closure(is_closure(op->body)), body(closure ? closure->body : op->body),
-              min(min), step(step) {}
+        parallel_loop(std::size_t n, const eval_context& context, const loop* op, index_t min, index_t step)
+            : parallel_for(n), context(context), sym(op->sym), closure(is_closure(op->body)),
+              body(closure ? closure->body : op->body), min(min), step(step) {}
       };
 
-      auto loop = std::make_shared<parallel_loop>(n, op, bounds.min, step);
+      auto loop = std::make_shared<parallel_loop>(n, context, op, bounds.min, step);
 
       // Capture n by value becuase this may run after the parallel_for call returns.
-      auto worker = [parent_context = &context, loop]() mutable {
+      auto worker = [loop]() mutable {
         eval_context context;
-        loop->run([&context, &parent_context, &loop](index_t i) {
+        loop->run([&context, &loop](index_t i) {
           // We can't initialize this outside the parallel loop, because we don't know if the loop will actually run
           // anything (it might already have been finished by other workers). To work around this, we initialize the
           // context on the first iteration we run.
           if (context.size() == 0) {
             if (loop->closure) {
               // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
-              context.reserve(parent_context->size());
-              context.config = parent_context->config;
+              context.reserve(loop->context.size());
+              context.config = loop->context.config;
 
               // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent
               // context, but assign them to our local context.
@@ -464,11 +465,13 @@ public:
                   // it. However, we are going to overwrite it below.
                   continue;
                 }
-                context.set(i.first, evaluate(i.second, *parent_context));
+                auto src = as_variable(i.second);
+                assert(src);
+                context.set(i.first, loop->context.lookup(*src));
               }
             } else {
               // We don't have a closure, just copy the whole context.
-              context = *parent_context;
+              context = loop->context;
             }
           }
 
