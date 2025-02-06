@@ -6,10 +6,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <memory>
 
 #include "base/arithmetic.h"
+#include "base/function_ref.h"
 #include "base/span.h"
 #include "base/util.h"
 
@@ -809,11 +809,10 @@ auto array_to_tuple(void** x, std::index_sequence<Is...>) {
 // The implementation of for_each_element involves quite a bit of code. To avoid code size problems, we implement it
 // with type erased callbacks. To mitigate the overhead impact of this, the last linear loop is implemented in the
 // callbacks without type erasure below.
-// TODO: std::function_ref (C++26) would be great here :( We might want to implement our own version of that.
-using for_each_contiguous_slice_callback = std::function<void(index_t, void**, index_t, const index_t*)>;
-using for_each_element_callback = std::function<void(void**, index_t, const index_t*)>;
-void for_each_contiguous_slice_impl(span<const raw_buffer*> bufs, const for_each_contiguous_slice_callback& fn);
-void for_each_element_impl(span<const raw_buffer*> bufs, const for_each_element_callback& fn);
+using for_each_contiguous_slice_callback = function_ref<void(index_t, void**, index_t, const index_t*)>;
+using for_each_element_callback = function_ref<void(void**, index_t, const index_t*)>;
+void for_each_contiguous_slice_impl(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback fn);
+void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callback fn);
 
 }  // namespace internal
 

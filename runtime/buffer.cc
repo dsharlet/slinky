@@ -646,7 +646,7 @@ index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void*
 
 template <std::size_t BufsSize>
 SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_element_impl(
-    span<const raw_buffer*> bufs, const for_each_element_callback& f) {
+    span<const raw_buffer*> bufs, for_each_element_callback f) {
   std::size_t bufs_size = BufsSize > 0 ? BufsSize : bufs.size();
   void* plan = SLINKY_ALLOCA(
       char, (sizeof(for_each_loop) + sizeof(void*) * bufs_size) * std::max<std::size_t>(1, bufs[0]->rank));
@@ -658,13 +658,13 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_element_impl
 }  // namespace
 
 SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice_impl(
-    span<const raw_buffer*> bufs, const for_each_contiguous_slice_callback& f) {
+    span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f) {
   void* plan = SLINKY_ALLOCA(
       char, (sizeof(for_each_loop) + sizeof(void*) * bufs.size()) * std::max<std::size_t>(1, bufs[0]->rank));
   void** bases = SLINKY_ALLOCA(void*, bufs.size());
   index_t slice_extent = make_for_each_contiguous_slice_loops(bufs, bases, plan);
 
-  auto wrapper = [&f, slice_extent](
+  auto wrapper = [f, slice_extent](
                      void** bases, index_t extent, const index_t* strides) { f(slice_extent, bases, extent, strides); };
 
   switch (bufs.size()) {
@@ -675,7 +675,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice_impl(
   }
 }
 
-void for_each_element_impl(span<const raw_buffer*> bufs, const for_each_element_callback& f) {
+void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callback f) {
   switch (bufs.size()) {
   case 1: for_each_element_impl<1>(bufs, f); return;
   case 2: for_each_element_impl<2>(bufs, f); return;
