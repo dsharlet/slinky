@@ -414,42 +414,93 @@ public:
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
     assert(step != 0);
-    std::atomic<index_t> result = 0;
     std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
-    context.reserve(op->sym.id + 1);
-    context.config->thread_pool->parallel_for(
-        n,
-        [parent_context = &context, step, min = bounds.min, op, &result](index_t i) {
-          eval_context context;
-          if (const let_stmt* closure = is_closure(op->body)) {
-            // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
-            context.reserve(parent_context->size());
-            context.config = parent_context->config;
 
-            // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent context,
-            // but assign them to our local context.
-            for (const std::pair<var, expr>& i : closure->lets) {
-              if (i.first == op->sym) {
-                // The loop variable is part of the closure, because it is defined outside the closure and used inside
-                // it. However, we are going to overwrite it below.
-                continue;
+    if (n == 0) {
+      return 0;
+    } else if (n == 1) {
+      return eval_with_value(op->body, op->sym, bounds.min);
+    } else {
+      context.reserve(op->sym.id + 1);
+
+      thread_pool* pool = context.config->thread_pool;
+      assert(pool);
+
+      // We want to minimize the size of the worker lambda below. We need to make an std::shared_ptr<parallel_for<>>
+      // anyways, so let's just extend that object with the extra shared state we need.
+      struct parallel_loop : public parallel_for<1> {
+        const eval_context& context;
+        const var sym;
+        const let_stmt* closure;
+        const stmt& body;
+        const index_t min;
+        const index_t step;
+        std::atomic<index_t> result{0};
+
+        parallel_loop(std::size_t n, const eval_context& context, const loop* op, index_t min, index_t step)
+            : parallel_for(n), context(context), sym(op->sym), closure(is_closure(op->body)),
+              body(closure ? closure->body : op->body), min(min), step(step) {}
+      };
+
+      auto loop = std::make_shared<parallel_loop>(n, context, op, bounds.min, step);
+
+      // Capture n by value becuase this may run after the parallel_for call returns.
+      auto worker = [loop]() mutable {
+        eval_context context;
+        loop->run([&context, &loop](index_t i) {
+          // We can't initialize this outside the parallel loop, because we don't know if the loop will actually run
+          // anything (it might already have been finished by other workers). To work around this, we initialize the
+          // context on the first iteration we run.
+          if (context.size() == 0) {
+            if (loop->closure) {
+              // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
+              context.reserve(loop->context.size());
+              context.config = loop->context.config;
+
+              // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent
+              // context, but assign them to our local context.
+              for (const std::pair<var, expr>& i : loop->closure->lets) {
+                if (i.first == loop->sym) {
+                  // The loop variable is part of the closure, because it is defined outside the closure and used inside
+                  // it. However, we are going to overwrite it below.
+                  continue;
+                }
+                auto src = as_variable(i.second);
+                assert(src);
+                context.set(i.first, loop->context.lookup(*src));
               }
-              context.set(i.first, evaluate(i.second, *parent_context));
+            } else {
+              // We don't have a closure, just copy the whole context.
+              context = loop->context;
             }
-          } else {
-            // We don't have a closure, just copy the whole context.
-            context = *parent_context;
           }
-          context.set(op->sym, i * step + min);
+
+          context.set(loop->sym, i * loop->step + loop->min);
           // Evaluate the parallel loop body with our copy of the context.
-          index_t result_i = evaluate(op->body, context);
+          index_t result_i = evaluate(loop->body, context);
           if (result_i != 0) {
             index_t zero = 0;
-            result.compare_exchange_strong(zero, result_i);
+            loop->result.compare_exchange_strong(zero, result_i);
           }
-        },
-        op->max_workers);
-    return result;
+        });
+        // If we get here, there's no more work to start.
+        if (context.size() != 0) {
+          // We ran some tasks, so we know that the context is still in scope. Cancel any remaining tasks.
+          context.config->thread_pool->cancel(loop.get());
+        }
+      };
+      int workers = std::min<int>(op->max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
+      if (workers > 1) {
+        pool->enqueue(workers - 1, worker, loop.get());
+      }
+      // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
+      // available.
+      pool->run(worker, loop.get());
+      // While the loop still isn't done, work on other tasks.
+      pool->wait_for([&]() { return loop->done(); });
+
+      return loop->result;
+    }
   }
 
   SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op) {

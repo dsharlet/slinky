@@ -186,6 +186,7 @@ public:
   stmt body;
 
   // If this is true, then the body does not access any symbols outside of those defined by `lets`.
+  // The values of every let must be a `variable` expression.
   bool is_closure;
 
   void accept(stmt_visitor* v) const override;
