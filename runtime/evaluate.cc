@@ -414,20 +414,33 @@ public:
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
     assert(step != 0);
-    std::atomic<index_t> result = 0;
     std::size_t n = ceil_div(bounds.max - bounds.min + 1, step);
-    context.reserve(op->sym.id + 1);
-    context.config->thread_pool->parallel_for(
-        n,
-        [parent_context = &context, step, min = bounds.min, op, &result](index_t i) {
+
+    if (n == 0) {
+      return 0;
+    } else if (n == 1) {
+      return eval_with_value(op->body, op->sym, bounds.min);
+    } else {
+      std::atomic<index_t> result = 0;
+
+      context.reserve(op->sym.id + 1);
+
+      thread_pool* pool = context.config->thread_pool;
+      assert(pool);
+
+      auto loop = std::make_shared<parallel_for<>>(n);
+
+      // Capture n by value becuase this may run after the parallel_for call returns.
+      auto worker = [this, pool, loop, step, min = bounds.min, op, &result]() mutable {
+        loop->run([parent_context = &context, step, min, op, &result](index_t i) {
           eval_context context;
           if (const let_stmt* closure = is_closure(op->body)) {
             // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
             context.reserve(parent_context->size());
             context.config = parent_context->config;
 
-            // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent context,
-            // but assign them to our local context.
+            // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent
+            // context, but assign them to our local context.
             for (const std::pair<var, expr>& i : closure->lets) {
               if (i.first == op->sym) {
                 // The loop variable is part of the closure, because it is defined outside the closure and used inside
@@ -447,9 +460,22 @@ public:
             index_t zero = 0;
             result.compare_exchange_strong(zero, result_i);
           }
-        },
-        op->max_workers);
-    return result;
+        });
+        // If we get here, there's no more work to start. Cancel any remaining tasks.
+        pool->cancel(loop.get());
+      };
+      int workers = std::min<int>(op->max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
+      if (workers > 1) {
+        pool->enqueue(workers - 1, worker, loop.get());
+      }
+      // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
+      // available.
+      pool->run(worker, loop.get());
+      // While the loop still isn't done, work on other tasks.
+      pool->wait_for([&]() { return loop->done(); });
+
+      return result;
+    }
   }
 
   SLINKY_NO_INLINE index_t eval_loop_serial(const loop* op) {
