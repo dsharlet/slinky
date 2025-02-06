@@ -582,7 +582,6 @@ void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_lo
   loop = offset_bytes(loop, sizeof(index_t) * bufs_size);
   void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
   std::copy_n(bases, bufs_size, bases_i);
-  // If the next step is to call f, do that eagerly here to avoid an extra call.
   assert(extent >= 1);
   for (;;) {
     for_each_impl<BufsSize>(bufs_size, bases_i, loop, f);
@@ -603,13 +602,13 @@ void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_lo
   index_t begin = dims[0]->begin();
   index_t end = begin + extent;
   void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
-  // If the next step is to call f, do that eagerly here to avoid an extra call.
   for (index_t i = begin; i < end; ++i) {
     bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
     for (std::size_t n = 1; n < bufs_size; n++) {
       bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
     }
     if (CallF) {
+      // If the next step is to call f, do that eagerly here to avoid an extra call.
       f(bases_i, 1, nullptr);
     } else {
       for_each_impl<BufsSize>(bufs_size, bases_i, loop, f);
