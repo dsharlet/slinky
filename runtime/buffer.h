@@ -789,7 +789,6 @@ void optimize_dims(raw_buffer& buf, Bufs&... bufs) {
 
 namespace internal {
 
-template <std::size_t BufsSize = 0>
 struct for_each_loop {
   // These are flags in the `impl` field.
   enum {
@@ -803,10 +802,6 @@ struct for_each_loop {
   };
   int impl;
   index_t extent;
-  union {
-    index_t strides[BufsSize];
-    const dim* dims[BufsSize];
-  };
 };
 
 index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan);
@@ -823,32 +818,37 @@ SLINKY_ALWAYS_INLINE inline void increment_bases(void** bases, const index_t* st
 }
 
 template <std::size_t NumBufs>
-void for_each_impl(void** bases, const for_each_loop<NumBufs>* loop,
+void for_each_impl(void** bases, const for_each_loop* loop,
     const std::function<void(void**, index_t extent, const index_t* strides)>& f);
 
 template <std::size_t NumBufs>
-void for_each_impl_linear(void** bases, const for_each_loop<NumBufs>* loop, const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
-  const index_t* strides = loop->strides;
+void for_each_impl_linear(void** bases, const for_each_loop* loop,
+    const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
   index_t extent = loop->extent;
-  ++loop;
+  loop = offset_bytes(loop, sizeof(for_each_loop));
+  const index_t* strides = reinterpret_cast<const index_t*>(loop);
+  loop = offset_bytes(loop, sizeof(index_t) * NumBufs);
   void* bases_i[NumBufs];
   std::copy_n(bases, NumBufs, bases_i);
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   assert(extent >= 1);
   for (;;) {
-    for_each_impl(bases_i, loop, f);
+    for_each_impl<NumBufs>(bases_i, loop, f);
     if (SLINKY_UNLIKELY(--extent <= 0)) break;
     increment_bases<NumBufs>(bases_i, strides);
   }
 }
 
 template <std::size_t NumBufs, bool CallF>
-void for_each_impl_folded(void** bases, const for_each_loop<NumBufs>* loop,
+void for_each_impl_folded(void** bases, const for_each_loop* loop,
     const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
-  const dim* const* dims = loop->dims;
+  index_t extent = loop->extent;
+  loop = offset_bytes(loop, sizeof(for_each_loop));
+  const dim* const* dims = reinterpret_cast<const dim* const*>(loop);
+  loop = offset_bytes(loop, sizeof(const dim* const*) * NumBufs);
+
   index_t begin = dims[0]->begin();
-  index_t end = begin + loop->extent;
-  ++loop;
+  index_t end = begin + extent;
   void* bases_i[NumBufs];
   // If the next step is to call f, do that eagerly here to avoid an extra call.
   for (index_t i = begin; i < end; ++i) {
@@ -859,24 +859,24 @@ void for_each_impl_folded(void** bases, const for_each_loop<NumBufs>* loop,
     if (CallF) {
       f(bases_i, 1, nullptr);
     } else {
-      for_each_impl(bases_i, loop, f);
+      for_each_impl<NumBufs>(bases_i, loop, f);
     }
   }
 }
 
 template <std::size_t NumBufs>
-SLINKY_ALWAYS_INLINE inline void for_each_impl(void** bases, const for_each_loop<NumBufs>* loop,
+SLINKY_ALWAYS_INLINE inline void for_each_impl(void** bases, const for_each_loop* loop,
     const std::function<void(void**, index_t extent, const index_t* strides)>& f) {
-  if (SLINKY_LIKELY(loop->impl == for_each_loop<>::innermost)) {
+  if (SLINKY_LIKELY(loop->impl == for_each_loop::innermost)) {
     void* bases_i[NumBufs];
     std::copy_n(bases, NumBufs, bases_i);
-    f(bases_i, loop->extent, loop->strides);
+    f(bases_i, loop->extent, reinterpret_cast<const index_t*>(loop + 1));
   } else if (loop->impl == 0) {
     for_each_impl_linear<NumBufs>(bases, loop, f);
-  } else if (loop->impl == (for_each_loop<>::folded | for_each_loop<>::innermost)) {
+  } else if (loop->impl == (for_each_loop::folded | for_each_loop::innermost)) {
     for_each_impl_folded<NumBufs, true>(bases, loop, f);
   } else {
-    assert(loop->impl == for_each_loop<>::folded);
+    assert(loop->impl == for_each_loop::folded);
     for_each_impl_folded<NumBufs, false>(bases, loop, f);
   }
 }
@@ -899,19 +899,21 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  auto* plan = SLINKY_ALLOCA(internal::for_each_loop<BufsSize>, std::max<std::size_t>(1, buf.rank));
+  void* plan =
+      SLINKY_ALLOCA(char, (sizeof(internal::for_each_loop) + sizeof(void*) * BufsSize) * std::max<std::size_t>(1, buf.rank));
   void* bases[BufsSize];
   index_t slice_extent = internal::make_for_each_contiguous_slice_loops(buf_ptrs, bases, plan);
 
-  internal::for_each_impl(bases, plan, [&f, slice_extent](void** bases, index_t extent, const index_t* strides) {
-    for (;;) {
-      std::apply(f, std::tuple_cat(std::make_tuple(slice_extent),
-                        internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
-                            bases, std::make_index_sequence<BufsSize>())));
-      if (SLINKY_UNLIKELY(--extent <= 0)) break;
-      internal::increment_bases<BufsSize>(bases, strides);
-    }
-  });
+  internal::for_each_impl<BufsSize>(bases, reinterpret_cast<const internal::for_each_loop*>(plan),
+      [&f, slice_extent](void** bases, index_t extent, const index_t* strides) {
+        for (;;) {
+          std::apply(f, std::tuple_cat(std::make_tuple(slice_extent),
+                            internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
+                                bases, std::make_index_sequence<BufsSize>())));
+          if (SLINKY_UNLIKELY(--extent <= 0)) break;
+          internal::increment_bases<BufsSize>(bases, strides);
+        }
+      });
 }
 
 // Call `f` with a pointer to each element of `buf`, and pointers to the same corresponding elements of `bufs`, or
@@ -921,18 +923,19 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  auto* plan = SLINKY_ALLOCA(internal::for_each_loop<BufsSize>, std::max<std::size_t>(1, buf.rank));
+  void* plan = SLINKY_ALLOCA(char, (sizeof(internal::for_each_loop) + sizeof(void*) * BufsSize) * std::max<std::size_t>(1, buf.rank));
   void* bases[BufsSize];
   internal::make_for_each_loops(buf_ptrs, bases, plan);
 
-  internal::for_each_impl(bases, plan, [&f](void** bases, index_t extent, const index_t* strides) {
-    for (;;) {
-      std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
-                        bases, std::make_index_sequence<BufsSize>()));
-      if (SLINKY_UNLIKELY(--extent <= 0)) break;
-      internal::increment_bases<BufsSize>(bases, strides);
-    }
-  });
+  internal::for_each_impl<BufsSize>(bases, reinterpret_cast<const internal::for_each_loop*>(plan),
+      [&f](void** bases, index_t extent, const index_t* strides) {
+        for (;;) {
+          std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
+                            bases, std::make_index_sequence<BufsSize>()));
+          if (SLINKY_UNLIKELY(--extent <= 0)) break;
+          internal::increment_bases<BufsSize>(bases, strides);
+        }
+      });
 }
 
 }  // namespace slinky

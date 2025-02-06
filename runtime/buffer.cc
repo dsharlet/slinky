@@ -473,7 +473,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
   }
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
-  for_each_loop<>* prev_loop = reinterpret_cast<for_each_loop<>*>(plan);
+  for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan);
   prev_loop->impl = 0;
   prev_loop->extent = 1;
   index_t slice_extent = 1;
@@ -487,8 +487,8 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
       assert(extent == 1 || buf_dim.max() < buf_dim.min());
-      for_each_loop<>* loop = increment_plan<for_each_loop<>>(plan);
-      loop->impl = for_each_loop<>::folded;
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
+      loop->impl = for_each_loop::folded;
       loop->extent = buf_dim.extent();
       prev_loop = loop;
 
@@ -535,7 +535,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
 
-      for_each_loop<>* loop = increment_plan<for_each_loop<>>(plan);
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
       loop->impl = 0;
       loop->extent = extent;
       prev_loop = loop;
@@ -548,7 +548,7 @@ SLINKY_NO_INLINE index_t make_for_each_loops_impl(
       }
     }
   }
-  prev_loop->impl |= for_each_loop<>::innermost;
+  prev_loop->impl |= for_each_loop::innermost;
   assert(extent == 1);
   return SkipContiguous ? slice_extent : 1;
 }
