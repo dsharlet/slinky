@@ -667,7 +667,7 @@ public:
       for (dim_fold_info& j : *i) {
         if (!depends_on(j.factor, l.worker_count).any()) continue;
 
-        if (l.data_parallel && max_workers == loop::parallel) {
+        if (l.data_parallel && max_workers != loop::serial) {
           // This is a data parallel loop, remove the folding.
           // TODO: We have other options that would be better:
           // - Move the allocation into the loop.
