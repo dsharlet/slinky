@@ -666,11 +666,13 @@ template void for_each_contiguous_slice_impl<0>(span<const raw_buffer*> bufs, fo
 template void for_each_contiguous_slice_impl<1>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
 template void for_each_contiguous_slice_impl<2>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
 template void for_each_contiguous_slice_impl<3>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
+template void for_each_contiguous_slice_impl<4>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
 
 template void for_each_element_impl<0>(span<const raw_buffer*> bufs, for_each_element_callback f);
 template void for_each_element_impl<1>(span<const raw_buffer*> bufs, for_each_element_callback f);
 template void for_each_element_impl<2>(span<const raw_buffer*> bufs, for_each_element_callback f);
 template void for_each_element_impl<3>(span<const raw_buffer*> bufs, for_each_element_callback f);
+template void for_each_element_impl<4>(span<const raw_buffer*> bufs, for_each_element_callback f);
 
 }  // namespace internal
 }  // namespace slinky

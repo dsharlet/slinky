@@ -818,7 +818,7 @@ void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callba
 
 // The above templates are only instantiated for a small number of sizes, up to this number. Larger values should use
 // 0, which is handled by a runtime parameter instead of a compile-time constant.
-static constexpr std::size_t max_bufs_size = 3;
+static constexpr std::size_t max_bufs_size = 4;
 
 }  // namespace internal
 
