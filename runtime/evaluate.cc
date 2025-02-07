@@ -435,6 +435,7 @@ public:
         const stmt& body;
         const index_t min;
         const index_t step;
+        atomic_flag completion_flag;
         std::atomic<index_t> result{0};
 
         parallel_loop(std::size_t n, const eval_context& context, const loop* op, index_t min, index_t step)
@@ -443,6 +444,7 @@ public:
       };
 
       auto loop = std::make_shared<parallel_loop>(n, context, op, bounds.min, step);
+      std::future<void> loop_completion_future = loop->completion_flag.get_future();
 
       // Capture n by value becuase this may run after the parallel_for call returns.
       auto worker = [loop]() mutable {
@@ -488,6 +490,9 @@ public:
           // We ran some tasks, so we know that the context is still in scope. Cancel any remaining tasks.
           context.config->thread_pool->cancel(loop.get());
         }
+        if (loop->done()) {
+          loop->completion_flag.set();
+        }
       };
       int workers = std::min<int>(op->max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
       if (workers > 1) {
@@ -496,9 +501,9 @@ public:
       // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
       // available.
       pool->run(worker, loop.get());
-      // While the loop still isn't done, work on other tasks.
-      pool->wait_for([&]() { return loop->done(); });
 
+      // While the loop still isn't done, work on other tasks.
+      loop_completion_future.wait();
       return loop->result;
     }
   }
