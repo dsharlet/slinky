@@ -569,19 +569,21 @@ SLINKY_ALWAYS_INLINE inline index_t make_for_each_loops_impl(
 }
 
 template <std::size_t BufsSize>
-void for_each_impl(std::size_t n, void** bases, const for_each_loop* loop, const for_each_element_callback& f);
+void for_each_impl(std::size_t n, void** bases, const for_each_loop* loop, for_each_element_callback f);
 
 template <std::size_t BufsSize>
-void for_each_impl_linear(
-    std::size_t bufs_size, void** bases, const for_each_loop* loop, const for_each_element_callback& f) {
+void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_loop* loop, for_each_element_callback f) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
+  
   index_t extent = loop->extent;
+  assert(extent >= 1);
+  assert(loop->impl == 0);  // Not calling f here, should have been called directly.
   loop = offset_bytes(loop, sizeof(for_each_loop));
   const index_t* strides = reinterpret_cast<const index_t*>(loop);
   loop = offset_bytes(loop, sizeof(index_t) * bufs_size);
+
   void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
   std::copy_n(bases, bufs_size, bases_i);
-  assert(extent >= 1);
   for (;;) {
     for_each_impl<BufsSize>(bufs_size, bases_i, loop, f);
     if (SLINKY_UNLIKELY(--extent <= 0)) break;
@@ -590,9 +592,9 @@ void for_each_impl_linear(
 }
 
 template <std::size_t BufsSize, bool CallF>
-void for_each_impl_folded(
-    std::size_t bufs_size, void** bases, const for_each_loop* loop, const for_each_element_callback& f) {
+void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_loop* loop, for_each_element_callback f) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
+  
   index_t extent = loop->extent;
   loop = offset_bytes(loop, sizeof(for_each_loop));
   const dim* const* dims = reinterpret_cast<const dim* const*>(loop);
@@ -617,7 +619,7 @@ void for_each_impl_folded(
 
 template <std::size_t BufsSize>
 SLINKY_ALWAYS_INLINE inline void for_each_impl(
-    std::size_t bufs_size, void** bases, const for_each_loop* loop, const for_each_element_callback& f) {
+    std::size_t bufs_size, void** bases, const for_each_loop* loop, for_each_element_callback f) {
   if (SLINKY_LIKELY(loop->impl == for_each_loop::innermost)) {
     void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
     std::copy_n(bases, bufs_size, bases_i);
