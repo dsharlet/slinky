@@ -468,7 +468,6 @@ SLINKY_ALWAYS_INLINE inline const T* increment_plan(const void*& x, std::size_t 
   return result;
 }
 
-template <typename F>
 struct for_each_loop {
   // These are flags in the `impl` field.
   enum {
@@ -482,10 +481,25 @@ struct for_each_loop {
   };
   int impl;
   index_t extent;
-
-  F f;
-  index_t slice_extent;
 };
+
+// We store a plan for a parallel for loop in a structure of the following layout, for N buffers and rank R loops:
+// struct {
+//   for_each_loop loop;
+//   union {
+//     index_t strides[N];  // Used by linear loops
+//     const dim* dims[N];  // Used by folded loops
+//   };
+// } loops[R];
+// F f;
+// index_t slice_extent;
+//
+// We can't make a simple struct for this, because N and R are not necessarily compile-time constants.
+template <typename F>
+SLINKY_ALWAYS_INLINE inline std::size_t size_of_plan(std::size_t bufs_size, std::size_t rank) {
+  const std::size_t loop_size = sizeof(for_each_loop) + sizeof(void*) * bufs_size;
+  return loop_size * std::max<std::size_t>(1, rank) + sizeof(F) + sizeof(index_t);
+}
 
 // Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback
 SLINKY_ALWAYS_INLINE inline void call_f(
@@ -497,39 +511,40 @@ SLINKY_ALWAYS_INLINE inline void call_f(
   f(slice_extent, bases, extent, strides);
 }
 
-template <std::size_t BufsSize, typename F>
-void for_each_impl(std::size_t n, void** bases, const for_each_loop<F>* loop);
+template <typename F, std::size_t BufsSize>
+void for_each_impl(std::size_t n, void** bases, const void* plan);
 
-template <std::size_t BufsSize, typename F>
-void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_loop<F>* loop) {
+template <typename F, std::size_t BufsSize>
+void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_loop* loop) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
 
   index_t extent = loop->extent;
   assert(extent >= 1);
   assert(loop->impl == 0);  // Not calling f here, should have been called directly.
-  loop = offset_bytes(loop, sizeof(for_each_loop<F>));
+  loop = offset_bytes(loop, sizeof(for_each_loop));
   const index_t* strides = reinterpret_cast<const index_t*>(loop);
   loop = offset_bytes(loop, sizeof(index_t) * bufs_size);
 
   void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
   std::copy_n(bases, bufs_size, bases_i);
   for (;;) {
-    for_each_impl<BufsSize>(bufs_size, bases_i, loop);
+    for_each_impl<F, BufsSize>(bufs_size, bases_i, loop);
     if (SLINKY_UNLIKELY(--extent <= 0)) break;
     increment_bases<BufsSize>(bufs_size, bases_i, strides);
   }
 }
 
-template <std::size_t BufsSize, bool CallF, typename F>
-void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_loop<F>* loop) {
+template <typename F, std::size_t BufsSize, bool CallF>
+void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_loop* loop) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
 
   index_t extent = loop->extent;
-  F f = loop->f;
-  index_t slice_extent = loop->slice_extent;
-  loop = offset_bytes(loop, sizeof(for_each_loop<F>));
+  loop = offset_bytes(loop, sizeof(for_each_loop));
   const dim* const* dims = reinterpret_cast<const dim* const*>(loop);
   loop = offset_bytes(loop, sizeof(const dim* const*) * bufs_size);
+
+  const F& f = *reinterpret_cast<const F*>(loop);
+  index_t slice_extent = *reinterpret_cast<const index_t*>(offset_bytes(loop, sizeof(F)));
 
   index_t begin = dims[0]->begin();
   index_t end = begin + extent;
@@ -543,25 +558,32 @@ void for_each_impl_folded(std::size_t bufs_size, void** bases, const for_each_lo
       // If the next step is to call f, do that eagerly here to avoid an extra call.
       call_f(f, slice_extent, bases_i, 1, nullptr);
     } else {
-      for_each_impl<BufsSize>(bufs_size, bases_i, loop);
+      for_each_impl<F, BufsSize>(bufs_size, bases_i, loop);
     }
   }
 }
 
-template <std::size_t BufsSize, typename F>
-SLINKY_ALWAYS_INLINE inline void for_each_impl(std::size_t bufs_size, void** bases, const for_each_loop<F>* loop) {
+template <typename F, std::size_t BufsSize>
+SLINKY_ALWAYS_INLINE inline void for_each_impl(std::size_t bufs_size, void** bases, const void* plan) {
   bufs_size = BufsSize > 0 ? BufsSize : bufs_size;
-  if (SLINKY_LIKELY(loop->impl == for_each_loop<F>::innermost)) {
+
+  const for_each_loop* loop = increment_plan<for_each_loop>(plan);
+  if (SLINKY_LIKELY(loop->impl == for_each_loop::innermost)) {
     void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
     std::copy_n(bases, bufs_size, bases_i);
-    call_f(loop->f, loop->slice_extent, bases_i, loop->extent, reinterpret_cast<const index_t*>(loop + 1));
+
+    const index_t* strides = increment_plan<index_t>(plan, bufs_size);
+    const F& f = *increment_plan<F>(plan);
+    index_t slice_extent = *reinterpret_cast<const index_t*>(plan);
+
+    call_f(f, slice_extent, bases_i, loop->extent, strides);
   } else if (loop->impl == 0) {
-    for_each_impl_linear<BufsSize>(bufs_size, bases, loop);
-  } else if (loop->impl == (for_each_loop<F>::folded | for_each_loop<F>::innermost)) {
-    for_each_impl_folded<BufsSize, true>(bufs_size, bases, loop);
+    for_each_impl_linear<F, BufsSize>(bufs_size, bases, loop);
+  } else if (loop->impl == (for_each_loop::folded | for_each_loop::innermost)) {
+    for_each_impl_folded<F, BufsSize, true>(bufs_size, bases, loop);
   } else {
-    assert(loop->impl == for_each_loop<F>::folded);
-    for_each_impl_folded<BufsSize, false>(bufs_size, bases, loop);
+    assert(loop->impl == for_each_loop::folded);
+    for_each_impl_folded<F, BufsSize, false>(bufs_size, bases, loop);
   }
 }
 
@@ -570,8 +592,7 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
   std::size_t bufs_size = BufsSize > 0 ? BufsSize : bufs.size();
   const raw_buffer* buf = bufs[0];
 
-  void* plan =
-      SLINKY_ALLOCA(char, (sizeof(for_each_loop<F>) + sizeof(void*) * bufs_size) * std::max<std::size_t>(1, buf->rank));
+  void* plan = SLINKY_ALLOCA(char, size_of_plan<F>(bufs_size, buf->rank));
 
   void** bases = SLINKY_ALLOCA(void*, bufs_size);
   bases[0] = buf->base;
@@ -580,10 +601,10 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
   }
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
-  for_each_loop<F>* prev_loop = reinterpret_cast<for_each_loop<F>*>(plan);
+  for_each_loop* prev_loop = reinterpret_cast<for_each_loop*>(plan);
   prev_loop->impl = 0;
   prev_loop->extent = 1;
-  for_each_loop<F>* first_loop = prev_loop;
+  for_each_loop* first_loop = prev_loop;
 
   index_t slice_extent = 1;
   index_t extent = 1;
@@ -596,8 +617,8 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
       assert(extent == 1 || buf_dim.max() < buf_dim.min());
-      for_each_loop<F>* loop = increment_plan<for_each_loop<F>>(plan);
-      loop->impl = for_each_loop<F>::folded;
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
+      loop->impl = for_each_loop::folded;
       loop->extent = buf_dim.extent();
       prev_loop = loop;
 
@@ -644,7 +665,7 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
 
-      for_each_loop<F>* loop = increment_plan<for_each_loop<F>>(plan);
+      for_each_loop* loop = increment_plan<for_each_loop>(plan);
       loop->impl = 0;
       loop->extent = extent;
       prev_loop = loop;
@@ -657,12 +678,14 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
       }
     }
   }
-  prev_loop->impl |= for_each_loop<F>::innermost;
-  prev_loop->f = f;
-  prev_loop->slice_extent = slice_extent;
+  prev_loop->impl |= for_each_loop::innermost;
   assert(extent == 1);
 
-  for_each_impl<BufsSize>(bufs_size, bases, first_loop);
+  plan = offset_bytes(prev_loop, sizeof(for_each_loop) + sizeof(void*) * bufs_size);
+  *increment_plan<F>(plan) = f;
+  *reinterpret_cast<index_t*>(plan) = slice_extent;
+
+  for_each_impl<F, BufsSize>(bufs_size, bases, first_loop);
 }
 
 }  // namespace
