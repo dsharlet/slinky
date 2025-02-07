@@ -481,7 +481,7 @@ template <bool SkipContiguous, std::size_t BufsSize>
 SLINKY_ALWAYS_INLINE inline index_t make_for_each_loops_impl(
     const raw_buffer* const* bufs, void** bases, std::size_t bufs_size_dynamic, void* plan) {
   std::size_t bufs_size = BufsSize == 0 ? bufs_size_dynamic : BufsSize;
-  const auto* buf = bufs[0];
+  const raw_buffer* buf = bufs[0];
   bases[0] = buf->base;
   for (std::size_t n = 1; n < bufs_size; ++n) {
     bases[n] = bufs[n]->base;
@@ -634,57 +634,43 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(
   }
 }
 
-index_t make_for_each_contiguous_slice_loops(span<const raw_buffer*> bufs, void** bases, void* plan) {
-  // The implementation of this function benefits from knowing the size of the bufs span is constant.
-  // By far the common case of this function is implementing elementwise unary or binary operations.
-  // So, we provide special cases for those use cases, and use a slightly slower implementation otherwise.
-  switch (bufs.size()) {
-  case 1: return make_for_each_loops_impl<true, 1>(bufs.data(), bases, 0, plan);
-  case 2: return make_for_each_loops_impl<true, 2>(bufs.data(), bases, 0, plan);
-  case 3: return make_for_each_loops_impl<true, 3>(bufs.data(), bases, 0, plan);
-  default: return make_for_each_loops_impl<true, 0>(bufs.data(), bases, bufs.size(), plan);
-  }
-}
+}  // namespace
 
 template <std::size_t BufsSize>
-SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_element_impl(
-    span<const raw_buffer*> bufs, for_each_element_callback f) {
+SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice_impl(
+    span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f) {
+  std::size_t bufs_size = BufsSize > 0 ? BufsSize : bufs.size();
+  void* plan = SLINKY_ALLOCA(
+      char, (sizeof(for_each_loop) + sizeof(void*) * bufs_size) * std::max<std::size_t>(1, bufs[0]->rank));
+  void** bases = SLINKY_ALLOCA(void*, bufs_size);
+  index_t slice_extent = make_for_each_loops_impl<true, BufsSize>(bufs.data(), bases, bufs_size, plan);
+
+  for_each_impl<BufsSize>(bufs_size, bases, reinterpret_cast<const for_each_loop*>(plan),
+      [f, slice_extent](
+          void** bases, index_t extent, const index_t* strides) { f(slice_extent, bases, extent, strides); });
+}
+
+template <size_t BufsSize>
+void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callback f) {
   std::size_t bufs_size = BufsSize > 0 ? BufsSize : bufs.size();
   void* plan = SLINKY_ALLOCA(
       char, (sizeof(for_each_loop) + sizeof(void*) * bufs_size) * std::max<std::size_t>(1, bufs[0]->rank));
   void** bases = SLINKY_ALLOCA(void*, bufs_size);
   make_for_each_loops_impl<false, BufsSize>(bufs.data(), bases, bufs_size, plan);
+
   for_each_impl<BufsSize>(bufs_size, bases, reinterpret_cast<const for_each_loop*>(plan), f);
 }
 
-}  // namespace
+// These are templates defined in an implementation file, explicitly instantiate the templates we want to exist.
+template void for_each_contiguous_slice_impl<0>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
+template void for_each_contiguous_slice_impl<1>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
+template void for_each_contiguous_slice_impl<2>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
+template void for_each_contiguous_slice_impl<3>(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f);
 
-SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice_impl(
-    span<const raw_buffer*> bufs, for_each_contiguous_slice_callback f) {
-  void* plan = SLINKY_ALLOCA(
-      char, (sizeof(for_each_loop) + sizeof(void*) * bufs.size()) * std::max<std::size_t>(1, bufs[0]->rank));
-  void** bases = SLINKY_ALLOCA(void*, bufs.size());
-  index_t slice_extent = make_for_each_contiguous_slice_loops(bufs, bases, plan);
-
-  auto wrapper = [f, slice_extent](
-                     void** bases, index_t extent, const index_t* strides) { f(slice_extent, bases, extent, strides); };
-
-  switch (bufs.size()) {
-  case 1: for_each_impl<1>(1, bases, reinterpret_cast<const for_each_loop*>(plan), wrapper); return;
-  case 2: for_each_impl<2>(2, bases, reinterpret_cast<const for_each_loop*>(plan), wrapper); return;
-  case 3: for_each_impl<3>(3, bases, reinterpret_cast<const for_each_loop*>(plan), wrapper); return;
-  default: for_each_impl<0>(bufs.size(), bases, reinterpret_cast<const for_each_loop*>(plan), wrapper); return;
-  }
-}
-
-void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callback f) {
-  switch (bufs.size()) {
-  case 1: for_each_element_impl<1>(bufs, f); return;
-  case 2: for_each_element_impl<2>(bufs, f); return;
-  case 3: for_each_element_impl<3>(bufs, f); return;
-  default: for_each_element_impl<0>(bufs, f); return;
-  }
-}
+template void for_each_element_impl<0>(span<const raw_buffer*> bufs, for_each_element_callback f);
+template void for_each_element_impl<1>(span<const raw_buffer*> bufs, for_each_element_callback f);
+template void for_each_element_impl<2>(span<const raw_buffer*> bufs, for_each_element_callback f);
+template void for_each_element_impl<3>(span<const raw_buffer*> bufs, for_each_element_callback f);
 
 }  // namespace internal
 }  // namespace slinky

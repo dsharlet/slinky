@@ -811,8 +811,14 @@ auto array_to_tuple(void** x, std::index_sequence<Is...>) {
 // callbacks without type erasure below.
 using for_each_contiguous_slice_callback = function_ref<void(index_t, void**, index_t, const index_t*)>;
 using for_each_element_callback = function_ref<void(void**, index_t, const index_t*)>;
+template <std::size_t BufsSize>
 void for_each_contiguous_slice_impl(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback fn);
+template <std::size_t BufsSize>
 void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callback fn);
+
+// The above templates are only instantiated for a small number of sizes, up to this number. Larger values should use
+// 0, which is handled by a runtime parameter instead of a compile-time constant.
+static constexpr std::size_t max_bufs_size = 3;
 
 }  // namespace internal
 
@@ -827,7 +833,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  internal::for_each_contiguous_slice_impl(
+  internal::for_each_contiguous_slice_impl<BufsSize <= internal::max_bufs_size ? BufsSize : 0>(
       buf_ptrs, [&f](index_t slice_extent, void** bases, index_t extent, const index_t* strides) {
         for (;;) {
           std::apply(f, std::tuple_cat(std::make_tuple(slice_extent),
@@ -846,14 +852,15 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  internal::for_each_element_impl(buf_ptrs, [&f](void** bases, index_t extent, const index_t* strides) {
-    for (;;) {
-      std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
-                        bases, std::make_index_sequence<BufsSize>()));
-      if (SLINKY_UNLIKELY(--extent <= 0)) break;
-      internal::increment_bases<BufsSize>(0, bases, strides);
-    }
-  });
+  internal::for_each_element_impl<BufsSize <= internal::max_bufs_size ? BufsSize : 0>(
+      buf_ptrs, [&f](void** bases, index_t extent, const index_t* strides) {
+        for (;;) {
+          std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
+                            bases, std::make_index_sequence<BufsSize>()));
+          if (SLINKY_UNLIKELY(--extent <= 0)) break;
+          internal::increment_bases<BufsSize>(0, bases, strides);
+        }
+      });
 }
 
 }  // namespace slinky
