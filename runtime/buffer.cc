@@ -594,7 +594,6 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs.data(), bufs_size, d)) {
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
-      assert(extent == 1 || buf_dim.max() < buf_dim.min());
       loop->impl = for_each_impl_folded<F, BufsSize, false>;
       last_impl = for_each_impl_folded<F, BufsSize, true>;
       loop->extent = buf_dim.extent();
