@@ -407,8 +407,8 @@ private:
   // Avoid default constructor of slinky::dim, we might not use this.
   alignas(slinky::dim) char dims_storage[sizeof(slinky::dim) * DimsSize];
 
-  void assign_dims(int rank, const slinky::dim* src = nullptr) {
-    assert(rank <= static_cast<int>(DimsSize));
+  void assign_dims(std::size_t rank, const slinky::dim* src = nullptr) {
+    assert(rank <= DimsSize);
     this->rank = rank;
     if (DimsSize > 0) {
       dims = reinterpret_cast<slinky::dim*>(dims_storage);
@@ -623,7 +623,7 @@ enum class fuse_type {
 
 // Fuse two dimensions of a buffer.
 template <fuse_type type>
-inline void fuse(int inner, int outer, raw_buffer& buf) {
+inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
@@ -672,31 +672,32 @@ inline bool same_bounds(const dim& a, const dim& b) {
 }
 
 // Returns true if all buffers have the same bounds in dimension d.
-inline bool same_bounds(int, const raw_buffer&) { return true; }
-inline bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1) {
+inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
+inline bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1) {
   return same_bounds(buf0.dim(d), buf1.dim(d));
 }
 template <typename... Bufs>
-bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
   return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
 }
 
 // Returns true if two dimensions of all buffers can be fused.
-inline bool can_fuse(int, int) { return true; }
+inline bool can_fuse(std::ptrdiff_t, std::ptrdiff_t) { return true; }
 template <typename... Bufs>
-bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) {
+bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf, const Bufs&... bufs) {
   return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
 }
 
 // Fuse two dimensions of all buffers.
 template <fuse_type type, typename... Bufs>
-void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   fuse<type>(inner, outer, buf);
   fuse<type>(inner, outer, bufs...);
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline void attempt_fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+SLINKY_ALWAYS_INLINE inline void attempt_fuse(
+    std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
     fuse<fuse_type::remove>(inner, outer, buf, bufs...);
   }
@@ -704,7 +705,7 @@ SLINKY_ALWAYS_INLINE inline void attempt_fuse(int inner, int outer, raw_buffer& 
 
 template <typename... Bufs>
 SLINKY_ALWAYS_INLINE inline void attempt_fuse(
-    int inner, int outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+    std::ptrdiff_t inner, std::ptrdiff_t outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
     // These two dims are not part of the same set. Don't fuse them.
     return;
@@ -758,14 +759,14 @@ bool sort_dims(raw_buffer& buf, Bufs&... bufs) {
 template <typename... Bufs>
 void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   assert(internal::same_rank(buf, bufs...));
-  for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
+  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
   }
 }
 template <typename... Bufs>
 void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
   assert(internal::same_rank(buf, bufs...));
-  for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
+  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, buf, bufs...);
   }
 }

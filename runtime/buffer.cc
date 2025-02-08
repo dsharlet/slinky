@@ -379,13 +379,13 @@ namespace internal {
 
 namespace {
 
-SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, int d) {
+SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
   if (bufs[0]->dim(d).stride() != static_cast<index_t>(bufs[0]->elem_size)) {
     // This dimension is not contiguous.
     return false;
   }
   for (std::size_t n = 1; n < size; n++) {
-    if (d >= static_cast<int>(bufs[n]->rank)) {
+    if (d >= bufs[n]->rank) {
       // This dimension is broadcasted, it's not contiguous.
       return false;
     } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
@@ -396,7 +396,7 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
   return true;
 }
 
-SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::size_t size, int d) {
+SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
   assert(d > 0);
   const dim& base_inner = bufs[0]->dim(d - 1);
   const dim& base_outer = bufs[0]->dim(d);
@@ -411,7 +411,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   }
 
   for (std::size_t n = 1; n < size; n++) {
-    if (d - 1 >= static_cast<int>(bufs[n]->rank)) {
+    if (d > bufs[n]->rank) {
       // Both dimensions are broadcasts, they can be fused.
       continue;
     }
@@ -425,7 +425,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
       return false;
     }
 
-    const index_t outer_stride = d < static_cast<int>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+    const index_t outer_stride = d < bufs[n]->rank ? bufs[n]->dim(d).stride() : 0;
     if (inner.stride() * inner_extent != outer_stride) {
       // The dimensions are not contiguous in memory.
       return false;
@@ -434,14 +434,14 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   return true;
 }
 
-SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, int d) {
+SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
   const dim& buf_dim = bufs[0]->dim(d);
   if (buf_dim.is_folded()) {
     // The main buffer is folded.
     return true;
   }
   for (std::size_t i = 1; i < size; ++i) {
-    if (d >= static_cast<int>(bufs[i]->rank)) {
+    if (d >= bufs[i]->rank) {
       // Broadcast dimension.
       continue;
     } else if (bufs[i]->dim(d).is_folded(buf_dim)) {
@@ -600,7 +600,7 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
 
   index_t slice_extent = 1;
   index_t extent = 1;
-  for (index_t d = static_cast<index_t>(buf->rank) - 1; d >= 0; --d) {
+  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf->rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf->dim(d);
 
     if (buf_dim.min() == buf_dim.max()) {
@@ -635,7 +635,7 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
       bases[0] = offset_bytes_non_null(bases[0], offset);
     }
     for (std::size_t n = 1; n < bufs_size; n++) {
-      if (SLINKY_LIKELY(bases[n] && d < static_cast<index_t>(bufs[n]->rank))) {
+      if (SLINKY_LIKELY(bases[n] && d < static_cast<std::ptrdiff_t>(bufs[n]->rank))) {
         const dim& buf_n_dim = bufs[n]->dim(d);
         if (SLINKY_LIKELY(buf_n_dim.contains(buf_dim))) {
           index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
@@ -667,7 +667,7 @@ SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f
       index_t* strides = loop->strides;
       strides[0] = buf_dim.stride();
       for (std::size_t n = 1; n < bufs_size; n++) {
-        strides[n] = d < static_cast<index_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+        strides[n] = d < static_cast<std::ptrdiff_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
       }
       prev_loop = loop;
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
