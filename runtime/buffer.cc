@@ -470,6 +470,7 @@ SLINKY_ALWAYS_INLINE inline const T* increment_plan(const void*& x, std::size_t 
 
 struct for_each_loop;
 
+// These functions may modify the second parameter in-place.
 typedef void (*for_each_loop_impl)(std::size_t, void**, const for_each_loop*);
 
 struct for_each_loop {
@@ -509,7 +510,7 @@ SLINKY_ALWAYS_INLINE inline std::size_t size_of_plan(std::size_t bufs_size, std:
 
 // Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback
 SLINKY_ALWAYS_INLINE inline void call_f(
-    for_each_element_callback f, index_t slice_extent, void** bases, index_t extent, const index_t* strides) {
+    for_each_element_callback f, index_t, void** bases, index_t extent, const index_t* strides) {
   f(bases, extent, strides);
 }
 SLINKY_ALWAYS_INLINE inline void call_f(
@@ -524,9 +525,7 @@ void for_each_impl_call_f(std::size_t bufs_size, void** bases, const for_each_lo
   const callback<F>& f =
       *reinterpret_cast<const callback<F>*>(offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size)));
 
-  void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
-  std::copy_n(bases, bufs_size, bases_i);
-  call_f(f.f, f.slice_extent, bases_i, loop->extent, loop->strides);
+  call_f(f.f, f.slice_extent, bases, loop->extent, loop->strides);
 }
 
 template <typename F, std::size_t BufsSize>
@@ -542,11 +541,11 @@ void for_each_impl_linear(std::size_t bufs_size, void** bases, const for_each_lo
   for_each_loop_impl impl = loop->impl;
 
   void** bases_i = SLINKY_ALLOCA(void*, bufs_size);
-  std::copy_n(bases, bufs_size, bases_i);
   for (;;) {
+    std::copy_n(bases, bufs_size, bases_i);
     impl(bufs_size, bases_i, loop);
     if (SLINKY_UNLIKELY(--extent <= 0)) break;
-    increment_bases<BufsSize>(bufs_size, bases_i, strides);
+    increment_bases<BufsSize>(bufs_size, bases, strides);
   }
 }
 
