@@ -385,10 +385,11 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
     return false;
   }
   for (std::size_t n = 1; n < size; n++) {
-    if (d >= bufs[n]->rank) {
+    const raw_buffer& buf_n = *bufs[n];
+    if (d >= buf_n.rank) {
       // This dimension is broadcasted, it's not contiguous.
       return false;
-    } else if (bufs[n]->dim(d).stride() != static_cast<index_t>(bufs[n]->elem_size)) {
+    } else if (buf_n.dim(d).stride() != static_cast<index_t>(buf_n.elem_size)) {
       // This dimension is not contiguous.
       return false;
     }
@@ -411,12 +412,14 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   }
 
   for (std::size_t n = 1; n < size; n++) {
-    if (d > bufs[n]->rank) {
+    const raw_buffer& buf_n = *bufs[n];
+    const std::size_t rank = buf_n.rank;
+    if (d > rank) {
       // Both dimensions are broadcasts, they can be fused.
       continue;
     }
 
-    const dim& inner = bufs[n]->dim(d - 1);
+    const dim& inner = buf_n.dim(d - 1);
     if (inner.min() != base_inner.min() || inner.max() != base_inner.max()) {
       // The bounds of the inner dimension are not equal.
       return false;
@@ -425,7 +428,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
       return false;
     }
 
-    const index_t outer_stride = d < bufs[n]->rank ? bufs[n]->dim(d).stride() : 0;
+    const index_t outer_stride = d < rank ? buf_n.dim(d).stride() : 0;
     if (inner.stride() * inner_extent != outer_stride) {
       // The dimensions are not contiguous in memory.
       return false;
@@ -440,14 +443,17 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
     // The main buffer is folded.
     return true;
   }
-  for (std::size_t i = 1; i < size; ++i) {
-    if (d >= bufs[i]->rank) {
+  for (std::size_t n = 1; n < size; ++n) {
+    const raw_buffer& buf_n = *bufs[n];
+    if (d >= buf_n.rank) {
       // Broadcast dimension.
       continue;
-    } else if (bufs[i]->dim(d).is_folded(buf_dim)) {
+    } 
+    const dim& buf_n_dim = buf_n.dim(d);
+    if (buf_n_dim.is_folded(buf_dim)) {
       // There's a folded buffer, we need a folded loop.
       return true;
-    } else if (!bufs[i]->dim(d).contains(buf_dim)) {
+    } else if (!buf_n_dim.contains(buf_dim)) {
       // One of the extra buffers is out of bounds, use a folded loop.
       return true;
     }
@@ -601,7 +607,8 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       const dim** dims = loop->dims;
       dims[0] = &buf->dim(d);
       for (std::size_t n = 1; n < bufs_size; n++) {
-        dims[n] = d < static_cast<std::ptrdiff_t>(bufs[n]->rank) ? &bufs[n]->dim(d) : &broadcast_dim;
+        const raw_buffer& buf_n = *bufs[n];
+        dims[n] = d < static_cast<std::ptrdiff_t>(buf_n.rank) ? &buf_n.dim(d) : &broadcast_dim;
       }
       prev_loop = loop;
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
@@ -620,8 +627,9 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       bases[0] = offset_bytes_non_null(bases[0], offset);
     }
     for (std::size_t n = 1; n < bufs_size; n++) {
-      if (SLINKY_LIKELY(bases[n] && d < static_cast<std::ptrdiff_t>(bufs[n]->rank))) {
-        const dim& buf_n_dim = bufs[n]->dim(d);
+      const raw_buffer& buf_n = *bufs[n];
+      if (SLINKY_LIKELY(bases[n] && d < static_cast<std::ptrdiff_t>(buf_n.rank))) {
+        const dim& buf_n_dim = buf_n.dim(d);
         if (SLINKY_LIKELY(buf_n_dim.contains(buf_dim))) {
           index_t offset = buf_n_dim.flat_offset_bytes(buf_dim.min());
           bases[n] = offset_bytes_non_null(bases[n], offset);
@@ -652,7 +660,8 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       index_t* strides = loop->strides;
       strides[0] = buf_dim.stride();
       for (std::size_t n = 1; n < bufs_size; n++) {
-        strides[n] = d < static_cast<std::ptrdiff_t>(bufs[n]->rank) ? bufs[n]->dim(d).stride() : 0;
+        const raw_buffer& buf_n = *bufs[n];
+        strides[n] = d < static_cast<std::ptrdiff_t>(buf_n.rank) ? buf_n.dim(d).stride() : 0;
       }
       prev_loop = loop;
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
