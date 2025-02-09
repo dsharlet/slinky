@@ -379,9 +379,9 @@ namespace internal {
 
 namespace {
 
-SLINKY_ALWAYS_INLINE inline const dim& get_dim(const raw_buffer& buf, std::size_t d) { 
+SLINKY_ALWAYS_INLINE inline const dim& get_dim(const raw_buffer& buf, std::size_t d) {
   // Dimensions beyond the rank are broadcasts.
-  return d < buf.rank ? buf.dim(d) : broadcast_dim; 
+  return d < buf.rank ? buf.dim(d) : broadcast_dim;
 }
 
 SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
@@ -453,7 +453,7 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
     if (d >= buf_n.rank) {
       // Broadcast dimension.
       continue;
-    } 
+    }
     const dim& buf_n_dim = buf_n.dim(d);
     if (buf_n_dim.is_folded(buf_dim)) {
       // There's a folded buffer, we need a folded loop.
@@ -589,7 +589,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
   }
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
-  for_each_loop_impl inner_impl = for_each_impl_call_f<F, BufsSize>;
+  for_each_loop_impl inner_impl;
   for_each_loop* outer_loop = loop;
 
   index_t slice_extent = 1;
