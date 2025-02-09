@@ -392,8 +392,8 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
   }
   for (std::size_t n = 1; n < size; n++) {
     const raw_buffer& buf_n = *bufs[n];
-    if (&buf_n == &buf) {
-      // This is the same buffer as the base.
+    if (&buf_n == &buf || !buf_n.base) {
+      // This is the same buffer as the base, or the base pointer is nullptr.
       continue;
     } else if (d >= buf_n.rank) {
       // This dimension is broadcasted, it's not contiguous.
@@ -423,8 +423,8 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
 
   for (std::size_t n = 1; n < size; n++) {
     const raw_buffer& buf_n = *bufs[n];
-    if (&buf_n == &buf) {
-      // This is the same buffer as the base.
+    if (&buf_n == &buf || !buf_n.base) {
+      // This is the same buffer as the base, or the base pointer is nullptr.
       continue;
     }
     const std::size_t rank = buf_n.rank;
@@ -460,8 +460,8 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
   }
   for (std::size_t n = 1; n < size; ++n) {
     const raw_buffer& buf_n = *bufs[n];
-    if (&buf_n == &buf) {
-      // This is the same buffer as the base.
+    if (&buf_n == &buf || !buf_n.base) {
+      // This is the same buffer as the base, or the base pointer is nullptr.
       continue;
     } else if (d >= buf_n.rank) {
       // Broadcast dimension.
