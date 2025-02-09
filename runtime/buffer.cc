@@ -599,11 +599,11 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     bases[n] = bufs[n]->base;
   }
 
-  loop->extent = 1;
   for_each_loop_impl<BufsSize> inner_impl;
   for_each_loop<BufsSize>* outer_loop = loop;
 
   index_t slice_extent = 1;
+  index_t extent = 1;
   for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d >= 0; --d) {
     const dim& buf_dim = buf.dim(d);
 
@@ -612,9 +612,10 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs.data(), bufs.size(), d)) {
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
+      loop->extent = buf_dim.extent();
       loop->impl = for_each_impl_folded<F, BufsSize, false>;
       inner_impl = for_each_impl_folded<F, BufsSize, true>;
-      loop->extent = buf_dim.extent();
+      extent = 1;
 
       const dim** dims = loop->dims;
       dims[0] = &buf.dim(d);
@@ -622,13 +623,10 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
         dims[n] = &get_dim(*bufs[n], d);
       }
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs.size()));
-      // We can write this even though this might be one after the last loop, because this is where the callback lives,
-      // which gets overwritten below.
-      loop->extent = 1;
       continue;
     } else {
       // Not folded, use a linear, possibly fused loop below.
-      loop->extent *= buf_dim.max() - buf_dim.min() + 1;
+      extent *= buf_dim.max() - buf_dim.min() + 1;
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
@@ -654,16 +652,18 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       }
     }
 
-    if (loop->extent == 1 || (d > 0 && can_fuse(bufs.data(), bufs.size(), d))) {
+    if (extent == 1 || (d > 0 && can_fuse(bufs.data(), bufs.size(), d))) {
       // Let this fuse with the next dimension.
     } else if (SkipContiguous && is_contiguous_slice(bufs.data(), bufs.size(), d)) {
       // This is the slice dimension.
-      slice_extent *= loop->extent;
-      loop->extent = 1;
+      slice_extent *= extent;
+      extent = 1;
     } else {
       // For the "output" buf, we can't cross a fold boundary, which means we can treat it as linear.
       assert(!buf_dim.is_folded());
 
+      loop->extent = extent;
+      extent = 1;
       loop->impl = for_each_impl_linear<F, BufsSize>;
       inner_impl = for_each_impl_call_f<F, BufsSize>;
 
@@ -674,15 +674,11 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
         strides[n] = d < static_cast<std::ptrdiff_t>(buf_n.rank) ? buf_n.dim(d).stride() : 0;
       }
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs.size()));
-      // We can write this even though this might be one after the last loop, because this is where the callback lives,
-      // which gets overwritten below.
-      loop->extent = 1;
     }
   }
-  if (loop == outer_loop || (offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs.size())) == outer_loop &&
-                                inner_impl == for_each_impl_call_f<F, BufsSize>)) {
-    // Either there are no loops, or the outer loop calls f.
-    call_f(callback<F>{f, slice_extent}, bases, outer_loop->extent, outer_loop->strides);
+  if (loop == outer_loop) {
+    // There are no loops, just call f. This is an edge case below branch which assumes there is at least one loop.
+    call_f(callback<F>{f, slice_extent}, bases, 1, nullptr);
   } else {
     // Put the callback at the end of the plan, where the inner loop expects to find it.
     reinterpret_cast<callback<F>*>(loop)->f = f;
