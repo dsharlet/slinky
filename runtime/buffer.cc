@@ -589,7 +589,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
   }
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
-  for_each_loop_impl last_impl = for_each_impl_call_f<F, BufsSize>;
+  for_each_loop_impl inner_impl = for_each_impl_call_f<F, BufsSize>;
   for_each_loop* outer_loop = loop;
 
   index_t slice_extent = 1;
@@ -603,7 +603,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
       loop->impl = for_each_impl_folded<F, BufsSize, false>;
-      last_impl = for_each_impl_folded<F, BufsSize, true>;
+      inner_impl = for_each_impl_folded<F, BufsSize, true>;
       loop->extent = buf_dim.extent();
 
       const dim** dims = loop->dims;
@@ -653,7 +653,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       assert(!buf_dim.is_folded());
 
       loop->impl = for_each_impl_linear<F, BufsSize>;
-      last_impl = for_each_impl_call_f<F, BufsSize>;
+      inner_impl = for_each_impl_call_f<F, BufsSize>;
       loop->extent = extent;
       extent = 1;
 
@@ -676,8 +676,8 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     }
 
     // We need to replace the implementation of the last loop.
-    for_each_loop* prev_loop = offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs_size));
-    prev_loop->impl = last_impl;
+    for_each_loop* inner_loop = offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs_size));
+    inner_loop->impl = inner_impl;
 
     outer_loop->impl(bufs_size, bases, outer_loop);
   }
