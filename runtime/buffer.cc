@@ -590,9 +590,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
   for_each_loop_impl last_impl = for_each_impl_call_f<F, BufsSize>;
-  loop->extent = 1;
   for_each_loop* outer_loop = loop;
-  for_each_loop* prev_loop = loop;
 
   index_t slice_extent = 1;
   index_t extent = 1;
@@ -613,7 +611,6 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       for (std::size_t n = 1; n < bufs_size; n++) {
         dims[n] = &get_dim(*bufs[n], d);
       }
-      prev_loop = loop;
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
 
       continue;
@@ -666,21 +663,24 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
         const raw_buffer& buf_n = *bufs[n];
         strides[n] = d < static_cast<std::ptrdiff_t>(buf_n.rank) ? buf_n.dim(d).stride() : 0;
       }
-      prev_loop = loop;
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
     }
   }
-  prev_loop->impl = last_impl;
+  if (loop == outer_loop) {
+    // There are no loops. Just directly call f.
+    call_f(callback<F>{f, slice_extent}, bases, 1, nullptr);
+  } else {
+    reinterpret_cast<callback<F>*>(loop)->f = f;
+    if (SkipContiguous) {
+      reinterpret_cast<callback<F>*>(loop)->slice_extent = slice_extent;
+    }
 
-  // `loop` might not point to where we need to put the callback if there were no loops (rank 0 buffer).
-  // One loop after `prev_loop` works in both cases.
-  loop = offset_bytes_non_null(prev_loop, sizeof_for_each_loop(bufs_size));
-  reinterpret_cast<callback<F>*>(loop)->f = f;
-  if (SkipContiguous) {
-    reinterpret_cast<callback<F>*>(loop)->slice_extent = slice_extent;
+    // We need to replace the implementation of the last loop.
+    for_each_loop* prev_loop = offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs_size));
+    prev_loop->impl = last_impl;
+
+    outer_loop->impl(bufs_size, bases, outer_loop);
   }
-
-  outer_loop->impl(bufs_size, bases, outer_loop);
 }
 
 }  // namespace
