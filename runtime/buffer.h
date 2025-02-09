@@ -556,9 +556,9 @@ public:
     return *this;
   }
 
-  void allocate() {
+  void allocate(index_t alignment = 1) {
     assert(!to_free);
-    to_free = raw_buffer::allocate();
+    to_free = raw_buffer::allocate(alignment);
   }
 
   void free() {
