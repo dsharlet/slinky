@@ -591,6 +591,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
   // Start out with a loop of extent 1, in case the buffer is rank 0.
   for_each_loop_impl inner_impl;
   for_each_loop* outer_loop = loop;
+  outer_loop->extent = 1;
 
   index_t slice_extent = 1;
   index_t extent = 1;
@@ -666,10 +667,12 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
     }
   }
-  if (loop == outer_loop) {
-    // There are no loops. Just directly call f.
-    call_f(callback<F>{f, slice_extent}, bases, 1, nullptr);
+  if (loop == outer_loop || (offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs_size)) == outer_loop &&
+                                inner_impl == for_each_impl_call_f<F, BufsSize>)) {
+    // Either there are no loops, or the outer loop calls f.
+    call_f(callback<F>{f, slice_extent}, bases, outer_loop->extent, outer_loop->strides);
   } else {
+    // Put the callback at the end of the plan, where the inner loop expects to find it.
     reinterpret_cast<callback<F>*>(loop)->f = f;
     if (SkipContiguous) {
       reinterpret_cast<callback<F>*>(loop)->slice_extent = slice_extent;
