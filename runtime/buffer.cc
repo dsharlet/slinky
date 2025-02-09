@@ -379,6 +379,11 @@ namespace internal {
 
 namespace {
 
+SLINKY_ALWAYS_INLINE inline const dim& get_dim(const raw_buffer& buf, std::size_t d) { 
+  // Dimensions beyond the rank are broadcasts.
+  return d < buf.rank ? buf.dim(d) : broadcast_dim; 
+}
+
 SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
   if (bufs[0]->dim(d).stride() != static_cast<index_t>(bufs[0]->elem_size)) {
     // This dimension is not contiguous.
@@ -606,8 +611,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       const dim** dims = loop->dims;
       dims[0] = &buf->dim(d);
       for (std::size_t n = 1; n < bufs_size; n++) {
-        const raw_buffer& buf_n = *bufs[n];
-        dims[n] = d < static_cast<std::ptrdiff_t>(buf_n.rank) ? &buf_n.dim(d) : &broadcast_dim;
+        dims[n] = &get_dim(*bufs[n], d);
       }
       prev_loop = loop;
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size));
