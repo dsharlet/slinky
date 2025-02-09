@@ -385,7 +385,8 @@ SLINKY_ALWAYS_INLINE inline const dim& get_dim(const raw_buffer& buf, std::size_
 }
 
 SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
-  if (bufs[0]->dim(d).stride() != static_cast<index_t>(bufs[0]->elem_size)) {
+  const raw_buffer& buf = *bufs[0];
+  if (buf.dim(d).stride() != static_cast<index_t>(buf.elem_size)) {
     // This dimension is not contiguous.
     return false;
   }
@@ -404,8 +405,9 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
 
 SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
   assert(d > 0);
-  const dim& base_inner = bufs[0]->dim(d - 1);
-  const dim& base_outer = bufs[0]->dim(d);
+  const raw_buffer& buf = *bufs[0];
+  const dim& base_inner = buf.dim(d - 1);
+  const dim& base_outer = buf.dim(d);
   if (base_inner.fold_factor() != dim::unfolded) {
     // One of the dimensions is folded.
     return false;
@@ -443,7 +445,8 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
 }
 
 SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
-  const dim& buf_dim = bufs[0]->dim(d);
+  const raw_buffer& buf = *bufs[0];
+  const dim& buf_dim = buf.dim(d);
   if (buf_dim.is_folded()) {
     // The main buffer is folded.
     return true;
@@ -578,12 +581,12 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_folded(std::size_t bufs_size, void*
 template <bool SkipContiguous, std::size_t BufsSize, typename F>
 SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<const raw_buffer*> bufs, F f) {
   std::size_t bufs_size = BufsSize > 0 ? BufsSize : bufs.size();
-  const raw_buffer* buf = bufs[0];
+  const raw_buffer& buf = *bufs[0];
 
-  for_each_loop* loop = reinterpret_cast<for_each_loop*>(SLINKY_ALLOCA(char, size_of_plan<F>(bufs_size, buf->rank)));
+  for_each_loop* loop = reinterpret_cast<for_each_loop*>(SLINKY_ALLOCA(char, size_of_plan<F>(bufs_size, buf.rank)));
 
   void** bases = SLINKY_ALLOCA(void*, bufs_size);
-  bases[0] = buf->base;
+  bases[0] = buf.base;
   for (std::size_t n = 1; n < bufs_size; ++n) {
     bases[n] = bufs[n]->base;
   }
@@ -593,8 +596,8 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
   for_each_loop* outer_loop = loop;
 
   index_t slice_extent = 1;
-  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf->rank) - 1; d >= 0; --d) {
-    const dim& buf_dim = buf->dim(d);
+  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d >= 0; --d) {
+    const dim& buf_dim = buf.dim(d);
 
     if (buf_dim.min() == buf_dim.max()) {
       // extent 1, we don't need any of the logic here, skip to below.
@@ -606,7 +609,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       loop->extent = buf_dim.extent();
 
       const dim** dims = loop->dims;
-      dims[0] = &buf->dim(d);
+      dims[0] = &buf.dim(d);
       for (std::size_t n = 1; n < bufs_size; n++) {
         dims[n] = &get_dim(*bufs[n], d);
       }
