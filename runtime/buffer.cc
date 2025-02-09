@@ -620,7 +620,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     }
 
     // Align the bases for dimensions we will access via linear pointer arithmetic.
-    if (buf_dim.fold_factor() != dim::unfolded && bases[0]) {
+    if (buf_dim.fold_factor() != dim::unfolded) {
       // This function is expected to adjust all bases to point to the min of `buf_dim`. For non-folded dimensions, that
       // is true by construction, but not for folded dimensions.
       index_t offset = buf_dim.flat_offset_bytes(buf_dim.min());
