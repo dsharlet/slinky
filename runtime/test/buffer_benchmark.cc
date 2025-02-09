@@ -158,95 +158,40 @@ void BM_copy_padded(benchmark::State& state) {
 BENCHMARK(BM_copy_padded)->Args({256, 4, -1});
 BENCHMARK(BM_copy_padded)->Args({64, 4, 4});
 
-constexpr index_t slice_extent = 64;
-
-void memset_slice(index_t extent, void* base) { memset(base, 0, extent); }
-
-template <typename Fn>
-void BM_for_each_element_1x(benchmark::State& state, Fn fn) {
+void BM_for_each_element_1x(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(3, state);
   buffer<char, 3> buf;
   allocate_buffer(buf, extents, padding_size);
-
-  assert(buf.dim(0).extent() * buf.elem_size == slice_extent);
-  auto fn_wrapper = [fn = std::move(fn)](void* a) { fn(slice_extent, a); };
 
   buf.slice(0);
   for (auto _ : state) {
-    for_each_element(fn_wrapper, buf);
+    for_each_element([&](const void*) {}, buf);
   }
 }
 
-template <typename Fn>
-void BM_for_each_element_fused_1x(benchmark::State& state, Fn fn) {
+void BM_for_each_contiguous_slice_1x(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(3, state);
   buffer<char, 3> buf;
   allocate_buffer(buf, extents, padding_size);
 
   for (auto _ : state) {
-    buffer<char, 3> buf_fused(buf);
-    // TODO: If this can be made as fast as `for_each_contiguous_slice`, maybe we should just get rid of that helper in
-    // favor of this combination.
-    optimize_dims(buf_fused);
-    index_t dim0_size = buf_fused.dim(0).extent() * buf.elem_size;
-    buf_fused.slice(0);
-    for_each_element([=](void* x) { fn(dim0_size, x); }, buf_fused);
-  }
-}
-
-template <typename Fn>
-void BM_for_each_contiguous_slice_1x(benchmark::State& state, Fn fn) {
-  std::vector<index_t> extents = state_to_vector(3, state);
-  buffer<char, 3> buf;
-  allocate_buffer(buf, extents, padding_size);
-
-  for (auto _ : state) {
-    for_each_contiguous_slice(buf, fn);
-  }
-}
-
-template <typename Fn>
-void BM_for_each_element_hardcoded_1x(benchmark::State& state, Fn fn) {
-  std::vector<index_t> extents = state_to_vector(3, state);
-  buffer<char, 3> buf;
-  allocate_buffer(buf, extents, padding_size);
-
-  for (auto _ : state) {
-    index_t dim0_size = buf.dim(0).extent() * buf.elem_size;
-    char* base_i = buf.base();
-    for (index_t i = 0; i < buf.dim(2).extent(); ++i, base_i += buf.dim(2).stride()) {
-      char* base_j = base_i;
-      for (index_t j = 0; j < buf.dim(1).extent(); ++j, base_j += buf.dim(1).stride()) {
-        fn(dim0_size, base_j);
-      }
-    }
+    for_each_contiguous_slice(buf, [&](index_t, const void*) {});
   }
 }
 
 // The difference between these two benchmarks on the same size buffer gives an indication of how much time is spent in
 // overhead inside for_each_contiguous_slice.
-void BM_fill_for_each_element(benchmark::State& state) { BM_for_each_element_1x(state, memset_slice); }
-void BM_fill_for_each_element_fused(benchmark::State& state) { BM_for_each_element_fused_1x(state, memset_slice); }
-void BM_fill_for_each_contiguous_slice(benchmark::State& state) {
-  BM_for_each_contiguous_slice_1x(state, memset_slice);
-}
-void BM_fill_for_each_element_hardcoded(benchmark::State& state) {
-  BM_for_each_element_hardcoded_1x(state, memset_slice);
-}
+void BM_fill_for_each_element(benchmark::State& state) { BM_for_each_element_1x(state); }
+void BM_fill_for_each_contiguous_slice(benchmark::State& state) { BM_for_each_contiguous_slice_1x(state); }
 
-BENCHMARK(BM_fill_for_each_element)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_fill_for_each_element_fused)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_fill_for_each_contiguous_slice)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_fill_for_each_element_hardcoded)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_fill_for_each_element)->Args({slice_extent, 4, 4});
-BENCHMARK(BM_fill_for_each_element_fused)->Args({slice_extent, 4, 4});
-BENCHMARK(BM_fill_for_each_contiguous_slice)->Args({slice_extent, 4, 4});
-BENCHMARK(BM_fill_for_each_element_hardcoded)->Args({slice_extent, 4, 4});
+BENCHMARK(BM_fill_for_each_element)->Args({64, 16, 1});
+BENCHMARK(BM_fill_for_each_contiguous_slice)->Args({64, 16, 1});
+BENCHMARK(BM_fill_for_each_element)->Args({64, 4, 4});
+BENCHMARK(BM_fill_for_each_contiguous_slice)->Args({64, 4, 4});
 
 void memcpy_slice(index_t extent, void* dst, const void* src) { memcpy(dst, src, extent); }
 
-template <typename Fn>
-void BM_for_each_element_2x(benchmark::State& state, Fn fn) {
+void BM_for_each_element_2x(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(3, state);
   buffer<char, 3> dst;
   allocate_buffer(dst, extents, padding_size);
@@ -256,20 +201,15 @@ void BM_for_each_element_2x(benchmark::State& state, Fn fn) {
 
   char x = 42;
   fill(src, &x);
-
-  assert(dst.dim(0).extent() == src.dim(0).extent());
-  assert(dst.dim(0).extent() * dst.elem_size == slice_extent);
-  auto fn_wrapper = [fn = std::move(fn)](void* a, const void* b) { fn(slice_extent, a, b); };
 
   dst.slice(0);
   src.slice(0);
   for (auto _ : state) {
-    for_each_element(fn_wrapper, dst, src);
+    for_each_element([&](const void*, const void*) {}, dst, src);
   }
 }
 
-template <typename Fn>
-void BM_for_each_element_fused_2x(benchmark::State& state, Fn fn) {
+void BM_for_each_contiguous_slice_2x(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(3, state);
   buffer<char, 3> dst;
   allocate_buffer(dst, extents, padding_size);
@@ -281,82 +221,22 @@ void BM_for_each_element_fused_2x(benchmark::State& state, Fn fn) {
   fill(src, &x);
 
   for (auto _ : state) {
-    buffer<char, 3> src_fused(src);
-    buffer<char, 3> dst_fused(dst);
-    // TODO: If this can be made as fast as `for_each_contiguous_slice`, maybe we should just get rid of that helper in
-    // favor of this combination.
-    optimize_dims(dst_fused, src_fused);
-    assert(dst_fused.dim(0).extent() == src_fused.dim(0).extent());
-    index_t dim0_size = dst_fused.dim(0).extent() * dst_fused.elem_size;
-    dst_fused.slice(0);
-    src_fused.slice(0);
-    for_each_element([=](void* a, const void* b) { fn(dim0_size, a, b); }, dst_fused, src_fused);
+    for_each_contiguous_slice(
+        dst, [&](index_t, const void*, const void*) {}, src);
   }
 }
 
-template <typename Fn>
-void BM_for_each_contiguous_slice_2x(benchmark::State& state, Fn fn) {
-  std::vector<index_t> extents = state_to_vector(3, state);
-  buffer<char, 3> dst;
-  allocate_buffer(dst, extents, padding_size);
+void BM_copy_for_each_element(benchmark::State& state) { BM_for_each_element_2x(state); }
+void BM_copy_for_each_contiguous_slice(benchmark::State& state) { BM_for_each_contiguous_slice_2x(state); }
 
-  buffer<char, 3> src;
-  allocate_buffer(src, extents);
-
-  char x = 42;
-  fill(src, &x);
-
-  for (auto _ : state) {
-    for_each_contiguous_slice(dst, fn, src);
-  }
-}
-
-template <typename Fn>
-void BM_for_each_element_hardcoded_2x(benchmark::State& state, Fn fn) {
-  std::vector<index_t> extents = state_to_vector(3, state);
-  buffer<char, 3> dst;
-  allocate_buffer(dst, extents, padding_size);
-
-  buffer<char, 3> src;
-  allocate_buffer(src, extents);
-
-  char x = 42;
-  fill(src, &x);
-
-  for (auto _ : state) {
-    index_t dim0_size = dst.dim(0).extent() * dst.elem_size;
-    char* dst_i = dst.base();
-    const char* src_i = src.base();
-    for (index_t i = 0; i < dst.dim(2).extent(); ++i, dst_i += dst.dim(2).stride(), src_i += src.dim(2).stride()) {
-      char* dst_j = dst_i;
-      const char* src_j = src_i;
-      for (index_t j = 0; j < dst.dim(1).extent(); ++j, dst_j += dst.dim(1).stride(), src_j += src.dim(1).stride()) {
-        fn(dim0_size, dst_j, src_j);
-      }
-    }
-  }
-}
-void BM_copy_for_each_element(benchmark::State& state) { BM_for_each_element_2x(state, memcpy_slice); }
-void BM_copy_for_each_element_fused(benchmark::State& state) { BM_for_each_element_fused_2x(state, memcpy_slice); }
-void BM_copy_for_each_contiguous_slice(benchmark::State& state) {
-  BM_for_each_contiguous_slice_2x(state, memcpy_slice);
-}
-void BM_copy_for_each_element_hardcoded(benchmark::State& state) {
-  BM_for_each_element_hardcoded_2x(state, memcpy_slice);
-}
-
-BENCHMARK(BM_copy_for_each_element)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_copy_for_each_element_fused)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_copy_for_each_contiguous_slice)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_copy_for_each_element_hardcoded)->Args({slice_extent, 16, 1});
-BENCHMARK(BM_copy_for_each_element)->Args({slice_extent, 4, 4});
-BENCHMARK(BM_copy_for_each_element_fused)->Args({slice_extent, 4, 4});
-BENCHMARK(BM_copy_for_each_contiguous_slice)->Args({slice_extent, 4, 4});
-BENCHMARK(BM_copy_for_each_element_hardcoded)->Args({slice_extent, 4, 4});
+BENCHMARK(BM_copy_for_each_element)->Args({64, 16, 1});
+BENCHMARK(BM_copy_for_each_contiguous_slice)->Args({64, 16, 1});
+BENCHMARK(BM_copy_for_each_element)->Args({64, 4, 4});
+BENCHMARK(BM_copy_for_each_contiguous_slice)->Args({64, 4, 4});
 
 void BM_fill_batch_dims(benchmark::State& state) {
   buffer<char, 8> dst;
-  allocate_buffer(dst, {slice_extent, 1, 1, 1, 1, 1, 1, 1});
+  allocate_buffer(dst, {64, 1, 1, 1, 1, 1, 1, 1});
 
   char five = 5;
 
@@ -369,12 +249,12 @@ BENCHMARK(BM_fill_batch_dims);
 
 void BM_for_each_element_batch_dims(benchmark::State& state) {
   buffer<char, 8> dst;
-  allocate_buffer(dst, {slice_extent, 1, 1, 1, 1, 1, 1, 1});
+  allocate_buffer(dst, {64, 1, 1, 1, 1, 1, 1, 1});
 
   for (auto _ : state) {
     raw_buffer dst_sliced = dst;
     dst_sliced.slice(0);
-    for_each_element([](void* x) { memset_slice(slice_extent, x); }, dst_sliced);
+    for_each_element([&](const void* x) {}, dst_sliced);
   }
 }
 
@@ -402,5 +282,36 @@ BENCHMARK(BM_init_strides)->Args({4, 3, 2, 1});
 BENCHMARK(BM_init_strides)->Args({3, 2, 1, 1});
 BENCHMARK(BM_init_strides)->Args({2, 1, 1, 1});
 BENCHMARK(BM_init_strides)->Args({1, 1, 1, 1});
+
+void BM_optimize_dims_1x(benchmark::State& state) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> buf;
+  allocate_buffer(buf, extents, padding_size);
+
+  for (auto _ : state) {
+    buffer<char, 3> buf_fused(buf);
+    optimize_dims(buf_fused);
+  }
+}
+
+void BM_optimize_dims_2x(benchmark::State& state) {
+  std::vector<index_t> extents = state_to_vector(3, state);
+  buffer<char, 3> dst;
+  allocate_buffer(dst, extents, padding_size);
+
+  buffer<char, 3> src;
+  allocate_buffer(src, extents);
+
+  for (auto _ : state) {
+    buffer<char, 3> src_fused(src);
+    buffer<char, 3> dst_fused(dst);
+    optimize_dims(dst_fused, src_fused);
+  }
+}
+
+BENCHMARK(BM_optimize_dims_1x)->Args({64, 16, 1});
+BENCHMARK(BM_optimize_dims_1x)->Args({64, 4, 4});
+BENCHMARK(BM_optimize_dims_2x)->Args({64, 16, 1});
+BENCHMARK(BM_optimize_dims_2x)->Args({64, 4, 4});
 
 }  // namespace slinky
