@@ -392,7 +392,10 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
   }
   for (std::size_t n = 1; n < size; n++) {
     const raw_buffer& buf_n = *bufs[n];
-    if (d >= buf_n.rank) {
+    if (&buf_n == &buf) {
+      // This is the same buffer as the base.
+      continue;
+    } else if (d >= buf_n.rank) {
       // This dimension is broadcasted, it's not contiguous.
       return false;
     } else if (buf_n.dim(d).stride() != static_cast<index_t>(buf_n.elem_size)) {
@@ -420,6 +423,10 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
 
   for (std::size_t n = 1; n < size; n++) {
     const raw_buffer& buf_n = *bufs[n];
+    if (&buf_n == &buf) {
+      // This is the same buffer as the base.
+      continue;
+    }
     const std::size_t rank = buf_n.rank;
     if (d > rank) {
       // Both dimensions are broadcasts, they can be fused.
@@ -453,7 +460,10 @@ SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, 
   }
   for (std::size_t n = 1; n < size; ++n) {
     const raw_buffer& buf_n = *bufs[n];
-    if (d >= buf_n.rank) {
+    if (&buf_n == &buf) {
+      // This is the same buffer as the base.
+      continue;
+    } else if (d >= buf_n.rank) {
       // Broadcast dimension.
       continue;
     }
