@@ -503,12 +503,12 @@ SLINKY_ALWAYS_INLINE inline std::size_t size_of_plan(std::size_t bufs_size, std:
 
 // Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback
 SLINKY_ALWAYS_INLINE inline void call_f(
-    for_each_element_callback f, index_t, void** bases, index_t extent, const index_t* strides) {
-  f(bases, extent, strides);
+    const callback<for_each_element_callback>& f, void** bases, index_t extent, const index_t* strides) {
+  f.f(bases, extent, strides);
 }
 SLINKY_ALWAYS_INLINE inline void call_f(
-    for_each_contiguous_slice_callback f, index_t slice_extent, void** bases, index_t extent, const index_t* strides) {
-  f(slice_extent, bases, extent, strides);
+    const callback<for_each_contiguous_slice_callback>& f, void** bases, index_t extent, const index_t* strides) {
+  f.f(f.slice_extent, bases, extent, strides);
 }
 
 template <typename F, std::size_t BufsSize>
@@ -518,7 +518,7 @@ void for_each_impl_call_f(std::size_t bufs_size, void** bases, const for_each_lo
   const callback<F>& f =
       *reinterpret_cast<const callback<F>*>(offset_bytes_non_null(loop, sizeof_for_each_loop(bufs_size)));
 
-  call_f(f.f, f.slice_extent, bases, loop->extent, loop->strides);
+  call_f(f, bases, loop->extent, loop->strides);
 }
 
 template <typename F, std::size_t BufsSize>
@@ -563,7 +563,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_folded(std::size_t bufs_size, void*
     }
     if (CallF) {
       // If the next step is to call f, do that eagerly here to avoid an extra call.
-      call_f(f.f, f.slice_extent, bases_i, 1, nullptr);
+      call_f(f, bases_i, 1, nullptr);
     } else {
       impl(bufs_size, bases_i, loop);
     }
@@ -585,7 +585,6 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
 
   // Start out with a loop of extent 1, in case the buffer is rank 0.
   for_each_loop_impl last_impl = for_each_impl_call_f<F, BufsSize>;
-  loop->impl = 0;
   loop->extent = 1;
   for_each_loop* outer_loop = loop;
   for_each_loop* prev_loop = loop;
@@ -672,7 +671,10 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
   // `loop` might not point to where we need to put the callback if there were no loops (rank 0 buffer).
   // One loop after `prev_loop` works in both cases.
   loop = offset_bytes_non_null(prev_loop, sizeof_for_each_loop(bufs_size));
-  *reinterpret_cast<callback<F>*>(loop) = {f, slice_extent};
+  reinterpret_cast<callback<F>*>(loop)->f = f;
+  if (SkipContiguous) {
+    reinterpret_cast<callback<F>*>(loop)->slice_extent = slice_extent;
+  }
 
   outer_loop->impl(bufs_size, bases, outer_loop);
 }
