@@ -384,13 +384,14 @@ SLINKY_ALWAYS_INLINE inline const dim& get_dim(const raw_buffer& buf, std::size_
   return d < buf.rank ? buf.dim(d) : broadcast_dim;
 }
 
-SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
+template <std::size_t BufsSize>
+SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   const raw_buffer& buf = *bufs[0];
   if (buf.dim(d).stride() != static_cast<index_t>(buf.elem_size)) {
     // This dimension is not contiguous.
     return false;
   }
-  for (std::size_t n = 1; n < size; n++) {
+  for (std::size_t n = 1; n < bufs.size(); n++) {
     const raw_buffer& buf_n = *bufs[n];
     if (&buf_n == &buf || !buf_n.base) {
       // This is the same buffer as the base, or the base pointer is nullptr.
@@ -406,7 +407,8 @@ SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(const raw_buffer* const* bu
   return true;
 }
 
-SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
+template <std::size_t BufsSize>
+SLINKY_ALWAYS_INLINE inline bool can_fuse(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   assert(d > 0);
   const raw_buffer& buf = *bufs[0];
   const dim& base_inner = buf.dim(d - 1);
@@ -421,7 +423,7 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
     return false;
   }
 
-  for (std::size_t n = 1; n < size; n++) {
+  for (std::size_t n = 1; n < bufs.size(); n++) {
     const raw_buffer& buf_n = *bufs[n];
     if (&buf_n == &buf || !buf_n.base) {
       // This is the same buffer as the base, or the base pointer is nullptr.
@@ -451,14 +453,15 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(const raw_buffer* const* bufs, std::si
   return true;
 }
 
-SLINKY_ALWAYS_INLINE inline bool use_folded_loop(const raw_buffer* const* bufs, std::size_t size, std::size_t d) {
+template <std::size_t BufsSize>
+SLINKY_ALWAYS_INLINE inline bool use_folded_loop(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   const raw_buffer& buf = *bufs[0];
   const dim& buf_dim = buf.dim(d);
   if (buf_dim.is_folded()) {
     // The main buffer is folded.
     return true;
   }
-  for (std::size_t n = 1; n < size; ++n) {
+  for (std::size_t n = 1; n < bufs.size(); ++n) {
     const raw_buffer& buf_n = *bufs[n];
     if (&buf_n == &buf || !buf_n.base) {
       // This is the same buffer as the base, or the base pointer is nullptr.
@@ -609,7 +612,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
 
     if (buf_dim.min() == buf_dim.max()) {
       // extent 1, we don't need any of the logic here, skip to below.
-    } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs.data(), bufs.size(), d)) {
+    } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs, d)) {
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
       loop->extent = buf_dim.extent();
@@ -652,9 +655,9 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       }
     }
 
-    if (extent == 1 || (d > 0 && can_fuse(bufs.data(), bufs.size(), d))) {
+    if (extent == 1 || (d > 0 && can_fuse(bufs, d))) {
       // Let this fuse with the next dimension.
-    } else if (SkipContiguous && is_contiguous_slice(bufs.data(), bufs.size(), d)) {
+    } else if (SkipContiguous && is_contiguous_slice(bufs, d)) {
       // This is the slice dimension.
       slice_extent *= extent;
       extent = 1;
