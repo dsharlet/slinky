@@ -55,7 +55,7 @@ const T* align_up(const T* x, std::size_t align) {
 // TODO(https://github.com/dsharlet/slinky/issues/1): This and buffer_expr in pipeline.h should have the same API
 // (except for expr instead of index_t).
 class dim {
-  index_t min_;
+  alignas(16) index_t min_;
   index_t max_;
   index_t stride_;
   index_t fold_factor_;

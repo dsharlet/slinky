@@ -506,8 +506,7 @@ struct callback {
 };
 
 std::ptrdiff_t sizeof_for_each_loop(std::size_t bufs_size) {
-  // Aligning this seems to help with performance (BM_for_each_element_batch_dims)
-  return (sizeof(for_each_loop<>) - sizeof(for_each_loop<>::dims) + sizeof(for_each_loop<>::dims) * bufs_size + 15) & ~15;
+  return sizeof(for_each_loop<>) - sizeof(for_each_loop<>::dims) + sizeof(for_each_loop<>::dims) * bufs_size;
 }
 
 // We store a plan for a parallel for loop in a structure of the following layout, for N buffers and rank R loops:
