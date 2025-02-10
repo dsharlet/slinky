@@ -187,7 +187,7 @@ public:
   using element = void;
   using pointer = void*;
 
-  void* base;
+  alignas(16) void* base;
   std::size_t elem_size;
   std::size_t rank;
   slinky::dim* dims;
