@@ -506,17 +506,12 @@ struct callback {
 };
 
 std::ptrdiff_t sizeof_for_each_loop(std::size_t bufs_size) {
-  return sizeof(for_each_loop<>) - sizeof(for_each_loop<>::dims) + sizeof(for_each_loop<>::dims) * bufs_size;
+  // Aligning this seems to help with performance (BM_for_each_element_batch_dims)
+  return (sizeof(for_each_loop<>) - sizeof(for_each_loop<>::dims) + sizeof(for_each_loop<>::dims) * bufs_size + 15) & ~15;
 }
 
 // We store a plan for a parallel for loop in a structure of the following layout, for N buffers and rank R loops:
-// struct {
-//   for_each_loop loop;
-//   union {
-//     index_t strides[N];  // Used by linear loops
-//     const dim* dims[N];  // Used by folded loops
-//   };
-// } loops[R];
+// for_each_loop<N> loops[R];
 // callback<F> f;
 //
 // We can't make a simple struct for this, because N and R are not necessarily compile-time constants.
@@ -566,17 +561,16 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_linear(
 template <typename F, std::size_t BufsSize, bool CallF>
 SLINKY_NO_STACK_PROTECTOR void for_each_impl_folded(
     mutable_span<void*, BufsSize> bases, const for_each_loop<BufsSize>* loop) {
-  index_t extent = loop->extent;
   const dim* const* dims = loop->dims;
   loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bases.size()));
 
   for_each_loop_impl<BufsSize> impl = loop->impl;
   const callback<F>& f = *reinterpret_cast<const callback<F>*>(loop);
 
-  index_t begin = dims[0]->begin();
-  index_t end = begin + extent;
+  index_t min = dims[0]->min();
+  index_t max = dims[0]->max();
   void** bases_i = SLINKY_ALLOCA(void*, bases.size());
-  for (index_t i = begin; i < end; ++i) {
+  for (index_t i = min; i <= max; ++i) {
     bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
     for (std::size_t n = 1; n < bases.size(); n++) {
       bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
@@ -615,7 +609,6 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
     } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs, d)) {
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
-      loop->extent = buf_dim.extent();
       loop->impl = for_each_impl_folded<F, BufsSize, false>;
       inner_impl = for_each_impl_folded<F, BufsSize, true>;
       extent = 1;
