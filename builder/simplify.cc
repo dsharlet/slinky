@@ -1463,7 +1463,7 @@ public:
   dim_expr mutate(const dim_expr& d) {
     dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
     if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
-    if (prove_true(result.extent() == result.fold_factor)) result.fold_factor = expr();
+    if (prove_true(result.extent() <= result.fold_factor)) result.fold_factor = expr();
     if (is_constant(result.stride, dim::auto_stride)) result.stride = expr();
     return result;
   }
