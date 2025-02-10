@@ -260,6 +260,20 @@ void BM_for_each_element_batch_dims(benchmark::State& state) {
 
 BENCHMARK(BM_for_each_element_batch_dims);
 
+void BM_for_each_element_folded(benchmark::State& state) {
+  buffer<char, 1> src({256});
+  src.dim(0).set_fold_factor(state.range(0));
+  src.allocate();
+  buffer<char, 1> dst({256});
+  dst.allocate();
+
+  for (auto _ : state) {
+    for_each_element([&](const void* x, const void*) {}, dst, src);
+  }
+}
+
+BENCHMARK(BM_for_each_element_folded)->Range(1, 256);
+
 void BM_init_strides(benchmark::State& state) {
   int extent0 = state.range(0);
   int extent1 = state.range(1);
