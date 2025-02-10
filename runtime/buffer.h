@@ -55,7 +55,7 @@ const T* align_up(const T* x, std::size_t align) {
 // TODO(https://github.com/dsharlet/slinky/issues/1): This and buffer_expr in pipeline.h should have the same API
 // (except for expr instead of index_t).
 class dim {
-  index_t min_;
+  alignas(16) index_t min_;
   index_t max_;
   index_t stride_;
   index_t fold_factor_;
@@ -407,8 +407,8 @@ private:
   // Avoid default constructor of slinky::dim, we might not use this.
   alignas(slinky::dim) char dims_storage[sizeof(slinky::dim) * DimsSize];
 
-  void assign_dims(int rank, const slinky::dim* src = nullptr) {
-    assert(rank <= static_cast<int>(DimsSize));
+  void assign_dims(std::size_t rank, const slinky::dim* src = nullptr) {
+    assert(rank <= DimsSize);
     this->rank = rank;
     if (DimsSize > 0) {
       dims = reinterpret_cast<slinky::dim*>(dims_storage);
@@ -556,9 +556,9 @@ public:
     return *this;
   }
 
-  void allocate() {
+  void allocate(index_t alignment = 1) {
     assert(!to_free);
-    to_free = raw_buffer::allocate();
+    to_free = raw_buffer::allocate(alignment);
   }
 
   void free() {
@@ -623,7 +623,7 @@ enum class fuse_type {
 
 // Fuse two dimensions of a buffer.
 template <fuse_type type>
-inline void fuse(int inner, int outer, raw_buffer& buf) {
+inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
   dim& id = buf.dim(inner);
   dim& od = buf.dim(outer);
   assert(can_fuse(id, od));
@@ -672,31 +672,32 @@ inline bool same_bounds(const dim& a, const dim& b) {
 }
 
 // Returns true if all buffers have the same bounds in dimension d.
-inline bool same_bounds(int, const raw_buffer&) { return true; }
-inline bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1) {
+inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
+inline bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1) {
   return same_bounds(buf0.dim(d), buf1.dim(d));
 }
 template <typename... Bufs>
-bool same_bounds(int d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
   return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
 }
 
 // Returns true if two dimensions of all buffers can be fused.
-inline bool can_fuse(int, int) { return true; }
+inline bool can_fuse(std::ptrdiff_t, std::ptrdiff_t) { return true; }
 template <typename... Bufs>
-bool can_fuse(int inner, int outer, const raw_buffer& buf, const Bufs&... bufs) {
+bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf, const Bufs&... bufs) {
   return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
 }
 
 // Fuse two dimensions of all buffers.
 template <fuse_type type, typename... Bufs>
-void fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   fuse<type>(inner, outer, buf);
   fuse<type>(inner, outer, bufs...);
 }
 
 template <typename... Bufs>
-SLINKY_ALWAYS_INLINE inline void attempt_fuse(int inner, int outer, raw_buffer& buf, Bufs&... bufs) {
+SLINKY_ALWAYS_INLINE inline void attempt_fuse(
+    std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   if (same_bounds(inner, buf, bufs...) && can_fuse(inner, outer, buf, bufs...)) {
     fuse<fuse_type::remove>(inner, outer, buf, bufs...);
   }
@@ -704,7 +705,7 @@ SLINKY_ALWAYS_INLINE inline void attempt_fuse(int inner, int outer, raw_buffer& 
 
 template <typename... Bufs>
 SLINKY_ALWAYS_INLINE inline void attempt_fuse(
-    int inner, int outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
+    std::ptrdiff_t inner, std::ptrdiff_t outer, span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   if (static_cast<int>(dim_sets.size()) > outer && dim_sets[outer] != dim_sets[inner]) {
     // These two dims are not part of the same set. Don't fuse them.
     return;
@@ -758,14 +759,14 @@ bool sort_dims(raw_buffer& buf, Bufs&... bufs) {
 template <typename... Bufs>
 void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
   assert(internal::same_rank(buf, bufs...));
-  for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
+  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
   }
 }
 template <typename... Bufs>
 void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
   assert(internal::same_rank(buf, bufs...));
-  for (index_t d = static_cast<index_t>(buf.rank) - 1; d > 0; --d) {
+  for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, buf, bufs...);
   }
 }
@@ -792,7 +793,7 @@ namespace internal {
 
 template <std::size_t BufsSize>
 SLINKY_ALWAYS_INLINE inline void increment_bases(std::size_t n, void** bases, const index_t* strides) {
-  n = BufsSize > 0 ? BufsSize : n;
+  n = BufsSize != dynamic_extent ? BufsSize : n;
   bases[0] = offset_bytes(bases[0], strides[0]);
   if (1 < n) bases[1] = offset_bytes(bases[1], strides[1]);
   if (2 < n) bases[2] = offset_bytes(bases[2], strides[2]);
@@ -812,9 +813,9 @@ auto array_to_tuple(void** x, std::index_sequence<Is...>) {
 using for_each_contiguous_slice_callback = function_ref<void(index_t, void**, index_t, const index_t*)>;
 using for_each_element_callback = function_ref<void(void**, index_t, const index_t*)>;
 template <std::size_t BufsSize>
-void for_each_contiguous_slice_impl(span<const raw_buffer*> bufs, for_each_contiguous_slice_callback fn);
+void for_each_contiguous_slice_impl(span<const raw_buffer*, BufsSize> bufs, for_each_contiguous_slice_callback fn);
 template <std::size_t BufsSize>
-void for_each_element_impl(span<const raw_buffer*> bufs, for_each_element_callback fn);
+void for_each_element_impl(span<const raw_buffer*, BufsSize> bufs, for_each_element_callback fn);
 
 // The above templates are only instantiated for a small number of sizes, up to this number. Larger values should use
 // 0, which is handled by a runtime parameter instead of a compile-time constant.
@@ -833,7 +834,9 @@ SLINKY_NO_STACK_PROTECTOR void for_each_contiguous_slice(const Buf& buf, const F
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  internal::for_each_contiguous_slice_impl<BufsSize <= internal::max_bufs_size ? BufsSize : 0>(
+  constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
+
+  internal::for_each_contiguous_slice_impl<ConstBufsSize>(
       buf_ptrs, [&f](index_t slice_extent, void** bases, index_t extent, const index_t* strides) {
         for (;;) {
           std::apply(f, std::tuple_cat(std::make_tuple(slice_extent),
@@ -852,15 +855,16 @@ SLINKY_NO_STACK_PROTECTOR void for_each_element(const F& f, const Buf& buf, cons
   constexpr std::size_t BufsSize = sizeof...(Bufs) + 1;
   std::array<const raw_buffer*, BufsSize> buf_ptrs = {&buf, &bufs...};
 
-  internal::for_each_element_impl<BufsSize <= internal::max_bufs_size ? BufsSize : 0>(
-      buf_ptrs, [&f](void** bases, index_t extent, const index_t* strides) {
-        for (;;) {
-          std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
-                            bases, std::make_index_sequence<BufsSize>()));
-          if (SLINKY_UNLIKELY(--extent <= 0)) break;
-          internal::increment_bases<BufsSize>(0, bases, strides);
-        }
-      });
+  constexpr std::size_t ConstBufsSize = BufsSize <= internal::max_bufs_size ? BufsSize : dynamic_extent;
+
+  internal::for_each_element_impl<ConstBufsSize>(buf_ptrs, [&f](void** bases, index_t extent, const index_t* strides) {
+    for (;;) {
+      std::apply(f, internal::array_to_tuple<typename Buf::pointer, typename Bufs::pointer...>(
+                        bases, std::make_index_sequence<BufsSize>()));
+      if (SLINKY_UNLIKELY(--extent <= 0)) break;
+      internal::increment_bases<BufsSize>(0, bases, strides);
+    }
+  });
 }
 
 }  // namespace slinky

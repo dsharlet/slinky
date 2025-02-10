@@ -641,6 +641,27 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
   }
 }
 
+TEST(buffer, for_each_element_fuzz) {
+  gtest_seeded_mt19937 rng;
+
+  for (int i = 0; i < 1000; ++i) {
+    constexpr int max_rank = 4;
+    buffer<int, max_rank> bufs[3];
+    for (buffer<int, max_rank>& buf : bufs) {
+      buf.rank = random(rng, 0, max_rank);
+      for (std::size_t d = 0; d < buf.rank; ++d) {
+        buf.dim(d).set_bounds(random(rng, -4, 2), random(rng, -2, 4));
+        buf.dim(d).set_stride(random(rng, 0, 4));
+        buf.dim(d).set_fold_factor((rng() & 3) == 0 ? random(rng, 1, 4) : dim::unfolded);
+      }
+      buf.allocate();
+    }
+    for_each_element([](const void*, const void*, const void*) {}, bufs[0], bufs[1], bufs[2]);
+    for_each_contiguous_slice(
+        bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
+  }
+}
+
 TEST(buffer, copy) {
   gtest_seeded_mt19937 rng;
 
