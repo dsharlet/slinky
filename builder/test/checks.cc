@@ -82,6 +82,8 @@ TEST(pipeline, unused_input) {
   buffer<int, 1> out_buf({N});
   in_buf.allocate();
   out_buf.allocate();
+  fill(in_buf, 2);
+  // Leave unused uninitialized so we know if something accesses it (via msan).
 
   const raw_buffer* inputs[] = {&in_buf, &unused_buf};
   const raw_buffer* outputs[] = {&out_buf};
