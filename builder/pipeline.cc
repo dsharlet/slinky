@@ -654,7 +654,7 @@ class pipeline_builder {
     }
 
     for (const auto& i : input_syms_) {
-      assert(allocation_bounds_[i.first]);
+      if (!allocation_bounds_[i.first]) continue;
       inferred_bounds_[i.first] = allocation_bounds_[i.first];
     }
   }
@@ -819,6 +819,7 @@ class pipeline_builder {
       }
 
       std::optional<allocation_candidate>& info = allocation_info_[input->sym()];
+      if (!info) continue;
       info->consumers_produced++;
 
       if (info->consumers_produced == info->deps_count) {
@@ -1205,7 +1206,10 @@ public:
     std::vector<stmt> checks;
     for (const auto& i : input_syms_) {
       const std::optional<box_expr>& bounds = allocation_bounds_[i.first];
-      assert(bounds);
+      if (!bounds) {
+        // This input must have been unused, ignore it.
+        continue;
+      }
       for (int d = 0; d < static_cast<int>(bounds->size()); ++d) {
         checks.push_back(check::make(i.second->dim(d).min() <= (*bounds)[d].min));
         checks.push_back(check::make(i.second->dim(d).max() >= (*bounds)[d].max));
