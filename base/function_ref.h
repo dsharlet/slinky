@@ -1,6 +1,8 @@
 #ifndef SLINKY_BASE_FUNCTION_REF_H
 #define SLINKY_BASE_FUNCTION_REF_H
 
+#include <cstddef>
+
 namespace slinky {
 
 template <typename Ret, typename... Args>
@@ -16,15 +18,18 @@ class function_ref<Ret(Args...)> {
   }
 
   typedef Ret (*impl_fn)(const void*, Args...);
-  impl_fn impl;
+  impl_fn impl_;
   const void* obj_;
 
 public:
-  function_ref() : impl(nullptr), obj_(nullptr) {}
+  function_ref() : impl_(nullptr), obj_(nullptr) {}
+  function_ref(std::nullptr_t) : function_ref() {}
   template <typename F>
-  function_ref(const F& f) : impl(reinterpret_cast<impl_fn>(get_impl<F>)), obj_(&f) {}
+  function_ref(const F& f) : impl_(reinterpret_cast<impl_fn>(get_impl<F>)), obj_(&f) {}
 
-  Ret operator()(Args... args) const { return impl(obj_, args...); }
+  operator bool() const { return impl_ != nullptr; }
+
+  Ret operator()(Args... args) const { return impl_(obj_, args...); }
 };
 
 }  // namespace slinky

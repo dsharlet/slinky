@@ -1,6 +1,7 @@
 #ifndef SLINKY_BUILDER_NODE_MUTATOR_H
 #define SLINKY_BUILDER_NODE_MUTATOR_H
 
+#include "base/function_ref.h"
 #include "runtime/expr.h"
 #include "runtime/stmt.h"
 
@@ -140,12 +141,12 @@ stmt clone_with(const transpose* op, var sym, stmt new_body);
 
 // Helper for single statement mutators.
 template <typename T>
-stmt recursive_mutate(const stmt& s, const std::function<stmt(const T*)>& mutator) {
-  using mutator_fn = std::function<stmt(const T*)>;
+stmt recursive_mutate(const stmt& s, function_ref<stmt(const T*)> mutator) {
+  using mutator_fn = function_ref<stmt(const T*)>;
   class impl : public stmt_mutator {
   public:
-    const mutator_fn& mutator;
-    impl(const mutator_fn& mutator) : mutator(mutator) {}
+    mutator_fn mutator;
+    impl(mutator_fn mutator) : mutator(mutator) {}
     stmt mutate(const stmt& s) override {
       if (const T* t = s.as<T>()) {
         return mutator(t);
