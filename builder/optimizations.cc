@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/chrome_trace.h"
+#include "base/function_ref.h"
 #include "builder/node_mutator.h"
 #include "builder/pipeline.h"
 #include "builder/simplify.h"
@@ -641,7 +642,7 @@ public:
   }
 
   void merge_buffer_info(
-      symbol_map<buffer_info>& old_buffers, var sym, var src, std::function<void(alias_info&)> handler) {
+      symbol_map<buffer_info>& old_buffers, var sym, var src, function_ref<void(alias_info&)> handler) {
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       for (auto& a : i->aliases) {
@@ -688,7 +689,7 @@ public:
   }
 
   template <typename T>
-  void visit_buffer_mutator(const T* op, std::function<void(alias_info&)> handler) {
+  void visit_buffer_mutator(const T* op, function_ref<void(alias_info&)> handler) {
     // We need to know which alias candidates are added inside this mutator.
     symbol_map<buffer_info> old_buffers(buffers.size());
     std::swap(old_buffers, buffers);

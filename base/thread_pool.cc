@@ -11,7 +11,7 @@ namespace slinky {
 
 thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
 
-thread_pool_impl::thread_pool_impl(int workers, const task& init) : stop_(false) {
+thread_pool_impl::thread_pool_impl(int workers, task_ref init) : stop_(false) {
   auto worker = [this, init]() {
     if (init) init();
     run_worker([this]() -> bool { return stop_; });
@@ -29,7 +29,7 @@ thread_pool_impl::~thread_pool_impl() {
   }
 }
 
-void thread_pool_impl::run_worker(const predicate& condition) {
+void thread_pool_impl::run_worker(predicate_ref condition) {
   ++worker_count_;
   wait_for(condition, cv_worker_);
   --worker_count_;
@@ -63,7 +63,7 @@ thread_pool::task_id thread_pool_impl::dequeue(task& t) {
   return nullptr;
 }
 
-void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::condition_variable& cv) {
+void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable& cv) {
   // We want to spin a few times before letting the OS take over.
   const int spin_count = 1000;
   int spins = 0;
@@ -91,7 +91,7 @@ void thread_pool_impl::wait_for(const thread_pool::predicate& condition, std::co
   }
 }
 
-void thread_pool_impl::atomic_call(const task& t) {
+void thread_pool_impl::atomic_call(task_ref t) {
   std::unique_lock l(mutex_);
   t();
   cv_worker_.notify_all();
@@ -113,7 +113,7 @@ void thread_pool_impl::enqueue(task t, task_id id) {
   cv_helper_.notify_one();
 }
 
-void thread_pool_impl::run(const task& t, task_id id) {
+void thread_pool_impl::run(task_ref t, task_id id) {
   assert(id == unique_task_id || std::find(task_stack.begin(), task_stack.end(), id) == task_stack.end());
   task_stack.push_back(id);
   t();

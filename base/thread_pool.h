@@ -10,6 +10,8 @@
 #include <mutex>
 #include <thread>
 
+#include "base/function_ref.h"
+
 namespace slinky {
 
 constexpr std::size_t cache_line_size = 64;
@@ -89,7 +91,9 @@ public:
   using task_id = const void*;
   static task_id unique_task_id;
   using task = std::function<void()>;
+  using task_ref = function_ref<void()>;
   using predicate = std::function<bool()>;
+  using predicate_ref = function_ref<bool()>;
 
   virtual ~thread_pool() = default;
 
@@ -100,14 +104,14 @@ public:
   virtual void enqueue(int n, task t, task_id id = unique_task_id) = 0;
   virtual void enqueue(task t, task_id id = unique_task_id) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  virtual void run(const task& t, task_id id = unique_task_id) = 0;
+  virtual void run(task_ref t, task_id id = unique_task_id) = 0;
   // Cancel tasks previously enqueued with the given `id`.
   virtual void cancel(task_id id) {}
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
-  virtual void wait_for(const predicate& condition) = 0;
+  virtual void wait_for(predicate_ref condition) = 0;
   // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
-  virtual void atomic_call(const task& t) = 0;
+  virtual void atomic_call(task_ref t) = 0;
 
   template <typename Fn>
   void parallel_for(std::size_t n, Fn&& body, int max_workers = std::numeric_limits<int>::max()) {
@@ -158,7 +162,7 @@ private:
   std::condition_variable cv_helper_;
   std::condition_variable cv_worker_;
 
-  void wait_for(const predicate& condition, std::condition_variable& cv);
+  void wait_for(predicate_ref condition, std::condition_variable& cv);
 
   task_id dequeue(task& t);
 
@@ -167,11 +171,11 @@ public:
   // `init` is a task that is run on each newly created thread.
   // Pass workers = 0 to have a thread pool with no worker threads and
   // use `run_worker` to enter a thread into the thread pool.
-  thread_pool_impl(int workers = 3, const task& init = nullptr);
+  thread_pool_impl(int workers = 3, task_ref init = nullptr);
   ~thread_pool_impl() override;
 
   // Enters the calling thread into the thread pool as a worker. Does not return until `condition` returns true.
-  void run_worker(const predicate& condition);
+  void run_worker(predicate_ref condition);
   // Because the above API allows adding workers to the thread pool, we might not know how many threads there will be
   // when starting up a task. This allows communicating that information.
   void expect_workers(int n) { expected_thread_count_ = n; }
@@ -180,10 +184,10 @@ public:
 
   void enqueue(int n, task t, task_id id = unique_task_id) override;
   void enqueue(task t, task_id id = unique_task_id) override;
-  void run(const task& t, task_id id = unique_task_id) override;
+  void run(task_ref t, task_id id = unique_task_id) override;
   void cancel(task_id id) override;
-  void wait_for(const predicate& condition) override { wait_for(condition, cv_helper_); }
-  void atomic_call(const task& t) override;
+  void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
+  void atomic_call(task_ref t) override;
 };
 
 }  // namespace slinky
