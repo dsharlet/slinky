@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <future>
 #include <limits>
 #include <mutex>
 #include <thread>
@@ -13,6 +14,23 @@
 #include "base/function_ref.h"
 
 namespace slinky {
+
+class atomic_flag {
+  std::atomic_flag flag_ = {};
+  std::promise<void> promise_;
+
+public:
+  atomic_flag() = default;
+
+  std::future<void> get_future() {
+    return promise_.get_future();
+  }
+
+  void set() {
+    if (!flag_.test_and_set())
+      promise_.set_value();
+  }
+};
 
 constexpr std::size_t cache_line_size = 64;
 
