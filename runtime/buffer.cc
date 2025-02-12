@@ -598,8 +598,8 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
   void** bases_i = SLINKY_ALLOCA(void*, bases.size());
 
   // To handle non-linear loops, we process an interval [min, max] in blocks of the `fold_factor`, within which we can
-  // compute the base pointers linearly from the strides, if the buffers are complete in-bounds or out-of-bounds.
-  // We need to handle buffers going in and out of bounds too, so we break the blocks into chunks at those boundaries.
+  // compute the base pointers linearly from the strides, if the buffers are fully in-bounds or out-of-bounds.
+  // We need to handle buffers going in and out of bounds too, so we break the blocks into smaller chunks at those boundaries.
   auto run_one_fold = [&](index_t min, index_t max) {
     for (index_t i = min; i <= max;) {
       index_t max_i = max;
