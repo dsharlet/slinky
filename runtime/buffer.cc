@@ -523,14 +523,24 @@ SLINKY_ALWAYS_INLINE inline std::size_t size_of_plan(std::size_t bufs_size, std:
   return sizeof_for_each_loop(bufs_size) * std::max<std::size_t>(1, rank) + sizeof(callback<F>);
 }
 
-// Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback
-SLINKY_ALWAYS_INLINE inline void call_f(
-    const callback<for_each_element_callback>& f, void** bases, index_t extent, const index_t* strides) {
+// Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback.
+SLINKY_ALWAYS_INLINE inline void call_f(const callback<for_each_element_callback>& f, void** bases, index_t extent,
+    const index_t* strides, std::false_type = {}) {
   f.f(bases, extent, strides);
 }
-SLINKY_ALWAYS_INLINE inline void call_f(
-    const callback<for_each_contiguous_slice_callback>& f, void** bases, index_t extent, const index_t* strides) {
+SLINKY_ALWAYS_INLINE inline void call_f(const callback<for_each_element_callback>& f, void** bases, index_t extent,
+    const index_t* strides, std::true_type) {
+  f.f(bases, extent, strides);
+}
+SLINKY_ALWAYS_INLINE inline void call_f(const callback<for_each_contiguous_slice_callback>& f, void** bases,
+    index_t extent, const index_t* strides, std::false_type = {}) {
   f.f(f.slice_extent, bases, extent, strides);
+}
+// If we have a contiguous callback, and we know the slice is contiguous, we can adjust the contiguous slice extent
+// instead of calling f in a loop.
+SLINKY_ALWAYS_INLINE inline void call_f(const callback<for_each_contiguous_slice_callback>& f, void** bases,
+    index_t extent, const index_t* strides, std::true_type) {
+  f.f(f.slice_extent * extent, bases, 1, nullptr);
 }
 
 template <typename F, std::size_t BufsSize>
@@ -569,7 +579,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_linear(
   call_impl_linear(extent, bases, loop, strides);
 }
 
-template <typename F, std::size_t BufsSize, bool CallF>
+template <typename F, std::size_t BufsSize, bool CallF, typename Contiguous = std::false_type>
 SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
     mutable_span<void*, BufsSize> bases, const for_each_loop<BufsSize>* loop) {
   const dim* const* dims = loop->dims;
@@ -617,7 +627,7 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
       index_t extent_i = max_i - i + 1;
       if (CallF) {
         // If the next step is to call f, do that eagerly here to avoid an extra call.
-        call_f(f, bases_i, extent_i, strides);
+        call_f(f, bases_i, extent_i, strides, Contiguous());
       } else {
         call_impl_linear<BufsSize>(extent_i, {bases_i, bases.size()}, loop, strides);
       }
@@ -676,7 +686,11 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
       loop->impl = for_each_impl_nonlinear<F, BufsSize, false>;
-      inner_impl = for_each_impl_nonlinear<F, BufsSize, true>;
+      if (SkipContiguous && is_contiguous_slice(bufs, d)) {
+        inner_impl = for_each_impl_nonlinear<F, BufsSize, true, std::true_type>;
+      } else {
+        inner_impl = for_each_impl_nonlinear<F, BufsSize, true, std::false_type>;
+      }
       extent = 1;
 
       const dim** dims = loop->dims;
