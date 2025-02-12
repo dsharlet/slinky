@@ -379,11 +379,6 @@ namespace internal {
 
 namespace {
 
-SLINKY_ALWAYS_INLINE inline const dim& get_dim(const raw_buffer& buf, std::size_t d) {
-  // Dimensions beyond the rank are broadcasts.
-  return d < buf.rank ? buf.dim(d) : broadcast_dim;
-}
-
 template <std::size_t BufsSize>
 SLINKY_ALWAYS_INLINE inline bool is_contiguous_slice(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   const raw_buffer& buf = *bufs[0];
@@ -453,8 +448,12 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(span<const raw_buffer*, BufsSize> bufs
   return true;
 }
 
+// We need a non-linear loop if we can't compute a pointer for any dimension via multiplying the stride and adding it to
+// the beginning of the dimension:
+// - A dimension is folded
+// - A dimension is partially out of bounds
 template <std::size_t BufsSize>
-SLINKY_ALWAYS_INLINE inline bool use_folded_loop(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
+SLINKY_ALWAYS_INLINE inline bool use_nonlinear_loop(span<const raw_buffer*, BufsSize> bufs, std::size_t d) {
   const raw_buffer& buf = *bufs[0];
   const dim& buf_dim = buf.dim(d);
   if (buf_dim.is_folded()) {
@@ -491,7 +490,12 @@ using for_each_loop_impl = void (*)(mutable_span<void*, BufsSize>, const for_eac
 
 template <std::size_t BufsSize>
 struct for_each_loop {
-  index_t extent;
+  union {
+    // For linear loops, the extent of the loop.
+    index_t extent;
+    // For nonlinear loops, the intersection of all the folds in this loop.
+    index_t fold_factor;
+  };
   for_each_loop_impl<BufsSize> impl;
   union {
     index_t strides[1];  // [bufs_size]
@@ -537,14 +541,10 @@ void for_each_impl_call_f(mutable_span<void*, BufsSize> bases, const for_each_lo
   call_f(f, bases.data(), loop->extent, loop->strides);
 }
 
-template <typename F, std::size_t BufsSize>
-SLINKY_NO_STACK_PROTECTOR void for_each_impl_linear(
-    mutable_span<void*, BufsSize> bases, const for_each_loop<BufsSize>* loop) {
-  const index_t* strides = loop->strides;
-  index_t extent = loop->extent;
+template <std::size_t BufsSize>
+SLINKY_NO_STACK_PROTECTOR void call_impl_linear(
+    index_t extent, mutable_span<void*, BufsSize> bases, const for_each_loop<BufsSize>* loop, const index_t* strides) {
   assert(extent >= 1);
-
-  loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bases.size()));
 
   for_each_loop_impl<BufsSize> impl = loop->impl;
 
@@ -557,30 +557,97 @@ SLINKY_NO_STACK_PROTECTOR void for_each_impl_linear(
   }
 }
 
-template <typename F, std::size_t BufsSize, bool CallF>
-SLINKY_NO_STACK_PROTECTOR void for_each_impl_folded(
+template <typename F, std::size_t BufsSize>
+SLINKY_NO_STACK_PROTECTOR void for_each_impl_linear(
     mutable_span<void*, BufsSize> bases, const for_each_loop<BufsSize>* loop) {
-  const dim* const* dims = loop->dims;
+  const index_t* strides = loop->strides;
+  index_t extent = loop->extent;
+  assert(extent >= 1);
+
   loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bases.size()));
 
-  for_each_loop_impl<BufsSize> impl = loop->impl;
+  call_impl_linear(extent, bases, loop, strides);
+}
+
+template <typename F, std::size_t BufsSize, bool CallF>
+SLINKY_NO_STACK_PROTECTOR void for_each_impl_nonlinear(
+    mutable_span<void*, BufsSize> bases, const for_each_loop<BufsSize>* loop) {
+  const dim* const* dims = loop->dims;
+  const index_t fold_factor = loop->fold_factor;
+
+  loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bases.size()));
+
   const callback<F>& f = *reinterpret_cast<const callback<F>*>(loop);
 
-  index_t min = dims[0]->min();
-  index_t max = dims[0]->max();
+  index_t* strides = SLINKY_ALLOCA(index_t, bases.size());
+  for (std::size_t n = 0; n < bases.size(); ++n) {
+    strides[n] = dims[n]->stride();
+  }
+
+  const dim& dim_0 = *dims[0];
   void** bases_i = SLINKY_ALLOCA(void*, bases.size());
-  for (index_t i = min; i <= max; ++i) {
-    bases_i[0] = offset_bytes_non_null(bases[0], dims[0]->flat_offset_bytes(i));
-    for (std::size_t n = 1; n < bases.size(); n++) {
-      bases_i[n] = dims[n]->contains(i) ? offset_bytes(bases[n], dims[n]->flat_offset_bytes(i)) : nullptr;
+
+  // To handle non-linear loops, we process an interval [min, max] in blocks of the `fold_factor`, within which we can
+  // compute the base pointers linearly from the strides, if the buffers are complete in-bounds or out-of-bounds.
+  // We need to handle buffers going in and out of bounds too, so we break the blocks into chunks at those boundaries.
+  auto run_one_fold = [&](index_t min, index_t max) {
+    for (index_t i = min; i <= max;) {
+      index_t max_i = max;
+      assert(!dim_0.is_folded(i, max_i));
+      bases_i[0] = offset_bytes_non_null(bases[0], dim_0.flat_offset_bytes(i));
+      for (std::size_t n = 1; n < bases.size(); n++) {
+        if (!bases[n]) {
+          bases_i[n] = nullptr;
+          continue;
+        }
+        const dim& dim_n = *dims[n];
+        assert(!dim_n.is_folded(i, max_i));
+        if (dim_n.contains(i)) {
+          // This interval starts out non-null, but could become null before the end of the interval.
+          bases_i[n] = offset_bytes_non_null(bases[n], dim_n.flat_offset_bytes(i));
+          max_i = std::min(max_i, dim_n.max());
+        } else {
+          bases_i[n] = nullptr;
+          if (dim_n.min() > i) {
+            // This interval starts out null, but could become non-null before the end of the interval.
+            max_i = std::min(max_i, dim_n.min() - 1);
+          }
+        }
+      }
+      index_t extent_i = max_i - i + 1;
+      if (CallF) {
+        // If the next step is to call f, do that eagerly here to avoid an extra call.
+        call_f(f, bases_i, extent_i, strides);
+      } else {
+        call_impl_linear<BufsSize>(extent_i, {bases_i, bases.size()}, loop, strides);
+      }
+      i = max_i + 1;
     }
-    if (CallF) {
-      // If the next step is to call f, do that eagerly here to avoid an extra call.
-      call_f(f, bases_i, 1, nullptr);
-    } else {
-      impl({bases_i, bases.size()}, loop);
+  };
+
+  index_t min = dim_0.min();
+  index_t max = dim_0.max();
+  if (fold_factor == dim::unfolded) {
+    // Not folded, we can treat the whole range as one chunk.
+    run_one_fold(min, max);
+  } else {
+    index_t first_fold = align_up(min, fold_factor);
+    if (min != first_fold) {
+      // Handle the partial fold before the first fold boundary.
+      run_one_fold(min, std::min(first_fold - 1, max));
+    }
+
+    for (index_t i = first_fold; i <= max; i += fold_factor) {
+      // Process up to the end without crossing a fold boundary.
+      run_one_fold(i, std::min(i + fold_factor - 1, max));
     }
   }
+}
+
+index_t gcd_fold_factor(index_t a, index_t b) {
+  if (a == dim::unfolded) return b;
+  if (b == dim::unfolded) return a;
+  return gcd(a, b);
 }
 
 template <bool SkipContiguous, std::size_t BufsSize, typename F>
@@ -605,22 +672,30 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
 
     if (buf_dim.min() == buf_dim.max()) {
       // extent 1, we don't need any of the logic here, skip to below.
-    } else if (buf_dim.max() < buf_dim.min() || use_folded_loop(bufs, d)) {
+    } else if (buf_dim.max() < buf_dim.min() || use_nonlinear_loop(bufs, d)) {
       // extent > 1 and there is a folded dimension in one of the buffers, or we need to crop one of the buffers, or the
       // loops are empty.
-      loop->impl = for_each_impl_folded<F, BufsSize, false>;
-      inner_impl = for_each_impl_folded<F, BufsSize, true>;
+      loop->impl = for_each_impl_nonlinear<F, BufsSize, false>;
+      inner_impl = for_each_impl_nonlinear<F, BufsSize, true>;
       extent = 1;
 
       const dim** dims = loop->dims;
       dims[0] = &buf.dim(d);
+      loop->fold_factor = buf_dim.fold_factor();
       for (std::size_t n = 1; n < bufs.size(); n++) {
-        dims[n] = &get_dim(*bufs[n], d);
+        const raw_buffer& buf_n = *bufs[n];
+        if (d < static_cast<std::ptrdiff_t>(buf_n.rank)) {
+          const dim& buf_n_dim = buf_n.dim(d);
+          dims[n] = &buf_n_dim;
+          loop->fold_factor = gcd_fold_factor(loop->fold_factor, buf_n_dim.fold_factor());
+        } else {
+          dims[n] = &broadcast_dim;
+        }
       }
       loop = offset_bytes_non_null(loop, sizeof_for_each_loop(bufs.size()));
       continue;
     } else {
-      // Not folded, use a linear, possibly fused loop below.
+      // Use a linear, possibly fused loop below.
       extent *= buf_dim.max() - buf_dim.min() + 1;
     }
 
@@ -640,7 +715,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
           bases[n] = offset_bytes_non_null(bases[n], offset);
         } else {
           // If we got here, we need to say the buffer is always out of bounds. If it is partially out of bounds,
-          // use_folded_loop should have returned true above.
+          // use_nonlinear_loop should have returned true above.
           assert(buf_n_dim.empty() || buf_n_dim.min() > buf_dim.max() || buf_n_dim.max() < buf_dim.min());
           bases[n] = nullptr;
         }

@@ -321,6 +321,41 @@ TEST(buffer, slice_1_3_5) {
   ASSERT_EQ(sliced.dim(2), buf.dim(4));
 }
 
+TEST(buffer, for_each_element_folded) {
+  buffer<char, 1> buf({10});
+  buf.dim(0).set_fold_factor(4);
+  buf.allocate();
+  int count = 0;
+  for_each_element(
+      [&](char* i) {
+        *i = 7;
+        count++;
+      },
+      buf);
+  ASSERT_EQ(count, 10);
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
+}
+
+TEST(buffer, for_each_element_cropped) {
+  buffer<char, 1> src({10});
+  buffer<char, 1> dst({10});
+  src.crop(0, 2, 6);
+  dst.allocate();
+  src.allocate();
+  fill(src, 7);
+  int total = 0;
+  int in_bounds = 0;
+  for_each_element(
+      [&](char* o, const char* i) {
+        *o = i ? *i : 0;
+        in_bounds += i ? 1 : 0;
+        ++total;
+      },
+      dst, src);
+  ASSERT_EQ(total, 10);
+  ASSERT_EQ(in_bounds, src.dim(0).extent());
+}
+
 TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
