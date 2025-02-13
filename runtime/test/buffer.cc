@@ -321,6 +321,41 @@ TEST(buffer, slice_1_3_5) {
   ASSERT_EQ(sliced.dim(2), buf.dim(4));
 }
 
+TEST(buffer, for_each_element_folded) {
+  buffer<char, 1> buf({10});
+  buf.dim(0).set_fold_factor(4);
+  buf.allocate();
+  int count = 0;
+  for_each_element(
+      [&](char* i) {
+        *i = 7;
+        count++;
+      },
+      buf);
+  ASSERT_EQ(count, 10);
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
+}
+
+TEST(buffer, for_each_element_cropped) {
+  buffer<char, 1> src({10});
+  buffer<char, 1> dst({10});
+  src.crop(0, 2, 6);
+  dst.allocate();
+  src.allocate();
+  fill(src, 7);
+  int total = 0;
+  int in_bounds = 0;
+  for_each_element(
+      [&](char* o, const char* i) {
+        *o = i ? *i : 0;
+        in_bounds += i ? 1 : 0;
+        ++total;
+      },
+      dst, src);
+  ASSERT_EQ(total, 10);
+  ASSERT_EQ(in_bounds, src.dim(0).extent());
+}
+
 TEST(buffer, for_each_contiguous_slice) {
   buffer<char, 3> buf({10, 20, 30});
   buf.allocate();
@@ -369,6 +404,47 @@ TEST(buffer, for_each_contiguous_folded) {
   });
   ASSERT_EQ(slices, 120);
   ASSERT_TRUE(is_filled_buffer(buf, 7));
+}
+
+TEST(buffer, for_each_contiguous_folded_innermost) {
+  buffer<char, 3> buf({10});
+  buf.dim(0).set_fold_factor(4);
+  buf.allocate();
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
+    std::fill_n(slice, slice_extent, 7);
+    slices++;
+  });
+  ASSERT_EQ(slices, 3);
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
+}
+
+TEST(buffer, for_each_contiguous_cropped) {
+  buffer<char, 1> src({10});
+  buffer<char, 1> dst({10});
+  src.crop(0, 2, 6);
+  dst.allocate();
+  src.allocate();
+  fill(src, 7);
+  int slices = 0;
+  int total = 0;
+  int in_bounds = 0;
+  for_each_contiguous_slice(
+      dst,
+      [&](index_t slice_extent, char* o, const char* i) {
+        if (i) {
+          std::copy_n(i, slice_extent, o);
+        } else {
+          std::fill_n(o, slice_extent, 0);
+        }
+        ++slices;
+        in_bounds += i ? slice_extent : 0;
+        total += slice_extent;
+      },
+      src);
+  ASSERT_EQ(total, 10);
+  ASSERT_EQ(in_bounds, src.dim(0).extent());
+  ASSERT_EQ(slices, 3);
 }
 
 TEST(buffer, for_each_contiguous_slice_padded) {
@@ -719,8 +795,7 @@ TEST(buffer, copy_empty_src) {
     for (int d = 0; d < rank; d++) {
       src.dim(0).set_min_extent(0, D);
     }
-    src.dim(empty_dim).set_min_extent(std::numeric_limits<index_t>::max(),
-                                      std::numeric_limits<index_t>::min());
+    src.dim(empty_dim).set_min_extent(std::numeric_limits<index_t>::max(), std::numeric_limits<index_t>::min());
     init_random(rng, src);
 
     buffer<int, rank> dst;
