@@ -26,7 +26,6 @@ index_t alloc_extent(const dim& dim) {
   if (dim.fold_factor() != dim::unfolded) {
     // TODO: We can do better than this if the dim doesn't cross a fold boundary.
     return dim.fold_factor();
-    // return std::min(dim.fold_factor(), dim.extent()  * 2);
   } else {
     return dim.extent();
   }
