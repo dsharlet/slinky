@@ -419,6 +419,21 @@ TEST(buffer, for_each_contiguous_folded_innermost) {
   ASSERT_TRUE(is_filled_buffer(buf, 7));
 }
 
+TEST(buffer, for_each_contiguous_folded_innermost_dim_1) {
+  buffer<char, 3> buf({10, 20});
+  buf.dim(0).set_fold_factor(4);
+  buf.init_strides();
+  std::swap(buf.dim(0), buf.dim(1));
+  buf.allocate();
+  int slices = 0;
+  for_each_contiguous_slice(buf, [&](index_t slice_extent, char* slice) {
+    std::fill_n(slice, slice_extent, 7);
+    slices++;
+  });
+  ASSERT_EQ(slices, 60);
+  ASSERT_TRUE(is_filled_buffer(buf, 7));
+}
+
 TEST(buffer, for_each_contiguous_cropped) {
   buffer<char, 1> src({10});
   buffer<char, 1> dst({10});
