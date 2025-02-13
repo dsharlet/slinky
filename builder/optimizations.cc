@@ -797,10 +797,18 @@ public:
     }
   }
 
-  bool fold_factors_strides_same(const std::vector<dim_expr>& dims_a, const std::vector<dim_expr>& dims_b) {
-    for (std::size_t ix = 0; ix < std::min(dims_a.size(), dims_b.size()); ++ix) {
-      if ((dims_a[ix].stride.defined() || dims_b[ix].stride.defined()) && !prove_true(dims_a[ix].stride == dims_b[ix].stride)) return false;
-      if ((dims_a[ix].fold_factor.defined() || dims_b[ix].fold_factor.defined()) && !prove_true(dims_a[ix].fold_factor == dims_b[ix].fold_factor)) return false;
+  bool fold_factors_strides_same(const std::vector<dim_expr>& alloc_dims, const std::vector<dim_expr>& alias_dims) {
+    if (alloc_dims.size() != alias_dims.size()) {
+      return !(std::any_of(alloc_dims.begin(), alloc_dims.end(),
+          [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); }));
+    }
+    for (std::size_t ix = 0; ix < alloc_dims.size(); ++ix) {
+      if ((alloc_dims[ix].stride.defined() || alias_dims[ix].stride.defined()) &&
+          !prove_true(alloc_dims[ix].stride == alias_dims[ix].stride))
+        return false;
+      if ((alloc_dims[ix].fold_factor.defined() || alias_dims[ix].fold_factor.defined()) &&
+          !prove_true(alloc_dims[ix].fold_factor == alias_dims[ix].fold_factor))
+        return false;
     }
     return true;
   }
@@ -824,10 +832,12 @@ public:
       can_alias = false;
     }
 
-    if (can_alias && back && back->defined() && buffers.lookup(*back) && fold_factors_strides_same(op->dims, buffers[*back]->dims)) {
+    if (can_alias && back && back->defined() && buffers.lookup(*back) &&
+        fold_factors_strides_same(op->dims, buffers[*back]->dims)) {
       forward.erase(*back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
-    } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd) && fold_factors_strides_same(op->dims, buffers[*fwd]->dims)) {
+    } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd) &&
+               fold_factors_strides_same(op->dims, buffers[*fwd]->dims)) {
       backward.erase(*fwd);
       set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
     } else if (!body.same_as(op->body)) {
