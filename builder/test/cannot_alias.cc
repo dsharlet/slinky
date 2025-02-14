@@ -247,8 +247,8 @@ TEST_P(may_alias, same_bounds) {
   }
 
   // TODO: This requires the buffer_aliaser mutator to learn from checks to prove some predicates it needs to be true.
-  //ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
-  //ASSERT_EQ(eval_ctx.copy_calls, may_alias ? 0 : 2);
+  // ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
+  // ASSERT_EQ(eval_ctx.copy_calls, may_alias ? 0 : 2);
 }
 
 TEST_P(may_alias, unfolded) {
@@ -304,6 +304,67 @@ TEST_P(may_alias, unfolded) {
   }
 
   ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
+}
+
+TEST_P(may_alias, with_fold) {
+  const bool may_alias = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
+
+  if (!may_alias) {
+    // Make fold_factors mismatching to test that they are not aliased.
+    intm2->dim(0).fold_factor = 2;
+  }
+
+  var x(ctx, "x");
+
+  // Here we explicitly use std::functions (in the form of a
+  // func::callable typedef) to wrap the local calls
+  // purely to verify that the relevant func::make calls work correctly.
+  func::callable<const int, int> m2 = multiply_2<int>;
+  func::callable<const int, int> m2_2 = multiply_2<int>;
+  func::callable<const int, int> a1 = add_1<int>;
+
+  func mul = func::make(
+      std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "mul"});
+  func mul2 = func::make(std::move(m2_2), {{intm, {point(x)}}}, {{intm2, {x}}},
+      call_stmt::attributes{.allow_in_place = 0x1, .name = "mul2"});
+  func add = func::make(
+      std::move(a1), {{intm2, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
+
+  add.loops({{x, 1, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline
+  const int N = 10;
+
+  buffer<int, 1> in_buf({N});
+  in_buf.allocate();
+  for (int i = 0; i < N; ++i) {
+    in_buf(i) = i;
+  }
+
+  buffer<int, 1> out_buf({N});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(out_buf(i), 4 * i + 1);
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 1 : 2);
 }
 
 TEST(split_output, cannot_alias) {
