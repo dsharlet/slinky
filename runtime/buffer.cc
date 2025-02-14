@@ -759,6 +759,7 @@ SLINKY_NO_STACK_PROTECTOR SLINKY_ALWAYS_INLINE inline void for_each_impl(span<co
 
     // We need to replace the implementation of the last loop.
     for_each_loop<BufsSize>* inner_loop = offset_bytes_non_null(loop, -sizeof_for_each_loop(bufs.size()));
+    (void)inner_impl;
     inner_loop->impl = inner_impl;
 
     // Run the outer loop.
