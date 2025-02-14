@@ -798,16 +798,13 @@ public:
   }
 
   bool fold_factors_strides_same(const std::vector<dim_expr>& alloc_dims, const std::vector<dim_expr>& alias_dims) {
-    if (alloc_dims.size() != alias_dims.size()) {
+    if (alloc_dims.size() > alias_dims.size()) {
       return !(std::any_of(alloc_dims.begin(), alloc_dims.end(),
           [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); }));
     }
     for (std::size_t ix = 0; ix < alloc_dims.size(); ++ix) {
-      if ((alloc_dims[ix].stride.defined() || alias_dims[ix].stride.defined()) &&
-          !prove_true(alloc_dims[ix].stride == alias_dims[ix].stride))
-        return false;
-      if ((alloc_dims[ix].fold_factor.defined() || alias_dims[ix].fold_factor.defined()) &&
-          !prove_true(alloc_dims[ix].fold_factor == alias_dims[ix].fold_factor))
+      if (alloc_dims[ix].stride.defined() && !prove_true(alloc_dims[ix].stride == alias_dims[ix].stride)) return false;
+      if (alloc_dims[ix].fold_factor.defined() && !prove_true(alloc_dims[ix].fold_factor == alias_dims[ix].fold_factor))
         return false;
     }
     return true;
