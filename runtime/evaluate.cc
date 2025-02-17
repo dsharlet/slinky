@@ -496,8 +496,11 @@ public:
       // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
       // available.
       pool->run(worker, loop.get());
-      // While the loop still isn't done, work on other tasks.
-      pool->wait_for([&]() { return loop->done(); });
+
+      if (!loop->done()) {
+        // While the loop still isn't done, work on other tasks.
+        pool->wait_for([&]() { return loop->done(); });
+      }
 
       return loop->result;
     }
