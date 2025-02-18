@@ -324,19 +324,12 @@ TEST_P(may_alias, with_fold) {
 
   var x(ctx, "x");
 
-  // Here we explicitly use std::functions (in the form of a
-  // func::callable typedef) to wrap the local calls
-  // purely to verify that the relevant func::make calls work correctly.
-  func::callable<const int, int> m2 = multiply_2<int>;
-  func::callable<const int, int> m2_2 = multiply_2<int>;
-  func::callable<const int, int> a1 = add_1<int>;
-
-  func mul = func::make(
-      std::move(m2), {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "mul"});
-  func mul2 = func::make(std::move(m2_2), {{intm, {point(x)}}}, {{intm2, {x}}},
+  func mul = func::make(multiply_2<int>, {{in, {point(x)}}}, {{intm, {x}}},
+      call_stmt::attributes{.allow_in_place = 0x1, .name = "mul"});
+  func mul2 = func::make(multiply_2<int>, {{intm, {point(x)}}}, {{intm2, {x}}},
       call_stmt::attributes{.allow_in_place = 0x1, .name = "mul2"});
-  func add = func::make(
-      std::move(a1), {{intm2, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
+  func add = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out, {x}}},
+      call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
 
   add.loops({{x, 1, 1}});
 
