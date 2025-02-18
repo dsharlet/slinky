@@ -775,6 +775,7 @@ class in_place_aliaser : public stmt_mutator {
     // The name of the allocation or output variable that this buffer is derived from.
     var root;
 
+    std::vector<dim_expr> dims;
     bool allow_alias = true;
   };
   // Tracks buffer symbols that are actually the same buffer.
@@ -796,8 +797,21 @@ public:
     }
   }
 
+  bool fold_factors_strides_same(const std::vector<dim_expr>& alloc_dims, const std::vector<dim_expr>& alias_dims) {
+    if (alloc_dims.size() > alias_dims.size()) {
+      return !(std::any_of(alloc_dims.begin(), alloc_dims.end(),
+          [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); }));
+    }
+    for (std::size_t ix = 0; ix < alloc_dims.size(); ++ix) {
+      if (alloc_dims[ix].stride.defined() && !prove_true(alloc_dims[ix].stride == alias_dims[ix].stride)) return false;
+      if (alloc_dims[ix].fold_factor.defined() && !prove_true(alloc_dims[ix].fold_factor == alias_dims[ix].fold_factor))
+        return false;
+    }
+    return true;
+  }
+
   void visit(const allocate* op) override {
-    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym});
+    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym, op->dims});
     auto set_back = set_value_in_scope(backward, op->sym, var());
     auto set_fwd = set_value_in_scope(forward, op->sym, var());
     auto set_used = set_value_in_scope(use_count, op->sym, 0);
@@ -813,18 +827,14 @@ public:
       // problem with multiple uses is the buffer we use instead of this allocation might be bigger, and the other use
       // needs those values missing from this allocation.
       can_alias = false;
-    } else if (std::any_of(op->dims.begin(), op->dims.end(),
-                   [&](const dim_expr& i) { return i.stride.defined() || i.fold_factor.defined(); })) {
-      // Don't alias if doing so could drop a stride or fold factor constraint.
-      // TODO: We could relax this check to allow aliasing if we know that the stride and fold factor of the buffer we
-      // are aliasing is the same.
-      can_alias = false;
     }
 
-    if (can_alias && back && back->defined() && buffers.lookup(*back)) {
+    if (can_alias && back && back->defined() && buffers.lookup(*back) &&
+        fold_factors_strides_same(op->dims, buffers[*back]->dims)) {
       forward.erase(*back);
       set_result(crop_buffer::make(op->sym, *back, dims_bounds(op->dims), std::move(body)));
-    } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd)) {
+    } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd) &&
+               fold_factors_strides_same(op->dims, buffers[*fwd]->dims)) {
       backward.erase(*fwd);
       set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
     } else if (!body.same_as(op->body)) {
