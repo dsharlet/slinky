@@ -565,6 +565,11 @@ class pipeline_builder {
     std::set<var> allocations;
 
     static statement_with_range merge(const statement_with_range& a, const statement_with_range& b) {
+      if (a.start > b.end) {
+        // In case the range order is reversed.
+        return merge(b, a);
+      }
+
       assert(a.end + 1 == b.start);
       statement_with_range r;
       r.body = block::make({a.body, b.body});
