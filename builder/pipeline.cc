@@ -983,16 +983,16 @@ public:
 
   const std::vector<var>& external_symbols() const { return sanitizer_.external; }
 
-  // This function works together with the produce() and make_loops() functions
+  // This function works together with the produce() and make_loop() functions
   // to build an initial IR. The high-level approach is the following:
   // * the `build()` function looks through the list of func's
   //   to find funcs which need to be produced or allocated at given
   //   loop level `at`. If func need to be produced it calls the
   //   `produce()` function which actually produces the body of the
-  //   func. If func has loops it calls the 'make_loops()' func to produce
+  //   func. If func has loops it calls the 'make_loop()' func to produce
   //   corresponding loops.
   // * the `produce()` for a given func produces it's body.
-  // * the `make_loops()` will produce the necessary loops defined for the function.
+  // * the `make_loop()` will produce the necessary loops defined for the function.
   //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
   statement_with_range build(const statement_with_range& body, const func* base_f, const loop_id& at) {
