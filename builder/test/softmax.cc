@@ -107,7 +107,7 @@ INSTANTIATE_TEST_SUITE_P(mode, softmax,
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(compute_at, softmax,
-    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(false), testing::Values(0)),
+    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(true), testing::Values(0)),
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(with_copy, softmax,
