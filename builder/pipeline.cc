@@ -686,6 +686,9 @@ class pipeline_builder {
     return simplify(bounds);
   }
 
+  // Creates a loop body for a given function including all function bodies computed inside of the loops.
+  // It may recursively call itself if there are nested loops, it's assumed that loops are produced
+  // starting from the outer one.
   statement_with_range make_loop(statement_with_range body, const func* base_f, int loop_index) {
     const func::loop_info& loop = base_f->loops()[loop_index];
     assert(loop.defined());
