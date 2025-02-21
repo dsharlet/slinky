@@ -746,16 +746,6 @@ class pipeline_builder {
     return body;
   }
 
-  // Generate the loops that we want to be explicit.
-  // Returns generated statement as well as the lifetime range covered by it.
-  statement_with_range make_loops(const func* f) {
-    statement_with_range result;
-
-    result = make_loop(result, f, f->loops().size() - 1);
-
-    return result;
-  }
-
   void compute_allocation_bounds() {
     for (const func* f : order_) {
       bounds_map output_bounds = get_output_bounds(f->outputs());
@@ -1019,7 +1009,9 @@ public:
       assert(realize_at != realization_levels_.end());
 
       if (compute_at->second == at && !f->loops().empty()) {
-        statement_with_range f_body = make_loops(f);
+        // Generate the loops that we want to be explicit by recursively calling make_loop starting
+        // from the outer loop.
+        statement_with_range f_body = make_loop(statement_with_range(), f, f->loops().size() - 1);;
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
