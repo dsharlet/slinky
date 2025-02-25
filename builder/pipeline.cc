@@ -1021,7 +1021,7 @@ public:
         // Generate the loops that we want to be explicit by recursively calling make_loop starting
         // from the outer loop.
         statement_with_range f_body = make_loop(f, f->loops().size() - 1);
-        ;
+
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
