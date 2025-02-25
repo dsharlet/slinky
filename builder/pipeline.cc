@@ -559,8 +559,8 @@ class pipeline_builder {
 
   struct statement_with_range {
     stmt body;
-    int start;
-    int end;
+    int start = 0;
+    int end = 0;
     // Stores every allocation inside of the range.
     std::set<var> allocations;
 
@@ -689,15 +689,21 @@ class pipeline_builder {
   // Creates a loop body for a given function including all function bodies computed inside of the loops.
   // It may recursively call itself if there are nested loops, it's assumed that loops are produced
   // starting from the outer one.
-  statement_with_range make_loop(statement_with_range body, const func* base_f, int loop_index) {
+  statement_with_range make_loop(const func* base_f, int loop_index) {
     const func::loop_info& loop = base_f->loops()[loop_index];
     assert(loop.defined());
     loop_id here = {base_f, loop.var};
 
-    body = build(body, base_f, here);
+    statement_with_range body = build(base_f, here);
 
     if (loop_index > 0) {
-      body = make_loop(body, base_f, loop_index - 1);
+      statement_with_range inner_loop = make_loop(base_f, loop_index - 1);
+      assert(body.body.defined() || inner_loop.body.defined());
+      if (body.body.defined() && inner_loop.body.defined()) {
+        body = statement_with_range::merge(body, inner_loop);
+      } else if (!body.body.defined() && inner_loop.body.defined()) {
+        body = inner_loop;
+      }
     }
     // Find which buffers are used inside of the body.
     // TODO(vksnk): recomputing this seems really wasteful, we can should be
@@ -998,7 +1004,7 @@ public:
   // * the `make_loop()` will produce the necessary loops defined for the function.
   //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  statement_with_range build(const statement_with_range& body, const func* base_f, const loop_id& at) {
+  statement_with_range build(const func* base_f, const loop_id& at) {
     symbol_map<var> uncropped_subs;
     std::vector<statement_with_range> results;
     // Build the functions computed at this loop level.
@@ -1014,7 +1020,8 @@ public:
       if (compute_at->second == at && !f->loops().empty()) {
         // Generate the loops that we want to be explicit by recursively calling make_loop starting
         // from the outer loop.
-        statement_with_range f_body = make_loop(statement_with_range(), f, f->loops().size() - 1);;
+        statement_with_range f_body = make_loop(f, f->loops().size() - 1);
+        ;
         // This is a special case for the buffers which are produced and consumed inside
         // of this loop. In this case we simply wrap loop body with corresponding allocations.
         if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
@@ -1156,19 +1163,12 @@ public:
       iteration_count++;
     }
 
-    if (results.empty() && !body.body.defined()) return body;
+    if (results.empty()) return {};
 
     statement_with_range result;
-    if (results.empty()) {
-      result = body;
-    } else {
-      result = results.front();
-      for (std::size_t ix = 1; ix < results.size(); ix++) {
-        result = statement_with_range::merge(result, results[ix]);
-      }
-      if (body.body.defined()) {
-        result = statement_with_range::merge(body, result);
-      }
+    result = results.front();
+    for (std::size_t ix = 1; ix < results.size(); ix++) {
+      result = statement_with_range::merge(result, results[ix]);
     }
 
     // Add all remaining allocations at this loop level. The allocations can be added in any order. This order enables
@@ -1324,7 +1324,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   pipeline_builder builder(ctx, inputs, outputs);
 
   stmt result;
-  result = builder.build({}, nullptr, loop_id()).body;
+  result = builder.build(nullptr, loop_id()).body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
