@@ -103,11 +103,7 @@ class softmax : public testing::TestWithParam<std::tuple<int, int, bool, int>> {
 auto split_factors = testing::Values(0, 1, 4);
 
 INSTANTIATE_TEST_SUITE_P(mode, softmax,
-    testing::Combine(split_factors, split_factors, testing::Values(false), testing::Values(0)),
-    test_params_to_string<softmax::ParamType>);
-
-INSTANTIATE_TEST_SUITE_P(compute_at, softmax,
-    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(false), testing::Values(0)),
+    testing::Combine(split_factors, split_factors, testing::Values(false, true), testing::Values(0)),
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(with_copy, softmax,
@@ -178,7 +174,7 @@ TEST_P(softmax, pipeline) {
   pass0.loops(loops);
   pass4.loops(loops);
 
-  if (use_compute_at) {
+  if (use_compute_at && split_b > 0) {
     pass1.compute_at({&pass4, b});
   }
 
