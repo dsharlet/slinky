@@ -176,6 +176,7 @@ TEST_P(softmax, pipeline) {
 
   if (use_compute_at && split_b > 0) {
     pass1.compute_at({&pass4, b});
+    max_in->store_at({&pass4, b});
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
