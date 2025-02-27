@@ -1044,8 +1044,7 @@ class pipeline_builder {
   // * the `make_loop()` will produce the necessary loops defined for the function.
   //   For each of the new loops, the `build()` is called for the case when there
   //   are func which need to be produced in that new loop.
-  statement_with_range build(const func* base_f, const loop_id& at) {
-    symbol_map<var> uncropped_subs;
+  std::vector<statement_with_range> build(const func* base_f, const loop_id& at, symbol_map<var>& uncropped_subs) {
     std::vector<statement_with_range> results;
     // Build the functions computed at this loop level.
     for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
@@ -1087,15 +1086,7 @@ class pipeline_builder {
       }
     }
 
-    statement_with_range result = lay_out_allocations(at, results, uncropped_subs);
-
-    // Substitute references to the intermediate buffers with the 'name.uncropped' when they
-    // are used as an input arguments. This does a batch substitution by replacing multiple
-    // buffer names at once and relies on the fact that the same var can't be written
-    // by two different funcs.
-    result.body = substitute_inputs(result.body, uncropped_subs);
-
-    return result;
+    return results;
   }
 
 public:
@@ -1143,17 +1134,21 @@ public:
       here = {base_f, loop.var};
     }
 
-    statement_with_range body = build(base_f, here);
+    symbol_map<var> uncropped_subs;
+    std::vector<statement_with_range> results = build(base_f, here, uncropped_subs);
 
     if (loop_index > 0) {
       statement_with_range inner_loop = make_loop(base_f, loop_index - 1);
-      assert(body.body.defined() || inner_loop.body.defined());
-      if (body.body.defined() && inner_loop.body.defined()) {
-        body = statement_with_range::merge(body, inner_loop);
-      } else if (!body.body.defined() && inner_loop.body.defined()) {
-        body = inner_loop;
-      }
+      results.push_back(inner_loop);
     }
+
+    statement_with_range body = lay_out_allocations(here, results, uncropped_subs);
+
+    // Substitute references to the intermediate buffers with the 'name.uncropped' when they
+    // are used as an input arguments. This does a batch substitution by replacing multiple
+    // buffer names at once and relies on the fact that the same var can't be written
+    // by two different funcs.
+    body.body = substitute_inputs(body.body, uncropped_subs);
 
     if (here.root()) return body;
 
