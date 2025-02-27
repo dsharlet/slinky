@@ -1125,7 +1125,8 @@ public:
 
   // Creates a loop body for a given function including all function bodies computed inside of the loops.
   // It may recursively call itself if there are nested loops, it's assumed that loops are produced
-  // starting from the outer one.
+  // starting from the outer one. If base_f function is nullptr, the assumption is that we need to
+  // create a "root" loop which  only will have body.
   statement_with_range make_loop(const func* base_f, int loop_index) {
     func::loop_info loop;
     loop_id here;
@@ -1142,7 +1143,7 @@ public:
       results.push_back(inner_loop);
     }
 
-    statement_with_range body = lay_out_allocations(here, results, uncropped_subs);
+    statement_with_range body = lay_out_allocations(here, std::move(results), uncropped_subs);
 
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
@@ -1330,7 +1331,6 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   pipeline_builder builder(ctx, inputs, outputs);
 
   stmt result;
-  // result = builder.build(nullptr, loop_id()).body;
   result = builder.make_loop(nullptr, 0).body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
