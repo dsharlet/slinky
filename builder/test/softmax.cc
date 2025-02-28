@@ -98,22 +98,22 @@ TEST(fused_softmax, correctness) {
       run_fused_softmax({100.0f, 0.0f, 100.0f}), testing::Pointwise(testing::FloatNear(1e-6f), {0.5f, 0.0f, 0.5f}));
 }
 
-class softmax : public testing::TestWithParam<std::tuple<int, int, bool, int>> {};
+class softmax : public testing::TestWithParam<std::tuple<int, int, int, int>> {};
 
 auto split_factors = testing::Values(0, 1, 4);
 
 INSTANTIATE_TEST_SUITE_P(mode, softmax,
-    testing::Combine(split_factors, split_factors, testing::Values(false, true), testing::Values(0)),
+    testing::Combine(split_factors, split_factors, testing::Values(0, 1, 2), testing::Values(0)),
     test_params_to_string<softmax::ParamType>);
 
 INSTANTIATE_TEST_SUITE_P(with_copy, softmax,
-    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(false), testing::Values(0, 1, 2)),
+    testing::Combine(testing::Values(1), testing::Values(1), testing::Values(0), testing::Values(0, 1, 2)),
     test_params_to_string<softmax::ParamType>);
 
 TEST_P(softmax, pipeline) {
   const int split_c = std::get<0>(GetParam());
   const int split_b = std::get<1>(GetParam());
-  const bool use_compute_at = std::get<2>(GetParam());
+  const int use_compute_at = std::get<2>(GetParam());
   const int copy_at_the_end = std::get<3>(GetParam());
 
   // Make the pipeline
@@ -176,6 +176,10 @@ TEST_P(softmax, pipeline) {
 
   if (use_compute_at && split_b > 0) {
     pass1.compute_at({&pass4, b});
+    if (use_compute_at == 2) {
+      max_in->store_at({&pass4, b});
+      max_in->store_in(memory_type::stack);
+    }
   }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
@@ -222,8 +226,15 @@ TEST_P(softmax, pipeline) {
       ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size,
                                             softmax_in_size, softmax_out_size, add_out_size));
     } else {
-      ASSERT_THAT(eval_ctx.heap.allocs,
-          testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size));
+      if (use_compute_at == 2) {
+        // TODO(vksnk): investigate why after using store_at on max_in, the storages folding stops working
+        // for softmax_in.
+        ASSERT_THAT(eval_ctx.heap.allocs,
+            testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, B * softmax_in_size / split_b, softmax_out_size));
+      } else {
+        ASSERT_THAT(eval_ctx.heap.allocs,
+            testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size));
+      }
     }
   } else {
     if (copy_at_the_end == 2) {

@@ -686,75 +686,6 @@ class pipeline_builder {
     return simplify(bounds);
   }
 
-  // Creates a loop body for a given function including all function bodies computed inside of the loops.
-  // It may recursively call itself if there are nested loops, it's assumed that loops are produced
-  // starting from the outer one.
-  statement_with_range make_loop(const func* base_f, int loop_index) {
-    const func::loop_info& loop = base_f->loops()[loop_index];
-    assert(loop.defined());
-    loop_id here = {base_f, loop.var};
-
-    statement_with_range body = build(base_f, here);
-
-    if (loop_index > 0) {
-      statement_with_range inner_loop = make_loop(base_f, loop_index - 1);
-      assert(body.body.defined() || inner_loop.body.defined());
-      if (body.body.defined() && inner_loop.body.defined()) {
-        body = statement_with_range::merge(body, inner_loop);
-      } else if (!body.body.defined() && inner_loop.body.defined()) {
-        body = inner_loop;
-      }
-    }
-    // Find which buffers are used inside of the body.
-    // TODO(vksnk): recomputing this seems really wasteful, we can should be
-    // able to maintain the list of buffers as we build the IR.
-    std::vector<var> buffer_used = find_buffer_dependencies(body.body);
-
-    // Add crops for the used buffers using previously inferred bounds.
-    // Input syms should be the innermost.
-    for (const auto& i : input_syms_) {
-      var sym = i.first;
-      if (!allocation_bounds_[sym]) continue;
-      if (!std::binary_search(buffer_used.begin(), buffer_used.end(), sym)) continue;
-      body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
-    }
-
-    // Followed by intermediate buffers in the reverse topological order
-    // (i.e. the outermost buffers are closer to the outputs of the pipeline).
-    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
-      const func* f = *i;
-
-      if (f == base_f) {
-        // Don't really need to emit buffer_crop for base_f, because they will
-        // have crop_dim anyway.
-        continue;
-      }
-      for (const func::output& o : f->outputs()) {
-        const buffer_expr_ptr& b = o.buffer;
-        if (!inferred_bounds_[b->sym()]) continue;
-        if (!std::binary_search(buffer_used.begin(), buffer_used.end(), b->sym())) continue;
-        body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
-      }
-    }
-
-    // The loop body is done, and we have an actual loop to make here. Crop the body.
-    body.body = crop_for_loop(body.body, base_f, loop);
-    // And make the actual loop.
-    expr loop_step = sanitizer_.mutate(loop.step);
-    interval_expr loop_bounds = get_loop_bounds(base_f, loop);
-    // Make sure that a loop variable is unique.
-    std::string loop_var_name;
-    if (base_f->outputs().size() == 1) {
-      loop_var_name = ctx.name(base_f->outputs()[0].sym()) + ".";
-    }
-    loop_var_name += ctx.name(loop.sym());
-    var loop_var = ctx.insert_unique(loop_var_name);
-    body.body = substitute(body.body, loop.sym(), loop_var);
-    body.body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body.body);
-
-    return body;
-  }
-
   void compute_allocation_bounds() {
     for (const func* f : order_) {
       bounds_map output_bounds = get_output_bounds(f->outputs());
@@ -958,106 +889,17 @@ class pipeline_builder {
     }
   }
 
-public:
-  pipeline_builder(
-      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
-      : ctx(ctx), sanitizer_(ctx) {
-    // Dependencies between the functions.
-    std::map<const func*, std::vector<const func*>> deps;
-    topological_sort(outputs, order_, deps);
-
-    sanitizer_.external.reserve(outputs.size() + inputs.size());
-    for (auto& i : outputs) {
-      output_syms_[i->sym()] = i;
-      sanitizer_.external.push_back(i->sym());
-    }
-    for (const buffer_expr_ptr& i : inputs) {
-      input_syms_[i->sym()] = i;
-      sanitizer_.external.push_back(i->sym());
-    }
-    std::sort(sanitizer_.external.begin(), sanitizer_.external.end());
-
-    // Build a loop nest tree and computes compute_at locations when neccessary.
-    compute_innermost_locations(order_, deps, compute_at_levels_, realization_levels_);
-
-    // Compute allocation bounds.
-    compute_allocation_bounds();
-
-    // Substitute inferred bounds into user provided dims.
-    substitute_buffer_dims();
-
-    // Compute number of consumers for each of the buffers.
-    compute_deps_count();
-  }
-
-  const std::vector<var>& external_symbols() const { return sanitizer_.external; }
-
-  // This function works together with the produce() and make_loop() functions
-  // to build an initial IR. The high-level approach is the following:
-  // * the `build()` function looks through the list of func's
-  //   to find funcs which need to be produced or allocated at given
-  //   loop level `at`. If func need to be produced it calls the
-  //   `produce()` function which actually produces the body of the
-  //   func. If func has loops it calls the 'make_loop()' func to produce
-  //   corresponding loops.
-  // * the `produce()` for a given func produces it's body.
-  // * the `make_loop()` will produce the necessary loops defined for the function.
-  //   For each of the new loops, the `build()` is called for the case when there
-  //   are func which need to be produced in that new loop.
-  statement_with_range build(const func* base_f, const loop_id& at) {
-    symbol_map<var> uncropped_subs;
-    std::vector<statement_with_range> results;
-    // Build the functions computed at this loop level.
-    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
-      const func* f = *i;
-      const auto& compute_at = compute_at_levels_.find(f);
-      assert(compute_at != compute_at_levels_.end());
-      std::set<var> old_candidates = candidates_for_allocation_[at];
-
-      const auto& realize_at = realization_levels_.find(f);
-      assert(realize_at != realization_levels_.end());
-
-      if (compute_at->second == at && !f->loops().empty()) {
-        // Generate the loops that we want to be explicit by recursively calling make_loop starting
-        // from the outer loop.
-        statement_with_range f_body = make_loop(f, f->loops().size() - 1);
-
-        // This is a special case for the buffers which are produced and consumed inside
-        // of this loop. In this case we simply wrap loop body with corresponding allocations.
-        if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
-          std::vector<var> to_remove;
-          for (auto b : candidates_for_allocation_[at]) {
-            // We only want candidates which are not in the old_candidates list.
-            if (old_candidates.count(b) > 0) continue;
-            if (copy_inputs_.count(b) > 0) continue;
-            std::optional<allocation_candidate>& info = allocation_info_[b];
-            if (info->consumers_produced != info->deps_count) continue;
-
-            f_body = produce_allocation(info->buffer, f_body, uncropped_subs);
-            to_remove.push_back(b);
-          }
-          for (auto b : to_remove) {
-            candidates_for_allocation_[at].erase(b);
-          }
-        }
-
-        results.push_back(f_body);
-      } else if (realize_at->second == at) {
-        results.push_back(produce(f));
-      }
-    }
-
-    // This attempts to lay out allocation nodes such that the nesting
-    // is minimized. The general idea is to iteratively build up a tree of
-    // allocations starting from the allocations with the allocations with the
-    // shortest life time as the lowest level of the tree. This is not always possible
-    // in general to do and there are corner cases where nesting of allocations will
-    // have depth N regardless of the approach, but in most practical situations this
-    // will produce a structure close to the tree (for example, for the linear pipeline it
-    // should build a perfect tree of depth ~log(N)). Similarly, the complexity of this
-    // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
-    // should be O(N*log(N)).
-
+  // This attempts to lay out allocation nodes such that the nesting
+  // is minimized. The general idea is to iteratively build up a tree of
+  // allocations starting from the allocations with the allocations with the
+  // shortest life time as the lowest level of the tree. This is not always possible
+  // in general to do and there are corner cases where nesting of allocations will
+  // have depth N regardless of the approach, but in most practical situations this
+  // will produce a structure close to the tree (for example, for the linear pipeline it
+  // should build a perfect tree of depth ~log(N)). Similarly, the complexity of this
+  // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
+  // should be O(N*log(N)).
+  statement_with_range lay_out_allocations(const loop_id& at, std::vector<statement_with_range> results, symbol_map<var>& uncropped_subs) {
     // The vector of allocations at this loop level.
     std::vector<allocation_candidate> lifetimes;
     // The same as above, but also has a set of special dependencies to
@@ -1187,13 +1029,178 @@ public:
     // Try again for the combined statement.
     place_constant_buffers(&result, 1);
 
+    return result;
+  }
+
+  // This function works together with the produce() and make_loop() functions
+  // to build an initial IR. The high-level approach is the following:
+  // * the `build()` function looks through the list of func's
+  //   to find funcs which need to be produced or allocated at given
+  //   loop level `at`. If func need to be produced it calls the
+  //   `produce()` function which actually produces the body of the
+  //   func. If func has loops it calls the 'make_loop()' func to produce
+  //   corresponding loops.
+  // * the `produce()` for a given func produces it's body.
+  // * the `make_loop()` will produce the necessary loops defined for the function.
+  //   For each of the new loops, the `build()` is called for the case when there
+  //   are func which need to be produced in that new loop.
+  std::vector<statement_with_range> build(const func* base_f, const loop_id& at, symbol_map<var>& uncropped_subs) {
+    std::vector<statement_with_range> results;
+    // Build the functions computed at this loop level.
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
+      const auto& compute_at = compute_at_levels_.find(f);
+      assert(compute_at != compute_at_levels_.end());
+      std::set<var> old_candidates = candidates_for_allocation_[at];
+
+      const auto& realize_at = realization_levels_.find(f);
+      assert(realize_at != realization_levels_.end());
+
+      if (compute_at->second == at && !f->loops().empty()) {
+        // Generate the loops that we want to be explicit by recursively calling make_loop starting
+        // from the outer loop.
+        statement_with_range f_body = make_loop(f, f->loops().size() - 1);
+
+        // This is a special case for the buffers which are produced and consumed inside
+        // of this loop. In this case we simply wrap loop body with corresponding allocations.
+        if (candidates_for_allocation_[at].size() > old_candidates.size() + 1) {
+          std::vector<var> to_remove;
+          for (auto b : candidates_for_allocation_[at]) {
+            // We only want candidates which are not in the old_candidates list.
+            if (old_candidates.count(b) > 0) continue;
+            if (copy_inputs_.count(b) > 0) continue;
+            std::optional<allocation_candidate>& info = allocation_info_[b];
+            if (info->consumers_produced != info->deps_count) continue;
+
+            f_body = produce_allocation(info->buffer, f_body, uncropped_subs);
+            to_remove.push_back(b);
+          }
+          for (auto b : to_remove) {
+            candidates_for_allocation_[at].erase(b);
+          }
+        }
+
+        results.push_back(f_body);
+      } else if (realize_at->second == at) {
+        results.push_back(produce(f));
+      }
+    }
+
+    return results;
+  }
+
+public:
+  pipeline_builder(
+      node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
+      : ctx(ctx), sanitizer_(ctx) {
+    // Dependencies between the functions.
+    std::map<const func*, std::vector<const func*>> deps;
+    topological_sort(outputs, order_, deps);
+
+    sanitizer_.external.reserve(outputs.size() + inputs.size());
+    for (auto& i : outputs) {
+      output_syms_[i->sym()] = i;
+      sanitizer_.external.push_back(i->sym());
+    }
+    for (const buffer_expr_ptr& i : inputs) {
+      input_syms_[i->sym()] = i;
+      sanitizer_.external.push_back(i->sym());
+    }
+    std::sort(sanitizer_.external.begin(), sanitizer_.external.end());
+
+    // Build a loop nest tree and computes compute_at locations when neccessary.
+    compute_innermost_locations(order_, deps, compute_at_levels_, realization_levels_);
+
+    // Compute allocation bounds.
+    compute_allocation_bounds();
+
+    // Substitute inferred bounds into user provided dims.
+    substitute_buffer_dims();
+
+    // Compute number of consumers for each of the buffers.
+    compute_deps_count();
+  }
+
+  const std::vector<var>& external_symbols() const { return sanitizer_.external; }
+
+  // Creates a loop body for a given function including all function bodies computed inside of the loops.
+  // It may recursively call itself if there are nested loops, it's assumed that loops are produced
+  // starting from the outer one. If base_f function is nullptr, the assumption is that we need to
+  // create a "root" loop which  only will have body.
+  statement_with_range make_loop(const func* base_f, int loop_index) {
+    func::loop_info loop;
+    loop_id here;
+    if (base_f != nullptr) {
+      loop = base_f->loops()[loop_index];
+      here = {base_f, loop.var};
+    }
+
+    symbol_map<var> uncropped_subs;
+    std::vector<statement_with_range> results = build(base_f, here, uncropped_subs);
+
+    if (loop_index > 0) {
+      statement_with_range inner_loop = make_loop(base_f, loop_index - 1);
+      results.push_back(inner_loop);
+    }
+
+    statement_with_range body = lay_out_allocations(here, std::move(results), uncropped_subs);
+
     // Substitute references to the intermediate buffers with the 'name.uncropped' when they
     // are used as an input arguments. This does a batch substitution by replacing multiple
     // buffer names at once and relies on the fact that the same var can't be written
     // by two different funcs.
-    result.body = substitute_inputs(result.body, uncropped_subs);
+    body.body = substitute_inputs(body.body, uncropped_subs);
 
-    return result;
+    if (here.root()) return body;
+
+    // Find which buffers are used inside of the body.
+    // TODO(vksnk): recomputing this seems really wasteful, we can should be
+    // able to maintain the list of buffers as we build the IR.
+    std::vector<var> buffer_used = find_buffer_dependencies(body.body);
+
+    // Add crops for the used buffers using previously inferred bounds.
+    // Input syms should be the innermost.
+    for (const auto& i : input_syms_) {
+      var sym = i.first;
+      if (!allocation_bounds_[sym]) continue;
+      if (!std::binary_search(buffer_used.begin(), buffer_used.end(), sym)) continue;
+      body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
+    }
+
+    // Followed by intermediate buffers in the reverse topological order
+    // (i.e. the outermost buffers are closer to the outputs of the pipeline).
+    for (auto i = order_.rbegin(); i != order_.rend(); ++i) {
+      const func* f = *i;
+
+      if (f == base_f) {
+        // Don't really need to emit buffer_crop for base_f, because they will
+        // have crop_dim anyway.
+        continue;
+      }
+      for (const func::output& o : f->outputs()) {
+        const buffer_expr_ptr& b = o.buffer;
+        if (!inferred_bounds_[b->sym()]) continue;
+        if (!std::binary_search(buffer_used.begin(), buffer_used.end(), b->sym())) continue;
+        body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
+      }
+    }
+
+    // The loop body is done, and we have an actual loop to make here. Crop the body.
+    body.body = crop_for_loop(body.body, base_f, loop);
+    // And make the actual loop.
+    expr loop_step = sanitizer_.mutate(loop.step);
+    interval_expr loop_bounds = get_loop_bounds(base_f, loop);
+    // Make sure that a loop variable is unique.
+    std::string loop_var_name;
+    if (base_f->outputs().size() == 1) {
+      loop_var_name = ctx.name(base_f->outputs()[0].sym()) + ".";
+    }
+    loop_var_name += ctx.name(loop.sym());
+    var loop_var = ctx.insert_unique(loop_var_name);
+    body.body = substitute(body.body, loop.sym(), loop_var);
+    body.body = loop::make(loop_var, loop.max_workers, loop_bounds, loop_step, body.body);
+
+    return body;
   }
 
   stmt define_sanitized_replacements(const stmt& body) { return sanitizer_.define_replacements(body); }
@@ -1324,7 +1331,7 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   pipeline_builder builder(ctx, inputs, outputs);
 
   stmt result;
-  result = builder.build(nullptr, loop_id()).body;
+  result = builder.make_loop(nullptr, 0).body;
   result = builder.add_input_checks(result);
   result = builder.make_buffers(result);
   result = builder.define_sanitized_replacements(result);
