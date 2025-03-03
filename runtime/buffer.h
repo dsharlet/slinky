@@ -146,6 +146,10 @@ class raw_buffer;
 using raw_buffer_ptr = std::shared_ptr<raw_buffer>;
 using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 
+// This value allows expressing `at` and `address_at` arguments that slice that dimension.
+static constexpr struct {
+} slice;
+
 // We have some difficult requirements for this buffer object:
 // 1. We want type safety in user code, but we also want to be able to treat buffers as generic.
 // 2. We want to store metadata (dimensions) efficiently.
@@ -161,11 +165,20 @@ using const_raw_buffer_ptr = std::shared_ptr<const raw_buffer>;
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer {
 protected:
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
+    return dims->flat_offset_bytes(i0);
+  }
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice)) {
+    return 0;
+  }
 
   template <typename... Indices>
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {
     return dims->flat_offset_bytes(i0) + flat_offset_bytes_impl(dims + 1, indices...);
+  }
+  template <typename... Indices>
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice), Indices... indices) {
+    return flat_offset_bytes_impl(dims + 1, indices...);
   }
 
   static bool contains_impl(const dim* dims, index_t i0) { return dims->contains(i0); }
@@ -201,8 +214,14 @@ public:
     return dims[i];
   }
 
+  // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>
   std::ptrdiff_t flat_offset_bytes(index_t i0, Indices... indices) const {
+    assert(sizeof...(indices) + 1 <= rank);
+    return flat_offset_bytes_impl(dims, i0, indices...);
+  }
+  template <typename... Indices>
+  std::ptrdiff_t flat_offset_bytes(decltype(slinky::slice) i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return flat_offset_bytes_impl(dims, i0, indices...);
   }
@@ -211,11 +230,21 @@ public:
     assert(sizeof...(indices) + 1 <= rank);
     return offset_bytes(base, flat_offset_bytes(i0, indices...));
   }
+  template <typename... Indices>
+  void* address_at(decltype(slinky::slice) i0, Indices... indices) const {
+    assert(sizeof...(indices) + 1 <= rank);
+    return offset_bytes(base, flat_offset_bytes(i0, indices...));
+  }
   std::ptrdiff_t flat_offset_bytes() const { return 0; }
   void* address_at() const { return base; }
 
   template <typename... Indices>
   bool contains(index_t i0, Indices... indices) const {
+    assert(sizeof...(indices) + 1 <= rank);
+    return contains_impl(dims, i0, indices...);
+  }
+  template <typename... Indices>
+  bool contains(decltype(slinky::slice) i0, Indices... indices) const {
     assert(sizeof...(indices) + 1 <= rank);
     return contains_impl(dims, i0, indices...);
   }
@@ -525,12 +554,21 @@ public:
 
   // These accessors are not designed to be fast. They exist to facilitate testing,
   // and maybe they are useful to compute addresses.
+  // `indices` may either be integral, or `slice`, indicating that the dimension should be sliced.
   template <typename... Indices>
   auto& at(index_t i0, Indices... indices) const {
     return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
   }
   template <typename... Indices>
+  auto& at(decltype(slinky::slice) i0, Indices... indices) const {
+    return *offset_bytes_non_null(base(), flat_offset_bytes(i0, indices...));
+  }
+  template <typename... Indices>
   auto& operator()(index_t i0, Indices... indices) const {
+    return at(i0, indices...);
+  }
+  template <typename... Indices>
+  auto& operator()(decltype(slinky::slice) i0, Indices... indices) const {
     return at(i0, indices...);
   }
 

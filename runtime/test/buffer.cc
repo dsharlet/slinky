@@ -164,6 +164,35 @@ TEST(buffer, buffer) {
   }
 }
 
+TEST(buffer, address_at_slice) {
+  buffer<int, 2> buf;
+
+  ASSERT_EQ(buf.rank, 2);
+
+  buf.dim(0) = {4, 14};
+  buf.dim(1) = {5, 20};
+  buf.allocate();
+
+  ASSERT_EQ(&buf(), buf.base());
+  ASSERT_EQ(&buf(4), buf.base());
+  ASSERT_EQ(&buf(4, 5), buf.base());
+  ASSERT_EQ(&buf(slice, 5), buf.base());
+}
+
+TEST(buffer, folded_address_at_slice) {
+  buffer<char, 2> buf;
+
+  ASSERT_EQ(buf.rank, 2);
+
+  buf.dim(0) = {4, 14, dim::auto_stride, 3};
+  buf.dim(1) = {5, 20, dim::auto_stride, 6};
+  buf.allocate();
+
+  ASSERT_EQ(&buf(), buf.base());
+  ASSERT_EQ(&buf(4), buf.base() + buf.dim(0).flat_offset_bytes(4));
+  ASSERT_EQ(&buf(slice, 5), buf.base() + buf.dim(1).flat_offset_bytes(5));
+}
+
 TEST(buffer, empty_buffer) {
   buffer<int, 3> buf({1, 0, 2});
 
