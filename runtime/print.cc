@@ -289,11 +289,7 @@ public:
 
   void visit(const loop* l) override {
     *this << indent() << l->sym << " = loop(";
-    switch (l->max_workers) {
-    case loop::serial: *this << "serial"; break;
-    case loop::parallel: *this << "parallel"; break;
-    default: *this << l->max_workers; break;
-    }
+    *this << l->max_workers;
     *this << ", " << l->bounds;
     if (l->step.defined()) {
       *this << ", " << l->step;

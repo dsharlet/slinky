@@ -188,7 +188,7 @@ public:
     expr orig_min;
     interval_expr bounds;
     expr step;
-    int max_workers;
+    expr max_workers;
     bool data_parallel = true;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds = std::make_unique<symbol_map<box_expr>>();
     std::unique_ptr<symbol_map<interval_expr>> expr_bounds = std::make_unique<symbol_map<interval_expr>>();
@@ -212,7 +212,7 @@ public:
     std::size_t loop_id = -1;
 
     bool add_synchronization() {
-      if (sync_stages + 1 >= max_workers) {
+      if (prove_true(sync_stages + 1 >= max_workers)) {
         // It's pointless to add more stages to the loop, because we can't run then in parallel anyways, it would just
         // add more synchronization overhead.
         return false;
@@ -228,7 +228,7 @@ public:
     loop_info() = default;
 
     loop_info(node_context& ctx, var sym, std::size_t loop_id, expr orig_min, interval_expr bounds, expr step,
-        int max_workers)
+        expr max_workers)
         : sym(sym), orig_min(orig_min), bounds(bounds), step(step), max_workers(max_workers),
           semaphores(ctx, ctx.name(sym) + "_semaphores"), worker_count(ctx, ctx.name(sym) + "_worker_count"),
           loop_id(loop_id) {}
@@ -656,7 +656,7 @@ public:
 
     const loop_info& l = loops.back();
     const int stage_count = l.sync_stages;
-    const int max_workers = l.data_parallel ? op->max_workers : std::max(1, stage_count);
+    expr max_workers = l.data_parallel ? op->max_workers : std::max(1, stage_count);
     stmt result = loop::make(op->sym, max_workers, loop_bounds, op->step, std::move(body));
 
     // Substitute the placeholder worker_count.
@@ -667,7 +667,7 @@ public:
       for (dim_fold_info& j : *i) {
         if (!depends_on(j.factor, l.worker_count).any()) continue;
 
-        if (l.data_parallel && max_workers != loop::serial) {
+        if (l.data_parallel && !prove_true(max_workers == loop::serial)) {
           // This is a data parallel loop, remove the folding.
           // TODO: We have other options that would be better:
           // - Move the allocation into the loop.

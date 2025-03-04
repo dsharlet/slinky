@@ -1357,7 +1357,7 @@ public:
   }
 
   void visit(const loop* op) override {
-    if (op->max_workers != loop::serial) {
+    if (!prove_true(op->max_workers == loop::serial)) {
       // We're entering a parallel loop. All the buffers in scope cannot be mutated in this scope.
       symbol_map<bool> old_can_mutate;
       std::swap(can_mutate, old_can_mutate);

@@ -1334,7 +1334,7 @@ public:
       }
     }
 
-    if (op->is_serial()) {
+    if (prove_true(op->max_workers == loop::serial)) {
       scoped_trace trace("drop_loop");
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the

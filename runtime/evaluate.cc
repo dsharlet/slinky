@@ -410,7 +410,7 @@ public:
     return 0;
   }
 
-  SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op) {
+  SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
     assert(step != 0);
@@ -489,7 +489,7 @@ public:
           context.config->thread_pool->cancel(loop.get());
         }
       };
-      int workers = std::min<int>(op->max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
+      int workers = std::min<int>(max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
       if (workers > 1) {
         pool->enqueue(workers - 1, worker, loop.get());
       }
@@ -526,8 +526,9 @@ public:
   }
 
   index_t eval(const loop* op) {
-    if (op->max_workers > 1) {
-      return eval_loop_parallel(op);
+    index_t max_workers = eval(op->max_workers);
+    if (max_workers > 1) {
+      return eval_loop_parallel(op, max_workers);
     } else {
       return eval_loop_serial(op);
     }

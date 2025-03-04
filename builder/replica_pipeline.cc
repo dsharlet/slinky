@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "builder/substitute.h"
+#include "builder/simplify.h"
 #include "runtime/print.h"
 
 namespace slinky {
@@ -248,12 +249,13 @@ public:
     return print_vector(fout_names);
   }
 
-  std::string print_max_workers(int x) {
-    switch (x) {
-    case loop::serial: return "loop::serial";
-    case loop::parallel: return "loop::parallel";
-    default: return std::to_string(x);
+  std::string print_max_workers(const expr& x) {
+    if (prove_true(x == loop::serial)) {
+      return "loop::serial";
+    } else if (prove_true(x == loop::parallel)) {
+      return "loop::parallel";
     }
+    return print_expr_maybe_inlined(x);
   }
 
   std::string print(const func::loop_info& loopinfo) {
