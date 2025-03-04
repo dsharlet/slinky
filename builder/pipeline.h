@@ -311,7 +311,9 @@ public:
 
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
+  std::vector<input>& inputs() { return inputs_; }
   const std::vector<output>& outputs() const { return outputs_; }
+  std::vector<output>& outputs() { return outputs_; }
   const call_stmt::attributes& attrs() const { return attrs_; }
   const void* user_data() const { return user_data_; }
   void*& user_data() { return user_data_; }
