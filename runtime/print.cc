@@ -289,7 +289,15 @@ public:
 
   void visit(const loop* l) override {
     *this << indent() << l->sym << " = loop(";
-    *this << l->max_workers;
+    const constant* maybe_constant = l->max_workers.as<constant>();
+    if (maybe_constant && maybe_constant->value == loop::serial) {
+      *this << "serial";
+    } else if (maybe_constant && maybe_constant->value == loop::parallel) {
+      *this << "parallel";
+    } else {
+      *this << l->max_workers;
+    }
+
     *this << ", " << l->bounds;
     if (l->step.defined()) {
       *this << ", " << l->step;
