@@ -151,10 +151,10 @@ public:
   struct loop_info {
     slinky::var var;
     expr step;
-    int max_workers;
+    expr max_workers;
 
     loop_info() = default;
-    loop_info(slinky::var var, expr step = 1, int max_workers = loop::serial)
+    loop_info(slinky::var var, expr step = 1, expr max_workers = loop::serial)
         : var(var), step(step), max_workers(max_workers) {}
 
     slinky::var sym() const { return var; }

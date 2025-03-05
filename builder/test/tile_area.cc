@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "base/thread_pool.h"
 #include "builder/pipeline.h"
 #include "builder/test/context.h"
 #include "builder/test/funcs.h"
@@ -80,6 +81,76 @@ TEST(tile_area, pipeline) {
     }
 
     ASSERT_LE(max_elem_count_seen, split_area);
+  }
+}
+
+class test_thread_pool_impl : public thread_pool_impl {
+public:
+  void run(task_ref t, task_id id = unique_task_id) override {
+    run_called = true;
+    thread_pool_impl::run(t, id);
+  }
+
+  bool run_called = false;
+};
+
+// An example of two 2D elementwise operations in sequence.
+TEST(conditional_parallel, pipeline) {
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func mul = func::make(multiply_2<int>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func add = func::make(add_1<int>, {{intm, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  // This makes loops configurable by parameter which can be passed from outside.
+  var max_workers_x(ctx, "max_workers_x");
+  var max_workers_y(ctx, "max_workers_y");
+
+  add.loops({{x, 2, max_workers_x}, {y, 1, max_workers_y}});
+
+  pipeline p = build_pipeline(ctx, {max_workers_x, max_workers_y}, {in}, {out});
+
+  // Run the pipeline
+  const int W = 10;
+  const int H = 10;
+
+  buffer<int, 2> in_buf({W, H});
+  in_buf.allocate();
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      in_buf(x, y) = y * W + x;
+    }
+  }
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  for (int max_x : {loop::serial, loop::parallel}) {
+    for (int max_y : {loop::serial, loop::parallel}) {
+      const index_t args[] = {max_x, max_y};
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      test_context eval_ctx;
+      test_thread_pool_impl tp;
+      eval_ctx.config.thread_pool = &tp;
+      p.evaluate(args, inputs, outputs, eval_ctx);
+
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
+        }
+      }
+
+      ASSERT_EQ(tp.run_called, max_x != loop::serial || max_y != loop::serial);
+    }
   }
 }
 

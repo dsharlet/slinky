@@ -220,7 +220,7 @@ public:
 class loop : public stmt_node<loop> {
 public:
   var sym;
-  int max_workers;
+  expr max_workers;
   interval_expr bounds;
   expr step;
   stmt body;
@@ -228,12 +228,9 @@ public:
   static constexpr int serial = 1;
   static constexpr int parallel = std::numeric_limits<int>::max();
 
-  bool is_serial() const { return max_workers == serial; }
-  bool is_parallel() const { return max_workers > 1; }
-
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(var sym, int max_workers, interval_expr bounds, expr step, stmt body);
+  static stmt make(var sym, expr max_workers, interval_expr bounds, expr step, stmt body);
 
   static constexpr stmt_node_type static_type = stmt_node_type::loop;
 };

@@ -143,6 +143,7 @@ public:
     op->bounds.min.accept(this);
     op->bounds.max.accept(this);
     if (op->step.defined()) op->step.accept(this);
+    if (op->max_workers.defined()) op->max_workers.accept(this);
 
     visit_sym_body(op->sym, nullptr, op->body);
   }

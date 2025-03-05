@@ -479,10 +479,10 @@ stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
   return make(std::move(stmts));
 }
 
-stmt loop::make(var sym, int max_workers, interval_expr bounds, expr step, stmt body) {
+stmt loop::make(var sym, expr max_workers, interval_expr bounds, expr step, stmt body) {
   auto l = new loop();
   l->sym = sym;
-  l->max_workers = max_workers;
+  l->max_workers = std::move(max_workers);
   l->bounds = std::move(bounds);
   l->step = std::move(step);
   l->body = std::move(body);
@@ -855,6 +855,7 @@ void recursive_node_visitor::visit(const loop* op) {
   op->bounds.min.accept(this);
   op->bounds.max.accept(this);
   if (op->step.defined()) op->step.accept(this);
+  if (op->max_workers.defined()) op->max_workers.accept(this);
   if (op->body.defined()) op->body.accept(this);
 }
 void recursive_node_visitor::visit(const call_stmt* op) {}

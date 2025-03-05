@@ -184,11 +184,12 @@ void node_mutator::visit(const call* op) {
 void node_mutator::visit(const loop* op) {
   interval_expr bounds = mutate(op->bounds);
   expr step = mutate(op->step);
+  expr max_workers = mutate(op->max_workers);
   stmt body = mutate(op->body);
-  if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+  if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
     set_result(op);
   } else {
-    set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+    set_result(loop::make(op->sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
   }
 }
 void node_mutator::visit(const copy_stmt* op) {
