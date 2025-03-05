@@ -482,7 +482,7 @@ stmt block::make(std::vector<stmt> stmts, stmt tail_stmt) {
 stmt loop::make(var sym, expr max_workers, interval_expr bounds, expr step, stmt body) {
   auto l = new loop();
   l->sym = sym;
-  l->max_workers = max_workers;
+  l->max_workers = std::move(max_workers);
   l->bounds = std::move(bounds);
   l->step = std::move(step);
   l->body = std::move(body);

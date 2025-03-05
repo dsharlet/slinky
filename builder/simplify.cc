@@ -1327,7 +1327,7 @@ public:
           result.push_back(i->first);
         }
         std::reverse(loop_body.begin(), loop_body.end());
-        result.push_back(mutate(loop::make(op->sym, max_workers, bounds, step, block::make(std::move(loop_body)))));
+        result.push_back(mutate(loop::make(op->sym, std::move(max_workers), bounds, step, block::make(std::move(loop_body)))));
         set_result(block::make(std::move(result)));
         return;
       } else {
@@ -1390,7 +1390,7 @@ public:
     if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, max_workers, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(op->sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
     }
   }
 

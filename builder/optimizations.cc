@@ -1275,7 +1275,7 @@ public:
     if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(sym, max_workers, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
     }
   }
 
