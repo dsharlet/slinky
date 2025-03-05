@@ -1265,16 +1265,17 @@ public:
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
+    expr max_workers = mutate(op->max_workers);
     var sym = symbols.contains(op->sym) ? rename(op->sym) : op->sym;
     auto s = set_value_in_scope(symbols, op->sym, sym);
     var old_in_loop = in_loop;
     in_loop = sym;
     stmt body = mutate(op->body);
     in_loop = old_in_loop;
-    if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+    if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(sym, max_workers, std::move(bounds), std::move(step), std::move(body)));
     }
   }
 
