@@ -1223,6 +1223,7 @@ public:
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
+    expr max_workers = mutate(op->max_workers);
 
     // TODO: Try not to assume that step > 0.
     auto knowledge = learn_from_true(step > 0);
@@ -1326,7 +1327,7 @@ public:
           result.push_back(i->first);
         }
         std::reverse(loop_body.begin(), loop_body.end());
-        result.push_back(mutate(loop::make(op->sym, op->max_workers, bounds, step, block::make(std::move(loop_body)))));
+        result.push_back(mutate(loop::make(op->sym, max_workers, bounds, step, block::make(std::move(loop_body)))));
         set_result(block::make(std::move(result)));
         return;
       } else {
@@ -1334,7 +1335,7 @@ public:
       }
     }
 
-    if (prove_true(op->max_workers == loop::serial)) {
+    if (prove_true(max_workers == loop::serial)) {
       scoped_trace trace("drop_loop");
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
@@ -1386,10 +1387,10 @@ public:
       }
     }
 
-    if (bounds.same_as(op->bounds) && step.same_as(op->step) && body.same_as(op->body)) {
+    if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
       set_result(op);
     } else {
-      set_result(loop::make(op->sym, op->max_workers, std::move(bounds), std::move(step), std::move(body)));
+      set_result(loop::make(op->sym, max_workers, std::move(bounds), std::move(step), std::move(body)));
     }
   }
 
