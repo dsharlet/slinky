@@ -139,6 +139,7 @@ cc_test(
     srcs = ["tile_area.cc"],
     deps = [
         ":util",
+        "//base:thread_pool",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",
