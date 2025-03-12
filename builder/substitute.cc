@@ -214,7 +214,7 @@ public:
     assert(cs);
 
     if (cs->target && op->target) {
-    // If std::function-s are defined we can't comparet the functions.
+      // If std::function-s are defined we can't comparet the functions.
       if (!try_match(cs, op)) return ;
     } else {
       if (!try_match(cs->inputs, op->inputs)) return;
