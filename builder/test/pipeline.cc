@@ -15,6 +15,20 @@
 
 namespace slinky {
 
+// Replace callbacks within the call_stmt nullptr, so they can be compared.
+class call_nullifier : public node_mutator {
+public:
+  call_nullifier() {}
+
+  void visit(const call_stmt* op) override {
+    set_result(call_stmt::make(nullptr, op->inputs, op->outputs, op->attrs));
+ }
+};
+
+stmt nullify_calls(const stmt& s) {
+  return call_nullifier().mutate(s);
+}
+
 // Matrix multiplication (not fast!)
 template <typename T>
 index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
@@ -852,7 +866,7 @@ TEST(unrelated, pipeline) {
   };
   pipeline p = make_pipeline();
   pipeline p2 = make_pipeline();
-  ASSERT_TRUE(match(p.body, p2.body));
+  ASSERT_TRUE(match(nullify_calls(p.body), nullify_calls(p2.body)));
 
   // Run the pipeline.
   const int W1 = 20;
@@ -1323,7 +1337,7 @@ TEST_P(diamond_stencils, pipeline) {
   };
   pipeline p = make_pipeline();
   pipeline p2 = make_pipeline();
-  ASSERT_TRUE(match(p.body, p2.body));
+  ASSERT_TRUE(match(nullify_calls(p.body), nullify_calls(p2.body)));
 
   // Run the pipeline.
   const int W = 20;
