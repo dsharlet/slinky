@@ -15,7 +15,7 @@
 
 namespace slinky {
 
-// Replace callbacks within the call_stmt nullptr, so they can be compared.
+// Replaces callbacks within the call_stmt with nullptr, so they can be compared.
 class call_nullifier : public node_mutator {
 public:
   call_nullifier() {}
