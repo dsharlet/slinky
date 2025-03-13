@@ -213,12 +213,12 @@ public:
     const call_stmt* cs = static_cast<const call_stmt*>(self);
     assert(cs);
 
+    if (!try_match(cs->inputs, op->inputs)) return;
+    if (!try_match(cs->outputs, op->outputs)) return;
     if (cs->target && op->target) {
-      // If std::function-s are defined we can't compare the functions.
-      if (!try_match(cs, op)) return ;
+      // If std::function-s are defined we can't compare the functions, compare the pointers instead.
+      if (!try_match(cs, op)) return;
     } else {
-      if (!try_match(cs->inputs, op->inputs)) return;
-      if (!try_match(cs->outputs, op->outputs)) return;
       if (!try_match(!cs->target, !op->target)) return;
     }
   }
