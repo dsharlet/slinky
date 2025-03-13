@@ -15,6 +15,14 @@
 
 namespace slinky {
 
+// Replaces callbacks within the call_stmt with nullptr, so they can be compared.
+class call_nullifier : public node_mutator {
+public:
+  void visit(const call_stmt* op) override { set_result(call_stmt::make(nullptr, op->inputs, op->outputs, op->attrs)); }
+};
+
+stmt nullify_calls(const stmt& s) { return call_nullifier().mutate(s); }
+
 // Matrix multiplication (not fast!)
 template <typename T>
 index_t matmul(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& c) {
@@ -601,7 +609,7 @@ TEST_P(stencil_chain, pipeline) {
                           "_split_" + std::to_string(split);
   setup_tracing(eval_ctx.config, test_name + ".json");
 
-  p.evaluate(inputs, outputs, eval_ctx); 
+  p.evaluate(inputs, outputs, eval_ctx);
 
   // Run the pipeline stages manually to get the reference result.
   buffer<short, 2> ref_intm({W + 4, H + 4});
@@ -667,7 +675,7 @@ TEST_P(multiple_outputs, pipeline) {
   func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
                                                      const buffer<int>& sum_xy) -> index_t {
     for (index_t z = std::min(sum_xy.dim(0).min(), sum_x.dim(1).min());
-         z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
+        z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
       if (sum_xy.contains(z)) sum_xy(z) = 0;
       for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
         if (sum_x.contains(y, z)) sum_x(y, z) = 0;
@@ -842,7 +850,8 @@ TEST(unrelated, pipeline) {
 
     func mul2 = func::make(multiply_2<int>, {{in2, {point(x)}}}, {{intm2, {x}}},
         call_stmt::attributes{.allow_in_place = 0x1, .name = "mul2"});
-    func add2 = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add2"});
+    func add2 = func::make(
+        add_1<int>, {{intm2, {point(x)}}}, {{out2, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add2"});
 
     stencil1.loops({{y, 2}});
 
@@ -852,7 +861,7 @@ TEST(unrelated, pipeline) {
   };
   pipeline p = make_pipeline();
   pipeline p2 = make_pipeline();
-  ASSERT_TRUE(match(p.body, p2.body));
+  ASSERT_TRUE(match(nullify_calls(p.body), nullify_calls(p2.body)));
 
   // Run the pipeline.
   const int W1 = 20;
@@ -898,7 +907,7 @@ TEST(unrelated, pipeline) {
 
   // intm2 aliased to out2.
   // TODO: Bring back aliasing in-place calls.
-  //ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W1 + 2) * 4 * sizeof(short)));
+  // ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre((W1 + 2) * 4 * sizeof(short)));
 }
 
 class padded_stencil : public testing::TestWithParam<int> {};
@@ -1323,7 +1332,7 @@ TEST_P(diamond_stencils, pipeline) {
   };
   pipeline p = make_pipeline();
   pipeline p2 = make_pipeline();
-  ASSERT_TRUE(match(p.body, p2.body));
+  ASSERT_TRUE(match(nullify_calls(p.body), nullify_calls(p2.body)));
 
   // Run the pipeline.
   const int W = 20;
