@@ -18,8 +18,6 @@ namespace slinky {
 // Replaces callbacks within the call_stmt with nullptr, so they can be compared.
 class call_nullifier : public node_mutator {
 public:
-  call_nullifier() {}
-
   void visit(const call_stmt* op) override { set_result(call_stmt::make(nullptr, op->inputs, op->outputs, op->attrs)); }
 };
 
