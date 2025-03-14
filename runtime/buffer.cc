@@ -136,7 +136,9 @@ std::size_t raw_buffer::init_strides(index_t alignment) {
   std::size_t unknown_end = 0;
   for (std::size_t i = 0; i < rank; ++i) {
     if (dim(i).stride() == 0) continue;
-
+    if (dim(i).min() == 0 && dim(i).extent() < dim(i).fold_factor()) {
+      dim(i).set_fold_factor(dim::unfolded);
+    }
     index_t alloc_extent_i = alloc_extent(dim(i));
     if (alloc_extent_i <= 1) {
       // The buffer is empty or has extent 1, we don't care about the stride.
