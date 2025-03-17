@@ -188,7 +188,7 @@ public:
     expr orig_min;
     interval_expr bounds;
     expr step;
-    expr max_workers;
+    expr max_workers = 0;
     bool data_parallel = true;
     std::unique_ptr<symbol_map<box_expr>> buffer_bounds = std::make_unique<symbol_map<box_expr>>();
     std::unique_ptr<symbol_map<interval_expr>> expr_bounds = std::make_unique<symbol_map<interval_expr>>();
