@@ -71,6 +71,15 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     src_dim.fold_factor = expr();
     return true;
   } else {
+    // If a src_x depends on multiple dst_x, only consider this dst dim for now.
+    for (int i = 0; i < static_cast<int>(dst_x.size()); ++i) {
+      if (i != dst_d) {
+        // TODO: Maybe this zero needs to be a buffer_min? But which...?
+        src_x = substitute(src_x, dst_x[i], 0);
+      }
+    }
+    src_x = simplify(src_x);
+
     // Try to parse src_x = dst_x * scale + offset
     expr scale = 1;
     if (const class mul* s = src_x.as<class mul>()) {

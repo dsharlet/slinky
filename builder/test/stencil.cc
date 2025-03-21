@@ -65,6 +65,8 @@ TEST_P(stencil, x_dx) {
       ASSERT_EQ(out_buf(n, k), in_buf(n * S + k * D));
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(stencil, dx_x) {
@@ -105,6 +107,8 @@ TEST_P(stencil, dx_x) {
       ASSERT_EQ(out_buf(k, n), in_buf(n * S + k * D));
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(stencil, x_y_dx_dy) {
@@ -152,6 +156,8 @@ TEST_P(stencil, x_y_dx_dy) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(stencil, x_dx_y_dy) {
@@ -199,6 +205,8 @@ TEST_P(stencil, x_dx_y_dy) {
       }
     }
   }
+
+  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 }  // namespace slinky
