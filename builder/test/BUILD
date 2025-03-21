@@ -204,3 +204,15 @@ cc_test(
     ],
     size = "small",
 )
+
+cc_test(
+    name = "stencil",
+    srcs = ["stencil.cc"],
+    deps = [
+        ":util",
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
