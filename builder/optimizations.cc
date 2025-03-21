@@ -47,7 +47,7 @@ dim_expr select(const expr& c, dim_expr t, dim_expr f) {
 }
 
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
+bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
     expr at_t;
@@ -85,7 +85,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
       }
     }
 
-    expr offset = simplify((src_x - dst_x) * scale);
+    expr offset = simplify((src_x - dst_x[dst_d]) * scale);
     if (depends_on(offset, dst_x).any()) {
       // We don't understand this src_x as a copy.
       return false;
@@ -107,7 +107,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
 bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_dim) {
   // We might not have an src dim if we're trying to broadcast.
   expr src_x = src_d >= 0 ? op->src_x[src_d] : expr();
-  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x[dst_d], dst_d, at, src_dim);
+  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim);
 }
 
 // `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,
