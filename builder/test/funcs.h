@@ -1,6 +1,9 @@
 #ifndef SLINKY_BUILDER_TEST_FUNCS_H
 #define SLINKY_BUILDER_TEST_FUNCS_H
 
+#include <functional>
+#include <vector>
+
 #include "runtime/buffer.h"
 
 namespace slinky {
@@ -119,6 +122,44 @@ index_t upsample_nn_2x(const buffer<const T>& in, const buffer<T>& out) {
     }
   }
   return 0;
+}
+
+template <typename T>
+index_t sum_impl(const buffer<const T>& in, const buffer<T>& out, span<int> dims) {
+  int d = dims[0];
+  const dim& r = in.dim(d);
+  dims = dims.subspan(1);
+  if (dims.empty()) {
+    for_each_element(
+        [&](T* out, const T* in) {
+          for (index_t i = 0; i < r.extent(); ++i) {
+            *out += *offset_bytes(in, i * r.stride());
+          }
+        },
+        out, in);
+  } else {
+    for (index_t i = r.begin(); i < r.end(); ++i) {
+      buffer<const T, 8> in_sliced = in;
+      in_sliced.slice(d, i);
+      sum_impl(in_sliced.template cast<const T>(), out, dims);
+    }
+  }
+
+  return 0;
+}
+
+// Compute the sum of the dimensions in `dims`.
+template <typename T>
+index_t sum(const buffer<const T>& in, const buffer<T>& out, std::vector<int> dims) {
+  assert(in.rank == out.rank + static_cast<int>(dims.size()));
+
+  // We need the dims in sorted order, largest first.
+  std::sort(dims.begin(), dims.end(), std::greater<int>());
+
+  // Initialize with 0
+  copy(scalar<T>(0), out);
+
+  return sum_impl(in, out, dims);
 }
 
 }  // namespace slinky
