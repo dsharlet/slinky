@@ -38,20 +38,19 @@ TEST_P(stencil, 1d) {
   var x(ctx, "x");
   var dx(ctx, "dx");
 
-  // This test computes the following stencil operation:
+  // This test computes the following stencil operation, in this case a convolution with a kernel of 1s:
   //
   //  for i in [0, N):
   //    for k in [0, K):
   //      out[i] += in[i * S + k * D]
   //
-  // Using the following approach;
-  //
+  // Using the following approach:
   // 1. Make a copy of the input such that stencil(x, dx) = in(x * S + dx * D)
   // 2. Compute a reduction of the dx dimension
   //
   // We expect slinky to alias the copy.
   func stencil_copy = func::make_copy({in, {point(x * S + dx * D)}}, {stencil, {x, dx}});
-  auto sum_1 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, {1}); };
+  auto sum_1 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, /*dims=*/{1}); };
   func reduce = func::make(std::move(sum_1), {{stencil, {point(x), min_extent(0, K)}}}, {{{out, {x}}}});
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
@@ -112,7 +111,7 @@ TEST_P(stencil, 2d) {
 
   // See the 1d version for a 1D description of what this is doing in 2D.
   func stencil_copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {stencil, {x, y, dx, dy}});
-  auto sum_23 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, {2, 3}); };
+  auto sum_23 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, /*dims=*/{2, 3}); };
   func reduce = func::make(
       std::move(sum_23), {{stencil, {point(x), point(y), min_extent(0, K), min_extent(0, K)}}}, {{{out, {x, y}}}});
 
