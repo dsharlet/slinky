@@ -62,7 +62,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     } else {
       return false;
     }
-  } else if (!depends_on(src_x, dst_x).any()) {
+  } else if (!depends_on(src_x, dst_x).var) {
     // This is a broadcast because the src_x is constant w.r.t. dst_x.
     at = src_x;
     src_dim.bounds = buffer_bounds(dst, dst_d);
@@ -83,10 +83,10 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     // Try to parse src_x = dst_x * scale + offset
     expr scale = 1;
     if (const class mul* s = src_x.as<class mul>()) {
-      if (!depends_on(s->a, dst_x).any()) {
+      if (!depends_on(s->a, dst_x).var) {
         scale = s->a;
         src_x = s->b;
-      } else if (!depends_on(s->b, dst_x).any()) {
+      } else if (!depends_on(s->b, dst_x).var) {
         scale = s->b;
         src_x = s->a;
       } else {
@@ -95,7 +95,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     }
 
     expr offset = simplify((src_x - dst_x[dst_d]) * scale);
-    if (depends_on(offset, dst_x).any()) {
+    if (depends_on(offset, dst_x).var) {
       // We don't understand this src_x as a copy.
       return false;
     }
