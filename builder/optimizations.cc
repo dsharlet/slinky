@@ -46,6 +46,49 @@ dim_expr select(const expr& c, dim_expr t, dim_expr f) {
   };
 }
 
+// Try to find a, b such that y = a*x + b
+bool is_linear(const expr& y, var x, expr& a, expr& b) {
+  if (match(y, x)) {
+    // y = x
+    a = 1;
+    b = 0;
+    return true;
+  } else if (!depends_on(y, x).var) {
+    // y = b
+    a = 0;
+    b = y;
+    return true;
+  } else if (const add* op = y.as<add>()) {
+    expr aa, ab;
+    expr ba, bb;
+    if (is_linear(op->a, x, aa, ab) && is_linear(op->b, x, ba, bb)) {
+      a = aa + ba;
+      b = ab + bb;
+      return true;
+    }
+  } else if (const sub* op = y.as<sub>()) {
+    expr aa, ab;
+    expr ba, bb;
+    if (is_linear(op->a, x, aa, ab) && is_linear(op->b, x, ba, bb)) {
+      a = aa - ba;
+      b = ab - bb;
+      return true;
+    }
+  } else if (const mul* op = y.as<mul>()) {
+    if (is_linear(op->a, x, a, b) && !depends_on(op->b, x).var) {
+      a *= op->b;
+      b *= op->b;
+      return true;
+    } else if (is_linear(op->b, x, a, b) && !depends_on(op->a, x).var) {
+      a *= op->a;
+      b *= op->a;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
 bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
@@ -81,22 +124,15 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     src_x = simplify(src_x);
 
     // Try to parse src_x = dst_x * scale + offset
-    expr scale = 1;
-    if (const class mul* s = src_x.as<class mul>()) {
-      if (!depends_on(s->a, dst_x).var) {
-        scale = s->a;
-        src_x = s->b;
-      } else if (!depends_on(s->b, dst_x).var) {
-        scale = s->b;
-        src_x = s->a;
-      } else {
-        return false;
-      }
+    expr scale, offset;
+    if (!is_linear(src_x, dst_x[dst_d], scale, offset)) {
+      return false;
     }
+    scale = simplify(scale);
+    offset = simplify(offset);
 
-    expr offset = simplify((src_x - dst_x[dst_d]) * scale);
-    if (depends_on(offset, dst_x).var) {
-      // We don't understand this src_x as a copy.
+    if (!is_non_negative(scale)) {
+      // TODO: Maybe we could handle negative stride copies.
       return false;
     }
 
