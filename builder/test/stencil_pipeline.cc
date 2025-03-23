@@ -13,10 +13,11 @@
 
 namespace slinky {
 
-class stencil : public testing::TestWithParam<std::tuple<bool, int, int, int>> {};
+class stencil : public testing::TestWithParam<std::tuple<bool, int, int, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(stride_dilation_size, stencil,
-    testing::Combine(testing::Bool(), testing::Values(1, 2, 3), testing::Values(1, 2, 3), testing::Values(1, 2, 3)),
+    testing::Combine(testing::Bool(), testing::Values(1, 2, 3), testing::Values(1, 2, 3), testing::Values(1, 2, 3),
+        testing::Values(0, 3)),
     test_params_to_string<stencil::ParamType>);
 
 TEST_P(stencil, 1d) {
@@ -24,6 +25,7 @@ TEST_P(stencil, 1d) {
   const int S = std::get<1>(GetParam());
   const int D = std::get<2>(GetParam());
   const int K = std::get<3>(GetParam());
+  const int split = std::get<4>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -52,6 +54,10 @@ TEST_P(stencil, 1d) {
   func stencil_copy = func::make_copy({in, {point(x * S + dx * D)}}, {stencil, {x, dx}});
   auto sum_1 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, /*dims=*/{1}); };
   func reduce = func::make(std::move(sum_1), {{stencil, {point(x), min_extent(0, K)}}}, {{{out, {x}}}});
+
+  if (split > 0) {
+    reduce.loops({{x, split}});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
@@ -92,6 +98,7 @@ TEST_P(stencil, 2d) {
   const int S = std::get<1>(GetParam());
   const int D = std::get<2>(GetParam());
   const int K = std::get<3>(GetParam());
+  const int split = std::get<4>(GetParam());
 
   // Make the pipeline
   node_context ctx;
@@ -114,6 +121,10 @@ TEST_P(stencil, 2d) {
   auto sum_23 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, /*dims=*/{2, 3}); };
   func reduce = func::make(
       std::move(sum_23), {{stencil, {point(x), point(y), min_extent(0, K), min_extent(0, K)}}}, {{{out, {x, y}}}});
+
+  if (split > 0) {
+    reduce.loops({{x, split}, {y, split}});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
