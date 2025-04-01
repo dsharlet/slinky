@@ -591,6 +591,8 @@ class pipeline_builder {
   std::set<var> copy_inputs_;
   std::map<var, std::vector<var>> copy_deps_;
 
+  std::map<var, std::set<var>> bounds_deps_;
+
   int functions_produced_ = 0;
 
   // Topologically sorted functions.
@@ -697,6 +699,9 @@ class pipeline_builder {
           *bound = *bound | crop;
         } else {
           allocation_bounds_[i.sym()] = crop;
+        }
+        for (const auto& o : f->outputs()) {
+          bounds_deps_[i.sym()].insert(o.sym());
         }
       }
     }
@@ -1089,6 +1094,25 @@ class pipeline_builder {
     return results;
   }
 
+  void find_transitive_deps_impl(const var& v, std::set<var>& result) {
+    result.insert(v);
+    for (const var& p: bounds_deps_[v]) {
+      // No point in visiting the node we've already seen.
+      // NOTE(vksnk): this check is O(lg N) and we can make it O(1) by using
+      // an additional `visited` array, but I don't think it's critical for
+      // performance at all.
+      if (result.count(p) > 0) continue;
+      find_transitive_deps_impl(p, result);
+    }
+  }
+
+  void find_transitive_deps(const std::vector<var>& buffers, std::set<var>& result) {
+    symbol_map<bool> visited;
+    for (const var& v:  buffers) {
+      find_transitive_deps_impl(v, result);
+    }
+  }
+
 public:
   pipeline_builder(
       node_context& ctx, const std::vector<buffer_expr_ptr>& inputs, const std::vector<buffer_expr_ptr>& outputs)
@@ -1154,16 +1178,16 @@ public:
     if (here.root()) return body;
 
     // Find which buffers are used inside of the body.
-    // TODO(vksnk): recomputing this seems really wasteful, we can should be
-    // able to maintain the list of buffers as we build the IR.
-    std::vector<var> buffer_used = find_buffer_dependencies(body.body);
+    std::vector<var> buffers_used = find_buffer_dependencies(body.body);
+    std::set<var> transitive_deps;
+    find_transitive_deps(buffers_used, transitive_deps);
 
     // Add crops for the used buffers using previously inferred bounds.
     // Input syms should be the innermost.
     for (const auto& i : input_syms_) {
       var sym = i.first;
       if (!allocation_bounds_[sym]) continue;
-      if (!std::binary_search(buffer_used.begin(), buffer_used.end(), sym)) continue;
+      if (transitive_deps.count(sym) == 0) continue;
       body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
     }
 
@@ -1180,7 +1204,7 @@ public:
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (!inferred_bounds_[b->sym()]) continue;
-        if (!std::binary_search(buffer_used.begin(), buffer_used.end(), b->sym())) continue;
+        if (transitive_deps.count(b->sym()) == 0) continue;
         body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
       }
     }
