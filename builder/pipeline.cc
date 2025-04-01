@@ -1181,8 +1181,8 @@ public:
     // Find which buffers are used inside of the body.
     std::vector<var> buffers_used = find_buffer_dependencies(body.body);
     std::set<var> transitive_deps;
-    // NOTE(vksnk): we could be more clever here and stop once we reach specific buffer -- this
-    // could prevent adding crops which are not affected by this loop's crop_dim.
+    // NOTE(vksnk): we could be more clever here and stop once we reach this loop's parent buffer(s)
+    // which will avoid adding unnecessary crops which are not affected by this loop's crop_dim.
     find_transitive_deps(buffers_used, transitive_deps);
 
     // Add crops for the used buffers using previously inferred bounds.
