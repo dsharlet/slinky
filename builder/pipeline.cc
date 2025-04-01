@@ -590,7 +590,7 @@ class pipeline_builder {
   symbol_map<allocation_candidate> allocation_info_;
   std::set<var> copy_inputs_;
   std::map<var, std::vector<var>> copy_deps_;
-
+  // Direct buffer dependencies wrt to bounds for each buffer.
   std::map<var, std::set<var>> bounds_deps_;
 
   int functions_produced_ = 0;
@@ -904,7 +904,8 @@ class pipeline_builder {
   // should build a perfect tree of depth ~log(N)). Similarly, the complexity of this
   // algorithm is O(N^2) for the worst case, but for the most practical pipelines it's
   // should be O(N*log(N)).
-  statement_with_range lay_out_allocations(const loop_id& at, std::vector<statement_with_range> results, symbol_map<var>& uncropped_subs) {
+  statement_with_range lay_out_allocations(
+      const loop_id& at, std::vector<statement_with_range> results, symbol_map<var>& uncropped_subs) {
     // The vector of allocations at this loop level.
     std::vector<allocation_candidate> lifetimes;
     // The same as above, but also has a set of special dependencies to
@@ -1096,7 +1097,7 @@ class pipeline_builder {
 
   void find_transitive_deps_impl(const var& v, std::set<var>& result) {
     result.insert(v);
-    for (const var& p: bounds_deps_[v]) {
+    for (const var& p : bounds_deps_[v]) {
       // No point in visiting the node we've already seen.
       // NOTE(vksnk): this check is O(lg N) and we can make it O(1) by using
       // an additional `visited` array, but I don't think it's critical for
@@ -1106,9 +1107,9 @@ class pipeline_builder {
     }
   }
 
+  // Find transitive dependencies for a set of buffers wrt their bounds dependencies using DFS.
   void find_transitive_deps(const std::vector<var>& buffers, std::set<var>& result) {
-    symbol_map<bool> visited;
-    for (const var& v:  buffers) {
+    for (const var& v : buffers) {
       find_transitive_deps_impl(v, result);
     }
   }
@@ -1180,6 +1181,8 @@ public:
     // Find which buffers are used inside of the body.
     std::vector<var> buffers_used = find_buffer_dependencies(body.body);
     std::set<var> transitive_deps;
+    // NOTE(vksnk): we could be more clever here and stop once we reach specific buffer -- this
+    // could prevent adding crops which are not affected by this loop's crop_dim.
     find_transitive_deps(buffers_used, transitive_deps);
 
     // Add crops for the used buffers using previously inferred bounds.
