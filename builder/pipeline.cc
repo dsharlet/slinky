@@ -736,6 +736,7 @@ class pipeline_builder {
       if (output_syms_.count(b->sym())) continue;
 
       if (b->store_at()) {
+        // Check that this loop_id actually exists.
         assert(loops_.count(*b->store_at()) > 0);
         candidates_for_allocation_[*b->store_at()].insert(b->sym());
       } else {
