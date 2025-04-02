@@ -1165,6 +1165,8 @@ public:
       here = {base_f, loop.var};
     }
 
+    loops_.insert(here);
+
     symbol_map<var> uncropped_subs;
     std::vector<statement_with_range> results = build(base_f, here, uncropped_subs);
 
