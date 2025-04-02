@@ -593,6 +593,10 @@ class pipeline_builder {
   // Direct buffer dependencies wrt to bounds for each buffer.
   std::map<var, std::set<var>> bounds_deps_;
 
+  // Set of loops we've generated so far, this is used solely for the correctness
+  // checks.
+  std::set<loop_id, loop_id_less> loops_;
+
   int functions_produced_ = 0;
 
   // Topologically sorted functions.
@@ -732,6 +736,8 @@ class pipeline_builder {
       if (output_syms_.count(b->sym())) continue;
 
       if (b->store_at()) {
+        // Check that this loop_id actually exists.
+        assert(loops_.count(*b->store_at()) > 0);
         candidates_for_allocation_[*b->store_at()].insert(b->sym());
       } else {
         candidates_for_allocation_[loop_id()].insert(b->sym());
@@ -1159,6 +1165,8 @@ public:
       loop = base_f->loops()[loop_index];
       here = {base_f, loop.var};
     }
+
+    loops_.insert(here);
 
     symbol_map<var> uncropped_subs;
     std::vector<statement_with_range> results = build(base_f, here, uncropped_subs);
