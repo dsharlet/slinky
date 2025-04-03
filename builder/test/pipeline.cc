@@ -252,6 +252,73 @@ TEST_P(elementwise, pipeline_2d) {
   }
 }
 
+// An example of two 2D elementwise operations in sequence with intermediate buffer stored at
+// the inner loop level.
+TEST(elementwise, store_at) {
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto intm1 = buffer_expr::make(ctx, "intm1", 2, sizeof(int));
+  auto intm2 = buffer_expr::make(ctx, "intm2", 2, sizeof(int));
+  auto intm3 = buffer_expr::make(ctx, "intm3", 2, sizeof(int));
+  auto intm4 = buffer_expr::make(ctx, "intm4", 2, sizeof(int));
+
+  // If we want to alias intermediate buffer to the output buffer,
+  // we need to tell aliaser that output is unfolded and it's safe to alias.
+  out->dim(0).fold_factor = dim::unfolded;
+  out->dim(1).fold_factor = dim::unfolded;
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func mul1 = func::make(multiply_2<int>, {{in, {point(x), point(y)}}}, {{intm1, {x, y}}});
+  func add1 = func::make(add_1<int>, {{intm1, {point(x), point(y)}}}, {{intm2, {x, y}}});
+  func mul2 = func::make(multiply_2<int>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
+  func add2 = func::make(add_1<int>, {{intm3, {point(x), point(y)}}}, {{intm4, {x, y}}});
+  func mul3 = func::make(multiply_2<int>, {{intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+
+  mul3.loops({{y, 1, loop::serial}});
+  buffer_expr_ptr intms[] = {intm1, intm2, intm3, intm4};
+  for (auto& b : intms) {
+    b->store_at({&mul3, y});
+    b->store_in(memory_type::stack);
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline
+  const int W = 15;
+  const int H = 10;
+
+  buffer<int, 2> in_buf({W, H});
+  in_buf.allocate();
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      in_buf(x, y) = y * W + x;
+    }
+  }
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), 2 * (2 * (2 * (y * W + x) + 1) + 1));
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), 0);  // The intermediate only needs stack.
+}
+
 // Two separate loops where intermediate buffer can be folded in theory, but shouldn't
 // because consumer is in a different loop.
 TEST(elementwise, outside_fold) {
