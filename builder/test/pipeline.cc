@@ -252,10 +252,14 @@ TEST_P(elementwise, pipeline_2d) {
   }
 }
 
+class store_at : public testing::TestWithParam<bool> {};
+
+INSTANTIATE_TEST_SUITE_P(alias_in_place, store_at, testing::Values(false, true));
+
 // An example of two 2D elementwise operations in sequence with intermediate buffer stored at
 // the inner loop level.
-TEST(elementwise, store_at) {
-
+TEST_P(store_at, elementwise_2d) {
+  bool alias_in_place = GetParam();
   // Make the pipeline
   node_context ctx;
 
@@ -274,11 +278,16 @@ TEST(elementwise, store_at) {
   var x(ctx, "x");
   var y(ctx, "y");
 
-  func mul1 = func::make(multiply_2<int>, {{in, {point(x), point(y)}}}, {{intm1, {x, y}}});
-  func add1 = func::make(add_1<int>, {{intm1, {point(x), point(y)}}}, {{intm2, {x, y}}});
-  func mul2 = func::make(multiply_2<int>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}});
-  func add2 = func::make(add_1<int>, {{intm3, {point(x), point(y)}}}, {{intm4, {x, y}}});
-  func mul3 = func::make(multiply_2<int>, {{intm4, {point(x), point(y)}}}, {{out, {x, y}}});
+  func mul1 = func::make(multiply_2<int>, {{in, {point(x), point(y)}}}, {{intm1, {x, y}}},
+      call_stmt::attributes{.allow_in_place = alias_in_place});
+  func add1 = func::make(add_1<int>, {{intm1, {point(x), point(y)}}}, {{intm2, {x, y}}},
+      call_stmt::attributes{.allow_in_place = alias_in_place});
+  func mul2 = func::make(multiply_2<int>, {{intm2, {point(x), point(y)}}}, {{intm3, {x, y}}},
+      call_stmt::attributes{.allow_in_place = alias_in_place});
+  func add2 = func::make(add_1<int>, {{intm3, {point(x), point(y)}}}, {{intm4, {x, y}}},
+      call_stmt::attributes{.allow_in_place = alias_in_place});
+  func mul3 = func::make(multiply_2<int>, {{intm4, {point(x), point(y)}}}, {{out, {x, y}}},
+      call_stmt::attributes{.allow_in_place = alias_in_place});
 
   mul3.loops({{y, 1, loop::serial}});
   buffer_expr_ptr intms[] = {intm1, intm2, intm3, intm4};
