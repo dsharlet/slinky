@@ -227,8 +227,9 @@ TEST_P(softmax, pipeline) {
                                             softmax_in_size, softmax_out_size, add_out_size));
     } else {
       if (use_compute_at == 2) {
+        // TODO(vksnk): for this to work we need to teach slide_and_fold_storage to take bounds from make_buffer.
         ASSERT_THAT(eval_ctx.heap.allocs,
-            testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, softmax_in_size, softmax_out_size));
+            testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, B * softmax_in_size / split_b, softmax_out_size));
       } else {
         ASSERT_THAT(eval_ctx.heap.allocs,
             testing::UnorderedElementsAre(sum_exp_in_size, exp_in_size, max_in_size, softmax_in_size, softmax_out_size));
