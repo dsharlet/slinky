@@ -636,7 +636,6 @@ void fill(const raw_buffer& dst, const T& padding) {
 }
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
-  if (inner.min() == inner.max()) return true;
   if (outer.min() == outer.max()) return true;
   if (inner.fold_factor() != dim::unfolded) return false;
 
