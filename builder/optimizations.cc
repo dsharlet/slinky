@@ -836,7 +836,9 @@ public:
     } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd) &&
                fold_factors_strides_same(op->dims, buffers[*fwd]->dims)) {
       backward.erase(*fwd);
-      set_result(clone_buffer::make(op->sym, *fwd, std::move(body)));
+
+      stmt cropped = crop_buffer::make(op->sym, op->sym, dims_bounds(op->dims), std::move(body));
+      set_result(clone_buffer::make(op->sym, *fwd, std::move(cropped)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
