@@ -19,7 +19,7 @@ struct loop_id {
   const slinky::func* func = nullptr;
   slinky::var var;
 
-  bool innermost(const slinky::func* other) const { return other == func; }
+  bool innermost(const slinky::func* other) const { return other == func && !var.defined(); }
   bool root() const { return !func; }
   // TODO: Deprecated
   slinky::var sym() const { return var; }
