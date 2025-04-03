@@ -789,9 +789,8 @@ class in_place_aliaser : public stmt_mutator {
   // we encounter is the last use of the buffer.
   symbol_map<int> use_count;
 
-  node_context& ctx;
 public:
-  in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs, node_context& ctx) : ctx(ctx) {
+  in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
     for (const buffer_expr_ptr& i : outputs) {
       buffers[i->sym()] = {i->sym()};
       use_count[i->sym()] = 0;
@@ -837,9 +836,9 @@ public:
     } else if (can_alias && fwd && fwd->defined() && buffers.lookup(*fwd) &&
                fold_factors_strides_same(op->dims, buffers[*fwd]->dims)) {
       backward.erase(*fwd);
-      var inplace_sym = ctx.insert_unique(ctx.name(*fwd) + ".inplace");
-      stmt cropped = crop_buffer::make(op->sym, inplace_sym, dims_bounds(op->dims), std::move(body));
-      set_result(clone_buffer::make(inplace_sym, *fwd, std::move(cropped)));
+
+      stmt cropped = crop_buffer::make(op->sym, op->sym, dims_bounds(op->dims), std::move(body));
+      set_result(clone_buffer::make(op->sym, *fwd, std::move(cropped)));
     } else if (!body.same_as(op->body)) {
       set_result(clone_with(op, std::move(body)));
     } else {
@@ -945,9 +944,9 @@ public:
 
 }  // namespace
 
-stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs, node_context& ctx) {
+stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs) {
   scoped_trace trace("alias_in_place");
-  return in_place_aliaser(outputs, ctx).mutate(s);
+  return in_place_aliaser(outputs).mutate(s);
 }
 
 namespace {
