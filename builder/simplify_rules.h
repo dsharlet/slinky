@@ -430,6 +430,7 @@ bool apply_sub_rules(Fn&& apply) {
       apply((x + y) - x, y) ||
       apply((x - y) - x, -y) ||
       apply(x - (x + y), -y) ||
+      apply(x - (y - x), -y) ||
       apply(x - (x - y), y) ||
       apply((x + y) - (x + z), y - z) ||
       apply((x - y) - (z - y), x - z) ||
