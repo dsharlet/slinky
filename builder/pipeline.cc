@@ -1189,11 +1189,13 @@ public:
     // Find which buffers are used inside of the body.
     std::vector<var> buffers_used = find_buffer_dependencies(body.body);
     std::set<var> transitive_deps;
+    // We also need to include transitive dependencies of the used buffers in case metadata
+    // needs to be updated.
     // NOTE(vksnk): we could be more clever here and stop once we reach this loop's parent buffer(s)
     // which will avoid adding unnecessary crops which are not affected by this loop's crop_dim.
     find_transitive_deps(buffers_used, transitive_deps);
 
-    // Add crops for the used buffers using previously inferred bounds.
+    // Add crops for the buffers and their dependencies used inside of the body using previously inferred bounds.
     // Input syms should be the innermost.
     for (const auto& i : input_syms_) {
       var sym = i.first;
@@ -1216,7 +1218,15 @@ public:
         const buffer_expr_ptr& b = o.buffer;
         if (!inferred_bounds_[b->sym()]) continue;
         if (transitive_deps.count(b->sym()) == 0) continue;
-        body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
+        if (body.allocations.count(b->sym()) > 0) {
+          // We can't produce the crop for the buffers which weren't allocated yet,
+          // so produce make_buffer, because some other buffers might use metadata from them.
+          const std::optional<std::vector<dim_expr>>& maybe_dims = inferred_shapes_[b->sym()];
+          if (!maybe_dims) continue;
+          body.body = make_buffer::make(b->sym(), expr(), expr(), *maybe_dims, body.body);
+        } else {
+          body.body = crop_buffer::make(b->sym(), b->sym(), *inferred_bounds_[b->sym()], body.body);
+        }
       }
     }
 
