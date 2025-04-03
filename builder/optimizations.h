@@ -11,7 +11,7 @@ stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_exp
     const std::vector<buffer_expr_ptr>& outputs);
 
 // Replace allocations of input buffers to calls that can be computed in place with crops of the output buffer.
-stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs);
+stmt alias_in_place(const stmt& s, const std::vector<buffer_expr_ptr>& outputs, node_context& ctx);
 
 // Replace sibling stmts with a single stmt of a block where possible.
 stmt fuse_siblings(const stmt& s);
