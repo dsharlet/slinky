@@ -339,6 +339,7 @@ bool match(expr_ref a, expr_ref b) { return matcher().try_match(a.get(), b.get()
 bool match(stmt_ref a, stmt_ref b) { return matcher().try_match(a.get(), b.get()); }
 bool match(const interval_expr& a, const interval_expr& b) { return matcher().try_match(a, b); }
 bool match(const dim_expr& a, const dim_expr& b) { return matcher().try_match(a, b); }
+bool match(const box_expr& a, const box_expr& b) { return matcher().try_match(a, b); }
 
 int compare(const var& a, const var& b) {
   matcher m;

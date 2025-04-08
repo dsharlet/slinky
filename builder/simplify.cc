@@ -1970,6 +1970,23 @@ public:
       bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dims[i].bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
     }
+
+    // Remove trailing undefined bounds.
+    while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
+      bounds.pop_back();
+    }
+
+    if (bounds.empty()) {
+      // This crop was a no-op.
+      if (op_src != op_sym) {
+        auto s = set_value_in_scope(vars, op_sym, expr_info::substitution(variable::make(op_src)));
+        set_result(mutate(op_body));
+      } else {
+        set_result(mutate(op_body));
+      }
+      return;
+    }
+
     stmt body = mutate_with_buffer(op, op_body, op_sym, op_src, std::move(info));
     scoped_trace trace("visit_crop");
     auto deps = depends_on(body, op_sym);
@@ -1981,10 +1998,6 @@ public:
       return;
     }
 
-    // Remove trailing undefined bounds.
-    while (!bounds.empty() && !bounds.back().min.defined() && !bounds.back().max.defined()) {
-      bounds.pop_back();
-    }
 
     // If this was a crop_buffer, and we only have one dim, we're going to change it to a crop_dim.
     const int dims_count = std::count_if(
@@ -1992,6 +2005,18 @@ public:
     changed = changed || (dims_count == 1 && op->type != crop_dim::static_type) || !body.same_as(op_body);
 
     auto make_crop = [&](const stmt& body) -> stmt {
+      if (const crop_dim* c = body.as<crop_dim>()) {
+        if (dims_count == 1 && bounds.size() == c->dim + 1 && c->src == op_src && match(c->bounds, bounds.back())) {
+          // This is an identical crop, re-use the buffer.
+          return crop_dim::make(op_sym, c->src, c->dim, c->bounds, substitute(c->body, c->sym, op_sym));
+        }
+      } else if (const crop_buffer* c = body.as<crop_buffer>()) {
+        if (c->src == op_src && match(c->bounds, bounds)) {
+          // This is an identical crop, re-use the buffer.
+          return crop_buffer::make(op_sym, c->src, c->bounds, substitute(c->body, c->sym, op_sym));
+        }
+      }
+
       if (!changed && body.same_as(op_body)) {
         return stmt(op);
       } else if (dims_count == 1) {
@@ -2004,12 +2029,7 @@ public:
       }
     };
 
-    if (bounds.empty()) {
-      // This crop was a no-op.
-      set_result(substitute(body, op_sym, op_src));
-    } else {
-      set_result(lift_decl_invariants(body, op_sym, make_crop));
-    }
+    set_result(lift_decl_invariants(body, op_sym, make_crop));
   }
 
   void visit(const crop_buffer* op) override {
