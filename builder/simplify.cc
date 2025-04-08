@@ -1310,10 +1310,9 @@ public:
               // stmts back in the loop.
               // TODO: We could be a bit more careful here, and only put the stmts that actually depend on this stmt
               // back in the loop.
-              for (; j > 0; --j) {
-                loop_body.push_back(lifted[j - 1].second);
-                lifted.erase(lifted.begin() + j - 1);
-              }
+              std::transform(lifted.begin(), lifted.begin() + j, std::back_inserter(loop_body),
+                  [](const auto& i) { return i.second; });
+              lifted.erase(lifted.begin(), lifted.begin() + j);
             }
             break;
           }

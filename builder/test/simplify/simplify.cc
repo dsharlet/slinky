@@ -33,6 +33,8 @@ var b1(symbols, "b1");
 var b2(symbols, "b2");
 var b3(symbols, "b3");
 var b4(symbols, "b4");
+var b5(symbols, "b5");
+var b6(symbols, "b6");
 
 MATCHER_P(matches, x, "") { return match(arg, x); }
 
@@ -431,6 +433,24 @@ TEST(simplify, licm) {
           make_call(b2, b3),
           make_crop_x(b4, 0, make_call(b3, b4)),
       }))));
+
+  // A call that is loop invariant, but with a transitive dependency on a loop variant.
+  ASSERT_THAT(simplify(make_loop_x(block::make({
+                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_call(b5, b6),
+                  make_call(b1, b2),
+                  make_call(b2, b3),
+                  make_crop_x(b4, 0, make_call(b3, b4)),
+              }))),
+      matches(block::make({
+          make_call(b5, b6),
+          make_loop_x(block::make({
+              make_crop_x(b1, 0, make_call(b0, b1)),
+              make_call(b1, b2),
+              make_call(b2, b3),
+              make_crop_x(b4, 0, make_call(b3, b4)),
+          })),
+      })));
 }
 
 TEST(simplify, bounds) {
