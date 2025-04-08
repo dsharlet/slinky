@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -529,7 +530,7 @@ void test_for_each_contiguous_slice_fill(Rng& rng) {
 
 TEST(buffer, for_each_contiguous_slice_fill) {
   gtest_seeded_mt19937 rng;
-  for (int cases = 0; cases < 1000; ++cases) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     test_for_each_contiguous_slice_fill<char>(rng);
     test_for_each_contiguous_slice_fill<int>(rng);
   }
@@ -571,7 +572,7 @@ void test_for_each_contiguous_slice_copy(Rng& rng) {
 
 TEST(buffer, for_each_contiguous_slice_copy) {
   gtest_seeded_mt19937 rng;
-  for (int cases = 0; cases < 10000; ++cases) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     test_for_each_contiguous_slice_copy<char, char>(rng);
     test_for_each_contiguous_slice_copy<short, int>(rng);
     test_for_each_contiguous_slice_copy<int, int>(rng);
@@ -605,7 +606,7 @@ void test_for_each_element_copy(Rng& rng) {
 
 TEST(buffer, for_each_element_copy) {
   gtest_seeded_mt19937 rng;
-  for (int cases = 0; cases < 10000; ++cases) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     test_for_each_element_copy<char, char>(rng);
     test_for_each_element_copy<short, int>(rng);
     test_for_each_element_copy<int, int>(rng);
@@ -648,7 +649,7 @@ void test_for_each_contiguous_slice_add(Rng& rng) {
 
 TEST(buffer, for_each_contiguous_slice_add) {
   gtest_seeded_mt19937 rng;
-  for (int cases = 0; cases < 1000; ++cases) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     test_for_each_contiguous_slice_add<int, int, int>(rng);
     test_for_each_contiguous_slice_add<short, int, int>(rng);
     test_for_each_contiguous_slice_add<short, short, int>(rng);
@@ -764,7 +765,7 @@ void set_strides(buffer<T, N>& buf, int* permutation = nullptr, index_t* padding
 TEST(buffer, for_each_element_fuzz) {
   gtest_seeded_mt19937 rng;
 
-  for (int i = 0; i < 1000; ++i) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     constexpr int max_rank = 4;
     buffer<int, max_rank> bufs[3];
     for (buffer<int, max_rank>& buf : bufs) {
@@ -786,7 +787,7 @@ TEST(buffer, copy) {
   gtest_seeded_mt19937 rng;
 
   constexpr int max_rank = 4;
-  for (int cases = 0; cases < 10000; ++cases) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     int rank = random(rng, 0, max_rank);
     int elem_size = random(rng, 1, 12);
 

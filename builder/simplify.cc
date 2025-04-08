@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <deque>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
@@ -2006,7 +2007,6 @@ public:
       return;
     }
 
-
     // If this was a crop_buffer, and we only have one dim, we're going to change it to a crop_dim.
     const int dims_count = std::count_if(
         bounds.begin(), bounds.end(), [](const interval_expr& i) { return i.min.defined() || i.max.defined(); });
@@ -2014,7 +2014,8 @@ public:
 
     auto make_crop = [&](const stmt& body) -> stmt {
       if (const crop_dim* c = body.as<crop_dim>()) {
-        if (dims_count == 1 && bounds.size() == c->dim + 1 && c->src == op_src && match(c->bounds, bounds.back())) {
+        if (dims_count == 1 && static_cast<int>(bounds.size()) == c->dim + 1 && c->src == op_src &&
+            match(c->bounds, bounds.back())) {
           // This is an identical crop, re-use the buffer.
           return crop_dim::make(op_sym, c->src, c->dim, c->bounds, substitute(c->body, c->sym, op_sym));
         }
