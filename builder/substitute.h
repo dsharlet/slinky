@@ -18,6 +18,7 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool match(index_t a, var b) { return false; 
 bool match(stmt_ref a, stmt_ref b);
 bool match(const interval_expr& a, const interval_expr& b);
 bool match(const dim_expr& a, const dim_expr& b);
+bool match(const box_expr& a, const box_expr& b);
 
 // Compute a sort ordering of two nodes based on their structure (not their values).
 int compare(const var& a, const var& b);
