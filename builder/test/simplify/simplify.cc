@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <cassert>
+#include <chrono>
 
 #include "base/test/seeded_test.h"
 #include "builder/simplify.h"
@@ -1049,12 +1050,11 @@ TEST(simplify, fuzz) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);
 
-  constexpr int tests = 10000;
   constexpr int checks = 10;
 
   eval_context ctx;
 
-  for (int i = 0; i < tests; ++i) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     expr test = gen.random_expr(2);
     expr simplified = simplify(test);
 
@@ -1160,12 +1160,11 @@ TEST(simplify, fuzz_correlated_bounds) {
   gtest_seeded_mt19937 rng;
   expr_generator<gtest_seeded_mt19937> gen(rng, 4);
 
-  constexpr int tests = 1000;
   constexpr int checks = 10;
 
   eval_context ctx;
 
-  for (int i = 0; i < tests; ++i) {
+  for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     index_t a = gen.random_constant(16);
     index_t b = gen.random_constant(16);
     index_t c = gen.random_constant(16);

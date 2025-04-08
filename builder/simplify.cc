@@ -829,7 +829,8 @@ public:
               // This is (x/c0)*c1. If we know x is aligned to c0, the result is x*(c1/c0).
               expr_info x_info;
               expr x = mutate(d->a, &x_info);
-              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0 && x_info.alignment.remainder % *c0 == 0) {
+              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0 &&
+                  x_info.alignment.remainder % *c0 == 0) {
                 mutate_and_set_result((x * *c1) / *c0);
                 return;
               }
@@ -1327,7 +1328,8 @@ public:
           result.push_back(i->first);
         }
         std::reverse(loop_body.begin(), loop_body.end());
-        result.push_back(mutate(loop::make(op->sym, std::move(max_workers), bounds, step, block::make(std::move(loop_body)))));
+        result.push_back(
+            mutate(loop::make(op->sym, std::move(max_workers), bounds, step, block::make(std::move(loop_body)))));
         set_result(block::make(std::move(result)));
         return;
       } else {
@@ -1387,7 +1389,8 @@ public:
       }
     }
 
-    if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
+    if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) &&
+        body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(loop::make(op->sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
@@ -1464,7 +1467,9 @@ public:
   dim_expr mutate(const dim_expr& d) {
     dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
     if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
-    if (result.fold_factor.defined() && prove_true(result.min() / result.fold_factor == result.max() / result.fold_factor)) result.fold_factor = expr();
+    if (result.fold_factor.defined() &&
+        prove_true(result.min() / result.fold_factor == result.max() / result.fold_factor))
+      result.fold_factor = expr();
     if (is_constant(result.stride, dim::auto_stride)) result.stride = expr();
     return result;
   }
@@ -1998,7 +2003,6 @@ public:
       return;
     }
 
-
     // If this was a crop_buffer, and we only have one dim, we're going to change it to a crop_dim.
     const int dims_count = std::count_if(
         bounds.begin(), bounds.end(), [](const interval_expr& i) { return i.min.defined() || i.max.defined(); });
@@ -2006,7 +2010,8 @@ public:
 
     auto make_crop = [&](const stmt& body) -> stmt {
       if (const crop_dim* c = body.as<crop_dim>()) {
-        if (dims_count == 1 && bounds.size() == c->dim + 1 && c->src == op_src && match(c->bounds, bounds.back())) {
+        if (dims_count == 1 && static_cast<int>(bounds.size()) == c->dim + 1 && c->src == op_src &&
+            match(c->bounds, bounds.back())) {
           // This is an identical crop, re-use the buffer.
           return crop_dim::make(op_sym, c->src, c->dim, c->bounds, substitute(c->body, c->sym, op_sym));
         }

@@ -31,6 +31,12 @@ namespace slinky {
 #define SLINKY_PURE
 #endif
 
+#if SLINKY_HAS_ATTRIBUTE(unused)
+#define SLINKY_UNUSED __attribute__((unused))
+#else
+#define SLINKY_UNUSED
+#endif
+
 #ifdef NDEBUG
 // alloca() will cause stack-smashing code to be inserted;
 // while laudable, we use alloca() in time-critical code
