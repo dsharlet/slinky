@@ -606,6 +606,16 @@ TEST(simplify, crop) {
   ASSERT_THAT(
       simplify(crop_buffer::make(b1, b0, {{x, y}, {z, w}}, crop_buffer::make(b2, b1, {{}, {z, w}, {u, v}}, body))),
       matches(crop_buffer::make(b2, b0, {{x, y}, {z, w}, {u, v}}, body)));
+
+  // Nested crops of the same buffer.
+  ASSERT_THAT(simplify(crop_dim::make(
+                  b1, b0, 0, {x, y}, crop_dim::make(b2, b0, 0, {x, y}, call_stmt::make(nullptr, {}, {b1, b2}, {})))),
+      matches(crop_dim::make(b1, b0, 0, {x, y}, call_stmt::make(nullptr, {}, {b1, b1}, {}))));
+  ASSERT_THAT(simplify(clone_buffer::make(b1, b0,
+                  crop_buffer::make(b2, b1, {buffer_bounds(b0, 0)},
+                      crop_dim::make(b3, b1, 0, {x, y},
+                          crop_dim::make(b4, b2, 0, {x, y}, call_stmt::make(nullptr, {}, {b3, b4}, {})))))),
+      matches(crop_dim::make(b3, b0, 0, {x, y}, call_stmt::make(nullptr, {}, {b3, b3}, {}))));
 }
 
 TEST(simplify, make_buffer) {
