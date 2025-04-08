@@ -13,6 +13,7 @@ cc_library(
     deps = [
         "@bazel_tools//tools/cpp/runfiles",
         "@googletest//:gtest",
+        "//base",
     ],
     testonly = True,
     visibility = ["//visibility:public"],
