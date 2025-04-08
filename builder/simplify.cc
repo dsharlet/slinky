@@ -829,7 +829,8 @@ public:
               // This is (x/c0)*c1. If we know x is aligned to c0, the result is x*(c1/c0).
               expr_info x_info;
               expr x = mutate(d->a, &x_info);
-              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0 && x_info.alignment.remainder % *c0 == 0) {
+              if (x_info.alignment.modulus > 0 && x_info.alignment.modulus % *c0 == 0 &&
+                  x_info.alignment.remainder % *c0 == 0) {
                 mutate_and_set_result((x * *c1) / *c0);
                 return;
               }
@@ -1304,13 +1305,17 @@ public:
               lifted.insert(lifted.begin() + j, {mutate(i_lifted), i});
               --j;
               i = stmt();
-              break;
             } else {
               // We can't delete the references to the loop variable here, so j is not loop invariant. Put the original
-              // stmt back in the loop.
-              loop_body.push_back(lifted[j - 1].second);
-              lifted.erase(lifted.begin() + j - 1);
+              // stmts back in the loop.
+              // TODO: We could be a bit more careful here, and only put the stmts that actually depend on this stmt
+              // back in the loop.
+              for (; j > 0; --j) {
+                loop_body.push_back(lifted[j - 1].second);
+                lifted.erase(lifted.begin() + j - 1);
+              }
             }
+            break;
           }
 
           if (i.defined()) {
@@ -1327,7 +1332,8 @@ public:
           result.push_back(i->first);
         }
         std::reverse(loop_body.begin(), loop_body.end());
-        result.push_back(mutate(loop::make(op->sym, std::move(max_workers), bounds, step, block::make(std::move(loop_body)))));
+        result.push_back(
+            mutate(loop::make(op->sym, std::move(max_workers), bounds, step, block::make(std::move(loop_body)))));
         set_result(block::make(std::move(result)));
         return;
       } else {
@@ -1387,7 +1393,8 @@ public:
       }
     }
 
-    if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
+    if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) &&
+        body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(loop::make(op->sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
@@ -1464,7 +1471,9 @@ public:
   dim_expr mutate(const dim_expr& d) {
     dim_expr result = {mutate(d.bounds), mutate(d.stride), mutate(d.fold_factor)};
     if (is_constant(result.fold_factor, dim::unfolded)) result.fold_factor = expr();
-    if (result.fold_factor.defined() && prove_true(result.min() / result.fold_factor == result.max() / result.fold_factor)) result.fold_factor = expr();
+    if (result.fold_factor.defined() &&
+        prove_true(result.min() / result.fold_factor == result.max() / result.fold_factor))
+      result.fold_factor = expr();
     if (is_constant(result.stride, dim::auto_stride)) result.stride = expr();
     return result;
   }
