@@ -795,7 +795,7 @@ TEST(buffer, copy) {
     int elem_size = random(rng, 1, 12);
 
     buffer<void, max_rank> dst(rank, elem_size);
-    for (std::size_t d = 0; d < rank; ++d) {
+    for (int d = 0; d < rank; ++d) {
       dst.dim(d).set_min_extent(0, 5);
     }
     buffer<void, max_rank> src = dst;
