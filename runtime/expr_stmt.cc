@@ -418,14 +418,13 @@ stmt call_stmt::make(call_stmt::callable target, symbol_list inputs, symbol_list
   return stmt(n);
 }
 
-stmt copy_stmt::make(
-    var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, std::optional<std::vector<char>> padding) {
+stmt copy_stmt::make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad) {
   auto n = new copy_stmt();
   n->src = src;
   n->src_x = std::move(src_x);
   n->dst = dst;
   n->dst_x = std::move(dst_x);
-  n->padding = std::move(padding);
+  n->pad = pad;
   return stmt(n);
 }
 

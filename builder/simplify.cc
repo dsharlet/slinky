@@ -1426,6 +1426,7 @@ public:
   void visit(const copy_stmt* op) override {
     var src = visit_symbol(op->src);
     var dst = visit_symbol(op->dst);
+    var pad = visit_symbol(op->pad);
 
     std::vector<scoped_value_in_symbol_map<expr_info>> decls;
     for (var i : op->dst_x) {
@@ -1440,8 +1441,8 @@ public:
       changed = changed || !src_x.back().same_as(i);
     }
 
-    if (changed || src != op->src || dst != op->dst) {
-      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->padding));
+    if (changed || src != op->src || dst != op->dst || pad != op->pad) {
+      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->pad));
     } else {
       set_result(op);
     }

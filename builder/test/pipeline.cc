@@ -1007,7 +1007,8 @@ TEST_P(padded_stencil, pipeline) {
   var y(ctx, "y");
 
   func add = func::make(add_1<short>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
-  func padded = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {padded_intm, {x, y}}, {{6, 0}});
+  func padded = func::make_copy(
+      {intm, {point(x), point(y)}, in->bounds()}, {padded_intm, {x, y}}, {buffer_expr::make<short>(ctx, "padding", 6)});
   func stencil = func::make(sum3x3<short>, {{padded_intm, {bounds(-1, 1) + x, bounds(-1, 1) + y}}}, {{out, {x, y}}});
 
   switch (schedule) {
@@ -1117,7 +1118,8 @@ TEST_P(padded_stencil_separable, pipeline) {
       },
       {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, call_stmt::attributes{.name = "add"});
   // transpose so we compute the stencil in x.
-  func padded_t = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {padded_intm_t, {y, x}}, {{6, 0}});
+  func padded_t = func::make_copy({intm, {point(x), point(y)}, in->bounds()}, {padded_intm_t, {y, x}},
+      {buffer_expr::make<short>(ctx, "padding", 6)});
   func stencil_x = func::make(
       [&](const buffer<const short>& a, const buffer<short>& b) -> index_t {
         if (require_dense_x) {

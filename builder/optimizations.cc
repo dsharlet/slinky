@@ -155,7 +155,7 @@ public:
       set_result(op);
       return;
     }
-    if (!op->padding || op->padding->empty()) {
+    if (!op->pad.defined()) {
       // No padding, this copy is now a no-op.
       set_result(stmt());
       return;
@@ -567,7 +567,7 @@ public:
     }
 
     // If there is no padding, we can assume that the src is always in bounds of dst.
-    a.assume_in_bounds = !op->padding || op->padding->empty();
+    a.assume_in_bounds = !op->pad.defined();
 
     a.elem_size = buffer_elem_size(op->src);
 
@@ -1052,17 +1052,18 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
   call_stmt::attributes copy_attrs;
   copy_attrs.name = "copy";
   stmt result = call_stmt::make(
-      [padding = op->padding](const call_stmt* op, const eval_context& ctx) -> index_t {
+      [](const call_stmt* op, const eval_context& ctx) -> index_t {
         // TODO: This passes the src buffer as an output, not an input, because slinky thinks the bounds of inputs
         // don't matter. But in this case, they do...
         const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
         const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-        raw_buffer pad_buf = raw_buffer::make_scalar_ref(
-            dst_buf->elem_size, (!padding || padding->empty()) ? nullptr : const_cast<char*>(padding->data()));
-        ctx.config->copy(*src_buf, *dst_buf, &pad_buf);
+        const raw_buffer* pad_buf = op->outputs[2].defined() ? ctx.lookup_buffer(op->outputs[2]) : nullptr;
+        assert(src_buf);
+        assert(dst_buf);
+        ctx.config->copy(*src_buf, *dst_buf, pad_buf);
         return 0;
       },
-      {}, {op->src, dst}, std::move(copy_attrs));
+      {}, {op->src, dst, op->pad}, std::move(copy_attrs));
 
   std::vector<expr> src_x = op->src_x;
   std::vector<var> dst_x = op->dst_x;

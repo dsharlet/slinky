@@ -231,7 +231,7 @@ public:
     if (!try_match(cs->src_x, op->src_x)) return;
     if (!try_match(cs->dst, op->dst)) return;
     if (!try_match(cs->dst_x, op->dst_x)) return;
-    if (!try_match(cs->padding, op->padding)) return;
+    if (!try_match(cs->pad, op->pad)) return;
   }
 
   void visit(const allocate* op) override {
@@ -647,6 +647,7 @@ void substitutor::visit(const call_stmt* op) {
 void substitutor::visit(const copy_stmt* op) {
   var src = visit_symbol(op->src);
   var dst = visit_symbol(op->dst);
+  var pad = visit_symbol(op->pad);
 
   std::size_t decls_entered = 0;
   // copy_stmt is effectively a declaration of the dst_x symbols for the src_x expressions.
@@ -670,8 +671,8 @@ void substitutor::visit(const copy_stmt* op) {
     changed = changed || !src_x[i].same_as(op->src_x[i]);
   }
   exit_decls(decls_entered);
-  if (changed || src != op->src || dst != op->dst) {
-    set_result(copy_stmt::make(src, std::move(src_x), dst, std::move(dst_x), op->padding));
+  if (changed || src != op->src || dst != op->dst || pad != op->pad) {
+    set_result(copy_stmt::make(src, std::move(src_x), dst, std::move(dst_x), op->pad));
   } else {
     set_result(op);
   }

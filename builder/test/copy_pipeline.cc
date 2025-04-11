@@ -83,7 +83,7 @@ TEST_P(padded_copy, pipeline) {
   func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
   func crop = func::make_copy(
       {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
-      {padded_intm, {x, y}}, {3});
+      {padded_intm, {x, y}}, {buffer_expr::make<char>(ctx, "padding", 3)});
   func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (split_y > 0) {
@@ -167,7 +167,8 @@ TEST_P(copy_sequence, pipeline) {
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
       return func::make_copy(
-          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, static_cast<char>(stage));
+          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, {
+        buffer_expr::make<char>(ctx, "padding", stage)});
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }

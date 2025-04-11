@@ -322,8 +322,8 @@ public:
 
   void visit(const copy_stmt* n) override {
     *this << indent() << "copy(" << n->src << ", {" << n->src_x << "}, " << n->dst << ", {" << n->dst_x << "}";
-    if (n->padding) {
-      *this << ", {" << *n->padding << "}";
+    if (n->pad.defined()) {
+      *this << ", " << n->pad;
     }
     *this << ")\n";
   }

@@ -90,12 +90,11 @@ func::func(
   add_this_to_buffers();
 }
 
-func::func(input input, output out, std::optional<std::vector<char>> padding)
-    : func(nullptr, {std::move(input)}, {std::move(out)}) {
-  padding_ = std::move(padding);
+func::func(input src, output dst, input pad) : func(nullptr, {std::move(src), std::move(pad)}, {std::move(dst)}) {
+  is_padded_copy_ = true;
 }
 
-func::func(std::vector<input> inputs, output out) : func(nullptr, std::move(inputs), {std::move(out)}) {}
+func::func(std::vector<input> src, output dst) : func(nullptr, std::move(src), {std::move(dst)}) {}
 
 func::func(func&& m) noexcept { *this = std::move(m); }
 func& func::operator=(func&& m) noexcept {
@@ -106,7 +105,7 @@ func& func::operator=(func&& m) noexcept {
   outputs_ = std::move(m.outputs_);
   loops_ = std::move(m.loops_);
   compute_at_ = std::move(m.compute_at_);
-  padding_ = std::move(m.padding_);
+  is_padded_copy_ = m.is_padded_copy_;
   attrs_ = std::move(m.attrs_);
   user_data_ = m.user_data_;
   add_this_to_buffers();
@@ -137,6 +136,31 @@ stmt func::make_call() const {
       outputs.push_back(i.sym());
     }
     return call_stmt::make(impl_, std::move(inputs), std::move(outputs), attrs_);
+  } else if (is_padded_copy_) {
+    assert(inputs_.size() == 2);
+    assert(outputs_.size() == 1);
+    const func::input& input = inputs_[0];
+    const func::input& padding = inputs_[1];
+    std::vector<expr> src_x;
+    std::vector<var> dst_x;
+    for (const interval_expr& i : input.bounds) {
+      assert(match(i.min, i.max));
+      src_x.push_back(i.min);
+    }
+    for (const var& i : outputs_[0].dims) {
+      dst_x.push_back(i);
+    }
+    stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding.sym());
+    if (!input.input_crop.empty()) {
+      copy = crop_buffer::make(inputs_[0].sym(), inputs_[0].sym(), input.input_crop, copy);
+    }
+    if (!input.output_crop.empty()) {
+      copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
+    }
+    if (!input.output_slice.empty()) {
+      copy = slice_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_slice, copy);
+    }
+    return copy;
   } else {
     std::vector<stmt> copies;
     for (const func::input& input : inputs_) {
@@ -150,7 +174,7 @@ stmt func::make_call() const {
       for (const var& i : outputs_[0].dims) {
         dst_x.push_back(i);
       }
-      stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding_);
+      stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, var());
       if (!input.input_crop.empty()) {
         copy = crop_buffer::make(inputs_[0].sym(), inputs_[0].sym(), input.input_crop, copy);
       }
@@ -166,20 +190,20 @@ stmt func::make_call() const {
   }
 }
 
-func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t dim, std::vector<expr> bounds) {
-  assert(in.size() + 1 == bounds.size());
-  std::size_t rank = out.buffer->rank();
+func func::make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds) {
+  assert(src.size() + 1 == bounds.size());
+  std::size_t rank = dst.buffer->rank();
 
   std::vector<func::input> inputs;
-  for (std::size_t i = 0; i < in.size(); ++i) {
+  for (std::size_t i = 0; i < src.size(); ++i) {
     // Prepare the input.
-    assert(in[i]->rank() == rank);
+    assert(src[i]->rank() == rank);
     func::input input;
 
-    input.buffer = in[i];
+    input.buffer = src[i];
     input.bounds.resize(rank);
     for (std::size_t d = 0; d < rank; ++d) {
-      input.bounds[d] = point(out.dims[d]);
+      input.bounds[d] = point(dst.dims[d]);
     }
     // We translate the input by the bounds to make concatenation a bit more natural (the concatenated buffers will
     // start at index 0 in the concatenated dimension).
@@ -195,24 +219,24 @@ func func::make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t 
 
     inputs.push_back(std::move(input));
   }
-  return make_copy(std::move(inputs), std::move(out));
+  return make_copy(std::move(inputs), std::move(dst));
 }
 
-func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t dim) {
-  std::size_t rank = out.buffer->rank();
-  assert(out.dims.size() == rank);
+func func::make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim) {
+  std::size_t rank = dst.buffer->rank();
+  assert(dst.dims.size() == rank);
   assert(rank > 0);
   dim = std::min(rank - 1, dim);
 
   std::vector<func::input> inputs;
-  for (std::size_t i = 0; i < in.size(); ++i) {
+  for (std::size_t i = 0; i < src.size(); ++i) {
     // Prepare the input.
-    assert(in[i]->rank() + 1 == rank);
+    assert(src[i]->rank() + 1 == rank);
     func::input input;
-    input.buffer = in[i];
+    input.buffer = src[i];
     input.bounds.resize(rank);
     for (std::size_t d = 0; d < rank; ++d) {
-      input.bounds[d] = point(out.dims[d]);
+      input.bounds[d] = point(dst.dims[d]);
     }
 
     // Remove the stack dimension of the output from the input bounds, and slice the output at this point.
@@ -223,8 +247,8 @@ func func::make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t d
     inputs.push_back(std::move(input));
   }
   // Also apply the slice to the output dimensions.
-  out.dims.erase(out.dims.begin() + dim);
-  return make_copy(std::move(inputs), std::move(out));
+  dst.dims.erase(dst.dims.begin() + dim);
+  return make_copy(std::move(inputs), std::move(dst));
 }
 
 namespace {
@@ -534,8 +558,10 @@ stmt substitute_inputs(const stmt& s, const symbol_map<var>& subs) {
     }
 
     void visit(const copy_stmt* op) override {
-      if (subs[op->src]) {
-        set_result(copy_stmt::make(*subs[op->src], op->src_x, op->dst, op->dst_x, op->padding));
+      var src = subs[op->src] ? *subs[op->src] : op->src;
+      var pad = subs[op->pad] ? *subs[op->pad] : op->pad;
+      if (src != op->src || pad != op->pad) {
+        set_result(copy_stmt::make(src, op->src_x, op->dst, op->dst_x, pad));
       } else {
         set_result(op);
       }
@@ -812,7 +838,7 @@ class pipeline_builder {
           allocation_info_[b->sym()].emplace(b);
         }
 
-        if (!f->impl() && f->padding()) {
+        if (!f->impl() && f->is_padded_copy()) {
           // Collect all buffers which are outputs of the copy
           // and the inputs of the copy as their dependencies.
           copy_inputs_.insert(b->sym());
@@ -833,7 +859,7 @@ class pipeline_builder {
       for (const auto& i : f->inputs()) {
         const auto& input = i.buffer;
 
-        if ((!f->impl() && !f->padding()) || (input->constant())) {
+        if ((!f->impl() && !f->is_padded_copy()) || (input->constant())) {
           // Collect all buffers which are inputs to the copy
           // and the outputs of the copy as their dependencies.
           copy_inputs_.insert(input->sym());

@@ -332,9 +332,10 @@ public:
 
     if (!f.defined() && f.outputs().size() == 1) {
       std::string func_outputs = print(f.outputs()[0]);
-      if (f.padding()) {
+      if (f.is_padded_copy()) {
+        assert(f.inputs().size() == 2);
         std::string func_inputs = print(f.inputs()[0]);
-        std::string padding = print_vector(*f.padding());
+        std::string padding = print(f.inputs()[1]);
         (void)print_assignment_explicit(
             fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ", ", padding, ")");
       } else {

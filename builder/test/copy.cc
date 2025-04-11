@@ -62,7 +62,7 @@ TEST(trivial_1d, copy) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy = func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, static_cast<int>(0));
+  func copy = func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, {buffer_expr::make<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -105,7 +105,8 @@ TEST(trivial_2d, copy) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, static_cast<int>(0));
+  func copy = func::make_copy(
+      {in, {point(x), point(y)}, output_crop}, {out, {x, y}}, {buffer_expr::make<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -192,8 +193,8 @@ TEST(padded, copy) {
   int padding_x = 3;
   int padding_y = 2;
 
-  func copy = func::make_copy(
-      {in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}}, static_cast<int>(0));
+  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}},
+      {buffer_expr::make<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -238,8 +239,8 @@ TEST(custom_pad, copy) {
   const int x_max = 8;
   const int y_min = 2;
   const int y_max = 4;
-  func copy =
-      func::make_copy({in, {point(x), point(y)}, {{x_min, x_max}, {y_min, y_max}}}, {out, {x, y}}, static_cast<int>(0));
+  func copy = func::make_copy({in, {point(x), point(y)}, {{x_min, x_max}, {y_min, y_max}}}, {out, {x, y}},
+      {buffer_expr::make<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
