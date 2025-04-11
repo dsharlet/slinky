@@ -66,10 +66,7 @@ public:
       dims[d] = dim::broadcast();
     }
 
-    auto value = raw_buffer::make(Rank, sizeof(T), dims);
-    assert(value->size_bytes() == sizeof(T));
-    memcpy(value->base, &c->value, sizeof(T));
-    result = buffer_expr::make(ctx, "c" + std::to_string(c->value), std::move(value));
+    result = buffer_expr::make_scalar<T>(ctx, "c" + std::to_string(c->value), c->value);
     constants.push_back(result);
   }
 

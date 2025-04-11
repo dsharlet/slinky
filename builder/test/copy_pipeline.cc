@@ -51,12 +51,16 @@ TEST(flip_y, pipeline) {
   ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
 }
 
-class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, int>> {};
+class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, int, bool>> {};
 
 auto offsets = testing::Values(0, 1, -1, 10, -10);
+auto no_offset = testing::Values(0);
 
-INSTANTIATE_TEST_SUITE_P(offsets, padded_copy,
-    testing::Combine(offsets, offsets, testing::Bool(), testing::Values(0, 1, 2)),
+INSTANTIATE_TEST_SUITE_P(offsets_x, padded_copy,
+    testing::Combine(offsets, no_offset, testing::Bool(), testing::Values(0, 1, 2), testing::Bool()),
+    test_params_to_string<padded_copy::ParamType>);
+INSTANTIATE_TEST_SUITE_P(offsets_y, padded_copy,
+    testing::Combine(no_offset, offsets, testing::Bool(), testing::Values(0, 1, 2), testing::Bool()),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
@@ -64,6 +68,16 @@ TEST_P(padded_copy, pipeline) {
   int offset_y = std::get<1>(GetParam());
   bool in_bounds = std::get<2>(GetParam());
   int split_y = std::get<3>(GetParam());
+  bool compute_padding = std::get<4>(GetParam());
+
+  auto padding_value = [=](index_t x, index_t y) -> char {
+    if (compute_padding) {
+      return static_cast<char>(y * 2 + x);
+    } else {
+      return 3;
+    }
+  };
+
   std::vector<int> permutation = {0, 1};
   if (std::get<3>(GetParam())) {
     std::swap(permutation[0], permutation[1]);
@@ -76,14 +90,33 @@ TEST_P(padded_copy, pipeline) {
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(char));
   auto intm = buffer_expr::make(ctx, "intm", 2, sizeof(char));
   auto padded_intm = buffer_expr::make(ctx, "padded_intm", 2, sizeof(char));
+  buffer_expr_ptr padding;
+  if (compute_padding) {
+    padding = buffer_expr::make(ctx, "padding", 2, sizeof(char));
+  } else {
+    padding = buffer_expr::make_scalar<char>(ctx, "padding", 3);
+  }
 
   var x(ctx, "x");
   var y(ctx, "y");
 
   func copy_in = func::make(copy_2d<char>, {{in, {point(x), point(y)}}}, {{intm, {x, y}}});
+  func padding_func;
+  if (compute_padding) {
+    auto iota2 = [=](const buffer<char>& out) -> slinky::index_t {
+      assert(out.rank == 2);
+      for (index_t y = out.dim(1).begin(); y != out.dim(1).end(); ++y) {
+        for (index_t x = out.dim(0).begin(); x != out.dim(0).end(); ++x) {
+          out(x, y) = padding_value(x, y);
+        }
+      }
+      return 0;
+    };
+    padding_func = func::make(std::move(iota2), {}, {{padding, {x, y}}});
+  }
   func crop = func::make_copy(
       {intm, permute<interval_expr>(permutation, {point(x + offset_x), point(y + offset_y)}), in->bounds()},
-      {padded_intm, {x, y}}, {3});
+      {padded_intm, {x, y}}, {padding, {point(x), point(y)}});
   func copy_out = func::make(copy_2d<char>, {{padded_intm, {point(x), point(y)}}}, {{out, {x, y}}});
 
   if (split_y > 0) {
@@ -117,12 +150,16 @@ TEST_P(padded_copy, pipeline) {
       if (in_buf.contains(permute<index_t>(permutation, {x + offset_x, y + offset_y}))) {
         ASSERT_EQ(out_buf(x, y), in_buf(permute<index_t>(permutation, {x + offset_x, y + offset_y})));
       } else {
-        ASSERT_EQ(out_buf(x, y), 3);
+        ASSERT_EQ(out_buf(x, y), padding_value(x, y));
       }
     }
   }
 
-  ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
+  if (compute_padding) {
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char), W * H * sizeof(char)));
+  } else {
+    ASSERT_THAT(eval_ctx.heap.allocs, testing::UnorderedElementsAre(W * H * sizeof(char)));
+  }
   ASSERT_EQ(eval_ctx.copy_calls, split_y == 0 ? 1 : ceil_div(H, split_y));
 }
 
@@ -166,8 +203,8 @@ TEST_P(copy_sequence, pipeline) {
   // If the pad mask is one for that stage, we add padding outside the region [1, 4].
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
-      return func::make_copy(
-          {src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}}, static_cast<char>(stage));
+      return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}},
+          {buffer_expr::make_scalar<char>(ctx, "padding", stage)});
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
@@ -223,7 +260,9 @@ TEST_P(copy_sequence, pipeline) {
 
 class copied_output : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, copied_output, testing::Combine(testing::Range(0, 3), offsets, offsets),
+INSTANTIATE_TEST_SUITE_P(offset_x, copied_output, testing::Combine(testing::Range(0, 3), offsets, no_offset),
+    test_params_to_string<copied_output::ParamType>);
+INSTANTIATE_TEST_SUITE_P(offset_y, copied_output, testing::Combine(testing::Range(0, 3), no_offset, offsets),
     test_params_to_string<copied_output::ParamType>);
 
 TEST_P(copied_output, pipeline) {
@@ -295,7 +334,9 @@ TEST_P(copied_output, pipeline) {
 
 class copied_input : public testing::TestWithParam<std::tuple<int, int, int>> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, copied_input, testing::Combine(testing::Range(0, 3), offsets, offsets),
+INSTANTIATE_TEST_SUITE_P(offset_x, copied_input, testing::Combine(testing::Range(0, 3), offsets, no_offset),
+    test_params_to_string<copied_input::ParamType>);
+INSTANTIATE_TEST_SUITE_P(offset_y, copied_input, testing::Combine(testing::Range(0, 3), no_offset, offsets),
     test_params_to_string<copied_input::ParamType>);
 
 TEST_P(copied_input, pipeline) {
@@ -708,7 +749,7 @@ TEST_P(broadcasted_elementwise, constant) {
   init_random(in2_buf);
 
   auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
-  auto in2 = buffer_expr::make(ctx, "in2", raw_buffer::make_copy(in2_buf));
+  auto in2 = buffer_expr::make_constant(ctx, "in2", raw_buffer::make_copy(in2_buf));
   auto in2_broadcasted = buffer_expr::make(ctx, "in2_broadcasted", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 

@@ -62,7 +62,8 @@ TEST(trivial_1d, copy) {
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy = func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, static_cast<int>(0));
+  func copy =
+      func::make_copy({in, {point(x)}, output_crop}, {out, {x}}, {buffer_expr::make_scalar<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -99,15 +100,16 @@ TEST(trivial_2d, copy) {
 
   auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+  auto pad = buffer_expr::make(ctx, "pad", 2, sizeof(int));
 
   var x(ctx, "x");
   var y(ctx, "y");
 
   // Crop the output to the intersection of the input and output buffer.
   box_expr output_crop = in->bounds() & out->bounds();
-  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, static_cast<int>(0));
+  func copy = func::make_copy({in, {point(x), point(y)}, output_crop}, {out, {x, y}}, {pad, {point(x), point(y)}});
 
-  pipeline p = build_pipeline(ctx, {in}, {out});
+  pipeline p = build_pipeline(ctx, {in, pad}, {out});
 
   // Run the pipeline.
   const int H = 20;
@@ -115,27 +117,36 @@ TEST(trivial_2d, copy) {
   buffer<int, 2> out_buf({W, H});
   out_buf.allocate();
 
-  for (int offset : {0, -4, 3}) {
-    buffer<int, 2> in_buf({W, H});
-    in_buf.translate(0, offset);
-    init_random(in_buf);
+  for (int pad_non_broadcast_dim : {-1, 0, 1}) {
+    buffer<int, 2> pad_buf({W, H});
+    for (int d = 0; d < 2; ++d) {
+      if (d == pad_non_broadcast_dim) continue;
+      pad_buf.dim(d).set_stride(0);
+    }
+    init_random(pad_buf);
 
-    const raw_buffer* inputs[] = {&in_buf};
-    const raw_buffer* outputs[] = {&out_buf};
-    test_context eval_ctx;
-    p.evaluate(inputs, outputs, eval_ctx);
+    for (int offset : {0, -4, 3}) {
+      buffer<int, 2> in_buf({W, H});
+      in_buf.translate(0, offset);
+      init_random(in_buf);
 
-    for (int y = 0; y < H; ++y) {
-      for (int x = 0; x < W; ++x) {
-        if (in_buf.contains(x, y)) {
-          ASSERT_EQ(out_buf(x, y), in_buf(x, y));
-        } else {
-          ASSERT_EQ(out_buf(x, y), 0);
+      const raw_buffer* inputs[] = {&in_buf, &pad_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      test_context eval_ctx;
+      p.evaluate(inputs, outputs, eval_ctx);
+
+      for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+          if (in_buf.contains(x, y)) {
+            ASSERT_EQ(out_buf(x, y), in_buf(x, y));
+          } else {
+            ASSERT_EQ(out_buf(x, y), pad_buf(x, y));
+          }
         }
       }
-    }
 
-    ASSERT_EQ(eval_ctx.copy_calls, 1);
+      ASSERT_EQ(eval_ctx.copy_calls, 1);
+    }
   }
 }
 
@@ -192,8 +203,8 @@ TEST(padded, copy) {
   int padding_x = 3;
   int padding_y = 2;
 
-  func copy = func::make_copy(
-      {in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}}, static_cast<int>(0));
+  func copy = func::make_copy({in, {point(x) - padding_x, point(y) - padding_y}, in->bounds()}, {out, {x, y}},
+      {buffer_expr::make_scalar<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -238,8 +249,8 @@ TEST(custom_pad, copy) {
   const int x_max = 8;
   const int y_min = 2;
   const int y_max = 4;
-  func copy =
-      func::make_copy({in, {point(x), point(y)}, {{x_min, x_max}, {y_min, y_max}}}, {out, {x, y}}, static_cast<int>(0));
+  func copy = func::make_copy({in, {point(x), point(y)}, {{x_min, x_max}, {y_min, y_max}}}, {out, {x, y}},
+      {buffer_expr::make_scalar<int>(ctx, "padding", 0)});
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 

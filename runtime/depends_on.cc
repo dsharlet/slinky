@@ -170,9 +170,14 @@ public:
     if (depends_on_result* deps = find_deps(op->src)) {
       deps->var = true;
       deps->buffer_src = true;
-      if (op->padding) {
+      if (op->pad.defined()) {
         deps->buffer_bounds = true;
       }
+      deps->buffer_dims = true;
+    }
+    if (depends_on_result* deps = find_deps(op->pad)) {
+      deps->var = true;
+      deps->buffer_src = true;
       deps->buffer_dims = true;
     }
     if (depends_on_result* deps = find_deps(op->dst)) {

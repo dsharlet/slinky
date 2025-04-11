@@ -89,13 +89,15 @@ TEST(depends_on, basic) {
 TEST(depends_on, copy) {
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), x),
       (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {{3}}), x),
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, w), x),
       (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true, .buffer_bounds = true}));
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {}), y),
       (depends_on_result{.var = true, .buffer_dst = true, .buffer_dims = true, .buffer_bounds = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, {{3}}), y),
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, w), y),
       (depends_on_result{.var = true, .buffer_dst = true, .buffer_dims = true, .buffer_bounds = true}));
-  ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
+  ASSERT_EQ(depends_on(copy_stmt::make(x, {z}, y, {z}, w), w),
+      (depends_on_result{.var = true, .buffer_src = true, .buffer_dims = true}));
+    ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), z), (depends_on_result{}));
   ASSERT_EQ(depends_on(copy_stmt::make(x, {z + w}, y, {z}, {}), w), (depends_on_result{.var = true}));
 }
 

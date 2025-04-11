@@ -163,15 +163,12 @@ public:
   std::vector<expr> src_x;
   var dst;
   std::vector<var> dst_x;
-  // padding = nullopt => no padding
-  // padding = {} => padding is uninitialized
-  // padding = <elem_size bytes> => value to put in padding
-  std::optional<std::vector<char>> padding;
+  // If defined, the copy will be padded with the values from this buffer when `src` is out of bounds of `dst`.
+  var pad;
 
   void accept(stmt_visitor* v) const override;
 
-  static stmt make(
-      var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, std::optional<std::vector<char>> padding);
+  static stmt make(var src, std::vector<expr> src_x, var dst, std::vector<var> dst_x, var pad);
 
   static constexpr stmt_node_type static_type = stmt_node_type::copy_stmt;
 };
