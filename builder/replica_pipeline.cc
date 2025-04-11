@@ -163,7 +163,7 @@ public:
       }
       os_ << "  " << const_name << "->allocate();\n";
       os_ << "  std::uint8_t " << const_name << "_fill[" << elem_size << "] = { 0 };\n";
-      os_ << "  fill(*" << const_name << ", " << const_name << "_fill);\n";
+      os_ << "  copy(*raw_buffer::make_scalar(" << elem_size << ", " << const_name << "_fill), *" << const_name << ");\n";
       (void)print_assignment_explicit(name, "buffer_expr::make(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
     } else {
       (void)print_assignment_explicit(
