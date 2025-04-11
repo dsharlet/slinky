@@ -142,8 +142,10 @@ public:
   printer& operator<<(var sym) {
     if (context) {
       os << context->name(sym);
-    } else {
+    } else if (sym.defined()) {
       os << "<" + std::to_string(sym.id) << ">";
+    } else {
+      os << "<>";
     }
     return *this;
   }

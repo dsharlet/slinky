@@ -22,8 +22,10 @@ expr var::operator-() const { return -expr(*this); }
 std::string node_context::name(var v) const {
   if (v.id < sym_to_name.size()) {
     return sym_to_name[v.id];
-  } else {
+  } else if (v.defined()) {
     return "<" + std::to_string(v.id) + ">";
+  } else {
+    return "<>";
   }
 }
 
