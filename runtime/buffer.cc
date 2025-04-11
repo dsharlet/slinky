@@ -59,9 +59,7 @@ std::size_t raw_buffer::elem_count() const {
 
 raw_buffer_ptr raw_buffer::make(std::size_t rank, std::size_t elem_size, const class dim* dims) {
   std::size_t size = sizeof(raw_buffer) + sizeof(slinky::dim) * rank;
-  if (rank == 0) {
-    size += elem_size;
-  } else if (dims) {
+  if (rank == 0 || dims) {
     size += alloc_size(rank, elem_size, dims);
   }
   char* mem = reinterpret_cast<char*>(malloc(size));
