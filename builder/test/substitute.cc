@@ -18,6 +18,7 @@ var y(symbols, "y");
 var z(symbols, "z");
 var w(symbols, "w");
 var u(symbols, "u");
+var v(symbols, "v");
 
 MATCHER_P(matches, expected, "") { return match(arg, expected); }
 
@@ -60,6 +61,7 @@ TEST(substitute, shadowed) {
       substitute(copy_stmt::make(x, {y, z}, w, {y, z}, {}), y, z), matches(copy_stmt::make(x, {y, z}, w, {y, z}, {})));
   ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {y}, {}), y, z), matches(copy_stmt::make(x, {y}, w, {y}, {})));
   ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {z}, {}), y, u), matches(copy_stmt::make(x, {u}, w, {z}, {})));
+  ASSERT_THAT(substitute(copy_stmt::make(x, {y}, w, {z}, u), u, v), matches(copy_stmt::make(x, {y}, w, {z}, v)));
 }
 
 TEST(match, basic) {

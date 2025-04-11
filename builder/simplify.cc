@@ -1442,7 +1442,7 @@ public:
     }
 
     if (changed || src != op->src || dst != op->dst || pad != op->pad) {
-      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, op->pad));
+      set_result(copy_stmt::make(src, std::move(src_x), dst, op->dst_x, pad));
     } else {
       set_result(op);
     }
