@@ -103,8 +103,7 @@ TEST_P(trivial, pipeline) {
 class elementwise : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_schedule_mode, elementwise,
-    testing::Combine(loop_modes, testing::Range(0, 4), testing::Values(false, true)),
-    test_params_to_string<elementwise::ParamType>);
+    testing::Combine(loop_modes, testing::Range(0, 4), testing::Bool()), test_params_to_string<elementwise::ParamType>);
 
 // An example of two 1D elementwise operations in sequence.
 TEST_P(elementwise, pipeline_1d) {
@@ -254,7 +253,7 @@ TEST_P(elementwise, pipeline_2d) {
 
 class store_at : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(alias_in_place, store_at, testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(alias_in_place, store_at, testing::Bool());
 
 // An example of two 2D elementwise operations in sequence with intermediate buffer stored at
 // the inner loop level.
@@ -565,8 +564,8 @@ TEST_P(stencil, pipeline) {
 
 class slide_2d : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(split_split_mode, slide_2d,
-    testing::Combine(loop_modes, loop_modes, testing::Values(false, true)), test_params_to_string<slide_2d::ParamType>);
+INSTANTIATE_TEST_SUITE_P(split_split_mode, slide_2d, testing::Combine(loop_modes, loop_modes, testing::Bool()),
+    test_params_to_string<slide_2d::ParamType>);
 
 TEST_P(slide_2d, pipeline) {
   int max_workers_x = std::get<0>(GetParam());
@@ -753,7 +752,7 @@ TEST_P(multiple_outputs, pipeline) {
   func::callable<const int, int, int> sum_x_xy = [](const buffer<const int>& in, const buffer<int>& sum_x,
                                                      const buffer<int>& sum_xy) -> index_t {
     for (index_t z = std::min(sum_xy.dim(0).min(), sum_x.dim(1).min());
-        z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
+         z <= std::max(sum_xy.dim(0).max(), sum_x.dim(1).max()); ++z) {
       if (sum_xy.contains(z)) sum_xy(z) = 0;
       for (index_t y = sum_x.dim(0).min(); y <= sum_x.dim(0).max(); ++y) {
         if (sum_x.contains(y, z)) sum_x(y, z) = 0;
@@ -1074,7 +1073,7 @@ interval_expr dilate(interval_expr x, int dx) { return {x.min - dx, x.max + dx};
 class padded_stencil_separable : public testing::TestWithParam<std::tuple<bool, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(alias_schedule, padded_stencil_separable,
-    testing::Combine(testing::Values(true, false), testing::Range(0, 3)),
+    testing::Combine(testing::Bool(), testing::Range(0, 3)),
     test_params_to_string<padded_stencil_separable::ParamType>);
 
 TEST_P(padded_stencil_separable, pipeline) {

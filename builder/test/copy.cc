@@ -810,7 +810,7 @@ TEST(stack, copy) {
 
 class reshape : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(opaque, reshape, testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(opaque, reshape, testing::Bool());
 
 TEST_P(reshape, copy) {
   const bool opaque = GetParam();
@@ -890,7 +890,7 @@ TEST_P(reshape, copy) {
 
 class batch_reshape : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(opaque, batch_reshape, testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(opaque, batch_reshape, testing::Bool());
 
 TEST_P(batch_reshape, copy) {
   const bool opaque = GetParam();

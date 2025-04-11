@@ -14,7 +14,7 @@ namespace slinky {
 
 class may_alias : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(constrain, may_alias, testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(constrain, may_alias, testing::Bool());
 
 TEST_P(may_alias, transpose_input) {
   // Make the pipeline
@@ -324,12 +324,12 @@ TEST_P(may_alias, with_fold) {
 
   var x(ctx, "x");
 
-  func mul = func::make(multiply_2<int>, {{in, {point(x)}}}, {{intm, {x}}},
-      call_stmt::attributes{.allow_in_place = 0x1, .name = "mul"});
+  func mul = func::make(
+      multiply_2<int>, {{in, {point(x)}}}, {{intm, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "mul"});
   func mul2 = func::make(multiply_2<int>, {{intm, {point(x)}}}, {{intm2, {x}}},
       call_stmt::attributes{.allow_in_place = 0x1, .name = "mul2"});
-  func add = func::make(add_1<int>, {{intm2, {point(x)}}}, {{out, {x}}},
-      call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
+  func add = func::make(
+      add_1<int>, {{intm2, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
 
   add.loops({{x, 1, 1}});
 
@@ -423,8 +423,7 @@ TEST(split_output, cannot_alias) {
 
 class multiple_uses : public testing::TestWithParam<std::tuple<int, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(alias_split, multiple_uses,
-    testing::Combine(testing::Values(0, 1), testing::Values(false, true)),
+INSTANTIATE_TEST_SUITE_P(alias_split, multiple_uses, testing::Combine(testing::Values(0, 1), testing::Bool()),
     test_params_to_string<multiple_uses::ParamType>);
 
 TEST_P(multiple_uses, cannot_alias) {

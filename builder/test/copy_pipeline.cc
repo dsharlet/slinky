@@ -56,7 +56,7 @@ class padded_copy : public testing::TestWithParam<std::tuple<int, int, bool, int
 auto offsets = testing::Values(0, 1, -1, 10, -10);
 
 INSTANTIATE_TEST_SUITE_P(offsets, padded_copy,
-    testing::Combine(offsets, offsets, testing::Values(true, false), testing::Values(0, 1, 2)),
+    testing::Combine(offsets, offsets, testing::Bool(), testing::Values(0, 1, 2)),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
@@ -368,7 +368,7 @@ TEST_P(copied_input, pipeline) {
 
 class concatenated_output : public testing::TestWithParam<bool> {};
 
-INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output, testing::Values(true, false));
+INSTANTIATE_TEST_SUITE_P(schedule, concatenated_output, testing::Bool());
 
 TEST_P(concatenated_output, pipeline) {
   bool no_alias_buffers = GetParam();
@@ -437,8 +437,7 @@ class transposed_output : public testing::TestWithParam<std::tuple<bool, int, in
 
 auto iota3 = testing::Values(0, 1, 2);
 
-INSTANTIATE_TEST_SUITE_P(schedule, transposed_output,
-    testing::Combine(testing::Values(true, false), iota3, iota3, iota3),
+INSTANTIATE_TEST_SUITE_P(schedule, transposed_output, testing::Combine(testing::Bool(), iota3, iota3, iota3),
     test_params_to_string<transposed_output::ParamType>);
 
 TEST_P(transposed_output, pipeline) {
@@ -563,7 +562,7 @@ TEST(stacked_output, pipeline) {
 class broadcasted_elementwise : public testing::TestWithParam<std::tuple<bool, int, int>> {};
 
 INSTANTIATE_TEST_SUITE_P(dim, broadcasted_elementwise,
-    testing::Combine(testing::Values(true, false), testing::Range(0, 2), testing::Values(0, 1)),
+    testing::Combine(testing::Bool(), testing::Range(0, 2), testing::Values(0, 1)),
     test_params_to_string<broadcasted_elementwise::ParamType>);
 
 TEST_P(broadcasted_elementwise, input) {
@@ -759,7 +758,7 @@ TEST_P(broadcasted_elementwise, constant) {
 class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(dim, constrained_transpose,
-    testing::Combine(testing::Values(true, false), testing::Values(true, false), testing::Values(true, false)),
+    testing::Combine(testing::Bool(), testing::Bool(), testing::Bool()),
     test_params_to_string<constrained_transpose::ParamType>);
 
 TEST_P(constrained_transpose, pipeline) {
