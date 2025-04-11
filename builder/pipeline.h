@@ -228,8 +228,9 @@ private:
   template <typename ArgTypes, typename Fn, std::size_t... Indices>
   static SLINKY_ALWAYS_INLINE index_t call_impl_tuple(
       const Fn& impl, eval_context& ctx, const call_stmt* op, std::index_sequence<Indices...>) {
-    return impl(internal::buffer_converter<typename std::tuple_element<Indices, ArgTypes>::type>::convert(ctx.lookup_buffer(
-        Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()]))...);
+    return impl(
+        internal::buffer_converter<typename std::tuple_element<Indices, ArgTypes>::type>::convert(ctx.lookup_buffer(
+            Indices < op->inputs.size() ? op->inputs[Indices] : op->outputs[Indices - op->inputs.size()]))...);
   }
 
   template <typename Lambda>

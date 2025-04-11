@@ -147,8 +147,8 @@ TEST(evaluate, crop_dim) {
 
   evaluate(crop_dim::make(x, x, 0, {1, 3}, make_check(x, {3, 20})), ctx);
   evaluate(crop_dim::make(y, x, 0, {1, 3}, block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})), ctx);
-  evaluate(
-      crop_dim::make(y, x, 0, buffer_bounds(y, 0), block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})), ctx);
+  evaluate(crop_dim::make(y, x, 0, buffer_bounds(y, 0), block::make({make_check(x, {10, 20}), make_check(y, {3, 20})})),
+      ctx);
   ASSERT_EQ(buf_before, buf);
 }
 

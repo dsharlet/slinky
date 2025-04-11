@@ -18,7 +18,7 @@ namespace {
 
 template <typename T, typename... U>
 std::uintptr_t get_target(const std::function<T(U...)>& f) {
-  typedef T(*fn)(U...);
+  typedef T (*fn)(U...);
   return reinterpret_cast<std::uintptr_t>(f.template target<fn>());
 }
 

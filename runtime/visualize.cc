@@ -177,9 +177,7 @@ public:
     *this << "select(" << op->condition << ", " << op->true_value << ", " << op->false_value << ")";
   }
 
-  void visit(const call* op) override { 
-    *this << op->intrinsic << "(" << op->args << ")"; 
-  }
+  void visit(const call* op) override { *this << op->intrinsic << "(" << op->args << ")"; }
 
   void visit(const block* b) override {
     for (const auto& s : b->stmts) {

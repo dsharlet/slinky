@@ -23,9 +23,7 @@ void pipeline::setup(scalars args, buffers inputs, buffers outputs, eval_context
   }
 }
 
-void pipeline::setup(buffers inputs, buffers outputs, eval_context& ctx) const {
-  setup({}, inputs, outputs, ctx);
-}
+void pipeline::setup(buffers inputs, buffers outputs, eval_context& ctx) const { setup({}, inputs, outputs, ctx); }
 
 index_t pipeline::evaluate(eval_context& ctx) const { return slinky::evaluate(body, ctx); }
 

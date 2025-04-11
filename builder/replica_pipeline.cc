@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "builder/substitute.h"
 #include "builder/simplify.h"
+#include "builder/substitute.h"
 #include "runtime/print.h"
 
 namespace slinky {

@@ -6,7 +6,8 @@
 
 namespace slinky {
 
-// Where possible, replace `allocate` with `make_buffer` referring to another buffer with appropriate metadata for copies.
+// Where possible, replace `allocate` with `make_buffer` referring to another buffer with appropriate metadata for
+// copies.
 stmt alias_copies(const stmt& s, node_context& ctx, const std::vector<buffer_expr_ptr>& inputs,
     const std::vector<buffer_expr_ptr>& outputs);
 

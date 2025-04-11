@@ -344,7 +344,8 @@ bool is_pure(expr_ref x) {
 
 namespace {
 
-std::vector<var> keys(const std::map<var, depends_on_result>& m) { std::vector<var> result;
+std::vector<var> keys(const std::map<var, depends_on_result>& m) {
+  std::vector<var> result;
   result.reserve(m.size());
   for (const auto& i : m) {
     result.push_back(i.first);
@@ -373,7 +374,7 @@ std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output) {
   std::map<var, depends_on_result> deps;
   dependencies v(deps);
   if (s.defined()) s.accept(&v);
-  
+
   std::vector<var> result;
   result.reserve(deps.size());
   for (const auto& i : deps) {

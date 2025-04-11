@@ -71,7 +71,9 @@ stmt clone_with(const transpose* op, var sym, stmt new_body) {
   return transpose::make(sym, op->src, op->dims, std::move(new_body));
 }
 
-stmt clone_with(const let_stmt* op, stmt new_body) { return let_stmt::make(op->lets, std::move(new_body), op->is_closure); }
+stmt clone_with(const let_stmt* op, stmt new_body) {
+  return let_stmt::make(op->lets, std::move(new_body), op->is_closure);
+}
 
 stmt clone_with(const loop* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
 stmt clone_with(const allocate* op, stmt new_body) { return clone_with(op, op->sym, std::move(new_body)); }
@@ -186,7 +188,8 @@ void node_mutator::visit(const loop* op) {
   expr step = mutate(op->step);
   expr max_workers = mutate(op->max_workers);
   stmt body = mutate(op->body);
-  if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
+  if (bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) &&
+      body.same_as(op->body)) {
     set_result(op);
   } else {
     set_result(loop::make(op->sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));

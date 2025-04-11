@@ -60,7 +60,8 @@ test_context::test_context() {
 
   config.thread_pool = &threads;
 
-  // Many tests count the number of allocations that go on the heap, don't let memory_type::automatic corrupt those counts.
+  // Many tests count the number of allocations that go on the heap, don't let memory_type::automatic corrupt those
+  // counts.
   config.auto_stack_threshold = 0;
   // Similarly, alignment makes it hard to know the expected size of allocations.
   config.alignment = 1;
