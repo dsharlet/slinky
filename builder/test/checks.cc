@@ -37,8 +37,7 @@ TEST(pipeline, checks) {
   buffer<int, 1> in_buf({N});
   buffer<int, 1> out_buf({N});
   in_buf.allocate();
-  const int zero = 0;
-  fill(in_buf, &zero);
+  copy(scalar<int>(0), in_buf);
   out_buf.allocate();
 
   const raw_buffer* inputs[] = {&in_buf};
@@ -82,7 +81,7 @@ TEST(pipeline, unused_input) {
   buffer<int, 1> out_buf({N});
   in_buf.allocate();
   out_buf.allocate();
-  fill(in_buf, 2);
+  copy(scalar<int>(2), in_buf);
   // Leave unused uninitialized so we know if something accesses it (via msan).
 
   const raw_buffer* inputs[] = {&in_buf, &unused_buf};

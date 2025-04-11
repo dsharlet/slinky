@@ -1057,8 +1057,12 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         // don't matter. But in this case, they do...
         const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
         const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-        const void* pad_value = (!padding || padding->empty()) ? nullptr : padding->data();
-        ctx.config->copy(*src_buf, *dst_buf, pad_value);
+        raw_buffer pad_buf;
+        pad_buf.base = (!padding || padding->empty()) ? nullptr : const_cast<char*>(padding->data());
+        pad_buf.rank = 0;
+        pad_buf.elem_size = dst_buf->elem_size;
+        pad_buf.dims = nullptr;
+        ctx.config->copy(*src_buf, *dst_buf, &pad_buf);
         return 0;
       },
       {}, {op->src, dst}, std::move(copy_attrs));
