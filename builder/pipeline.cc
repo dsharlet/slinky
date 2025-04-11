@@ -125,6 +125,33 @@ void func::remove_this_from_buffers() {
   }
 }
 
+namespace {
+
+stmt make_copy_func(const func::input& src, const func::output& dst, var padding = var()) {
+  std::vector<expr> src_x;
+  std::vector<var> dst_x;
+  for (const interval_expr& i : src.bounds) {
+    assert(match(i.min, i.max));
+    src_x.push_back(i.min);
+  }
+  for (const var& i : dst.dims) {
+    dst_x.push_back(i);
+  }
+  stmt copy = copy_stmt::make(src.sym(), src_x, dst.sym(), dst_x, padding);
+  if (!src.input_crop.empty()) {
+    copy = crop_buffer::make(src.sym(), src.sym(), src.input_crop, copy);
+  }
+  if (!src.output_crop.empty()) {
+    copy = crop_buffer::make(dst.sym(), dst.sym(), src.output_crop, copy);
+  }
+  if (!src.output_slice.empty()) {
+    copy = slice_buffer::make(dst.sym(), dst.sym(), src.output_slice, copy);
+  }
+  return copy;
+}
+
+}  // namespace
+
 stmt func::make_call() const {
   if (impl_) {
     call_stmt::symbol_list inputs;
@@ -139,52 +166,12 @@ stmt func::make_call() const {
   } else if (is_padded_copy_) {
     assert(inputs_.size() == 2);
     assert(outputs_.size() == 1);
-    const func::input& input = inputs_[0];
-    const func::input& padding = inputs_[1];
-    std::vector<expr> src_x;
-    std::vector<var> dst_x;
-    for (const interval_expr& i : input.bounds) {
-      assert(match(i.min, i.max));
-      src_x.push_back(i.min);
-    }
-    for (const var& i : outputs_[0].dims) {
-      dst_x.push_back(i);
-    }
-    stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, padding.sym());
-    if (!input.input_crop.empty()) {
-      copy = crop_buffer::make(inputs_[0].sym(), inputs_[0].sym(), input.input_crop, copy);
-    }
-    if (!input.output_crop.empty()) {
-      copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
-    }
-    if (!input.output_slice.empty()) {
-      copy = slice_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_slice, copy);
-    }
-    return copy;
+    return make_copy_func(inputs_[0], outputs_[0], inputs_[1].sym());
   } else {
     std::vector<stmt> copies;
+    assert(outputs_.size() == 1);
     for (const func::input& input : inputs_) {
-      assert(outputs_.size() == 1);
-      std::vector<expr> src_x;
-      std::vector<var> dst_x;
-      for (const interval_expr& i : input.bounds) {
-        assert(match(i.min, i.max));
-        src_x.push_back(i.min);
-      }
-      for (const var& i : outputs_[0].dims) {
-        dst_x.push_back(i);
-      }
-      stmt copy = copy_stmt::make(input.sym(), src_x, outputs_[0].sym(), dst_x, var());
-      if (!input.input_crop.empty()) {
-        copy = crop_buffer::make(inputs_[0].sym(), inputs_[0].sym(), input.input_crop, copy);
-      }
-      if (!input.output_crop.empty()) {
-        copy = crop_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_crop, copy);
-      }
-      if (!input.output_slice.empty()) {
-        copy = slice_buffer::make(outputs_[0].sym(), outputs_[0].sym(), input.output_slice, copy);
-      }
-      copies.push_back(copy);
+      copies.push_back(make_copy_func(input, outputs_[0]));
     }
     return block::make(std::move(copies));
   }
