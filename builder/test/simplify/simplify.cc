@@ -609,16 +609,16 @@ TEST(simplify, allocate) {
   // Pull statements that don't use the buffer out of allocate nodes.
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
                   block::make({check::make(y), check::make(buffer_at(x)), check::make(z)}))),
-      matches(block::make(
-          {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x))),
-              check::make(z)})));
+      matches(block::make({check::make(y),
+          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x))),
+          check::make(z)})));
 
   // Make sure clone_buffer doesn't hide uses of buffers or bounds.
   ASSERT_THAT(simplify(allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, 5}},
                   block::make({check::make(y), clone_buffer::make(w, x, check::make(buffer_at(w))), check::make(z)}))),
-      matches(block::make(
-          {check::make(y), allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x))),
-              check::make(z)})));
+      matches(block::make({check::make(y),
+          allocate::make(x, memory_type::heap, 1, {{bounds(2, 3), 4, expr()}}, check::make(buffer_at(x))),
+          check::make(z)})));
 }
 
 TEST(simplify, crop) {

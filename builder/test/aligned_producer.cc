@@ -11,7 +11,7 @@ namespace slinky {
 class aligned_producer : public testing::TestWithParam<std::tuple<int, int, bool>> {};
 
 INSTANTIATE_TEST_SUITE_P(split_mode, aligned_producer,
-    testing::Combine(testing::Range(2, 4), testing::Range(0, 5), testing::Values(true, false)),
+    testing::Combine(testing::Range(2, 4), testing::Range(0, 5), testing::Bool()),
     test_params_to_string<aligned_producer::ParamType>);
 
 // An example of two 1D elementwise operations in sequence.

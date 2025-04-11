@@ -294,7 +294,8 @@ TEST_P(elementwise, exp2_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 
 TEST_P(elementwise, exp3_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x))); }
 TEST_P(elementwise, exp4_horners) { test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x)))); }
 TEST_P(elementwise, exp8_horners) {
-  test_expr_pipeline<int, 1>(ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
+  test_expr_pipeline<int, 1>(
+      ctx, GetParam(), 1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x * (1 + x))))))));
 }
 
 }  // namespace slinky

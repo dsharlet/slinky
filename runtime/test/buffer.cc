@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <chrono>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -781,8 +781,7 @@ TEST(buffer, for_each_element_fuzz) {
       buf.allocate();
     }
     for_each_element([](const void*, const void*, const void*) {}, bufs[0], bufs[1], bufs[2]);
-    for_each_contiguous_slice(
-        bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
+    for_each_contiguous_slice(bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
   }
 }
 

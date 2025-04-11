@@ -221,8 +221,7 @@ void BM_for_each_contiguous_slice_2x(benchmark::State& state) {
   copy(scalar<char>(42), src);
 
   for (auto _ : state) {
-    for_each_contiguous_slice(
-        dst, [&](index_t, const void*, const void*) {}, src);
+    for_each_contiguous_slice(dst, [&](index_t, const void*, const void*) {}, src);
   }
 }
 

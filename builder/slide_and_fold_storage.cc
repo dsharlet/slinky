@@ -244,9 +244,7 @@ public:
   symbol_map<interval_expr>& current_expr_bounds() { return *loops.back().expr_bounds; }
   symbol_map<modulus_remainder<index_t>>& current_expr_alignment() { return *loops.back().expr_alignment; }
 
-  slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) {
-    loops.emplace_back(loop_info());
-  }
+  slide_and_fold(node_context& ctx) : ctx(ctx), x(ctx.insert_unique("_x")) { loops.emplace_back(loop_info()); }
 
   stmt mutate(const stmt& s) override {
     stmt result = stmt_mutator::mutate(s);

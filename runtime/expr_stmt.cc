@@ -1,6 +1,6 @@
 #include "runtime/expr.h"
-#include "runtime/stmt.h"
 #include "runtime/print.h"
+#include "runtime/stmt.h"
 
 #include <algorithm>
 #include <cassert>
@@ -124,7 +124,7 @@ expr::expr(std::int64_t x) : expr(make_constant(x)) {}
 expr::expr(var sym) : expr(make_variable(sym)) {}
 
 expr variable::make(var sym) { return expr(make_variable(sym)); }
-expr variable::make(var sym, buffer_field field, int dim) { 
+expr variable::make(var sym, buffer_field field, int dim) {
   variable* n = new variable();
   n->sym = sym;
   n->field = field;
@@ -649,24 +649,20 @@ bool is_variable(expr_ref x, var b, buffer_field field, int dim) {
 expr abs(expr x) { return call::make(intrinsic::abs, {std::move(x)}); }
 expr align_down(expr x, const expr& a) { return (std::move(x) / a) * a; }
 expr align_up(expr x, const expr& a) { return ((std::move(x) + a - 1) / a) * a; }
-interval_expr align(interval_expr x, const expr& a) { return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1}; }
+interval_expr align(interval_expr x, const expr& a) {
+  return {align_down(std::move(x.min), a), align_up(std::move(x.max) + 1, a) - 1};
+}
 
 expr and_then(expr a, expr b) { return call::make(intrinsic::and_then, {std::move(a), std::move(b)}); }
 expr or_else(expr a, expr b) { return call::make(intrinsic::or_else, {std::move(a), std::move(b)}); }
 
-expr buffer_rank(var buf) {
-  return variable::make(buf, buffer_field::rank);
-}
+expr buffer_rank(var buf) { return variable::make(buf, buffer_field::rank); }
 expr buffer_elem_size(var buf) { return variable::make(buf, buffer_field::elem_size); }
 expr buffer_min(var buf, int dim) { return variable::make(buf, buffer_field::min, dim); }
 expr buffer_max(var buf, int dim) { return variable::make(buf, buffer_field::max, dim); }
 expr buffer_extent(var buf, int dim) { return (buffer_max(buf, dim) - buffer_min(buf, dim)) + 1; }
-expr buffer_stride(var buf, int dim) {
-  return variable::make(buf, buffer_field::stride, dim);
-}
-expr buffer_fold_factor(var buf, int dim) {
-  return variable::make(buf, buffer_field::fold_factor, dim);
-}
+expr buffer_stride(var buf, int dim) { return variable::make(buf, buffer_field::stride, dim); }
+expr buffer_fold_factor(var buf, int dim) { return variable::make(buf, buffer_field::fold_factor, dim); }
 
 interval_expr buffer_bounds(var buf, int dim) { return {buffer_min(buf, dim), buffer_max(buf, dim)}; }
 dim_expr buffer_dim(var buf, int dim) {
@@ -714,7 +710,6 @@ box_expr dims_bounds(span<const dim_expr> dims) {
   }
   return result;
 }
-
 
 const expr& dim_expr::get_field(buffer_field field) const {
   switch (field) {
