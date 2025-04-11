@@ -383,11 +383,22 @@ public:
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);
 
-  // Make a buffer around a scalar value. The resulting buffer will have rank 0.
+  // Make a buffer around a scalar value. The resulting buffer will have rank 0. The result is a heap allocated
+  // buffer that contains a copy of the scalar value.
   static raw_buffer_ptr make_scalar(std::size_t elem_size, const void* value);
   template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
   static raw_buffer_ptr make_scalar(const T& value) {
     return make_scalar(sizeof(T), &value);
+  }
+
+  // Make a buffer around a scalar value. The resulting buffer will have rank 0. The result is a buffer that contains a
+  // pointer to the value.
+  static raw_buffer make_scalar_ref(std::size_t elem_size, void* value) {
+    return raw_buffer{value, elem_size, 0, nullptr};
+  }
+  template <typename T>
+  static raw_buffer make_scalar_ref(const T& value) {
+    return make_scalar_ref(sizeof(T), &value);
   }
 };
 
@@ -397,7 +408,7 @@ class scalar : public raw_buffer {
 public:
   T value;
 
-  scalar(const T& value = T()) : value(value) { 
+  scalar(const T& value = T()) : value(value) {
     base = &this->value;
     elem_size = sizeof(T);
     rank = 0;

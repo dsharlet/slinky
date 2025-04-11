@@ -1057,11 +1057,8 @@ stmt implement_copy(const copy_stmt* op, node_context& ctx) {
         // don't matter. But in this case, they do...
         const raw_buffer* src_buf = ctx.lookup_buffer(op->outputs[0]);
         const raw_buffer* dst_buf = ctx.lookup_buffer(op->outputs[1]);
-        raw_buffer pad_buf;
-        pad_buf.base = (!padding || padding->empty()) ? nullptr : const_cast<char*>(padding->data());
-        pad_buf.rank = 0;
-        pad_buf.elem_size = dst_buf->elem_size;
-        pad_buf.dims = nullptr;
+        raw_buffer pad_buf = raw_buffer::make_scalar_ref(
+            dst_buf->elem_size, (!padding || padding->empty()) ? nullptr : const_cast<char*>(padding->data()));
         ctx.config->copy(*src_buf, *dst_buf, &pad_buf);
         return 0;
       },
@@ -1278,7 +1275,8 @@ public:
     in_loop = sym;
     stmt body = mutate(op->body);
     in_loop = old_in_loop;
-    if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) && max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
+    if (sym == op->sym && bounds.same_as(op->bounds) && step.same_as(op->step) &&
+        max_workers.same_as(op->max_workers) && body.same_as(op->body)) {
       set_result(op);
     } else {
       set_result(loop::make(sym, std::move(max_workers), std::move(bounds), std::move(step), std::move(body)));
