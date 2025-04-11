@@ -48,14 +48,14 @@ test_context::test_context() {
     heap.track_free(b->size_bytes());
   };
 
-  config.copy = [this](const raw_buffer& src, const raw_buffer& dst, const void* padding) {
+  config.copy = [this](const raw_buffer& src, const raw_buffer& dst, const raw_buffer* pad) {
     ++copy_calls;
     copy_elements += dst.elem_count();
-    slinky::copy(src, dst, padding);
+    slinky::copy(src, dst, pad);
   };
-  config.pad = [this](const dim* in_bounds, const raw_buffer& dst, const void* padding) {
+  config.pad = [this](const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
     ++pad_calls;
-    slinky::pad(in_bounds, dst, padding);
+    slinky::pad(in_bounds, dst, pad);
   };
 
   config.thread_pool = &threads;

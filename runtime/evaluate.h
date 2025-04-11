@@ -29,12 +29,12 @@ struct eval_config {
   slinky::thread_pool* thread_pool = nullptr;
 
   // Functions implementing buffer data movement:
-  // - `copy` should copy from `src` to `dst`, filling `dst` with `padding` when out of bounds of `src`.
-  // - `pad` should fill the area out of bounds of `src_dims` with `padding` in `dst`.
-  std::function<void(const raw_buffer& src, const raw_buffer& dst, const void* padding)> copy =
-      static_cast<void (*)(const raw_buffer&, const raw_buffer&, const void*)>(slinky::copy);
-  std::function<void(const dim* in_bounds, const raw_buffer& dst, const void* padding)> pad =
-      static_cast<void (*)(const dim*, const raw_buffer&, const void*)>(slinky::pad);
+  // - `copy` should copy from `src` to `dst`, filling `dst` with `pad` when out of bounds of `src`.
+  // - `pad` should fill the area out of bounds of `src_dims` with `pad` in `dst`.
+  std::function<void(const raw_buffer& src, const raw_buffer& dst, const raw_buffer* pad)> copy =
+      static_cast<void (*)(const raw_buffer&, const raw_buffer&, const raw_buffer*)>(slinky::copy);
+  std::function<void(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad)> pad =
+      static_cast<void (*)(const dim*, const raw_buffer&, const raw_buffer&)>(slinky::pad);
 
   // Functions implementing the `trace_begin` and `trace_end` intrinsics.
   std::function<index_t(const char*)> trace_begin;

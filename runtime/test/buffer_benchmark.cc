@@ -55,14 +55,16 @@ BENCHMARK(BM_memset)->Arg(1024);
 
 void BM_fill(benchmark::State& state) {
   std::vector<index_t> extents = state_to_vector(4, state);
+
+  scalar<int> five(5);
+  five.elem_size = extents[0];
+
   buffer<void, 3> dst(3, extents[0]);
   extents.erase(extents.begin());
   allocate_buffer(dst, extents);
 
-  int five = 5;
-
   for (auto _ : state) {
-    fill(dst, &five);
+    copy(five, dst);
   }
 }
 
@@ -77,10 +79,10 @@ void BM_fill_padded(benchmark::State& state) {
   buffer<char, 3> dst;
   allocate_buffer(dst, state_to_vector(3, state), padding_size);
 
-  char five = 5;
+  scalar<char> five(5);
 
   for (auto _ : state) {
-    fill(dst, &five);
+    copy(five, dst);
   }
 }
 
@@ -97,10 +99,10 @@ void BM_pad(benchmark::State& state) {
     src.dim(d).set_bounds(1, extents[d] - 2);
   }
 
-  char five = 0;
+  scalar<char> five(5);
 
   for (auto _ : state) {
-    pad(src.dims, dst, &five);
+    pad(src.dims, dst, five);
   }
 }
 
@@ -199,8 +201,7 @@ void BM_for_each_element_2x(benchmark::State& state) {
   buffer<char, 3> src;
   allocate_buffer(src, extents);
 
-  char x = 42;
-  fill(src, &x);
+  copy(scalar<char>(42), src);
 
   dst.slice(0);
   src.slice(0);
@@ -217,8 +218,7 @@ void BM_for_each_contiguous_slice_2x(benchmark::State& state) {
   buffer<char, 3> src;
   allocate_buffer(src, extents);
 
-  char x = 42;
-  fill(src, &x);
+  copy(scalar<char>(42), src);
 
   for (auto _ : state) {
     for_each_contiguous_slice(
@@ -238,10 +238,10 @@ void BM_fill_batch_dims(benchmark::State& state) {
   buffer<char, 8> dst;
   allocate_buffer(dst, {64, 1, 1, 1, 1, 1, 1, 1});
 
-  char five = 5;
+  scalar<char> five(5);
 
   for (auto _ : state) {
-    fill(dst, &five);
+    copy(five, dst);
   }
 }
 

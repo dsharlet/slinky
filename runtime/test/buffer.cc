@@ -207,18 +207,21 @@ bool test_fill(int elem_size, int size) {
   buf.allocate();
   std::vector<uint8_t> value(elem_size);
   std::iota(value.begin(), value.end(), 0);
-  fill(buf, value.data());
-  for (int i = 0; i < size * elem_size; ++i) {
-    if (reinterpret_cast<const uint8_t*>(buf.base())[i] != i % elem_size) {
-      return false;
+  copy(*raw_buffer::make_scalar(value.size(), value.data()), buf);
+  const uint8_t* data = reinterpret_cast<const uint8_t*>(buf.base());
+  for (int i = 0; i < size; ++i) {
+    for (int j = 0; j < elem_size; ++j) {
+      if (*data++ != j) {
+        return false;
+      }
     }
   }
   return true;
 }
 
 TEST(buffer, fill) {
-  for (int size = 0; size < 100; ++size) {
-    for (int elem_size : {1, 2, 3, 4, 8, 12, 16, 63, 64, 65}) {
+  for (int elem_size : {1, 2, 3, 4, 8, 12, 16, 63, 64, 65}) {
+    for (int size : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100, 1024 / elem_size, 1024 * 1024 / elem_size}) {
       ASSERT_TRUE(test_fill(elem_size, size)) << elem_size << " " << size;
     }
   }
@@ -372,7 +375,7 @@ TEST(buffer, for_each_element_cropped) {
   src.crop(0, 2, 6);
   dst.allocate();
   src.allocate();
-  fill(src, 7);
+  copy(scalar<char>(7), src);
   int total = 0;
   int in_bounds = 0;
   for_each_element(
@@ -470,7 +473,7 @@ TEST(buffer, for_each_contiguous_cropped) {
   src.crop(0, 2, 6);
   dst.allocate();
   src.allocate();
-  fill(src, 7);
+  copy(scalar<char>(7), src);
   int slices = 0;
   int total = 0;
   int in_bounds = 0;
@@ -791,39 +794,42 @@ TEST(buffer, copy) {
     int rank = random(rng, 0, max_rank);
     int elem_size = random(rng, 1, 12);
 
-    std::vector<char> padding(elem_size);
-    std::fill(padding.begin(), padding.end(), 7);
-
-    buffer<void, max_rank> src(rank, elem_size);
     buffer<void, max_rank> dst(rank, elem_size);
-    for (std::size_t d = 0; d < src.rank; ++d) {
-      src.dim(d).set_min_extent(0, 5);
+    for (int d = 0; d < rank; ++d) {
       dst.dim(d).set_min_extent(0, 5);
     }
-    randomize_strides_and_padding(rng, src, {-1, 1, true, false});
-    randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
+    buffer<void, max_rank> src = dst;
+    randomize_strides_and_padding(rng, src, {-1, 1, true, true});
     init_random(rng, src);
+
+    // The padding can't be out of bounds, add one extra padding.
+    buffer<void, max_rank> padding1 = dst;
+    buffer<void, max_rank> padding2 = dst;
+    randomize_strides_and_padding(rng, padding1, {1, 3, true, true});
+    randomize_strides_and_padding(rng, padding2, {1, 3, true, true});
+    init_random(rng, padding1);
+    init_random(rng, padding2);
+
+    randomize_strides_and_padding(rng, dst, {-1, 1, false, false});
     dst.allocate();
 
-    slinky::copy(src, dst, padding.data());
+    slinky::copy(src, dst, padding1);
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
         ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
-        ASSERT_EQ(memcmp(dst.address_at(i), padding.data(), elem_size), 0);
+        ASSERT_EQ(memcmp(dst.address_at(i), padding1.address_at(i), elem_size), 0);
       }
     });
 
-    std::vector<char> new_padding(elem_size);
-    std::fill(new_padding.begin(), new_padding.end(), 3);
-    pad(src.dims, dst, new_padding.data());
+    pad(src.dims, dst, padding2);
     for_each_index(dst, [&](auto i) {
       if (src.contains(i)) {
         // The src should not have been modified.
         ASSERT_EQ(memcmp(dst.address_at(i), src.address_at(i), elem_size), 0);
       } else {
         // But we should have new padding.
-        ASSERT_EQ(memcmp(dst.address_at(i), new_padding.data(), elem_size), 0);
+        ASSERT_EQ(memcmp(dst.address_at(i), padding2.address_at(i), elem_size), 0);
       }
     });
   }
@@ -848,9 +854,9 @@ TEST(buffer, copy_empty_src) {
       dst.dim(0).set_min_extent(0, D);
     }
     dst.allocate();
-    fill(dst, 7);
+    copy(scalar<int>(7), dst);
     // The result of copying an empty buffer should be entirely padding.
-    slinky::copy(src, dst, 3);
+    slinky::copy(src, dst, scalar<int>(3));
     ASSERT_TRUE(is_filled_buffer(dst, 3));
   }
 }
@@ -928,6 +934,21 @@ TEST(fuse_contiguous_dims, fuse_broadcasted) {
   ASSERT_EQ(b.dim(0).extent(), 6);
   ASSERT_EQ(b.dim(0).stride(), 4);
   ASSERT_EQ(b.dim(1).stride(), 0);
+}
+
+TEST(fuse_contiguous_dims, fuse_implicit_broadcasted) {
+  buffer<int, 3> a({6, 1, 1}), b({6});
+  a.dim(1) = dim::broadcast();
+  a.dim(2) = dim::broadcast();
+
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 2);
+  ASSERT_EQ(b.rank, 1);
+  ASSERT_EQ(a.dim(0).extent(), 6);
+  ASSERT_EQ(a.dim(0).stride(), 4);
+  ASSERT_EQ(a.dim(1).stride(), 0);
+  ASSERT_EQ(b.dim(0).extent(), 6);
+  ASSERT_EQ(b.dim(0).stride(), 4);
 }
 
 TEST(fuse_contiguous_dims, fuse_extent1) {

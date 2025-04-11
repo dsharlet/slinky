@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 
 #include "base/arithmetic.h"
 #include "base/function_ref.h"
@@ -165,12 +166,8 @@ static constexpr struct {
 // - Provides storage for DimsSize dims (default is 0).
 class raw_buffer {
 protected:
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) {
-    return dims->flat_offset_bytes(i0);
-  }
-  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice)) {
-    return 0;
-  }
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0) { return dims->flat_offset_bytes(i0); }
+  static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, decltype(slinky::slice)) { return 0; }
 
   template <typename... Indices>
   static std::ptrdiff_t flat_offset_bytes_impl(const dim* dims, index_t i0, Indices... indices) {
@@ -385,6 +382,38 @@ public:
 
   // Make a deep copy of another buffer, including allocating and copying the data.
   static raw_buffer_ptr make_copy(const raw_buffer& src);
+
+  // Make a buffer around a scalar value. The resulting buffer will have rank 0. The result is a heap allocated
+  // buffer that contains a copy of the scalar value.
+  static raw_buffer_ptr make_scalar(std::size_t elem_size, const void* value);
+  template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
+  static raw_buffer_ptr make_scalar(const T& value) {
+    return make_scalar(sizeof(T), &value);
+  }
+
+  // Make a buffer around a scalar value. The resulting buffer will have rank 0. The result is a buffer that contains a
+  // pointer to the value.
+  static raw_buffer make_scalar_ref(std::size_t elem_size, void* value) {
+    return raw_buffer{value, elem_size, 0, nullptr};
+  }
+  template <typename T>
+  static raw_buffer make_scalar_ref(const T& value) {
+    return make_scalar_ref(sizeof(T), &value);
+  }
+};
+
+// This is a wrapper for a raw_buffer that represents a scalar value, with storage for the scalar value.
+template <typename T>
+class scalar : public raw_buffer {
+public:
+  T value;
+
+  scalar(const T& value = T()) : value(value) {
+    base = &this->value;
+    elem_size = sizeof(T);
+    rank = 0;
+    dims = nullptr;
+  }
 };
 
 namespace internal {
@@ -613,27 +642,15 @@ const buffer<NewT>& raw_buffer::cast() const {
 }
 
 // Copy the contents of `src` to `dst`.
-// If `padding` is null, `src` must contain every index that `dst` contains.
-// If `padding` is non-null, `dst` is filled with the padding when it is out of bounds of `src`.
-void copy(const raw_buffer& src, const raw_buffer& dst, const void* padding = nullptr);
-template <typename T, typename = typename std::enable_if<!std::is_pointer<T>::value>::type>
-void copy(const raw_buffer& src, const raw_buffer& dst, const T& padding) {
-  copy(src, dst, &padding);
-}
+// If `padding` is nullptr, every index of `dst` must be in bounds of `src`.
+// If `padding` is not nullptr, `dst` will be copied from `src` if it is in bounds, otherwise it will be copied from
+// `padding`, which must be in bounds.
+void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer* pad = nullptr);
+inline void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer& pad) { copy(src, dst, &pad); }
 
 // Performs only the padding operation of a copy. The region that would have been copied is unmodified.
-void pad(const dim* in_bounds, const raw_buffer& dst, const void* padding);
-template <typename T, typename = typename std::enable_if<!std::is_pointer<T>::value>::type>
-void pad(const dim* in_bounds, const raw_buffer& dst, const T& padding) {
-  pad(in_bounds, dst, &padding);
-}
+void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
 
-// Fill `dst` with `value`. `value` should point to `dst.elem_size` bytes.
-void fill(const raw_buffer& dst, const void* value);
-template <typename T, typename = typename std::enable_if<!std::is_pointer<T>::value>::type>
-void fill(const raw_buffer& dst, const T& padding) {
-  fill(dst, &padding);
-}
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (outer.min() == outer.max()) return true;
@@ -661,36 +678,52 @@ enum class fuse_type {
 // Fuse two dimensions of a buffer.
 template <fuse_type type>
 inline void fuse(index_t inner, index_t outer, raw_buffer& buf) {
-  dim& id = buf.dim(inner);
-  dim& od = buf.dim(outer);
-  assert(can_fuse(id, od));
-  if (id.min() == id.max()) {
-    if (type == fuse_type::remove) {
-      buf.slice(inner);
-      return;
+  if (outer >= static_cast<index_t>(buf.rank)) {
+    // Fusing an implicit broadcast, nothing to do.
+    assert(inner >= static_cast<index_t>(buf.rank) || can_fuse(buf.dim(inner), dim::broadcast()));
+  } else if (inner >= static_cast<index_t>(buf.rank)) {
+    // The inner dimension is an implicit broadcast.
+    dim& od = buf.dim(outer);
+    assert(can_fuse(dim::broadcast(), od));
+    if (type == fuse_type::keep) {
+      od.set_point(0);
+    } else if (type == fuse_type::remove) {
+      buf.slice(outer);
     } else {
-      id = od;
+      assert(type == fuse_type::undef);
     }
-  } else if (id.unbounded()) {
-    // Already fused
   } else {
-    const index_t id_extent = id.extent();
-    if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
-      assert(id.fold_factor() == dim::unfolded);
-      id.set_fold_factor(od.fold_factor() * id_extent);
-    }
-    if (od.unbounded()) {
-      id.set_unbounded();
+    dim& id = buf.dim(inner);
+    dim& od = buf.dim(outer);
+    assert(can_fuse(id, od));
+    if (id.min() == id.max()) {
+      if (type == fuse_type::remove) {
+        buf.slice(inner);
+        return;
+      } else {
+        id = od;
+      }
+    } else if (id.unbounded()) {
+      // Already fused
     } else {
-      id.set_range(od.begin() * id_extent, od.end() * id_extent);
+      const index_t id_extent = id.extent();
+      if (od.min() != od.max() && od.fold_factor() != dim::unfolded) {
+        assert(id.fold_factor() == dim::unfolded);
+        id.set_fold_factor(od.fold_factor() * id_extent);
+      }
+      if (od.unbounded()) {
+        id.set_unbounded();
+      } else {
+        id.set_range(od.begin() * id_extent, od.end() * id_extent);
+      }
     }
-  }
-  if (type == fuse_type::keep) {
-    od.set_point(0);
-  } else if (type == fuse_type::remove) {
-    buf.slice(outer);
-  } else {
-    assert(type == fuse_type::undef);
+    if (type == fuse_type::keep) {
+      od.set_point(0);
+    } else if (type == fuse_type::remove) {
+      buf.slice(outer);
+    } else {
+      assert(type == fuse_type::undef);
+    }
   }
 }
 
@@ -708,21 +741,22 @@ inline bool same_bounds(const dim& a, const dim& b) {
   return a.min() == b.min() && a.max() == b.max() && a.fold_factor() == b.fold_factor();
 }
 
+inline const dim& dim_or_broadcast(const raw_buffer& buf, std::ptrdiff_t d) {
+  return d < static_cast<std::ptrdiff_t>(buf.rank) ? buf.dim(d) : dim::broadcast();
+}
+
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
-inline bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1) {
-  return same_bounds(buf0.dim(d), buf1.dim(d));
-}
 template <typename... Bufs>
 bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
-  return same_bounds(buf0.dim(d), buf1.dim(d)) && same_bounds(d, buf1, bufs...);
+  return same_bounds(dim_or_broadcast(buf0, d), dim_or_broadcast(buf1, d)) && same_bounds(d, buf1, bufs...);
 }
 
 // Returns true if two dimensions of all buffers can be fused.
 inline bool can_fuse(std::ptrdiff_t, std::ptrdiff_t) { return true; }
 template <typename... Bufs>
 bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf, const Bufs&... bufs) {
-  return can_fuse(buf.dim(inner), buf.dim(outer)) && can_fuse(inner, outer, bufs...);
+  return can_fuse(dim_or_broadcast(buf, inner), dim_or_broadcast(buf, outer)) && can_fuse(inner, outer, bufs...);
 }
 
 // Fuse two dimensions of all buffers.
@@ -766,14 +800,16 @@ void swap_dims(std::size_t i, std::size_t j, raw_buffer& buf, Bufs&... bufs) {
 // Returns true if the sort changed the ordering of the dimensions.
 template <typename... Bufs>
 bool sort_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
-  assert(internal::same_rank(buf, bufs...));
+  // We only attempt to sort the dimensions that exist in all buffers. We could do better here, sometimes we can
+  // swap implicit broadcast dimensions with another broadcast dimension.
+  const size_t rank = std::min({buf.rank, bufs.rank...});
   bool modified = false;
   // A bubble sort is appropriate here, because:
   // - Typically, buffer ranks are very small.
   // - To use std::sort or similar, we need to copy the buffer dimensions into a temporary, sort, and copy them back.
   // - This template will be instantiated very frequently, it's worth attempting to minimize code size.
-  for (std::size_t i = 0; i < buf.rank; ++i) {
-    for (std::size_t j = i + 1; j < buf.rank; ++j) {
+  for (std::size_t i = 0; i < rank; ++i) {
+    for (std::size_t j = i + 1; j < rank; ++j) {
       if (j < dim_sets.size() && dim_sets[i] != dim_sets[j]) continue;
       if (buf.dim(i).stride() > buf.dim(j).stride()) {
         internal::swap_dims(i, j, buf, bufs...);
@@ -795,14 +831,12 @@ bool sort_dims(raw_buffer& buf, Bufs&... bufs) {
 // eligible for fusion. By default, all dimensions are considered to be part of the same set.
 template <typename... Bufs>
 void fuse_contiguous_dims(span<const int> dim_sets, raw_buffer& buf, Bufs&... bufs) {
-  assert(internal::same_rank(buf, bufs...));
   for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, dim_sets, buf, bufs...);
   }
 }
 template <typename... Bufs>
 void fuse_contiguous_dims(raw_buffer& buf, Bufs&... bufs) {
-  assert(internal::same_rank(buf, bufs...));
   for (std::ptrdiff_t d = static_cast<std::ptrdiff_t>(buf.rank) - 1; d > 0; --d) {
     internal::attempt_fuse(d - 1, d, buf, bufs...);
   }
