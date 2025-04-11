@@ -94,7 +94,7 @@ TEST_P(padded_copy, pipeline) {
   if (compute_padding) {
     padding = buffer_expr::make(ctx, "padding", 2, sizeof(char));
   } else {
-    padding = buffer_expr::make<char>(ctx, "padding", 3);
+    padding = buffer_expr::make_scalar<char>(ctx, "padding", 3);
   }
 
   var x(ctx, "x");
@@ -204,7 +204,7 @@ TEST_P(copy_sequence, pipeline) {
   auto make_copy = [&](int stage, buffer_expr_ptr src, buffer_expr_ptr dst) {
     if (((1 << stage) & pad_mask) != 0) {
       return func::make_copy({src, {point(x + 1)}, {bounds(pad_min(stage), pad_max(stage))}}, {dst, {x}},
-          {buffer_expr::make<char>(ctx, "padding", stage)});
+          {buffer_expr::make_scalar<char>(ctx, "padding", stage)});
     } else {
       return func::make_copy({src, {point(x + 1)}}, {dst, {x}});
     }
@@ -749,7 +749,7 @@ TEST_P(broadcasted_elementwise, constant) {
   init_random(in2_buf);
 
   auto in1 = buffer_expr::make(ctx, "in1", 2, sizeof(int));
-  auto in2 = buffer_expr::make(ctx, "in2", raw_buffer::make_copy(in2_buf));
+  auto in2 = buffer_expr::make_constant(ctx, "in2", raw_buffer::make_copy(in2_buf));
   auto in2_broadcasted = buffer_expr::make(ctx, "in2_broadcasted", 2, sizeof(int));
   auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
 

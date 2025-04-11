@@ -52,15 +52,15 @@ public:
   static buffer_expr_ptr make(var sym, std::size_t rank, expr elem_size);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size);
   // Make a constant buffer_expr. It takes ownership of the buffer from the caller.
-  static buffer_expr_ptr make(var sym, const_raw_buffer_ptr constant_buffer);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make_constant(var sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
   template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
-  static buffer_expr_ptr make(var sym, const T& value) {
-    return make(sym, raw_buffer::make_scalar<T>(value));
+  static buffer_expr_ptr make_scalar(var sym, const T& value) {
+    return make_constant(sym, raw_buffer::make_scalar<T>(value));
   }
   template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const T& value) {
-    return make(ctx, sym, raw_buffer::make_scalar<T>(value));
+  static buffer_expr_ptr make_scalar(node_context& ctx, const std::string& sym, const T& value) {
+    return make_constant(ctx, sym, raw_buffer::make_scalar<T>(value));
   }
 
   var sym() const { return sym_; }

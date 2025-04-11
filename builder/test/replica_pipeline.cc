@@ -387,7 +387,7 @@ auto p = []() -> ::slinky::pipeline {
   padding_const->allocate();
   std::uint8_t padding_const_fill[2] = { 0 };
   copy(*raw_buffer::make_scalar(2, padding_const_fill), *padding_const);
-  auto padding = buffer_expr::make(ctx, /*sym=*/"padding", padding_const);
+  auto padding = buffer_expr::make_constant(ctx, /*sym=*/"padding", padding_const);
   auto _fn_1 = func::make_copy({intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}, {}}, {padded_intm, {x, y}}, {padding, {}});
   _fn_1.compute_root();
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
