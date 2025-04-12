@@ -420,13 +420,14 @@ public:
           }
         }
       } else if (!any_stride_defined(target_info->dims)) {
-        assert(target_info->dims.size() == alias.permutation.size());
+        assert(info.dims.size() == alias.permutation.size());
         // The target doesn't have any strides, we might have some strides we assumed we could propagate.
-        for (std::size_t d = 0; d < target_info->dims.size(); ++d) {
+        for (std::size_t d = 0; d < info.dims.size(); ++d) {
           int alias_d = alias.permutation[d];
           if (alias_d >= 0) {
-            assert(!target_info->dims[d].stride.defined());
-            target_info->dims[d].stride = info.dims[alias_d].stride;
+            assert(alias_d < static_cast<int>(target_info->dims.size()));
+            assert(!target_info->dims[alias_d].stride.defined());
+            target_info->dims[alias_d].stride = info.dims[d].stride;
           }
         }
       }
