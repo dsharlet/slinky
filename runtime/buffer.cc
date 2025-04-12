@@ -260,77 +260,130 @@ void optimize_broadcast(const raw_buffer& dst, raw_buffer& src, broadcast_buffer
   }
 }
 
-// This function modifies the dims of src and dst.
-void copy_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
+// Perform an unpadded copy.
+void copy_impl(raw_buffer& src, raw_buffer& dst) {
   assert(src.elem_size == dst.elem_size);
   assert(dst.base || dst.elem_count() == 0);
-  if (pad.base) {
-    assert(pad.elem_size == src.elem_size);
-  }
-  const std::size_t rank = dst.rank;
   index_t elem_size = dst.elem_size;
 
-  if (rank == 0) {
-    memcpy(dst.base, !src.base ? pad.base : src.base, elem_size);
-    return;
-  }
-
-  broadcast_buffer src_broadcast;
-  optimize_broadcast(dst, src, src_broadcast);
-
-  if (pad.base) {
-    broadcast_buffer pad_broadcast;
-    optimize_broadcast(dst, pad, pad_broadcast);
-
-    optimize_dims(dst, src, pad);
-    for_each_contiguous_slice(
-        dst,
-        [elem_size](index_t extent, void* dst, const void* src, const void* pad) {
-          memcpy(dst, src ? src : pad, extent * elem_size);
-        },
-        src, pad);
+  if (dst.rank == 0) {
+    memcpy(dst.base, src.base, elem_size);
   } else {
-    optimize_dims(dst, src);
     for_each_contiguous_slice(
         dst, [elem_size](index_t extent, void* dst, const void* src) { memcpy(dst, src, extent * elem_size); }, src);
+  }
+}
+
+// The strategy used here for padding is to start with the last dimension (which should have the largest stride), and
+// fill the padded area. Once this padded area is filled, it can be cropped from the buffer, which reduces the area
+// the next dimension needs to pad. Proceeding in this order minimizes the area we need to fill with small stride, which
+// is where this is slow (because we can only copy one or a few elements at a time.
+
+// This function copies `pad` to `dst` where `dst` is out of bounds of `src` in dimension `d`, and then crops `dst` such
+// that only the unpadded area remains in dimension `d`.
+void pad_impl(raw_buffer& src, raw_buffer& dst, raw_buffer& pad) {
+  for (int d = static_cast<int>(std::min(src.rank, dst.rank)) - 1; d >= 0; --d) {
+    const slinky::dim& src_d = src.dim(d);
+    // TODO: Try to implement this without saving and restoring the dst buffer between each crop.
+    void* dst_base = dst.base;
+    slinky::dim dst_d = dst.dim(d);
+    if (dst_d.min() < src_d.min()) {
+      // There's padding before the min in this dimension.
+      dst.crop(d, dst_d.min(), src_d.min() - 1);
+      copy_impl(pad, dst);
+      dst.base = dst_base;
+      dst.dim(d) = dst_d;
+    }
+    if (dst_d.max() > src_d.max()) {
+      // There's padding after the max in this dimension.
+      dst.crop(d, src_d.max() + 1, dst_d.max());
+      copy_impl(pad, dst);
+      dst.base = dst_base;
+      dst.dim(d) = dst_d;
+    }
+    // Crop off the padded areas we've filled in this dimension.
+    dst.crop(d, src_d.min(), src_d.max());
+    // If the src was bigger, crop it, so the bounds should match.
+    src.crop(d, dst_d.min(), dst_d.max());
   }
 }
 
 }  // namespace
 
 SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst, const raw_buffer* pad) {
+  assert(dst.elem_size == src.elem_size);
+  assert(dst.base || dst.elem_count() == 0);
+  if (dst.rank == 0) {
+    assert(src.base || (pad && pad->base));
+    memcpy(dst.base, !src.base && pad ? pad->base : src.base, dst.elem_size);
+    return;
+  }
+
   // Make (shallow) copies of the buffers, so we can optimize the dimensions.
-  raw_buffer src_opt = src;
-  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
-  internal::copy_small_n(src.dims, src.rank, src_opt.dims);
   raw_buffer dst_opt = dst;
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
   internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
-  raw_buffer pad_opt = pad ? *pad : raw_buffer{nullptr, 0, 0, nullptr};
-  if (pad) {
+
+  raw_buffer src_opt = src;
+  src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
+  internal::copy_small_n(src.dims, src.rank, src_opt.dims);
+  broadcast_buffer src_broadcast;
+  optimize_broadcast(dst_opt, src_opt, src_broadcast);
+
+  // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
+  if (src_opt.rank > 0 && pad && pad->base) {
+    assert(dst_opt.elem_size == pad->elem_size);
+
+    raw_buffer pad_opt = *pad;
     pad_opt.dims = SLINKY_ALLOCA(dim, pad->rank);
     internal::copy_small_n(pad->dims, pad->rank, pad_opt.dims);
+    broadcast_buffer pad_broadcast;
+    optimize_broadcast(dst_opt, pad_opt, pad_broadcast);
+
+    optimize_dims(dst_opt, src_opt, pad_opt);
+
+    // Implement the padding in all but the first dimension.
+    pad_impl(src_opt, dst_opt, pad_opt);
+    if (src_opt.base == dst_opt.base) {
+      // This is an in-place padded copy, we're done.
+      return;
+    }
+  } else {
+    optimize_dims(dst_opt, src_opt);
   }
-  copy_impl(src_opt, dst_opt, pad_opt);
+  copy_impl(src_opt, dst_opt);
 }
 
 void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
+  assert(dst.elem_size == pad.elem_size);
+  if (dst.rank == 0) {
+    return;
+  }
+
   // To implement pad, we'll make a buffer that looks like dst, but cropped to the bounds, and copy it with pad.
+  raw_buffer dst_opt = dst;
+  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
+  internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
+
   raw_buffer src = dst;
   src.dims = SLINKY_ALLOCA(dim, dst.rank);
   internal::copy_small_n(dst.dims, dst.rank, src.dims);
   for (std::size_t d = 0; d < dst.rank; ++d) {
     src.crop(d, in_bounds[d].min(), in_bounds[d].max());
   }
+  broadcast_buffer src_broadcast;
+  optimize_broadcast(dst_opt, src, src_broadcast);
 
-  raw_buffer dst_opt = dst;
-  dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
-  internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
   raw_buffer pad_opt = pad;
   pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
   internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
+  broadcast_buffer pad_broadcast;
+  optimize_broadcast(dst_opt, pad_opt, pad_broadcast);
 
-  copy_impl(src, dst_opt, pad_opt);
+  optimize_dims(dst_opt, src, pad_opt);
+
+  // Implement the padding in all but the first dimension.
+  pad_impl(src, dst_opt, pad_opt);
 }
 
 namespace internal {
