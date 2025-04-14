@@ -205,58 +205,58 @@ bool is_repeated_byte(const void* value, std::size_t size) {
   return true;
 }
 
-// When copying broadcasted buffers, it would be slow if we copied each element one at a time. We can avoid this by
-// rewriting broadcasted dimensions to be folded dimensions of a larger sequence of elements.
-struct broadcast_buffer {
-  std::array<uint8_t, 256> data;
-  slinky::dim dim;
-};
-
-void optimize_broadcast(const raw_buffer& dst, raw_buffer& src, broadcast_buffer& buffer) {
-  // Remove any dims past the end of dst.
-  while (src.rank > dst.rank) {
-    src.dims -= 1;
-  }
-  assert(dst.rank >= src.rank);
-  // Remove broadcasts that are unbounded.
-  while (src.rank > 0 && src.dim(src.rank - 1).stride() == 0 && src.dim(src.rank - 1).contains(dst.dim(src.rank - 1))) {
-    src.rank -= 1;
-  }
-
-  if (src.rank == 0) {
-    // We can replace this with a rank 1 folded buffer, so we can perform larger copies at once.
-    const slinky::dim& dst_dim0 = dst.dim(0);
-    const index_t elem_size = src.elem_size;
-    const index_t target_size = dst_dim0.extent() * src.elem_size;
-
-    // Copy the broadcasted src value to the broadcast buffer.
-    memcpy(buffer.data.data(), src.base, elem_size);
-    src.base = buffer.data.data();
-
-    // Repeatedly copy the broadcast buffer to itself, doubling its size each time, until we reach the target size or we
-    // fill up the broadcast buffer.
-    index_t fold_factor;
-    if (src.elem_size == 1 || is_repeated_byte(src.base, src.elem_size)) {
-      if (target_size < static_cast<index_t>(buffer.data.size())) {
-        memset(src.base, *reinterpret_cast<const char*>(src.base), target_size);
-        fold_factor = dim::unfolded;
-      } else {
-        memset(src.base, *reinterpret_cast<const char*>(src.base), buffer.data.size());
-        fold_factor = buffer.data.size() / src.elem_size;
-      }
-    } else {
-      index_t size = src.elem_size;
-      fold_factor = 1;
-      while (size < target_size && size * 2 <= static_cast<index_t>(buffer.data.size())) {
-        memcpy(offset_bytes_non_null(src.base, size), src.base, size);
-        size += size;
-        fold_factor += fold_factor;
-      }
+void fill(void* dst, const void* value, index_t elem_size, index_t size) {
+  if (elem_size == 1) {
+    memset(dst, *reinterpret_cast<const uint8_t*>(value), size);
+  } else {
+    assert(elem_size > 0);
+    while (size >= elem_size) {
+      memcpy(dst, value, elem_size);
+      dst = offset_bytes_non_null(dst, elem_size);
+      size -= elem_size;
     }
+    // The elem_size might not divide the size if optimize_fill_value replicated it.
+    memcpy(dst, value, size);
+  }
+}
 
-    buffer.dim = slinky::dim(dst_dim0.min(), dst_dim0.max(), src.elem_size, fold_factor);
-    src.rank = 1;
-    src.dims = &buffer.dim;
+// When copying broadcasted buffers, it would be slow if we copied each element one at a time. We can avoid this by
+// duplicating the value into a buffer and copying from that larger buffer instead.
+using fill_value_buffer = std::array<uint8_t, 256>;
+void optimize_fill_value(const void*& value, index_t& elem_size, index_t fill_size, fill_value_buffer& buffer) {
+  if (is_repeated_byte(value, elem_size)) {
+    // This value can be filled with memset.
+    elem_size = 1;
+    return;
+  }
+  assert(elem_size != 1);
+  const index_t target_size = std::min<index_t>(buffer.size(), fill_size);
+  if (elem_size * 2 <= target_size) {
+    // Repeatedly duplicate the constant as long as it fits in the buffer.
+    memcpy(buffer.data(), value, elem_size);
+    while (elem_size * 2 <= target_size) {
+      memcpy(&buffer[elem_size], buffer.data(), elem_size);
+      elem_size *= 2;
+    }
+    value = buffer.data();
+  }
+}
+
+const slinky::dim& slice_dim0(raw_buffer& buf) {
+  if (buf.rank > 0) {
+    buf.rank--;
+    return *buf.dims++;
+  } else {
+    return dim::broadcast();
+  }
+}
+
+void unslice_dim0(raw_buffer& buf, const slinky::dim& d) {
+  if (&d + 1 == buf.dims) {
+    buf.rank++;
+    buf.dims--;
+  } else {
+    // The dimension didn't come from this buffer (rank 0 broadcast).
   }
 }
 
@@ -269,8 +269,53 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
   if (dst.rank == 0) {
     memcpy(dst.base, src.base, elem_size);
   } else {
-    for_each_contiguous_slice(
-        dst, [elem_size](index_t extent, void* dst, const void* src) { memcpy(dst, src, extent * elem_size); }, src);
+    const slinky::dim& dst_dim0 = dst.dim(0);
+    const slinky::dim& src_dim0 = src.rank > 0 ? src.dim(0) : dim::broadcast();
+
+    if (dst_dim0.empty()) {
+      // Empty destination, nothing to do.
+    } else if (dst_dim0.fold_factor() != dim::unfolded || src_dim0.fold_factor() != dim::unfolded ||
+               dst_dim0.stride() != elem_size || (src_dim0.stride() != 0 && src_dim0.stride() != elem_size)) {
+      // There is some complication to the innermost dimension's copy.
+      for_each_contiguous_slice(
+          dst, [elem_size](index_t extent, void* dst, const void* src) { memcpy(dst, src, extent * elem_size); }, src);
+    } else {
+      slice_dim0(dst);
+      slice_dim0(src);
+
+      const index_t dst_size = dst_dim0.extent() * elem_size;
+
+      if (src_dim0.stride() == 0) {
+        // The inner dimension is a fill call.
+        fill_value_buffer buffer;
+        const void* buffer_value;
+        index_t buffer_elem_size;
+        const void* cached_src = nullptr;
+        for_each_element(
+            [&](void* dst, const void* src) {
+              if (cached_src != src) {
+                cached_src = src;
+                buffer_elem_size = elem_size;
+                buffer_value = src;
+                optimize_fill_value(buffer_value, buffer_elem_size, dst_size, buffer);
+              }
+              fill(dst, buffer_value, buffer_elem_size, dst_size);
+            },
+            dst, src);
+      } else {
+        // The inner dimension is a memcpy.
+        assert(src_dim0.stride() == elem_size);
+        assert(src_dim0.begin() <= dst_dim0.begin());
+        assert(src_dim0.end() >= dst_dim0.end());
+
+        slinky::index_t src_offset = src_dim0.flat_offset_bytes(dst_dim0.min());
+        for_each_element(
+            [=](void* dst, const void* src) { memcpy(dst, offset_bytes_non_null(src, src_offset), dst_size); }, dst,
+            src);
+      }
+      unslice_dim0(dst, dst_dim0);
+      unslice_dim0(src, src_dim0);
+    }
   }
 }
 
@@ -327,8 +372,6 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
   raw_buffer src_opt = src;
   src_opt.dims = SLINKY_ALLOCA(dim, src.rank);
   internal::copy_small_n(src.dims, src.rank, src_opt.dims);
-  broadcast_buffer src_broadcast;
-  optimize_broadcast(dst_opt, src_opt, src_broadcast);
 
   // If the src has rank 0, then the padding is irrelevant, nothing is out of bounds.
   if (src_opt.rank > 0 && pad && pad->base) {
@@ -337,8 +380,6 @@ SLINKY_NO_STACK_PROTECTOR void copy(const raw_buffer& src, const raw_buffer& dst
     raw_buffer pad_opt = *pad;
     pad_opt.dims = SLINKY_ALLOCA(dim, pad->rank);
     internal::copy_small_n(pad->dims, pad->rank, pad_opt.dims);
-    broadcast_buffer pad_broadcast;
-    optimize_broadcast(dst_opt, pad_opt, pad_broadcast);
 
     optimize_dims(dst_opt, src_opt, pad_opt);
 
@@ -371,14 +412,10 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
   for (std::size_t d = 0; d < dst.rank; ++d) {
     src.crop(d, in_bounds[d].min(), in_bounds[d].max());
   }
-  broadcast_buffer src_broadcast;
-  optimize_broadcast(dst_opt, src, src_broadcast);
 
   raw_buffer pad_opt = pad;
   pad_opt.dims = SLINKY_ALLOCA(dim, pad.rank);
   internal::copy_small_n(pad.dims, pad.rank, pad_opt.dims);
-  broadcast_buffer pad_broadcast;
-  optimize_broadcast(dst_opt, pad_opt, pad_broadcast);
 
   optimize_dims(dst_opt, src, pad_opt);
 
