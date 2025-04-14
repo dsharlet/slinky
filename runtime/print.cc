@@ -142,8 +142,10 @@ public:
   printer& operator<<(var sym) {
     if (context) {
       os << context->name(sym);
-    } else {
+    } else if (sym.defined()) {
       os << "<" + std::to_string(sym.id) << ">";
+    } else {
+      os << "<>";
     }
     return *this;
   }
@@ -320,8 +322,8 @@ public:
 
   void visit(const copy_stmt* n) override {
     *this << indent() << "copy(" << n->src << ", {" << n->src_x << "}, " << n->dst << ", {" << n->dst_x << "}";
-    if (n->padding) {
-      *this << ", {" << *n->padding << "}";
+    if (n->pad.defined()) {
+      *this << ", " << n->pad;
     }
     *this << ")\n";
   }

@@ -52,8 +52,16 @@ public:
   static buffer_expr_ptr make(var sym, std::size_t rank, expr elem_size);
   static buffer_expr_ptr make(node_context& ctx, const std::string& sym, std::size_t rank, expr elem_size);
   // Make a constant buffer_expr. It takes ownership of the buffer from the caller.
-  static buffer_expr_ptr make(var sym, const_raw_buffer_ptr constant_buffer);
-  static buffer_expr_ptr make(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make_constant(var sym, const_raw_buffer_ptr constant_buffer);
+  static buffer_expr_ptr make_constant(node_context& ctx, const std::string& sym, const_raw_buffer_ptr constant_buffer);
+  template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
+  static buffer_expr_ptr make_scalar(var sym, const T& value) {
+    return make_constant(sym, raw_buffer::make_scalar<T>(value));
+  }
+  template <typename T, typename = typename std::enable_if_t<std::is_trivial_v<T>>>
+  static buffer_expr_ptr make_scalar(node_context& ctx, const std::string& sym, const T& value) {
+    return make_constant(ctx, sym, raw_buffer::make_scalar<T>(value));
+  }
 
   var sym() const { return sym_; }
   expr elem_size() const { return elem_size_; }
@@ -171,11 +179,11 @@ private:
 
   std::vector<input> inputs_;
   std::vector<output> outputs_;
+  // If this is true, `inputs_` must have 2 elements, where the second input is the padding.
+  bool is_padded_copy_ = false;
 
   std::vector<loop_info> loops_;
   std::optional<loop_id> compute_at_;
-
-  std::optional<std::vector<char>> padding_;
 
   void add_this_to_buffers();
   void remove_this_from_buffers();
@@ -185,7 +193,7 @@ public:
   func(call_stmt::callable impl, std::vector<input> inputs, std::vector<output> outputs,
       call_stmt::attributes attrs = {});
   func(std::vector<input> inputs, output out);
-  func(input input, output out, std::optional<std::vector<char>> padding = std::nullopt);
+  func(input src, output dst, input pad);
   func(func&&) noexcept;
   func& operator=(func&&) noexcept;
   ~func();
@@ -290,26 +298,20 @@ public:
   }
 
   // Make a copy from a single input to a single output.
-  static func make_copy(input in, output out) { return func(std::move(in), {std::move(out)}); }
+  static func make_copy(input src, output dst) { return func({std::move(src)}, std::move(dst)); }
   // Make a copy from a single input to a single output, with padding outside the output crop.
-  static func make_copy(input in, output out, std::vector<char> padding) {
-    return func({std::move(in)}, std::move(out), std::move(padding));
-  }
-  template <typename T>
-  static func make_copy(input in, output out, T padding) {
-    std::vector<char> p(sizeof(padding));
-    memcpy(p.data(), &padding, sizeof(T));
-    return make_copy(std::move(in), std::move(out), std::move(p));
+  static func make_copy(input src, output dst, input pad) {
+    return func(std::move(src), std::move(dst), std::move(pad));
   }
   // Make a copy from multiple inputs with undefined padding.
-  static func make_copy(std::vector<input> in, output out) { return func(std::move(in), {std::move(out)}); }
+  static func make_copy(std::vector<input> src, output dst) { return func(std::move(src), std::move(dst)); }
   // Make a concatenation copy. This is a helper function for `make_copy`, where the crop for input i is a `crop_dim` in
   // dimension `dim` on the interval `[bounds[i], bounds[i + 1])`, and the input is translated by `-bounds[i]`.
-  static func make_concat(std::vector<buffer_expr_ptr> in, output out, std::size_t dim, std::vector<expr> bounds);
+  static func make_concat(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim, std::vector<expr> bounds);
   // Make a stack copy. This is a helper function for `make_copy`, where the crop for input i is a `slice_dim` of
   // dimension `dim` at i. If `dim` is greater than the rank of `out` (the default), the new stack dimension will be the
   // last dimension of the output.
-  static func make_stack(std::vector<buffer_expr_ptr> in, output out, std::size_t dim = -1);
+  static func make_stack(std::vector<buffer_expr_ptr> src, output dst, std::size_t dim = -1);
 
   const call_stmt::callable& impl() const { return impl_; }
   const std::vector<input>& inputs() const { return inputs_; }
@@ -317,7 +319,7 @@ public:
   const call_stmt::attributes& attrs() const { return attrs_; }
   const void* user_data() const { return user_data_; }
   void*& user_data() { return user_data_; }
-  const std::optional<std::vector<char>>& padding() const { return padding_; }
+  bool is_padded_copy() const { return is_padded_copy_; }
 
   stmt make_call() const;
 };

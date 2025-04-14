@@ -357,26 +357,32 @@ function pipeline(__in, out) {
     let g_1 = buffer_min(__in, 1);
     let g_0 = buffer_max(__in, 0);
     let g_2 = buffer_max(__in, 1);
-    { let padded_intm_intm = allocate('padded_intm/intm', 2, [
-        {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
-        {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
+    { let padding = allocate('padding', 2, [
+        
       ]);
-      { let __intm_3 = crop_buffer(padded_intm_intm, [
-          [g, g_0],
-          [g_1, g_2]
-      ]); {
-        let intm_3 = __intm_3;
-        consume(__in);
-        produce(intm_3);
+      { let padded_intm_intm = allocate('padded_intm/intm', 2, [
+          {bounds:[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], stride:NaN, fold_factor:NaN},
+          {bounds:[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], stride:NaN, fold_factor:NaN}
+        ]);
+        { let __intm_3 = crop_buffer(padded_intm_intm, [
+            [g, g_0],
+            [g_1, g_2]
+        ]); {
+          let intm_3 = __intm_3;
+          consume(__in);
+          produce(intm_3);
+          __event_t++;
+          produce(intm_3);
+          produce(padded_intm_intm);
+          produce(padding);
+          __event_t++;
+        }}
+        consume(padded_intm_intm);
+        produce(out);
         __event_t++;
-        produce(intm_3);
-        produce(padded_intm_intm);
-        __event_t++;
-      }}
-      consume(padded_intm_intm);
-      produce(out);
-      __event_t++;
-      free(padded_intm_intm);
+        free(padded_intm_intm);
+      }
+      free(padding);
     }
   }
 }

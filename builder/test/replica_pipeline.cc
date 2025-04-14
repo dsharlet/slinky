@@ -362,7 +362,7 @@ auto p = []() -> ::slinky::pipeline {
   ASSERT_EQ(0, p().evaluate(inputs, outputs, eval_ctx));
 }
 
-TEST(replica, padded_stencil) {
+TEST(replica, padded_stencil) {  
   // clang-format off
 // BEGIN define_replica_pipeline() output
 auto p = []() -> ::slinky::pipeline {
@@ -383,7 +383,12 @@ auto p = []() -> ::slinky::pipeline {
   };
   auto _fn_2 = func::make(std::move(_replica_fn_3), {{in, {point(x), point(y)}}}, {{intm, {x, y}}}, {});
   auto _4 = in->sym();
-  auto _fn_1 = func::make_copy({intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}, {}}, {padded_intm, {x, y}}, {6, 0});
+  auto padding_const = std::make_shared<buffer<void, 0>>(/*rank=*/0, /*elem_size=*/2);
+  padding_const->allocate();
+  std::uint8_t padding_const_fill[2] = { 0 };
+  copy(*raw_buffer::make_scalar(2, padding_const_fill), *padding_const);
+  auto padding = buffer_expr::make_constant(ctx, /*sym=*/"padding", padding_const);
+  auto _fn_1 = func::make_copy({intm, {point(x), point(y)}, {{(buffer_min(_4, 0)), (buffer_max(_4, 0))}, {(buffer_min(_4, 1)), (buffer_max(_4, 1))}}, {}, {}}, {padded_intm, {x, y}}, {padding, {}});
   _fn_1.compute_root();
   auto _replica_fn_5 = [=](const buffer<const void>& i0, const buffer<void>& o0) -> index_t {
     const buffer<const void>* input_buffers[] = {&i0};

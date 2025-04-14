@@ -163,8 +163,8 @@ public:
       }
       os_ << "  " << const_name << "->allocate();\n";
       os_ << "  std::uint8_t " << const_name << "_fill[" << elem_size << "] = { 0 };\n";
-      os_ << "  fill(*" << const_name << ", " << const_name << "_fill);\n";
-      (void)print_assignment_explicit(name, "buffer_expr::make(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
+      os_ << "  copy(*raw_buffer::make_scalar(" << elem_size << ", " << const_name << "_fill), *" << const_name << ");\n";
+      (void)print_assignment_explicit(name, "buffer_expr::make_constant(ctx, /*sym=*/\"", name, "\", ", const_name, ")");
     } else {
       (void)print_assignment_explicit(
           name, "buffer_expr::make(ctx, \"", name, "\", /*rank=*/", bep->rank(), ", /*elem_size=*/", elem_size, ")");
@@ -332,9 +332,10 @@ public:
 
     if (!f.defined() && f.outputs().size() == 1) {
       std::string func_outputs = print(f.outputs()[0]);
-      if (f.padding()) {
+      if (f.is_padded_copy()) {
+        assert(f.inputs().size() == 2);
         std::string func_inputs = print(f.inputs()[0]);
-        std::string padding = print_vector(*f.padding());
+        std::string padding = print(f.inputs()[1]);
         (void)print_assignment_explicit(
             fn_name, "func::make_copy(", func_inputs, ", ", func_outputs, ", ", padding, ")");
       } else {
