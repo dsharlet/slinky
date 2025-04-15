@@ -219,7 +219,7 @@ public:
     return *this;
   }
 
-  std::string indent(int extra = 0) const { return std::string(depth + extra, ' '); }
+  std::string indent(int extra = 0) const { return "\n" + std::string(depth + extra, ' '); }
 
   void visit(const variable* v) override {
     switch (v->field) {
@@ -246,17 +246,17 @@ public:
     if (std::all_of(l->lets.begin(), l->lets.end(), [&](const auto& i) { return as_variable(i.second); })) {
       *this << indent() << tag << " {";
       print_vector(l->lets, ", ");
-      *this << "} in {\n";
+      *this << "} in {";
     } else if (l->lets.size() == 1) {
-      *this << indent() << tag << " " << l->lets.front().first << " = " << l->lets.front().second << " in {\n";
+      *this << indent() << tag << " " << l->lets.front().first << " = " << l->lets.front().second << " in {";
     } else {
-      *this << indent() << tag << " {\n";
+      *this << indent() << tag << " {";
       *this << indent(2);
-      print_vector(l->lets, ",\n" + indent(2));
-      *this << "\n" << indent() << "} in {\n";
+      print_vector(l->lets, "," + indent(2));
+      *this << "" << indent() << "} in {";
     }
     *this << l->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit_bin_op(const expr& a, const char* s, const expr& b) { *this << "(" << a << s << b << ")"; }
@@ -303,9 +303,9 @@ public:
     if (l->step.defined()) {
       *this << ", " << l->step;
     }
-    *this << ") {\n";
+    *this << ") {";
     *this << l->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const call_stmt* n) override {
@@ -317,7 +317,7 @@ public:
     } else {
       *this << "<null target>";
     }
-    *this << ", {" << n->inputs << "}, {" << n->outputs << "})\n";
+    *this << ", {" << n->inputs << "}, {" << n->outputs << "})";
   }
 
   void visit(const copy_stmt* n) override {
@@ -325,91 +325,91 @@ public:
     if (n->pad.defined()) {
       *this << ", " << n->pad;
     }
-    *this << ")\n";
+    *this << ")";
   }
 
   void visit(const allocate* n) override {
     *this << indent() << n->sym << " = allocate(" << n->storage << ", " << n->elem_size << ", {";
     if (!n->dims.empty()) {
-      *this << "\n" << indent(2);
-      print_vector(n->dims, ",\n" + indent(2));
-      *this << "\n" << indent();
+      *this << "" << indent(2);
+      print_vector(n->dims, "," + indent(2));
+      *this << "" << indent();
     }
-    *this << "}) {\n";
+    *this << "}) {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const make_buffer* n) override {
     *this << indent() << n->sym << " = make_buffer(" << n->base << ", " << n->elem_size << ", {";
     if (!n->dims.empty()) {
-      *this << "\n" << indent(2);
-      print_vector(n->dims, ",\n" + indent(2));
-      *this << "\n" << indent();
+      *this << "" << indent(2);
+      print_vector(n->dims, "," + indent(2));
+      *this << "" << indent();
     }
-    *this << "}) {\n";
+    *this << "}) {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const constant_buffer* n) override {
     const raw_buffer& buf = *n->value;
     *this << indent() << n->sym << " = constant_buffer(" << buf.base << ", " << buf.elem_size << ", {";
     if (buf.rank > 0) {
-      *this << "\n" << indent(2);
-      print_vector(span<const dim>{buf.dims, buf.rank}, ",\n" + indent(2));
-      *this << "\n" << indent();
+      *this << "" << indent(2);
+      print_vector(span<const dim>{buf.dims, buf.rank}, "," + indent(2));
+      *this << "" << indent();
     }
-    *this << "}) {\n";
+    *this << "}) {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const clone_buffer* n) override {
-    *this << indent() << n->sym << " = clone_buffer(" << n->src << ") {\n";
+    *this << indent() << n->sym << " = clone_buffer(" << n->src << ") {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const crop_buffer* n) override {
     *this << indent() << n->sym << " = crop_buffer(" << n->src << ", {";
     if (!n->bounds.empty()) {
-      *this << "\n";
+      *this << "";
       *this << indent(2);
-      print_vector(n->bounds, ",\n" + indent(2));
-      *this << "\n";
+      print_vector(n->bounds, "," + indent(2));
+      *this << "";
       *this << indent();
     }
-    *this << "}) {\n";
+    *this << "}) {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const crop_dim* n) override {
-    *this << indent() << n->sym << " = crop_dim(" << n->src << ", " << n->dim << ", " << n->bounds << ") {\n";
+    *this << indent() << n->sym << " = crop_dim(" << n->src << ", " << n->dim << ", " << n->bounds << ") {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const slice_buffer* n) override {
-    *this << indent() << n->sym << " = slice_buffer(" << n->src << ", {" << n->at << "}) {\n";
+    *this << indent() << n->sym << " = slice_buffer(" << n->src << ", {" << n->at << "}) {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const slice_dim* n) override {
-    *this << indent() << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << ") {\n";
+    *this << indent() << n->sym << " = slice_dim(" << n->src << ", " << n->dim << ", " << n->at << ") {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
   void visit(const transpose* n) override {
-    *this << indent() << n->sym << " = transpose(" << n->src << ", {" << n->dims << "}) {\n";
+    *this << indent() << n->sym << " = transpose(" << n->src << ", {" << n->dims << "}) {";
     *this << n->body;
-    *this << indent() << "}\n";
+    *this << indent() << "}";
   }
 
-  void visit(const check* n) override { *this << indent() << "check(" << n->condition << ")\n"; }
+  void visit(const check* n) override { *this << indent() << "check(" << n->condition << ")"; }
 };
 
 namespace {
