@@ -19,6 +19,9 @@ namespace slinky {
 void dump_context_for_expr(
     std::ostream&, const eval_context&, const expr& = expr(), const node_context* symbols = nullptr);
 
+// And this one too.
+const node_context* set_default_print_context(const node_context* ctx);
+
 namespace {
 
 node_context symbols;
@@ -36,6 +39,12 @@ var b3(symbols, "b3");
 var b4(symbols, "b4");
 var b5(symbols, "b5");
 var b6(symbols, "b6");
+
+// Make test failures easier to read.
+auto _ = []() {
+  set_default_print_context(&symbols);
+  return 0;
+}();
 
 MATCHER_P(matches, x, "") { return match(arg, x); }
 
