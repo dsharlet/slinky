@@ -777,6 +777,12 @@ class in_place_aliaser : public stmt_mutator {
     var root;
 
     std::vector<dim_expr> dims;
+
+    // Which loop level this allocation appears at. We assume that buffers allocated outside the pipeline
+    // get this default, which indicates that the buffer is effectively inside any possible loop, allowing it to be
+    // reused as an output.
+    int loop_level = std::numeric_limits<int>::max();
+
     bool allow_alias = true;
   };
   // Tracks buffer symbols that are actually the same buffer.
@@ -789,6 +795,8 @@ class in_place_aliaser : public stmt_mutator {
   // Tracks if a buffer is used. Buffers start out unused, and we visit block stmts in reverse order, so the first use
   // we encounter is the last use of the buffer.
   symbol_map<int> use_count;
+
+  int loop_level = 0;
 
 public:
   in_place_aliaser(const std::vector<buffer_expr_ptr>& outputs) {
@@ -812,7 +820,7 @@ public:
   }
 
   void visit(const allocate* op) override {
-    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym, op->dims});
+    auto set_buffer = set_value_in_scope(buffers, op->sym, {op->sym, op->dims, loop_level});
     auto set_back = set_value_in_scope(backward, op->sym, var());
     auto set_fwd = set_value_in_scope(forward, op->sym, var());
     auto set_used = set_value_in_scope(use_count, op->sym, 0);
@@ -873,6 +881,12 @@ public:
         // We don't know how to alias this buffer.
         continue;
       }
+      if (output_alloc->loop_level < loop_level) {
+        // This allocation is at an outer loop level.
+        // TODO: We could still alias this if we can prove that this allocation is written everywhere it's read inside
+        // this loop.
+        continue;
+      }
       for (std::size_t i = 0; i < op->inputs.size(); ++i) {
         const std::size_t bit = o * op->inputs.size() + i;
         assert(bit < 32);
@@ -885,6 +899,10 @@ public:
             *use_count[input_alloc->root] > 1) {
           // We're traversing blocks backwards, if we already had a use, this is not the last use of the buffer, we
           // can't alias it.
+          continue;
+        }
+        if (input_alloc->loop_level < loop_level) {
+          // This allocation is at an outer loop level.
           continue;
         }
 
@@ -940,6 +958,12 @@ public:
       std::reverse(stmts.begin(), stmts.end());
       set_result(block::make(std::move(stmts)));
     }
+  }
+
+  void visit(const loop* op) override {
+    ++loop_level;
+    stmt_mutator::visit(op);
+    --loop_level;
   }
 };
 
