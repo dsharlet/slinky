@@ -561,10 +561,6 @@ TEST(simplify, buffer_bounds) {
           loop::make(x, loop::parallel, {0, select((1 < z), 117, 0)}, y,
               crop_dim::make(b1, b0, 0, {x, (((x + y) + 15) / 16) * 16}, use_buffer(b1))))));
 
-  ASSERT_THAT(simplify(decl_bounds(b0, {{0, select(1 < x, y, 1) + -1}},
-                  crop_dim::make(b1, b0, 0, {0, select(1 < x, expr(), 0)}, use_buffer(b1)))),
-      matches(decl_bounds(b0, {{0, select(1 < x, y, 1) + -1}}, use_buffer(b0))));
-
   ASSERT_THAT(simplify(loop::make(x, loop::serial, {0, y}, z,
                   crop_dim::make(b1, b0, 0, {select(x <= 0, x, expr()), y}, use_buffer(b1)))),
       matches(loop::make(
@@ -623,6 +619,12 @@ TEST(simplify, allocate) {
 
 TEST(simplify, crop) {
   stmt body = call_stmt::make(nullptr, {}, {b2}, {});
+
+  ASSERT_THAT(simplify(crop_dim::make(b2, b0, 0, {buffer_min(b0, 0), x}, body)),
+      matches(crop_dim::make(b2, b0, 0, {expr(), x}, body)));
+  ASSERT_THAT(simplify(crop_dim::make(b2, b0, 0, {x, buffer_max(b0, 0)}, body)),
+      matches(crop_dim::make(b2, b0, 0, {x, expr()}, body)));
+
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 0, {z, w}, body))),
       matches(crop_dim::make(b2, b0, 0, {max(x, z), min(y, w)}, body)));
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y}, crop_dim::make(b2, b1, 1, {z, w}, body))),

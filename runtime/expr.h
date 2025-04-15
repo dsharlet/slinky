@@ -98,9 +98,6 @@ enum class intrinsic {
   and_then,
   or_else,
 
-  // `define_undef(x, def)` means that undefined expressions take the value `def` when evaluating `x`.
-  define_undef,
-
   // Returns the size of a buffer in bytes.
   buffer_size_bytes,
 
