@@ -306,7 +306,7 @@ TEST_P(may_alias, unfolded) {
   ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 1);
 }
 
-TEST_P(may_alias, with_fold) {
+TEST_P(may_alias, inside_loop) {
   const bool may_alias = GetParam();
 
   // Make the pipeline
@@ -316,11 +316,6 @@ TEST_P(may_alias, with_fold) {
   auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
   auto intm = buffer_expr::make(ctx, "intm", 1, sizeof(int));
   auto intm2 = buffer_expr::make(ctx, "intm2", 1, sizeof(int));
-
-  if (!may_alias) {
-    // Make fold_factors mismatching to test that they are not aliased.
-    intm2->dim(0).fold_factor = 2;
-  }
 
   var x(ctx, "x");
 
@@ -332,6 +327,11 @@ TEST_P(may_alias, with_fold) {
       add_1<int>, {{intm2, {point(x)}}}, {{out, {x}}}, call_stmt::attributes{.allow_in_place = 0x1, .name = "add"});
 
   add.loops({{x, 1, 1}});
+
+  if (may_alias) {
+    intm->store_at({&add, x});
+    intm2->store_at({&add, x});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out});
 
@@ -357,7 +357,7 @@ TEST_P(may_alias, with_fold) {
     ASSERT_EQ(out_buf(i), 4 * i + 1);
   }
 
-  ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 1 : 2);
+  ASSERT_EQ(eval_ctx.heap.allocs.size(), may_alias ? 0 : 2);
 }
 
 TEST(split_output, cannot_alias) {
@@ -538,6 +538,79 @@ TEST_P(multiple_uses, cannot_alias_output) {
     for (int x = 0; x < W; ++x) {
       ASSERT_EQ(b_buf(x, y), in_buf(x, y) + 2);
       ASSERT_EQ(c_buf(x, y), in_buf(x, y) + 2);
+    }
+  }
+}
+
+TEST(reused_in_loop, cannot_alias) {
+  // This test verifies that we don't compute 
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+
+  auto sum_in = buffer_expr::make(ctx, "sum_in", 1, sizeof(int));
+  auto sum_in_1 = buffer_expr::make(ctx, "sum_in_1", 1, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  func sum_y = func::make(
+      [](const buffer<const int>& in, const buffer<int>& sum_in) -> index_t {
+        for (index_t x = sum_in.dim(0).begin(); x < sum_in.dim(0).end(); ++x) {
+          sum_in(x) = 0;
+          for (index_t y = in.dim(1).begin(); y < in.dim(1).end(); ++y) {
+            sum_in(x) += in(x, y);
+          }
+        }
+        return 0;
+      },
+      {{in, {point(x), in->dim(1).bounds}}}, {{sum_in, {x}}});
+
+  func add = func::make(add_1<int>, {{sum_in, {point(x)}}}, {{sum_in_1, {x}}},
+      call_stmt::attributes{.allow_in_place = true, .name = "add_1"});
+
+  func diff = func::make(
+      [](const buffer<const int>& in, const buffer<const int>& sum_in_1, const buffer<int>& out) -> index_t {
+        for (index_t x = out.dim(0).begin(); x < out.dim(0).end(); ++x) {
+          for (index_t y = out.dim(1).begin(); y < out.dim(1).end(); ++y) {
+            out(x, y) = in(x, y) - sum_in_1(x);
+          }
+        }
+        return 0;
+      },
+      {{in, {point(x), point(y)}}, {sum_in_1, {point(x), point(y)}}}, {{out, {x, y}}},
+      call_stmt::attributes{.allow_in_place = true, .name = "sub"});
+
+  sum_y.compute_root();
+  diff.loops({{x, 1}});
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int W = 20;
+  const int H = 10;
+  buffer<int, 2> in_buf({W, H});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+
+  // Not having span(std::initializer_list<T>) is unfortunate.
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int x = 0; x < W; ++x) {
+    int sum_in_y_1 = 1;
+    for (int y = 0; y < H; ++y) {
+      sum_in_y_1 += in_buf(x, y);
+    }
+
+    for (int y = 0; y < H; ++y) {
+      ASSERT_EQ(in_buf(x, y) - sum_in_y_1, out_buf(x, y));
     }
   }
 }
