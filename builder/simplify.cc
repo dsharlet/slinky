@@ -1821,7 +1821,7 @@ public:
         // We have T(x + y, b). We can rewrite to T(x, b - y) + y, and if we can eliminate the bound, the whole
         // bound is redundant.
         for (const expr& i : bounds) {
-          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)}, def);
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)}, def - xa->b);
           if (!removed.same_as(xa->a)) {
             return std::move(removed) + xa->b;
           }
@@ -1832,7 +1832,7 @@ public:
         // We have T(x / y, b). We can rewrite to T(x, b * y) / y, and if we can eliminate the bound, the whole
         // bound is redundant.
         for (const expr& i : bounds) {
-          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i * xa->b)}, def);
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i * xa->b)}, def * xa->b);
           if (!removed.same_as(xa->a)) {
             return std::move(removed) / xa->b;
           }
@@ -1844,8 +1844,10 @@ public:
         // is not invertible. Since we're looking for bounds, we can use a conservative rounding. If we're looking for
         // redundant mins, we should round up, and redundant maxes should round down.
         for (const expr& i : bounds) {
-          expr rounded = std::is_same<T, class min>::value ? i + (xa->b - 1) : i;
-          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(rounded / xa->b)}, def);
+          auto div = [](const expr& a, const expr& b) {
+            return std::is_same<T, class min>::value ? ceil_div(a, b) : floor_div(a, b);
+          };
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(div(i, xa->b))}, div(def, xa->b));
           if (!removed.same_as(xa->a)) {
             return std::move(removed) * xa->b;
           }

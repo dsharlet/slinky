@@ -653,6 +653,16 @@ TEST(simplify, crop) {
                       crop_dim::make(b3, b1, 0, {x, y},
                           crop_dim::make(b4, b2, 0, {x, y}, call_stmt::make(nullptr, {}, {b3, b4}, {})))))),
       matches(crop_dim::make(b3, b0, 0, {x, y}, call_stmt::make(nullptr, {}, {b3, b3}, {}))));
+
+  ASSERT_THAT(simplify(block::make({
+                  check::make(buffer_min(b0, 0) == 0),
+                  crop_dim::make(b2, b0, 0,
+                      {select(buffer_max(b0, 0) < 0, buffer_max(b0, 0) + 32, 0), buffer_max(b0, 0) + 31}, body),
+              })),
+      matches(block::make({
+          check::make(buffer_min(b0, 0) == 0),
+          crop_dim::make(b2, b0, 0, {select(buffer_max(b0, 0) < 0, buffer_max(b0, 0), -32) + 32, expr()}, body),
+      })));
 }
 
 TEST(simplify, make_buffer) {
