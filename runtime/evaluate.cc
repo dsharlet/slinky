@@ -62,9 +62,6 @@ class evaluator {
 public:
   eval_context& context;
 
-  // We want to propagate undefined values when we hit them.
-  bool undef;
-
   evaluator(eval_context& context) : context(context) {}
 
   // Assume `e` is defined, evaluate it and return the result.
@@ -113,9 +110,7 @@ public:
   // If `e` is defined, evaluate it and return the result. Otherwise, return default `def`.
   SLINKY_ALWAYS_INLINE index_t eval(const expr& e, index_t def) {
     if (e.defined()) {
-      undef = false;
-      index_t result = eval(e);
-      return undef ? def : result;
+      return eval(e);
     } else {
       return def;
     }
@@ -180,13 +175,7 @@ public:
   index_t eval(const logical_not* op) { return eval(op->a) == 0; }
 
   index_t eval(const class select* op) {
-    const expr& value = eval(op->condition) ? op->true_value : op->false_value;
-    if (value.defined()) {
-      return eval(value);
-    } else {
-      undef = true;
-      return 0;
-    }
+    return eval(eval(op->condition) ? op->true_value : op->false_value);
   }
 
   bool eval_short_circuit_op(const call* op) {
@@ -322,8 +311,6 @@ public:
 
     case intrinsic::and_then:
     case intrinsic::or_else: return eval_short_circuit_op(op);
-
-    case intrinsic::define_undef: return eval_define_undef(op);
 
     case intrinsic::buffer_size_bytes: return eval_buffer_metadata(op);
     case intrinsic::buffer_at: return reinterpret_cast<index_t>(eval_buffer_at(op));

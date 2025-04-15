@@ -1796,7 +1796,7 @@ public:
   }
 
   template <typename T>
-  expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds) {
+  expr remove_redundant_bounds(expr x, const std::set<expr, node_less>& bounds, const expr& def) {
     auto is_redundant = [&](const expr& x) {
       // A bound x is redundant if the bounds already have a value i such that T(x, i) == i
       for (const expr& i : bounds) {
@@ -1805,23 +1805,23 @@ public:
       }
       return false;
     };
-    if (is_redundant(x)) return expr();
+    if (is_redundant(x)) return def;
     if (const T* t = x.as<T>()) {
       bool a_redundant = is_redundant(t->a);
       bool b_redundant = is_redundant(t->b);
       if (a_redundant && b_redundant) {
-        return expr();
+        return def;
       } else if (a_redundant) {
-        return remove_redundant_bounds<T>(t->b, bounds);
+        return remove_redundant_bounds<T>(t->b, bounds, def);
       } else if (b_redundant) {
-        return remove_redundant_bounds<T>(t->a, bounds);
+        return remove_redundant_bounds<T>(t->a, bounds, def);
       }
     } else if (const add* xa = x.as<add>()) {
       if (as_constant(xa->b)) {
         // We have T(x + y, b). We can rewrite to T(x, b - y) + y, and if we can eliminate the bound, the whole
         // bound is redundant.
         for (const expr& i : bounds) {
-          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)});
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i - xa->b)}, def - xa->b);
           if (!removed.same_as(xa->a)) {
             return std::move(removed) + xa->b;
           }
@@ -1832,7 +1832,7 @@ public:
         // We have T(x / y, b). We can rewrite to T(x, b * y) / y, and if we can eliminate the bound, the whole
         // bound is redundant.
         for (const expr& i : bounds) {
-          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i * xa->b)});
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(i * xa->b)}, def * xa->b);
           if (!removed.same_as(xa->a)) {
             return std::move(removed) / xa->b;
           }
@@ -1844,8 +1844,10 @@ public:
         // is not invertible. Since we're looking for bounds, we can use a conservative rounding. If we're looking for
         // redundant mins, we should round up, and redundant maxes should round down.
         for (const expr& i : bounds) {
-          expr rounded = std::is_same<T, class min>::value ? i + (xa->b - 1) : i;
-          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(rounded / xa->b)});
+          auto div = [](const expr& a, const expr& b) {
+            return std::is_same<T, class min>::value ? ceil_div(a, b) : floor_div(a, b);
+          };
+          expr removed = remove_redundant_bounds<T>(xa->a, {mutate(div(i, xa->b))}, div(def, xa->b));
           if (!removed.same_as(xa->a)) {
             return std::move(removed) * xa->b;
           }
@@ -1857,8 +1859,8 @@ public:
           if (match(xs->condition, bs->condition)) {
             // We have T(select(c, xt, xf), select(c, bt, bf)), rewrite to select(c, T(xt, bt), T(xf, bf)) and attempt
             // to eliminate bounds.
-            expr t = remove_redundant_bounds<T>(xs->true_value, {bs->true_value});
-            expr f = remove_redundant_bounds<T>(xs->false_value, {bs->false_value});
+            expr t = remove_redundant_bounds<T>(xs->true_value, {bs->true_value}, def);
+            expr f = remove_redundant_bounds<T>(xs->false_value, {bs->false_value}, def);
             if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
               return select(xs->condition, std::move(t), std::move(f));
             }
@@ -1866,8 +1868,8 @@ public:
         }
       }
       // Also try select(x, T(xt, b), T(xf, b))
-      expr t = remove_redundant_bounds<T>(xs->true_value, bounds);
-      expr f = remove_redundant_bounds<T>(xs->false_value, bounds);
+      expr t = remove_redundant_bounds<T>(xs->true_value, bounds, def);
+      expr f = remove_redundant_bounds<T>(xs->false_value, bounds, def);
       if (!t.same_as(xs->true_value) || !f.same_as(xs->false_value)) {
         return select(xs->condition, std::move(t), std::move(f));
       }
@@ -1893,19 +1895,12 @@ public:
     enumerate_bounds<class max>(buffer.min, mins);
     enumerate_bounds<class min>(buffer.max, maxs);
     interval_expr deduped = {
-        remove_redundant_bounds<class max>(result.min, mins),
-        remove_redundant_bounds<class min>(result.max, maxs),
+        remove_redundant_bounds<class max>(result.min, mins, buffer_min(buf, dim)),
+        remove_redundant_bounds<class min>(result.max, maxs, buffer_max(buf, dim)),
     };
     if (!deduped.same_as(result)) {
       result = mutate(deduped);
     }
-
-    if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
-    if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
-
-    // TODO: I think it might be possible to avoid generating these min/max + mutate in some cases.
-    if (result.min.defined()) buffer.min = mutate(max(buffer.min, result.min));
-    if (result.max.defined()) buffer.max = mutate(min(buffer.max, result.max));
 
     // We might have written a select into an interval that tries to preserve the empty-ness of the interval.
     // But this might be unnecessary. Try to remove unnecessary selects here.
@@ -1930,6 +1925,13 @@ public:
         result.min = mutate(ctx.matched(x) + ctx.matched(y));
       }
     }
+
+    if (result.min.defined() && prove_true(result.min <= buffer.min)) result.min = expr();
+    if (result.max.defined() && prove_true(result.max >= buffer.max)) result.max = expr();
+
+    // TODO: I think it might be possible to avoid generating these min/max + mutate in some cases.
+    if (result.min.defined()) buffer.min = mutate(max(buffer.min, result.min));
+    if (result.max.defined()) buffer.max = mutate(min(buffer.max, result.max));
 
     return result;
   }
