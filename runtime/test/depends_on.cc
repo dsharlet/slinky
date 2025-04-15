@@ -142,6 +142,8 @@ TEST(find_dependencies, basic) {
   ASSERT_THAT(find_dependencies(crop_dim::make(x, y, 0, {z, z}, call_stmt::make(nullptr, {w}, {u}, {}))),
       testing::ElementsAre(y, z, w, u));
   ASSERT_THAT(find_dependencies(block::make({check::make(x), check::make(y)})), testing::ElementsAre(x, y));
+  ASSERT_THAT(find_dependencies(copy_stmt::make(x, {w}, y, {w}, z)), testing::ElementsAre(x, y, z));
+  ASSERT_THAT(find_dependencies(copy_stmt::make(x, {w + u}, y, {w}, var())), testing::ElementsAre(x, y, u));
 }
 
 }  // namespace slinky

@@ -35,6 +35,8 @@ public:
   }
 
   depends_on_result* find_deps(var s) {
+    if (!s.defined()) return nullptr;
+
     // Go in reverse order to handle shadowed declarations properly.
     for (auto i = var_deps.rbegin(); i != var_deps.rend(); ++i) {
       if (i->first == s) return i->second;
