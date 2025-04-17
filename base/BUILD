@@ -8,6 +8,7 @@ cc_library(
     hdrs = [
         "allocator.h",
         "arithmetic.h",
+        "atomic_wait.h",
         "function_ref.h",
         "ref_count.h",
         "modulus_remainder.h",
@@ -23,6 +24,9 @@ cc_library(
     hdrs = [
         "thread_pool.h",
         "function_ref.h",
+    ],
+    deps = [
+        ":base",
     ],
     visibility = ["//visibility:public"],
 )

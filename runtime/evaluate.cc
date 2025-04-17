@@ -15,6 +15,7 @@
 #include <thread>
 #include <utility>
 
+#include "base/atomic_wait.h"
 #include "base/chrome_trace.h"
 #include "base/thread_pool.h"
 #include "runtime/buffer.h"
@@ -435,7 +436,8 @@ public:
         const stmt& body;
         const index_t min;
         const index_t step;
-        std::atomic<index_t> result{0};
+        alignas(cache_line_size) std::atomic<index_t> result{0};
+        alignas(cache_line_size) std::atomic<bool> completion_flag{false};
 
         parallel_loop(std::size_t n, const eval_context& context, const loop* op, index_t min, index_t step)
             : parallel_for(n), context(context), sym(op->sym), closure(is_closure(op->body)),
@@ -483,10 +485,14 @@ public:
             loop->result.compare_exchange_strong(zero, result_i);
           }
         });
+
         // If we get here, there's no more work to start.
         if (context.size() != 0) {
           // We ran some tasks, so we know that the context is still in scope. Cancel any remaining tasks.
           context.config->thread_pool->cancel(loop.get());
+        }
+        if (loop->done() && !loop->completion_flag.exchange(true)) {
+          slinky::atomic_notify_one(&loop->completion_flag);
         }
       };
       int workers = std::min<int>(max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
@@ -499,7 +505,7 @@ public:
 
       if (!loop->done()) {
         // While the loop still isn't done, work on other tasks.
-        pool->wait_for([&]() { return loop->done(); });
+        pool->wait_for([&]() { return loop->done(); }, loop->completion_flag);
       }
 
       return loop->result;
