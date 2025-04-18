@@ -7,7 +7,7 @@ cc_library(
     name = "util",
     srcs = ["bazel_util.cc"],
     hdrs = [
-        "bazel_util.h", 
+        "bazel_util.h",
         "seeded_test.h",
     ],
     deps = [
@@ -66,6 +66,17 @@ cc_test(
     srcs = ["thread_pool_benchmark.cc"],
     deps = [
         "//base:thread_pool",
+        "@google_benchmark//:benchmark_main",
+    ],
+    args=["--benchmark_min_time=1x"],
+    size = "small",
+)
+
+cc_test(
+    name = "atomic_wait_benchmark",
+    srcs = ["atomic_wait_benchmark.cc"],
+    deps = [
+        "//base",
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=1x"],
