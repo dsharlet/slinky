@@ -33,6 +33,8 @@ TEST(arithmetic, euclidean_div_mod) {
     // 2. (a / b) * b + a % b == a
     ASSERT_EQ(euclidean_div(a, b) * b + euclidean_mod(a, b), a);
     ASSERT_EQ(euclidean_div(-a, b) * b + euclidean_mod(-a, b), -a);
+    ASSERT_EQ(euclidean_div_positive_divisor(a, b) * b + euclidean_mod(a, b), a);
+    ASSERT_EQ(euclidean_div_positive_divisor(-a, b) * b + euclidean_mod(-a, b), -a);
     ASSERT_EQ(euclidean_div(a, -b) * -b + euclidean_mod(a, -b), a);
     ASSERT_EQ(euclidean_div(-a, -b) * -b + euclidean_mod(-a, -b), -a);
     ASSERT_EQ(euclidean_div(a, b) * b + euclidean_mod_positive_modulus(a, b), a);
