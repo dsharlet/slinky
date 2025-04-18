@@ -319,10 +319,10 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
   }
 }
 
-// The strategy used here for padding is to start with the last dimension (which should have the largest stride), and
+// The strategy used here for padding is to start with the last dimension (which typically has the largest stride), and
 // fill the padded area. Once this padded area is filled, it can be cropped from the buffer, which reduces the area
 // the next dimension needs to pad. Proceeding in this order minimizes the area we need to fill with small stride, which
-// is where this is slow (because we can only copy one or a few elements at a time.
+// is where this is slow (because we can only copy one or a few elements at a time).
 
 // This function copies `pad` to `dst` where `dst` is out of bounds of `src` in dimension `d`, and then crops `dst` such
 // that only the unpadded area remains in dimension `d`.
@@ -406,11 +406,9 @@ void pad(const dim* in_bounds, const raw_buffer& dst, const raw_buffer& pad) {
   dst_opt.dims = SLINKY_ALLOCA(dim, dst.rank);
   internal::copy_small_n(dst.dims, dst.rank, dst_opt.dims);
 
-  raw_buffer src = dst;
-  src.dims = SLINKY_ALLOCA(dim, dst.rank);
-  internal::copy_small_n(dst.dims, dst.rank, src.dims);
+  raw_buffer src = {nullptr, dst.elem_size, dst.rank, SLINKY_ALLOCA(dim, dst.rank)};
   for (std::size_t d = 0; d < dst.rank; ++d) {
-    src.crop(d, in_bounds[d].min(), in_bounds[d].max());
+    src.dim(d) = {in_bounds[d].min(), in_bounds[d].max(), 0, dim::unfolded};
   }
 
   raw_buffer pad_opt = pad;
@@ -456,13 +454,14 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(span<const raw_buffer*, BufsSize> bufs
   const raw_buffer& buf = *bufs[0];
   const dim& base_inner = buf.dim(d - 1);
   const dim& base_outer = buf.dim(d);
-  if (base_inner.fold_factor() != dim::unfolded) {
-    // One of the dimensions is folded.
-    return false;
-  }
   const index_t inner_extent = base_inner.extent();
   if (base_inner.stride() * inner_extent != base_outer.stride()) {
     // The dimensions are not contiguous in memory.
+    return false;
+  }
+
+  if (base_outer.stride() != 0 && base_inner.fold_factor() != dim::unfolded) {
+    // One of the dimensions is folded.
     return false;
   }
 
@@ -482,14 +481,16 @@ SLINKY_ALWAYS_INLINE inline bool can_fuse(span<const raw_buffer*, BufsSize> bufs
     if (inner.min() != base_inner.min() || inner.max() != base_inner.max()) {
       // The bounds of the inner dimension are not equal.
       return false;
-    } else if (inner.fold_factor() != dim::unfolded) {
-      // One of the dimensions is folded.
-      return false;
     }
 
     const index_t outer_stride = d < rank ? buf_n.dim(d).stride() : 0;
     if (inner.stride() * inner_extent != outer_stride) {
       // The dimensions are not contiguous in memory.
+      return false;
+    }
+
+    if (outer_stride != 0 && inner.fold_factor() != dim::unfolded) {
+      // One of the dimensions is folded.
       return false;
     }
   }
@@ -564,7 +565,8 @@ std::ptrdiff_t sizeof_for_each_loop(std::size_t bufs_size) {
 // We can't make a simple struct for this, because N and R are not necessarily compile-time constants.
 template <typename F>
 SLINKY_ALWAYS_INLINE inline std::size_t size_of_plan(std::size_t bufs_size, std::size_t rank) {
-  return sizeof_for_each_loop(bufs_size) * std::max<std::size_t>(1, rank) + sizeof(F);
+  // We only need max(rank, 1) for each loops, but it only wastes a little stack and it's cheaper to compute the add.
+  return sizeof_for_each_loop(bufs_size) * (rank + 1) + sizeof(F);
 }
 
 // Compile-time dispatch to either for_each_contiguous_slice_callback or for_each_element_callback.

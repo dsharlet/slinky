@@ -132,8 +132,8 @@ public:
 
   // Check if the dimension crosses a fold between min and max.
   bool is_folded(index_t min, index_t max) const {
-    if (fold_factor() == unfolded) return false;
-    return euclidean_div(min, fold_factor()) != euclidean_div(max, fold_factor());
+    if (stride() == 0 || fold_factor() == unfolded) return false;
+    return euclidean_div_positive_divisor(min, fold_factor()) != euclidean_div_positive_divisor(max, fold_factor());
   }
   bool is_folded(const dim& other) const { return is_folded(other.min(), other.max()); }
   bool is_folded() const { return is_folded(min(), max()); }
@@ -654,7 +654,6 @@ void pad(const dim* src_bounds, const raw_buffer& dst, const raw_buffer& pad);
 // Returns true if the two dimensions can be fused.
 inline bool can_fuse(const dim& inner, const dim& outer) {
   if (outer.min() == outer.max()) return true;
-  if (inner.fold_factor() != dim::unfolded) return false;
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
   // Some integer overflow below is harmless when multiplied by zero, but flagged by ubsan.
@@ -663,7 +662,8 @@ inline bool can_fuse(const dim& inner, const dim& outer) {
   index_t next_stride = inner.stride() * (inner.max() - inner.min() + 1);
 #endif
   if (next_stride != outer.stride()) return false;
-  return true;
+
+  return next_stride == 0 || inner.fold_factor() == dim::unfolded;
 }
 
 enum class fuse_type {
