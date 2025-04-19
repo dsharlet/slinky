@@ -222,7 +222,7 @@ void fill(void* dst, const void* value, index_t elem_size, index_t size) {
 
 // When copying broadcasted buffers, it would be slow if we copied each element one at a time. We can avoid this by
 // duplicating the value into a buffer and copying from that larger buffer instead.
-using fill_value_buffer = std::array<uint8_t, 256>;
+using fill_value_buffer = std::array<uint8_t, 64>;
 void optimize_fill_value(const void*& value, index_t& elem_size, index_t fill_size, fill_value_buffer& buffer) {
   if (is_repeated_byte(value, elem_size)) {
     // This value can be filled with memset.
