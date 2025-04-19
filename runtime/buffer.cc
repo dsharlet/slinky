@@ -308,10 +308,10 @@ void copy_impl(raw_buffer& src, raw_buffer& dst) {
         assert(src_dim0.begin() <= dst_dim0.begin());
         assert(src_dim0.end() >= dst_dim0.end());
 
-        slinky::index_t src_offset = src_dim0.flat_offset_bytes(dst_dim0.min());
-        for_each_element(
-            [=](void* dst, const void* src) { memcpy(dst, offset_bytes_non_null(src, src_offset), dst_size); }, dst,
-            src);
+        void* src_base = src.base;
+        src.base = offset_bytes(src.base, src_dim0.flat_offset_bytes(dst_dim0.min()));
+        for_each_element([=](void* dst, const void* src) { memcpy(dst, src, dst_size); }, dst, src);
+        src.base = src_base;
       }
       unslice_dim0(dst, dst_dim0);
       unslice_dim0(src, src_dim0);
