@@ -19,7 +19,7 @@ T euclidean_div(T a, T b, T define_b_zero = 0) {
     return define_b_zero;
   }
   T q = a / b;
-  T r = a - q * b;
+  T r = a % b;
   T bs = b >> (sizeof(T) * 8 - 1);
   T rs = r >> (sizeof(T) * 8 - 1);
   return q - (rs & bs) + (rs & ~bs);
@@ -38,7 +38,7 @@ template <typename T>
 T euclidean_div_positive_divisor(T a, T b) {
   assert(b > 0);
   T q = a / b;
-  T r = a - q * b;
+  T r = a % b;
   T rs = r >> (sizeof(T) * 8 - 1);
   return q + rs;
 }
