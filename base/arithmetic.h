@@ -19,17 +19,12 @@ T euclidean_div(T a, T b, T define_b_zero = 0) {
     return define_b_zero;
   }
   T q = a / b;
-  T r = a - q * b;
+  T r = a % b;
+  // Get the sign of b and r (-1 or 0).
   T bs = b >> (sizeof(T) * 8 - 1);
   T rs = r >> (sizeof(T) * 8 - 1);
+  // Adjust the result (which is rounded towards 0) to be rounded down.
   return q - (rs & bs) + (rs & ~bs);
-}
-
-template <typename T>
-T euclidean_mod_positive_modulus(T a, T b) {
-  assert(b > 0);
-  T r = a % b;
-  return r >= 0 ? r : r + b;
 }
 
 template <typename T>
@@ -39,6 +34,23 @@ T euclidean_mod(T a, T b, T define_b_zero = 0) {
   }
   T r = a % b;
   return r >= 0 ? r : (b < 0 ? r - b : r + b);
+}
+
+template <typename T>
+T euclidean_div_positive_divisor(T a, T b) {
+  assert(b > 0);
+  T q = a / b;
+  T r = a % b;
+  // Get the sign of r (-1 or 0).
+  T rs = r >> (sizeof(T) * 8 - 1);
+  return q + rs;
+}
+
+template <typename T>
+T euclidean_mod_positive_modulus(T a, T b) {
+  assert(b > 0);
+  T r = a % b;
+  return r >= 0 ? r : r + b;
 }
 
 // Compute a / b, rounding down.
