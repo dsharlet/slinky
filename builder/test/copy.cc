@@ -465,6 +465,54 @@ TEST_P(downsample_y, copy) {
   ASSERT_EQ(eval_ctx.copy_elements, W * H);
 }
 
+class mod_y : public testing::TestWithParam<int> {};
+
+INSTANTIATE_TEST_SUITE_P(split, mod_y, testing::Range(0, 5));
+
+TEST_P(mod_y, copy) {
+  int split = GetParam();
+
+  // Make the pipeline
+  node_context ctx;
+
+  auto in = buffer_expr::make(ctx, "in", 2, sizeof(int));
+  auto out = buffer_expr::make(ctx, "out", 2, sizeof(int));
+
+  var x(ctx, "x");
+  var y(ctx, "y");
+
+  const int kMod = 23;
+  func mod_func = func::make_copy({in, {point(x), point(y % kMod)}}, {out, {x, y}});
+
+  if (split > 0) {
+    mod_func.loops({{y, split}});
+  }
+
+  pipeline p = build_pipeline(ctx, {in}, {out});
+
+  // Run the pipeline.
+  const int H = 20;
+  const int W = 10;
+  buffer<int, 2> in_buf({W, kMod});
+  init_random(in_buf);
+
+  buffer<int, 2> out_buf({W, H});
+  out_buf.allocate();
+  const raw_buffer* inputs[] = {&in_buf};
+  const raw_buffer* outputs[] = {&out_buf};
+  test_context eval_ctx;
+  p.evaluate(inputs, outputs, eval_ctx);
+
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      ASSERT_EQ(out_buf(x, y), in_buf(x, y % kMod));
+    }
+  }
+
+  ASSERT_EQ(eval_ctx.copy_calls, split == 0 ? 1 : ceil_div(H, split));
+  ASSERT_EQ(eval_ctx.copy_elements, W * H);
+}
+
 class transpose_test : public testing::TestWithParam<std::vector<int>> {};
 
 INSTANTIATE_TEST_SUITE_P(schedule, transpose_test,

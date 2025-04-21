@@ -71,6 +71,23 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     src_dim.fold_factor = expr();
     return true;
   } else {
+    expr fold_factor = buffer_fold_factor(src, src_d);
+    bool is_mod = false;
+
+    // Try to parse src_x = dst_x % fold_factor
+    if (const class mod* m = src_x.as<class mod>()) {
+      const bool is_unfolded =
+          !src_dim.fold_factor.defined() ||
+          src_dim.fold_factor.same_as(dim::unfolded);
+      if (is_unfolded && !depends_on(m->b, dst_x).any()) {
+        fold_factor = m->b;
+        src_x = m->a;
+        is_mod = true;
+      } else {
+        return false;
+      }
+    }
+
     // Try to parse src_x = dst_x * scale + offset
     expr scale = 1;
     if (const class mul* s = src_x.as<class mul>()) {
@@ -86,14 +103,14 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     }
 
     expr offset = simplify((src_x - dst_x) * scale);
-    if (depends_on(offset, dst_x).any()) {
+    if ((is_mod && !is_zero(offset)) || depends_on(offset, dst_x).any()) {
       // We don't understand this src_x as a copy.
       return false;
     }
 
     src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
     src_dim.stride = buffer_stride(src, src_d) * scale;
-    src_dim.fold_factor = buffer_fold_factor(src, src_d);
+    src_dim.fold_factor = fold_factor;
     at = buffer_min(src, src_d) + offset * (scale - 1);
 
     // Alternative definitions that may be useful in the future and were difficult to determine:
