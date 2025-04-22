@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -202,7 +203,7 @@ TEST(buffer, empty_buffer) {
   buf.allocate();
 }
 
-bool test_fill(int elem_size, int size) {
+bool test_copy_broadcast(int elem_size, int size) {
   buffer<void, 1> buf({size}, elem_size);
   buf.allocate();
   std::vector<uint8_t> value(elem_size);
@@ -219,12 +220,40 @@ bool test_fill(int elem_size, int size) {
   return true;
 }
 
-TEST(buffer, fill) {
+TEST(buffer, copy_broadcast) {
   for (int elem_size : {1, 2, 3, 4, 8, 12, 16, 63, 64, 65}) {
     for (int size : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100, 1024 / elem_size, 1024 * 1024 / elem_size}) {
-      ASSERT_TRUE(test_fill(elem_size, size)) << elem_size << " " << size;
+      ASSERT_TRUE(test_copy_broadcast(elem_size, size)) << elem_size << " " << size;
     }
   }
+}
+
+TEST(buffer, pad_scalar) {
+  scalar<int> dst(1);
+  scalar<int> padding(2);
+  pad(nullptr, dst, padding);
+  ASSERT_EQ(dst.value, 1);
+}
+
+TEST(buffer, pad_1d) {
+  buffer<int, 1> dst({10});
+  dst.allocate();
+  std::iota(dst.base(), dst.base() + dst.elem_count(), 0);
+  scalar<int> padding(0);
+  dim src(3, 6);
+  pad(&src, dst, padding);
+  ASSERT_THAT(span<int>(dst.base(), dst.elem_count()), testing::ElementsAre(0, 0, 0, 3, 4, 5, 6, 0, 0, 0));
+}
+
+TEST(buffer, pad_2d) {
+  buffer<int, 2> dst({4, 4});
+  dst.allocate();
+  std::iota(dst.base(), dst.base() + dst.elem_count(), 0);
+  scalar<int> padding(0);
+  dim src[] = {{1, 2}, {1, 2}};
+  pad(src, dst, padding);
+  ASSERT_THAT(
+      span<int>(dst.base(), dst.elem_count()), testing::ElementsAre(0, 0, 0, 0, 0, 5, 6, 0, 0, 9, 10, 0, 0, 0, 0, 0));
 }
 
 TEST(buffer, shallow_copy) {
@@ -781,7 +810,8 @@ TEST(buffer, for_each_element_fuzz) {
       buf.allocate();
     }
     for_each_element([](const void*, const void*, const void*) {}, bufs[0], bufs[1], bufs[2]);
-    for_each_contiguous_slice(bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
+    for_each_contiguous_slice(
+        bufs[0], [](index_t, const void*, const void*, const void*) {}, bufs[1], bufs[2]);
   }
 }
 
