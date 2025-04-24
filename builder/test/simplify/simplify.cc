@@ -206,7 +206,7 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(select(x, (y - 4), 2) + 4), matches(select(x, y, 6)));
   ASSERT_THAT(simplify(select(x, y + 3, 5) - 1), matches(select(x, y, 2) + 2));
-  ASSERT_THAT(simplify(min(x + 2, select(y, 3, z + 4)) - 1), matches(min(x, select(y, -1, z) + 2) + 1));
+  ASSERT_THAT(simplify(min(x + 2, select(y, 3, z + 4)) - 1), matches((min(x + -2, select(y, -1, z)) + 3)));
 
   ASSERT_THAT(simplify(select((y <= 0), select((x <= 0), z, x), z)), matches(select(0 < x && y <= 0, x, z)));
 
@@ -219,6 +219,8 @@ TEST(simplify, basic) {
 
   ASSERT_THAT(simplify(max(select(z <= 0, -1, select(1 <= y, min(x, z + -1), 0)) + 1, select((1 <= y), z, 0))),
       matches(select((1 <= y), max(z, 0), (0 < z))));
+
+  ASSERT_THAT(simplify(min(min(x / 16 + -2, y) + 1, min(y + 1, x / 16)) + 2), matches(min(y, x / 16 + -2) + 3));
 }
 
 TEST(simplify, let) {
