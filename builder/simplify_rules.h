@@ -545,8 +545,15 @@ bool apply_div_rules(Fn&& apply) {
 
       apply((x + y*c0)/c1, y*eval(c0/c1) + x/c1, c0%c1 == 0) ||
       apply((x + c0)/c1, x/c1 + eval(c0/c1), c0%c1 == 0) ||
-      apply((y*c0 - x)/c1, y*eval(c0/c1) + (-x/c1), c0%c1 == 0 && c0 != 0) ||
-      apply((c0 - x)/c1, (-x/c1) + eval(c0/c1), c0%c1 == 0 && c0 != 0) ||
+      apply((y*c0 - x)/c1, y*eval(c0/c1) + (-x)/c1, c0%c1 == 0 && c0 != 0) ||
+      apply((c0 - x)/c1, (-x)/c1 + eval(c0/c1), c0%c1 == 0 && c0 != 0) ||
+    
+      apply(min(y, z + x*c0)/c1, min(x*eval(c0/c1) + z/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(max(y, z + x*c0)/c1, max(x*eval(c0/c1) + z/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(min(y, x*c0 - z)/c1, min(x*eval(c0/c1) + (-z)/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(max(y, x*c0 - z)/c1, max(x*eval(c0/c1) + (-z)/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(min(y, x*c0)/c1, min(x*eval(c0/c1), y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(max(y, x*c0)/c1, max(x*eval(c0/c1), y/c1), c1 > 0 && c0%c1 == 0) ||
     
       apply(select(x, c0, c1)/c2, select(x, eval(c0/c2), eval(c1/c2))) ||
       apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
