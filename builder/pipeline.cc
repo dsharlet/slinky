@@ -1118,23 +1118,47 @@ class pipeline_builder {
 
     return results;
   }
+  // Returns true if v is connected to one of the terminal node.
+  bool find_transitive_deps_impl(
+      const var& v, const std::set<var>& terminal, std::set<var>& visited, std::set<var>& result) {
+    // This is a terminal node, so return true.
+    if (terminal.count(v)) {
+      return true;
+    }
 
-  void find_transitive_deps_impl(const var& v, std::set<var>& result) {
-    result.insert(v);
+    visited.insert(v);
+
+    // If any of the connected nodes are connected to the terminal node, this one is connected too.
+    bool can_reach_terminal = false;
     for (const var& p : bounds_deps_[v]) {
       // No point in visiting the node we've already seen.
       // NOTE(vksnk): this check is O(lg N) and we can make it O(1) by using
       // an additional `visited` array, but I don't think it's critical for
       // performance at all.
-      if (result.count(p) > 0) continue;
-      find_transitive_deps_impl(p, result);
+      if (visited.count(p) > 0) {
+        // result set only contains nodes connected to the terminal nodes.
+        can_reach_terminal = can_reach_terminal || (result.count(p) > 0);
+        continue;
+      }
+
+      // This is not embedded into or expression below, because we still need all of the child nodes
+      // even if can_reach_terminal is already true.
+      bool can_reach_terminal_from_p = find_transitive_deps_impl(p, terminal, visited, result);
+      can_reach_terminal = can_reach_terminal || can_reach_terminal_from_p;
     }
+
+    // We only keep nodes connected to the terminal nodes.
+    if (can_reach_terminal) result.insert(v);
+
+    return can_reach_terminal;
   }
 
   // Find transitive dependencies for a set of buffers wrt their bounds dependencies using DFS.
-  void find_transitive_deps(const std::vector<var>& buffers, std::set<var>& result) {
+  void find_transitive_deps(const std::vector<var>& buffers, const std::set<var>& terminal, std::set<var>& result) {
+    std::set<var> visited;
     for (const var& v : buffers) {
-      find_transitive_deps_impl(v, result);
+      if (constants_.count(v)) continue;
+      find_transitive_deps_impl(v, terminal, visited, result);
     }
   }
 
@@ -1205,20 +1229,42 @@ public:
     if (here.root()) return body;
 
     // Find which buffers are used inside of the body.
-    std::vector<var> buffers_used = find_buffer_dependencies(body.body);
-    std::set<var> transitive_deps;
+    // We separate input and output buffers list, because we don't need to find transitive
+    // dependencies for inputs.
+    // TODO(vksnk): we can add a function which does both of these in one pass.
+    std::vector<var> input_buffers_used = find_buffer_dependencies(body.body, true, false);
+    std::vector<var> buffers_used = find_buffer_dependencies(body.body, false, true);
+    // The function above doesn't add buffers allocated inside of the body into the outputs list,
+    // but we still need to define their dependencies.
+    for (var v : body.allocations) {
+      buffers_used.push_back(v);
+    }
+
+    std::set<var> all_deps;
+    std::set<var> terminal;
+    if (base_f) {
+      // These are the crops which can actually affect other crops and we don't want
+      // any dependencies which can't reach one of these.
+      for (const func::output& o : base_f->outputs()) {
+        terminal.insert(o.buffer->sym());
+      }
+    }
+
     // We also need to include transitive dependencies of the used buffers in case metadata
     // needs to be updated.
-    // NOTE(vksnk): we could be more clever here and stop once we reach this loop's parent buffer(s)
-    // which will avoid adding unnecessary crops which are not affected by this loop's crop_dim.
-    find_transitive_deps(buffers_used, transitive_deps);
+    find_transitive_deps(buffers_used, terminal, all_deps);
+
+    // Add buffers which are used as inputs into the set as well.
+    for (var v : input_buffers_used) {
+      all_deps.insert(v);
+    }
 
     // Add crops for the buffers and their dependencies used inside of the body using previously inferred bounds.
     // Input syms should be the innermost.
     for (const auto& i : input_syms_) {
       var sym = i.first;
       if (!allocation_bounds_[sym]) continue;
-      if (transitive_deps.count(sym) == 0) continue;
+      if (all_deps.count(sym) == 0) continue;
       body.body = crop_buffer::make(sym, sym, *allocation_bounds_[sym], body.body);
     }
 
@@ -1235,7 +1281,7 @@ public:
       for (const func::output& o : f->outputs()) {
         const buffer_expr_ptr& b = o.buffer;
         if (!inferred_bounds_[b->sym()]) continue;
-        if (transitive_deps.count(b->sym()) == 0) continue;
+        if (all_deps.count(b->sym()) == 0) continue;
         if (body.allocations.count(b->sym()) > 0) {
           // We can't produce the crop for the buffers which weren't allocated yet,
           // so produce make_buffer, because some other buffers might use metadata from them.
