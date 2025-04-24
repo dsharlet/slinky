@@ -123,7 +123,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
       apply(min(x, min(y, c0)), min(min(x, y), c0)) ||
       apply(min(x + c0, (y + c1)/c2), min(x, (y + eval(c1 - c0*c2))/c2) + c0, c2 != 0) ||
-      apply(min(x + c0, y + c1), min(x, y + eval(c1 - c0)) + c0) ||
+      apply(min(x + c0, y + c1),
+        min(x, y + eval(c1 - c0)) + c0, c0 >= c1,  // Canonicalize to pulling bigger constants out.
+        min(y, x + eval(c0 - c1)) + c1) ||
       apply(min(x + c0, c1 - y), c1 - max(y, eval(c1 - c0) - x)) ||
       apply(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
       apply(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
@@ -294,7 +296,9 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
       apply(max(x, max(y, c0)), max(max(x, y), c0)) ||
       apply(max(x + c0, (y + c1)/c2), max(x, (y + eval(c1 - c0*c2))/c2) + c0, c2 != 0) ||
-      apply(max(x + c0, y + c1), max(x, y + eval(c1 - c0)) + c0) ||
+      apply(max(x + c0, y + c1),
+        max(x, y + eval(c1 - c0)) + c0, c0 >= c1,  // Canonicalize to pulling bigger constants out.
+        max(y, x + eval(c0 - c1)) + c1) ||
       apply(max(x + c0, c1 - y), c1 - min(y, eval(c1 - c0) - x)) ||
       apply(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
       apply(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
@@ -545,8 +549,15 @@ bool apply_div_rules(Fn&& apply) {
 
       apply((x + y*c0)/c1, y*eval(c0/c1) + x/c1, c0%c1 == 0) ||
       apply((x + c0)/c1, x/c1 + eval(c0/c1), c0%c1 == 0) ||
-      apply((y*c0 - x)/c1, y*eval(c0/c1) + (-x/c1), c0%c1 == 0 && c0 != 0) ||
-      apply((c0 - x)/c1, (-x/c1) + eval(c0/c1), c0%c1 == 0 && c0 != 0) ||
+      apply((y*c0 - x)/c1, y*eval(c0/c1) + (-x)/c1, c0%c1 == 0 && c0 != 0) ||
+      apply((c0 - x)/c1, (-x)/c1 + eval(c0/c1), c0%c1 == 0 && c0 != 0) ||
+    
+      apply(min(y, z + x*c0)/c1, min(x*eval(c0/c1) + z/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(max(y, z + x*c0)/c1, max(x*eval(c0/c1) + z/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(min(y, x*c0 - z)/c1, min(x*eval(c0/c1) + (-z)/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(max(y, x*c0 - z)/c1, max(x*eval(c0/c1) + (-z)/c1, y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(min(y, x*c0)/c1, min(x*eval(c0/c1), y/c1), c1 > 0 && c0%c1 == 0) ||
+      apply(max(y, x*c0)/c1, max(x*eval(c0/c1), y/c1), c1 > 0 && c0%c1 == 0) ||
     
       apply(select(x, c0, c1)/c2, select(x, eval(c0/c2), eval(c1/c2))) ||
       apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
