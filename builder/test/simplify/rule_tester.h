@@ -65,13 +65,21 @@ public:
         ctx[var(i)] = expr_gen_.random_constant();
       }
 
+      auto dump_ctx = [&]() { 
+        std::stringstream ss;
+        for (std::size_t i = 0; i < var_count; ++i) {
+          ss << ", " << var(i) << "=" << ctx[var(i)];
+        }
+        return ss.str();
+      };
+
       index_t value = evaluate(pattern, ctx);
       index_t replacement_value = evaluate(replacement, ctx);
       index_t simplified_value = evaluate(simplified, ctx);
       ASSERT_EQ(value, replacement_value) << "Incorrect rule: " << rule_str << "\n"
-                                          << pattern << " -> " << replacement << "\n";
+                                          << pattern << " -> " << replacement << dump_ctx() << "\n";
       ASSERT_EQ(value, simplified_value) << "Incorrect simplification: " << rule_str << "\n"
-                                         << pattern << " -> " << simplified << "\n";
+                                         << pattern << " -> " << simplified << dump_ctx() << "\n";
     }
   }
 
