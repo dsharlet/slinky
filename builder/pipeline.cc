@@ -1141,8 +1141,8 @@ class pipeline_builder {
         continue;
       }
 
-      // This is not embedded into or expression below, because we still need all of the child nodes
-      // even if can_reach_terminal is already true.
+      // This is not embedded into `or` expression below, because we still need to visit all of
+      // the child nodes even if can_reach_terminal is already true.
       bool can_reach_terminal_from_p = find_transitive_deps_impl(p, terminal, visited, result);
       can_reach_terminal = can_reach_terminal || can_reach_terminal_from_p;
     }
