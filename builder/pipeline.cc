@@ -450,38 +450,42 @@ void compute_innermost_locations(const std::vector<const func*>& order,
     if (p != deps.end()) {
       assert(!p->second.empty());
 
-      // If we have an explicitly set compute_at location we should use that.
+      // Check all of the consumers and find their innermost locations.
+      std::vector<int> parent_ids;
+      for (const auto& d : p->second) {
+        const auto& node = func_to_loop_tree.find(d);
+        assert(node != func_to_loop_tree.end());
+        parent_ids.push_back(node->second);
+      }
+
+      assert(parent_ids.size() > 0);
+      if (parent_ids.size() == 1) {
+        // We have just one consumer, so use its innermost location.
+        parent_id = parent_ids[0];
+      } else {
+        // There are multiple consumers, so we need to find the least common ancestor
+        // of their innermost locations.
+        parent_id = lca(loop_tree, parent_ids);
+      }
       if (f->compute_at()) {
-        // TODO(vksnk): check if compute_at is a valid location based on computed
-        // innermost location.
-        for (int ix = 0; ix < static_cast<int>(loop_tree.size()); ix++) {
+        // If the func has explicitly defined compute_at location it needs
+        // to be somewhere in the path from the innermost location to the root.
+        std::vector<int> path = find_path_from_root(loop_tree, parent_id);
+        // Reset parent_id, because we want to change it based on the compute_at.
+        parent_id = -1;
+        for (int ix = 0; ix < static_cast<int>(path.size()); ix++) {
           if (loop_tree[ix].loop == *f->compute_at()) {
             parent_id = ix;
           }
         }
+        assert(parent_id != -1);
         compute_at_levels[f] = *f->compute_at();
       } else {
-        // Check all of the consumers and find their innermost locations.
-        std::vector<int> parent_ids;
-        for (const auto& d : p->second) {
-          const auto& node = func_to_loop_tree.find(d);
-          assert(node != func_to_loop_tree.end());
-          parent_ids.push_back(node->second);
-        }
-
-        if (parent_ids.size() == 1) {
-          // We have just one consumer, so use its innermost location.
-          parent_id = parent_ids[0];
-        } else {
-          // There are multiple consumers, so we need to find the least common ancestor
-          // of their innermost locations.
-          parent_id = lca(loop_tree, parent_ids);
-        }
-
         compute_at_levels[f] = loop_tree[parent_id].loop;
       }
     } else {
       // This is an output so should be computed at root.
+      assert(!f->compute_at() || f->compute_at()->root());
       parent_id = 0;
       compute_at_levels[f] = loop_id();
     }
