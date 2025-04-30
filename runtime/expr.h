@@ -338,6 +338,7 @@ inline interval_expr point(expr x) { return interval_expr(std::move(x)); }
 
 interval_expr operator*(const expr& a, const interval_expr& b);
 interval_expr operator+(const expr& a, const interval_expr& b);
+interval_expr operator-(const expr& a, const interval_expr& b);
 
 expr clamp(expr x, interval_expr b);
 interval_expr select(const expr& c, interval_expr t, interval_expr f);
