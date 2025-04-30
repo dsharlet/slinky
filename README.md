@@ -16,16 +16,16 @@ Without needing to worry about instruction selection, register pressure, and so 
 The ultimate goal of Slinky is to make automatic scheduling of pipelines reliable and fast enough to implement a just-in-time optimization engine at runtime.
 
 ## Graph description
-Pipelines are described by operators called `func`s and connected by `buffer_expr`s.
-`func` has a list of `input` and `output` objects.
-A `func` can have multiple `output`s, but all outputs must be indexed by one set of dimensions for the `func`.
-An `input` or `output` is associated with a `buffer_expr`.
-An `output` has a list of dimensions, which identify variables (`var`) used to index the corresponding dimension of the `buffer_expr`.
-An `input` has a list of bounds expressions, expressed as an inclusive interval `[min, max]`, where the bounds can depend on the variables from the output dimensions.
+A pipeline is a directed acyclic graph, where the nodes are `buffer_expr`s, and the edges are `func`s.
+A `func` is said to "consume" its input buffer(s), and "produce" its output buffers, of which there can be more than one.
+A node that is not produced by any `func` is a pipeline input, and a node that is not consumed by a `func` is a pipeline output.
 
-The actual implementation of a `func` is a callback taking a single argument `eval_context`.
-This object contains the state of the program at the time of the call.
-Values of any symbol currently in scope at the time of the call can be accessed in the `eval_context`. 
+A `func` encapsulates:
+
+- A symbolic description of data dependecies.
+Data dependencies are expressed as a `[min, max]` interval for each input dimension as a function of the output dimensions.
+- A specification of the compute schedule (loop tiling).
+- A callback representing the actual implementation.
 
 ### Elementwise example
 Here is an example of a simple pipeline of two 1D elementwise `func`s:
@@ -33,68 +33,88 @@ Here is an example of a simple pipeline of two 1D elementwise `func`s:
 ```c++
 node_context ctx;
 
-auto in = buffer_expr::make(ctx, "in", sizeof(int), 1);
-auto out = buffer_expr::make(ctx, "out", sizeof(int), 1);
-auto intm = buffer_expr::make(ctx, "intm", sizeof(int), 1);
+// input buffer expression
+auto in = buffer_expr::make(ctx, "in", 1, sizeof(int));
+// output buffer expression
+auto out = buffer_expr::make(ctx, "out", 1, sizeof(int));
+// temporary buffer expression
+auto tmp = buffer_expr::make(ctx, "tmp", 1, sizeof(int));
 
-var x(ctx, "x");
+var i(ctx, "i");
+// `mul` is automatically registered as the producer of `tmp`.
+func mul = func::make(multiply_2<int>, {{in, {point(i)}}}, {{tmp, {i}}});
 
-func mul = func::make(multiply_2, {in, {point(x)}}, {intm, {x}});
-func add = func::make(add_1, {intm, {point(x)}}, {out, {x}});
+// one could reuse 'i', but for clarity let's use a new variable.
+var j(ctx, "j");
+// `add` is automatically registered as the producer of `out`.
+func add = func::make(add_1<int>, {{tmp, {point(j)}}}, {{out, {j}}});
 
 pipeline p = build_pipeline(ctx, {in}, {out});
 ```
 
-- `in` and `out` are the input and output buffers.
-- `intm` is the intermediate buffer between the two operations.
-- To describe this pipeline, we need one variable `x`.
-- Both `func` objects have the same signature:
-	- Consume a buffer of `const int`, produce a buffer of `int`.
-	- The output dimension is indexed by `x`, and both operations require a the single point interval `[x, x]` of their inputs.
-	- `multiply_2` and `add_1` are functions implementing this operation.
+Without any further specifications this pipeline would use the following strategy:
 
-The possible implementations of this pipeline vary between two extremes:
-1. Allocating `intm` to have the same size as `out`, and executing all of `mul`, followed by all of `add`.
-2. Allocating `intm` to have a single element, and executing `mul` followed by `add` in a single loop over the output elements.
+1. Materialize the whole logical tmp buffer of the same size as out, execute all of `mul`.
+2. Execute all of `add`.
 
-Of course, (2) would have extremely high overhead, and would not be a desireable strategy.
-If the buffers are large, (1) is inefficient due to poor memory locality.
-The ideal strategy is to split `out` into chunks, and compute the two operations at each chunk.
-This allows targeting a chunk size that fits in the cache, but amortizes the overhead of setting up the buffers and calling the functions implementing this operation.
-This can be implemented with the following schedule:
+This approach has multiple downsides:
+
+1. Large memory allocation for `tmp`.
+2. `tmp` memory is first fully written and then fully read, resulting
+in expensive memory traffic and inefficient use of CPU caches.
 
 ```c++
-const int chunk_size = 8;
-add.loops({x, chunk_size});
-mul.compute_at({&stencil, x});
+check(in)
+check((buffer_rank(in) == 1))
+check(out)
+check((buffer_rank(out) == 1))
+check((buffer_elem_size(in) == 4))
+check((buffer_elem_size(out) == 4))
+check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))))
+check((buffer_min(in, 0) <= buffer_min(out, 0)))
+check((buffer_max(out, 0) <= buffer_max(in, 0)))
+tmp = allocate(automatic, 4, {
+  {[buffer_min(out, 0), buffer_max(out, 0)], <>, <>}
+}) {
+ call(<mul>, {in}, {tmp})
+ call(<add>, {tmp}, {out})
+}
 ```
 
-In this case, the `mul.compute_at` specification is only for illustration purposes, it is equivalent to the default behavior, which is to compute funcs at the innermost location that does not imply redundant compute.
+The opposite extreme would be the following:
 
-This will result in a slinky program that looks like this:
+1. Allocate a buffer of size 1 for `tmp`.
+2. For each element compute `mul` followed by `add` and store the result to `out`.
 
 ```c++
-intm = allocate(heap, 4, {
-  {[buffer_min(out, 0), buffer_max(out, 0)], 4, 8}
+...
+const int chunk_size = 1;
+add.loops({{x, chunk_size}});
+pipeline p = build_pipeline(ctx, {in}, {out});
+```
+
+```c++
+tmp = allocate(automatic, 4, {
+  {[buffer_min(out, 0), buffer_max(out, 0)], <>, 1}
 }) {
- intm.uncropped = clone_buffer(intm) {
-  serial loop(x in [buffer_min(out, 0), buffer_max(out, 0)], 8) {
-   crop_dim(intm, 0, [x, min((x + 7), buffer_max(out, 0))]) {
-    call(add, {in}, {intm})
-   }
-   crop_dim(out, 0, [x, (x + 7)]) {
-    call(mul, {intm.uncropped}, {out})
-   }
+ out.j = loop(serial, [buffer_min(out, 0), buffer_max(out, 0)], 1) {
+  tmp = crop_dim(tmp, 0, [out.j, out.j]) {
+   call(<mull>, {in}, {tmp})
+  }
+  out.out.j = crop_dim(out, 0, [out.j, out.j]) {
+   call(<add>, {tmp}, {out.out.j})
   }
  }
 }
 ```
 
-Observations:
+This approach seemingly avoids the aforementioned issues but introduces a different set
+of deficiencies:
 
-- The loop steps by 8 elements at a time, as we specified in the schedule.
-- Within the loop, we call `add` followed by `mul`, inside crops that restrict the computations to (up to) 8 elements at a time (this pipeline can handle any number of output elements, it is not limited to be a multiple of 8).
-- The allocation is "folded" by 8, limiting the size of the allocation to only what is needed for each loop iteration.
+1. Inefficient use of `mul` and `add` vectorized implementations.
+2. Unamortized function calls overhead.
+
+The ideal strategy is to split `out` into chunks, and compute the two operations at each chunk.
 
 ### Stencil example
 Here is an example of a pipeline that has a stage that is a stencil, such as a convolution:
