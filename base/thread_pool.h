@@ -110,6 +110,8 @@ public:
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(predicate_ref condition) = 0;
+  virtual void wait_for(predicate_ref condition, std::atomic<bool>& flag) = 0;
+
   // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
   virtual void atomic_call(task_ref t) = 0;
 
@@ -187,6 +189,7 @@ public:
   void run(task_ref t, task_id id = unique_task_id) override;
   void cancel(task_id id) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
+  void wait_for(predicate_ref condition, std::atomic<bool>& flag) override;
   void atomic_call(task_ref t) override;
 };
 
