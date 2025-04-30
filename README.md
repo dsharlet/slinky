@@ -60,8 +60,7 @@ Without any further specifications this pipeline would use the following strateg
 This approach has multiple downsides:
 
 1. Large memory allocation for `tmp`.
-2. `tmp` memory is first fully written and then fully read, resulting
-in expensive memory traffic and inefficient use of CPU caches.
+2. `tmp` memory is first fully written and then fully read, resulting in expensive memory traffic and inefficient use of CPU caches.
 
 ```c++
 check(in)
@@ -163,16 +162,28 @@ This means:
 This generates a program like so:
 
 ```
-intm = allocate<intm>({
-  {[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], 2},
-  {[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], ((buffer_extent(out, 0) * 2) + 4), 3}
-} on heap) {
- loop(y in [(buffer_min(out, 1) + -2), buffer_max(out, 1)]) {
-   crop_dim<1>(intm, [(y + 1), (y + 1)]) {
-   call(add, {in}, {intm})
+check(in)
+check((buffer_rank(in) == 2))
+check(out)
+check((buffer_rank(out) == 2))
+check((buffer_elem_size(in) == 2))
+check((buffer_elem_size(out) == 2))
+check(or_else((buffer_fold_factor(out, 0) == 9223372036854775807), (buffer_max(out, 0) < (buffer_fold_factor(out, 0) + buffer_min(out, 0)))))
+check(or_else((buffer_fold_factor(out, 1) == 9223372036854775807), (buffer_max(out, 1) < (buffer_fold_factor(out, 1) + buffer_min(out, 1)))))
+check((buffer_min(in, 0) < buffer_min(out, 0)))
+check((buffer_max(out, 0) < buffer_max(in, 0)))
+check((buffer_min(in, 1) < buffer_min(out, 1)))
+check((buffer_max(out, 1) < buffer_max(in, 1)))
+intm = allocate(automatic, 2, {
+  {[(buffer_min(out, 0) + -1), (buffer_max(out, 0) + 1)], <>, <>},
+  {[(buffer_min(out, 1) + -1), (buffer_max(out, 1) + 1)], <>, 3}
+}) {
+ out.y = loop(serial, [(buffer_min(out, 1) + -2), buffer_max(out, 1)], 1) {
+  intm = crop_dim(intm, 1, [(out.y + 1), (out.y + 1)]) {
+   call(<anonymous target>, {in}, {intm})
   }
-  crop_dim<1>(out, [y, y]) {
-   call(sum3x3, {intm}, {out})
+  out.out.y = crop_dim(out, 1, [out.y, out.y]) {
+   call(<anonymous target>, {intm}, {out.out.y})
   }
  }
 }
