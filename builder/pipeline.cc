@@ -473,9 +473,9 @@ void compute_innermost_locations(const std::vector<const func*>& order,
         std::vector<int> path = find_path_from_root(loop_tree, parent_id);
         // Reset parent_id, because we want to change it based on the compute_at.
         parent_id = -1;
-        for (int ix = 0; ix < static_cast<int>(path.size()); ix++) {
-          if (loop_tree[ix].loop == *f->compute_at()) {
-            parent_id = ix;
+        for (int p : path) {
+          if (loop_tree[p].loop == *f->compute_at()) {
+            parent_id = p;
           }
         }
         assert(parent_id != -1);
