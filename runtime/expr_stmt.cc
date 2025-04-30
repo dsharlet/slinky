@@ -362,6 +362,7 @@ interval_expr min_extent(const expr& min, expr extent) { return {min, min + std:
 
 interval_expr operator*(const expr& a, const interval_expr& b) { return b * a; }
 interval_expr operator+(const expr& a, const interval_expr& b) { return b + a; }
+interval_expr operator-(const expr& a, const interval_expr& b) { return -b + a; }
 
 expr clamp(expr x, interval_expr bounds) { return clamp(std::move(x), std::move(bounds.min), std::move(bounds.max)); }
 interval_expr select(const expr& c, interval_expr t, interval_expr f) {
