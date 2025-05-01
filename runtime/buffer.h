@@ -760,6 +760,8 @@ bool can_fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, const raw_buffer& buf,
 }
 
 // Fuse two dimensions of all buffers.
+template <fuse_type type>
+void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer) {}
 template <fuse_type type, typename... Bufs>
 void fuse(std::ptrdiff_t inner, std::ptrdiff_t outer, raw_buffer& buf, Bufs&... bufs) {
   fuse<type>(inner, outer, buf);
