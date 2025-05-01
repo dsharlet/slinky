@@ -102,6 +102,8 @@ The strategy is chosen this way, by platform:
         # define __YIELD_PROCESSOR() asm volatile ("pause" ::: "memory")
     #elif defined (__powerpc__)
         # define __YIELD_PROCESSOR() asm volatile ("or 27,27,27" ::: "memory")
+    #else
+        # define __YIELD_PROCESSOR()
     #endif
 #endif
 
