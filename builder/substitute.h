@@ -76,11 +76,14 @@ stmt substitute(const stmt& s, var target, const expr& replacement);
 
 // Substitute `elem_size` in for buffer_elem_size(buffer) and the other buffer metadata in `dims` for per-dimension
 // metadata.
-expr substitute_buffer(const expr& e, var buffer, const std::vector<dim_expr>& dims);
-expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
-interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::vector<dim_expr>& dims);
+// If `def` is defined, then buffer metadata that is undefined in `dims` will be replaced with a read of `def`'s
+// metadata.
+expr substitute_buffer(const expr& e, var buffer, const std::vector<dim_expr>& dims, var def = var());
+expr substitute_buffer(
+    const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims, var def = var());
+interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::vector<dim_expr>& dims, var def = var());
 interval_expr substitute_buffer(
-    const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims);
+    const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims, var def = var());
 
 // Helpers to make dims for use with `substitute_buffer` for bounds.
 std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds);

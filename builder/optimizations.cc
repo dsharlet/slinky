@@ -711,11 +711,11 @@ public:
     merge_buffer_info(old_buffers, op->sym, op->src, handler);
   }
 
-  void substitute_alloc_dims(var sym, const std::vector<dim_expr>& dims) {
+  void substitute_crop_into_allocs(var sym, var src, const std::vector<dim_expr>& dims) {
     for (std::optional<buffer_info>& i : buffers) {
       if (!i) continue;
       for (dim_expr& d : i->dims) {
-        d.bounds = substitute_buffer(d.bounds, sym, dims);
+        d.bounds = substitute_buffer(d.bounds, sym, dims, src);
       }
     }
   }
@@ -740,7 +740,7 @@ public:
     for (std::size_t i = 0; i < subs.size(); ++i) {
       subs[i].bounds = op->bounds[i] & buffer_bounds(op->src, i);
     }
-    substitute_alloc_dims(op->sym, subs);
+    substitute_crop_into_allocs(op->sym, op->src, subs);
   }
 
   void visit(const crop_dim* op) override {
@@ -748,7 +748,7 @@ public:
 
     std::vector<dim_expr> subs(op->dim + 1);
     subs[op->dim].bounds = op->bounds & buffer_bounds(op->src, op->dim);
-    substitute_alloc_dims(op->sym, subs);
+    substitute_crop_into_allocs(op->sym, op->src, subs);
   }
 
   void visit(const clone_buffer* op) override {
