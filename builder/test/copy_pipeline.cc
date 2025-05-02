@@ -796,10 +796,14 @@ TEST_P(broadcasted_elementwise, constant) {
   // }
 }
 
-class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool>> {};
+class constrained_transpose : public testing::TestWithParam<std::tuple<bool, bool, bool, bool>> {};
 
-INSTANTIATE_TEST_SUITE_P(dim, constrained_transpose,
-    testing::Combine(testing::Bool(), testing::Bool(), testing::Bool()),
+INSTANTIATE_TEST_SUITE_P(fixed, constrained_transpose,
+    testing::Combine(testing::Bool(), testing::Bool(), testing::Bool(), testing::Values(false)),
+    test_params_to_string<constrained_transpose::ParamType>);
+
+INSTANTIATE_TEST_SUITE_P(with_loops, constrained_transpose,
+    testing::Combine(testing::Values(false), testing::Values(false), testing::Values(false), testing::Values(true)),
     test_params_to_string<constrained_transpose::ParamType>);
 
 TEST_P(constrained_transpose, pipeline) {
@@ -834,6 +838,11 @@ TEST_P(constrained_transpose, pipeline) {
   func add_in = func::make(add_1<short>, {{{in, {point(x), point(y), point(z)}}}}, {{{intm1, {x, y, z}}}});
   func transposed = func::make_copy({intm1, {point(x), point(z), point(y)}}, {intm2, {x, y, z}});
   func add_out = func::make(add_1<short>, {{intm2, {point(x), point(y), point(z)}}}, {{{out, {x, y, z}}}});
+
+  if (std::get<3>(GetParam())) {
+    transposed.loops({{y, 1}});
+    intm1->store_at({&transposed, y});
+  }
 
   pipeline p = build_pipeline(ctx, {in}, {out}, build_options{.no_alias_buffers = no_alias_buffers});
 
