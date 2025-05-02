@@ -740,10 +740,11 @@ public:
   var target;
   expr elem_size;
   span<const dim_expr> dims;
+  var def;
 
 public:
-  buffer_substitutor(var target, expr elem_size, span<const dim_expr> dims)
-      : target(target), elem_size(elem_size), dims(dims) {}
+  buffer_substitutor(var target, expr elem_size, span<const dim_expr> dims, var def = var())
+      : target(target), elem_size(elem_size), dims(dims), def(def) {}
 
   var enter_decl(var x) override { return x != target ? x : var(); }
 
@@ -757,16 +758,21 @@ public:
     if (buf != target) return expr(op);
 
     switch (field) {
-    case buffer_field::rank: return expr(dims.size());
-    case buffer_field::elem_size: return elem_size.defined() ? elem_size : expr(op);
+    case buffer_field::rank: return def.defined() ? buffer_rank(def) : expr(dims.size());
+    case buffer_field::elem_size:
+      if (elem_size.defined()) return elem_size;
+      break;
     case buffer_field::min:
     case buffer_field::max:
     case buffer_field::stride:
-    case buffer_field::fold_factor:
-      return dim < static_cast<index_t>(dims.size()) ? dims[dim].get_field(field) : expr(op);
+    case buffer_field::fold_factor: {
+      expr sub = dim < static_cast<index_t>(dims.size()) ? dims[dim].get_field(field) : expr();
+      if (sub.defined()) return sub;
+      break;
+    }
     default: SLINKY_UNREACHABLE << "got scalar var instead of buffer";
     }
-    return expr(op);
+    return def.defined() ? variable::make(def, field, dim) : expr();
   }
 };
 
@@ -786,18 +792,18 @@ stmt substitute(const stmt& s, var target, const expr& replacement) {
   return var_substitutor(target, replacement).mutate(s);
 }
 
-expr substitute_buffer(const expr& e, var buffer, const std::vector<dim_expr>& dims) {
-  return substitute_buffer(e, buffer, expr(), dims);
+expr substitute_buffer(const expr& e, var buffer, const std::vector<dim_expr>& dims, var def) {
+  return substitute_buffer(e, buffer, expr(), dims, def);
 }
-expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
-  return buffer_substitutor(buffer, elem_size, dims).mutate(e);
+expr substitute_buffer(const expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims, var def) {
+  return buffer_substitutor(buffer, elem_size, dims, def).mutate(e);
 }
-interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::vector<dim_expr>& dims) {
-  return substitute_buffer(e, buffer, expr(), dims);
+interval_expr substitute_buffer(const interval_expr& e, var buffer, const std::vector<dim_expr>& dims, var def) {
+  return substitute_buffer(e, buffer, expr(), dims, def);
 }
 interval_expr substitute_buffer(
-    const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims) {
-  return buffer_substitutor(buffer, elem_size, dims).mutate(e);
+    const interval_expr& e, var buffer, const expr& elem_size, const std::vector<dim_expr>& dims, var def) {
+  return buffer_substitutor(buffer, elem_size, dims, def).mutate(e);
 }
 
 std::vector<dim_expr> make_dims_from_bounds(const box_expr& bounds) {
