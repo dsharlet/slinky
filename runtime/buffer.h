@@ -748,8 +748,8 @@ inline const dim& dim_or_broadcast(const raw_buffer& buf, std::ptrdiff_t d) {
 // Returns true if all buffers have the same bounds in dimension d.
 inline bool same_bounds(std::ptrdiff_t, const raw_buffer&) { return true; }
 template <typename... Bufs>
-bool same_bounds(std::ptrdiff_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
-  return same_bounds(dim_or_broadcast(buf0, d), dim_or_broadcast(buf1, d)) && same_bounds(d, buf1, bufs...);
+bool same_bounds(std::size_t d, const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bufs) {
+  return (buf0.rank <= d || buf1.rank <= d || same_bounds(buf0.dim(d), buf1.dim(d))) && same_bounds(d, buf1, bufs...);
 }
 
 // Returns true if two dimensions of all buffers can be fused.

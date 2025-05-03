@@ -926,6 +926,15 @@ TEST(fuse_contiguous_dims, fuse2) {
   ASSERT_EQ(b.dim(0).extent(), 4 * 5);
 }
 
+TEST(fuse_contiguous_dims, fuse2_with_broadcast) {
+  buffer<int, 2> a({4, 5});
+  buffer<int, 0> b;
+  fuse_contiguous_dims(a, b);
+  ASSERT_EQ(a.rank, 1);
+  ASSERT_EQ(b.rank, 0);
+  ASSERT_EQ(a.dim(0).extent(), 4 * 5);
+}
+
 TEST(fuse_contiguous_dims, fuse3) {
   buffer<int, 3> a({6, 7, 8}), b({6, 7, 8});
   fuse_contiguous_dims(a, b);
