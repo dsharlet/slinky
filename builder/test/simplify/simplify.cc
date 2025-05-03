@@ -784,6 +784,15 @@ TEST(simplify, make_buffer) {
               {buffer_dim(b0, 0), {{0, 0}, 0, {}}, {{0, 0}, 0, {}}}, call_stmt::make(nullptr, {}, {b1}, {})))),
       matches(allocate::make(b0, memory_type::heap, 4, {{{0, 255}, {}, {}}, {{0, 0}, {}, {}}, {{0, 0}, {}, {}}},
           call_stmt::make(nullptr, {}, {b0}, {}))));
+
+  // Two make_buffers can be folded into one
+  ASSERT_THAT(simplify(make_buffer::make(b1, buffer_at(b0, 2), buffer_elem_size(b0),
+                  {{{x, y - 2}, buffer_stride(b0, 0), buffer_fold_factor(b0, 0)}},
+                  make_buffer::make(b2, buffer_at(b1), buffer_elem_size(b1),
+                      {{{x + 2, y}, buffer_stride(b1, 0), buffer_fold_factor(b1, 0)}},
+                      call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(make_buffer::make(b2, buffer_at(b0, 2), buffer_elem_size(b0),
+          {{{x + 2, y}, buffer_stride(b0, 0), buffer_fold_factor(b0, 0)}}, call_stmt::make(nullptr, {}, {b2}, {}))));
 }
 
 TEST(simplify, transpose) {
@@ -806,6 +815,10 @@ TEST(simplify, transpose) {
                   b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))),
       matches(crop_buffer::make(
           b1, b0, {{x, y}, {z, w}}, transpose::make(b2, b1, {1, 0}, check::make(buffer_max(b2, 1) <= w)))));
+
+  ASSERT_THAT(
+      simplify(transpose::make(b1, b0, {}, transpose::make(b2, b1, {}, call_stmt::make(nullptr, {}, {b2}, {})))),
+      matches(transpose::make(b2, b0, {}, call_stmt::make(nullptr, {}, {b2}, {}))));
 }
 
 TEST(simplify, knowledge) {

@@ -1616,7 +1616,25 @@ public:
 
       const std::optional<buffer_info>& src_info = buffers[*src_buf];
       if (src_info) {
-        // Before trying to do anything, try to normalize the dimensions to be in terms of src_buf metadata.
+        if (bc->args.size() == 1) {
+          if (const make_buffer* src = src_info->decl.as<make_buffer>()) {
+            // The src of this make_buffer is also a make_buffer, try to substitute the outer one.
+            base = src->base;
+            info.elem_size = substitute_buffer(info.elem_size, src->sym, src->elem_size, src->dims);
+            for (dim_expr& i : info.dims) {
+              i.bounds = substitute_buffer(i.bounds, src->sym, src->elem_size, src->dims);
+              i.stride = substitute_buffer(i.stride, src->sym, src->elem_size, src->dims);
+              i.fold_factor = substitute_buffer(i.fold_factor, src->sym, src->elem_size, src->dims);
+            }
+            set_result(mutate(make_buffer::make(op->sym, base, info.elem_size, info.dims, op->body)));
+            return;
+          }
+        } else {
+          // We don't know how to substitute non-trivial buffer_at calls yet.
+        }
+
+        // Before trying to match a more specialized op, try to normalize the dimensions to be in terms of src_buf
+        // metadata.
         canonicalize_buffer(info, *src_info, *src_buf);
       }
 
