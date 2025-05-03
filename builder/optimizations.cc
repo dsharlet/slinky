@@ -89,7 +89,8 @@ bool is_linear(const expr& y, var x, expr& a, expr& b) {
   return false;
 }
 
-// Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
+// Checks if the copy operands `src_x` and `dst_x[dst_d]` represent a simple copy that can be handled by slinky::copy.
+// dst_x dimensions other than `dst_d` are assumed to be handled by a different `is_copy` call.
 bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
