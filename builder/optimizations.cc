@@ -117,8 +117,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     // If a src_x depends on multiple dst_x, only consider this dst dim for now.
     for (int i = 0; i < static_cast<int>(dst_x.size()); ++i) {
       if (i != dst_d) {
-        // TODO: Maybe this zero needs to be a buffer_min? But which...?
-        src_x = substitute(src_x, dst_x[i], 0);
+        src_x = substitute(src_x, dst_x[i], buffer_min(dst, i));
       }
     }
     src_x = simplify(src_x);
@@ -139,7 +138,12 @@ bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int
     src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
     src_dim.stride = buffer_stride(src, src_d) * scale;
     src_dim.fold_factor = buffer_fold_factor(src, src_d);
-    at = buffer_min(src, src_d) + offset * (scale - 1);
+    at = buffer_min(src, src_d);
+    if (!depends_on(offset, dst).any()) {
+      at += offset * (scale - 1);
+    } else {
+      // This offset is going to be handled by another dimension... we assume.
+    }
 
     // Alternative definitions that may be useful in the future and were difficult to determine:
     // src_dim.bounds = buffer_bounds(dst, dst_d);

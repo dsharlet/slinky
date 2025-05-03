@@ -11,6 +11,8 @@
 
 namespace slinky {
 
+constexpr int offsets[] = {0, 2, -3};
+
 template <typename T, std::size_t N>
 void init_random(buffer<T, N>& x) {
   x.allocate();
@@ -48,25 +50,31 @@ TEST_P(stencil, x_dx) {
   // Run the pipeline.
   const int N = 10;
 
-  buffer<short, 2> out_buf({N, K});
-  out_buf.allocate();
+  for (int min_n : offsets) {
+    for (int min_k : offsets) {
+      buffer<short, 2> out_buf({N, K});
+      out_buf.allocate();
+      out_buf.translate(min_n, min_k);
 
-  buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
-  init_random(in_buf);
+      buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
+      init_random(in_buf);
+      in_buf.translate(min_n * S + min_k * D);
 
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+      // Not having span(std::initializer_list<T>) is unfortunate.
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      test_context eval_ctx;
+      p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int n = 0; n < N; ++n) {
-    for (int k = 0; k < K; ++k) {
-      ASSERT_EQ(out_buf(n, k), in_buf(n * S + k * D));
+      for (int n = min_n; n < min_n + N; ++n) {
+        for (int k = min_k; k < min_k + K; ++k) {
+          ASSERT_EQ(out_buf(n, k), in_buf(n * S + k * D));
+        }
+      }
+
+      ASSERT_EQ(eval_ctx.copy_calls, 1);
     }
   }
-
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(stencil, dx_x) {
@@ -90,25 +98,31 @@ TEST_P(stencil, dx_x) {
   // Run the pipeline.
   const int N = 10;
 
-  buffer<short, 2> out_buf({K, N});
-  out_buf.allocate();
+  for (int min_n : offsets) {
+    for (int min_k : offsets) {
+      buffer<short, 2> out_buf({K, N});
+      out_buf.allocate();
+      out_buf.translate(min_k, min_n);
 
-  buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
-  init_random(in_buf);
+      buffer<short, 1> in_buf({(N - 1) * S + (K - 1) * D + 1});
+      init_random(in_buf);
+      in_buf.translate(min_n * S + min_k * D);
 
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+      // Not having span(std::initializer_list<T>) is unfortunate.
+      const raw_buffer* inputs[] = {&in_buf};
+      const raw_buffer* outputs[] = {&out_buf};
+      test_context eval_ctx;
+      p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int n = 0; n < N; ++n) {
-    for (int k = 0; k < K; ++k) {
-      ASSERT_EQ(out_buf(k, n), in_buf(n * S + k * D));
+      for (int n = min_n; n < min_n + N; ++n) {
+        for (int k = min_k; k < min_k + K; ++k) {
+          ASSERT_EQ(out_buf(k, n), in_buf(n * S + k * D));
+        }
+      }
+
+      ASSERT_EQ(eval_ctx.copy_calls, 1);
     }
   }
-
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(stencil, x_y_dx_dy) {
@@ -134,30 +148,39 @@ TEST_P(stencil, x_y_dx_dy) {
   // Run the pipeline.
   const int W = 10;
   const int H = 5;
+  for (int min_x : offsets) {
+    for (int min_y : offsets) {
+      for (int min_dx : offsets) {
+        for (int min_dy : offsets) {
+          buffer<short, 4> out_buf({W, H, K, K});
+          out_buf.allocate();
+          out_buf.translate(min_x, min_y, min_dx, min_dy);
 
-  buffer<short, 4> out_buf({W, H, K, K});
-  out_buf.allocate();
+          buffer<short, 2> in_buf({(W - 1) * S + (K - 1) * D + 1, (H - 1) * S + (K - 1) * D + 1});
+          init_random(in_buf);
+          in_buf.translate(min_x * S + min_dx * D, min_y * S + min_dy * D);
 
-  buffer<short, 2> in_buf({(W - 1) * S + (K - 1) * D + 1, (H - 1) * S + (K - 1) * D + 1});
-  init_random(in_buf);
+          // Not having span(std::initializer_list<T>) is unfortunate.
+          const raw_buffer* inputs[] = {&in_buf};
+          const raw_buffer* outputs[] = {&out_buf};
+          test_context eval_ctx;
+          p.evaluate(inputs, outputs, eval_ctx);
 
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+          for (int y = min_y; y < min_y + H; ++y) {
+            for (int x = min_x; x < min_x + W; ++x) {
+              for (int dy = min_dy; dy < min_dy + K; ++dy) {
+                for (int dx = min_dx; dx < min_dx + K; ++dx) {
+                  ASSERT_EQ(out_buf(x, y, dx, dy), in_buf(x * S + dx * D, y * S + dy * D));
+                }
+              }
+            }
+          }
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      for (int dy = 0; dy < K; ++dy) {
-        for (int dx = 0; dx < K; ++dx) {
-          ASSERT_EQ(out_buf(x, y, dx, dy), in_buf(x * S + dx * D, y * S + dy * D));
+          ASSERT_EQ(eval_ctx.copy_calls, 1);
         }
       }
     }
   }
-
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 TEST_P(stencil, x_dx_y_dy) {
@@ -184,29 +207,39 @@ TEST_P(stencil, x_dx_y_dy) {
   const int W = 10;
   const int H = 5;
 
-  buffer<short, 4> out_buf({W, K, H, K});
-  out_buf.allocate();
+  for (int min_x : offsets) {
+    for (int min_y : offsets) {
+      for (int min_dx : offsets) {
+        for (int min_dy : offsets) {
+          buffer<short, 4> out_buf({W, K, H, K});
+          out_buf.allocate();
+          out_buf.translate(min_x, min_dx, min_y, min_dy);
 
-  buffer<short, 2> in_buf({(W - 1) * S + (K - 1) * D + 1, (H - 1) * S + (K - 1) * D + 1});
-  init_random(in_buf);
+          buffer<short, 2> in_buf({(W - 1) * S + (K - 1) * D + 1, (H - 1) * S + (K - 1) * D + 1});
+          init_random(in_buf);
+          in_buf.translate(min_x * S + min_dx * D, min_y * S + min_dy * D);
 
-  // Not having span(std::initializer_list<T>) is unfortunate.
-  const raw_buffer* inputs[] = {&in_buf};
-  const raw_buffer* outputs[] = {&out_buf};
-  test_context eval_ctx;
-  p.evaluate(inputs, outputs, eval_ctx);
+          // Not having span(std::initializer_list<T>) is unfortunate.
+          const raw_buffer* inputs[] = {&in_buf};
+          const raw_buffer* outputs[] = {&out_buf};
+          test_context eval_ctx;
+          p.evaluate(inputs, outputs, eval_ctx);
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      for (int dy = 0; dy < K; ++dy) {
-        for (int dx = 0; dx < K; ++dx) {
-          ASSERT_EQ(out_buf(x, dx, y, dy), in_buf(x * S + dx * D, y * S + dy * D));
+          for (int y = min_y; y < min_y + H; ++y) {
+            for (int x = min_x; x < min_x + W; ++x) {
+              for (int dy = min_dy; dy < min_dy + K; ++dy) {
+                for (int dx = min_dx; dx < min_dx + K; ++dx) {
+                  ASSERT_EQ(out_buf(x, dx, y, dy), in_buf(x * S + dx * D, y * S + dy * D));
+                }
+              }
+            }
+          }
+
+          ASSERT_EQ(eval_ctx.copy_calls, 1);
         }
       }
     }
   }
-
-  ASSERT_EQ(eval_ctx.copy_calls, 1);
 }
 
 }  // namespace slinky
