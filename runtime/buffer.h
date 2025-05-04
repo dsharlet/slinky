@@ -738,7 +738,7 @@ bool same_rank(const raw_buffer& buf0, const raw_buffer& buf1, const Bufs&... bu
 }
 
 inline bool same_bounds(const dim& a, const dim& b) {
-  return a.min() == b.min() && a.max() == b.max() && a.fold_factor() == b.fold_factor();
+  return a.min() == b.min() && a.max() == b.max();
 }
 
 inline const dim& dim_or_broadcast(const raw_buffer& buf, std::ptrdiff_t d) {
