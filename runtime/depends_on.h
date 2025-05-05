@@ -57,6 +57,7 @@ var find_buffer_data_dependency(expr_ref e);
 // Find the buffers used by a stmt or expr. Returns the vars accessed in sorted order.
 std::vector<var> find_buffer_dependencies(stmt_ref s);
 std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output);
+std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool src, bool output, bool dst);
 
 }  // namespace slinky
 
