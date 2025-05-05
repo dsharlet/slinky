@@ -375,9 +375,13 @@ std::vector<var> find_dependencies(stmt_ref s) {
   return keys(deps);
 }
 
-std::vector<var> find_buffer_dependencies(stmt_ref s) { return find_buffer_dependencies(s, true, true); }
+std::vector<var> find_buffer_dependencies(stmt_ref s) { return find_buffer_dependencies(s, true, true, true, true); }
 
 std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output) {
+  return find_buffer_dependencies(s, input, input, output, output);
+}
+
+std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool src, bool output, bool dst) {
   std::map<var, depends_on_result> deps;
   dependencies v(deps);
   if (s.defined()) s.accept(&v);
@@ -385,8 +389,8 @@ std::vector<var> find_buffer_dependencies(stmt_ref s, bool input, bool output) {
   std::vector<var> result;
   result.reserve(deps.size());
   for (const auto& i : deps) {
-    if ((input && (i.second.buffer_input || i.second.buffer_src)) ||
-        (output && (i.second.buffer_output || i.second.buffer_dst))) {
+    if ((input && i.second.buffer_input) || (src && i.second.buffer_src) || (output && i.second.buffer_output) ||
+        (dst && i.second.buffer_dst)) {
       result.push_back(i.first);
     }
   }

@@ -1234,9 +1234,10 @@ public:
 
     // Find which buffers are used inside of the body.
     // We separate input and output buffers list, because we don't need to find transitive
-    // dependencies for inputs.
+    // dependencies for the inputs. Also, we only care about inputs of the copies, because for others
+    // all neccessary buffers will be in the transitive dependencies.
     // TODO(vksnk): we can add a function which does both of these in one pass.
-    std::vector<var> input_buffers_used = find_buffer_dependencies(body.body, true, false);
+    std::vector<var> input_buffers_used = find_buffer_dependencies(body.body, false, true, false, false);
     std::vector<var> buffers_used = find_buffer_dependencies(body.body, false, true);
     // The function above doesn't add buffers allocated inside of the body into the outputs list,
     // but we still need to define their dependencies.
