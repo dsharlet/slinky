@@ -124,20 +124,20 @@ index_t upsample_nn_2x(const buffer<const T>& in, const buffer<T>& out) {
   return 0;
 }
 
-// Compute the sum of the dimensions in `dims`.
+// `dims` is an array of `{dimension, min, max}` indicating which dimension and the bounds that should be reduced over.
 template <typename T>
-index_t sum(const buffer<const T>& in, const buffer<T>& out, std::vector<int> dims) {
+index_t sum(const buffer<const T>& in, const buffer<T>& out, std::vector<std::tuple<int, int, int>> dims) {
   assert(in.rank == out.rank + static_cast<int>(dims.size()));
 
   // Initialize with 0
   copy(scalar<T>(0), out);
 
-  // Make a buffer aliased to the output, with the same shape as the input.
+  // Make a buffer aliased to the output, with the same shape as the input, with the reduction dimensions inserted.
   buffer<T, 8> r = out;
-  std::sort(dims.begin(), dims.end(), std::less<int>());
-  for (int d : dims) {
-    r.unslice(d, in.dim(d));
-    r.dim(d).set_stride(0);
+  std::sort(dims.begin(), dims.end(), std::less<std::tuple<int, int, int>>());
+  for (auto d : dims) {
+    dim reduction_dim(std::get<1>(d), std::get<2>(d), /*stride=*/0);
+    r.unslice(std::get<0>(d), reduction_dim);
   }
 
   for_each_element([&](T* out, const T* in) { *out += *in; }, r, in);
