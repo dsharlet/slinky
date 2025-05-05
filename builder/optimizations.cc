@@ -46,8 +46,52 @@ dim_expr select(const expr& c, dim_expr t, dim_expr f) {
   };
 }
 
-// Checks if the copy operands `src_x` and `dst_x` represent a simple copy that can be handled by slinky::copy.
-bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr& at, dim_expr& src_dim) {
+// Try to find a, b such that y = a*x + b
+bool is_linear(const expr& y, var x, expr& a, expr& b) {
+  if (match(y, x)) {
+    // y = x
+    a = 1;
+    b = 0;
+    return true;
+  } else if (!depends_on(y, x).var) {
+    // y = b
+    a = 0;
+    b = y;
+    return true;
+  } else if (const add* op = y.as<add>()) {
+    expr aa, ab;
+    expr ba, bb;
+    if (is_linear(op->a, x, aa, ab) && is_linear(op->b, x, ba, bb)) {
+      a = aa + ba;
+      b = ab + bb;
+      return true;
+    }
+  } else if (const sub* op = y.as<sub>()) {
+    expr aa, ab;
+    expr ba, bb;
+    if (is_linear(op->a, x, aa, ab) && is_linear(op->b, x, ba, bb)) {
+      a = aa - ba;
+      b = ab - bb;
+      return true;
+    }
+  } else if (const mul* op = y.as<mul>()) {
+    if (is_linear(op->a, x, a, b) && !depends_on(op->b, x).var) {
+      a *= op->b;
+      b *= op->b;
+      return true;
+    } else if (is_linear(op->b, x, a, b) && !depends_on(op->a, x).var) {
+      a *= op->a;
+      b *= op->a;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Checks if the copy operands `src_x` and `dst_x[dst_d]` represent a simple copy that can be handled by slinky::copy.
+// dst_x dimensions other than `dst_d` are assumed to be handled by a different `is_copy` call.
+bool is_copy(var src, expr src_x, int src_d, var dst, span<const var> dst_x, int dst_d, expr& at, dim_expr& src_dim) {
   if (const class select* s = src_x.as<class select>()) {
     // The src is a select of two things that might both be copies.
     expr at_t;
@@ -62,7 +106,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     } else {
       return false;
     }
-  } else if (!depends_on(src_x, dst_x).any()) {
+  } else if (!depends_on(src_x, dst_x).var) {
     // This is a broadcast because the src_x is constant w.r.t. dst_x.
     at = src_x;
     src_dim.bounds = buffer_bounds(dst, dst_d);
@@ -71,30 +115,36 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
     src_dim.fold_factor = expr();
     return true;
   } else {
-    // Try to parse src_x = dst_x * scale + offset
-    expr scale = 1;
-    if (const class mul* s = src_x.as<class mul>()) {
-      if (!depends_on(s->a, dst_x).any()) {
-        scale = s->a;
-        src_x = s->b;
-      } else if (!depends_on(s->b, dst_x).any()) {
-        scale = s->b;
-        src_x = s->a;
-      } else {
-        return false;
+    // If a src_x depends on multiple dst_x, only consider this dst dim for now.
+    for (int i = 0; i < static_cast<int>(dst_x.size()); ++i) {
+      if (i != dst_d) {
+        src_x = substitute(src_x, dst_x[i], buffer_min(dst, i));
       }
     }
+    src_x = simplify(src_x);
 
-    expr offset = simplify((src_x - dst_x) * scale);
-    if (depends_on(offset, dst_x).any()) {
-      // We don't understand this src_x as a copy.
+    // Try to parse src_x = dst_x * scale + offset
+    expr scale, offset;
+    if (!is_linear(src_x, dst_x[dst_d], scale, offset)) {
+      return false;
+    }
+    scale = simplify(scale);
+    offset = simplify(offset);
+
+    if (!is_non_negative(scale)) {
+      // TODO: Maybe we could handle negative stride copies.
       return false;
     }
 
     src_dim.bounds = (buffer_bounds(src, src_d) - offset) / scale;
     src_dim.stride = buffer_stride(src, src_d) * scale;
     src_dim.fold_factor = buffer_fold_factor(src, src_d);
-    at = buffer_min(src, src_d) + offset * (scale - 1);
+    at = buffer_min(src, src_d);
+    if (!depends_on(offset, dst).any()) {
+      at += offset * (scale - 1);
+    } else {
+      // This offset is going to be handled by another dimension... we assume.
+    }
 
     // Alternative definitions that may be useful in the future and were difficult to determine:
     // src_dim.bounds = buffer_bounds(dst, dst_d);
@@ -107,7 +157,7 @@ bool is_copy(var src, expr src_x, int src_d, var dst, var dst_x, int dst_d, expr
 bool is_copy(const copy_stmt* op, int src_d, int dst_d, expr& at, dim_expr& src_dim) {
   // We might not have an src dim if we're trying to broadcast.
   expr src_x = src_d >= 0 ? op->src_x[src_d] : expr();
-  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x[dst_d], dst_d, at, src_dim);
+  return is_copy(op->src, src_x, src_d, op->dst, op->dst_x, dst_d, at, src_dim);
 }
 
 // `dst_d` may be a copy dim of `op` if it is used by exactly one src dim, where it might be a copy, or zero src dims,

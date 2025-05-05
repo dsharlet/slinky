@@ -1,6 +1,9 @@
 #ifndef SLINKY_BUILDER_TEST_FUNCS_H
 #define SLINKY_BUILDER_TEST_FUNCS_H
 
+#include <functional>
+#include <vector>
+
 #include "runtime/buffer.h"
 
 namespace slinky {
@@ -118,6 +121,27 @@ index_t upsample_nn_2x(const buffer<const T>& in, const buffer<T>& out) {
       out(x, y) = in((x + 0) >> 1, (y + 0) >> 1);
     }
   }
+  return 0;
+}
+
+// Compute the sum of the dimensions in `dims`.
+template <typename T>
+index_t sum(const buffer<const T>& in, const buffer<T>& out, std::vector<int> dims) {
+  assert(in.rank == out.rank + static_cast<int>(dims.size()));
+
+  // Initialize with 0
+  copy(scalar<T>(0), out);
+
+  // Make a buffer aliased to the output, with the same shape as the input.
+  buffer<T, 8> r = out;
+  std::sort(dims.begin(), dims.end(), std::less<int>());
+  for (int d : dims) {
+    r.unslice(d, in.dim(d));
+    r.dim(d).set_stride(0);
+  }
+
+  for_each_element([&](T* out, const T* in) { *out += *in; }, r, in);
+
   return 0;
 }
 
