@@ -52,7 +52,9 @@ TEST_P(stencil, 1d) {
   //
   // We expect slinky to alias the copy.
   func stencil_copy = func::make_copy({in, {point(x * S + dx * D)}}, {stencil, {x, dx}});
-  auto sum_1 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, /*dims=*/{1}); };
+  auto sum_1 = [K](const buffer<const short>& in, const buffer<short>& out) {
+    return sum(in, out, /*dims=*/{{1, 0, K - 1}});
+  };
   func reduce = func::make(std::move(sum_1), {{stencil, {point(x), min_extent(0, K)}}}, {{{out, {x}}}});
 
   if (split > 0) {
@@ -118,7 +120,9 @@ TEST_P(stencil, 2d) {
 
   // See the 1d version for a 1D description of what this is doing in 2D.
   func stencil_copy = func::make_copy({in, {point(x * S + dx * D), point(y * S + dy * D)}}, {stencil, {x, y, dx, dy}});
-  auto sum_23 = [](const buffer<const short>& in, const buffer<short>& out) { return sum(in, out, /*dims=*/{2, 3}); };
+  auto sum_23 = [K](const buffer<const short>& in, const buffer<short>& out) {
+    return sum(in, out, /*dims=*/{{2, 0, K - 1}, {3, 0, K - 1}});
+  };
   func reduce = func::make(
       std::move(sum_23), {{stencil, {point(x), point(y), min_extent(0, K), min_extent(0, K)}}}, {{{out, {x, y}}}});
 
