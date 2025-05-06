@@ -135,6 +135,11 @@ public:
     // TODO: This being a bitmask limits the number of inputs and outputs that can indicate `allow_in_place` is true...
     int allow_in_place = 0;
 
+    // The dimensions greater than min_rank are assumed to be "shift invariant"
+    // for the callback. If such a dimension can be proved to have extent 1 it
+    // can be sliced off without changing the semantics of the computation.
+    int min_rank = std::numeric_limits<int>::max();
+
     // A name for the callable. This is only a tag that is passed through slinky and used for printing, it doesn't
     // affect any slinky logic, *except* for if this is named `memcpy`, slinky assumes that the implementation of this
     // callback is:

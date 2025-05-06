@@ -1,6 +1,7 @@
 #include "builder/optimizations.h"
 
 #include <algorithm>
+#include <bitset>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -1305,6 +1306,173 @@ public:
 stmt insert_early_free(const stmt& s) {
   scoped_trace trace("insert_early_free");
   return early_free_inserter().mutate(s);
+}
+
+namespace {
+
+class pure_dims_remover : public stmt_mutator {
+  // Track dimensions of buffers that are provably one.
+  using sliceable_dims = std::bitset<64>;
+  symbol_map<sliceable_dims> symbol_to_sliceable_dims_;
+
+  static sliceable_dims single_dim(int d) {
+    sliceable_dims ret;
+    ret.set(d);
+    return ret;
+  }
+
+  static sliceable_dims erase_dim(sliceable_dims src_sd, int d) {
+    sliceable_dims sd = {};
+    for (int dim = 0; dim < d; ++dim) {
+      sd[dim] = src_sd[dim];
+    }
+    for (int dim = d; dim + 1 < sd.size(); ++dim) {
+      sd[dim] = src_sd[dim + 1];
+    }
+    return sd;
+  }
+
+  static bool is_extent_one(interval_expr interval) { return prove_true(interval.min == interval.max); }
+
+  static bool is_extent_one(dim_expr d) { return is_extent_one(d.bounds); }
+
+  template <typename T>
+  static sliceable_dims find_sliceable(const std::vector<T>& dims) {
+    sliceable_dims result = {};
+    for (size_t i = 0; i < dims.size(); ++i) {
+      if (is_extent_one(dims[i])) {
+        result.set(i);
+      }
+    }
+    return result;
+  }
+
+public:
+  pure_dims_remover() = default;
+
+  void visit(const crop_dim* op) override {
+    if (!is_extent_one(op->bounds)) {
+      return stmt_mutator::visit(op);
+    }
+    auto sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+    sd.set(op->dim);
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const crop_buffer* op) override {
+    sliceable_dims sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+    sd |= find_sliceable(op->bounds);
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const allocate* op) override {
+    sliceable_dims sd = find_sliceable(op->dims);
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const make_buffer* op) override {
+    sliceable_dims sd = find_sliceable(op->dims);
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const constant_buffer* op) override {
+    sliceable_dims sd = {};
+    for (size_t dim = 0; dim < op->value->rank; ++dim) {
+      if (op->value->dim(dim).extent() == 1) {
+        sd.set(dim);
+      }
+    }
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const clone_buffer* op) override {
+    sliceable_dims sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const transpose* op) override {
+    sliceable_dims src_sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+    sliceable_dims sd = {};
+    for (int dim = 0; dim < op->dims.size(); ++dim) {
+      int src_dim = op->dims[dim];
+      sd[dim] = src_sd[src_dim];
+    }
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const slice_dim* op) override {
+    sliceable_dims src_sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+    sliceable_dims sd = erase_dim(src_sd, op->dim);
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const slice_buffer* op) override {
+    sliceable_dims sd = symbol_to_sliceable_dims_.lookup(op->src, {});
+    for (int dim = std::min(sd.size(), op->at.size()) - 1; dim >= 0; --dim) {
+      if (op->at[dim].defined()) {
+        sd = erase_dim(sd, dim);
+      }
+    }
+    auto s = set_value_in_scope(symbol_to_sliceable_dims_, op->sym, sd);
+    stmt_mutator::visit(op);
+  }
+
+  void visit(const call_stmt* op) override {
+    if (op->attrs.min_rank == std::numeric_limits<int>::max()) {
+      return set_result(stmt{op});
+    }
+
+    sliceable_dims sliceable = -1;
+    for (var i : op->outputs) {
+      sliceable &= symbol_to_sliceable_dims_.lookup(i, {});
+    }
+
+    std::vector<expr> slices(sliceable.size());
+    for (int d = slices.size() - 1; d >= op->attrs.min_rank; --d) {
+      if (sliceable.test(d)) {
+        slices[d] = buffer_min(op->outputs.front(), d);
+      }
+    }
+    // Remove trailing slices we didn't set.
+    while (!slices.empty() && !slices.back().defined()) {
+      slices.pop_back();
+    }
+    if (slices.empty()) {
+      set_result(op);
+      return;
+    }
+
+    stmt result{op};
+    std::set<var> sliced;
+    for (var i : op->outputs) {
+      if (sliced.insert(i).second) {
+        result = slice_buffer::make(i, i, slices, result);
+      }
+    }
+    for (var i : op->inputs) {
+      if (sliced.insert(i).second) {
+        result = slice_buffer::make(i, i, slices, result);
+      }
+    }
+    set_result(result);
+  }
+
+  void visit(const copy_stmt* op) override { set_result(op); }
+};
+
+}  // namespace
+
+stmt remove_pure_dims(const stmt& s) {
+  scoped_trace trace("remove_pure_dims");
+  return pure_dims_remover{}.mutate(s);
 }
 
 namespace {

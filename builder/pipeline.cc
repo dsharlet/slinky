@@ -1485,6 +1485,8 @@ stmt build_pipeline(node_context& ctx, const std::vector<buffer_expr_ptr>& input
   // `evaluate` currently can't handle `copy_stmt`, so this is required.
   result = implement_copies(result, ctx);
 
+  result = remove_pure_dims(result);
+
   // `implement_copies` adds shadowed declarations, remove them before simplifying.
   result = deshadow(result, builder.external_symbols(), ctx);
   result = simplify(result);
