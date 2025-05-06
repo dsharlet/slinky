@@ -107,6 +107,103 @@ TEST(optimizations, fuse_siblings) {
           x, y, 0, {0, 10}, crop_dim::make(z, x, 1, {0, 10}, block::make({use_buffer(z), use_buffer(z)})))));
 }
 
+TEST(optimizations, remove_pure_dims) {
+  {
+    // Test support for crop_dim.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt crop = crop_dim::make(y, z, 1, {0, 0}, call);
+
+    stmt result = remove_pure_dims(crop);
+    ASSERT_THAT(
+        result, matches(crop_dim::make(y, z, 1, {0, 0}, slice_buffer::make(y, y, {expr{}, buffer_min(y, 1)}, call))));
+  }
+
+  {
+    // Test support for crop_buffer.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt crop = crop_buffer::make(y, z, {{}, {0, 0}}, call);
+
+    stmt result = remove_pure_dims(crop);
+    ASSERT_THAT(
+        result, matches(crop_buffer::make(y, z, {{}, {0, 0}}, slice_buffer::make(y, y, {{}, buffer_min(y, 1)}, call))));
+  }
+
+  {
+    // Test support for allocate.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt alloc = allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, call);
+
+    stmt result = remove_pure_dims(alloc);
+    ASSERT_THAT(result, matches(allocate::make(y, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}},
+                            slice_buffer::make(y, y, {{}, buffer_min(y, 1)}, call))));
+  }
+
+  {
+    // Test slicing inputs as well as outputs.
+    stmt call = call_stmt::make(nullptr, {x}, {y}, {.min_rank = 0});
+    stmt crop = crop_dim::make(y, z, 1, {0, 0}, call);
+
+    stmt result = remove_pure_dims(crop);
+    ASSERT_THAT(result, matches(crop_dim::make(y, z, 1, {0, 0},
+                            slice_buffer::make(x, x, {expr{}, buffer_min(y, 1)},
+                                slice_buffer::make(y, y, {expr{}, buffer_min(y, 1)}, call)))));
+  }
+
+  {
+    // Test propagation of sliceable dims through clone_buffer.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt alloc = allocate::make(
+        z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, clone_buffer::make(y, z, call));
+
+    stmt result = remove_pure_dims(alloc);
+    ASSERT_THAT(result, matches(allocate::make(z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}},
+                            clone_buffer::make(y, z, slice_buffer::make(y, y, {{}, buffer_min(y, 1)}, call)))));
+  }
+
+  {
+    // Test propagation of sliceable dims through transpose.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt alloc = allocate::make(
+        z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}}, transpose::make(y, z, {1, 0}, call));
+
+    stmt result = remove_pure_dims(alloc);
+    ASSERT_THAT(result, matches(allocate::make(z, memory_type::heap, 1, {{interval_expr{0, 5}}, {interval_expr{0, 0}}},
+                            transpose::make(y, z, {1, 0}, slice_buffer::make(y, y, {buffer_min(y, 0)}, call)))));
+  }
+
+  {
+    // Test slicing more than one dimension.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt crop1 = crop_dim::make(z, w, 1, {0, 0}, crop_dim::make(y, z, 2, {0, 0}, call));
+
+    stmt result = remove_pure_dims(crop1);
+    ASSERT_THAT(result, matches(crop_dim::make(z, w, 1, {0, 0},
+                            crop_dim::make(y, z, 2, {0, 0},
+                                slice_buffer::make(y, y, {expr{}, buffer_min(y, 1), buffer_min(y, 2)}, call)))));
+  }
+
+  {
+    // Test slicing the correct dimension under shadowing.
+    stmt call = call_stmt::make(nullptr, {y}, {y}, {.min_rank = 0});
+    stmt crop1 = crop_dim::make(y, z, 1, {0, 0}, crop_dim::make(y, z, 2, {0, 0}, call));
+
+    stmt result = remove_pure_dims(crop1);
+    ASSERT_THAT(result,
+        matches(crop_dim::make(y, z, 1, {0, 0},
+            crop_dim::make(y, z, 2, {0, 0}, slice_buffer::make(y, y, {expr{}, expr{}, buffer_min(y, 2)}, call)))));
+  }
+
+  {
+    // Test slicing two dimensions under shadowing and overlaping input/output.
+    stmt call = call_stmt::make(nullptr, {x}, {x}, {.min_rank = 0});
+    stmt crop1 = crop_dim::make(x, x, 1, {0, 0}, crop_dim::make(x, x, 2, {0, 0}, call));
+    stmt result = remove_pure_dims(crop1);
+    ASSERT_THAT(result, matches(crop_dim::make(x, x, 1, {0, 0},
+                            crop_dim::make(x, x, 2, {0, 0},
+                                slice_buffer::make(x, x, {expr{}, buffer_min(x, 1), buffer_min(x, 2)}, call)))));
+  }
+}
+
 TEST(optimizations, optimize_symbols) {
   auto make_dummy_decl = [](var x, stmt body) { return allocate::make(x, memory_type::heap, 1, {}, body); };
 

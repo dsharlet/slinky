@@ -27,6 +27,10 @@ stmt implement_copies(const stmt& s, node_context& ctx);
 // Find allocate nodes and try to insert free into them.
 stmt insert_early_free(const stmt& s);
 
+// Find call_stmt nodes and try to decrease the rank of the operation
+// using the optionally specificed function min_rank.
+stmt remove_pure_dims(const stmt& s);
+
 // The simplifier can't handle shadowed symbols. This mutator rewrites all declarations to avoid any shadowing.
 stmt deshadow(const stmt& s, span<var> external_symbols, node_context& ctx);
 
