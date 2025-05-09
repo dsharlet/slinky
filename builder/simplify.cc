@@ -238,6 +238,8 @@ public:
     // How many loops out is the `decl` found.
     int loop_depth = 0;
 
+    std::set<var> loop_deps;
+
     buffer_info() = default;
 
     buffer_info(expr elem_size) : elem_size(elem_size) {}
@@ -247,6 +249,17 @@ public:
       for (int d = 0; d < rank; ++d) {
         dims[d] = buffer_dim(sym, d);
       }
+    }
+
+    void add_dependency(const std::vector<var>& loops, const expr& x) {
+      for (var i : loops) {
+        if (depends_on(x, i).var) loop_deps.insert(i);
+      }
+    }
+
+    void add_dependency(const std::vector<var>& loops, const interval_expr& x) {
+      add_dependency(loops, x.min);
+      add_dependency(loops, x.max);
     }
 
     void init_dims(var sym, int rank) {
@@ -324,6 +337,8 @@ private:
   bool proving = false;
 
   expr_info result_info;
+
+  std::vector<var> loops;
 
   void set_result(expr e, expr_info info) {
     assert(!result_info.bounds.min.defined() && !result_info.bounds.max.defined());
@@ -1178,6 +1193,18 @@ public:
     }
   }
 
+  std::set<var> find_loops_used(const stmt& s) {
+    std::vector<var> raw = find_buffer_dependencies(s);
+    std::set<var> result;
+    for (var i : raw) {
+      const std::optional<buffer_info>& info = buffers.lookup(i);
+      if (info) {
+        result.insert(info->loop_deps.begin(), info->loop_deps.end());
+      }
+    }
+    return result;
+  }
+
   // Substitute expr() in for loop_var only in crop bounds within s, and only if those crop bounds do not crop a folded
   // dimension.
   stmt remove_loop_var_in_crop_bounds(const stmt& s, var loop_var) {
@@ -1292,6 +1319,13 @@ public:
       return;
     }
 
+    struct push_loop_in_scope {
+      std::vector<var>& loops;
+      push_loop_in_scope(std::vector<var>& loops, var x) : loops(loops) { loops.push_back(x); }
+      ~push_loop_in_scope() { loops.pop_back(); }
+    };
+    auto set_loop = push_loop_in_scope(loops, op->sym);
+
     for (auto& i : buffers) {
       if (i) ++i->loop_depth;
     }
@@ -1326,9 +1360,13 @@ public:
       for (auto ri = b->stmts.rbegin(); ri != b->stmts.rend(); ++ri) {
         stmt i = *ri;
 
-        if (!depends_on(i, op->sym).var) {
-          // i is loop invariant. Add it to the lifted result.
-          lifted.push_back({i, i});
+        std::set<var> loops_used = find_loops_used(i);
+
+        stmt i_lifted = drop_loop(i, op->sym, bounds, step);
+        if (!depends_on(i_lifted, op->sym).var && !std::all_of(loops.begin(), loops.end(),
+                [&](var j) { return depends_on(i, j).var || loops_used.find(j) != loops_used.end(); })) {
+          // i is invariant of at least one loop we are in. Try to lift it.
+          lifted.push_back({mutate(i_lifted), i});
         } else {
           // i depends on the loop. We are effectively reordering result ahead of i, we need to make sure we can do
           // that.
@@ -1991,6 +2029,7 @@ public:
     for (index_t i = 0; i < static_cast<index_t>(op_bounds.size()); ++i) {
       bounds[i] = mutate_crop_bounds(op_bounds[i], op_src, i, info->dims[i].bounds);
       changed = changed || !bounds[i].same_as(op_bounds[i]);
+      info->add_dependency(loops, bounds[i]);
     }
 
     // Remove trailing undefined bounds.
@@ -2112,7 +2151,10 @@ public:
       if (op_at[i].defined()) {
         at[i] = mutate(op_at[i]);
         changed = changed || !at[i].same_as(op_at[i]);
-        if (info && static_cast<index_t>(info->dims.size()) > i) info->dims.erase(info->dims.begin() + i);
+        if (info) {
+          if (static_cast<index_t>(info->dims.size()) > i) info->dims.erase(info->dims.begin() + i);
+          info->add_dependency(loops, at[i]);
+        }
       }
     }
 

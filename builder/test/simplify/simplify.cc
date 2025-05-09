@@ -346,8 +346,15 @@ TEST(simplify, licm) {
   auto make_loop_x = [](const stmt& body) { return loop::make(x, loop::parallel, bounds(0, 10), 1, body); };
   auto make_loop_y = [](const stmt& body) { return loop::make(y, loop::parallel, bounds(0, 10), 1, body); };
   auto make_call = [](var in, var out) { return call_stmt::make(nullptr, {in}, {out}, {}); };
-  auto make_crop_x = [](var b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(x), body); };
-  auto make_crop_y = [](var b, int dim, const stmt& body) { return crop_dim::make(b, b, dim, point(y), body); };
+  auto make_crop_x = [](var sym, var src, int dim, const stmt& body) {
+    return crop_dim::make(sym, src, dim, point(x), body);
+  };
+  auto make_crop_y = [](var sym, var src, int dim, const stmt& body) {
+    return crop_dim::make(sym, src, dim, point(y), body);
+  };
+  auto make_crop_xy = [](var sym, var src, const stmt& body) {
+    return crop_buffer::make(sym, src, {point(x), point(y)}, body);
+  };
 
   // One call doesn't depend on the loop.
   ASSERT_THAT(simplify(make_loop_x(make_call(b0, b1))), matches(make_call(b0, b1)));
@@ -363,42 +370,42 @@ TEST(simplify, licm) {
   // Last call depends on the loop, first call does not.
   ASSERT_THAT(simplify(make_loop_x(block::make({
                   make_call(b0, b1),
-                  make_crop_x(b2, 0, make_call(b0, b2)),
+                  make_crop_x(b3, b2, 0, make_call(b0, b3)),
               }))),
       matches(block::make({
           make_call(b0, b1),
-          make_loop_x(make_crop_x(b2, 0, make_call(b0, b2))),
+          make_loop_x(make_crop_x(b3, b2, 0, make_call(b0, b3))),
       })));
   // A call in the middle of the loop depends on the loop.
   ASSERT_THAT(simplify(make_loop_x(block::make({
                   make_call(b0, b1),
-                  make_crop_x(b2, 0, make_call(b0, b2)),
+                  make_crop_x(b3, b2, 0, make_call(b0, b3)),
                   make_call(b0, b3),
               }))),
       matches(block::make({
           make_call(b0, b1),
           make_call(b0, b3),
-          make_loop_x(make_crop_x(b2, 0, make_call(b0, b2))),
+          make_loop_x(make_crop_x(b3, b2, 0, make_call(b0, b3))),
       })));
   // A call in the middle of the loop does not depend on the loop, but does depend on the first call.
   ASSERT_THAT(simplify(make_loop_x(block::make({
-                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_crop_x(b2, b1, 0, make_call(b0, b2)),
                   make_call(b1, b2),
-                  make_crop_x(b3, 0, make_call(b0, b3)),
+                  make_crop_x(b4, b3, 0, make_call(b0, b4)),
               }))),
       matches(make_loop_x(block::make({
-          make_crop_x(b1, 0, make_call(b0, b1)),
+          make_crop_x(b2, b1, 0, make_call(b0, b2)),
           make_call(b1, b2),
-          make_crop_x(b3, 0, make_call(b0, b3)),
+          make_crop_x(b4, b3, 0, make_call(b0, b4)),
       }))));
   // A call in the middle of the loop does not depend on the loop, but does depend on the first call, and we know that
   // the first call doesn't write a folded buffer.
   ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
                   make_loop_x(block::make({
-                      make_crop_x(b1, 0, make_call(b0, b1)),
+                      make_crop_x(b2, b1, 0, make_call(b0, b2)),
                       make_call(b1, b2),
                       make_call(b1, b3),
-                      make_crop_x(b4, 0, make_call(b0, b4)),
+                      make_crop_x(b5, b4, 0, make_call(b0, b5)),
                   })))),
       matches(block::make({
           allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
@@ -407,27 +414,27 @@ TEST(simplify, licm) {
                   make_call(b1, b2),
                   make_call(b1, b3),
               })),
-          make_loop_x(make_crop_x(b4, 0, make_call(b0, b4))),
+          make_loop_x(make_crop_x(b5, b4, 0, make_call(b0, b5))),
       })));
   // A call at the end of the loop does not depend on the loop, but each call depends on the previous, and the first
   // call writes a folded buffer.
   ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
                   make_loop_x(block::make({
-                      make_crop_x(b1, 0, make_call(b0, b1)),
-                      make_crop_x(b2, 0, make_call(b1, b2)),
+                      make_crop_x(b2, b1, 0, make_call(b0, b2)),
+                      make_crop_x(b3, b2, 0, make_call(b1, b3)),
                       make_call(b2, b3),
                   })))),
       matches(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
           make_loop_x(block::make({
-              make_crop_x(b1, 0, make_call(b0, b1)),
-              make_crop_x(b2, 0, make_call(b1, b2)),
+              make_crop_x(b2, b1, 0, make_call(b0, b2)),
+              make_crop_x(b3, b2, 0, make_call(b1, b3)),
               make_call(b2, b3),
           })))));
   // Same as above, but with another loop invariant stmt that does get lifted.
   ASSERT_THAT(simplify(allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, dim::unfolded}},
                   make_loop_x(block::make({
-                      make_crop_x(b1, 0, make_call(b0, b1)),
-                      make_crop_x(b2, 0, make_call(b1, b2)),
+                      make_crop_x(b2, b1, 0, make_call(b0, b2)),
+                      make_crop_x(b3, b2, 0, make_call(b1, b3)),
                       make_call(b0, b4),
                       make_call(b2, b3),
                   })))),
@@ -435,65 +442,76 @@ TEST(simplify, licm) {
           make_call(b0, b4),
           allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
               make_loop_x(block::make({
-                  make_crop_x(b1, 0, make_call(b0, b1)),
-                  make_crop_x(b2, 0, make_call(b1, b2)),
+                  make_crop_x(b2, b1, 0, make_call(b0, b2)),
+                  make_crop_x(b3, b2, 0, make_call(b1, b3)),
                   make_call(b2, b3),
               }))),
       })));
   // A call at the end of the loop that is loop invariant.
   ASSERT_THAT(simplify(make_loop_x(block::make({
-                  make_crop_x(b1, 0, make_call(b0, b1)),
-                  make_crop_x(b2, 0, make_call(b1, b2)),
+                  make_crop_x(b2, b1, 0, make_call(b0, b2)),
+                  make_crop_x(b3, b2, 0, make_call(b1, b3)),
                   make_call(b0, b3),
               }))),
       matches(block::make({
           make_call(b0, b3),
           make_loop_x(block::make({
-              make_crop_x(b1, 0, make_call(b0, b1)),
-              make_crop_x(b2, 0, make_call(b1, b2)),
+              make_crop_x(b2, b1, 0, make_call(b0, b2)),
+              make_crop_x(b3, b2, 0, make_call(b1, b3)),
           })),
       })));
   // A nested loop.
-  ASSERT_THAT(simplify(make_loop_y(make_crop_y(b2, 1,
+  ASSERT_THAT(simplify(make_loop_y(make_crop_y(b3, b2, 1,
                   make_loop_x(block::make({
                       make_call(b0, b1),
-                      make_crop_x(b2, 0, make_call(b0, b2)),
+                      make_crop_x(b4, b3, 0, make_call(b0, b4)),
                   }))))),
       matches(block::make({
           make_call(b0, b1),
-          make_loop_y(make_crop_y(b2, 1, make_loop_x(make_crop_x(b2, 0, make_call(b0, b2))))),
+          make_loop_y(make_crop_y(b3, b2, 1, make_loop_x(make_crop_x(b4, b3, 0, make_call(b0, b4))))),
       })));
 
   // A call that is loop invariant, but with a transitive dependency on a loop variant.
   ASSERT_THAT(simplify(make_loop_x(block::make({
-                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_crop_x(b2, b1, 0, make_call(b0, b2)),
                   make_call(b1, b2),
                   make_call(b2, b3),
-                  make_crop_x(b4, 0, make_call(b3, b4)),
+                  make_crop_x(b5, b4, 0, make_call(b3, b5)),
               }))),
       matches(make_loop_x(block::make({
-          make_crop_x(b1, 0, make_call(b0, b1)),
+          make_crop_x(b2, b1, 0, make_call(b0, b2)),
           make_call(b1, b2),
           make_call(b2, b3),
-          make_crop_x(b4, 0, make_call(b3, b4)),
+          make_crop_x(b5, b4, 0, make_call(b3, b5)),
       }))));
 
   // A call that is loop invariant, but with a transitive dependency on a loop variant.
   ASSERT_THAT(simplify(make_loop_x(block::make({
-                  make_crop_x(b1, 0, make_call(b0, b1)),
+                  make_crop_x(b2, b1, 0, make_call(b0, b2)),
                   make_call(b5, b6),
                   make_call(b1, b2),
                   make_call(b2, b3),
-                  make_crop_x(b4, 0, make_call(b3, b4)),
+                  make_crop_x(b5, b4, 0, make_call(b3, b5)),
               }))),
       matches(block::make({
           make_call(b5, b6),
           make_loop_x(block::make({
-              make_crop_x(b1, 0, make_call(b0, b1)),
+              make_crop_x(b2, b1, 0, make_call(b0, b2)),
               make_call(b1, b2),
               make_call(b2, b3),
-              make_crop_x(b4, 0, make_call(b3, b4)),
+              make_crop_x(b5, b4, 0, make_call(b3, b5)),
           })),
+      })));
+
+  // A call doesn't depend on an outer loop, but does depend on an inner loop.
+  // A second call depends on the first call, and the inner and outer loop.
+  ASSERT_THAT(simplify(make_loop_y(make_loop_x(block::make({
+                  make_crop_x(b2, b1, 0, make_call(b0, b2)),
+                  make_crop_xy(b3, b2, make_call(b1, b3)),
+              })))),
+      matches(block::make({
+          crop_dim::make(b2, b1, 0, {0, 10}, make_call(b0, b2)),
+          make_loop_y(make_loop_x(make_crop_xy(b3, b2, make_call(b1, b3)))),
       })));
 }
 
