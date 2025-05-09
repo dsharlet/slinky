@@ -1222,6 +1222,50 @@ public:
     return m(buffers, loop_var).mutate(s);
   }
 
+  // Attempts to remove dependencies on a loop variable `loop`. If unsuccessful, the original `body` is returned.
+  stmt drop_loop(stmt body, var loop, const interval_expr& bounds, const expr& step) {
+    scoped_trace trace("drop_loop");
+    stmt result = body;
+    std::vector<std::tuple<var, var, int, interval_expr>> new_crops;
+    while (true) {
+      // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
+      if (const crop_dim* crop = result.as<crop_dim>()) {
+        // If we can prove that the union of either the current and next iteration, or previous and current iteration,
+        // is the whole iteration domain, then we can drop the loop. It's helpful to check both, because usually
+        // clamps that make this proof hard only exist in one direction.
+        interval_expr next_iter = substitute(crop->bounds, loop, expr(loop) + step);
+        interval_expr prev_iter = substitute(crop->bounds, loop, expr(loop) - step);
+        auto set_bounds_of_sym = set_value_in_scope(vars, loop, {bounds, alignment_type()});
+        // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
+        if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
+                       (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
+          result = crop->body;
+          expr_info info_of_min, info_of_max;
+          mutate(crop->bounds, &info_of_min, &info_of_max);
+          interval_expr crop_bounds = info_of_min.bounds | info_of_max.bounds;
+          // If the original loop was empty, we need to hack the crop bounds to produce an empty buffer.
+          crop_bounds.min = select(bounds.max < bounds.min, crop_bounds.max + 1, crop_bounds.min);
+          new_crops.emplace_back(crop->sym, crop->src, crop->dim, std::move(crop_bounds));
+        } else {
+          // This crop was not contiguous, we can't drop the loop.
+          return body;
+        }
+      } else if (result.as<call_stmt>() || result.as<copy_stmt>()) {
+        // We've found the actual body of the loop.
+        break;
+      } else {
+        // TODO: We might be able to handle other cases too, like blocks of copies all to the same buffer (a
+        // concatenate?).
+        return body;
+      }
+    }
+    // Rewrite the crops to cover the whole loop, and drop the loop.
+    for (auto i = new_crops.rbegin(); i != new_crops.rend(); ++i) {
+      result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), std::get<3>(*i), result);
+    }
+    return result;
+  }
+
   void visit(const loop* op) override {
     interval_expr bounds = mutate(op->bounds);
     expr step = mutate(op->step);
@@ -1346,48 +1390,8 @@ public:
       // Due to either scheduling or other simplifications, we can end up with a loop that runs a single call or copy on
       // contiguous crops of a buffer. In these cases, we can drop the loop in favor of just calling the body on the
       // union of the bounds covered by the loop.
-      stmt result = body;
-      std::vector<std::tuple<var, var, int, interval_expr>> new_crops;
-      bool drop_loop = true;
-      while (true) {
-        // For now, we only handle crop_dim. I don't think crop_buffer can ever yield this simplification?
-        if (const crop_dim* crop = result.as<crop_dim>()) {
-          // If we can prove that the union of either the current and next iteration, or previous and current iteration,
-          // is the whole iteration domain, then we can drop the loop. It's helpful to check both, because usually
-          // clamps that make this proof hard only exist in one direction.
-          interval_expr next_iter = substitute(crop->bounds, op->sym, expr(op->sym) + op->step);
-          interval_expr prev_iter = substitute(crop->bounds, op->sym, expr(op->sym) - op->step);
-          auto set_bounds_of_sym = set_value_in_scope(vars, op->sym, {bounds, alignment_type()});
-          // TODO: Currently we only support crops that monotonically increase the crop bounds as the loop progresses.
-          if (prove_true((next_iter.min > crop->bounds.min && crop->bounds.max + 1 >= next_iter.min) ||
-                         (crop->bounds.min > prev_iter.min && prev_iter.max + 1 >= crop->bounds.min))) {
-            result = crop->body;
-            expr_info info_of_min, info_of_max;
-            mutate(crop->bounds, &info_of_min, &info_of_max);
-            interval_expr crop_bounds = info_of_min.bounds | info_of_max.bounds;
-            // If the original loop was empty, we need to hack the crop bounds to produce an empty buffer.
-            crop_bounds.min = select(bounds.max < bounds.min, crop_bounds.max + 1, crop_bounds.min);
-            new_crops.emplace_back(crop->sym, crop->src, crop->dim, std::move(crop_bounds));
-          } else {
-            // This crop was not contiguous, we can't drop the loop.
-            drop_loop = false;
-            break;
-          }
-        } else if (result.as<call_stmt>() || result.as<copy_stmt>()) {
-          // We've found the actual body of the loop.
-          break;
-        } else {
-          // TODO: We might be able to handle other cases too, like blocks of copies all to the same buffer (a
-          // concatenate?).
-          drop_loop = false;
-          break;
-        }
-      }
-      if (drop_loop) {
-        // Rewrite the crops to cover the whole loop, and drop the loop.
-        for (auto i = new_crops.rbegin(); i != new_crops.rend(); ++i) {
-          result = crop_dim::make(std::get<0>(*i), std::get<1>(*i), std::get<2>(*i), std::get<3>(*i), result);
-        }
+      stmt result = drop_loop(body, op->sym, bounds, step);
+      if (!result.same_as(body)) {
         set_result(mutate(result));
         return;
       }

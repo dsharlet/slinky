@@ -1326,7 +1326,7 @@ class pure_dims_remover : public stmt_mutator {
     for (int dim = 0; dim < d; ++dim) {
       sd[dim] = src_sd[dim];
     }
-    for (int dim = d; dim + 1 < sd.size(); ++dim) {
+    for (int dim = d; dim + 1 < static_cast<int>(sd.size()); ++dim) {
       sd[dim] = src_sd[dim + 1];
     }
     return sd;
@@ -1339,7 +1339,7 @@ class pure_dims_remover : public stmt_mutator {
   template <typename T>
   static sliceable_dims find_sliceable(const std::vector<T>& dims) {
     sliceable_dims result = {};
-    for (size_t i = 0; i < dims.size(); ++i) {
+    for (std::size_t i = 0; i < dims.size(); ++i) {
       if (is_extent_one(dims[i])) {
         result.set(i);
       }
@@ -1381,7 +1381,7 @@ public:
 
   void visit(const constant_buffer* op) override {
     sliceable_dims sd = {};
-    for (size_t dim = 0; dim < op->value->rank; ++dim) {
+    for (std::size_t dim = 0; dim < op->value->rank; ++dim) {
       if (op->value->dim(dim).extent() == 1) {
         sd.set(dim);
       }
@@ -1399,7 +1399,7 @@ public:
   void visit(const transpose* op) override {
     sliceable_dims src_sd = symbol_to_sliceable_dims_.lookup(op->src, {});
     sliceable_dims sd = {};
-    for (int dim = 0; dim < op->dims.size(); ++dim) {
+    for (std::size_t dim = 0; dim < op->dims.size(); ++dim) {
       int src_dim = op->dims[dim];
       sd[dim] = src_sd[src_dim];
     }
