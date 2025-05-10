@@ -99,6 +99,27 @@ bool empty_intersection(const std::set<T>& a, const std::set<T>& b) {
   return empty_intersection(a.begin(), a.end(), b.begin(), b.end());
 }
 
+class immovable_finder : public recursive_node_visitor {
+public:
+  bool found = false;
+
+  void visit(const call* op) override {
+    switch (op->intrinsic) {
+    case intrinsic::semaphore_wait:
+    case intrinsic::semaphore_signal: found = true; return;
+    default: recursive_node_visitor::visit(op);
+    }
+  }
+
+  using recursive_node_visitor::visit;
+};
+
+bool is_movable(const stmt& s) {
+  immovable_finder f;
+  s.accept(&f);
+  return !f.found;
+}
+
 // If a constant can be added to an expression without creating new nodes, this helper produces that expression,
 // otherwise expr().
 class constant_adder : public node_mutator {
@@ -1205,9 +1226,8 @@ public:
     return result;
   }
 
-  // Substitute expr() in for loop_var only in crop bounds within s, and only if those crop bounds do not crop a folded
-  // dimension.
-  stmt remove_loop_var_in_crop_bounds(const stmt& s, var loop_var) {
+  // We consider a stmt to be loop invariant if all the writes to buffers by the stmt are preserved across loop iterations.
+  bool is_loop_invariant(const stmt& s, var loop_var) {
     class m : public node_mutator {
       symbol_map<buffer_info>& buffers;
       var loop_var;
@@ -1252,7 +1272,8 @@ public:
         }
       }
     };
-    return m(buffers, loop_var).mutate(s);
+    stmt removed = m(buffers, loop_var).mutate(s);
+    return !depends_on(removed, loop_var).any();
   }
 
   // Attempts to remove dependencies on a loop variable `loop`. If unsuccessful, the original `body` is returned.
@@ -1352,7 +1373,7 @@ public:
       // to be loop invariant, and remove both from the loop.
       // These accumulate results in reverse order.
       // Here, we keep the original stmt, in case we need to put it back in the loop.
-      std::vector<std::pair<stmt, stmt>> lifted;
+      std::vector<stmt> lifted;
       std::vector<stmt> loop_body;
       loop_body.reserve(b->stmts.size());
 
@@ -1360,13 +1381,18 @@ public:
       for (auto ri = b->stmts.rbegin(); ri != b->stmts.rend(); ++ri) {
         stmt i = *ri;
 
-        std::set<var> loops_used = find_loops_used(i);
+        if (is_loop_invariant(i)) {
+          lifted.push_back(i);
+          continue;
+        }
 
-        stmt i_lifted = drop_loop(i, op->sym, bounds, step);
-        if (!depends_on(i_lifted, op->sym).var && !std::all_of(loops.begin(), loops.end(),
-                [&](var j) { return depends_on(i, j).var || loops_used.find(j) != loops_used.end(); })) {
-          // i is invariant of at least one loop we are in. Try to lift it.
-          lifted.push_back({mutate(i_lifted), i});
+        // All of the loops used by i.
+        std::set<var> loops_used = find_loops_used(i);
+        if (may_be_loop_invariant && !std::all_of(loops.begin(), loops.end(), [&](var j) {
+              return depends_on(i, j).var || loops_used.find(j) != loops_used.end();
+            })) {
+          // i is invariant to some other loop we are in.
+          lifted.push_back(i);
         } else {
           // i depends on the loop. We are effectively reordering result ahead of i, we need to make sure we can do
           // that.
@@ -1378,20 +1404,19 @@ public:
           // the first dependency.
           for (std::size_t j = lifted.size(); j > 0 && j <= lifted.size();) {
             std::set<var> consumed_by_j;
-            buffers_accessed_via_aliases(lifted[j - 1].first, /*consumed=*/true, consumed_by_j);
+            buffers_accessed_via_aliases(lifted[j - 1], /*consumed=*/true, consumed_by_j);
 
             if (empty_intersection(produced_by_i, consumed_by_j)) {
-              // This loop invariant is independent of i.
+              // This loop invariant is independent of i, we can reorder past it.
               --j;
               continue;
             }
 
             // j depends on i, so j is not loop invariant. Can we make i loop invariant? We can if we can delete the
             // references to the loop variable.
-            stmt i_lifted = remove_loop_var_in_crop_bounds(i, op->sym);
-            if (!depends_on(i_lifted, op->sym).var) {
+            if (may_be_loop_invariant) {
               // We made i loop invariant, add it to the loop invariant result before it is used.
-              lifted.insert(lifted.begin() + j, {mutate(i_lifted), i});
+              lifted.insert(lifted.begin() + j, i);
               --j;
               i = stmt();
             } else {
@@ -1399,8 +1424,7 @@ public:
               // stmts back in the loop.
               // TODO: We could be a bit more careful here, and only put the stmts that actually depend on this stmt
               // back in the loop.
-              std::transform(lifted.begin(), lifted.begin() + j, std::back_inserter(loop_body),
-                  [](const auto& i) { return i.second; });
+              std::copy(lifted.begin(), lifted.begin() + j, std::back_inserter(loop_body));
               lifted.erase(lifted.begin(), lifted.begin() + j);
             }
             break;
@@ -1413,12 +1437,29 @@ public:
         }
       }
       if (!lifted.empty()) {
+        auto make_loop = [&](std::vector<stmt> body) {
+          return mutate(loop::make(op->sym, max_workers, bounds, step, block::make(std::move(body))));
+        };
         // We found something to lift out of the loop.
         std::vector<stmt> result;
         result.reserve(lifted.size() + 1);
+        std::vector<stmt> new_loop_body;
+        auto flush_loop = [&]() {
+          if (new_loop_body.empty()) return;
+          result.push_back(make_loop(std::move(new_loop_body)));
+          new_loop_body.clear();
+        };
         for (auto i = lifted.rbegin(); i != lifted.rend(); ++i) {
-          result.push_back(i->first);
+          if (depends_on(*i, op->sym).var) {
+            // This is not actually loop invariant.
+            new_loop_body.push_back(*i);
+          } else {
+            flush_loop();
+            result.push_back(*i);
+          }
         }
+        flush_loop();
+
         std::reverse(loop_body.begin(), loop_body.end());
         result.push_back(
             mutate(loop::make(op->sym, std::move(max_workers), bounds, step, block::make(std::move(loop_body)))));

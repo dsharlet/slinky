@@ -410,7 +410,7 @@ TEST(simplify, licm) {
       matches(block::make({
           allocate::make(b1, memory_type::heap, 1, {{{0, 10}, 1, expr()}},
               block::make({
-                  make_call(b0, b1),
+                  make_loop_x(make_crop_x(b2, b1, 0, make_call(b0, b2))),
                   make_call(b1, b2),
                   make_call(b1, b3),
               })),
@@ -510,7 +510,7 @@ TEST(simplify, licm) {
                   make_crop_xy(b3, b2, make_call(b1, b3)),
               })))),
       matches(block::make({
-          crop_dim::make(b2, b1, 0, {0, 10}, make_call(b0, b2)),
+          make_loop_x(make_crop_x(b2, b1, 0, make_call(b0, b2))),
           make_loop_y(make_loop_x(make_crop_xy(b3, b2, make_call(b1, b3)))),
       })));
 }
@@ -632,6 +632,15 @@ TEST(simplify, crop_not_needed) {
   ASSERT_THAT(simplify(crop_dim::make(b0, b0, 1, {x, y}, check::make(b0))), matches(check::make(b0)));
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {y, z}, check::make(b1))), matches(check::make(b0)));
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {y, z}, check::make(b0))), matches(check::make(b0)));
+
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y},
+                  crop_dim::make(b3, b2, 0, buffer_bounds(b1, 0), call_stmt::make(nullptr, {}, {b3}, {})))),
+      matches(crop_dim::make(
+          b3, b2, 0, {max(buffer_min(b0, 0), x), min(buffer_max(b0, 0), y)}, call_stmt::make(nullptr, {}, {b3}, {}))));
+
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 0, {x, y},
+                  crop_dim::make(b3, b2, 0, buffer_bounds(b1, 3), call_stmt::make(nullptr, {}, {b3}, {})))),
+      matches(crop_dim::make(b3, b2, 0, buffer_bounds(b0, 3), call_stmt::make(nullptr, {}, {b3}, {}))));
 }
 
 TEST(simplify, clone) {
