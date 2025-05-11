@@ -635,6 +635,11 @@ TEST(simplify, slice_of_crop) {
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_dim::make(b3, b1, 2, 0, body))),
       matches(crop_dim::make(b1, b0, 1, {0, 3}, slice_dim::make(b3, b1, 2, 0, body))));
 
+  // Unchanged.
+  ASSERT_THAT(
+      simplify(crop_buffer::make(b1, b0, {{0, 3}, {0, 4}, {0, 5}}, slice_buffer::make(b3, b1, {{1}, {2}}, body))),
+      matches(crop_buffer::make(b1, b0, {{0, 3}, {0, 4}, {0, 5}}, slice_buffer::make(b3, b1, {{1}, {2}}, body))));
+
   // Test support for slice_dim.
   ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_dim::make(b3, b1, 1, 0, body))),
       matches(slice_dim::make(b3, b0, 1, 0, body)));
