@@ -240,6 +240,18 @@ expr interval_expr::end() const { return max + 1; }
 expr interval_expr::extent() const { return max - min + 1; }
 expr interval_expr::empty() const { return min > max; }
 
+expr interval_expr::contains(expr_ref x) const {
+  if (min.defined() && max.defined()) {
+    return min <= x && x <= max;
+  } else if (min.defined()) {
+    return min <= x;
+  } else if (max.defined()) {
+    return x <= max;
+  } else {
+    return expr{1};
+  }
+}
+
 interval_expr& interval_expr::operator*=(const expr& scale) {
   if (is_point()) {
     min = max = mul::make(min, scale);

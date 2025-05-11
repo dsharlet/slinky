@@ -2060,10 +2060,48 @@ public:
     visit_crop(src == op->src ? op : nullptr, op->sym, src, std::move(bounds), op->body);
   }
 
+  bool prove_slice_unaffected_by_crop(const std::vector<interval_expr>& bounds, const std::vector<expr>& at) {
+    for (size_t dim = at.size(); dim < bounds.size(); ++dim) {
+      if (bounds[dim].min.defined() || bounds[dim].max.defined()) {
+        return false;
+      }
+    }
+    for (size_t dim = 0; dim < std::min(bounds.size(), at.size()); ++dim) {
+      if (!prove_true(bounds[dim].contains(at[dim]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool prove_slice_unaffected_by_crop(int dim, interval_expr bounds, const std::vector<expr>& at) {
+    return dim >= static_cast<int>(at.size()) ? !(bounds.min.defined() || bounds.max.defined())
+                                              : prove_true(bounds.contains(at[dim]));
+  }
+
   void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
     std::vector<expr> at(op_at.size());
     bool changed = op == nullptr;
     std::optional<buffer_info> info = buffers[op_src];
+
+    while (info) {
+      if (const crop_buffer* c = info->decl.as<crop_buffer>()) {
+        if (!prove_slice_unaffected_by_crop(c->bounds, op_at)) {
+          break;
+        }
+        op_src = c->src;
+        info = buffers[op_src];
+      } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
+        if (!prove_slice_unaffected_by_crop(c->dim, c->bounds, op_at)) {
+          break;
+        }
+        op_src = c->src;
+        info = buffers[op_src];
+      } else {
+        break;
+      }
+    }
+
     for (index_t i = static_cast<index_t>(op_at.size()) - 1; i >= 0; --i) {
       if (op_at[i].defined()) {
         at[i] = mutate(op_at[i]);

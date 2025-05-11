@@ -628,6 +628,31 @@ TEST(simplify, allocate) {
           check::make(z)})));
 }
 
+TEST(simplify, slice_of_crop) {
+  stmt body = call_stmt::make(nullptr, {}, {b3}, {});
+
+  // Unchanged.
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_dim::make(b3, b1, 2, 0, body))),
+      matches(crop_dim::make(b1, b0, 1, {0, 3}, slice_dim::make(b3, b1, 2, 0, body))));
+
+  // Unchanged.
+  ASSERT_THAT(
+      simplify(crop_buffer::make(b1, b0, {{0, 3}, {0, 4}, {0, 5}}, slice_buffer::make(b3, b1, {{1}, {2}}, body))),
+      matches(crop_buffer::make(b1, b0, {{0, 3}, {0, 4}, {0, 5}}, slice_buffer::make(b3, b1, {{1}, {2}}, body))));
+
+  // Test support for slice_dim.
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_dim::make(b3, b1, 1, 0, body))),
+      matches(slice_dim::make(b3, b0, 1, 0, body)));
+
+  // Test support for slice_buffer.
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_buffer::make(b3, b1, {{}, 0}, body))),
+      matches(slice_dim::make(b3, b0, 1, 0, body)));
+
+  // Test support for slicing multiple dimensions.
+  ASSERT_THAT(simplify(crop_dim::make(b1, b0, 1, {0, 3}, slice_buffer::make(b3, b1, {{1}, {0}}, body))),
+      matches(slice_buffer::make(b3, b0, {{1}, {0}}, body)));
+}
+
 TEST(simplify, crop) {
   stmt body = call_stmt::make(nullptr, {}, {b2}, {});
 
