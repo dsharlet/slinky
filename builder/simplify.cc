@@ -2060,27 +2060,23 @@ public:
     visit_crop(src == op->src ? op : nullptr, op->sym, src, std::move(bounds), op->body);
   }
 
-  bool prove_contains(interval_expr outer, interval_expr inner) {
-    return prove_true(outer.contains(inner.min)) && prove_true(outer.contains(inner.max));
-  }
-
-  bool prove_slice_unaffected(const std::vector<interval_expr>& bounds, const std::vector<expr>& at) {
+  bool prove_slice_unaffected_by_crop(const std::vector<interval_expr>& bounds, const std::vector<expr>& at) {
     for (size_t dim = at.size(); dim < bounds.size(); ++dim) {
-      if (!prove_contains(bounds[dim], interval_expr::all())) {
+      if (bounds[dim].min.defined() || bounds[dim].max.defined()) {
         return false;
       }
     }
     for (size_t dim = 0; dim < std::min(bounds.size(), at.size()); ++dim) {
-      if (!prove_contains(bounds[dim], point(at[dim]))) {
+      if (!prove_true(bounds[dim].contains(at[dim]))) {
         return false;
       }
     }
     return true;
   }
 
-  bool prove_slice_unaffected(int dim, interval_expr bounds, const std::vector<expr>& at) {
-    return dim >= static_cast<int>(at.size()) ? prove_contains(bounds, interval_expr::all())
-                                              : prove_contains(bounds, point(at[dim]));
+  bool prove_slice_unaffected_by_crop(int dim, interval_expr bounds, const std::vector<expr>& at) {
+    return dim >= static_cast<int>(at.size()) ? !(bounds.min.defined() || bounds.max.defined())
+                                              : prove_true(bounds.contains(at[dim]));
   }
 
   void visit_slice(const base_stmt_node* op, var op_sym, var op_src, const std::vector<expr>& op_at, stmt op_body) {
@@ -2090,13 +2086,13 @@ public:
 
     while (info) {
       if (const crop_buffer* c = info->decl.as<crop_buffer>()) {
-        if (!prove_slice_unaffected(c->bounds, op_at)) {
+        if (!prove_slice_unaffected_by_crop(c->bounds, op_at)) {
           break;
         }
         op_src = c->src;
         info = buffers[op_src];
       } else if (const crop_dim* c = info->decl.as<crop_dim>()) {
-        if (!prove_slice_unaffected(c->dim, c->bounds, op_at)) {
+        if (!prove_slice_unaffected_by_crop(c->dim, c->bounds, op_at)) {
           break;
         }
         op_src = c->src;
