@@ -302,11 +302,11 @@ struct interval_expr {
   // An interval_expr x such that x & y == y
   static const interval_expr& intersection_identity();
 
-  expr contains(expr_ref x) const;
   const expr& begin() const;
   expr end() const;
   expr extent() const;
   expr empty() const;
+  expr contains(expr_ref x) const;
 
   interval_expr& operator*=(const expr& scale);
   interval_expr& operator/=(const expr& scale);
