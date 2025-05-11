@@ -58,23 +58,43 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
 // like ((x + c0) / c1) * c2.
 void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
-  lhs.constants[1] = 1;
-  rhs.constants[1] = 1;
-  lhs.constants[2] = 0;
-  rhs.constants[2] = 0;
-  // Match the LHS and RHS both to the form ((x + a) / b) * c
+  // Match the LHS and RHS both to the form ((x + a) / b) * c or ((a - x) / b) * c
   // clang-format off
-  if (!(match(lhs, ((x + c2) / c0) * c1, a, eval(c0 > 0)) ||
-        match(lhs, (x / c0) * c1, a, eval(c0 > 0)) ||
-        match(lhs, (x + c2) / c0, a, eval(c0 > 0)) ||
-        match(lhs, x / c0, a, eval(c0 > 0)))) {
-    return;
+  lhs.constants[1] = 1;
+  lhs.constants[2] = 0;
+  // Try matching (a - x) / c0 first so we don't match x to c2 - x. We need to separate this from the rest of the matches
+  // so we know the sign of x.
+  if (!(match(lhs, ((c2 - x) / c0) * c1, a, eval(c0 > 0)) ||
+        match(lhs, (c2 - x) / c0, a, eval(c0 > 0)))) {
+    lhs.constants[1] = 1;
+    lhs.constants[2] = 0;
+    if (!(match(lhs, ((x + c2) / c0) * c1, a, eval(c0 > 0)) ||
+          match(lhs, (x / c0) * c1, a, eval(c0 > 0)) ||
+          match(lhs, (x + c2) / c0, a, eval(c0 > 0)) ||
+          match(lhs, x / c0, a, eval(c0 > 0)))) {
+      return;
+    }
+  } else {
+    // Rewrite (c2 - x)/c0 -> (x - c2)/-c0.
+    lhs.constants[2] = lhs.constants[0] - 1 - lhs.constants[2];
+    lhs.constants[0] *= -1;
   }
-  if (!(match(rhs, ((x + c2) / c0) * c1, b, eval(c0 > 0)) ||
-        match(rhs, (x / c0) * c1, b, eval(c0 > 0)) ||
-        match(rhs, (x + c2) / c0, b, eval(c0 > 0)) ||
-        match(rhs, x / c0, b, eval(c0 > 0)))) {
-    return;
+  rhs.constants[1] = 1;
+  rhs.constants[2] = 0;
+  if (!(match(rhs, ((c2 - x) / c0) * c1, b, eval(c0 > 0)) ||
+        match(rhs, (c2 - x) / c0, b, eval(c0 > 0)))) {
+    rhs.constants[1] = 1;
+    rhs.constants[2] = 0;
+    if (!(match(rhs, ((x + c2) / c0) * c1, b, eval(c0 > 0)) ||
+          match(rhs, (x / c0) * c1, b, eval(c0 > 0)) ||
+          match(rhs, (x + c2) / c0, b, eval(c0 > 0)) ||
+          match(rhs, x / c0, b, eval(c0 > 0)))) {
+      return;
+    }
+  } else {
+    // Rewrite (c2 - x)/c0 -> (x - c2)/-c0.
+    rhs.constants[2] = rhs.constants[0] - 1 - rhs.constants[2];
+    rhs.constants[0] *= -1;
   }
   // clang-format on
 
@@ -103,7 +123,7 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   assert(r_c0 < 1024);
   index_t min = std::numeric_limits<index_t>::max();
   index_t max = std::numeric_limits<index_t>::min();
-  index_t period = lcm(l_c0, r_c0);
+  index_t period = lcm(std::abs(l_c0), std::abs(r_c0));
   for (index_t x = 0; x < period; ++x) {
     index_t y = floor_div(x + l_c2, l_c0) * l_c1 + floor_div(x + r_c2, r_c0) * r_c1;
     min = std::min(min, y);
@@ -145,29 +165,20 @@ void tighten_correlated_bounds(interval_expr& bounds, const expr& a, const expr&
 }  // namespace
 
 interval_expr bounds_of(const add* op, interval_expr a, interval_expr b) {
-  if (a.is_point() && b.is_point()) {
-    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
-  } else {
-    interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
-    if (op) {
-      tighten_correlated_bounds(result, op->a, op->b, 1);
-    }
-    return result;
+  interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
+  if (op) {
+    tighten_correlated_bounds(result, op->a, op->b, 1);
   }
+  return result;
 }
 interval_expr bounds_of(const sub* op, interval_expr a, interval_expr b) {
-  if (a.is_point() && b.is_point()) {
-    return point(simplify(op_simplified(), op, std::move(a.min), std::move(b.min)));
-  } else {
-    interval_expr result = {
-        simplify(op_simplified(), op, std::move(a.min), std::move(b.max)),
-        simplify(op_simplified(), op, std::move(a.max), std::move(b.min)),
-    };
-    if (op) {
-      tighten_correlated_bounds(result, op->a, op->b, -1);
-    }
-    return result;
+  // -b => bounds are {-max, -min}.
+  std::swap(b.min, b.max);
+  interval_expr result = bounds_of_linear(op, std::move(a), std::move(b));
+  if (op) {
+    tighten_correlated_bounds(result, op->a, op->b, -1);
   }
+  return result;
 }
 
 namespace {

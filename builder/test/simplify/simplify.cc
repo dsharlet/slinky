@@ -1246,14 +1246,31 @@ TEST(simplify, fuzz_correlated_bounds) {
 
   eval_context ctx;
 
+  auto random_staircase = [&](index_t a, index_t b) {
+    if (rng() & 1) {
+      return ((x + gen.random_constant()) / a) * b;
+    } else {
+      return ((gen.random_constant() - x) / a) * b;
+    }
+  };
+
+  int finite_bounds_count = 0;
+  int total_count = 0;
+
   for (auto _ : fuzz_test(std::chrono::seconds(1))) {
     index_t a = gen.random_constant(16);
     index_t b = gen.random_constant(16);
     index_t c = gen.random_constant(16);
     index_t d = euclidean_div(b * c, a);
-    expr test = ((x + gen.random_constant()) / a) * b - ((x + gen.random_constant()) / c) * d;
+    expr lhs = random_staircase(a, b);
+    expr rhs = random_staircase(c, d);
+    expr test = rng() & 1 ? lhs + rhs : lhs - rhs;
 
     interval_expr bounds = bounds_of(test, gen.var_bounds());
+
+    finite_bounds_count += !is_infinity(bounds.min);
+    finite_bounds_count += !is_infinity(bounds.max);
+    total_count += 2;
 
     for (int j = 0; j < checks; ++j) {
       gen.init_context(ctx);
@@ -1282,6 +1299,10 @@ TEST(simplify, fuzz_correlated_bounds) {
       }
     }
   }
+
+  // Half the time, the staircases should be correlated, and the other half of the time, they should be anti-correlated,
+  // so we should be able to simplify ~half of the cases. However, it's random, so give an extra 50% tolerance.
+  ASSERT_GE(finite_bounds_count, total_count / 3);
 }
 
 }  // namespace slinky
