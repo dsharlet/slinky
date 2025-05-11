@@ -223,6 +223,14 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(min(x / 16 + -2, y) + 1, min(y + 1, x / 16)) + 2), matches(min(y, x / 16 + -2) + 3));
 }
 
+TEST(simplify, staircase) {
+  ASSERT_THAT(simplify(min(((x + 7) / 8) * 8, x)), matches(x));
+  ASSERT_THAT(simplify(max(((x + 7) / 8) * 8, x)), matches(((x + 7) / 8) * 8));
+
+  ASSERT_THAT(simplify(max((x / 8) * 8, x)), matches(x));
+  ASSERT_THAT(simplify(min((x / 8) * 8, x)), matches((x / 8) * 8));
+}
+
 TEST(simplify, let) {
   // lets that should be removed
   ASSERT_THAT(simplify(let::make(x, y, z)), matches(z));                      // Dead let

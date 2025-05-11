@@ -137,14 +137,20 @@ public:
 };
 
 template <int matched, int N>
+SLINKY_UNIQUE bool match(const pattern_constant<N>& p, index_t x, match_context& ctx) {
+  if (matched & (1 << (symbol_count + N))) {
+    return ctx.constants[N] == x;
+  } else {
+    ctx.constants[N] = x;
+    return true;
+  }
+  return false;
+}
+
+template <int matched, int N>
 SLINKY_UNIQUE bool match(const pattern_constant<N>& p, expr_ref x, match_context& ctx) {
   if (const constant* c = x.as<constant>()) {
-    if (matched & (1 << (symbol_count + N))) {
-      return ctx.constants[N] == c->value;
-    } else {
-      ctx.constants[N] = c->value;
-      return true;
-    }
+    return match<matched>(p, c->value, ctx);
   }
   return false;
 }
@@ -396,6 +402,98 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_call<A, B
   return os << p.fn << "(" << std::get<0>(p.args) << ", " << std::get<1>(p.args) << ")";
 }
 
+// Represents an expression of the form ((x + a)/b)*c
+template <typename X, typename A, typename B, typename C>
+class pattern_staircase {
+public:
+  X x;
+  A a;
+  B b;
+  C c;
+};
+
+template <typename X, typename A, typename B, typename C>
+struct pattern_info<pattern_staircase<X, A, B, C>> {
+  static constexpr expr_node_type type = expr_node_type::none;
+  static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = true;
+  static constexpr int matched =
+      pattern_info<X>::matched | pattern_info<A>::matched | pattern_info<B>::matched | pattern_info<C>::matched;
+};
+
+template <int matched, typename X, typename A, typename B, typename C>
+SLINKY_UNIQUE bool match(const pattern_staircase<X, A, B, C>& p, expr_ref x, match_context& ctx) {
+  // We shouldn't match ((x + 0)/1)*1, remember if we found something non-trivial.
+  bool non_trivial = false;
+
+  if (const mul* md = x.as<mul>()) {
+    if (match<matched>(p.c, md->b, ctx)) {
+      // Peel off the outer multiply by c.
+      x = md->a;
+      non_trivial = true;
+    } else {
+      return false;
+    }
+  } else if (!match<matched>(p.c, 1, ctx)) {
+    // No multiply, c must be 1.
+    return false;
+  }
+
+  // Don't match yet, we might need to canonicalize a negative divisor.
+  index_t b;
+  if (const div* db = x.as<div>()) {
+    if (auto bv = as_constant(db->b)) {
+      // Peel off the outer divide by b.
+      x = db->a;
+      b = *bv;
+      non_trivial = true;
+    } else {
+      return false;
+    }
+  } else {
+    // No divide, b must be 1.
+    b = 1;
+  }
+
+  constexpr int matched_c = matched | pattern_info<C>::matched;
+  constexpr int matched_cb = matched_c | pattern_info<B>::matched;
+  constexpr int matched_cbx = matched_cb | pattern_info<X>::matched;
+
+  if (const add* aa = x.as<add>()) {
+    // We might have ((x + a)/b)*c
+    return match<matched_c>(p.b, b, ctx) && match<matched_cb>(p.x, aa->a, ctx) && match<matched_cbx>(p.a, aa->b, ctx);
+  } else if (const sub* sa = x.as<sub>()) {
+    // We might have ((a - x)/b)*c. x - a should have been canonicalized to x + -a.
+    // We need to rewrite (a - x)/b to (x + (b - 1) - a)/(-b).
+    if (auto ac = as_constant(sa->a)) {
+      index_t a = std::abs(b) - 1 - *ac;
+      return match<matched_c>(p.b, -b, ctx) && match<matched_cb>(p.x, sa->b, ctx) && match<matched_cbx>(p.a, a, ctx);
+    }
+  } else if (non_trivial) {
+    // We might have (x/b)*c
+    return match<matched_c>(p.b, b, ctx) && match<matched_cb>(p.x, x, ctx) && match<matched_cbx>(p.a, 0, ctx);
+  }
+  return false;
+}
+
+template <typename X, typename A, typename B, typename C>
+SLINKY_UNIQUE auto substitute(const pattern_staircase<X, A, B, C>& p, const match_context& ctx, bool& overflowed) {
+  expr x = substitute(p.x, ctx, overflowed);
+  index_t a = substitute(p.a, ctx, overflowed);
+  index_t b = substitute(p.b, ctx, overflowed);
+  index_t c = substitute(p.c, ctx, overflowed);
+
+  if (a != 0) x += a;
+  if (b != 1) x /= b;
+  if (c != 1) x *= c;
+  return x;
+}
+
+template <typename X, typename A, typename B, typename C>
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_staircase<X, A, B, C>& p) {
+  return os << "staircase(" << p.x << ", " << p.a << ", " << p.b << ", " << p.c << ")";
+}
+
 template <typename T, typename Fn>
 class replacement_predicate {
 public:
@@ -484,6 +582,8 @@ template <typename C, typename T, typename F, typename... Ts>
 struct enable_pattern_ops<pattern_select<C, T, F>, Ts...> { using type = std::true_type; };
 template <typename... Args, typename... Ts>
 struct enable_pattern_ops<pattern_call<Args...>, Ts...> { using type = std::true_type; };
+template <typename X, typename A, typename B, typename C, typename... Ts>
+struct enable_pattern_ops<pattern_staircase<X, A, B, C>, Ts...> { using type = std::true_type; };
 template <typename T, typename... Ts>
 struct enable_pattern_ops<replacement_eval<T>, Ts...> { using type = std::true_type; };
 template <typename T, typename Fn, typename... Ts>
@@ -546,6 +646,11 @@ template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type
 SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::and_then, {a, b}}; }
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 SLINKY_UNIQUE auto or_else(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::or_else, {a, b}}; }
+
+template <typename X, typename A, typename B, typename C>
+SLINKY_UNIQUE auto staircase(const X& x, const A& a, const B& b, const C& c) {
+  return pattern_staircase<X, A, B, C>{x, a, b, c};
+}
 
 // clang-format on
 

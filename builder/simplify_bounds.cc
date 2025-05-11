@@ -58,46 +58,10 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
 // like ((x + c0) / c1) * c2.
 void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
-  // Match the LHS and RHS both to the form ((x + a) / b) * c or ((a - x) / b) * c
-  // clang-format off
-  lhs.constants[1] = 1;
-  lhs.constants[2] = 0;
-  // Try matching (a - x) / c0 first so we don't match x to c2 - x. We need to separate this from the rest of the matches
-  // so we know the sign of x.
-  if (!(match(lhs, ((c2 - x) / c0) * c1, a, eval(c0 > 0)) ||
-        match(lhs, (c2 - x) / c0, a, eval(c0 > 0)))) {
-    lhs.constants[1] = 1;
-    lhs.constants[2] = 0;
-    if (!(match(lhs, ((x + c2) / c0) * c1, a, eval(c0 > 0)) ||
-          match(lhs, (x / c0) * c1, a, eval(c0 > 0)) ||
-          match(lhs, (x + c2) / c0, a, eval(c0 > 0)) ||
-          match(lhs, x / c0, a, eval(c0 > 0)))) {
-      return;
-    }
-  } else {
-    // Rewrite (c2 - x)/c0 -> (x - c2)/-c0.
-    lhs.constants[2] = lhs.constants[0] - 1 - lhs.constants[2];
-    lhs.constants[0] *= -1;
+  if (!match(lhs, staircase(x, c2, c0, c1), a, eval(c0 > 0)) ||
+      !match(rhs, staircase(x, c2, c0, c1), b, eval(c0 > 0))) {
+    return;
   }
-  rhs.constants[1] = 1;
-  rhs.constants[2] = 0;
-  if (!(match(rhs, ((c2 - x) / c0) * c1, b, eval(c0 > 0)) ||
-        match(rhs, (c2 - x) / c0, b, eval(c0 > 0)))) {
-    rhs.constants[1] = 1;
-    rhs.constants[2] = 0;
-    if (!(match(rhs, ((x + c2) / c0) * c1, b, eval(c0 > 0)) ||
-          match(rhs, (x / c0) * c1, b, eval(c0 > 0)) ||
-          match(rhs, (x + c2) / c0, b, eval(c0 > 0)) ||
-          match(rhs, x / c0, b, eval(c0 > 0)))) {
-      return;
-    }
-  } else {
-    // Rewrite (c2 - x)/c0 -> (x - c2)/-c0.
-    rhs.constants[2] = rhs.constants[0] - 1 - rhs.constants[2];
-    rhs.constants[0] *= -1;
-  }
-  // clang-format on
-
   if (!match(lhs.matched(x), rhs.matched(x))) {
     // The x in the above expressions doesn't match, expressions may not be correlated.
     return;
@@ -108,13 +72,13 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   index_t l_c1 = lhs.matched(c1);
   index_t r_c0 = rhs.matched(c0);
   index_t r_c1 = rhs.matched(c1) * sign_b;
+  index_t l_c2 = lhs.matched(c2);
+  index_t r_c2 = rhs.matched(c2);
+
   if (l_c1 * r_c0 != -r_c1 * l_c0) {
     // The ratios of the two sides aren't the same, we can't tighten the bounds.
     return;
   }
-
-  index_t l_c2 = lhs.matched(c2);
-  index_t r_c2 = rhs.matched(c2);
 
   // The ratios of the two sides are equal. The value of this expression is a periodic pattern.
   // We need to search the period for the min and max.
