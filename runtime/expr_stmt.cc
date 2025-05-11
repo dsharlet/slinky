@@ -344,6 +344,18 @@ interval_expr& interval_expr::operator&=(interval_expr r) {
   return *this;
 }
 
+expr interval_expr::contains(expr_ref x) const {
+  if (min.defined() && max.defined()) {
+    return min <= x && x <= max;
+  } else if (min.defined()) {
+    return min <= x;
+  } else if (max.defined()) {
+    return x <= max;
+  } else {
+    return expr{1};
+  }
+}
+
 interval_expr interval_expr::operator|(interval_expr r) const {
   interval_expr result(*this);
   result |= std::move(r);
