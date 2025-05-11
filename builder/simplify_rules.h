@@ -170,34 +170,14 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(y/c0 + c1, x/c0),
         min(x, y + eval(c1*c0))/c0, c0 > 0,
         max(x, y + eval(c1*c0))/c0, c0 < 0) ||
-
-      apply(min(((x + c2)/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min(((x + c2)/c3)*c4, x/c1),
-        x/c1, c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c2 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min((x/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        (x/c3)*c4, 0 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min(x/c1 + c0, (x/c3)*c4), (x/c3)*c4, c0 > 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min((x/c3)*c4, x/c1), (x/c3)*c4, c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-
+        
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
-      // Compare x to a stair-step function in x
-      apply(min(x, ((x + c0)/c1)*c1 + c2),
+      apply(min(staircase(x, c2, c3, c4), (x + c0)/c1),
+        (x + c0)/c1, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
+        staircase(x, c2, c3, c4), c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
+      apply(min(x, staircase(x, c0, c1, c1) + c2),
         x, c1 > 0 && c0 + c2 >= c1 - 1,
-        ((x + c0)/c1)*c1 + c2, c1 > 0 && c0 + c2 <= 0) ||
-      apply(min((x/c1)*c1 + c2, (x/c0)*c0), (x/c0)*c0, c1 > 0 && c2 >= c1 && c0 != 0) ||
-      // Special cases where c0 or c2 is zero
-      apply(min(x, (x/c1)*c1 + c2),
-        x, c1 > 0 && c2 >= c1 - 1,
-        (x/c1)*c1 + c2, c1 > 0 && c2 <= 0) ||
-      apply(min(x, ((x + c0)/c1)*c1),
-        x, c1 > 0 && c0 >= c1 - 1,
-        ((x + c0)/c1)*c1, c1 > 0 && c0 <= 0) ||
-
-      apply(min(x, (x/c0)*c0), (x/c0)*c0, c0 > 0) ||
+        staircase(x, c0, c1, c1) + c2, c1 > 0 && c0 + c2 <= 0) ||
 
       apply(min(x, abs(x)), x) ||
 
@@ -345,34 +325,14 @@ bool apply_max_rules(Fn&& apply) {
         max(x, y + eval(c1*c0))/c0, c0 > 0,
         min(x, y + eval(c1*c0))/c0, c0 < 0) ||
  
-      apply(max(((x + c2)/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max(((x + c2)/c3)*c4, x/c1),
-        x/c1, c2 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max((x/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, 0 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        (x/c3)*c4, c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max(x/c1 + c0, (x/c3)*c4), x/c1 + c0, c0 > 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max((x/c3)*c4, x/c1), x/c1, c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
-      // Compare x to a stair-step function in x
-      apply(max(x, ((x + c0)/c1)*c1 + c2),
-        ((x + c0)/c1)*c1 + c2, c1 > 0 && c0 + c2 >= c1 - 1,
+      apply(max(staircase(x, c2, c3, c4), (x + c0)/c1),
+        (x + c0)/c1, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
+        staircase(x, c2, c3, c4), c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
+      apply(max(x, staircase(x, c0, c1, c1) + c2),
+        staircase(x, c0, c1, c1) + c2, c1 > 0 && c0 + c2 >= c1 - 1,
         x, c1 > 0 && c0 + c2 <= 0) ||
-      apply(max((x/c1)*c1 + c2, (x/c0)*c0), (x/c1)*c1 + c2, c2 >= c1 && c1 > 0 && c0 != 0) ||
-      // Special cases where c0 or c2 is zero
-      apply(max(x, (x/c1)*c1 + c2),
-        (x/c1)*c1 + c2, c1 > 0 && c2 >= c1 - 1,
-        x, c1 > 0 && c2 <= 0) ||
-      apply(max(x, ((x + c0)/c1)*c1),
-        x, c1 > 0 && c0 <= 0,
-        ((x + c0)/c1)*c1, c1 > 0 && c0 >= c1 - 1) ||
 
-      apply(max(x, (x/c0)*c0), x, c0 > 0) ||
-        
       apply(max(x, abs(x)), abs(x)) ||
 
       false;
@@ -624,22 +584,18 @@ bool apply_less_rules(Fn&& apply) {
 
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_LT.cpp#L340-L397
-      apply(w + ((x + c0)/c1)*c1 < x + z, w + c0 < z + (x + c0)%c1, c1 > 0) ||
-      apply(x + z < w + ((x + c0)/c1)*c1, z + (x + c0)%c1 < w + c0, c1 > 0) ||
-      apply(((x + c0)/c1)*c1 < x + z, c0 < z + (x + c0)%c1, c1 > 0) ||
-      apply(x + z < ((x + c0)/c1)*c1, z + (x + c0)%c1 < c0, c1 > 0) ||
-      apply(w + ((x + c0)/c1)*c1 < x, w + c0 < (x + c0)%c1, c1 > 0) ||
-      apply(x < w + ((x + c0)/c1)*c1, (x + c0)%c1 < w + c0, c1 > 0) ||
-      apply(w + (x/c1)*c1 < x + z, w < z + x%c1, c1 > 0) ||
-      apply(x + z < w + (x/c1)*c1, z + x%c1 < w, c1 > 0) ||
-      apply(((x + c0)/c1)*c1 < x, c0 < (x + c0)%c1, c1 > 0) ||
-      apply(x < ((x + c0)/c1)*c1, (x + c0)%c1 < c0, c1 > 0) ||
-      apply((x/c1)*c1 < x + z, 0 < z + x%c1, c1 > 0) ||
-      apply(x + z < (x/c1)*c1, z + x%c1 < 0, c1 > 0) ||
-      apply(w + (x/c1)*c1 < x, w < x%c1, c1 > 0) ||
-      apply(x < w + (x/c1)*c1, x%c1 < w, c1 > 0) ||
-      apply((x/c1)*c1 < x, x%c1 != 0, c1 > 0) ||
-      apply(x < (x/c1)*c1, false, c1 > 0) ||
+      apply(w + staircase(x, c0, c1, c1) < x + z, w + c0 < z + (x + c0)%c1, c1 > 0) ||
+      apply(x + z < w + staircase(x, c0, c1, c1), z + (x + c0)%c1 < w + c0, c1 > 0) ||
+      apply(staircase(x, c0, c1, c1) < x + z, c0 < z + (x + c0)%c1, c1 > 0) ||
+      apply(x + z < staircase(x, c0, c1, c1), z + (x + c0)%c1 < c0, c1 > 0) ||
+      apply(w + staircase(x, c0, c1, c1) < x, w + c0 < (x + c0)%c1, c1 > 0) ||
+      apply(x < w + staircase(x, c0, c1, c1), (x + c0)%c1 < w + c0, c1 > 0) ||
+      apply(staircase(x, c0, c1, c1) < x,
+        c0 < (x + c0)%c1, c1 > 0 && c0 != 0,
+        x%c1 != 0, c1 > 0 /*&& c0 == 0*/) ||
+      apply(x < staircase(x, c0, c1, c1), 
+        (x + c0)%c1 < c0, c1 > 0 && c0 != 0,
+        false, c1 > 0 /*&& c0 == 0*/) ||
 
       apply(x%c0 < c1,
         true, c0 > 0 && c0 <= c1,
