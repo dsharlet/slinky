@@ -40,8 +40,11 @@ struct eval_config {
   std::function<index_t(const char*)> trace_begin;
   std::function<void(index_t)> trace_end;
 
-  // Alignment to use for `raw_buffer::init_strides` and `raw_buffer::allocate` calls.
-  std::size_t alignment = sizeof(std::max_align_t);
+  // Alignment to use for `raw_buffer::allocate` calls.
+  std::size_t base_alignment = sizeof(std::max_align_t);
+
+  // Alignment to use for `raw_buffer::init_strides` calls.
+  std::size_t stride_alignment = 1;
 
   // Allocations with storage `memory_type::automatic` not bigger than this size (bytes) will be placed on the stack.
   std::size_t auto_stack_threshold = 4 * 1024;
