@@ -39,6 +39,10 @@ struct match_context {
 };
 
 template <int matched>
+SLINKY_UNIQUE bool match(index_t p, index_t x, match_context&) {
+  return p == x;
+}
+template <int matched>
 SLINKY_UNIQUE bool match(index_t p, expr_ref x, match_context&) {
   return is_constant(x, p);
 }

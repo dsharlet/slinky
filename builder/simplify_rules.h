@@ -170,9 +170,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(y/c0 + c1, x/c0),
         min(x, y + eval(c1*c0))/c0, c0 > 0,
         max(x, y + eval(c1*c0))/c0, c0 < 0) ||
-        
+
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
-      apply(min(staircase(x, c2, c3, c4), (x + c0)/c1),
+      apply(min(staircase(x, c2, c3, c4), staircase(x, c0, c1, 1)),
         (x + c0)/c1, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
         staircase(x, c2, c3, c4), c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
       apply(min(x, staircase(x, c0, c1, c1) + c2),
@@ -326,7 +326,7 @@ bool apply_max_rules(Fn&& apply) {
         min(x, y + eval(c1*c0))/c0, c0 < 0) ||
  
       // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
-      apply(max(staircase(x, c2, c3, c4), (x + c0)/c1),
+      apply(max(staircase(x, c2, c3, c4), staircase(x, c0, c1, 1)),
         (x + c0)/c1, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
         staircase(x, c2, c3, c4), c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
       apply(max(x, staircase(x, c0, c1, c1) + c2),
@@ -608,24 +608,14 @@ bool apply_less_rules(Fn&& apply) {
       // These rules taken from
       // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
       // Cancel a division
-      apply((x + c1)/c0 < (x + c2)/c0,
+      apply(staircase(x, c1, c0, 1) < staircase(x, c2, c0, 1),
         false, c0 > 0 && c1 >= c2,
         true, c0 > 0 && c1 <= c2 - c0) ||
-      // c1 == 0
-      apply(x/c0 < (x + c2)/c0,
-        false, c0 > 0 && 0 >= c2,
-        true, c0 > 0 && 0 <= c2 - c0) ||
-      // c2 == 0
-      apply((x + c1)/c0 < x/c0,
-        false, c0 > 0 && c1 >= 0,
-        true, c0 > 0 && c1 <= 0 - c0) ||
 
       // TODO: These aren't fully simplified, the above rules can be applied to the rewritten result.
       // If we ever added a c2 < 0 version of the above, these would need to be duplicated as well.
-      apply((x + c0)/c1 < x/c1 + c2, (x + eval(c0 - c2*c1))/c1 < x/c1, c1 != 0) ||
-      apply(x/c1 < x/c1 + c2, (x + eval(-c2*c1))/c1 < x/c1, c1 != 0) ||
-      apply(x/c1 + c2 < (x + c0)/c1, x/c1 < (x + eval(c0 - c2*c1))/c1, c1 != 0) ||
-      apply(x/c1 + c2 < x/c1, x/c1 < (x + eval(-c2*c1))/c1, c1 != 0) ||
+      apply(staircase(x, c0, c1, 1) < x/c1 + c2, (x + eval(c0 - c2*c1))/c1 < x/c1, c1 != 0) ||
+      apply(x/c1 + c2 < staircase(x, c0, c1, 1), x/c1 < (x + eval(c0 - c2*c1))/c1, c1 != 0) ||
 
       apply(x*c0 < y*c0,
         x < y, c0 > 0,
