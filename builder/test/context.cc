@@ -64,7 +64,7 @@ test_context::test_context() {
   // counts.
   config.auto_stack_threshold = 0;
   // Similarly, alignment makes it hard to know the expected size of allocations.
-  config.alignment = 1;
+  config.base_alignment = 1;
 
   eval_context::config = &config;
 }
