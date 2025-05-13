@@ -15,7 +15,7 @@ namespace rewrite {
 
 // The maximum number of values pattern_wildcard::idx and pattern_constant::idx can have, starting from 0.
 constexpr int symbol_count = 7;
-constexpr int constant_count = 5;
+constexpr int constant_count = 7;
 
 template <int N>
 class pattern_wildcard;
@@ -427,14 +427,10 @@ struct pattern_info<pattern_staircase<X, A, B, C>> {
 
 template <int matched, typename X, typename A, typename B, typename C>
 SLINKY_UNIQUE bool match(const pattern_staircase<X, A, B, C>& p, expr_ref x, match_context& ctx) {
-  // We shouldn't match ((x + 0)/1)*1, remember if we found something non-trivial.
-  bool non_trivial = false;
-
   if (const mul* md = x.as<mul>()) {
     if (match<matched>(p.c, md->b, ctx)) {
       // Peel off the outer multiply by c.
       x = md->a;
-      non_trivial = true;
     } else {
       return false;
     }
@@ -450,7 +446,6 @@ SLINKY_UNIQUE bool match(const pattern_staircase<X, A, B, C>& p, expr_ref x, mat
       // Peel off the outer divide by b.
       x = db->a;
       b = *bv;
-      non_trivial = true;
     } else {
       return false;
     }
@@ -473,7 +468,7 @@ SLINKY_UNIQUE bool match(const pattern_staircase<X, A, B, C>& p, expr_ref x, mat
       index_t a = std::abs(b) - 1 - *ac;
       return match<matched_c>(p.b, -b, ctx) && match<matched_cb>(p.x, sa->b, ctx) && match<matched_cbx>(p.a, a, ctx);
     }
-  } else if (non_trivial) {
+  } else {
     // We might have (x/b)*c
     return match<matched_c>(p.b, b, ctx) && match<matched_cb>(p.x, x, ctx) && match<matched_cbx>(p.a, 0, ctx);
   }
@@ -560,6 +555,49 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_boole
   return os << "boolean(" << r.a << ")";
 }
 
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
+class replacement_staircase_sum_bound {
+public:
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = true;
+  A1 a1;
+  B1 b1;
+  C1 c1;
+  A2 a2;
+  B2 b2;
+  C2 c2;
+  int bound_sign;
+};
+
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
+SLINKY_UNIQUE index_t substitute(
+    const replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>& r, const match_context& ctx, bool& overflowed) {
+  index_t a1 = substitute(r.a1, ctx, overflowed);
+  index_t b1 = substitute(r.b1, ctx, overflowed);
+  index_t c1 = substitute(r.c1, ctx, overflowed);
+  index_t a2 = substitute(r.a2, ctx, overflowed);
+  index_t b2 = substitute(r.b2, ctx, overflowed);
+  index_t c2 = substitute(r.c2, ctx, overflowed);
+  auto bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
+  if (r.bound_sign < 0) {
+    return bounds ? bounds->first : std::numeric_limits<index_t>::min();
+  } else {
+    return bounds ? bounds->second : std::numeric_limits<index_t>::max();
+  }
+}
+
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
+SLINKY_UNIQUE std::ostream& operator<<(
+    std::ostream& os, const replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>& r) {
+  if (r.bound_sign < 0) {
+    os << "staircase_sum_min(";
+  } else {
+    os << "staircase_sum_max(";
+  }
+  return os << r.a1 << ", " << r.b1 << ", " << r.c1 << ", " << r.a2 << ", " << r.b2 << ", " << r.c2 << ")";
+}
+
 // We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
 template <typename... Ts>
 struct enable_pattern_ops {
@@ -592,6 +630,8 @@ template <typename T, typename... Ts>
 struct enable_pattern_ops<replacement_eval<T>, Ts...> { using type = std::true_type; };
 template <typename T, typename Fn, typename... Ts>
 struct enable_pattern_ops<replacement_predicate<T, Fn>, Ts...> { using type = std::true_type; };
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2, typename... Ts>
+struct enable_pattern_ops<replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>, Ts...> { using type = std::true_type; };
 
 template <typename A, bool = typename enable_pattern_ops<A>::type()>
 SLINKY_UNIQUE auto operator!(const A& a) { return pattern_unary<logical_not, A>{a}; }
@@ -651,7 +691,7 @@ SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 SLINKY_UNIQUE auto or_else(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::or_else, {a, b}}; }
 
-template <typename X, typename A, typename B, typename C>
+template <typename X, typename A, typename B, typename C, bool = typename enable_pattern_ops<X, A, B, C>::type()>
 SLINKY_UNIQUE auto staircase(const X& x, const A& a, const B& b, const C& c) {
   return pattern_staircase<X, A, B, C>{x, a, b, c};
 }
@@ -661,6 +701,17 @@ SLINKY_UNIQUE auto staircase(const X& x, const A& a, const B& b, const C& c) {
 template <typename T>
 SLINKY_UNIQUE auto eval(const T& x) {
   return replacement_eval<T>{x};
+}
+
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
+SLINKY_UNIQUE auto staircase_sum_max(
+    const A1& a1, const B1& b1, const C1& c1, const A2& a2, const B2& b2, const C2& c2) {
+  return replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>{a1, b1, c1, a2, b2, c2, 1};
+}
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
+SLINKY_UNIQUE auto staircase_sum_min(
+    const A1& a1, const B1& b1, const C1& c1, const A2& a2, const B2& b2, const C2& c2) {
+  return replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>{a1, b1, c1, a2, b2, c2, -1};
 }
 
 template <typename Pattern, typename Target>

@@ -20,6 +20,8 @@ rewrite::pattern_constant<1> c1;
 rewrite::pattern_constant<2> c2;
 rewrite::pattern_constant<3> c3;
 rewrite::pattern_constant<4> c4;
+rewrite::pattern_constant<5> c5;
+rewrite::pattern_constant<6> c6;
 
 }  // namespace
 
@@ -171,13 +173,12 @@ bool apply_min_rules(Fn&& apply) {
         min(x, y + eval(c1*c0))/c0, c0 > 0,
         max(x, y + eval(c1*c0))/c0, c0 < 0) ||
 
-      // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
-      apply(min(staircase(x, c2, c3, c4), staircase(x, c0, c1, 1)),
-        (x + c0)/c1, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        staircase(x, c2, c3, c4), c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min(x, staircase(x, c0, c1, c1) + c2),
-        x, c1 > 0 && c0 + c2 >= c1 - 1,
-        staircase(x, c0, c1, c1) + c2, c1 > 0 && c0 + c2 <= 0) ||
+      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
+        staircase(x, c3, c4, c5) + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
+      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
+        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5),
+        staircase(x, c3, c4, c5), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(min(x, abs(x)), x) ||
 
@@ -325,13 +326,12 @@ bool apply_max_rules(Fn&& apply) {
         max(x, y + eval(c1*c0))/c0, c0 > 0,
         min(x, y + eval(c1*c0))/c0, c0 < 0) ||
  
-      // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
-      apply(max(staircase(x, c2, c3, c4), staircase(x, c0, c1, 1)),
-        (x + c0)/c1, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        staircase(x, c2, c3, c4), c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max(x, staircase(x, c0, c1, c1) + c2),
-        staircase(x, c0, c1, c1) + c2, c1 > 0 && c0 + c2 >= c1 - 1,
-        x, c1 > 0 && c0 + c2 <= 0) ||
+      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6,
+        staircase(x, c3, c4, c5) + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6) ||
+      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
+        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5),
+        staircase(x, c3, c4, c5), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(max(x, abs(x)), abs(x)) ||
 
@@ -605,17 +605,15 @@ bool apply_less_rules(Fn&& apply) {
         false, c1 > 0 && c0 >= c1 - 1,
         boolean(x%c1), c1 > 0 && c0 == 0) ||
     
-      // These rules taken from
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
-      // Cancel a division
-      apply(staircase(x, c1, c0, 1) < staircase(x, c2, c0, 1),
-        false, c0 > 0 && c1 >= c2,
-        true, c0 > 0 && c1 <= c2 - c0) ||
-
-      // TODO: These aren't fully simplified, the above rules can be applied to the rewritten result.
-      // If we ever added a c2 < 0 version of the above, these would need to be duplicated as well.
-      apply(staircase(x, c0, c1, 1) < x/c1 + c2, (x + eval(c0 - c2*c1))/c1 < x/c1, c1 != 0) ||
-      apply(x/c1 + c2 < staircase(x, c0, c1, 1), x/c1 < (x + eval(c0 - c2*c1))/c1, c1 != 0) ||
+      apply(staircase(x, c0, c1, c2) < staircase(x, c3, c4, c5) + c6,
+        true, 0 < staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
+        false, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
+      apply(staircase(x, c0, c1, c2) + c6 < staircase(x, c3, c4, c5),
+        true, c6 < staircase_sum_min(c0, c1, -c2, c3, c4, c5),
+        false, c6 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
+      apply(staircase(x, c0, c1, c2) < staircase(x, c3, c4, c5),
+        true, 0 < staircase_sum_min(c0, c1, -c2, c3, c4, c5),
+        false, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(x*c0 < y*c0,
         x < y, c0 > 0,

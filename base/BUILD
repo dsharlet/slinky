@@ -15,6 +15,9 @@ cc_library(
         "span.h",
         "util.h",
     ],
+    srcs = [
+        "arithmetic.cc",
+    ],
     visibility = ["//visibility:public"],
 )
 

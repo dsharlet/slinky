@@ -58,8 +58,8 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
 // like ((x + c0) / c1) * c2.
 void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
-  if (!match(lhs, staircase(x, c2, c0, c1), a, eval(c0 > 0)) ||
-      !match(rhs, staircase(x, c2, c0, c1), b, eval(c0 > 0))) {
+  if (!match(lhs, staircase(x, c0, c1, c2), a) ||
+      !match(rhs, staircase(x, c0, c1, c2), b)) {
     return;
   }
   if (!match(lhs.matched(x), rhs.matched(x))) {
@@ -68,33 +68,18 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   }
 
   // We have a sum of two such rational expressions.
-  index_t l_c0 = lhs.matched(c0);
-  index_t l_c1 = lhs.matched(c1);
-  index_t r_c0 = rhs.matched(c0);
-  index_t r_c1 = rhs.matched(c1) * sign_b;
-  index_t l_c2 = lhs.matched(c2);
-  index_t r_c2 = rhs.matched(c2);
+  index_t la = lhs.matched(c0);
+  index_t lb = lhs.matched(c1);
+  index_t lc = lhs.matched(c2);
+  index_t ra = rhs.matched(c0);
+  index_t rb = rhs.matched(c1);
+  index_t rc = rhs.matched(c2) * sign_b;
 
-  if (l_c1 * r_c0 != -r_c1 * l_c0) {
-    // The ratios of the two sides aren't the same, we can't tighten the bounds.
-    return;
+  std::optional<std::pair<int, int>> constant_bounds = staircase_sum_bounds(la, lb, lc, ra, rb, rc);
+  if (constant_bounds) {
+    bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, constant_bounds->first);
+    bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, constant_bounds->second);
   }
-
-  // The ratios of the two sides are equal. The value of this expression is a periodic pattern.
-  // We need to search the period for the min and max.
-  // If these constants get so big, we need to revisit this algorithm.
-  assert(l_c0 < 1024);
-  assert(r_c0 < 1024);
-  index_t min = std::numeric_limits<index_t>::max();
-  index_t max = std::numeric_limits<index_t>::min();
-  index_t period = lcm(std::abs(l_c0), std::abs(r_c0));
-  for (index_t x = 0; x < period; ++x) {
-    index_t y = floor_div(x + l_c2, l_c0) * l_c1 + floor_div(x + r_c2, r_c0) * r_c1;
-    min = std::min(min, y);
-    max = std::max(max, y);
-  }
-  bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, min);
-  bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, max);
 }
 
 // We can tighten the upper bounds of expressions like min(x, y) - max(z, w) when x or y is correlated to z or w in a
