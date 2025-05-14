@@ -242,3 +242,13 @@ cc_test(
     ],
     size = "small",
 )
+
+cc_test(
+    name = "rewrite",
+    srcs = ["rewrite.cc"],
+    deps = [
+        "//builder",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)

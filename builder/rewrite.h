@@ -148,7 +148,6 @@ SLINKY_UNIQUE bool match(const pattern_constant<N>& p, index_t x, match_context&
     ctx.constants[N] = x;
     return true;
   }
-  return false;
 }
 
 template <int matched, int N>
@@ -167,6 +166,37 @@ SLINKY_UNIQUE index_t substitute(const pattern_constant<N>&, const match_context
 template <int N>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_constant<N>&) {
   return os << 'c' << N;
+}
+
+template <typename A, index_t Default>
+class pattern_optional {
+public:
+  static constexpr expr_node_type type = A::type;
+  static constexpr bool is_boolean = A::is_boolean;
+  static constexpr bool is_canonical = A::is_canonical;
+  static constexpr int matched = A::matched;
+
+  A a;
+};
+
+template <int matched, typename A, index_t Default>
+SLINKY_UNIQUE bool match(const pattern_optional<A, Default>& p, index_t x, match_context& ctx) {
+  return match<matched>(p.a, x, ctx);
+}
+
+template <int matched, typename A, index_t Default>
+SLINKY_UNIQUE bool match(const pattern_optional<A, Default>& p, expr_ref x, match_context& ctx) {
+  return match<matched>(p.a, x, ctx);
+}
+
+template <typename A, index_t Default>
+SLINKY_UNIQUE auto substitute(const pattern_optional<A, Default>& p, const match_context& ctx, bool& overflowed) {
+  return substitute(p.a, ctx, overflowed);
+}
+
+template <typename A, index_t Default>
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_optional<A, Default>& p) {
+  return os << p.a << "?";
 }
 
 template <typename T, typename A, typename B>
@@ -215,6 +245,24 @@ SLINKY_UNIQUE bool match(const pattern_binary<T, A, B>& p, expr_ref x, match_con
   }
 }
 
+template <int matched, typename T, typename A, index_t DefaultA, typename B>
+SLINKY_UNIQUE bool match(const pattern_binary<T, pattern_optional<A, DefaultA>, B>& p, expr_ref x, match_context& ctx) {
+  if (const T* t = x.as<T>()) {
+    return match_binary<matched>(p, t->a, t->b, ctx);
+  } else {
+    return match<matched>(p.a, constant::get(DefaultA), ctx) && match<matched | pattern_info<A>::matched>(p.b, x, ctx);
+  }
+}
+
+template <int matched, typename T, typename A, typename B, index_t DefaultB>
+SLINKY_UNIQUE bool match(const pattern_binary<T, A, pattern_optional<B, DefaultB>>& p, expr_ref x, match_context& ctx) {
+  if (const T* t = x.as<T>()) {
+    return match_binary<matched>(p, t->a, t->b, ctx);
+  } else {
+    return match<matched>(p.a, x, ctx) && match<matched | pattern_info<A>::matched>(p.b, constant::get(DefaultB), ctx);
+  }
+}
+
 template <int matched, typename T, typename A, typename B>
 SLINKY_UNIQUE bool match(
     const pattern_binary<T, A, B>& p, const pattern_binary<T, pattern_expr, pattern_expr>& x, match_context& ctx) {
@@ -222,12 +270,12 @@ SLINKY_UNIQUE bool match(
 }
 
 template <typename T>
-SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&) {
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const T& = T()) {
   return make_binary<T>(std::move(a), std::move(b));
 }
 
 template <typename T>
-SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed) {
+SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed, const T& = T()) {
   if (binary_overflows<T>(a, b)) {
     overflowed = true;
     return 0;
@@ -236,9 +284,48 @@ SLINKY_UNIQUE index_t substitute_binary(index_t a, index_t b, bool& overflowed) 
   }
 }
 
+// Eagerly simplify some constants with binary arithmetic. This is not just an optimization, it is necessary to avoid
+// rewriting patterns with optional constants to trivially simplifiable expressions, which may result in infinite
+// recursion in the simplifier.
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const add& = add()) {
+  if (is_zero(a)) return b;
+  if (is_zero(b)) return a;
+  return make_binary<add>(std::move(a), std::move(b));
+}
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const sub& = sub()) {
+  if (is_zero(b)) return a;
+  return make_binary<sub>(std::move(a), std::move(b));
+}
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const mul& = mul()) {
+  if (is_zero(a) || is_one(b)) return a;
+  if (is_zero(b) || is_one(a)) return b;
+  return make_binary<mul>(std::move(a), std::move(b));
+}
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const div& = div()) {
+  if (is_zero(a) || is_one(b)) return a;
+  if (is_zero(b)) return 0;
+  if (is_one(b)) return a;
+  return make_binary<div>(std::move(a), std::move(b));
+}
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const mod& = mod()) {
+  if (is_zero(a)) return a;
+  if (is_one(b)) return 0;
+  return make_binary<mod>(std::move(a), std::move(b));
+}
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const logical_and& = logical_and()) {
+  if (is_true(a) || is_false(b)) return boolean(b);
+  if (is_true(b) || is_false(a)) return boolean(a);
+  return make_binary<logical_and>(std::move(a), std::move(b));
+}
+SLINKY_UNIQUE expr substitute_binary(expr a, expr b, bool&, const logical_or& = logical_or()) {
+  if (is_true(a) || is_false(b)) return boolean(a);
+  if (is_true(b) || is_false(a)) return boolean(b);
+  return make_binary<logical_or>(std::move(a), std::move(b));
+}
+
 template <typename T, typename A, typename B>
 SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx, bool& overflowed) {
-  return substitute_binary<T>(substitute(p.a, ctx, overflowed), substitute(p.b, ctx, overflowed), overflowed);
+  return substitute_binary(substitute(p.a, ctx, overflowed), substitute(p.b, ctx, overflowed), overflowed, T());
 }
 
 template <typename T, typename A, typename B>
@@ -696,6 +783,11 @@ SLINKY_UNIQUE auto staircase(const X& x, const A& a, const B& b, const C& c) {
   return pattern_staircase<X, A, B, C>{x, a, b, c};
 }
 
+template <index_t Default, typename T>
+constexpr auto may_be(const T& x) {
+  return rewrite::pattern_optional<T, Default>{x};
+}
+
 // clang-format on
 
 template <typename T>
@@ -755,7 +847,6 @@ class base_rewriter {
 
   template <typename Pattern, typename Replacement>
   SLINKY_ALWAYS_INLINE bool find_replacement(const match_context& ctx, Replacement r) {
-    static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
     bool overflowed = false;
     result = substitute(r, ctx, overflowed);
@@ -765,7 +856,6 @@ class base_rewriter {
   template <typename Pattern, typename Replacement, typename Predicate, typename... ReplacementPredicates>
   SLINKY_ALWAYS_INLINE bool find_replacement(
       const match_context& ctx, Replacement r, Predicate pr, ReplacementPredicates... r_pr) {
-    static_assert(pattern_info<Replacement>::is_canonical);
     static_assert(!pattern_info<Pattern>::is_boolean || pattern_info<Replacement>::is_boolean);
 
     bool overflowed = false;
@@ -788,8 +878,6 @@ public:
   // The last predicate is optional and defaults to true.
   template <typename Pattern, typename... ReplacementPredicate>
   SLINKY_ALWAYS_INLINE bool operator()(Pattern p, ReplacementPredicate... r_pr) {
-    static_assert(pattern_info<Pattern>::is_canonical);
-
     match_context ctx;
     if (!match_any_variant(p, x, ctx)) return false;
 

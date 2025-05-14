@@ -80,8 +80,8 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(max(x, y)), matches(max(x, y)));
   ASSERT_THAT(simplify(min(x, x)), matches(x));
   ASSERT_THAT(simplify(max(x, x)), matches(x));
-  ASSERT_THAT(simplify(min(x / 2, y / 2)), matches(min(x, y) / 2));
-  ASSERT_THAT(simplify(max(x / 2, y / 2)), matches(max(x, y) / 2));
+  ASSERT_THAT(simplify(min(x / 2, y / 2)), matches(min(y, x) / 2));
+  ASSERT_THAT(simplify(max(x / 2, y / 2)), matches(max(y, x) / 2));
   ASSERT_THAT(simplify(min(negative_infinity(), x)), matches(negative_infinity()));
   ASSERT_THAT(simplify(max(negative_infinity(), x)), matches(x));
   ASSERT_THAT(simplify(min(positive_infinity(), x)), matches(x));
@@ -145,6 +145,7 @@ TEST(simplify, basic) {
       matches((min(y, select((1 < x), max(x, 118), 1)) + -1)));
 
   ASSERT_THAT(simplify(min(y, z) <= y + 1), matches(true));
+  ASSERT_THAT(simplify((min(x, y + -1) <= min(x, y))), matches(true));
 
   ASSERT_THAT(simplify(and_then(expr(false), x)), matches(false));
   ASSERT_THAT(simplify(and_then(expr(true), x)), matches(boolean(x)));
