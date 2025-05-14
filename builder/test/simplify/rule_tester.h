@@ -43,6 +43,11 @@ SLINKY_UNIQUE index_t substitute(const pattern_constant<N>&, const match_context
   return ctx.constants[N];
 }
 
+template <typename A, index_t Default>
+SLINKY_UNIQUE auto substitute(const pattern_optional<A, Default>& p, const match_context& ctx) {
+  return substitute(p.a, ctx);
+}
+
 template <typename T, typename A, typename B>
 SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
   return make_binary<T>(substitute(p.a, ctx), substitute(p.b, ctx));
