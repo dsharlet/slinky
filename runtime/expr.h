@@ -619,6 +619,13 @@ SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_true(expr_ref x) {
 }
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_false(expr_ref x) { return is_zero(x); }
 
+// These overloads of the above make templates work transparently.
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_constant(index_t x, index_t value) { return x == value; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_zero(index_t x) { return x == 0; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_one(index_t x) { return x == 1; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_true(index_t x) { return x != 0; }
+SLINKY_ALWAYS_INLINE SLINKY_UNIQUE bool is_false(index_t x) { return x == 0; }
+
 // Check if `x` is a call to the intrinsic `fn`.
 SLINKY_ALWAYS_INLINE SLINKY_UNIQUE const call* as_intrinsic(expr_ref x, intrinsic fn) {
   const call* c = x.as<call>();
