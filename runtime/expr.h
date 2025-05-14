@@ -395,6 +395,7 @@ public:
 
   void accept(expr_visitor* v) const override;
 
+  static expr_ref get(index_t value);
   static expr make(index_t value);
   static expr make(const void* value);
 
