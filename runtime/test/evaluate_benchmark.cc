@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 
 #include "base/thread_pool.h"
 #include "runtime/evaluate.h"
@@ -22,11 +23,16 @@ var w(ctx, "w");
 
 constexpr index_t iterations = 100000;
 
+using clock = std::chrono::steady_clock;
+using microseconds = std::chrono::microseconds;
+
 // These benchmarks mostly work by generating nodes around a call counter, and wrapping that node with a loop.
-stmt make_call_counter(std::atomic<int>& calls) {
+stmt make_call_counter(std::atomic<int>& calls, microseconds task_size = microseconds{0}) {
   return call_stmt::make(
-      [&](const call_stmt*, eval_context& ctx) -> index_t {
+      [&, task_size](const call_stmt*, eval_context& ctx) -> index_t {
         ++calls;
+        auto end = std::chrono::steady_clock::now() + task_size;
+        while (clock::now() < end) {}
         return 0;
       },
       {}, {}, {});
@@ -202,18 +208,18 @@ void BM_buffer_metadata(benchmark::State& state) {
 
 BENCHMARK(BM_buffer_metadata);
 
-void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
+void benchmark_parallel_loop(benchmark::State& state, bool synchronize, microseconds task_size = microseconds{1}) {
   const int workers = state.range(0);
 
   std::atomic<int> calls = 0;
-  stmt body = let_stmt::make({{x, x}}, make_call_counter(calls), /*is_closure=*/true);
+  stmt body = let_stmt::make({{x, x}}, make_call_counter(calls, task_size), /*is_closure=*/true);
 
   index_t sem = workers;
   if (synchronize) {
     body = block::make({check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))), body,
         check::make(semaphore_signal(reinterpret_cast<index_t>(&sem)))});
   }
-  body = loop::make(x, workers, range(0, iterations), 1, body);
+  body = loop::make(x, workers, range(0, workers * std::chrono::milliseconds(1) / task_size), 1, body);
 
   eval_context eval_ctx;
   eval_config config;
@@ -228,10 +234,20 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize) {
   state.SetItemsProcessed(calls);
 }
 
-void BM_parallel_loop(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/false); }
+void BM_parallel_loop_1us(benchmark::State& state) {
+  benchmark_parallel_loop(state, /*synchronize=*/false, microseconds{1});
+}
+void BM_parallel_loop_10us(benchmark::State& state) {
+  benchmark_parallel_loop(state, /*synchronize=*/false, microseconds{10});
+}
+void BM_parallel_loop_100us(benchmark::State& state) {
+  benchmark_parallel_loop(state, /*synchronize=*/false, microseconds{100});
+}
 void BM_semaphores(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/true); }
 
-BENCHMARK(BM_parallel_loop)->RangeMultiplier(2)->Range(1, 16);
+BENCHMARK(BM_parallel_loop_1us)->RangeMultiplier(2)->Range(1, 16);
+BENCHMARK(BM_parallel_loop_10us)->RangeMultiplier(2)->Range(1, 16);
+BENCHMARK(BM_parallel_loop_100us)->RangeMultiplier(2)->Range(1, 16);
 BENCHMARK(BM_semaphores)->RangeMultiplier(2)->Range(1, 16);
 
 }  // namespace slinky
