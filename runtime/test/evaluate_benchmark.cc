@@ -219,7 +219,8 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize, nanoseco
     body = block::make({check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))), body,
         check::make(semaphore_signal(reinterpret_cast<index_t>(&sem)))});
   }
-  body = loop::make(x, workers, range(0, std::chrono::milliseconds(1) / task_size), 1, body);
+  const int iterations = std::chrono::milliseconds(1) / task_size;
+  body = loop::make(x, workers, range(0, iterations), 1, body);
 
   eval_context eval_ctx;
   eval_config config;
