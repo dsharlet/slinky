@@ -53,32 +53,4 @@ void BM_parallel_for_nested(benchmark::State& state) {
 
 BENCHMARK(BM_parallel_for_nested)->RangeMultiplier(2)->Range(1, 32);
 
-int fibonacci(thread_pool_impl& p, int n, int parallel_threshold = 0) {
-  if (n <= 1) {
-    return 1;
-  } else if (n < parallel_threshold) {
-    return fibonacci(p, n - 1, parallel_threshold) + fibonacci(p, n - 2, parallel_threshold);
-  } else {
-    std::atomic<int> result = 0;
-    p.parallel_for(
-        2, [n, parallel_threshold, &p, &result](int i) { result += fibonacci(p, n - i - 1, parallel_threshold); });
-    return result;
-  }
-}
-
-void BM_fibonacci(benchmark::State& state, int n, int g) {
-  const int workers = state.range(0);
-  thread_pool_impl t(workers - 1);
-
-  for (auto i : state) {
-    fibonacci(t, n, g);
-  }
-}
-
-void BM_fibonacci_fine(benchmark::State& state) { BM_fibonacci(state, 25, 8); }
-void BM_fibonacci_coarse(benchmark::State& state) { BM_fibonacci(state, 32, 16); }
-  
-BENCHMARK(BM_fibonacci_fine)->RangeMultiplier(2)->Range(1, 32);
-BENCHMARK(BM_fibonacci_coarse)->RangeMultiplier(2)->Range(1, 32);
-
 }  // namespace slinky
