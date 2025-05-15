@@ -24,10 +24,10 @@ var w(ctx, "w");
 constexpr index_t iterations = 100000;
 
 using clock = std::chrono::steady_clock;
-using microseconds = std::chrono::microseconds;
+using nanoseconds = std::chrono::nanoseconds;
 
 // These benchmarks mostly work by generating nodes around a call counter, and wrapping that node with a loop.
-stmt make_call_counter(std::atomic<int>& calls, microseconds task_size = microseconds{0}) {
+stmt make_call_counter(std::atomic<int>& calls, nanoseconds task_size = nanoseconds{0}) {
   return call_stmt::make(
       [&, task_size](const call_stmt*, eval_context& ctx) -> index_t {
         ++calls;
@@ -208,7 +208,7 @@ void BM_buffer_metadata(benchmark::State& state) {
 
 BENCHMARK(BM_buffer_metadata);
 
-void benchmark_parallel_loop(benchmark::State& state, bool synchronize, microseconds task_size = microseconds{1}) {
+void benchmark_parallel_loop(benchmark::State& state, bool synchronize, nanoseconds task_size = nanoseconds{1000}) {
   const int workers = state.range(0);
 
   std::atomic<int> calls = 0;
@@ -219,7 +219,7 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize, microsec
     body = block::make({check::make(semaphore_wait(reinterpret_cast<index_t>(&sem))), body,
         check::make(semaphore_signal(reinterpret_cast<index_t>(&sem)))});
   }
-  body = loop::make(x, workers, range(0, workers * std::chrono::milliseconds(1) / task_size), 1, body);
+  body = loop::make(x, workers, range(0, std::chrono::milliseconds(1) / task_size), 1, body);
 
   eval_context eval_ctx;
   eval_config config;
@@ -234,20 +234,24 @@ void benchmark_parallel_loop(benchmark::State& state, bool synchronize, microsec
   state.SetItemsProcessed(calls);
 }
 
+void BM_parallel_loop_10ns(benchmark::State& state) {
+  benchmark_parallel_loop(state, /*synchronize=*/false, nanoseconds{10});
+}
+void BM_parallel_loop_100ns(benchmark::State& state) {
+  benchmark_parallel_loop(state, /*synchronize=*/false, nanoseconds{100});
+}
 void BM_parallel_loop_1us(benchmark::State& state) {
-  benchmark_parallel_loop(state, /*synchronize=*/false, microseconds{1});
+  benchmark_parallel_loop(state, /*synchronize=*/false, nanoseconds{1000});
 }
 void BM_parallel_loop_10us(benchmark::State& state) {
-  benchmark_parallel_loop(state, /*synchronize=*/false, microseconds{10});
-}
-void BM_parallel_loop_100us(benchmark::State& state) {
-  benchmark_parallel_loop(state, /*synchronize=*/false, microseconds{100});
+  benchmark_parallel_loop(state, /*synchronize=*/false, nanoseconds{10000});
 }
 void BM_semaphores(benchmark::State& state) { benchmark_parallel_loop(state, /*synchronize=*/true); }
 
+BENCHMARK(BM_parallel_loop_10ns)->RangeMultiplier(2)->Range(1, 16);
+BENCHMARK(BM_parallel_loop_100ns)->RangeMultiplier(2)->Range(1, 16);
 BENCHMARK(BM_parallel_loop_1us)->RangeMultiplier(2)->Range(1, 16);
 BENCHMARK(BM_parallel_loop_10us)->RangeMultiplier(2)->Range(1, 16);
-BENCHMARK(BM_parallel_loop_100us)->RangeMultiplier(2)->Range(1, 16);
 BENCHMARK(BM_semaphores)->RangeMultiplier(2)->Range(1, 16);
 
 }  // namespace slinky
