@@ -31,9 +31,4 @@ std::optional<std::pair<int, int>> staircase_sum_bounds(int a1, int b1, int c1, 
   return {{min, max}};
 }
 
-int staircase_sum_max(int a1, int b1, int c1, int a2, int b2, int c2) {
-  auto bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
-  return bounds ? bounds->second : std::numeric_limits<int>::max();
-}
-
 }  // namespace slinky
