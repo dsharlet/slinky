@@ -423,6 +423,7 @@ public:
         const index_t min;
         const index_t step;
         std::atomic<index_t> result{0};
+        std::atomic<bool> cancelled{false};
 
         parallel_loop(std::size_t n, const eval_context& context, const loop* op, index_t min, index_t step)
             : parallel_for(n), context(context), sym(op->sym), closure(is_closure(op->body)),
@@ -471,8 +472,9 @@ public:
           }
         });
         // If we get here, there's no more work to start.
-        if (context.size() != 0) {
-          // We ran some tasks, so we know that the context is still in scope. Cancel any remaining tasks.
+        if (context.size() != 0 && !loop->cancelled.exchange(true)) {
+          // We ran some tasks, so we know that the context is still in scope, and we didn't already cancel it. Cancel
+          // any remaining tasks.
           context.config->thread_pool->cancel(loop.get());
         }
       };
