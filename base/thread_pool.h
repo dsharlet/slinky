@@ -108,7 +108,8 @@ public:
 
   virtual int thread_count() const = 0;
 
-  // Enqueues a loop task over `n` iterations.
+  // Enqueues a loop task over `n` iterations. The tasks queued in this thread pool are instances of `parallel_for<>`
+  // plus a loop task `t` that executes each iteration. Tasks are complete when all `n` of the iterations are done.
   virtual std::shared_ptr<loop> enqueue(
       std::size_t n, loop_task t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
