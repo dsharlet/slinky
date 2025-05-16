@@ -78,11 +78,13 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
     if (auto loop = dequeue(t)) {
       l.unlock();
       task_stack.push_back(&*loop);
-      loop->run(t);
+      bool done = loop->run(t);
       task_stack.pop_back();
       l.lock();
-      // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
-      cv_helper_.notify_all();
+      if (done) {
+        // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
+        cv_helper_.notify_all();
+      }
       // We did a task, reset the spin counter.
       spins = spin_count;
     } else if (spins-- > 0) {
@@ -117,11 +119,12 @@ std::shared_ptr<thread_pool::loop> thread_pool_impl::enqueue(std::size_t n, loop
   return loop;
 }
 
-void thread_pool_impl::work_on_loop(loop& l, loop_task body) {
+bool thread_pool_impl::work_on_loop(loop& l, loop_task body) {
   assert(std::find(task_stack.begin(), task_stack.end(), &l) == task_stack.end());
   task_stack.push_back(&l);
-  l.run(body);
+  bool result = l.run(body);
   task_stack.pop_back();
+  return result;
 }
 
 }  // namespace slinky
