@@ -57,10 +57,15 @@ auto offsets = testing::Values(0, 1, -1, 10, -10);
 auto no_offset = testing::Values(0);
 
 INSTANTIATE_TEST_SUITE_P(offsets_x, padded_copy,
-    testing::Combine(offsets, no_offset, testing::Bool(), testing::Values(0, 1, 2), testing::Bool()),
+    testing::Combine(offsets, no_offset, testing::Bool(), testing::Values(0, 1, 2), testing::Values(false)),
     test_params_to_string<padded_copy::ParamType>);
 INSTANTIATE_TEST_SUITE_P(offsets_y, padded_copy,
-    testing::Combine(no_offset, offsets, testing::Bool(), testing::Values(0, 1, 2), testing::Bool()),
+    testing::Combine(no_offset, offsets, testing::Bool(), testing::Values(0, 1, 2), testing::Values(false)),
+    test_params_to_string<padded_copy::ParamType>);
+
+INSTANTIATE_TEST_SUITE_P(computed_padding, padded_copy,
+    testing::Combine(
+        testing::Values(-3, 3), testing::Values(-2, 2), testing::Bool(), testing::Values(0, 2), testing::Values(true)),
     test_params_to_string<padded_copy::ParamType>);
 
 TEST_P(padded_copy, pipeline) {
