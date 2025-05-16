@@ -81,6 +81,16 @@ public:
     todo_ -= done;
   }
 
+  // Return the number of loop iterations that have not started yet. This returns an upper bound, by the time the
+  // function returns some of the counted iterations may have already been started by another thread.
+  std::size_t count_remaining_iterations() const {
+    std::size_t result = 0;
+    for (const task& k : tasks_) {
+      result += k.end - k.i;
+    }
+    return result;
+  }
+
   bool done() const { return todo_ == 0; }
 };
 
@@ -88,9 +98,8 @@ public:
 // It is not directly used by anything except for testing.
 class thread_pool {
 public:
-  using task_id = const void*;
-  static task_id unique_task_id;
-  using task = std::function<void()>;
+  using loop = slinky::parallel_for<>;
+  using loop_task = std::function<void(std::size_t)>;
   using task_ref = function_ref<void()>;
   using predicate = std::function<bool()>;
   using predicate_ref = function_ref<bool()>;
@@ -99,19 +108,24 @@ public:
 
   virtual int thread_count() const = 0;
 
-  // Enqueues `n` copies of task `t` on the thread pool queue. This guarantees that `t` will not
-  // be run recursively on the same thread while in `wait_for`.
-  virtual void enqueue(int n, task t, task_id id = unique_task_id) = 0;
-  virtual void enqueue(task t, task_id id = unique_task_id) = 0;
+  // Enqueues a loop task over `n` iterations. The tasks queued in this thread pool are instances of `parallel_for<>`
+  // plus a loop task `t` that executes each iteration. Tasks are complete when all `n` of the iterations are done.
+  virtual std::shared_ptr<loop> enqueue(
+      std::size_t n, loop_task t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  virtual void run(task_ref t, task_id id = unique_task_id) = 0;
-  // Cancel tasks previously enqueued with the given `id`.
-  virtual void cancel(task_id id) {}
+  virtual void work_on_loop(loop& l, loop_task body) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(predicate_ref condition) = 0;
   // Run `t` on the calling thread, but atomically w.r.t. other `atomic_call` and `wait_for` conditions.
   virtual void atomic_call(task_ref t) = 0;
+
+  // Enqueues a singleton task.
+  template <typename Fn>
+  void enqueue(Fn t) {
+    // Make a dummy loop task with one iteration.
+    enqueue(1, [t = std::move(t)](std::size_t) { t(); });
+  }
 
   template <typename Fn>
   void parallel_for(std::size_t n, Fn&& body, int max_workers = std::numeric_limits<int>::max()) {
@@ -122,23 +136,17 @@ public:
       return;
     }
 
-    auto loop = std::make_shared<slinky::parallel_for<>>(n);
-
-    // Capture n by value becuase this may run after the parallel_for call returns.
-    auto worker = [this, loop, body = std::move(body)]() mutable {
-      loop->run(body);
-      // If we get here, there's no more work to start. Cancel any remaining tasks.
-      cancel(loop.get());
-    };
-    int workers = std::min<int>(max_workers, std::min<std::size_t>(thread_count() + 1, n));
-    if (workers > 1) {
-      enqueue(workers - 1, worker, loop.get());
-    }
-    // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
+    assert(max_workers > 1);
+    auto loop = enqueue(n, body, max_workers - 1);
+    assert(loop);
+    // Working on the loop here guarantees forward progress on the loop even if no threads in the thread pool are
     // available.
-    run(worker, loop.get());
-    // While the loop still isn't done, work on other tasks.
-    wait_for([&]() { return loop->done(); });
+    work_on_loop(*loop, std::move(body));
+    // While the loop still isn't done, work on other tasks. Checking before calling `wait_for` helps because we
+    // don't need to call `loop->done` atomically.
+    if (!loop->done()) {
+      wait_for([&]() { return loop->done(); });
+    }
   }
 };
 
@@ -151,7 +159,7 @@ private:
   std::vector<std::thread> threads_;
   std::atomic<bool> stop_;
 
-  using queued_task = std::tuple<int, task, task_id>;
+  using queued_task = std::tuple<int, std::shared_ptr<loop>, loop_task>;
   std::deque<queued_task> task_queue_;
   std::mutex mutex_;
   // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
@@ -164,7 +172,7 @@ private:
 
   void wait_for(predicate_ref condition, std::condition_variable& cv);
 
-  task_id dequeue(task& t);
+  std::shared_ptr<loop> dequeue(loop_task& t);
 
 public:
   // `workers` indicates how many worker threads the thread pool will have.
@@ -182,10 +190,8 @@ public:
 
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
-  void enqueue(int n, task t, task_id id = unique_task_id) override;
-  void enqueue(task t, task_id id = unique_task_id) override;
-  void run(task_ref t, task_id id = unique_task_id) override;
-  void cancel(task_id id) override;
+  std::shared_ptr<loop> enqueue(std::size_t n, loop_task t, int max_workers) override;
+  void work_on_loop(loop& l, loop_task body) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(task_ref t) override;
 };
