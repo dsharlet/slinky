@@ -86,7 +86,8 @@ public:
   std::size_t count_remaining_iterations() const {
     std::size_t result = 0;
     for (const task& k : tasks_) {
-      result += k.end - k.i;
+      const std::size_t i = k.i;
+      result += std::max(i, k.end) - i;
     }
     return result;
   }
