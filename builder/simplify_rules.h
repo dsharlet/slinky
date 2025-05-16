@@ -20,6 +20,8 @@ rewrite::pattern_constant<1> c1;
 rewrite::pattern_constant<2> c2;
 rewrite::pattern_constant<3> c3;
 rewrite::pattern_constant<4> c4;
+rewrite::pattern_constant<5> c5;
+rewrite::pattern_constant<6> c6;
 
 }  // namespace
 
@@ -61,6 +63,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, max(x, y)), x) ||
 
       // Similar rules but with added constants.
+      apply(min(max(y, x + c0) + c1, max(z, x + c2)), max(x + c2, min(z, y + c1)), eval(c0 + c1 == c2)) ||
       apply(min(x, min(y, x + c0) + c1),
         min(x, y + c1), c0 + c1 >= 0,
         min(y, x + c0) + c1 /*c0 + c1 < 0*/) ||
@@ -170,33 +173,12 @@ bool apply_min_rules(Fn&& apply) {
         min(x, y + eval(c1*c0))/c0, c0 > 0,
         max(x, y + eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(min(((x + c2)/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min(((x + c2)/c3)*c4, x/c1),
-        x/c1, c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c2 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min((x/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        (x/c3)*c4, 0 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min(x/c1 + c0, (x/c3)*c4), (x/c3)*c4, c0 > 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(min((x/c3)*c4, x/c1), (x/c3)*c4, c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-
-      // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Min.cpp#L115-L129
-      // Compare x to a stair-step function in x
-      apply(min(x, ((x + c0)/c1)*c1 + c2),
-        x, c1 > 0 && c0 + c2 >= c1 - 1,
-        ((x + c0)/c1)*c1 + c2, c1 > 0 && c0 + c2 <= 0) ||
-      apply(min((x/c1)*c1 + c2, (x/c0)*c0), (x/c0)*c0, c1 > 0 && c2 >= c1 && c0 != 0) ||
-      // Special cases where c0 or c2 is zero
-      apply(min(x, (x/c1)*c1 + c2),
-        x, c1 > 0 && c2 >= c1 - 1,
-        (x/c1)*c1 + c2, c1 > 0 && c2 <= 0) ||
-      apply(min(x, ((x + c0)/c1)*c1),
-        x, c1 > 0 && c0 >= c1 - 1,
-        ((x + c0)/c1)*c1, c1 > 0 && c0 <= 0) ||
-
-      apply(min(x, (x/c0)*c0), (x/c0)*c0, c0 > 0) ||
+      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
+        staircase(x, c3, c4, c5) + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
+      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
+        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5),
+        staircase(x, c3, c4, c5), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(min(x, abs(x)), x) ||
 
@@ -234,6 +216,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, min(x, y)), x) ||
 
       // Similar rules but with added constants.
+      apply(max(min(y, x + c0) + c1, min(z, x + c2)), min(x + c2, max(z, y + c1)), eval(c0 + c1 == c2)) ||
       apply(max(x, max(y, x + c0) + c1),
         max(x, y + c1), c0 + c1 <= 0,
         max(y, x + c0) + c1 /*c0 + c1 > 0)*/) ||
@@ -343,34 +326,13 @@ bool apply_max_rules(Fn&& apply) {
         max(x, y + eval(c1*c0))/c0, c0 > 0,
         min(x, y + eval(c1*c0))/c0, c0 < 0) ||
  
-      apply(max(((x + c2)/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, c2 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max(((x + c2)/c3)*c4, x/c1),
-        x/c1, c2 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        ((x + c2)/c3)*c4, c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max((x/c3)*c4, (x + c0)/c1),
-        (x + c0)/c1, 0 <= c0 && c1 > 0 && c3 > 0 && c1*c4 == c3,
-        (x/c3)*c4, c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max(x/c1 + c0, (x/c3)*c4), x/c1 + c0, c0 > 0 && c1 > 0 && c3 > 0 && c1*c4 == c3) ||
-      apply(max((x/c3)*c4, x/c1), x/c1, c1 > 0 && c3 > 0 && c1*c4 == c3) ||
+      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6,
+        staircase(x, c3, c4, c5) + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6) ||
+      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
+        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5),
+        staircase(x, c3, c4, c5), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5)) ||
 
-      // https://github.com/halide/Halide/blob/f4c78317887b6df4d2486e1f81e81f9012943f0f/src/Simplify_Max.cpp#L115-L129
-      // Compare x to a stair-step function in x
-      apply(max(x, ((x + c0)/c1)*c1 + c2),
-        ((x + c0)/c1)*c1 + c2, c1 > 0 && c0 + c2 >= c1 - 1,
-        x, c1 > 0 && c0 + c2 <= 0) ||
-      apply(max((x/c1)*c1 + c2, (x/c0)*c0), (x/c1)*c1 + c2, c2 >= c1 && c1 > 0 && c0 != 0) ||
-      // Special cases where c0 or c2 is zero
-      apply(max(x, (x/c1)*c1 + c2),
-        (x/c1)*c1 + c2, c1 > 0 && c2 >= c1 - 1,
-        x, c1 > 0 && c2 <= 0) ||
-      apply(max(x, ((x + c0)/c1)*c1),
-        x, c1 > 0 && c0 <= 0,
-        ((x + c0)/c1)*c1, c1 > 0 && c0 >= c1 - 1) ||
-
-      apply(max(x, (x/c0)*c0), x, c0 > 0) ||
-        
       apply(max(x, abs(x)), abs(x)) ||
 
       false;
@@ -542,6 +504,7 @@ bool apply_div_rules(Fn&& apply) {
       apply(x/x, x != 0) ||
 
       apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), c0 > 0 && c1 > 0) ||
+      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1), c0 > 0 && c1 > 0) ||
       apply((x/c0)/c1, x/eval(c0*c1), c0 > 0 && c1 > 0) ||
       apply((x*c0)/c1, x*eval(c0/c1), c1 > 0 && c0%c1 == 0) ||
       apply((x*c0)/c1, x/eval(c1/c0), c0 > 0 && c1 > 0 && c1%c0 == 0) ||
@@ -621,22 +584,18 @@ bool apply_less_rules(Fn&& apply) {
 
       // These rules taken from:
       // https://github.com/halide/Halide/blob/e3d3c8cacfe6d664a8994166d0998f362bf55ce8/src/Simplify_LT.cpp#L340-L397
-      apply(w + ((x + c0)/c1)*c1 < x + z, w + c0 < z + (x + c0)%c1, c1 > 0) ||
-      apply(x + z < w + ((x + c0)/c1)*c1, z + (x + c0)%c1 < w + c0, c1 > 0) ||
-      apply(((x + c0)/c1)*c1 < x + z, c0 < z + (x + c0)%c1, c1 > 0) ||
-      apply(x + z < ((x + c0)/c1)*c1, z + (x + c0)%c1 < c0, c1 > 0) ||
-      apply(w + ((x + c0)/c1)*c1 < x, w + c0 < (x + c0)%c1, c1 > 0) ||
-      apply(x < w + ((x + c0)/c1)*c1, (x + c0)%c1 < w + c0, c1 > 0) ||
-      apply(w + (x/c1)*c1 < x + z, w < z + x%c1, c1 > 0) ||
-      apply(x + z < w + (x/c1)*c1, z + x%c1 < w, c1 > 0) ||
-      apply(((x + c0)/c1)*c1 < x, c0 < (x + c0)%c1, c1 > 0) ||
-      apply(x < ((x + c0)/c1)*c1, (x + c0)%c1 < c0, c1 > 0) ||
-      apply((x/c1)*c1 < x + z, 0 < z + x%c1, c1 > 0) ||
-      apply(x + z < (x/c1)*c1, z + x%c1 < 0, c1 > 0) ||
-      apply(w + (x/c1)*c1 < x, w < x%c1, c1 > 0) ||
-      apply(x < w + (x/c1)*c1, x%c1 < w, c1 > 0) ||
-      apply((x/c1)*c1 < x, x%c1 != 0, c1 > 0) ||
-      apply(x < (x/c1)*c1, false, c1 > 0) ||
+      apply(w + staircase(x, c0, c1, c1) < x + z, w + c0 < z + (x + c0)%c1, c1 > 0) ||
+      apply(x + z < w + staircase(x, c0, c1, c1), z + (x + c0)%c1 < w + c0, c1 > 0) ||
+      apply(staircase(x, c0, c1, c1) < x + z, c0 < z + (x + c0)%c1, c1 > 0) ||
+      apply(x + z < staircase(x, c0, c1, c1), z + (x + c0)%c1 < c0, c1 > 0) ||
+      apply(w + staircase(x, c0, c1, c1) < x, w + c0 < (x + c0)%c1, c1 > 0) ||
+      apply(x < w + staircase(x, c0, c1, c1), (x + c0)%c1 < w + c0, c1 > 0) ||
+      apply(staircase(x, c0, c1, c1) < x,
+        c0 < (x + c0)%c1, c1 > 0 && c0 != 0,
+        x%c1 != 0, c1 > 0 /*&& c0 == 0*/) ||
+      apply(x < staircase(x, c0, c1, c1), 
+        (x + c0)%c1 < c0, c1 > 0 && c0 != 0,
+        false, c1 > 0 /*&& c0 == 0*/) ||
 
       apply(x%c0 < c1,
         true, c0 > 0 && c0 <= c1,
@@ -646,27 +605,15 @@ bool apply_less_rules(Fn&& apply) {
         false, c1 > 0 && c0 >= c1 - 1,
         boolean(x%c1), c1 > 0 && c0 == 0) ||
     
-      // These rules taken from
-      // https://github.com/halide/Halide/blob/e9f8b041f63a1a337ce3be0b07de5a1cfa6f2f65/src/Simplify_LT.cpp#L399-L407
-      // Cancel a division
-      apply((x + c1)/c0 < (x + c2)/c0,
-        false, c0 > 0 && c1 >= c2,
-        true, c0 > 0 && c1 <= c2 - c0) ||
-      // c1 == 0
-      apply(x/c0 < (x + c2)/c0,
-        false, c0 > 0 && 0 >= c2,
-        true, c0 > 0 && 0 <= c2 - c0) ||
-      // c2 == 0
-      apply((x + c1)/c0 < x/c0,
-        false, c0 > 0 && c1 >= 0,
-        true, c0 > 0 && c1 <= 0 - c0) ||
-
-      // TODO: These aren't fully simplified, the above rules can be applied to the rewritten result.
-      // If we ever added a c2 < 0 version of the above, these would need to be duplicated as well.
-      apply((x + c0)/c1 < x/c1 + c2, (x + eval(c0 - c2*c1))/c1 < x/c1, c1 != 0) ||
-      apply(x/c1 < x/c1 + c2, (x + eval(-c2*c1))/c1 < x/c1, c1 != 0) ||
-      apply(x/c1 + c2 < (x + c0)/c1, x/c1 < (x + eval(c0 - c2*c1))/c1, c1 != 0) ||
-      apply(x/c1 + c2 < x/c1, x/c1 < (x + eval(-c2*c1))/c1, c1 != 0) ||
+      apply(staircase(x, c0, c1, c2) < staircase(x, c3, c4, c5) + c6,
+        true, 0 < staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
+        false, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
+      apply(staircase(x, c0, c1, c2) + c6 < staircase(x, c3, c4, c5),
+        true, c6 < staircase_sum_min(c0, c1, -c2, c3, c4, c5),
+        false, c6 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
+      apply(staircase(x, c0, c1, c2) < staircase(x, c3, c4, c5),
+        true, 0 < staircase_sum_min(c0, c1, -c2, c3, c4, c5),
+        false, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(x*c0 < y*c0,
         x < y, c0 > 0,

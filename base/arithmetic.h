@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <utility>
 
 namespace slinky {
@@ -211,6 +212,34 @@ template <typename T>
 T lcm(T a, T b) {
   return (a * b) / gcd(a, b);
 }
+
+// Computes ((x + a)/b)*c
+template <typename T>
+T staircase(T x, T a, T b, T c) {
+  return euclidean_div(x + a, b) * c;
+}
+
+template <typename T>
+struct interval {
+  // The interval is unbounded if the min or max is missing.
+  std::optional<T> min, max;
+
+  interval() = default;
+  explicit interval(T x) : min(x), max(x) {}
+  interval(T min, T max) : min(min), max(max) {}
+
+  bool operator==(const interval<T>& r) const {
+    if (!min != !r.min) return false;
+    if (!max != !r.max) return false;
+    if (min && *min != *r.min) return false;
+    if (max && *max != *r.max) return false;
+    return true;
+  }
+};
+
+// Returns the [min, max] interval over all x of ((x + a1)/b1)*c1 + ((x + a2)/b2)*c2
+// Returns std::nullopt if unbounded.
+interval<int> staircase_sum_bounds(int a1, int b1, int c1, int a2, int b2, int c2);
 
 }  // namespace slinky
 

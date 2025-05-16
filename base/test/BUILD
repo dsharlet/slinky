@@ -24,6 +24,7 @@ cc_test(
     srcs = ["arithmetic.cc"],
     deps = [
         "//base",
+        ":util",
         "@googletest//:gtest_main",
     ],
     size = "small",
