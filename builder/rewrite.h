@@ -579,11 +579,11 @@ SLINKY_UNIQUE index_t substitute(
   index_t a2 = substitute(r.a2, ctx, overflowed);
   index_t b2 = substitute(r.b2, ctx, overflowed);
   index_t c2 = substitute(r.c2, ctx, overflowed);
-  auto bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
+  interval<int> bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
   if (r.bound_sign < 0) {
-    return bounds ? bounds->first : std::numeric_limits<index_t>::min();
+    return bounds.min ? *bounds.min : std::numeric_limits<index_t>::min();
   } else {
-    return bounds ? bounds->second : std::numeric_limits<index_t>::max();
+    return bounds.max ? *bounds.max : std::numeric_limits<index_t>::max();
   }
 }
 
