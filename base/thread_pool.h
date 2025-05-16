@@ -135,17 +135,22 @@ public:
       body(0);
       return;
     }
-
-    assert(max_workers > 1);
-    auto loop = enqueue(n, body, max_workers - 1);
-    assert(loop);
-    // Working on the loop here guarantees forward progress on the loop even if no threads in the thread pool are
-    // available.
-    work_on_loop(*loop, std::move(body));
-    // While the loop still isn't done, work on other tasks. Checking before calling `wait_for` helps because we
-    // don't need to call `loop->done` atomically.
-    if (!loop->done()) {
-      wait_for([&]() { return loop->done(); });
+    max_workers = std::min(max_workers - 1, thread_count());
+    if (max_workers == 0) {
+      // We aren't going to get any worker threads, just run the loop.
+      for (std::size_t i = 0; i < n; ++i) {
+        body(i);
+      }
+    } else {
+      auto loop = enqueue(n, body, max_workers);
+      // Working on the loop here guarantees forward progress on the loop even if no threads in the thread pool are
+      // available.
+      work_on_loop(*loop, std::move(body));
+      // While the loop still isn't done, work on other tasks. Checking before calling `wait_for` helps because we
+      // don't need to call `loop->done` atomically.
+      if (!loop->done()) {
+        wait_for([&]() { return loop->done(); });
+      }
     }
   }
 };
