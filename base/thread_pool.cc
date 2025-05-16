@@ -53,12 +53,14 @@ std::shared_ptr<thread_pool::loop> thread_pool_impl::dequeue(loop_task& t) {
       i = task_queue_.erase(i);
       continue;
     }
-    t = std::get<2>(*i);
     int& max_workers = std::get<0>(*i);
     assert(max_workers > 0);
     if (--max_workers == 0 || iterations_remaining == 1) {
       // No more workers for this loop.
+      t = std::move(std::get<2>(*i));
       task_queue_.erase(i);
+    } else {
+      t = std::get<2>(*i);
     }
     return loop;
   }
