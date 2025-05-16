@@ -59,6 +59,13 @@ index_t multiply_2(const buffer<const T>& in, const buffer<T>& out) {
 }
 
 template <typename T>
+index_t square(const buffer<const T>& in, const buffer<T>& out) {
+  assert(in.rank == out.rank);
+  for_each_element([&](T* out, const T* in) { *out = *in * *in; }, out, in);
+  return 0;
+}
+
+template <typename T>
 index_t add_1(const buffer<const T>& in, const buffer<T>& out) {
   assert(in.rank == out.rank);
   for_each_element([&](T* out, const T* in) { *out = *in + 1; }, out, in);
@@ -70,6 +77,14 @@ index_t subtract(const buffer<const T>& a, const buffer<const T>& b, const buffe
   assert(a.rank == out.rank);
   assert(b.rank == out.rank);
   for_each_element([&](T* out, const T* a, const T* b) { *out = *a - *b; }, out, a, b);
+  return 0;
+}
+
+template <typename T>
+index_t multiply(const buffer<const T>& a, const buffer<const T>& b, const buffer<T>& out) {
+  assert(a.rank == out.rank);
+  assert(b.rank == out.rank);
+  for_each_element([&](T* out, const T* a, const T* b) { *out = *a * *b; }, out, a, b);
   return 0;
 }
 

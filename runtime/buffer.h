@@ -371,8 +371,8 @@ public:
   std::size_t init_strides(index_t alignment = 1);
 
   // Allocate and set the base pointer using `malloc`. Returns a pointer to the allocated memory, which should
-  // be deallocated with `aligned_free`. `alignment` must be a power of 2.
-  void* allocate(index_t alignment = 1);
+  // be deallocated with `aligned_free`. `base_alignment` and `stride_alignment` must be a power of 2.
+  void* allocate(index_t base_alignment = 1, index_t stride_alignment = 1);
 
   template <typename NewT>
   const buffer<NewT>& cast() const;

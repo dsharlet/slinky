@@ -85,12 +85,12 @@ TEST(arithmetic, gcd) {
 
 TEST(arithmetic, staircase_sum_bounds) {
   // Not the same slope
-  ASSERT_EQ(staircase_sum_bounds(0, 1, 1, 0, 1, 1), std::nullopt);
-  ASSERT_EQ(staircase_sum_bounds(0, 2, 1, 0, 1, -1), std::nullopt);
+  ASSERT_EQ(staircase_sum_bounds(0, 1, 1, 0, 1, 1), interval<int>{});
+  ASSERT_EQ(staircase_sum_bounds(0, 2, 1, 0, 1, -1), interval<int>{});
 
-  ASSERT_EQ(staircase_sum_bounds(0, 1, 1, 0, 1, -1), std::make_pair(0, 0));
-  ASSERT_EQ(staircase_sum_bounds(0, 1, 3, 0, 1, -3), std::make_pair(0, 0));
-  ASSERT_EQ(staircase_sum_bounds(0, 4, 1, 0, -4, 1), std::make_pair(0, 0));
+  ASSERT_EQ(staircase_sum_bounds(0, 1, 1, 0, 1, -1), interval<int>(0));
+  ASSERT_EQ(staircase_sum_bounds(0, 1, 3, 0, 1, -3), interval<int>(0));
+  ASSERT_EQ(staircase_sum_bounds(0, 4, 1, 0, -4, 1), interval<int>(0));
 
   // Generate random staircases, check against brute force.
   const int max_abs_bc = 16;
@@ -115,11 +115,13 @@ TEST(arithmetic, staircase_sum_bounds) {
 
     auto bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
     if (b1 * c2 == -b2 * c1 && ((b1 != 0) == (b2 != 0))) {
-      ASSERT_TRUE(bounds);
-      ASSERT_EQ(min, bounds->first);
-      ASSERT_EQ(max, bounds->second);
+      ASSERT_TRUE(bounds.min);
+      ASSERT_TRUE(bounds.max);
+      ASSERT_EQ(min, *bounds.min);
+      ASSERT_EQ(max, *bounds.max);
     } else {
-      ASSERT_FALSE(bounds);
+      ASSERT_FALSE(bounds.min);
+      ASSERT_FALSE(bounds.max);
     }
   }
 }

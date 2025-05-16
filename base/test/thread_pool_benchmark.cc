@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 
 #include <atomic>
+#include <random>
 #include <vector>
 
 #include "base/thread_pool.h"
@@ -21,7 +22,7 @@ void BM_parallel_for_overhead(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_parallel_for_overhead)->Arg(2)->Arg(4)->Arg(8);
+BENCHMARK(BM_parallel_for_overhead)->RangeMultiplier(2)->Range(1, 32);
 
 void BM_parallel_for(benchmark::State& state) {
   const int workers = state.range(0);
@@ -35,7 +36,7 @@ void BM_parallel_for(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_parallel_for)->Arg(2)->Arg(4)->Arg(8);
+BENCHMARK(BM_parallel_for)->RangeMultiplier(2)->Range(1, 32);
 
 void BM_parallel_for_nested(benchmark::State& state) {
   const int workers = state.range(0);
@@ -50,6 +51,6 @@ void BM_parallel_for_nested(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_parallel_for_nested)->Arg(2)->Arg(4)->Arg(8);
+BENCHMARK(BM_parallel_for_nested)->RangeMultiplier(2)->Range(1, 32);
 
 }  // namespace slinky

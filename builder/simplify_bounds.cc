@@ -58,8 +58,7 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
 // like ((x + c0) / c1) * c2.
 void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
   match_context lhs, rhs;
-  if (!match(lhs, staircase(x, c0, c1, c2), a) ||
-      !match(rhs, staircase(x, c0, c1, c2), b)) {
+  if (!match(lhs, staircase(x, c0, c1, c2), a) || !match(rhs, staircase(x, c0, c1, c2), b)) {
     return;
   }
   if (!match(lhs.matched(x), rhs.matched(x))) {
@@ -75,11 +74,9 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   index_t rb = rhs.matched(c1);
   index_t rc = rhs.matched(c2) * sign_b;
 
-  std::optional<std::pair<int, int>> constant_bounds = staircase_sum_bounds(la, lb, lc, ra, rb, rc);
-  if (constant_bounds) {
-    bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, constant_bounds->first);
-    bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, constant_bounds->second);
-  }
+  interval<int> sb = staircase_sum_bounds(la, lb, lc, ra, rb, rc);
+  if (sb.min) bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, *sb.min);
+  if (sb.max) bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, *sb.max);
 }
 
 // We can tighten the upper bounds of expressions like min(x, y) - max(z, w) when x or y is correlated to z or w in a
