@@ -123,6 +123,19 @@ cc_test(
 )
 
 cc_test(
+    name = "l2_norm",
+    srcs = ["l2_norm.cc"],
+    deps = [
+        ":util",
+        "//base/test:util",
+        "//builder",
+        "//runtime",
+        "@googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+cc_test(
     name = "aligned_producer",
     srcs = ["aligned_producer.cc"],
     deps = [
