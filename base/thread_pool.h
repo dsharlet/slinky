@@ -59,9 +59,9 @@ public:
   }
 
   // Work on the loop. This returns when work on all items in the loop has started, but may return before all items are
-  // complete.
+  // complete. Returns true if the loop is done.
   template <typename Fn>
-  void run(const Fn& body) {
+  bool run(const Fn& body) {
     std::size_t w = K == 1 ? 0 : worker_++;
     std::size_t done = 0;
     // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
@@ -78,7 +78,7 @@ public:
         ++done;
       }
     }
-    todo_ -= done;
+    return (todo_ -= done) == 0;
   }
 
   // Return the number of loop iterations that have not started yet. This returns an upper bound, by the time the
@@ -114,7 +114,7 @@ public:
   virtual std::shared_ptr<loop> enqueue(
       std::size_t n, loop_task t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  virtual void work_on_loop(loop& l, loop_task body) = 0;
+  virtual bool work_on_loop(loop& l, loop_task body) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(predicate_ref condition) = 0;
@@ -146,10 +146,9 @@ public:
       auto loop = enqueue(n, body, max_workers);
       // Working on the loop here guarantees forward progress on the loop even if no threads in the thread pool are
       // available.
-      work_on_loop(*loop, std::move(body));
-      // While the loop still isn't done, work on other tasks. Checking before calling `wait_for` helps because we
-      // don't need to call `loop->done` atomically.
-      if (!loop->done()) {
+      if (!work_on_loop(*loop, std::move(body))) {
+        // While the loop still isn't done, work on other tasks. Checking before calling `wait_for` helps because we
+        // don't need to call `loop->done` atomically.
         wait_for([&]() { return loop->done(); });
       }
     }
@@ -197,7 +196,7 @@ public:
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
   std::shared_ptr<loop> enqueue(std::size_t n, loop_task t, int max_workers) override;
-  void work_on_loop(loop& l, loop_task body) override;
+  bool work_on_loop(loop& l, loop_task body) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(task_ref t) override;
 };
