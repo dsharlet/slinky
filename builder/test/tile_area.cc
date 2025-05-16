@@ -84,16 +84,6 @@ TEST(tile_area, pipeline) {
   }
 }
 
-class test_thread_pool_impl : public thread_pool_impl {
-public:
-  void run(task_ref t, task_id id = unique_task_id) override {
-    run_called = true;
-    thread_pool_impl::run(t, id);
-  }
-
-  bool run_called = false;
-};
-
 // An example of two 2D elementwise operations in sequence.
 TEST(conditional_parallel, pipeline) {
   // Make the pipeline
@@ -139,8 +129,6 @@ TEST(conditional_parallel, pipeline) {
       const raw_buffer* inputs[] = {&in_buf};
       const raw_buffer* outputs[] = {&out_buf};
       test_context eval_ctx;
-      test_thread_pool_impl tp;
-      eval_ctx.config.thread_pool = &tp;
       p.evaluate(args, inputs, outputs, eval_ctx);
 
       for (int y = 0; y < H; ++y) {
@@ -148,8 +136,6 @@ TEST(conditional_parallel, pipeline) {
           ASSERT_EQ(out_buf(x, y), 2 * (y * W + x) + 1);
         }
       }
-
-      ASSERT_EQ(tp.run_called, max_x != loop::serial || max_y != loop::serial);
     }
   }
 }

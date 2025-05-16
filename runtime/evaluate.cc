@@ -58,6 +58,11 @@ struct interval {
   index_t min, max;
 };
 
+const let_stmt* as_closure(const stmt& s) {
+  const let_stmt* l = s.as<let_stmt>();
+  return l && l->is_closure ? l : nullptr;
+}
+
 class evaluator {
 public:
   eval_context& context;
@@ -174,9 +179,7 @@ public:
 
   index_t eval(const logical_not* op) { return eval(op->a) == 0; }
 
-  index_t eval(const class select* op) {
-    return eval(eval(op->condition) ? op->true_value : op->false_value);
-  }
+  index_t eval(const class select* op) { return eval(eval(op->condition) ? op->true_value : op->false_value); }
 
   bool eval_short_circuit_op(const call* op) {
     for (const expr& i : op->args) {
@@ -397,6 +400,31 @@ public:
     return 0;
   }
 
+  SLINKY_NO_INLINE static void init_context(
+      eval_context& context, const eval_context& parent_context, const let_stmt* closure, var exclude) {
+    if (closure) {
+      // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
+      context.reserve(parent_context.size());
+      context.config = parent_context.config;
+
+      // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent
+      // context, but assign them to our local context.
+      for (const std::pair<var, expr>& i : closure->lets) {
+        if (i.first == exclude) {
+          // The loop variable is part of the closure, because it is defined outside the closure and used inside
+          // it. However, we are going to overwrite it below.
+          continue;
+        }
+        auto src = as_variable(i.second);
+        assert(src);
+        context.set(i.first, parent_context.lookup(*src));
+      }
+    } else {
+      // We don't have a closure, just copy the whole context.
+      context = parent_context;
+    }
+  }
+
   SLINKY_NO_INLINE index_t eval_loop_parallel(const loop* op, index_t max_workers) {
     interval bounds = eval(op->bounds);
     index_t step = eval(op->step, 1);
@@ -413,85 +441,43 @@ public:
       thread_pool* pool = context.config->thread_pool;
       assert(pool);
 
-      // We want to minimize the size of the worker lambda below. We need to make an std::shared_ptr<parallel_for<>>
-      // anyways, so let's just extend that object with the extra shared state we need.
-      struct parallel_loop : public parallel_for<1> {
+      // Make a struct of the shared state that doesn't need to be captured by value.
+      struct shared_state {
         const eval_context& context;
-        const var sym;
+        index_t step;
+        index_t min;
+        var sym;
+        stmt body;
         const let_stmt* closure;
-        const stmt& body;
-        const index_t min;
-        const index_t step;
         std::atomic<index_t> result{0};
-        std::atomic<bool> cancelled{false};
-
-        parallel_loop(std::size_t n, const eval_context& context, const loop* op, index_t min, index_t step)
-            : parallel_for(n), context(context), sym(op->sym), closure(is_closure(op->body)),
-              body(closure ? closure->body : op->body), min(min), step(step) {}
       };
 
-      auto loop = std::make_shared<parallel_loop>(n, context, op, bounds.min, step);
+      stmt body = op->body;
+      const let_stmt* closure = as_closure(body);
+      if (closure) {
+        body = closure->body;
+      }
+      shared_state state = {context, step, bounds.min, op->sym, body, closure};
 
-      // Capture n by value becuase this may run after the parallel_for call returns.
-      auto worker = [loop]() mutable {
-        eval_context context;
-        loop->run([&context, &loop](index_t i) {
-          // We can't initialize this outside the parallel loop, because we don't know if the loop will actually run
-          // anything (it might already have been finished by other workers). To work around this, we initialize the
-          // context on the first iteration we run.
-          if (context.size() == 0) {
-            if (loop->closure) {
-              // The body is a closure, so we know exactly which symbols we need to copy to the new local context.
-              context.reserve(loop->context.size());
-              context.config = loop->context.config;
+      auto task = [&state, context = eval_context()](index_t i) mutable {
+        if (context.size() == 0) {
+          // We store the context in the lambda so we can initialize it once per worker. This assumes that the thread
+          // pool makes a copy of the worker function, which is perhaps sketchy, but it does do that.
+          init_context(context, state.context, state.closure, state.sym);
+        }
 
-              // Assume that this let_stmt is a closure for this loop. We'll evaluate the values using the parent
-              // context, but assign them to our local context.
-              for (const std::pair<var, expr>& i : loop->closure->lets) {
-                if (i.first == loop->sym) {
-                  // The loop variable is part of the closure, because it is defined outside the closure and used inside
-                  // it. However, we are going to overwrite it below.
-                  continue;
-                }
-                auto src = as_variable(i.second);
-                assert(src);
-                context.set(i.first, loop->context.lookup(*src));
-              }
-            } else {
-              // We don't have a closure, just copy the whole context.
-              context = loop->context;
-            }
-          }
-
-          context.set(loop->sym, i * loop->step + loop->min);
-          // Evaluate the parallel loop body with our copy of the context.
-          index_t result_i = evaluate(loop->body, context);
-          if (result_i != 0) {
-            index_t zero = 0;
-            loop->result.compare_exchange_strong(zero, result_i);
-          }
-        });
-        // If we get here, there's no more work to start.
-        if (context.size() != 0 && !loop->cancelled.exchange(true)) {
-          // We ran some tasks, so we know that the context is still in scope, and we didn't already cancel it. Cancel
-          // any remaining tasks.
-          context.config->thread_pool->cancel(loop.get());
+        context.set(state.sym, i * state.step + state.min);
+        // Evaluate the parallel loop body with our copy of the context.
+        index_t result_i = evaluate(state.body, context);
+        if (result_i != 0) {
+          index_t zero = 0;
+          state.result.compare_exchange_strong(zero, result_i);
         }
       };
-      int workers = std::min<int>(max_workers, std::min<std::size_t>(pool->thread_count() + 1, n));
-      if (workers > 1) {
-        pool->enqueue(workers - 1, worker, loop.get());
-      }
-      // Running the worker here guarantees forward progress on the loop even if no threads in the thread pool are
-      // available.
-      pool->run(worker, loop.get());
 
-      if (!loop->done()) {
-        // While the loop still isn't done, work on other tasks.
-        pool->wait_for([&]() { return loop->done(); });
-      }
+      pool->parallel_for(n, std::move(task), max_workers);
 
-      return loop->result;
+      return state.result;
     }
   }
 
