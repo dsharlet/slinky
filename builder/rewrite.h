@@ -771,6 +771,10 @@ SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_re
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(x, slinky::is_non_negative); }
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
+SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive); }
+template <typename T, bool = typename enable_pattern_ops<T>::type()>
 SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
 
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
