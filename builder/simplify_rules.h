@@ -2,6 +2,7 @@
 #define SLINKY_BUILDER_SIMPLIFY_RULES_H
 
 #include "builder/rewrite.h"
+#include "builder/simplify.h"
 
 namespace slinky {
 
@@ -141,10 +142,13 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x/c0, c1),
         min(x, eval(c1*c0))/c0, c0 > 0,
         max(x, eval(c1*c0))/c0, c0 < 0) ||
-
-      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
-        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
-        staircase(x, c3, c4, c5) + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
+        
+      apply(min(staircase(x, c0, c1, c2), (staircase(x, c3, c4, c5) + may_be<0>(y)) + may_be<0>(c6)),
+        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + constant_lower_bound(y) + c6,
+        staircase(x, c3, c4, c5) + y + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + constant_upper_bound(y) + c6) ||
+      apply(min(staircase(x, c0, c1, c2), (staircase(x, c3, c4, c5) - may_be<0>(y)) + may_be<0>(c6)),
+        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) - constant_upper_bound(y) + c6,
+        staircase(x, c3, c4, c5) - y + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) - constant_lower_bound(y) + c6) ||
 
       apply(min(x, abs(x)), x) ||
 
@@ -258,10 +262,13 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x/c0, c1),
         max(x, eval(c1*c0))/c0, c0 > 0,
         min(x, eval(c1*c0))/c0, c0 < 0) ||
-
-      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
-        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6,
-        staircase(x, c3, c4, c5) + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6) ||
+        
+      apply(max(staircase(x, c0, c1, c2), (staircase(x, c3, c4, c5) + may_be<0>(y)) + may_be<0>(c6)),
+        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + constant_upper_bound(y) + c6,
+        staircase(x, c3, c4, c5) + y + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + constant_lower_bound(y) + c6) ||
+      apply(max(staircase(x, c0, c1, c2), (staircase(x, c3, c4, c5) - may_be<0>(y)) + may_be<0>(c6)),
+        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) - constant_lower_bound(y) + c6,
+        staircase(x, c3, c4, c5) - y + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) - constant_upper_bound(y) + c6) ||
 
       apply(max(x, abs(x)), abs(x)) ||
 

@@ -685,6 +685,37 @@ SLINKY_UNIQUE std::ostream& operator<<(
   return os << r.a1 << ", " << r.b1 << ", " << r.c1 << ", " << r.a2 << ", " << r.b2 << ", " << r.c2 << ")";
 }
 
+template <typename A>
+class replacement_constant_bound {
+public:
+  static constexpr expr_node_type type = expr_node_type::constant;
+  static constexpr bool is_boolean = false;
+  static constexpr bool is_canonical = true;
+  A a;
+  int bound_sign;
+};
+
+template <typename A>
+SLINKY_UNIQUE index_t substitute(const replacement_constant_bound<A>& r, const match_context& ctx, bool& overflowed) {
+  if (r.bound_sign < 0) {
+    std::optional<index_t> bound = evaluate_constant_lower_bound(substitute(r.a, ctx, overflowed));
+    return bound ? *bound : std::numeric_limits<index_t>::min();
+  } else {
+    std::optional<index_t> bound = evaluate_constant_upper_bound(substitute(r.a, ctx, overflowed));
+    return bound ? *bound : std::numeric_limits<index_t>::max();
+  }
+}
+
+template <typename A>
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_constant_bound<A>& r) {
+  if (r.bound_sign < 0) {
+    os << "constant_lower_bound(";
+  } else {
+    os << "constant_upper_bound(";
+  }
+  return os << r.a << ")";
+}
+
 // We need a thing that lets us do SFINAE to disable overloads when none of the operand types are pattern expressions.
 template <typename... Ts>
 struct enable_pattern_ops {
@@ -808,6 +839,15 @@ template <typename A1, typename B1, typename C1, typename A2, typename B2, typen
 SLINKY_UNIQUE auto staircase_sum_min(
     const A1& a1, const B1& b1, const C1& c1, const A2& a2, const B2& b2, const C2& c2) {
   return replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>{a1, b1, c1, a2, b2, c2, -1};
+}
+
+template <typename A>
+SLINKY_UNIQUE auto constant_lower_bound(const A& a) {
+  return replacement_constant_bound<A>{a, -1};
+}
+template <typename A>
+SLINKY_UNIQUE auto constant_upper_bound(const A& a) {
+  return replacement_constant_bound<A>{a, 1};
 }
 
 template <typename Pattern, typename Target>
