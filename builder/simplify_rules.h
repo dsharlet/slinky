@@ -464,8 +464,7 @@ bool apply_less_rules(Fn&& apply) {
       // Cancellations in linear expressions
       apply(may_be<0>(w) + (x + may_be<0>(y)) < may_be<0>(u) + (x + may_be<0>(z)), y + w < z + u) ||
 
-      apply(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
-      apply(x + c0 < c1, x < eval(c1 - c0)) ||
+      apply(x + c0 < may_be<0>(y) + c1, x < y + eval(c1 - c0)) ||
       apply(x + c0 < y, x < y + eval(-c0)) ||
       apply(c0 < x + c1, eval(c0 - c1) < x) ||
 
