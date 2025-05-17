@@ -110,10 +110,10 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x + c0, y + c1),
         min(x, y + eval(c1 - c0)) + c0, c0 >= c1,  // Canonicalize to pulling bigger constants out.
         min(y, x + eval(c0 - c1)) + c1) ||
-      apply(min(x + c0, c1 - y), c1 - max(y, eval(c1 - c0) - x)) ||
-      apply(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
-      apply(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
-      apply(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
+      apply(min(x + c0, c1 - may_be<0>(y)), 
+        min(x, eval(c1 - c0)) + c0, is_zero(y),
+        c1 - max(y, eval(c1 - c0) - x)) ||
+      apply(min(c0 - x, c1 - may_be<0>(y)), c0 - max(x, y + eval(c0 - c1))) ||
       apply(min(min(x, c0) + may_be<0>(c1), min(y, c2)), min(min(y, x + c1), eval(min(c0 + c1, c2)))) ||
       apply(min(max(x, c0) + may_be<0>(c1), max(y, c2)),
         max(min(y, max(x, c0) + c1), c2), c2 < c0 + c1,
@@ -228,10 +228,10 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x + c0, y + c1),
         max(x, y + eval(c1 - c0)) + c0, c0 >= c1,  // Canonicalize to pulling bigger constants out.
         max(y, x + eval(c0 - c1)) + c1) ||
-      apply(max(x + c0, c1 - y), c1 - min(y, eval(c1 - c0) - x)) ||
-      apply(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
-      apply(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
-      apply(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
+      apply(max(x + c0, c1 - may_be<0>(y)), 
+        max(x, eval(c1 - c0)) + c0, is_zero(y),
+        c1 - min(y, eval(c1 - c0) - x)) ||
+      apply(max(c0 - x, c1 - may_be<0>(y)), c0 - min(x, y + eval(c0 - c1))) ||
       apply(max(max(x, c0) + may_be<0>(c1), max(y, c2)), max(max(y, x + c1), eval(max(c0 + c1, c2)))) ||
       apply(max(min(x, c0) + may_be<0>(c1), min(y, c2)),
         min(max(y, min(x, c0) + c1), c2), c2 > c0 + c1,
