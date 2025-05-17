@@ -37,10 +37,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, rewrite::positive_infinity()), x) ||
       apply(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
       apply(min(x, rewrite::negative_infinity()), rewrite::negative_infinity()) ||
-      apply(min(x, x + c0),
-        x, c0 > 0,
+      apply(min(x, x + may_be<0>(c0)),
+        x, c0 >= 0,
         x + c0 /*c0 < 0*/) ||
-      apply(min(x, x), x) ||
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
       // This might be the only rule that doesn't have an analogous max rule.
@@ -160,10 +159,9 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, rewrite::negative_infinity()), x) ||
       apply(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
       apply(max(x, rewrite::positive_infinity()), rewrite::positive_infinity()) ||
-      apply(max(x, x + c0),
+      apply(max(x, x + may_be<0>(c0)),
         x + c0, c0 > 0,
-        x /*c0 < 0*/) ||
-      apply(max(x, x), x) ||
+        x /*c0 <= 0*/) ||
       apply(max(x, y), x || y, is_boolean(x) && is_boolean(y)) ||
 
       // Canonicalize trees and find duplicate terms.
