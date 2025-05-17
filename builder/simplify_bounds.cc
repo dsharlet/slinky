@@ -54,16 +54,16 @@ interval_expr bounds_of_less(const T* op, interval_expr a, interval_expr b) {
   }
 }
 
-// Attempts to tighten the bounds for correlated expressions a +/- b, where the expressions are "stair step" functions
-// like ((x + c0) / c1) * c2.
-void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
+}  // namespace
+
+interval<int> staircase_sum_bounds(expr_ref a, expr_ref b, int sign_b) {
   match_context lhs, rhs;
   if (!match(lhs, staircase(x, c0, c1, c2), a) || !match(rhs, staircase(x, c0, c1, c2), b)) {
-    return;
+    return {};
   }
   if (!match(lhs.matched(x), rhs.matched(x))) {
     // The x in the above expressions doesn't match, expressions may not be correlated.
-    return;
+    return {};
   }
 
   // We have a sum of two such rational expressions.
@@ -74,7 +74,13 @@ void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, cons
   index_t rb = rhs.matched(c1);
   index_t rc = rhs.matched(c2) * sign_b;
 
-  interval<int> sb = staircase_sum_bounds(la, lb, lc, ra, rb, rc);
+  return staircase_sum_bounds(la, lb, lc, ra, rb, rc);
+}
+
+namespace {
+
+void tighten_correlated_bounds_stairs(interval_expr& bounds, const expr& a, const expr& b, int sign_b) {
+  interval<int> sb = staircase_sum_bounds(a, b, sign_b);
   if (sb.min) bounds.min = simplify(static_cast<const class max*>(nullptr), bounds.min, *sb.min);
   if (sb.max) bounds.max = simplify(static_cast<const class min*>(nullptr), bounds.max, *sb.max);
 }
