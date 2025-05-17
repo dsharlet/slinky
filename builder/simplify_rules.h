@@ -308,20 +308,16 @@ bool apply_sub_rules(Fn&& apply) {
   return
       apply(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      apply(x - x, 0) ||
       apply(x - 0, x) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
       apply(x - (c0 - y), (x + y) + eval(-c0)) ||
       apply(c0 - (x - y), (y - x) + c0) ||
-      apply((c0 - x) - y, c0 - (x + y)) ||
-      apply((x + y) - x, y) ||
-      apply((x - y) - x, -y) ||
-      apply(x - (x + y), -y) ||
-      apply(x - (x - y), y) ||
-      apply((x + y) - (x + z), y - z) ||
-      apply((x - y) - (z - y), x - z) ||
-      apply((x - y) - (x - z), z - y) ||
       apply((c0 - x) - (y - z), ((z - x) - y) + c0) ||
+      apply((c0 - x) - y, c0 - (x + y)) ||
+      apply((x + may_be<0>(y)) - x, y) ||
+      apply((x + may_be<0>(y)) - (x + z), y - z) ||
+      apply((x - y) - (z - y), x - z) ||
+      apply((x - y) - (x - may_be<0>(z)), z - y) ||
       apply((x + may_be<0>(c0)) - (y + may_be<0>(c1)), (x - y) + eval(c0 - c1), c0 != 0 || c1 != 0) ||
 
       // These rules taken from
