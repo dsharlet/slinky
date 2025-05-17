@@ -9,8 +9,6 @@
 
 namespace slinky {
 
-thread_pool::task_id thread_pool::unique_task_id = &thread_pool::unique_task_id;
-
 thread_pool_impl::thread_pool_impl(int workers, task_ref init) : stop_(false) {
   auto worker = [this, init]() {
     if (init) init();
@@ -37,28 +35,34 @@ void thread_pool_impl::run_worker(predicate_ref condition) {
 
 namespace {
 
-thread_local std::vector<thread_pool::task_id> task_stack;
+thread_local std::vector<const void*> task_stack;
 
 }  // namespace
 
-thread_pool::task_id thread_pool_impl::dequeue(task& t) {
-  for (auto i = task_queue_.begin(); i != task_queue_.end(); ++i) {
-    task_id id = std::get<2>(*i);
-    if (id != unique_task_id && std::find(task_stack.begin(), task_stack.end(), id) != task_stack.end()) {
-      // Don't enqueue the same task multiple times on the same thread.
+std::shared_ptr<thread_pool::loop> thread_pool_impl::dequeue(loop_task& t) {
+  for (auto i = task_queue_.begin(); i != task_queue_.end();) {
+    std::shared_ptr<thread_pool::loop> loop = std::get<1>(*i);
+    if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
+      // Don't run the same loop multiple times on the same thread.
+      ++i;
       continue;
     }
-    int& task_count = std::get<0>(*i);
-    if (task_count == 1) {
-      t = std::move(std::get<1>(*i));
-      task_queue_.erase(i);
-      return id;
-    } else {
-      assert(task_count > 1);
-      task_count -= 1;
-      t = std::get<1>(*i);
-      return id;
+    size_t iterations_remaining = loop->count_remaining_iterations();
+    if (iterations_remaining == 0) {
+      // No more threads can start working on this loop.
+      i = task_queue_.erase(i);
+      continue;
     }
+    int& max_workers = std::get<0>(*i);
+    assert(max_workers > 0);
+    if (--max_workers == 0 || iterations_remaining == 1) {
+      // No more workers for this loop.
+      t = std::move(std::get<2>(*i));
+      task_queue_.erase(i);
+    } else {
+      t = std::get<2>(*i);
+    }
+    return loop;
   }
   return nullptr;
 }
@@ -70,15 +74,17 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
 
   std::unique_lock l(mutex_);
   while (!condition()) {
-    task t;
-    if (task_id id = dequeue(t)) {
+    loop_task t;
+    if (auto loop = dequeue(t)) {
       l.unlock();
-      task_stack.push_back(id);
-      t();
+      task_stack.push_back(&*loop);
+      bool done = loop->run(t);
       task_stack.pop_back();
       l.lock();
-      // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
-      cv_helper_.notify_all();
+      if (done) {
+        // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
+        cv_helper_.notify_all();
+      }
       // We did a task, reset the spin counter.
       spins = spin_count;
     } else if (spins-- > 0) {
@@ -98,37 +104,27 @@ void thread_pool_impl::atomic_call(task_ref t) {
   cv_helper_.notify_all();
 }
 
-void thread_pool_impl::enqueue(int n, task t, task_id id) {
-  if (n <= 0) return;
-  std::unique_lock l(mutex_);
-  task_queue_.push_back({n, std::move(t), id});
-  cv_worker_.notify_all();
-  cv_helper_.notify_all();
-}
 
-void thread_pool_impl::enqueue(task t, task_id id) {
+std::shared_ptr<thread_pool::loop> thread_pool_impl::enqueue(std::size_t n, loop_task t, int max_workers) {
+  auto loop = std::make_shared<thread_pool::loop>(n);
   std::unique_lock l(mutex_);
-  task_queue_.push_back({1, std::move(t), id});
-  cv_worker_.notify_one();
-  cv_helper_.notify_one();
-}
-
-void thread_pool_impl::run(task_ref t, task_id id) {
-  assert(id == unique_task_id || std::find(task_stack.begin(), task_stack.end(), id) == task_stack.end());
-  task_stack.push_back(id);
-  t();
-  task_stack.pop_back();
-}
-
-void thread_pool_impl::cancel(task_id id) {
-  std::unique_lock l(mutex_);
-  for (auto i = task_queue_.begin(); i != task_queue_.end();) {
-    if (std::get<2>(*i) == id) {
-      i = task_queue_.erase(i);
-    } else {
-      ++i;
-    }
+  task_queue_.push_back({max_workers, loop, std::move(t)});
+  if (n == 1 || max_workers == 1) {
+    cv_worker_.notify_one();
+    cv_helper_.notify_one();
+  } else {
+    cv_worker_.notify_all();
+    cv_helper_.notify_all();
   }
+  return loop;
+}
+
+bool thread_pool_impl::work_on_loop(loop& l, loop_task body) {
+  assert(std::find(task_stack.begin(), task_stack.end(), &l) == task_stack.end());
+  task_stack.push_back(&l);
+  bool result = l.run(body);
+  task_stack.pop_back();
+  return result;
 }
 
 }  // namespace slinky

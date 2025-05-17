@@ -1,7 +1,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "base/arithmetic.h"
 #include "builder/pipeline.h"
 #include "builder/test/context.h"
 #include "builder/test/funcs.h"
