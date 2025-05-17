@@ -245,6 +245,9 @@ TEST(simplify, optional) {
   ASSERT_THAT(simplify(x + y < x + z), matches(expr(y) < z));
   ASSERT_THAT(simplify(w + (x + y) < x + z), matches(y + w < z));
   ASSERT_THAT(simplify(x + z < w + (x + y)), matches(z < y + w));
+  ASSERT_THAT(simplify(x || (y || x)), matches(x || y));
+  ASSERT_THAT(simplify(x || (y || (z || x))), matches(x || (y || z)));
+  ASSERT_THAT(simplify(x || (y || (z || (w || x)))), matches(x || (y || (z || w))));
 }
 
 TEST(simplify, let) {

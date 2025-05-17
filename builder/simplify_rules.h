@@ -616,15 +616,14 @@ bool apply_equal_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_and_rules(Fn&& apply) {
   return
-      apply(x && c0, boolean(x), c0 != 0) ||
-      apply(x && false, false) ||
+      apply(x && c0,
+        boolean(x), c0 != 0,
+        false) ||
       apply(x && x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
       apply((x && y) && (z && w), x && (y && (z && w))) ||
-      apply(x && (x && y), x && y) ||
-      apply(x && (y && (x && z)), x && (y && z)) ||
-      apply(x && (y && (z && (x && w))), x && (y && (z && w))) ||
+      apply(x && (may_be<true>(y) && (may_be<true>(z) && (may_be<true>(w) && x))), x && (y && (z && w))) ||
 
       apply(x && (x || y), boolean(x)) ||
       apply(x && (y || (x && z)), x && (y || z)) ||
@@ -685,15 +684,14 @@ bool apply_logical_and_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_or_rules(Fn&& apply) {
   return
-      apply(x || c0, true, c0 != 0) ||
-      apply(x || false, boolean(x)) ||
+      apply(x || c0,
+        boolean(x), c0 == 0,
+        true) ||
       apply(x || x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
       apply((x || y) || (z || w), x || (y || (z || w))) ||
-      apply(x || (x || y), x || y) ||
-      apply(x || (y || (x || z)), x || (y || z)) ||
-      apply(x || (y || (z || (x || w))), x || (y || (z || w))) ||
+      apply(x || (may_be<false>(y) || (may_be<false>(z) || (may_be<false>(w) || x))), x || (y || (z || w))) ||
 
       apply(x || (x && y), boolean(x)) ||
       apply(x || (y && (x || z)), x || (y && z)) ||
