@@ -458,22 +458,11 @@ bool apply_less_rules(Fn&& apply) {
       // with adjustments for the simplifier implementation here.
 
       // Normalize subtractions to additions to cut down on cases to consider
-      apply(x - y < z, x < z + y) ||
-      apply(z < x - y, z + y < x) ||
-      apply(z + (x - y) < w, x + z < y + w) ||
-      apply(w < z + (x - y), w + y < x + z) ||
-      apply(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
-      apply(w < u + (z + (x - y)), w + y < x + (z + u)) ||
+      apply(may_be<0>(u) + (may_be<0>(z) + (x - y)) < w, x + (z + u) < w + y) ||
+      apply(w < may_be<0>(u) + (may_be<0>(z) + (x - y)), w + y < x + (z + u)) ||
 
       // Cancellations in linear expressions
-      apply(x < x + y, 0 < y) ||
-      apply(x + y < x, y < 0) ||
-      apply(x < z + (x + y), 0 < z + y) ||
-      apply(z + (x + y) < x, z + y < 0) ||
-      apply(x + y < x + z, y < z) ||
-      apply(w + (x + y) < x + z, y + w < z) ||
-      apply(x + z < w + (x + y), z < y + w) ||
-      apply(w + (x + y) < u + (x + z), y + w < z + u) ||
+      apply(may_be<0>(w) + (x + may_be<0>(y)) < may_be<0>(u) + (x + may_be<0>(z)), y + w < z + u) ||
 
       apply(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
       apply(x + c0 < c1, x < eval(c1 - c0)) ||
@@ -583,17 +572,10 @@ bool apply_equal_rules(Fn&& apply) {
       apply(x == x*y, y == 1 || x == 0) ||
 
       // Normalize subtractions to additions to cut down on cases to consider
-      apply(z == x - y, x == y + z) ||
-      apply(w == z + (x - y), w + y == x + z) ||
-      apply(w == u + (z + (x - y)), w + y == x + (z + u)) ||
+      apply(w == may_be<0>(u) + (may_be<0>(z) + (x - y)), w + y == x + (z + u)) ||
 
       // Cancellations in linear expressions
-      apply(x == x + y, y == 0) ||
-      apply(x == z + (x + y), z + y == 0) ||
-      apply(x + y == x + z, y == z) ||
-      apply(w + (x + y) == x + z, z == y + w) ||
-      apply(x + z == w + (x + y), z == y + w) ||
-      apply(w + (x + y) == u + (x + z), y + w == z + u) ||
+      apply(may_be<0>(w) + (x + may_be<0>(y)) == may_be<0>(u) + (x + may_be<0>(z)), y + w == z + u) ||
 
       apply(x*c0 == y*c1,
         x == y*eval(c1/c0), c0 != 0 && c1%c0 == 0,

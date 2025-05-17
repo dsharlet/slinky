@@ -232,6 +232,21 @@ TEST(simplify, staircase) {
   ASSERT_THAT(simplify(min((x / 8) * 8, x)), matches((x / 8) * 8));
 }
 
+TEST(simplify, optional) {
+  ASSERT_THAT(simplify(x == x), matches(true));
+  ASSERT_THAT(simplify(x + y == x), matches(y == 0));
+  ASSERT_THAT(simplify(x + y == x + z), matches(expr(y) == z));
+  ASSERT_THAT(simplify(y + (x + w) == x + z), matches(w + y == z));
+  ASSERT_THAT(simplify(y + (x + w) == u + (x + z)), matches(w + y == z + u));
+  ASSERT_THAT(simplify(x < x + y), matches(0 < y));
+  ASSERT_THAT(simplify(x + y < x), matches(y < 0));
+  ASSERT_THAT(simplify(x < z + (x + y)), matches(0 < y + z));
+  ASSERT_THAT(simplify(z + (x + y) < x), matches(y + z < 0));
+  ASSERT_THAT(simplify(x + y < x + z), matches(expr(y) < z));
+  ASSERT_THAT(simplify(w + (x + y) < x + z), matches(y + w < z));
+  ASSERT_THAT(simplify(x + z < w + (x + y)), matches(z < y + w));
+}
+
 TEST(simplify, let) {
   // lets that should be removed
   ASSERT_THAT(simplify(let::make(x, y, z)), matches(z));                      // Dead let
