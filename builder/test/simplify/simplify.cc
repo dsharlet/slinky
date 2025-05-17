@@ -128,10 +128,10 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x, y + 1, y + 2)), matches(y + select(x, 1, 2)));
   ASSERT_THAT(simplify(select(x, 1, 2) + 1), matches(select(x, 2, 3)));
 
-  ASSERT_THAT(simplify(max(select(x, y, z), select(x, y, w))), matches(select(x, y, max(z, w))));
-  ASSERT_THAT(simplify(max(select(x, y, z), select(x, w, z))), matches(select(x, max(y, w), z)));
-  ASSERT_THAT(simplify(min(select(x, y, z), select(x, y, w))), matches(select(x, y, min(z, w))));
-  ASSERT_THAT(simplify(min(select(x, y, z), select(x, w, z))), matches(select(x, min(y, w), z)));
+  ASSERT_THAT(simplify(max(select(x, y, z), select(x, y, w))), matches(select(x, y, max(w, z))));
+  ASSERT_THAT(simplify(max(select(x, y, z), select(x, w, z))), matches(select(x, max(w, y), z)));
+  ASSERT_THAT(simplify(min(select(x, y, z), select(x, y, w))), matches(select(x, y, min(w, z))));
+  ASSERT_THAT(simplify(min(select(x, y, z), select(x, w, z))), matches(select(x, min(w, y), z)));
   ASSERT_THAT(simplify((select(x, y, z) < select(x, y, w))), matches(((expr(z) < expr(w)) && !x)));
 
   ASSERT_THAT(simplify(select(x == 1, y, select(x == 1, z, w))), matches(select(x == 1, y, w)));

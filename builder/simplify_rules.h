@@ -105,24 +105,19 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, select(y, z, max(x, w))), select(y, min(x, z), x)) ||
       apply(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
       apply(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
-      apply(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
+      apply(min(may_be<0>(w) + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
       apply(min(max(v, select(x, y, z)), select(x, w, u)), select(x, min(w, max(v, y)), min(u, max(v, z)))) ||
-      apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
 
       apply(min(select(x, y, select(z, w, u)), select(z, v, t)), select(z, min(v, select(x, y, w)), min(t, select(x, y, u)))) ||
       apply(min(select(x, select(z, w, u), y), select(z, v, t)), select(z, min(v, select(x, w, y)), min(t, select(x, u, y)))) ||
 
-      apply(min(x + c2, select(c0 < x, y, c1)), select(c0 < x, min(x, y - c2), x) + c2, c1 >= c0 + c2) ||
-      apply(min(x + c2, select(c0 < x, c1, y)), select(c0 < x, c1, min(y, x + c2)), c1 <= c0 + c2) ||
-      apply(min(x + c2, select(x < c0, y, c1)), select(x < c0, min(y, x + c2), c1), c1 <= c0 + c2) ||
-      apply(min(x + c2, select(x < c0, c1, y)), select(x < c0, x, min(x, y - c2)) + c2, c1 >= c0 + c2) ||
-      apply(min(x, select(c0 < x, y, c1)), select(c0 < x, min(x, y), x), c1 >= c0) ||
-      apply(min(x, select(c0 < x, c1, y)), select(c0 < x, c1, min(x, y)), c1 <= c0) ||
-      apply(min(x, select(x < c0, y, c1)), select(x < c0, min(x, y), c1), c1 <= c0) ||
-      apply(min(x, select(x < c0, c1, y)), select(x < c0, x, min(x, y)), c1 >= c0) ||
+      apply(min(x + may_be<0>(c2), select(c0 < x, y, c1)), select(c0 < x, min(x, y - c2), x) + c2, c1 >= c0 + c2) ||
+      apply(min(x + may_be<0>(c2), select(c0 < x, c1, y)), select(c0 < x, c1, min(y, x + c2)), c1 <= c0 + c2) ||
+      apply(min(x + may_be<0>(c2), select(x < c0, y, c1)), select(x < c0, min(y, x + c2), c1), c1 <= c0 + c2) ||
+      apply(min(x + may_be<0>(c2), select(x < c0, c1, y)), select(x < c0, x, min(x, y - c2)) + c2, c1 >= c0 + c2) ||
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -168,12 +163,9 @@ bool apply_min_rules(Fn&& apply) {
         min(x, eval(c1*c0))/c0, c0 > 0,
         max(x, eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
         staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
         staircase(x, c3, c4, c5) + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
-      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
-        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5),
-        staircase(x, c3, c4, c5), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(min(x, abs(x)), x) ||
 
@@ -251,24 +243,19 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, select(y, z, min(x, w))), select(y, max(x, z), x)) ||
       apply(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
       apply(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
-      apply(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
+      apply(max(may_be<0>(w) + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
       apply(max(min(v, select(x, y, z)), select(x, w, u)), select(x, max(w, min(v, y)), max(u, min(v, z)))) ||
-      apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
 
       apply(max(select(x, y, select(z, w, u)), select(z, v, t)), select(z, max(v, select(x, y, w)), max(t, select(x, y, u)))) ||
       apply(max(select(x, select(z, w, u), y), select(z, v, t)), select(z, max(v, select(x, w, y)), max(t, select(x, u, y)))) ||
 
-      apply(max(x + c2, select(c0 < x, y, c1)), select(c0 < x, max(y, x + c2), c1), c1 >= c0 + c2) ||
-      apply(max(x + c2, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y - c2)) + c2, c1 <= c0 + c2) ||
-      apply(max(x + c2, select(x < c0, y, c1)), select(x < c0, max(x, y - c2), x) + c2, c1 <= c0 + c2) ||
-      apply(max(x + c2, select(x < c0, c1, y)), select(x < c0, c1, max(y, x + c2)), c1 >= c0 + c2) ||
-      apply(max(x, select(c0 < x, y, c1)), select(c0 < x, max(x, y), c1), c1 >= c0) ||
-      apply(max(x, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y)), c1 <= c0) ||
-      apply(max(x, select(x < c0, y, c1)), select(x < c0, max(x, y), x), c1 <= c0) ||
-      apply(max(x, select(x < c0, c1, y)), select(x < c0, c1, max(x, y)), c1 >= c0) ||
+      apply(max(x + may_be<0>(c2), select(c0 < x, y, c1)), select(c0 < x, max(y, x + c2), c1), c1 >= c0 + c2) ||
+      apply(max(x + may_be<0>(c2), select(c0 < x, c1, y)), select(c0 < x, x, max(x, y - c2)) + c2, c1 <= c0 + c2) ||
+      apply(max(x + may_be<0>(c2), select(x < c0, y, c1)), select(x < c0, max(x, y - c2), x) + c2, c1 <= c0 + c2) ||
+      apply(max(x + may_be<0>(c2), select(x < c0, c1, y)), select(x < c0, c1, max(y, x + c2)), c1 >= c0 + c2) ||
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -314,12 +301,9 @@ bool apply_max_rules(Fn&& apply) {
         max(x, eval(c1*c0))/c0, c0 > 0,
         min(x, eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
         staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6,
         staircase(x, c3, c4, c5) + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6) ||
-      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
-        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5),
-        staircase(x, c3, c4, c5), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(max(x, abs(x)), abs(x)) ||
 
