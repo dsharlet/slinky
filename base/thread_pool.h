@@ -59,7 +59,7 @@ public:
   }
 
   // Work on the loop. This returns when work on all items in the loop has started, but may return before all items are
-  // complete. Returns true if the loop is done.
+  // complete. Returns true if this call resulted in the loop being done.
   template <typename Fn>
   bool run(const Fn& body) {
     std::size_t w = K == 1 ? 0 : worker_++;
@@ -78,7 +78,7 @@ public:
         ++done;
       }
     }
-    return (todo_ -= done) == 0;
+    return (todo_ -= done) == 0 && done > 0;
   }
 
   // Return the number of loop iterations that have not started yet. This returns an upper bound, by the time the
