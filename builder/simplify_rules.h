@@ -83,17 +83,13 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, max(x, y) + c1), x, c1 > 0) ||
 
       // Pull common terms out.
-      apply(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
-      apply(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
-      apply(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
-      apply(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      apply(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
-      apply(min(x + z, y + z), z + min(x, y)) ||
-      apply(min(x - z, y - z), min(x, y) - z) ||
-      apply(min(z - x, z - y), z - max(x, y)) ||
-      apply(min(x + z, z - y), z + min(x, -y)) ||
-      apply(min(x, x + z), x + min(z, 0)) ||
-      apply(min(x, x - z), x - max(z, 0)) ||
+      apply(min(x + may_be<0>(z), min(y, x + may_be<0>(w))), min(y, x + min(z, w))) ||
+      apply(min(x + may_be<0>(y), x + z), x + min(y, z)) ||
+      apply(min(x + may_be<0>(y), x - z),
+        x - max(0, z), is_zero(y),
+        x + min(y, -z)) ||
+      apply(min(y - x, z - x), min(y, z) - x) ||
+      apply(min(x - y, x - z), x - max(y, z)) ||
       apply(min(x, -x), -abs(x)) ||
 
       // Selects
@@ -221,17 +217,13 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, min(x, y) + c1), x, c1 < 0) ||
 
       // Pull common terms out.
-      apply(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
-      apply(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
-      apply(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
-      apply(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
-      apply(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
-      apply(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
-      apply(max(x + z, y + z), z + max(x, y)) ||
-      apply(max(x - z, y - z), max(x, y) - z) ||
-      apply(max(z - x, z - y), z - min(x, y)) ||
-      apply(max(x, x + z), x + max(z, 0)) ||
-      apply(max(x, x - z), x - min(z, 0)) ||
+      apply(max(x + may_be<0>(z), max(y, x + may_be<0>(w))), max(y, x + max(z, w))) ||
+      apply(max(x + may_be<0>(y), x + z), x + max(y, z)) ||
+      apply(max(x + may_be<0>(y), x - z),
+        x - min(0, z), is_zero(y),
+        x + max(y, -z)) ||
+      apply(max(y - x, z - x), max(y, z) - x) ||
+      apply(max(x - y, x - z), x - min(y, z)) ||
       apply(max(x, -x), abs(x)) ||
 
       // Selects
