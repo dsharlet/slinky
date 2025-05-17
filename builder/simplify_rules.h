@@ -281,13 +281,10 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + x*y, x*(y + 1), !is_constant(x)) ||
       apply(x*y + x*z, x*(y + z)) ||
       apply((x + y) + (x + z), (y + z) + x*2) ||
-      apply((x + z) + (x - y), (z - y) + x*2) ||
-      apply((x + z) + (y - x), y + z) ||
       apply((x + y) + (x - z), (y - z) + x*2) ||
       apply((x + y) + (z - x), y + z) ||
-      apply((x - y) + (x - z), x*2 - (y + z)) ||
-      apply((y - x) + (x - z), y - z) ||
       apply((x - y) + (z - x), z - y) ||
+      apply((x - y) + (x - z), x*2 - (y + z)) ||
       apply((y - x) + (z - x), (y + z) + x*-2) ||
 
       apply(x + (c0 - y), (x - y) + c0) ||
