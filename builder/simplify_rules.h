@@ -58,29 +58,17 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, min(y, min(z, min(w, min(u, min(x, v)))))), min(x, min(y, min(z, min(w, min(u, v)))))) ||
 
       // Similar rules but with mixes of min and max.
-      apply(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
-      apply(min(min(x, y), max(x, z)), min(x, y)) ||
-      apply(min(x, min(y, max(x, z))), min(x, y)) ||
-      apply(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
-      apply(min(x, max(x, y)), x) ||
-
-      // Similar rules but with added constants.
-      apply(min(max(y, x + c0) + c1, max(z, x + c2)), max(x + c2, min(z, y + c1)), eval(c0 + c1 == c2)) ||
-      apply(min(x, min(y, x + c0) + c1),
+      apply(min(max(y, x + may_be<0>(c0)) + may_be<0>(c1), max(z, x + may_be<0>(c2))), 
+        max(x + c2, min(z, y + c1)), eval(c0 + c1 == c2)) ||
+      apply(min(x, min(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         min(x, y + c1), c0 + c1 >= 0,
         min(y, x + c0) + c1 /*c0 + c1 < 0*/) ||
-      apply(min(x + c0, max(y, min(x, z) + c1)), min(x + c0, max(y, z + c1)), c1 > c0) ||
-      apply(min(x, max(y, min(x, z) + c1)), min(x, max(y, z + c1)), c1 > 0) ||
-      apply(min(x, min(y, x + c0)),
-        min(x, y), c0 > 0,
-        min(y, x + c0) /*c0 < 0*/) ||
-      apply(min(x, min(x, y) + c1),
-        min(x, y + c1), c1 > 0,
-        min(x, y) + c1 /*c1 < 0*/) ||
+      apply(min(x + may_be<0>(c0), max(y, min(x, z) + may_be<0>(c1))), min(x + c0, max(y, z + c1)), c1 >= c0) ||
       apply(min(max(x, min(y, c0)), c1), min(max(x, y), c1), c0 >= c1) ||
-
-      apply(min(x, max(y, x + c0)), x, c0 > 0) ||
-      apply(min(x, max(x, y) + c1), x, c1 > 0) ||
+      apply(min(min(x, y), max(x, z)), min(x, y)) ||
+      apply(min(x, min(y, max(x, z))), min(x, y)) ||
+      apply(min(x, max(x, y) + may_be<0>(c1)), x, c1 >= 0) ||
+      apply(min(x, max(y, x + may_be<0>(c0))), x, c0 >= 0) ||
 
       // Pull common terms out.
       apply(min(x + may_be<0>(z), min(y, x + may_be<0>(w))), min(y, x + min(z, w))) ||
@@ -192,29 +180,17 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, max(y, max(z, max(w, max(u, max(x, v)))))), max(x, max(y, max(z, max(w, max(u, v)))))) ||
 
       // Similar rules but with mixes of min and max.
-      apply(max(min(x, y), max(x, z)), max(x, z)) ||
-      apply(max(x, max(y, min(x, z))), max(x, y)) ||
-      apply(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
-      apply(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
-      apply(max(x, min(x, y)), x) ||
-
-      // Similar rules but with added constants.
-      apply(max(min(y, x + c0) + c1, min(z, x + c2)), min(x + c2, max(z, y + c1)), eval(c0 + c1 == c2)) ||
-      apply(max(x, max(y, x + c0) + c1),
+      apply(max(min(y, x + may_be<0>(c0)) + may_be<0>(c1), min(z, x + may_be<0>(c2))),
+        min(x + c2, max(z, y + c1)), eval(c0 + c1 == c2)) ||
+      apply(max(x, max(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         max(x, y + c1), c0 + c1 <= 0,
         max(y, x + c0) + c1 /*c0 + c1 > 0)*/) ||
-      apply(max(x + c0, min(y, max(x, z) + c1)), max(x + c0, min(y, z + c1)), c1 < c0) ||
-      apply(max(x, min(y, max(x, z) + c1)), max(x, min(y, z + c1)), c1 < 0) ||
-      apply(max(x, max(y, x + c0)),
-        max(x, y), c0 < 0,
-        max(y, x + c0) /*c1 > 0)*/) ||
-      apply(max(x, max(x, y) + c1),
-        max(x, y + c1), c1 < 0,
-        max(x, y) + c1 /*c1 > 0)*/) ||
+      apply(max(x + may_be<0>(c0), min(y, max(x, z) + may_be<0>(c1))), max(x + c0, min(y, z + c1)), c1 < c0) ||
       apply(max(min(x, max(y, c0)), c1), max(min(x, y), c1), c0 <= c1) ||
-
-      apply(max(x, min(y, x + c0)), x, c0 < 0) ||
-      apply(max(x, min(x, y) + c1), x, c1 < 0) ||
+      apply(max(min(x, y), max(x, z)), max(x, z)) ||
+      apply(max(x, max(y, min(x, z))), max(x, y)) ||
+      apply(max(x, min(y, x + may_be<0>(c0))), x, c0 <= 0) ||
+      apply(max(x, min(x, y) + may_be<0>(c1)), x, c1 <= 0) ||
 
       // Pull common terms out.
       apply(max(x + may_be<0>(z), max(y, x + may_be<0>(w))), max(y, x + max(z, w))) ||
