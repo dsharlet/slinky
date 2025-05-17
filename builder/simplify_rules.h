@@ -274,13 +274,11 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x + 0, x) ||
-      apply(x + x, x*2) ||
-      apply(x + (x + y), y + x*2) ||
       apply(x + (x - y), x*2 - y) ||
       apply(x + (y - x), y) ||
       apply(x + x*y, x*(y + 1), !is_constant(x)) ||
       apply(x*y + x*z, x*(y + z)) ||
-      apply((x + y) + (x + z), (y + z) + x*2) ||
+      apply((x + may_be<0>(y)) + (x + may_be<0>(z)), (y + z) + x*2) ||
       apply((x + y) + (x - z), (y - z) + x*2) ||
       apply((x + y) + (z - x), y + z) ||
       apply((x - y) + (z - x), z - y) ||
@@ -294,10 +292,10 @@ bool apply_add_rules(Fn&& apply) {
 
       apply(min(x, y + c1) + c2, min(y, x + c2), c1 == -c2) ||
       apply(max(x, y + c1) + c2, max(y, x + c2), c1 == -c2) ||
+      apply(z + min(x, y - (z + may_be<0>(w))), min(x + z, y - w)) ||
+      apply(z + max(x, y - (z + may_be<0>(w))), max(x + z, y - w)) ||
       apply(z + min(x, y - (z - w)), min(x + z, y + w)) ||
       apply(z + max(x, y - (z - w)), max(x + z, y + w)) ||
-      apply(z + min(x, y - z), min(y, x + z)) ||
-      apply(z + max(x, y - z), max(y, x + z)) ||
 
       apply(w + select(x, y, z - w), select(x, y + w, z)) ||
       apply(w + select(x, y - w, z), select(x, y, z + w)) ||
