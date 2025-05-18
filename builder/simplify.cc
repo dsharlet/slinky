@@ -772,6 +772,32 @@ public:
       return;
     }
 
+    // Try to prove one side dominates the other by looking at the bounds of the difference between the arguments.
+    expr_info delta_info;
+    expr delta = mutate(b - a, &delta_info);
+    if (auto ub = evaluate_constant_upper_bound(delta_info.bounds.max)) {
+      if (*ub <= 0) {
+        // b - a <= 0 => b <= a
+        if (T::static_type == min::static_type) {
+          set_result(std::move(b), std::move(b_info));
+        } else {
+          set_result(std::move(a), std::move(a_info));
+        }
+        return;
+      }
+    }
+    if (auto lb = evaluate_constant_lower_bound(delta_info.bounds.min)) {
+      if (*lb >= 0) {
+        // b - a >= 0 => b >= a
+        if (T::static_type == min::static_type) {
+          set_result(std::move(a), std::move(a_info));
+        } else {
+          set_result(std::move(b), std::move(b_info));
+        }
+        return;
+      }
+    }
+
     // We need to check between the bounds and a/b themselves to avoid the possibility of something like:
     // min(x, y + 1) not simplifying if we know the bounds of x are [0, y] and the bounds of y are [z, w],
     // because we end up looking at min(y, z + 1) instead of min(y, y + 1).
@@ -2304,11 +2330,8 @@ class constant_evaluator : public node_mutator {
   // == 0 -> we are constant folding
   // < 0 -> we are looking for a lower bound
   int sign = 0;
-  bool constant_required = true;
 
 public:
-  constant_evaluator(bool constant_required = true) : constant_required(constant_required) {}
-
   using node_mutator::mutate;
   expr mutate(const expr& x, int sign) {
     int old_sign = this->sign;
@@ -2317,8 +2340,6 @@ public:
     this->sign = old_sign;
     return result;
   }
-
-  void visit(const variable* op) override { set_result(constant_required ? expr() : expr(op)); }
 
   template <typename T>
   void visit_min_max(const T* op, bool take_constant) {
@@ -2358,8 +2379,27 @@ public:
     }
   }
 
-  void visit(const add* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, sign)); }
-  void visit(const sub* op) override { set_binary_result(op, mutate(op->a), mutate(op->b, -sign)); }
+  template <typename T>
+  void visit_add_sub(const T* op) {
+    constexpr int rhs_sign = T::static_type == sub::static_type ? -1 : 1;
+    expr a = mutate(op->a);
+    expr b = mutate(op->b, sign * rhs_sign);
+    if (sign != 0) {
+      // We're looking for a constant bound. We might have one if these are correlated staircases.
+      interval<int> bounds = staircase_sum_bounds(a, b, rhs_sign);
+      if (sign < 0 && bounds.min) {
+        set_result(*bounds.min);
+        return;
+      } else if (sign > 0 && bounds.max) {
+        set_result(*bounds.max);
+        return;
+      }
+    }
+    set_binary_result(op, std::move(a), std::move(b));
+  }
+
+  void visit(const add* op) override { visit_add_sub(op); }
+  void visit(const sub* op) override { visit_add_sub(op); }
 
   static int sign_of(const expr& x) {
     if (is_positive(x)) return 1;
@@ -2405,8 +2445,6 @@ public:
       expr result = mutate(equiv);
       if (!equiv.same_as(result)) {
         set_result(std::move(result));
-      } else if (constant_required) {
-        set_result(expr());
       } else {
         set_result(op);
       }
@@ -2566,9 +2604,7 @@ public:
       }
       return;
     }
-    if (constant_required) {
-      set_result(expr());
-    } else if (sign == 0) {
+    if (sign == 0) {
       node_mutator::visit(op);
     } else {
       set_result(op);
@@ -2587,8 +2623,8 @@ bool can_evaluate(intrinsic fn) {
   }
 }
 
-expr constant_lower_bound(const expr& x) { return constant_evaluator(false).mutate(x, -1); }
-expr constant_upper_bound(const expr& x) { return constant_evaluator(false).mutate(x, 1); }
+expr constant_lower_bound(const expr& x) { return constant_evaluator().mutate(x, -1); }
+expr constant_upper_bound(const expr& x) { return constant_evaluator().mutate(x, 1); }
 std::optional<index_t> evaluate_constant(const expr& x) { return as_constant(constant_evaluator().mutate(x, 0)); }
 std::optional<index_t> evaluate_constant_lower_bound(const expr& x) {
   return as_constant(constant_evaluator().mutate(x, -1));

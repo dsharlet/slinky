@@ -90,6 +90,10 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(min(min(x, 7), min(7, y))), matches(min(min(x, y), 7)));
   ASSERT_THAT(simplify(min(min(7, x), min(y, 7))), matches(min(min(x, y), 7)));
   ASSERT_THAT(simplify(min(min(7, x), min(7, y))), matches(min(min(x, y), 7)));
+  ASSERT_THAT(simplify(min(std::numeric_limits<index_t>::min(), -10)), matches(std::numeric_limits<index_t>::min()));
+  ASSERT_THAT(simplify(max(std::numeric_limits<index_t>::min(), -10)), matches(-10));
+  ASSERT_THAT(simplify(min(std::numeric_limits<index_t>::max(), -10)), matches(-10));
+  ASSERT_THAT(simplify(max(std::numeric_limits<index_t>::max(), -10)), matches(std::numeric_limits<index_t>::max()));
 
   ASSERT_THAT(simplify(x + 0), matches(x));
   ASSERT_THAT(simplify(x - 0), matches(x));
@@ -231,10 +235,13 @@ TEST(simplify, basic) {
 
 TEST(simplify, staircase) {
   ASSERT_THAT(simplify(min(((x + 7) / 8) * 8, x)), matches(x));
+  ASSERT_THAT(simplify(min(((x + 7) / 8) * 16, ((x + 3) / 4) * 8)), matches(((x + 3) / 4) * 8));
   ASSERT_THAT(simplify(max(((x + 7) / 8) * 8, x)), matches(((x + 7) / 8) * 8));
 
   ASSERT_THAT(simplify(max((x / 8) * 8, x)), matches(x));
   ASSERT_THAT(simplify(min((x / 8) * 8, x)), matches((x / 8) * 8));
+
+  ASSERT_THAT(simplify(min(((((x / 32) * 2) - ((15 - (x % 32)) / 32)) + 2), (x / 16))), matches(x / 16));
 }
 
 TEST(simplify, optional) {
@@ -1105,6 +1112,9 @@ TEST(evaluate_constant_lower_bound, basic) {
   ASSERT_EQ(evaluate_constant_lower_bound(false && x), false);
   ASSERT_EQ(evaluate_constant_lower_bound(x && true), std::nullopt);
   ASSERT_EQ(evaluate_constant_lower_bound(true && x), std::nullopt);
+
+  ASSERT_EQ(evaluate_constant_lower_bound(((x + 3) / 4) * 5 - ((x + 7) / 8) * 10),
+      *staircase_sum_bounds(3, 4, 5, 7, 8, -10).min);
 }
 
 TEST(evaluate_constant_upper_bound, basic) {
@@ -1137,6 +1147,9 @@ TEST(evaluate_constant_upper_bound, basic) {
   ASSERT_EQ(evaluate_constant_upper_bound(false && x), false);
   ASSERT_EQ(evaluate_constant_upper_bound(x && true), std::nullopt);
   ASSERT_EQ(evaluate_constant_upper_bound(true && x), std::nullopt);
+
+  ASSERT_EQ(evaluate_constant_upper_bound(((x + 3) / 4) * 5 - ((x + 7) / 8) * 10),
+      *staircase_sum_bounds(3, 4, 5, 7, 8, -10).max);
 }
 
 TEST(evaluate_constant, basic) {
