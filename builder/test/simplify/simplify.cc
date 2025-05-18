@@ -242,6 +242,7 @@ TEST(simplify, staircase) {
   ASSERT_THAT(simplify(min((x / 8) * 8, x)), matches((x / 8) * 8));
 
   ASSERT_THAT(simplify(min(((((x / 32) * 2) - ((15 - (x % 32)) / 32)) + 2), (x / 16))), matches(x / 16));
+  ASSERT_THAT(simplify(max((x / 32) * 2 + 2, (x / 16) + ((x % 32) + -16) / -32)), matches((x / 32) * 2 + 2));
 }
 
 TEST(simplify, optional) {
