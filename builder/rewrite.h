@@ -99,6 +99,11 @@ struct pattern_info<pattern_expr> {
   static constexpr int matched = 0;
 };
 
+template <int matched>
+SLINKY_UNIQUE bool match(const pattern_expr& p, expr_ref x, match_context&) {
+  return match(p.e, x);
+}
+
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_expr& e) { return os << e.e; }
 
 template <int N>
@@ -812,6 +817,19 @@ template <typename A1, typename B1, typename C1, typename A2, typename B2, typen
 SLINKY_UNIQUE auto staircase_sum_min(
     const A1& a1, const B1& b1, const C1& c1, const A2& a2, const B2& b2, const C2& c2) {
   return replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>{a1, b1, c1, a2, b2, c2, -1};
+}
+
+inline bool is_staircase_impl(expr_ref s, expr_ref of) {
+  pattern_constant<0> c0;
+  pattern_constant<1> c1;
+  pattern_constant<2> c2;
+  match_context m;
+  return match<0>(staircase(pattern_expr{of}, c0, c1, c2), s, m);
+}
+
+template <typename S, typename X>
+SLINKY_UNIQUE auto is_staircase(const S& s, const X& x) {
+  return make_predicate(is_staircase_impl, s, x);
 }
 
 template <typename Pattern, typename Target>
