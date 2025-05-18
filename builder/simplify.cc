@@ -108,7 +108,13 @@ public:
 
   constant_adder(index_t c) : c(c) {}
 
-  void visit(const constant* op) override { set_result(op->value + c); };
+  void visit(const constant* op) override { 
+    if (!add_overflows(op->value, c)) {
+      set_result(op->value + c);
+    } else {
+      set_result(expr());
+    }
+  };
   void visit(const variable* op) override { set_result(expr()); }
 
   void visit(const let* op) override {
