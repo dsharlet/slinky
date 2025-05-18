@@ -506,6 +506,7 @@ public:
   A a;
   B b;
   C c;
+  bool allow_trivial;
 };
 
 template <typename X, typename A, typename B, typename C>
@@ -541,9 +542,11 @@ SLINKY_UNIQUE bool match(const pattern_staircase<X, A, B, C>& p, expr_ref x, mat
     } else {
       return false;
     }
-  } else {
+  } else if (p.allow_trivial) {
     // No divide, b must be 1.
     b = 1;
+  } else {
+    return false;
   }
 
   constexpr int matched_c = matched | pattern_info<C>::matched;
@@ -582,7 +585,11 @@ SLINKY_UNIQUE auto substitute(const pattern_staircase<X, A, B, C>& p, const matc
 
 template <typename X, typename A, typename B, typename C>
 SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_staircase<X, A, B, C>& p) {
-  return os << "staircase(" << p.x << ", " << p.a << ", " << p.b << ", " << p.c << ")";
+  os << "staircase(" << p.x << ", " << p.a << ", " << p.b << ", " << p.c;
+  if (!p.allow_trivial) {
+    os << ", /*allow_trivial=*/false";
+  }
+  return os << ")";
 }
 
 template <typename Fn, typename... Args>
@@ -792,8 +799,8 @@ template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type
 SLINKY_UNIQUE auto or_else(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::or_else, {a, b}}; }
 
 template <typename X, typename A, typename B, typename C, bool = typename enable_pattern_ops<X, A, B, C>::type()>
-SLINKY_UNIQUE auto staircase(const X& x, const A& a, const B& b, const C& c) {
-  return pattern_staircase<X, A, B, C>{x, a, b, c};
+SLINKY_UNIQUE auto staircase(const X& x, const A& a, const B& b, const C& c, bool allow_trivial = true) {
+  return pattern_staircase<X, A, B, C>{x, a, b, c, allow_trivial};
 }
 
 template <index_t Default, typename T>

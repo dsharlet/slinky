@@ -296,12 +296,12 @@ bool apply_add_rules(Fn&& apply) {
 
       // Gather staircases of the same x to be siblings of one add/sub so we can find the bounds of the pair.
       // We need to be careful not to infinitely loop with 3 staircases.
-      apply(staircase(x, c0, c1, c2) + (y - z),
-        (staircase(x, c0, c1, c2) + y) - z, is_staircase(y, x) && !is_staircase(z, x),
-        (staircase(x, c0, c1, c2) - z) + y, is_staircase(z, x) && !is_staircase(y, x)) ||
-      apply(staircase(x, c0, c1, c2) + (y + z),
-        (staircase(x, c0, c1, c2) + y) + z, is_staircase(y, x) && !is_staircase(z, x),
-        (staircase(x, c0, c1, c2) + z) + y, is_staircase(z, x) && !is_staircase(y, x)) ||
+      apply((staircase(x, c0, c1, c2, /*allow_trivial=*/false) + may_be<0>(w)) + (y - z),
+        (staircase(x, c0, c1, c2) + y) - z + w, is_staircase(y, x) && !is_staircase(z, x) && !is_staircase(w, x),
+        (staircase(x, c0, c1, c2) - z) + y + w, is_staircase(z, x) && !is_staircase(y, x) && !is_staircase(w, x)) ||
+      apply((staircase(x, c0, c1, c2, /*allow_trivial=*/false) + may_be<0>(w)) + (y + z),
+        (staircase(x, c0, c1, c2) + y) + z + w, is_staircase(y, x) && !is_staircase(z, x) && !is_staircase(w, x),
+        (staircase(x, c0, c1, c2) + z) + y + w, is_staircase(z, x) && !is_staircase(y, x) && !is_staircase(w, x)) ||
 
       false;
 }
@@ -369,12 +369,12 @@ bool apply_sub_rules(Fn&& apply) {
 
       // Gather staircases of the same x to be siblings of one add/sub so we can find the bounds of the pair.
       // We need to be careful not to infinitely loop with 3 staircases.
-      apply(staircase(x, c0, c1, c2) - (y - z),
-        (staircase(x, c0, c1, c2) - y) + z, is_staircase(y, x) && !is_staircase(z, x),
-        (staircase(x, c0, c1, c2) + z) - y, is_staircase(z, x) && !is_staircase(y, x)) ||
-      apply(staircase(x, c0, c1, c2) - (y + z),
-        (staircase(x, c0, c1, c2) - y) - z, is_staircase(y, x) && !is_staircase(z, x),
-        (staircase(x, c0, c1, c2) - z) - y, is_staircase(z, x) && !is_staircase(y, x)) ||
+      apply((staircase(x, c0, c1, c2, /*allow_trivial=*/false) + may_be<0>(w)) - (y + z),
+        (staircase(x, c0, c1, c2) - y) - z + w, is_staircase(y, x) && !is_staircase(z, x) && !is_staircase(w, x),
+        (staircase(x, c0, c1, c2) - z) - y + w, is_staircase(z, x) && !is_staircase(y, x) && !is_staircase(w, x)) ||
+      apply((staircase(x, c0, c1, c2, /*allow_trivial=*/false) + may_be<0>(w)) - (y - z),
+        (staircase(x, c0, c1, c2) - y) + z + w, is_staircase(y, x) && !is_staircase(z, x) && !is_staircase(w, x),
+        (staircase(x, c0, c1, c2) + z) - y + w, is_staircase(z, x) && !is_staircase(y, x) && !is_staircase(w, x)) ||
 
       false;
 }

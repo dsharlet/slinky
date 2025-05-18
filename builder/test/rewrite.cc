@@ -134,6 +134,10 @@ TEST(match, optional) {
   ASSERT_THAT(test_match(min(x, y + may_be<0>(c0)), min(a, b + 2)), matches({{x, a}, {y, b}, {c0, 2}}));
   ASSERT_THAT(test_match(min(x, y + may_be<0>(c0)) < max(z, y + may_be<0>(c1)), min(a, b + 2) < max(c, b + 5)),
       matches({{x, a}, {y, b}, {c0, 2}, {z, c}, {c1, 5}}));
+
+  ASSERT_THAT(test_match((staircase(x, c0, c1, c2, /*allow_trivial=*/false) + may_be<0>(w)) - (y - z),
+                  ((a + (((b + 8) / 5) * 7)) - (b - c))),
+      matches({{x, b}, {y, b}, {w, a}, {z, c}}));
 }
 
 }  // namespace rewrite
