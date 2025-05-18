@@ -291,6 +291,7 @@ bool apply_add_rules(Fn&& apply) {
       apply((x + may_be<0>(c0)) + (y + may_be<0>(c1)), (x + y) + eval(c0 + c1), c0 != 0 || c1 != 0) ||
 
       apply(staircase(x, c0, c1, c2) + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, c0 != 0 && c1 != 0 && c2 != 0 && c3%c2 == 0) ||
+      apply(staircase(x, 0, c0, c0) + x%c0, x) ||
 
       apply(min(x, y + c1) + c2, min(y, x + c2), c1 == -c2) ||
       apply(max(x, y + c1) + c2, max(y, x + c2), c1 == -c2) ||
@@ -312,6 +313,7 @@ bool apply_sub_rules(Fn&& apply) {
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x - 0, x) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
+      apply(x - y/c0, x + y/eval(-c0), c0 <= 0) ||
       apply(x - (c0 - y), (x + y) + eval(-c0)) ||
       apply(c0 - (x - y), (y - x) + c0) ||
       apply((c0 - x) - (y - z), ((z - x) - y) + c0) ||
