@@ -431,6 +431,9 @@ bool apply_div_rules(Fn&& apply) {
       apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
       apply(select(x, c0, y)/c2, select(x, eval(c0/c2), y/c2)) ||
 
+      // Is there some generalization of this rule? 
+      apply(((x%2) + c0)/2, x%2 + eval(c0/2), c0%2 == 1) ||
+
       false;
 }
 
