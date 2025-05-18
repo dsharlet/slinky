@@ -66,6 +66,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(max(x, min(y, c0)), c1), min(max(x, y), c1), c0 >= c1) ||
       apply(min(min(x, y), max(x, z)), min(x, y)) ||
       apply(min(x, min(y, max(x, z))), min(x, y)) ||
+      apply(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
       apply(min(x, max(x, y) + may_be<0>(c1)), x, c1 >= 0) ||
       apply(min(x, max(y, x + may_be<0>(c0))), x, c0 >= 0) ||
 
@@ -183,6 +184,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(min(x, max(y, c0)), c1), max(min(x, y), c1), c0 <= c1) ||
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
       apply(max(x, max(y, min(x, z))), max(x, y)) ||
+      apply(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
       apply(max(x, min(y, x + may_be<0>(c0))), x, c0 <= 0) ||
       apply(max(x, min(x, y) + may_be<0>(c1)), x, c1 <= 0) ||
 
