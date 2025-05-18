@@ -580,27 +580,31 @@ SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const pattern_staircase
   return os << "staircase(" << p.x << ", " << p.a << ", " << p.b << ", " << p.c << ")";
 }
 
-template <typename T, typename Fn>
+template <typename Fn, typename... Args>
 class replacement_predicate {
 public:
   static constexpr expr_node_type type = expr_node_type::constant;
   static constexpr bool is_canonical = true;
-  T a;
+  std::tuple<Args...> args;
   Fn fn;
 };
 
-template <typename T, typename Fn>
-SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx, bool& overflowed) {
-  return r.fn(substitute(r.a, ctx, overflowed));
+template <typename Fn, typename A>
+SLINKY_UNIQUE bool substitute(const replacement_predicate<Fn, A>& r, const match_context& ctx, bool& overflowed) {
+  return r.fn(substitute(std::get<0>(r.args), ctx, overflowed));
+}
+template <typename Fn, typename A, typename B>
+SLINKY_UNIQUE bool substitute(const replacement_predicate<Fn, A, B>& r, const match_context& ctx, bool& overflowed) {
+  return r.fn(substitute(std::get<0>(r.args), ctx, overflowed), substitute(std::get<1>(r.args), ctx, overflowed));
 }
 
-template <typename T, typename Fn>
-SLINKY_UNIQUE replacement_predicate<T, Fn> make_predicate(T t, Fn fn) {
-  return {t, fn};
+template <typename Fn, typename... Args>
+SLINKY_UNIQUE replacement_predicate<Fn, Args...> make_predicate(Fn fn, Args... args) {
+  return {{args...}, fn};
 }
 
-template <typename T, typename Fn>
-SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<T, Fn>&) {
+template <typename Fn, typename... Args>
+SLINKY_UNIQUE std::ostream& operator<<(std::ostream& os, const replacement_predicate<Fn, Args...>&) {
   return os << "<unknown predicate>";
 }
 
@@ -715,8 +719,8 @@ template <typename X, typename A, typename B, typename C, typename... Ts>
 struct enable_pattern_ops<pattern_staircase<X, A, B, C>, Ts...> { using type = std::true_type; };
 template <typename T, typename... Ts>
 struct enable_pattern_ops<replacement_eval<T>, Ts...> { using type = std::true_type; };
-template <typename T, typename Fn, typename... Ts>
-struct enable_pattern_ops<replacement_predicate<T, Fn>, Ts...> { using type = std::true_type; };
+template <typename... Args, typename Fn, typename... Ts>
+struct enable_pattern_ops<replacement_predicate<Fn, Args...>, Ts...> { using type = std::true_type; };
 template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2, typename... Ts>
 struct enable_pattern_ops<replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>, Ts...> { using type = std::true_type; };
 
@@ -765,17 +769,17 @@ SLINKY_UNIQUE auto negative_infinity() { return pattern_call<>{intrinsic::negati
 SLINKY_UNIQUE auto indeterminate() { return pattern_call<>{intrinsic::indeterminate, {}}; }
 
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(x, slinky::is_finite); }
+SLINKY_UNIQUE auto is_finite(const T& x) { return make_predicate(slinky::is_finite, x); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate(x, [](expr_ref x) { return x.as<constant>() != nullptr; }); }
+SLINKY_UNIQUE auto is_constant(const T& x) { return make_predicate([](expr_ref x) { return x.as<constant>() != nullptr; }, x); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(x, slinky::is_zero); }
+SLINKY_UNIQUE auto is_zero(const T& x) { return make_predicate(slinky::is_zero, x); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(x, slinky::is_non_negative); }
+SLINKY_UNIQUE auto is_non_negative(const T& x) { return make_predicate(slinky::is_non_negative, x); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(x, slinky::is_non_positive); }
+SLINKY_UNIQUE auto is_non_positive(const T& x) { return make_predicate(slinky::is_non_positive, x); }
 template <typename T, bool = typename enable_pattern_ops<T>::type()>
-SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(x, slinky::is_boolean); }
+SLINKY_UNIQUE auto is_boolean(const T& x) { return make_predicate(slinky::is_boolean, x); }
 
 template <typename A, typename B, bool = typename enable_pattern_ops<A, B>::type()>
 SLINKY_UNIQUE auto and_then(const A& a, const B& b) { return pattern_call<A, B>{intrinsic::and_then, {a, b}}; }
