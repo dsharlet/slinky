@@ -412,11 +412,11 @@ bool apply_div_rules(Fn&& apply) {
       apply(x/-1, -x) ||
       apply(x/x, x != 0) ||
 
-      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), c0 > 0 && c1 > 0) ||
-      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1), c0 > 0 && c1 > 0) ||
-      apply((x/c0)/c1, x/eval(c0*c1), c0 > 0 && c1 > 0) ||
-      apply((x*c0)/c1, x*eval(c0/c1), c1 > 0 && c0%c1 == 0) ||
-      apply((x*c0)/c1, x/eval(c1/c0), c0 > 0 && c1 > 0 && c1%c0 == 0) ||
+      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1)) ||
+      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1)) ||
+      apply((x/c0)/c1, x/eval(c0*c1), c0 > 0) ||
+      apply((x*c0)/c1, x*eval(c0/c1), c0%c1 == 0) ||
+      apply((x*c0)/c1, x/eval(c1/c0), c0 > 0 && c1%c0 == 0) ||
       apply((x*y)/x, y*(x != 0)) ||
 
       apply((x + may_be<1>(y)*c0)/c1, y*eval(c0/c1) + x/c1, c0%c1 == 0) ||
