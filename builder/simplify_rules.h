@@ -42,10 +42,13 @@ bool apply_min_rules(Fn&& apply) {
         x + c0 /*c0 < 0*/) ||
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
-      // This might be the only rule that doesn't have an analogous max rule.
-      apply(min(max(x, c0), c1),
-        c0, c0 == c1,
-        max(min(x, c1), c0), c0 < c1) ||
+      // These might be the only rules that don't have an analogous max rule.
+      apply(min(max(x, c0)/may_be<1>(c1), c2),
+        c2, c1 > 1 && c0/c1 == c2,
+        max(min(x/c1, c2), eval(c0/c1)), c1 > 1 && c0/c1 < c2) ||
+      apply(min(min(y, max(x, c0)/may_be<1>(c1)), c2),
+        min(y, c2), c1 > 1 && c0/c1 == c2,
+        min(y, max(min(x/c1, c2), eval(c0/c1))), c1 > 1 && c0/c1 < c2) ||
 
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
