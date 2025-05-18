@@ -142,12 +142,6 @@ bool apply_min_rules(Fn&& apply) {
         min(x, eval(c1*c0))/c0, c0 > 0,
         max(x, eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
-        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
-        staircase(x, c3, c4, c5) + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
-
-      apply(min(x, abs(x)), x) ||
-
       false;
 }
 
@@ -259,12 +253,6 @@ bool apply_max_rules(Fn&& apply) {
         max(x, eval(c1*c0))/c0, c0 > 0,
         min(x, eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
-        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6,
-        staircase(x, c3, c4, c5) + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6) ||
-
-      apply(max(x, abs(x)), abs(x)) ||
-
       false;
 }
 
@@ -299,6 +287,15 @@ bool apply_add_rules(Fn&& apply) {
 
       apply(w + select(x, y, z - w), select(x, y + w, z)) ||
       apply(w + select(x, y - w, z), select(x, y, z + w)) ||
+
+      // Gather staircases of the same x to be siblings of one add/sub so we can find the bounds of the pair.
+      // We need to be careful not to infinitely loop with 3 staircases.
+      apply(staircase(x, c0, c1, c2) + (y - z),
+        (staircase(x, c0, c1, c2) + y) - z, is_staircase(y, x) && !is_staircase(z, x),
+        (staircase(x, c0, c1, c2) - z) + y, is_staircase(z, x) && !is_staircase(y, x)) ||
+      apply(staircase(x, c0, c1, c2) + (y + z),
+        (staircase(x, c0, c1, c2) + y) + z, is_staircase(y, x) && !is_staircase(z, x),
+        (staircase(x, c0, c1, c2) + z) + y, is_staircase(z, x) && !is_staircase(y, x)) ||
 
       false;
 }
@@ -362,6 +359,15 @@ bool apply_sub_rules(Fn&& apply) {
       apply(w - select(x, may_be<0>(y) + w, z), select(x, -y, w - z)) ||
       apply(w - select(x, y, w - z), select(x, w - y, z)) ||
       apply(w - select(x, w - y, z), select(x, y, w - z)) ||
+
+      // Gather staircases of the same x to be siblings of one add/sub so we can find the bounds of the pair.
+      // We need to be careful not to infinitely loop with 3 staircases.
+      apply(staircase(x, c0, c1, c2) - (y - z),
+        (staircase(x, c0, c1, c2) - y) + z, is_staircase(y, x) && !is_staircase(z, x),
+        (staircase(x, c0, c1, c2) + z) - y, is_staircase(z, x) && !is_staircase(y, x)) ||
+      apply(staircase(x, c0, c1, c2) - (y + z),
+        (staircase(x, c0, c1, c2) - y) - z, is_staircase(y, x) && !is_staircase(z, x),
+        (staircase(x, c0, c1, c2) - z) - y, is_staircase(z, x) && !is_staircase(y, x)) ||
 
       false;
 }
