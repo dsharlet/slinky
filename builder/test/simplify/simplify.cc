@@ -222,6 +222,11 @@ TEST(simplify, basic) {
       matches(select((1 <= y), max(z, 0), (0 < z))));
 
   ASSERT_THAT(simplify(min(min(x / 16 + -2, y) + 1, min(y + 1, x / 16)) + 2), matches(min(y, x / 16 + -2) + 3));
+
+  ASSERT_THAT(simplify((x / 2) * 2 + x % 2), matches(x));
+  ASSERT_THAT(simplify((x / 5) * 5 + x % 5), matches(x));
+
+  ASSERT_THAT(simplify(((x / 2) * 2 - (x % 2 + -1) / -2)), matches(x + -1));
 }
 
 TEST(simplify, staircase) {

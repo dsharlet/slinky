@@ -42,10 +42,13 @@ bool apply_min_rules(Fn&& apply) {
         x + c0 /*c0 < 0*/) ||
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
-      // This might be the only rule that doesn't have an analogous max rule.
-      apply(min(max(x, c0), c1),
-        c0, c0 == c1,
-        max(min(x, c1), c0), c0 < c1) ||
+      // These might be the only rules that don't have an analogous max rule.
+      apply(min(max(x, c0)/may_be<1>(c1), c2),
+        c2, c1 > 1 && c0/c1 == c2,
+        max(min(x/c1, c2), eval(c0/c1)), c1 > 1 && c0/c1 < c2) ||
+      apply(min(min(y, max(x, c0)/may_be<1>(c1)), c2),
+        min(y, c2), c1 > 1 && c0/c1 == c2,
+        min(y, max(min(x/c1, c2), eval(c0/c1))), c1 > 1 && c0/c1 < c2) ||
 
       // Canonicalize trees and find duplicate terms.
       apply(min(min(x, y), min(x, z)), min(x, min(y, z))) ||
@@ -66,6 +69,7 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(max(x, min(y, c0)), c1), min(max(x, y), c1), c0 >= c1) ||
       apply(min(min(x, y), max(x, z)), min(x, y)) ||
       apply(min(x, min(y, max(x, z))), min(x, y)) ||
+      apply(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
       apply(min(x, max(x, y) + may_be<0>(c1)), x, c1 >= 0) ||
       apply(min(x, max(y, x + may_be<0>(c0))), x, c0 >= 0) ||
 
@@ -183,6 +187,7 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(min(x, max(y, c0)), c1), max(min(x, y), c1), c0 <= c1) ||
       apply(max(min(x, y), max(x, z)), max(x, z)) ||
       apply(max(x, max(y, min(x, z))), max(x, y)) ||
+      apply(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
       apply(max(x, min(y, x + may_be<0>(c0))), x, c0 <= 0) ||
       apply(max(x, min(x, y) + may_be<0>(c1)), x, c1 <= 0) ||
 
@@ -289,6 +294,7 @@ bool apply_add_rules(Fn&& apply) {
       apply((x + may_be<0>(c0)) + (y + may_be<0>(c1)), (x + y) + eval(c0 + c1), c0 != 0 || c1 != 0) ||
 
       apply(staircase(x, c0, c1, c2) + c3, ((x + eval((c3/c2)*c1 + c0))/c1)*c2, c0 != 0 && c1 != 0 && c2 != 0 && c3%c2 == 0) ||
+      apply(staircase(x, 0, c0, c0) + x%c0, x) ||
 
       apply(min(x, y + c1) + c2, min(y, x + c2), c1 == -c2) ||
       apply(max(x, y + c1) + c2, max(y, x + c2), c1 == -c2) ||
@@ -310,6 +316,7 @@ bool apply_sub_rules(Fn&& apply) {
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x - 0, x) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
+      apply(x - y/c0, x + y/eval(-c0), c0 <= 0) ||
       apply(x - (c0 - y), (x + y) + eval(-c0)) ||
       apply(c0 - (x - y), (y - x) + c0) ||
       apply((c0 - x) - (y - z), ((z - x) - y) + c0) ||
@@ -405,11 +412,11 @@ bool apply_div_rules(Fn&& apply) {
       apply(x/-1, -x) ||
       apply(x/x, x != 0) ||
 
-      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1), c0 > 0 && c1 > 0) ||
-      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1), c0 > 0 && c1 > 0) ||
-      apply((x/c0)/c1, x/eval(c0*c1), c0 > 0 && c1 > 0) ||
-      apply((x*c0)/c1, x*eval(c0/c1), c1 > 0 && c0%c1 == 0) ||
-      apply((x*c0)/c1, x/eval(c1/c0), c0 > 0 && c1 > 0 && c1%c0 == 0) ||
+      apply((y + x/c0)/c1, (x + y*c0)/eval(c0*c1)) ||
+      apply((y - x/c0)/c1, (y*c0 - x + eval(c0 - 1))/eval(c0*c1)) ||
+      apply((x/c0)/c1, x/eval(c0*c1), c0 > 0) ||
+      apply((x*c0)/c1, x*eval(c0/c1), c0%c1 == 0) ||
+      apply((x*c0)/c1, x/eval(c1/c0), c0 > 0 && c1%c0 == 0) ||
       apply((x*y)/x, y*(x != 0)) ||
 
       apply((x + may_be<1>(y)*c0)/c1, y*eval(c0/c1) + x/c1, c0%c1 == 0) ||
@@ -423,6 +430,9 @@ bool apply_div_rules(Fn&& apply) {
       apply(select(x, c0, c1)/c2, select(x, eval(c0/c2), eval(c1/c2))) ||
       apply(select(x, y, c1)/c2, select(x, y/c2, eval(c1/c2))) ||
       apply(select(x, c0, y)/c2, select(x, eval(c0/c2), y/c2)) ||
+
+      // Is there some generalization of this rule? 
+      apply(((x%2) + c0)/2, x%2 + eval(c0/2), c0%2 == 1) ||
 
       false;
 }
