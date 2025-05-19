@@ -104,7 +104,7 @@ const variable* make_variable(var sym) {
   return n;
 }
 
-const constant* make_constant(std::int64_t value) {
+const constant* get_constant(std::int64_t value) {
   static const constant* zero = make_static_constant<0>();
   static const constant* one = make_static_constant<1>();
   if (value == 0) {
@@ -112,12 +112,18 @@ const constant* make_constant(std::int64_t value) {
   } else if (value == 1) {
     return one;
   } else {
-    assert(value <= std::numeric_limits<index_t>::max());
-    assert(value >= std::numeric_limits<index_t>::min());
-    auto n = new constant();
-    n->value = value;
-    return n;
+    return nullptr;
   }
+}
+
+const constant* make_constant(std::int64_t value) {
+  if (const constant* n = get_constant(value)) return n;
+
+  assert(value <= std::numeric_limits<index_t>::max());
+  assert(value >= std::numeric_limits<index_t>::min());
+  auto n = new constant();
+  n->value = value;
+  return n;
 }
 
 }  // namespace
@@ -134,6 +140,7 @@ expr variable::make(var sym, buffer_field field, int dim) {
   return expr(n);
 }
 
+expr_ref constant::get(index_t value) { return get_constant(value); }
 expr constant::make(index_t value) { return expr(make_constant(value)); }
 expr constant::make(const void* value) { return make(reinterpret_cast<index_t>(value)); }
 

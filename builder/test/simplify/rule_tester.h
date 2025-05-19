@@ -28,6 +28,98 @@ bool contains_infinity(expr x) {
 
 }  // namespace
 
+namespace rewrite {
+
+// We need a version of substitute from rewrite.h that does not eagerly apply optimization.
+SLINKY_UNIQUE index_t substitute(index_t p, const match_context&) { return p; }
+
+template <int N>
+SLINKY_UNIQUE expr_ref substitute(const pattern_wildcard<N>&, const match_context& ctx) {
+  return ctx.vars[N];
+}
+
+template <int N>
+SLINKY_UNIQUE index_t substitute(const pattern_constant<N>&, const match_context& ctx) {
+  return ctx.constants[N];
+}
+
+template <typename A, index_t Default>
+SLINKY_UNIQUE auto substitute(const pattern_optional<A, Default>& p, const match_context& ctx) {
+  return substitute(p.a, ctx);
+}
+
+template <typename T, typename A, typename B>
+SLINKY_UNIQUE auto substitute(const pattern_binary<T, A, B>& p, const match_context& ctx) {
+  return make_binary<T>(substitute(p.a, ctx), substitute(p.b, ctx));
+}
+
+template <typename T, typename A>
+SLINKY_UNIQUE auto substitute(const pattern_unary<T, A>& p, const match_context& ctx) {
+  return make_unary<T>(substitute(p.a, ctx));
+}
+
+template <typename C, typename T, typename F>
+SLINKY_UNIQUE expr substitute(const pattern_select<C, T, F>& p, const match_context& ctx) {
+  return select::make(substitute(p.c, ctx), substitute(p.t, ctx), substitute(p.f, ctx));
+}
+
+SLINKY_UNIQUE expr substitute(const pattern_call<>& p, const match_context& ctx) { return call::make(p.fn, {}); }
+template <typename A>
+SLINKY_UNIQUE expr substitute(const pattern_call<A>& p, const match_context& ctx) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx)});
+}
+template <typename A, typename B>
+SLINKY_UNIQUE expr substitute(const pattern_call<A, B>& p, const match_context& ctx) {
+  return call::make(p.fn, {substitute(std::get<0>(p.args), ctx), substitute(std::get<1>(p.args), ctx)});
+}
+
+template <typename X, typename A, typename B, typename C>
+SLINKY_UNIQUE auto substitute(const pattern_staircase<X, A, B, C>& p, const match_context& ctx) {
+  expr x = substitute(p.x, ctx);
+  index_t a = substitute(p.a, ctx);
+  index_t b = substitute(p.b, ctx);
+  index_t c = substitute(p.c, ctx);
+
+  if (a != 0) x += a;
+  if (b != 1) x /= b;
+  if (c != 1) x *= c;
+  return x;
+}
+
+template <typename T, typename Fn>
+SLINKY_UNIQUE bool substitute(const replacement_predicate<T, Fn>& r, const match_context& ctx) {
+  return r.fn(substitute(r.a, ctx));
+}
+
+template <typename T>
+SLINKY_UNIQUE index_t substitute(const replacement_eval<T>& r, const match_context& ctx) {
+  return substitute(r.a, ctx);
+}
+
+template <typename T>
+SLINKY_UNIQUE auto substitute(const replacement_boolean<T>& r, const match_context& ctx) {
+  return boolean(substitute(r.a, ctx));
+}
+
+template <typename A1, typename B1, typename C1, typename A2, typename B2, typename C2>
+SLINKY_UNIQUE index_t substitute(
+    const replacement_staircase_sum_bound<A1, B1, C1, A2, B2, C2>& r, const match_context& ctx) {
+  index_t a1 = substitute(r.a1, ctx);
+  index_t b1 = substitute(r.b1, ctx);
+  index_t c1 = substitute(r.c1, ctx);
+  index_t a2 = substitute(r.a2, ctx);
+  index_t b2 = substitute(r.b2, ctx);
+  index_t c2 = substitute(r.c2, ctx);
+  auto bounds = staircase_sum_bounds(a1, b1, c1, a2, b2, c2);
+  if (r.bound_sign < 0) {
+    return bounds.min ? *bounds.min : std::numeric_limits<index_t>::min();
+  } else {
+    return bounds.max ? *bounds.max : std::numeric_limits<index_t>::max();
+  }
+}
+
+}  // namespace rewrite
+
 class rule_tester {
   static constexpr std::size_t var_count = 6;
 
@@ -65,7 +157,7 @@ public:
         ctx[var(i)] = expr_gen_.random_constant();
       }
 
-      auto dump_ctx = [&]() { 
+      auto dump_ctx = [&]() {
         std::stringstream ss;
         for (std::size_t i = 0; i < var_count; ++i) {
           ss << ", " << var(i) << "=" << ctx[var(i)];
@@ -89,9 +181,8 @@ public:
     std::stringstream rule_str;
     rule_str << p << " -> " << r;
 
+    expr pattern = expr(substitute(p, m));
     bool overflowed = false;
-    expr pattern = expr(substitute(p, m, overflowed));
-    assert(!overflowed);
     expr replacement = expr(substitute(r, m, overflowed));
     assert(!overflowed);
 
@@ -114,8 +205,7 @@ public:
       init_match_context();
       bool overflowed = false;
       if (substitute(pr, m, overflowed) && !overflowed) {
-        expr pattern = expr(substitute(p, m, overflowed));
-        assert(!overflowed);
+        expr pattern = expr(substitute(p, m));
         expr replacement = expr(substitute(r, m, overflowed));
         assert(!overflowed);
 
