@@ -41,7 +41,7 @@ thread_local std::vector<const void*> task_stack;
 
 std::shared_ptr<thread_pool::loop> thread_pool_impl::dequeue(loop_task& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
-    std::shared_ptr<thread_pool::loop> loop = std::get<1>(*i);
+    std::shared_ptr<thread_pool::loop>& loop = std::get<1>(*i);
     if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
       // Don't run the same loop multiple times on the same thread.
       ++i;
@@ -53,16 +53,21 @@ std::shared_ptr<thread_pool::loop> thread_pool_impl::dequeue(loop_task& t) {
       i = task_queue_.erase(i);
       continue;
     }
+
+    // We are going to work on this loop.
     int& max_workers = std::get<0>(*i);
     assert(max_workers > 0);
     if (--max_workers == 0 || iterations_remaining == 1) {
-      // No more workers for this loop.
+      // We're the last worker for this loop, remove it from the queue.
       t = std::move(std::get<2>(*i));
+      std::shared_ptr<thread_pool::loop> result = std::move(loop);
       task_queue_.erase(i);
+      return result;
     } else {
+      // Leave the loop in the queue for other workers to work on.
       t = std::get<2>(*i);
+      return loop;
     }
-    return loop;
   }
   return nullptr;
 }
@@ -77,16 +82,21 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
     loop_task t;
     if (auto loop = dequeue(t)) {
       l.unlock();
+
+      // Run the task.
       task_stack.push_back(&*loop);
-      bool done = loop->run(t);
+      bool completed = loop->run(t);
       task_stack.pop_back();
-      l.lock();
-      if (done) {
-        // Notify the helper CV, helpers might be waiting for a condition that the task changed the value of.
-        cv_helper_.notify_all();
-      }
+
       // We did a task, reset the spin counter.
       spins = spin_count;
+
+      l.lock();
+
+      if (completed) {
+        // We completed the loop, notify the helper CV in case it is waiting for this loop to complete.
+        cv_helper_.notify_all();
+      }
     } else if (spins-- > 0) {
       l.unlock();
       std::this_thread::yield();
@@ -104,7 +114,6 @@ void thread_pool_impl::atomic_call(task_ref t) {
   cv_helper_.notify_all();
 }
 
-
 std::shared_ptr<thread_pool::loop> thread_pool_impl::enqueue(std::size_t n, loop_task t, int max_workers) {
   auto loop = std::make_shared<thread_pool::loop>(n);
   std::unique_lock l(mutex_);
@@ -119,12 +128,15 @@ std::shared_ptr<thread_pool::loop> thread_pool_impl::enqueue(std::size_t n, loop
   return loop;
 }
 
-bool thread_pool_impl::work_on_loop(loop& l, loop_task body) {
+void thread_pool_impl::run(loop& l, loop_task body) {
   assert(std::find(task_stack.begin(), task_stack.end(), &l) == task_stack.end());
   task_stack.push_back(&l);
-  bool result = l.run(body);
+  bool completed = l.run(body);
   task_stack.pop_back();
-  return result;
+  if (!completed || !l.done()) {
+    // The loop isn't done, work on other tasks while waiting for it to complete.
+    wait_for([&]() { return l.done(); });
+  }
 }
 
 }  // namespace slinky
