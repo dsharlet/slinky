@@ -128,10 +128,10 @@ TEST(simplify, basic) {
   ASSERT_THAT(simplify(select(x, y + 1, y + 2)), matches(y + select(x, 1, 2)));
   ASSERT_THAT(simplify(select(x, 1, 2) + 1), matches(select(x, 2, 3)));
 
-  ASSERT_THAT(simplify(max(select(x, y, z), select(x, y, w))), matches(select(x, y, max(z, w))));
-  ASSERT_THAT(simplify(max(select(x, y, z), select(x, w, z))), matches(select(x, max(y, w), z)));
-  ASSERT_THAT(simplify(min(select(x, y, z), select(x, y, w))), matches(select(x, y, min(z, w))));
-  ASSERT_THAT(simplify(min(select(x, y, z), select(x, w, z))), matches(select(x, min(y, w), z)));
+  ASSERT_THAT(simplify(max(select(x, y, z), select(x, y, w))), matches(select(x, y, max(w, z))));
+  ASSERT_THAT(simplify(max(select(x, y, z), select(x, w, z))), matches(select(x, max(w, y), z)));
+  ASSERT_THAT(simplify(min(select(x, y, z), select(x, y, w))), matches(select(x, y, min(w, z))));
+  ASSERT_THAT(simplify(min(select(x, y, z), select(x, w, z))), matches(select(x, min(w, y), z)));
   ASSERT_THAT(simplify((select(x, y, z) < select(x, y, w))), matches(((expr(z) < expr(w)) && !x)));
 
   ASSERT_THAT(simplify(select(x == 1, y, select(x == 1, z, w))), matches(select(x == 1, y, w)));
@@ -230,6 +230,24 @@ TEST(simplify, staircase) {
 
   ASSERT_THAT(simplify(max((x / 8) * 8, x)), matches(x));
   ASSERT_THAT(simplify(min((x / 8) * 8, x)), matches((x / 8) * 8));
+}
+
+TEST(simplify, optional) {
+  ASSERT_THAT(simplify(x == x), matches(true));
+  ASSERT_THAT(simplify(x + y == x), matches(y == 0));
+  ASSERT_THAT(simplify(x + y == x + z), matches(expr(y) == z));
+  ASSERT_THAT(simplify(y + (x + w) == x + z), matches(w + y == z));
+  ASSERT_THAT(simplify(y + (x + w) == u + (x + z)), matches(w + y == z + u));
+  ASSERT_THAT(simplify(x < x + y), matches(0 < y));
+  ASSERT_THAT(simplify(x + y < x), matches(y < 0));
+  ASSERT_THAT(simplify(x < z + (x + y)), matches(0 < y + z));
+  ASSERT_THAT(simplify(z + (x + y) < x), matches(y + z < 0));
+  ASSERT_THAT(simplify(x + y < x + z), matches(expr(y) < z));
+  ASSERT_THAT(simplify(w + (x + y) < x + z), matches(y + w < z));
+  ASSERT_THAT(simplify(x + z < w + (x + y)), matches(z < y + w));
+  ASSERT_THAT(simplify(x || (y || x)), matches(x || y));
+  ASSERT_THAT(simplify(x || (y || (z || x))), matches(x || (y || z)));
+  ASSERT_THAT(simplify(x || (y || (z || (w || x)))), matches(x || (y || (z || w))));
 }
 
 TEST(simplify, let) {

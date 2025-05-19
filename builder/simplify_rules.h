@@ -37,10 +37,9 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, rewrite::positive_infinity()), x) ||
       apply(min(x, std::numeric_limits<index_t>::min()), std::numeric_limits<index_t>::min()) ||
       apply(min(x, rewrite::negative_infinity()), rewrite::negative_infinity()) ||
-      apply(min(x, x + c0),
-        x, c0 > 0,
+      apply(min(x, x + may_be<0>(c0)),
+        x, c0 >= 0,
         x + c0 /*c0 < 0*/) ||
-      apply(min(x, x), x) ||
       apply(min(x, y), x && y, is_boolean(x) && is_boolean(y)) ||
 
       // This might be the only rule that doesn't have an analogous max rule.
@@ -58,42 +57,26 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, min(y, min(z, min(w, min(u, min(x, v)))))), min(x, min(y, min(z, min(w, min(u, v)))))) ||
 
       // Similar rules but with mixes of min and max.
-      apply(min(max(x, y), max(x, z)), max(x, min(y, z))) ||
-      apply(min(min(x, y), max(x, z)), min(x, y)) ||
-      apply(min(x, min(y, max(x, z))), min(x, y)) ||
-      apply(min(x, max(y, min(x, z))), min(x, max(y, z))) ||
-      apply(min(x, max(x, y)), x) ||
-
-      // Similar rules but with added constants.
-      apply(min(max(y, x + c0) + c1, max(z, x + c2)), max(x + c2, min(z, y + c1)), eval(c0 + c1 == c2)) ||
-      apply(min(x, min(y, x + c0) + c1),
+      apply(min(max(y, x + may_be<0>(c0)) + may_be<0>(c1), max(z, x + may_be<0>(c2))), 
+        max(x + c2, min(z, y + c1)), eval(c0 + c1 == c2)) ||
+      apply(min(x, min(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         min(x, y + c1), c0 + c1 >= 0,
         min(y, x + c0) + c1 /*c0 + c1 < 0*/) ||
-      apply(min(x + c0, max(y, min(x, z) + c1)), min(x + c0, max(y, z + c1)), c1 > c0) ||
-      apply(min(x, max(y, min(x, z) + c1)), min(x, max(y, z + c1)), c1 > 0) ||
-      apply(min(x, min(y, x + c0)),
-        min(x, y), c0 > 0,
-        min(y, x + c0) /*c0 < 0*/) ||
-      apply(min(x, min(x, y) + c1),
-        min(x, y + c1), c1 > 0,
-        min(x, y) + c1 /*c1 < 0*/) ||
+      apply(min(x + may_be<0>(c0), max(y, min(x, z) + may_be<0>(c1))), min(x + c0, max(y, z + c1)), c1 >= c0) ||
       apply(min(max(x, min(y, c0)), c1), min(max(x, y), c1), c0 >= c1) ||
-
-      apply(min(x, max(y, x + c0)), x, c0 > 0) ||
-      apply(min(x, max(x, y) + c1), x, c1 > 0) ||
+      apply(min(min(x, y), max(x, z)), min(x, y)) ||
+      apply(min(x, min(y, max(x, z))), min(x, y)) ||
+      apply(min(x, max(x, y) + may_be<0>(c1)), x, c1 >= 0) ||
+      apply(min(x, max(y, x + may_be<0>(c0))), x, c0 >= 0) ||
 
       // Pull common terms out.
-      apply(min(y + z, min(x, y)), min(x, y + min(z, 0))) ||
-      apply(min(y - z, min(x, y)), min(x, y - max(z, 0))) ||
-      apply(min(y, min(x, y + z)), min(x, y + min(z, 0))) ||
-      apply(min(y, min(x, y - z)), min(x, y - max(z, 0))) ||
-      apply(min((y + w), min(x, (y + z))), min(x, min(y + z, y + w))) ||
-      apply(min(x + z, y + z), z + min(x, y)) ||
-      apply(min(x - z, y - z), min(x, y) - z) ||
-      apply(min(z - x, z - y), z - max(x, y)) ||
-      apply(min(x + z, z - y), z + min(x, -y)) ||
-      apply(min(x, x + z), x + min(z, 0)) ||
-      apply(min(x, x - z), x - max(z, 0)) ||
+      apply(min(x + may_be<0>(z), min(y, x + may_be<0>(w))), min(y, x + min(z, w))) ||
+      apply(min(x + may_be<0>(y), x + z), x + min(y, z)) ||
+      apply(min(x + may_be<0>(y), x - z),
+        x - max(-y, z), is_non_positive(y),
+        x + min(y, -z)) ||
+      apply(min(y - x, z - x), min(y, z) - x) ||
+      apply(min(x - y, x - z), x - max(y, z)) ||
       apply(min(x, -x), -abs(x)) ||
 
       // Selects
@@ -105,24 +88,19 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x, select(y, z, max(x, w))), select(y, min(x, z), x)) ||
       apply(min(y, select(x, y, w)), select(x, y, min(y, w))) ||
       apply(min(z, select(x, w, z)), select(x, min(z, w), z)) ||
-      apply(min(select(x, y, z), select(x, w, u)), select(x, min(y, w), min(z, u))) ||
+      apply(min(may_be<0>(w) + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(min(v, select(x, y, z)), select(x, w, u)), min(v, select(x, min(y, w), min(z, u)))) ||
       apply(min(max(v, select(x, y, z)), select(x, w, u)), select(x, min(w, max(v, y)), min(u, max(v, z)))) ||
-      apply(min(w + select(x, y, z), select(x, u, v)), select(x, min(u, w + y), min(v, w + z))) ||
       apply(min(w - select(x, y, z), select(x, u, v)), select(x, min(u, w - y), min(v, w - z))) ||
       apply(min(select(x, y, z) - w, select(x, u, v)), select(x, min(u, y - w), min(v, z - w))) ||
 
       apply(min(select(x, y, select(z, w, u)), select(z, v, t)), select(z, min(v, select(x, y, w)), min(t, select(x, y, u)))) ||
       apply(min(select(x, select(z, w, u), y), select(z, v, t)), select(z, min(v, select(x, w, y)), min(t, select(x, u, y)))) ||
 
-      apply(min(x + c2, select(c0 < x, y, c1)), select(c0 < x, min(x, y - c2), x) + c2, c1 >= c0 + c2) ||
-      apply(min(x + c2, select(c0 < x, c1, y)), select(c0 < x, c1, min(y, x + c2)), c1 <= c0 + c2) ||
-      apply(min(x + c2, select(x < c0, y, c1)), select(x < c0, min(y, x + c2), c1), c1 <= c0 + c2) ||
-      apply(min(x + c2, select(x < c0, c1, y)), select(x < c0, x, min(x, y - c2)) + c2, c1 >= c0 + c2) ||
-      apply(min(x, select(c0 < x, y, c1)), select(c0 < x, min(x, y), x), c1 >= c0) ||
-      apply(min(x, select(c0 < x, c1, y)), select(c0 < x, c1, min(x, y)), c1 <= c0) ||
-      apply(min(x, select(x < c0, y, c1)), select(x < c0, min(x, y), c1), c1 <= c0) ||
-      apply(min(x, select(x < c0, c1, y)), select(x < c0, x, min(x, y)), c1 >= c0) ||
+      apply(min(x + may_be<0>(c2), select(c0 < x, y, c1)), select(c0 < x, min(x, y - c2), x) + c2, c1 >= c0 + c2) ||
+      apply(min(x + may_be<0>(c2), select(c0 < x, c1, y)), select(c0 < x, c1, min(y, x + c2)), c1 <= c0 + c2) ||
+      apply(min(x + may_be<0>(c2), select(x < c0, y, c1)), select(x < c0, min(y, x + c2), c1), c1 <= c0 + c2) ||
+      apply(min(x + may_be<0>(c2), select(x < c0, c1, y)), select(x < c0, x, min(x, y - c2)) + c2, c1 >= c0 + c2) ||
 
       // Move constants out.
       apply(min(min(x, c0), c1), min(x, eval(min(c0, c1)))) ||
@@ -131,18 +109,14 @@ bool apply_min_rules(Fn&& apply) {
       apply(min(x + c0, y + c1),
         min(x, y + eval(c1 - c0)) + c0, c0 >= c1,  // Canonicalize to pulling bigger constants out.
         min(y, x + eval(c0 - c1)) + c1) ||
-      apply(min(x + c0, c1 - y), c1 - max(y, eval(c1 - c0) - x)) ||
-      apply(min(x + c0, c1), min(x, eval(c1 - c0)) + c0) ||
-      apply(min(c0 - x, c1 - y), c0 - max(x, y + eval(c0 - c1))) ||
-      apply(min(c0 - x, c1), c0 - max(x, eval(c0 - c1))) ||
-      apply(min(min(x, c0) + c1, min(y, c2)), min(min(y, x + c1), eval(min(c0 + c1, c2)))) ||
-      apply(min(min(x, c0), min(y, c2)), min(min(y, x), eval(min(c0, c2)))) ||
-      apply(min(max(x, c0) + c1, max(y, c2)),
+      apply(min(x + c0, c1 - may_be<0>(y)), 
+        min(x, eval(c1 - c0)) + c0, is_zero(y),
+        c1 - max(y, eval(c1 - c0) - x)) ||
+      apply(min(c0 - x, c1 - may_be<0>(y)), c0 - max(x, y + eval(c0 - c1))) ||
+      apply(min(min(x, c0) + may_be<0>(c1), min(y, c2)), min(min(y, x + c1), eval(min(c0 + c1, c2)))) ||
+      apply(min(max(x, c0) + may_be<0>(c1), max(y, c2)),
         max(min(y, max(x, c0) + c1), c2), c2 < c0 + c1,
         max(min(x + c1, max(y, c2)), eval(c0 + c1)) /*c2 >= c0 + c1*/) ||
-      apply(min(max(x, c0), max(y, c1)),
-        max(min(x, max(y, c1)), c0), c0 < c1,
-        max(min(y, max(x, c0)), c1), c0 > c1) ||
       apply(min(x + c0, select(y, may_be<0>(z) + c1, may_be<0>(w) + c2)), min(x, select(y, z + eval(c1 - c0), w + eval(c2 - c0))) + c0) ||
       apply(min(select(y, c1, c2), c0), select(y, eval(min(c0, c1)), eval(min(c0, c2)))) ||
 
@@ -168,12 +142,9 @@ bool apply_min_rules(Fn&& apply) {
         min(x, eval(c1*c0))/c0, c0 > 0,
         max(x, eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
         staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6,
         staircase(x, c3, c4, c5) + c6, 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6) ||
-      apply(min(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
-        staircase(x, c0, c1, c2), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5),
-        staircase(x, c3, c4, c5), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(min(x, abs(x)), x) ||
 
@@ -188,10 +159,9 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, rewrite::negative_infinity()), x) ||
       apply(max(x, std::numeric_limits<index_t>::max()), std::numeric_limits<index_t>::max()) ||
       apply(max(x, rewrite::positive_infinity()), rewrite::positive_infinity()) ||
-      apply(max(x, x + c0),
+      apply(max(x, x + may_be<0>(c0)),
         x + c0, c0 > 0,
-        x /*c0 < 0*/) ||
-      apply(max(x, x), x) ||
+        x /*c0 <= 0*/) ||
       apply(max(x, y), x || y, is_boolean(x) && is_boolean(y)) ||
 
       // Canonicalize trees and find duplicate terms.
@@ -204,42 +174,26 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, max(y, max(z, max(w, max(u, max(x, v)))))), max(x, max(y, max(z, max(w, max(u, v)))))) ||
 
       // Similar rules but with mixes of min and max.
-      apply(max(min(x, y), max(x, z)), max(x, z)) ||
-      apply(max(x, max(y, min(x, z))), max(x, y)) ||
-      apply(max(min(x, y), min(x, z)), min(x, max(y, z))) ||
-      apply(max(x, min(y, max(x, z))), max(x, min(y, z))) ||
-      apply(max(x, min(x, y)), x) ||
-
-      // Similar rules but with added constants.
-      apply(max(min(y, x + c0) + c1, min(z, x + c2)), min(x + c2, max(z, y + c1)), eval(c0 + c1 == c2)) ||
-      apply(max(x, max(y, x + c0) + c1),
+      apply(max(min(y, x + may_be<0>(c0)) + may_be<0>(c1), min(z, x + may_be<0>(c2))),
+        min(x + c2, max(z, y + c1)), eval(c0 + c1 == c2)) ||
+      apply(max(x, max(y, x + may_be<0>(c0)) + may_be<0>(c1)),
         max(x, y + c1), c0 + c1 <= 0,
         max(y, x + c0) + c1 /*c0 + c1 > 0)*/) ||
-      apply(max(x + c0, min(y, max(x, z) + c1)), max(x + c0, min(y, z + c1)), c1 < c0) ||
-      apply(max(x, min(y, max(x, z) + c1)), max(x, min(y, z + c1)), c1 < 0) ||
-      apply(max(x, max(y, x + c0)),
-        max(x, y), c0 < 0,
-        max(y, x + c0) /*c1 > 0)*/) ||
-      apply(max(x, max(x, y) + c1),
-        max(x, y + c1), c1 < 0,
-        max(x, y) + c1 /*c1 > 0)*/) ||
+      apply(max(x + may_be<0>(c0), min(y, max(x, z) + may_be<0>(c1))), max(x + c0, min(y, z + c1)), c1 < c0) ||
       apply(max(min(x, max(y, c0)), c1), max(min(x, y), c1), c0 <= c1) ||
-
-      apply(max(x, min(y, x + c0)), x, c0 < 0) ||
-      apply(max(x, min(x, y) + c1), x, c1 < 0) ||
+      apply(max(min(x, y), max(x, z)), max(x, z)) ||
+      apply(max(x, max(y, min(x, z))), max(x, y)) ||
+      apply(max(x, min(y, x + may_be<0>(c0))), x, c0 <= 0) ||
+      apply(max(x, min(x, y) + may_be<0>(c1)), x, c1 <= 0) ||
 
       // Pull common terms out.
-      apply(max(y + z, max(x, y)), max(x, y + max(z, 0))) ||
-      apply(max(y - z, max(x, y)), max(x, y - min(z, 0))) ||
-      apply(max(y, max(x, y + z)), max(x, y + max(z, 0))) ||
-      apply(max(y, max(x, y - z)), max(x, y - min(z, 0))) ||
-      apply(max(x, max(y, x + z)), max(y, max(x, x + z))) ||
-      apply(max(x, max(y, x - z)), max(y, max(x, x - z))) ||
-      apply(max(x + z, y + z), z + max(x, y)) ||
-      apply(max(x - z, y - z), max(x, y) - z) ||
-      apply(max(z - x, z - y), z - min(x, y)) ||
-      apply(max(x, x + z), x + max(z, 0)) ||
-      apply(max(x, x - z), x - min(z, 0)) ||
+      apply(max(x + may_be<0>(z), max(y, x + may_be<0>(w))), max(y, x + max(z, w))) ||
+      apply(max(x + may_be<0>(y), x + z), x + max(y, z)) ||
+      apply(max(x + may_be<0>(y), x - z),
+        x - min(-y, z), is_non_positive(y),
+        x + max(y, -z)) ||
+      apply(max(y - x, z - x), max(y, z) - x) ||
+      apply(max(x - y, x - z), x - min(y, z)) ||
       apply(max(x, -x), abs(x)) ||
 
       // Selects
@@ -251,24 +205,19 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x, select(y, z, min(x, w))), select(y, max(x, z), x)) ||
       apply(max(y, select(x, y, w)), select(x, y, max(y, w))) ||
       apply(max(z, select(x, w, z)), select(x, max(z, w), z)) ||
-      apply(max(select(x, y, z), select(x, w, u)), select(x, max(y, w), max(z, u))) ||
+      apply(max(may_be<0>(w) + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(max(v, select(x, y, z)), select(x, w, u)), max(v, select(x, max(y, w), max(z, u)))) ||
       apply(max(min(v, select(x, y, z)), select(x, w, u)), select(x, max(w, min(v, y)), max(u, min(v, z)))) ||
-      apply(max(w + select(x, y, z), select(x, u, v)), select(x, max(u, w + y), max(v, w + z))) ||
       apply(max(w - select(x, y, z), select(x, u, v)), select(x, max(u, w - y), max(v, w - z))) ||
       apply(max(select(x, y, z) - w, select(x, u, v)), select(x, max(u, y - w), max(v, z - w))) ||
 
       apply(max(select(x, y, select(z, w, u)), select(z, v, t)), select(z, max(v, select(x, y, w)), max(t, select(x, y, u)))) ||
       apply(max(select(x, select(z, w, u), y), select(z, v, t)), select(z, max(v, select(x, w, y)), max(t, select(x, u, y)))) ||
 
-      apply(max(x + c2, select(c0 < x, y, c1)), select(c0 < x, max(y, x + c2), c1), c1 >= c0 + c2) ||
-      apply(max(x + c2, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y - c2)) + c2, c1 <= c0 + c2) ||
-      apply(max(x + c2, select(x < c0, y, c1)), select(x < c0, max(x, y - c2), x) + c2, c1 <= c0 + c2) ||
-      apply(max(x + c2, select(x < c0, c1, y)), select(x < c0, c1, max(y, x + c2)), c1 >= c0 + c2) ||
-      apply(max(x, select(c0 < x, y, c1)), select(c0 < x, max(x, y), c1), c1 >= c0) ||
-      apply(max(x, select(c0 < x, c1, y)), select(c0 < x, x, max(x, y)), c1 <= c0) ||
-      apply(max(x, select(x < c0, y, c1)), select(x < c0, max(x, y), x), c1 <= c0) ||
-      apply(max(x, select(x < c0, c1, y)), select(x < c0, c1, max(x, y)), c1 >= c0) ||
+      apply(max(x + may_be<0>(c2), select(c0 < x, y, c1)), select(c0 < x, max(y, x + c2), c1), c1 >= c0 + c2) ||
+      apply(max(x + may_be<0>(c2), select(c0 < x, c1, y)), select(c0 < x, x, max(x, y - c2)) + c2, c1 <= c0 + c2) ||
+      apply(max(x + may_be<0>(c2), select(x < c0, y, c1)), select(x < c0, max(x, y - c2), x) + c2, c1 <= c0 + c2) ||
+      apply(max(x + may_be<0>(c2), select(x < c0, c1, y)), select(x < c0, c1, max(y, x + c2)), c1 >= c0 + c2) ||
 
       // Move constants out.
       apply(max(max(x, c0), c1), max(x, eval(max(c0, c1)))) ||
@@ -277,18 +226,14 @@ bool apply_max_rules(Fn&& apply) {
       apply(max(x + c0, y + c1),
         max(x, y + eval(c1 - c0)) + c0, c0 >= c1,  // Canonicalize to pulling bigger constants out.
         max(y, x + eval(c0 - c1)) + c1) ||
-      apply(max(x + c0, c1 - y), c1 - min(y, eval(c1 - c0) - x)) ||
-      apply(max(x + c0, c1), max(x, eval(c1 - c0)) + c0) ||
-      apply(max(c0 - x, c1 - y), c0 - min(x, y + eval(c0 - c1))) ||
-      apply(max(c0 - x, c1), c0 - min(x, eval(c0 - c1))) ||
-      apply(max(max(x, c0) + c1, max(y, c2)), max(max(y, x + c1), eval(max(c0 + c1, c2)))) ||
-      apply(max(max(x, c0), max(y, c2)), max(max(y, x), eval(max(c0, c2)))) ||
-      apply(max(min(x, c0) + c1, min(y, c2)),
+      apply(max(x + c0, c1 - may_be<0>(y)), 
+        max(x, eval(c1 - c0)) + c0, is_zero(y),
+        c1 - min(y, eval(c1 - c0) - x)) ||
+      apply(max(c0 - x, c1 - may_be<0>(y)), c0 - min(x, y + eval(c0 - c1))) ||
+      apply(max(max(x, c0) + may_be<0>(c1), max(y, c2)), max(max(y, x + c1), eval(max(c0 + c1, c2)))) ||
+      apply(max(min(x, c0) + may_be<0>(c1), min(y, c2)),
         min(max(y, min(x, c0) + c1), c2), c2 > c0 + c1,
         min(max(x + c1, min(y, c2)), eval(c0 + c1)) /*c2 <= c0 + c1*/) ||
-      apply(max(min(x, c0), min(y, c1)),
-        min(max(x, min(y, c1)), c0), c0 > c1,
-        min(max(y, min(x, c0)), c1), c0 < c1) ||
       apply(max(x + c0, select(y, may_be<0>(z) + c1, may_be<0>(w) + c2)), max(x, select(y, z + eval(c1 - c0), w + eval(c2 - c0))) + c0) ||
       apply(max(select(y, c1, c2), c0), select(y, eval(max(c0, c1)), eval(max(c0, c2)))) ||
 
@@ -314,12 +259,9 @@ bool apply_max_rules(Fn&& apply) {
         max(x, eval(c1*c0))/c0, c0 > 0,
         min(x, eval(c1*c0))/c0, c0 < 0) ||
 
-      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + c6),
+      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5) + may_be<0>(c6)),
         staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5) + c6,
         staircase(x, c3, c4, c5) + c6, 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5) + c6) ||
-      apply(max(staircase(x, c0, c1, c2), staircase(x, c3, c4, c5)),
-        staircase(x, c0, c1, c2), 0 >= staircase_sum_max(c0, c1, -c2, c3, c4, c5),
-        staircase(x, c3, c4, c5), 0 <= staircase_sum_min(c0, c1, -c2, c3, c4, c5)) ||
 
       apply(max(x, abs(x)), abs(x)) ||
 
@@ -332,20 +274,15 @@ bool apply_add_rules(Fn&& apply) {
       apply(x + rewrite::positive_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
       apply(x + rewrite::negative_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x + 0, x) ||
-      apply(x + x, x*2) ||
-      apply(x + (x + y), y + x*2) ||
       apply(x + (x - y), x*2 - y) ||
       apply(x + (y - x), y) ||
       apply(x + x*y, x*(y + 1), !is_constant(x)) ||
       apply(x*y + x*z, x*(y + z)) ||
-      apply((x + y) + (x + z), (y + z) + x*2) ||
-      apply((x + z) + (x - y), (z - y) + x*2) ||
-      apply((x + z) + (y - x), y + z) ||
+      apply((x + may_be<0>(y)) + (x + may_be<0>(z)), (y + z) + x*2) ||
       apply((x + y) + (x - z), (y - z) + x*2) ||
       apply((x + y) + (z - x), y + z) ||
-      apply((x - y) + (x - z), x*2 - (y + z)) ||
-      apply((y - x) + (x - z), y - z) ||
       apply((x - y) + (z - x), z - y) ||
+      apply((x - y) + (x - z), x*2 - (y + z)) ||
       apply((y - x) + (z - x), (y + z) + x*-2) ||
 
       apply(x + (c0 - y), (x - y) + c0) ||
@@ -355,10 +292,10 @@ bool apply_add_rules(Fn&& apply) {
 
       apply(min(x, y + c1) + c2, min(y, x + c2), c1 == -c2) ||
       apply(max(x, y + c1) + c2, max(y, x + c2), c1 == -c2) ||
+      apply(z + min(x, y - (z + may_be<0>(w))), min(x + z, y - w)) ||
+      apply(z + max(x, y - (z + may_be<0>(w))), max(x + z, y - w)) ||
       apply(z + min(x, y - (z - w)), min(x + z, y + w)) ||
       apply(z + max(x, y - (z - w)), max(x + z, y + w)) ||
-      apply(z + min(x, y - z), min(y, x + z)) ||
-      apply(z + max(x, y - z), max(y, x + z)) ||
 
       apply(w + select(x, y, z - w), select(x, y + w, z)) ||
       apply(w + select(x, y - w, z), select(x, y, z + w)) ||
@@ -371,20 +308,16 @@ bool apply_sub_rules(Fn&& apply) {
   return
       apply(x - rewrite::positive_infinity(), rewrite::negative_infinity(), is_finite(x)) ||
       apply(x - rewrite::negative_infinity(), rewrite::positive_infinity(), is_finite(x)) ||
-      apply(x - x, 0) ||
       apply(x - 0, x) ||
       apply(x - y*c0, x + y*eval(-c0)) ||
       apply(x - (c0 - y), (x + y) + eval(-c0)) ||
       apply(c0 - (x - y), (y - x) + c0) ||
-      apply((c0 - x) - y, c0 - (x + y)) ||
-      apply((x + y) - x, y) ||
-      apply((x - y) - x, -y) ||
-      apply(x - (x + y), -y) ||
-      apply(x - (x - y), y) ||
-      apply((x + y) - (x + z), y - z) ||
-      apply((x - y) - (z - y), x - z) ||
-      apply((x - y) - (x - z), z - y) ||
       apply((c0 - x) - (y - z), ((z - x) - y) + c0) ||
+      apply((c0 - x) - y, c0 - (x + y)) ||
+      apply((x + may_be<0>(y)) - x, y) ||
+      apply((x + may_be<0>(y)) - (x + z), y - z) ||
+      apply((x - y) - (z - y), x - z) ||
+      apply((x - y) - (x - may_be<0>(z)), z - y) ||
       apply((x + may_be<0>(c0)) - (y + may_be<0>(c1)), (x - y) + eval(c0 - c1), c0 != 0 || c1 != 0) ||
 
       // These rules taken from
@@ -525,25 +458,13 @@ bool apply_less_rules(Fn&& apply) {
       // with adjustments for the simplifier implementation here.
 
       // Normalize subtractions to additions to cut down on cases to consider
-      apply(x - y < z, x < z + y) ||
-      apply(z < x - y, z + y < x) ||
-      apply(z + (x - y) < w, x + z < y + w) ||
-      apply(w < z + (x - y), w + y < x + z) ||
-      apply(u + (z + (x - y)) < w, x + (z + u) < w + y) ||
-      apply(w < u + (z + (x - y)), w + y < x + (z + u)) ||
+      apply(may_be<0>(u) + (may_be<0>(z) + (x - y)) < w, x + (z + u) < w + y) ||
+      apply(w < may_be<0>(u) + (may_be<0>(z) + (x - y)), w + y < x + (z + u)) ||
 
       // Cancellations in linear expressions
-      apply(x < x + y, 0 < y) ||
-      apply(x + y < x, y < 0) ||
-      apply(x < z + (x + y), 0 < z + y) ||
-      apply(z + (x + y) < x, z + y < 0) ||
-      apply(x + y < x + z, y < z) ||
-      apply(w + (x + y) < x + z, y + w < z) ||
-      apply(x + z < w + (x + y), z < y + w) ||
-      apply(w + (x + y) < u + (x + z), y + w < z + u) ||
+      apply(may_be<0>(w) + (x + may_be<0>(y)) < may_be<0>(u) + (x + may_be<0>(z)), y + w < z + u) ||
 
-      apply(x + c0 < y + c1, x < y + eval(c1 - c0)) ||
-      apply(x + c0 < c1, x < eval(c1 - c0)) ||
+      apply(x + c0 < may_be<0>(y) + c1, x < y + eval(c1 - c0)) ||
       apply(x + c0 < y, x < y + eval(-c0)) ||
       apply(c0 < x + c1, eval(c0 - c1) < x) ||
 
@@ -650,17 +571,10 @@ bool apply_equal_rules(Fn&& apply) {
       apply(x == x*y, y == 1 || x == 0) ||
 
       // Normalize subtractions to additions to cut down on cases to consider
-      apply(z == x - y, x == y + z) ||
-      apply(w == z + (x - y), w + y == x + z) ||
-      apply(w == u + (z + (x - y)), w + y == x + (z + u)) ||
+      apply(w == may_be<0>(u) + (may_be<0>(z) + (x - y)), w + y == x + (z + u)) ||
 
       // Cancellations in linear expressions
-      apply(x == x + y, y == 0) ||
-      apply(x == z + (x + y), z + y == 0) ||
-      apply(x + y == x + z, y == z) ||
-      apply(w + (x + y) == x + z, z == y + w) ||
-      apply(x + z == w + (x + y), z == y + w) ||
-      apply(w + (x + y) == u + (x + z), y + w == z + u) ||
+      apply(may_be<0>(w) + (x + may_be<0>(y)) == may_be<0>(u) + (x + may_be<0>(z)), y + w == z + u) ||
 
       apply(x*c0 == y*c1,
         x == y*eval(c1/c0), c0 != 0 && c1%c0 == 0,
@@ -702,15 +616,14 @@ bool apply_equal_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_and_rules(Fn&& apply) {
   return
-      apply(x && c0, boolean(x), c0 != 0) ||
-      apply(x && false, false) ||
+      apply(x && c0,
+        boolean(x), c0 != 0,
+        false) ||
       apply(x && x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
       apply((x && y) && (z && w), x && (y && (z && w))) ||
-      apply(x && (x && y), x && y) ||
-      apply(x && (y && (x && z)), x && (y && z)) ||
-      apply(x && (y && (z && (x && w))), x && (y && (z && w))) ||
+      apply(x && (may_be<true>(y) && (may_be<true>(z) && (may_be<true>(w) && x))), x && (y && (z && w))) ||
 
       apply(x && (x || y), boolean(x)) ||
       apply(x && (y || (x && z)), x && (y || z)) ||
@@ -771,15 +684,14 @@ bool apply_logical_and_rules(Fn&& apply) {
 template <typename Fn>
 bool apply_logical_or_rules(Fn&& apply) {
   return
-      apply(x || c0, true, c0 != 0) ||
-      apply(x || false, boolean(x)) ||
+      apply(x || c0,
+        boolean(x), c0 == 0,
+        true) ||
       apply(x || x, boolean(x)) ||
 
       // Canonicalize trees and find redundant terms.
       apply((x || y) || (z || w), x || (y || (z || w))) ||
-      apply(x || (x || y), x || y) ||
-      apply(x || (y || (x || z)), x || (y || z)) ||
-      apply(x || (y || (z || (x || w))), x || (y || (z || w))) ||
+      apply(x || (may_be<false>(y) || (may_be<false>(z) || (may_be<false>(w) || x))), x || (y || (z || w))) ||
 
       apply(x || (x && y), boolean(x)) ||
       apply(x || (y && (x || z)), x || (y && z)) ||
