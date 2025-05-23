@@ -20,6 +20,8 @@ public:
   // A task is a set of work items indexed by an integer i, where a `body` is called for each i in the set.
   class task {
   public:
+    virtual ~task() = default;
+
     // Work on the task. This returns when work on all items in the task have started, but may return before all items
     // are complete. Returns true if this call resulted in the loop being done (any subsequent calls to `run` will do no
     // work), but the loop may not be done.
