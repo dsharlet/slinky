@@ -32,6 +32,17 @@ cc_library(
 )
 
 cc_library(
+    name = "thread_pool_impl",
+    srcs = ["thread_pool_impl.cc"],
+    hdrs = [
+        "thread_pool_impl.h",
+        "function_ref.h",
+    ],
+    deps = [":thread_pool"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "chrome_trace",
     srcs = ["chrome_trace.cc"],
     hdrs = ["chrome_trace.h"],

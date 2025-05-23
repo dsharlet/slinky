@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#include "base/thread_pool.h"
+#include "base/thread_pool_impl.h"
 #include "runtime/evaluate.h"
 #include "runtime/expr.h"
 

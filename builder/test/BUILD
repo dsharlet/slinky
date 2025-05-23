@@ -19,7 +19,7 @@ cc_library(
         "//runtime",
         "//runtime:visualize",
         "//base:chrome_trace",
-        "//base:thread_pool",
+        "//base:thread_pool_impl",
         "//base/test:util",
         "//builder:replica_pipeline",
         "@googletest//:gtest",
@@ -152,7 +152,7 @@ cc_test(
     srcs = ["tile_area.cc"],
     deps = [
         ":util",
-        "//base:thread_pool",
+        "//base:thread_pool_impl",
         "//builder",
         "//runtime",
         "@googletest//:gtest_main",

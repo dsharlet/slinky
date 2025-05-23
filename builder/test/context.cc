@@ -4,7 +4,7 @@
 #include <sstream>
 
 #include "base/chrome_trace.h"
-#include "base/thread_pool.h"
+#include "base/thread_pool_impl.h"
 #include "runtime/buffer.h"
 
 namespace slinky {

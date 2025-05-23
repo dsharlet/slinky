@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "base/thread_pool.h"
+#include "base/thread_pool_impl.h"
 #include "builder/pipeline.h"
 #include "builder/test/context.h"
 #include "builder/test/funcs.h"

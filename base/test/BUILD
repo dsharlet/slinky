@@ -44,7 +44,7 @@ cc_test(
     name = "thread_pool",
     srcs = ["thread_pool.cc"],
     deps = [
-        "//base:thread_pool",
+        "//base:thread_pool_impl",
         "@googletest//:gtest_main",
     ],
     size = "small",
@@ -66,7 +66,7 @@ cc_test(
     name = "thread_pool_benchmark",
     srcs = ["thread_pool_benchmark.cc"],
     deps = [
-        "//base:thread_pool",
+        "//base:thread_pool_impl",
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=1x"],
