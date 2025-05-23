@@ -136,7 +136,7 @@ public:
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
   std::shared_ptr<task> enqueue(std::size_t n, task_body t, int max_workers) override;
-  void run(task* l, task_body body) override;
+  void wait_for(task* l, task_body body) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(function_ref<void()> t) override;
 };

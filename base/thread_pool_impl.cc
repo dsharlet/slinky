@@ -128,7 +128,7 @@ std::shared_ptr<task> thread_pool_impl::enqueue(std::size_t n, task_body t, int 
   return loop;
 }
 
-void thread_pool_impl::run(task* l, task_body body) {
+void thread_pool_impl::wait_for(task* l, task_body body) {
   assert(std::find(task_stack.begin(), task_stack.end(), &l) == task_stack.end());
   task_stack.push_back(&l);
   bool completed = l->run(body);
