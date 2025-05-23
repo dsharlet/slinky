@@ -35,13 +35,13 @@ void thread_pool_impl::run_worker(predicate_ref condition) {
 
 namespace {
 
-thread_local std::vector<const task*> task_stack;
+thread_local std::vector<const thread_pool::task*> task_stack;
 
 }  // namespace
 
-std::shared_ptr<task> thread_pool_impl::dequeue(task_body& t) {
+std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue(task_body& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
-    std::shared_ptr<task_impl>& loop = std::get<1>(*i);
+    std::shared_ptr<task_impl<>>& loop = std::get<1>(*i);
     if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
       // Don't run the same loop multiple times on the same thread.
       ++i;
@@ -114,8 +114,8 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
   cv_helper_.notify_all();
 }
 
-std::shared_ptr<task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
-  auto loop = std::make_shared<task_impl>(n);
+std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
+  auto loop = std::make_shared<task_impl<>>(n);
   std::unique_lock l(mutex_);
   task_queue_.push_back({max_workers, loop, std::move(t)});
   if (n == 1 || max_workers == 1) {

@@ -14,21 +14,21 @@
 
 namespace slinky {
 
-// A task is a set of work items indexed by an integer i, where a `body` is called for each i in the set.
-class task {
-public:
-  // Work on the task. This returns when work on all items in the task have started, but may return before all items are
-  // complete. Returns true if this call resulted in the loop being done (any subsequent calls to `run` will do no
-  // work), but the loop may not be done.
-  virtual bool run(function_ref<void(std::size_t)> body) = 0;
-
-  // Returns true if all work is complete.
-  virtual bool done() const = 0;
-};
-
 // This is an abstract base class for a thread pool used by slinky.
 class thread_pool {
 public:
+  // A task is a set of work items indexed by an integer i, where a `body` is called for each i in the set.
+  class task {
+  public:
+    // Work on the task. This returns when work on all items in the task have started, but may return before all items
+    // are complete. Returns true if this call resulted in the loop being done (any subsequent calls to `run` will do no
+    // work), but the loop may not be done.
+    virtual bool run(function_ref<void(std::size_t)> body) = 0;
+
+    // Returns true if all work is complete.
+    virtual bool done() const = 0;
+  };
+
   using task_body = std::function<void(std::size_t)>;
   using predicate_ref = function_ref<bool()>;
 
