@@ -4,7 +4,7 @@
 #include <random>
 #include <vector>
 
-#include "base/thread_pool.h"
+#include "base/thread_pool_impl.h"
 
 namespace slinky {
 

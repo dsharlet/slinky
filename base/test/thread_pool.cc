@@ -4,7 +4,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "base/thread_pool.h"
+#include "base/thread_pool_impl.h"
 
 namespace slinky {
 

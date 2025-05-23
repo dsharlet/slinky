@@ -29,7 +29,7 @@ cc_test(
     srcs = ["evaluate.cc"],
     deps = [
         "//runtime",
-        "//base:thread_pool",
+        "//base:thread_pool_impl",
         "@googletest//:gtest_main",
     ],
     size = "small",
@@ -51,7 +51,7 @@ cc_test(
     srcs = ["evaluate_benchmark.cc"],
     deps = [
         "//runtime",
-        "//base:thread_pool",
+        "//base:thread_pool_impl",
         "@google_benchmark//:benchmark_main",
     ],
     args=["--benchmark_min_time=1x"],
