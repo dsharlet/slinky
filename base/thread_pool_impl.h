@@ -94,15 +94,13 @@ public:
       return done > 0 && (todo -= done) == 0;
     }
 
-    // Return the number of loop iterations that have not started yet. This returns an upper bound, by the time the
-    // function returns some of the counted iterations may have already been started by another thread.
-    std::size_t count_remaining_iterations() const {
-      std::size_t result = 0;
+    // Returns true if there is no work left to start.
+    bool all_work_started() const {
+      if (workers <= 0) return true;
       for (const task& k : tasks_) {
-        const std::size_t i = k.i;
-        result += std::max(i, k.end) - i;
+        if (k.i < k.end) return false;
       }
-      return result;
+      return true;
     }
 
     bool done() const override { return todo == 0; }
