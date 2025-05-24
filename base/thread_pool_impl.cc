@@ -35,11 +35,11 @@ void thread_pool_impl::run_worker(predicate_ref condition) {
 
 namespace {
 
-thread_local std::vector<const thread_pool::task*> task_stack;
+thread_local std::vector<const thread_pool_impl::task_impl<>*> task_stack;
 
 }  // namespace
 
-std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue(task_body& t) {
+std::shared_ptr<thread_pool_impl::task_impl<>> thread_pool_impl::dequeue(task_body& t) {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
     std::shared_ptr<task_impl<>>& loop = std::get<1>(*i);
     if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
@@ -60,7 +60,7 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue(task_body& t) {
     if (--max_workers == 0 || iterations_remaining == 1) {
       // We're the last worker for this loop, remove it from the queue.
       t = std::move(std::get<2>(*i));
-      std::shared_ptr<task> result = std::move(loop);
+      std::shared_ptr<task_impl<>> result = std::move(loop);
       task_queue_.erase(i);
       return result;
     } else {
@@ -94,8 +94,7 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
       l.lock();
 
       if (completed) {
-        // We completed the loop, notify the helper CV in case it is waiting for this loop to complete.
-        cv_helper_.notify_all();
+        loop->cv.notify_all();
       }
     } else if (spins-- > 0) {
       l.unlock();
@@ -111,7 +110,6 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
   std::unique_lock l(mutex_);
   t();
   cv_worker_.notify_all();
-  cv_helper_.notify_all();
 }
 
 std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
@@ -120,22 +118,21 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task
   task_queue_.push_back({max_workers, loop, std::move(t)});
   if (n == 1 || max_workers == 1) {
     cv_worker_.notify_one();
-    cv_helper_.notify_one();
   } else {
     cv_worker_.notify_all();
-    cv_helper_.notify_all();
   }
   return loop;
 }
 
 void thread_pool_impl::wait_for(task* l, task_body body) {
-  assert(std::find(task_stack.begin(), task_stack.end(), l) == task_stack.end());
-  task_stack.push_back(l);
-  bool completed = l->run(body);
+  task_impl<>* task = reinterpret_cast<task_impl<>*>(l);
+  assert(std::find(task_stack.begin(), task_stack.end(), task) == task_stack.end());
+  task_stack.push_back(task);
+  bool completed = task->run(body);
   task_stack.pop_back();
   if (!completed || !l->done()) {
     // The loop isn't done, work on other tasks while waiting for it to complete.
-    wait_for([&]() { return l->done(); });
+    wait_for([&]() { return task->done(); }, task->cv);
   }
 }
 

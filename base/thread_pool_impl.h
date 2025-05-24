@@ -37,6 +37,8 @@ public:
     std::atomic<std::size_t> todo_ = 0;
 
   public:
+    std::condition_variable cv;
+
     // Set up a parallel for loop over `n` items.
     task_impl(std::size_t n) : todo_(n) {
       // Divide the work evenly among the tasks we have.
@@ -107,17 +109,11 @@ private:
   using queued_task = std::tuple<int, std::shared_ptr<task_impl<>>, task_body>;
   std::deque<queued_task> task_queue_;
   std::mutex mutex_;
-  // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
-  // - cv_helper_ is waited on by threads that are helping the worker threads while waiting for a condition.
-  // - cv_worker_ is waited on by worker threads.
-  // Enqueuing a task wakes up a thread from each condition variable.
-  // cv_helper_ is only notified when the state of a condition may change (a task completes, or an `atomic_call` runs).
-  std::condition_variable cv_helper_;
   std::condition_variable cv_worker_;
 
   void wait_for(predicate_ref condition, std::condition_variable& cv);
 
-  std::shared_ptr<task> dequeue(task_body& t);
+  std::shared_ptr<task_impl<>> dequeue(task_body& t);
 
 public:
   // `workers` indicates how many worker threads the thread pool will have.
@@ -137,7 +133,7 @@ public:
 
   std::shared_ptr<task> enqueue(std::size_t n, task_body t, int max_workers) override;
   void wait_for(task* l, task_body body) override;
-  void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
+  void wait_for(predicate_ref condition) override { wait_for(condition, cv_worker_); }
   void atomic_call(function_ref<void()> t) override;
 };
 
