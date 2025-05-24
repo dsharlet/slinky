@@ -39,7 +39,7 @@ thread_local std::vector<const thread_pool::task*> task_stack;
 
 }  // namespace
 
-std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue() {
+std::shared_ptr<thread_pool_impl::task_impl<>> thread_pool_impl::dequeue() {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
     std::shared_ptr<task_impl<>>& loop = *i;
     if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
@@ -54,7 +54,7 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue() {
       i = task_queue_.erase(i);
     } else if (iterations_remaining == 1) {
       // We're the last worker for this loop, remove it from the queue.
-      std::shared_ptr<task> result = std::move(loop);
+      std::shared_ptr<task_impl<>> result = std::move(loop);
       task_queue_.erase(i);
       return result;
     } else {
@@ -76,7 +76,7 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
 
       // Run the task.
       task_stack.push_back(&*loop);
-      bool completed = loop->run();
+      bool completed = loop->work();
       task_stack.pop_back();
 
       // We did a task, reset the spin counter.
@@ -120,13 +120,14 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task
 }
 
 void thread_pool_impl::wait_for(task* l) {
-  assert(std::find(task_stack.begin(), task_stack.end(), l) == task_stack.end());
-  task_stack.push_back(l);
-  bool completed = l->run();
+  task_impl<>* task = reinterpret_cast<task_impl<>*>(l);
+  assert(std::find(task_stack.begin(), task_stack.end(), task) == task_stack.end());
+  task_stack.push_back(task);
+  bool completed = task->work();
   task_stack.pop_back();
-  if (!completed || !l->done()) {
+  if (!completed || !task->done()) {
     // The loop isn't done, work on other tasks while waiting for it to complete.
-    wait_for([&]() { return l->done(); });
+    wait_for([&]() { return task->done(); });
   }
 }
 

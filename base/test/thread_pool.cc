@@ -15,7 +15,7 @@ bool test_task_impl_done(int n) {
   std::vector<int> ran(n);
 
   thread_pool_impl::task_impl<K> p(n, [&](int i) { ran[i]++; });
-  p.run();
+  p.work();
   return std::all_of(ran.begin(), ran.end(), [](int i) { return i == 1; });
 }
 

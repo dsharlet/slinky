@@ -22,11 +22,6 @@ public:
   public:
     virtual ~task() = default;
 
-    // Work on the task. This returns when work on all items in the task have started, but may return before all items
-    // are complete. Returns true if this call resulted in the loop being done (any subsequent calls to `run` will do no
-    // work), but the loop may not be done.
-    virtual bool run() = 0;
-
     // Returns true if all work is complete.
     virtual bool done() const = 0;
   };
@@ -44,7 +39,8 @@ public:
   virtual std::shared_ptr<task> enqueue(
       std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  // Does not return until the loop is complete.
+  // Does not return until the loop is complete. The task object must have been created by the `enqueue` function of
+  // this thread pool.
   virtual void wait_for(task* l) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.

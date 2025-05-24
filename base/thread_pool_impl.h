@@ -28,8 +28,10 @@ public:
   public:
     task_body body;
 
-    alignas(cache_line_size) std::atomic<std::size_t> todo_;
-    std::atomic<int> worker_;
+    alignas(cache_line_size) std::atomic<std::size_t> todo;
+
+    // How many workers can start working on this loop. Decremented as workers begin working.
+    alignas(cache_line_size) std::atomic<int> workers;
 
     struct task {
       // i is the next iteration to run.
@@ -42,7 +44,7 @@ public:
 
     // Set up a parallel for loop over `n` items.
     task_impl(std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
-        : body(std::move(body)), todo_(n), worker_(max_workers) {
+        : body(std::move(body)), todo(n), workers(max_workers) {
       // Divide the work evenly among the tasks we have.
       if (K > 1 && n < K) {
         for (std::size_t i = 0; i < n; ++i) {
@@ -68,12 +70,12 @@ public:
 
     // Work on the loop. This returns when work on all items in the loop has started, but may return before all items
     // are complete. Returns true if this call resulted in the loop being done, but the loop may not be done.
-    bool run() override {
-      int w = --worker_;
+    bool work() {
+      int w = --workers;
       if (w < 0) {
         return false;
       }
-      //task_body body = this->body;
+      task_body body = this->body;
       std::size_t done = 0;
       // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
       // stealing work from other workers.
@@ -89,7 +91,7 @@ public:
           ++done;
         }
       }
-      return done > 0 && (todo_ -= done) == 0;
+      return done > 0 && (todo -= done) == 0;
     }
 
     // Return the number of loop iterations that have not started yet. This returns an upper bound, by the time the
@@ -103,7 +105,7 @@ public:
       return result;
     }
 
-    bool done() const override { return todo_ == 0; }
+    bool done() const override { return todo == 0; }
   };
 
 private:
@@ -124,7 +126,7 @@ private:
 
   void wait_for(predicate_ref condition, std::condition_variable& cv);
 
-  std::shared_ptr<task> dequeue();
+  std::shared_ptr<task_impl<>> dequeue();
 
 public:
   // `workers` indicates how many worker threads the thread pool will have.
