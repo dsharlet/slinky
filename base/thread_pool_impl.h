@@ -19,14 +19,17 @@ constexpr std::size_t cache_line_size = 64;
 
 // This implements a simple thread pool that maps easily to the eval_context thread pool interface.
 class thread_pool_impl final : public thread_pool {
+public:
   // This is a helper class for implementing a work stealing scheduler for a parallel for loop. It divides the work
   // among `K` task objects, which can be executed independently by separate threads. When the task is complete, the
-  // thread will try to steal work from other tasks.
-  template <size_t K = 1>
+  // thread will try to steal work from other tasks. K must be a power of 2.
+  template <int K = 1>
   class task_impl final : public task {
   public:
     task_body body;
-    int max_workers;
+
+    alignas(cache_line_size) std::atomic<std::size_t> todo_;
+    std::atomic<int> worker_;
 
     struct task {
       // i is the next iteration to run.
@@ -36,11 +39,10 @@ class thread_pool_impl final : public thread_pool {
       std::size_t end;
     };
     task tasks_[K];
-    alignas(cache_line_size) std::atomic<std::size_t> worker_ = 0;
-    std::atomic<std::size_t> todo_ = 0;
 
     // Set up a parallel for loop over `n` items.
-    task_impl(std::size_t n, task_body body, int max_workers) : body(std::move(body)), max_workers(max_workers), todo_(n) {
+    task_impl(std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
+        : body(std::move(body)), todo_(n), worker_(max_workers) {
       // Divide the work evenly among the tasks we have.
       if (K > 1 && n < K) {
         for (std::size_t i = 0; i < n; ++i) {
@@ -67,13 +69,16 @@ class thread_pool_impl final : public thread_pool {
     // Work on the loop. This returns when work on all items in the loop has started, but may return before all items
     // are complete. Returns true if this call resulted in the loop being done, but the loop may not be done.
     bool run() override {
-      task_body body = this->body;
-      std::size_t w = K == 1 ? 0 : worker_++;
+      int w = --worker_;
+      if (w < 0) {
+        return false;
+      }
+      //task_body body = this->body;
       std::size_t done = 0;
       // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
       // stealing work from other workers.
-      for (std::size_t i = 0; i < K; ++i) {
-        task& k = tasks_[(i + w) % K];
+      for (int i = 0; i < K; ++i) {
+        task& k = tasks_[(i + w) & (K - 1)];
         while (true) {
           std::size_t i = k.i++;
           if (i >= k.end) {
@@ -101,6 +106,7 @@ class thread_pool_impl final : public thread_pool {
     bool done() const override { return todo_ == 0; }
   };
 
+private:
   int expected_thread_count_ = 0;
   std::atomic<int> worker_count_{0};
   std::vector<std::thread> threads_;

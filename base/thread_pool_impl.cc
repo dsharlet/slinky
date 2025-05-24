@@ -47,16 +47,12 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue() {
       ++i;
       continue;
     }
+
     size_t iterations_remaining = loop->count_remaining_iterations();
     if (iterations_remaining == 0) {
       // No more threads can start working on this loop.
       i = task_queue_.erase(i);
-      continue;
-    }
-
-    // We are going to work on this loop.
-    assert(loop->max_workers > 0);
-    if (--loop->max_workers == 0 || iterations_remaining == 1) {
+    } else if (iterations_remaining == 1) {
       // We're the last worker for this loop, remove it from the queue.
       std::shared_ptr<task> result = std::move(loop);
       task_queue_.erase(i);
