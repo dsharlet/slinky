@@ -39,9 +39,9 @@ thread_local std::vector<const thread_pool::task*> task_stack;
 
 }  // namespace
 
-std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue(task_body& t) {
+std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue() {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
-    std::shared_ptr<task_impl<>>& loop = std::get<1>(*i);
+    std::shared_ptr<task_impl<>>& loop = *i;
     if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
       // Don't run the same loop multiple times on the same thread.
       ++i;
@@ -55,17 +55,13 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::dequeue(task_body& t) {
     }
 
     // We are going to work on this loop.
-    int& max_workers = std::get<0>(*i);
-    assert(max_workers > 0);
-    if (--max_workers == 0 || iterations_remaining == 1) {
+    assert(loop->max_workers > 0);
+    if (--loop->max_workers == 0 || iterations_remaining == 1) {
       // We're the last worker for this loop, remove it from the queue.
-      t = std::move(std::get<2>(*i));
       std::shared_ptr<task> result = std::move(loop);
       task_queue_.erase(i);
       return result;
     } else {
-      // Leave the loop in the queue for other workers to work on.
-      t = std::get<2>(*i);
       return loop;
     }
   }
@@ -79,13 +75,12 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
 
   std::unique_lock l(mutex_);
   while (!condition()) {
-    task_body t;
-    if (auto loop = dequeue(t)) {
+    if (auto loop = dequeue()) {
       l.unlock();
 
       // Run the task.
       task_stack.push_back(&*loop);
-      bool completed = loop->run(t);
+      bool completed = loop->run();
       task_stack.pop_back();
 
       // We did a task, reset the spin counter.
@@ -115,9 +110,9 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
 }
 
 std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
-  auto loop = std::make_shared<task_impl<>>(n);
+  auto loop = std::make_shared<task_impl<>>(n, std::move(t), max_workers);
   std::unique_lock l(mutex_);
-  task_queue_.push_back({max_workers, loop, std::move(t)});
+  task_queue_.push_back(loop);
   if (n == 1 || max_workers == 1) {
     cv_worker_.notify_one();
     cv_helper_.notify_one();
@@ -128,10 +123,10 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task
   return loop;
 }
 
-void thread_pool_impl::wait_for(task* l, task_body body) {
+void thread_pool_impl::wait_for(task* l) {
   assert(std::find(task_stack.begin(), task_stack.end(), l) == task_stack.end());
   task_stack.push_back(l);
-  bool completed = l->run(body);
+  bool completed = l->run();
   task_stack.pop_back();
   if (!completed || !l->done()) {
     // The loop isn't done, work on other tasks while waiting for it to complete.
