@@ -39,15 +39,24 @@ thread_local std::vector<const thread_pool::task*> task_stack;
 
 }  // namespace
 
-std::shared_ptr<thread_pool_impl::task_impl<>> thread_pool_impl::dequeue() {
+std::shared_ptr<thread_pool_impl::task_impl<>> thread_pool_impl::dequeue(int& worker) {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
     const std::shared_ptr<task_impl<>>& loop = *i;
-    if (loop->all_work_started()) {
-      // No more threads can start working on this loop.
-      i = task_queue_.erase(i);
-    } else if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
+    if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
       // Don't run the same loop multiple times on the same thread.
       ++i;
+      continue;
+    }
+    // We want to work on this loop, find out which worker we will be.
+    worker = --loop->workers;
+    if (worker < 0 || loop->all_work_started()) {
+      // No more threads can start working on this loop.
+      i = task_queue_.erase(i);
+    } else if (worker == 0) {
+      // This is the last worker for this loop.
+      auto result = std::move(loop);
+      i = task_queue_.erase(i);
+      return result;
     } else {
       return loop;
     }
@@ -62,12 +71,13 @@ void thread_pool_impl::wait_for(predicate_ref condition, std::condition_variable
 
   std::unique_lock l(mutex_);
   while (!condition()) {
-    if (auto loop = dequeue()) {
+    int worker;
+    if (auto loop = dequeue(worker)) {
       l.unlock();
 
       // Run the task.
       task_stack.push_back(&*loop);
-      bool completed = loop->work();
+      bool completed = loop->work(worker);
       task_stack.pop_back();
 
       // We did a task, reset the spin counter.

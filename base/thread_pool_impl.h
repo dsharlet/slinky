@@ -22,7 +22,7 @@ class thread_pool_impl final : public thread_pool {
 public:
   // This is a helper class for implementing a work stealing scheduler for a parallel for loop. It divides the work
   // among `K` task objects, which can be executed independently by separate threads. When the task is complete, the
-  // thread will try to steal work from other tasks. K must be a power of 2.
+  // thread will try to steal work from other tasks.
   template <std::size_t K = 4>
   class task_impl final : public task {
   public:
@@ -37,35 +37,35 @@ public:
       // i is the next iteration to run.
       alignas(cache_line_size) std::atomic<std::size_t> i;
 
-      // The last iteration to run in this task.
+      // One past the last iteration to run in this task.
       std::size_t end;
     };
-    task tasks_[K];
+    task tasks[K];
 
     // Set up a parallel for loop over `n` items.
     task_impl(bool ordered, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
         : body(std::move(body)), todo(n), workers(max_workers) {
       if (ordered) {
         // All work items go in the first task.
-        tasks_[0].i = 0;
-        tasks_[0].end = n;
+        tasks[0].i = 0;
+        tasks[0].end = n;
         for (std::size_t i = 1; i < K; ++i) {
-          task& k = tasks_[i];
+          task& k = tasks[i];
           k.i = 0;
           k.end = 0;
         }
       } else if (K > 1 && n < K) {
         // The first n tasks get 1 work item, the rest get 0.
         for (std::size_t i = 0; i < K; ++i) {
-          task& k = tasks_[i];
+          task& k = tasks[i];
           k.i = i;
-          k.end = i < n ? i + 1 : 0;
+          k.end = std::min(i + 1, n);
         }
       } else {
         std::size_t begin = 0;
         // Divide the work evenly among the tasks we have.
         for (std::size_t i = 0; i < K; ++i) {
-          task& k = tasks_[i];
+          task& k = tasks[i];
           k.i = begin;
           k.end = ((i + 1) * n) / K;
           begin = k.end;
@@ -75,20 +75,16 @@ public:
 
     // Work on the loop. This returns when work on all items in the loop has started, but may return before all items
     // are complete. Returns true if this call resulted in the loop being done, but the loop may not be done.
-    bool work() {
-      int w = --workers;
-      if (w < 0) {
-        return false;
-      }
+    bool work(std::size_t worker) {
       task_body body = this->body;
       std::size_t done = 0;
       // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
       // stealing work from other workers.
       for (std::size_t i = 0; i < K; ++i) {
-        task& k = tasks_[(i + w) & (K - 1)];
+        task& t = tasks[(i + worker) % K];
         while (true) {
-          std::size_t i = k.i++;
-          if (i >= k.end) {
+          std::size_t i = t.i++;
+          if (i >= t.end) {
             // There are no more iterations to run.
             break;
           }
@@ -99,10 +95,18 @@ public:
       return done > 0 && (todo -= done) == 0;
     }
 
+    bool work() { 
+      int worker = --workers;
+      if (worker >= 0) {
+        return work(worker);
+      } else {
+        return false;
+      }
+    }
+
     // Returns true if there is no work left to start.
     bool all_work_started() const {
-      if (workers <= 0) return true;
-      for (const task& k : tasks_) {
+      for (const task& k : tasks) {
         if (k.i < k.end) return false;
       }
       return true;
@@ -129,7 +133,7 @@ private:
 
   void wait_for(predicate_ref condition, std::condition_variable& cv);
 
-  std::shared_ptr<task_impl<>> dequeue();
+  std::shared_ptr<task_impl<>> dequeue(int& worker);
 
 public:
   // `workers` indicates how many worker threads the thread pool will have.
