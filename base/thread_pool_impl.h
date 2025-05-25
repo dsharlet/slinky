@@ -23,7 +23,7 @@ public:
   // This is a helper class for implementing a work stealing scheduler for a parallel for loop. It divides the work
   // among `K` task objects, which can be executed independently by separate threads. When the task is complete, the
   // thread will try to steal work from other tasks. K must be a power of 2.
-  template <int K = 1>
+  template <std::size_t K = 4>
   class task_impl final : public task {
   public:
     task_body body;
@@ -43,22 +43,27 @@ public:
     task tasks_[K];
 
     // Set up a parallel for loop over `n` items.
-    task_impl(std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
+    task_impl(bool ordered, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
         : body(std::move(body)), todo(n), workers(max_workers) {
-      // Divide the work evenly among the tasks we have.
-      if (K > 1 && n < K) {
-        for (std::size_t i = 0; i < n; ++i) {
-          task& k = tasks_[i];
-          k.i = i;
-          k.end = i + 1;
-        }
-        for (std::size_t i = n; i < K; ++i) {
+      if (ordered) {
+        // All work items go in the first task.
+        tasks_[0].i = 0;
+        tasks_[0].end = n;
+        for (std::size_t i = 1; i < K; ++i) {
           task& k = tasks_[i];
           k.i = 0;
           k.end = 0;
         }
+      } else if (K > 1 && n < K) {
+        // The first n tasks get 1 work item, the rest get 0.
+        for (std::size_t i = 0; i < K; ++i) {
+          task& k = tasks_[i];
+          k.i = i;
+          k.end = i < n ? i + 1 : 0;
+        }
       } else {
         std::size_t begin = 0;
+        // Divide the work evenly among the tasks we have.
         for (std::size_t i = 0; i < K; ++i) {
           task& k = tasks_[i];
           k.i = begin;
@@ -79,7 +84,7 @@ public:
       std::size_t done = 0;
       // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
       // stealing work from other workers.
-      for (int i = 0; i < K; ++i) {
+      for (std::size_t i = 0; i < K; ++i) {
         task& k = tasks_[(i + w) & (K - 1)];
         while (true) {
           std::size_t i = k.i++;

@@ -97,7 +97,11 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
 }
 
 std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
-  auto loop = std::make_shared<task_impl<>>(n, std::move(t), std::min(max_workers, thread_count()));
+  // If the number of workers is less than "infinite", we assume the caller wants a single loop counter.
+  // TODO: This is a hack that should be removed when we remove pipelined loops.
+  const bool ordered = max_workers < std::numeric_limits<int>::max();
+
+  auto loop = std::make_shared<task_impl<>>(ordered, n, std::move(t), std::min(max_workers, thread_count()));
   std::unique_lock l(mutex_);
   task_queue_.push_back(loop);
   if (n == 1 || max_workers == 1) {

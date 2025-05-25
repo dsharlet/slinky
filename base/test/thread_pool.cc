@@ -11,20 +11,22 @@ namespace slinky {
 int sum_arithmetic_sequence(int n) { return n * (n - 1) / 2; }
 
 template <int K>
-bool test_task_impl_done(int n) {
+bool test_task_impl_done(bool ordered, int n) {
   std::vector<int> ran(n);
 
-  thread_pool_impl::task_impl<K> p(n, [&](int i) { ran[i]++; });
+  thread_pool_impl::task_impl<K> p(ordered, n, [&](int i) { ran[i]++; });
   p.work();
   return std::all_of(ran.begin(), ran.end(), [](int i) { return i == 1; });
 }
 
 TEST(task_impl, done) {
   for (int n = 0; n < 100; ++n) {
-    ASSERT_TRUE(test_task_impl_done<1>(n));
-    ASSERT_TRUE(test_task_impl_done<2>(n));
-    ASSERT_TRUE(test_task_impl_done<4>(n));
-    ASSERT_TRUE(test_task_impl_done<16>(n));
+    for (bool ordered : {false, true}) {
+      ASSERT_TRUE(test_task_impl_done<1>(ordered, n));
+      ASSERT_TRUE(test_task_impl_done<2>(ordered, n));
+      ASSERT_TRUE(test_task_impl_done<4>(ordered, n));
+      ASSERT_TRUE(test_task_impl_done<16>(ordered, n));
+    }
   }
 }
 
