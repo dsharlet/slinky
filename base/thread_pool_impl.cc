@@ -39,9 +39,9 @@ thread_local std::vector<const thread_pool::task*> task_stack;
 
 }  // namespace
 
-std::shared_ptr<thread_pool_impl::task_impl<>> thread_pool_impl::dequeue(int& worker) {
+ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
   for (auto i = task_queue_.begin(); i != task_queue_.end();) {
-    const std::shared_ptr<task_impl<>>& loop = *i;
+    ref_count<task_impl>& loop = *i;
     if (std::find(task_stack.begin(), task_stack.end(), &*loop) != task_stack.end()) {
       // Don't run the same loop multiple times on the same thread.
       ++i;
@@ -106,12 +106,16 @@ void thread_pool_impl::atomic_call(function_ref<void()> t) {
   cv_helper_.notify_all();
 }
 
-std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
+ref_count<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task_body t, int max_workers) {
   // If the number of workers is less than "infinite", we assume the caller wants a single loop counter.
   // TODO: This is a hack that should be removed when we remove pipelined loops.
   const bool ordered = max_workers < std::numeric_limits<int>::max();
 
-  auto loop = std::make_shared<task_impl<>>(ordered, n, std::move(t), std::min(max_workers, thread_count()));
+  max_workers = std::min(max_workers, thread_count());
+
+  constexpr int max_shards = 8;
+  const std::size_t shard_count = ordered ? 1 : std::min<std::size_t>(n, std::min(max_shards, max_workers));
+  auto loop = task_impl::make(shard_count, n, std::move(t), max_workers);
   std::unique_lock l(mutex_);
   task_queue_.push_back(loop);
   if (n == 1 || max_workers == 1) {
@@ -125,7 +129,7 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task
 }
 
 void thread_pool_impl::wait_for(task* t) {
-  task_impl<>* task = reinterpret_cast<task_impl<>*>(t);
+  task_impl* task = reinterpret_cast<task_impl*>(t);
   assert(std::find(task_stack.begin(), task_stack.end(), task) == task_stack.end());
   task_stack.push_back(task);
   bool completed = task->work();

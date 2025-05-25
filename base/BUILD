@@ -28,6 +28,7 @@ cc_library(
         "thread_pool.h",
         "function_ref.h",
     ],
+    deps = [":base"],
     visibility = ["//visibility:public"],
 )
 

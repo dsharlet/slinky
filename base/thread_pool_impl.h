@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "base/function_ref.h"
+#include "base/ref_count.h"
 #include "base/thread_pool.h"
 
 namespace slinky {
@@ -21,9 +22,8 @@ constexpr std::size_t cache_line_size = 64;
 class thread_pool_impl final : public thread_pool {
 public:
   // This is a helper class for implementing a work stealing scheduler for a parallel for loop. It divides the work
-  // among `K` task objects, which can be executed independently by separate threads. When the task is complete, the
-  // thread will try to steal work from other tasks.
-  template <std::size_t K = 4>
+  // among `shards`, which can be executed independently by separate threads. When the task is complete, the
+  // thread will try to steal work from other shards.
   class task_impl final : public task {
   public:
     task_body body;
@@ -40,37 +40,33 @@ public:
       // One past the last iteration to run in this shard.
       std::size_t end;
     };
-    shard shards[K];
+    std::size_t shard_count;
+    // This memory follows the task_impl object.
+    shard shards[0];
 
+  private:
     // Set up a parallel for loop over `n` items.
-    task_impl(bool ordered, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
-        : body(std::move(body)), todo(n), max_workers(max_workers) {
-      if (ordered) {
-        // All work items go in the first shard.
-        shards[0].i = 0;
-        shards[0].end = n;
-        for (std::size_t i = 1; i < K; ++i) {
-          shard& s = shards[i];
-          s.i = 0;
-          s.end = 0;
-        }
-      } else if (K > 1 && n < K) {
-        // The first n shards get 1 work item, the rest get 0.
-        for (std::size_t i = 0; i < K; ++i) {
-          shard& s = shards[i];
-          s.i = i;
-          s.end = std::min(i + 1, n);
-        }
-      } else {
-        std::size_t begin = 0;
-        // Divide the work evenly among the shards we have.
-        for (std::size_t i = 0; i < K; ++i) {
-          shard& s = shards[i];
-          s.i = begin;
-          s.end = ((i + 1) * n) / K;
-          begin = s.end;
-        }
+    task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers)
+        : body(std::move(body)), todo(n), max_workers(max_workers), shard_count(shard_count) {
+      std::size_t begin = 0;
+      // Divide the work evenly among the shards we have.
+      for (std::size_t i = 0; i < shard_count; ++i) {
+        shard& s = shards[i];
+        s.i = begin;
+        s.end = ((i + 1) * n) / shard_count;
+        begin = s.end;
       }
+    }
+
+  public:
+    static slinky::ref_count<task_impl> make(std::size_t shard_count, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max()) {
+      void* memory = aligned_alloc(cache_line_size, sizeof(task_impl) + sizeof(shard) * shard_count);
+      return new (memory) task_impl(shard_count, n, std::move(body), max_workers);
+    }
+
+    void destroy() override { 
+      this->~task_impl();
+      free(this);
     }
 
     // Work on the loop. This returns when work on all items in the loop has started, but may return before all items
@@ -80,8 +76,8 @@ public:
       std::size_t done = 0;
       // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
       // stealing work from other workers.
-      for (std::size_t i = 0; i < K; ++i) {
-        shard& s = shards[(i + worker) % K];
+      for (std::size_t i = 0; i < shard_count; ++i) {
+        shard& s = shards[(i + worker) % shard_count];
         while (true) {
           std::size_t i = s.i++;
           if (i >= s.end) {
@@ -95,7 +91,7 @@ public:
       return done > 0 && (todo -= done) == 0;
     }
 
-    bool work() { 
+    bool work() {
       int worker = --max_workers;
       if (worker >= 0) {
         return work(worker);
@@ -106,7 +102,8 @@ public:
 
     // Returns true if there is no work left to start.
     bool all_work_started() const {
-      for (const shard& s : shards) {
+      for (std::size_t i = 0; i < shard_count; ++i) {
+        const shard& s = shards[i];
         if (s.i < s.end) return false;
       }
       return true;
@@ -121,7 +118,7 @@ private:
   std::vector<std::thread> threads_;
   std::atomic<bool> stop_;
 
-  std::deque<std::shared_ptr<task_impl<>>> task_queue_;
+  std::deque<ref_count<task_impl>> task_queue_;
   std::mutex mutex_;
   // We have two condition variables in an attempt to minimize unnecessary thread wakeups:
   // - cv_helper_ is waited on by threads that are helping the worker threads while waiting for a condition.
@@ -133,7 +130,7 @@ private:
 
   void wait_for(predicate_ref condition, std::condition_variable& cv);
 
-  std::shared_ptr<task_impl<>> dequeue(int& worker);
+  ref_count<task_impl> dequeue(int& worker);
 
 public:
   // `workers` indicates how many worker threads the thread pool will have.
@@ -151,7 +148,7 @@ public:
 
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
-  std::shared_ptr<task> enqueue(std::size_t n, task_body t, int max_workers) override;
+  ref_count<task> enqueue(std::size_t n, task_body t, int max_workers) override;
   void wait_for(task* t) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(function_ref<void()> t) override;
