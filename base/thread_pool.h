@@ -1,14 +1,10 @@
 #ifndef SLINKY_BASE_THREAD_POOL_H
 #define SLINKY_BASE_THREAD_POOL_H
 
-#include <atomic>
-#include <cassert>
-#include <condition_variable>
-#include <deque>
+#include <cstddef>
 #include <functional>
 #include <limits>
-#include <mutex>
-#include <thread>
+#include <utility>
 
 #include "base/function_ref.h"
 #include "base/ref_count.h"

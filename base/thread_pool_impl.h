@@ -25,13 +25,13 @@ public:
   // among `shards`, which can be executed independently by separate threads. When the task is complete, the
   // thread will try to steal work from other shards.
   class task_impl final : public task {
-  public:
-    task_body body;
+  private:
+    task_body body_;
 
-    alignas(cache_line_size) std::atomic<std::size_t> todo;
+    alignas(cache_line_size) std::atomic<std::size_t> todo_;
 
     // How many workers can start working on this loop. Decremented as workers begin working.
-    alignas(cache_line_size) std::atomic<int> max_workers;
+    alignas(cache_line_size) std::atomic<int> max_workers_;
 
     struct shard {
       // i is the next iteration to run.
@@ -40,76 +40,32 @@ public:
       // One past the last iteration to run in this shard.
       std::size_t end;
     };
-    std::size_t shard_count;
+    std::size_t shard_count_;
     // This memory follows the task_impl object.
-    shard shards[0];
+    shard shards_[0];
 
-  private:
     // Set up a parallel for loop over `n` items.
-    task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers)
-        : body(std::move(body)), todo(n), max_workers(max_workers), shard_count(shard_count) {
-      std::size_t begin = 0;
-      // Divide the work evenly among the shards we have.
-      for (std::size_t i = 0; i < shard_count; ++i) {
-        shard& s = shards[i];
-        s.i = begin;
-        s.end = ((i + 1) * n) / shard_count;
-        begin = s.end;
-      }
-    }
+    task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers);
 
   public:
-    static slinky::ref_count<task_impl> make(std::size_t shard_count, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max()) {
-      void* memory = aligned_alloc(cache_line_size, sizeof(task_impl) + sizeof(shard) * shard_count);
-      return new (memory) task_impl(shard_count, n, std::move(body), max_workers);
-    }
+    static slinky::ref_count<task_impl> make(
+        std::size_t shard_count, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max());
 
-    void destroy() override { 
-      this->~task_impl();
-      free(this);
-    }
+    void destroy() override;
+
+    // Return a unique worker ID for this loop. Negative worker IDs are invalid, indicating no more workers should work
+    // on this loop.
+    int allocate_worker() { return --max_workers_; }
 
     // Work on the loop. This returns when work on all items in the loop has started, but may return before all items
     // are complete. Returns true if this call resulted in the loop being done, but the loop may not be done.
-    bool work(std::size_t worker) {
-      task_body body = this->body;
-      std::size_t done = 0;
-      // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
-      // stealing work from other workers.
-      for (std::size_t i = 0; i < shard_count; ++i) {
-        shard& s = shards[(i + worker) % shard_count];
-        while (true) {
-          std::size_t i = s.i++;
-          if (i >= s.end) {
-            // There are no more iterations to run.
-            break;
-          }
-          body(i);
-          ++done;
-        }
-      }
-      return done > 0 && (todo -= done) == 0;
-    }
-
-    bool work() {
-      int worker = --max_workers;
-      if (worker >= 0) {
-        return work(worker);
-      } else {
-        return false;
-      }
-    }
+    bool work(std::size_t worker);
+    bool work();
 
     // Returns true if there is no work left to start.
-    bool all_work_started() const {
-      for (std::size_t i = 0; i < shard_count; ++i) {
-        const shard& s = shards[i];
-        if (s.i < s.end) return false;
-      }
-      return true;
-    }
+    bool all_work_started() const;
 
-    bool done() const override { return todo == 0; }
+    bool done() const override { return todo_ == 0; }
   };
 
 private:

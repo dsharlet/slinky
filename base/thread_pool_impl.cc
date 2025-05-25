@@ -9,6 +9,66 @@
 
 namespace slinky {
 
+thread_pool_impl::task_impl::task_impl(std::size_t shard_count, std::size_t n, task_body body, int max_workers)
+    : body_(std::move(body)), todo_(n), max_workers_(max_workers), shard_count_(shard_count) {
+  std::size_t begin = 0;
+  // Divide the work evenly among the shards we have.
+  for (std::size_t i = 0; i < shard_count_; ++i) {
+    shard& s = shards_[i];
+    s.i = begin;
+    s.end = ((i + 1) * n) / shard_count_;
+    begin = s.end;
+  }
+}
+
+slinky::ref_count<thread_pool_impl::task_impl> thread_pool_impl::task_impl::make(
+    std::size_t shard_count, std::size_t n, task_body body, int max_workers) {
+  void* memory = aligned_alloc(cache_line_size, sizeof(task_impl) + sizeof(shard) * shard_count);
+  return new (memory) task_impl(shard_count, n, std::move(body), max_workers);
+}
+
+void thread_pool_impl::task_impl::destroy() {
+  this->~task_impl();
+  free(this);
+}
+
+bool thread_pool_impl::task_impl::work(std::size_t worker) {
+  task_body body = body_;
+  std::size_t done = 0;
+  // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
+  // stealing work from other workers.
+  for (std::size_t i = 0; i < shard_count_; ++i) {
+    shard& s = shards_[(i + worker) % shard_count_];
+    while (true) {
+      std::size_t i = s.i++;
+      if (i >= s.end) {
+        // There are no more iterations to run.
+        break;
+      }
+      body(i);
+      ++done;
+    }
+  }
+  return done > 0 && (todo_ -= done) == 0;
+}
+
+bool thread_pool_impl::task_impl::work() {
+  int worker = allocate_worker();
+  if (worker >= 0) {
+    return work(worker);
+  } else {
+    return false;
+  }
+}
+
+bool thread_pool_impl::task_impl::all_work_started() const {
+  for (std::size_t i = 0; i < shard_count_; ++i) {
+    const shard& s = shards_[i];
+    if (s.i < s.end) return false;
+  }
+  return true;
+}
+
 thread_pool_impl::thread_pool_impl(int workers, function_ref<void()> init) : stop_(false) {
   auto worker = [this, init]() {
     if (init) init();
@@ -48,7 +108,7 @@ ref_count<thread_pool_impl::task_impl> thread_pool_impl::dequeue(int& worker) {
       continue;
     }
     // We want to work on this loop, find out which worker we will be.
-    worker = --loop->max_workers;
+    worker = loop->allocate_worker();
     if (worker < 0 || loop->all_work_started()) {
       // No more threads can start working on this loop.
       i = task_queue_.erase(i);
