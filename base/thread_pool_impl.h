@@ -31,44 +31,44 @@ public:
     alignas(cache_line_size) std::atomic<std::size_t> todo;
 
     // How many workers can start working on this loop. Decremented as workers begin working.
-    alignas(cache_line_size) std::atomic<int> workers;
+    alignas(cache_line_size) std::atomic<int> max_workers;
 
-    struct task {
+    struct shard {
       // i is the next iteration to run.
       alignas(cache_line_size) std::atomic<std::size_t> i;
 
-      // One past the last iteration to run in this task.
+      // One past the last iteration to run in this shard.
       std::size_t end;
     };
-    task tasks[K];
+    shard shards[K];
 
     // Set up a parallel for loop over `n` items.
     task_impl(bool ordered, std::size_t n, task_body body, int max_workers = std::numeric_limits<int>::max())
-        : body(std::move(body)), todo(n), workers(max_workers) {
+        : body(std::move(body)), todo(n), max_workers(max_workers) {
       if (ordered) {
-        // All work items go in the first task.
-        tasks[0].i = 0;
-        tasks[0].end = n;
+        // All work items go in the first shard.
+        shards[0].i = 0;
+        shards[0].end = n;
         for (std::size_t i = 1; i < K; ++i) {
-          task& k = tasks[i];
-          k.i = 0;
-          k.end = 0;
+          shard& s = shards[i];
+          s.i = 0;
+          s.end = 0;
         }
       } else if (K > 1 && n < K) {
-        // The first n tasks get 1 work item, the rest get 0.
+        // The first n shards get 1 work item, the rest get 0.
         for (std::size_t i = 0; i < K; ++i) {
-          task& k = tasks[i];
-          k.i = i;
-          k.end = std::min(i + 1, n);
+          shard& s = shards[i];
+          s.i = i;
+          s.end = std::min(i + 1, n);
         }
       } else {
         std::size_t begin = 0;
-        // Divide the work evenly among the tasks we have.
+        // Divide the work evenly among the shards we have.
         for (std::size_t i = 0; i < K; ++i) {
-          task& k = tasks[i];
-          k.i = begin;
-          k.end = ((i + 1) * n) / K;
-          begin = k.end;
+          shard& s = shards[i];
+          s.i = begin;
+          s.end = ((i + 1) * n) / K;
+          begin = s.end;
         }
       }
     }
@@ -81,10 +81,10 @@ public:
       // The first iteration of this loop runs the work allocated to this worker. Subsequent iterations of this loop are
       // stealing work from other workers.
       for (std::size_t i = 0; i < K; ++i) {
-        task& t = tasks[(i + worker) % K];
+        shard& s = shards[(i + worker) % K];
         while (true) {
-          std::size_t i = t.i++;
-          if (i >= t.end) {
+          std::size_t i = s.i++;
+          if (i >= s.end) {
             // There are no more iterations to run.
             break;
           }
@@ -96,7 +96,7 @@ public:
     }
 
     bool work() { 
-      int worker = --workers;
+      int worker = --max_workers;
       if (worker >= 0) {
         return work(worker);
       } else {
@@ -106,8 +106,8 @@ public:
 
     // Returns true if there is no work left to start.
     bool all_work_started() const {
-      for (const task& k : tasks) {
-        if (k.i < k.end) return false;
+      for (const shard& s : shards) {
+        if (s.i < s.end) return false;
       }
       return true;
     }
@@ -152,7 +152,7 @@ public:
   int thread_count() const override { return std::max<int>(expected_thread_count_, worker_count_); }
 
   std::shared_ptr<task> enqueue(std::size_t n, task_body t, int max_workers) override;
-  void wait_for(task* l) override;
+  void wait_for(task* t) override;
   void wait_for(predicate_ref condition) override { wait_for(condition, cv_helper_); }
   void atomic_call(function_ref<void()> t) override;
 };

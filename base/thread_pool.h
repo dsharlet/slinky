@@ -39,9 +39,9 @@ public:
   virtual std::shared_ptr<task> enqueue(
       std::size_t n, task_body t, int max_workers = std::numeric_limits<int>::max()) = 0;
   // Run the task on the current thread, and prevents tasks enqueued by `enqueue` from running recursively.
-  // Does not return until the loop is complete. The task object must have been created by the `enqueue` function of
+  // Does not return until the task is complete. The task object must have been created by the `enqueue` function of
   // this thread pool.
-  virtual void wait_for(task* l) = 0;
+  virtual void wait_for(task* t) = 0;
   // Waits for `condition` to become true. While waiting, executes tasks on the queue.
   // The condition is executed atomically.
   virtual void wait_for(predicate_ref condition) = 0;

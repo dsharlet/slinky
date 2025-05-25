@@ -48,7 +48,7 @@ std::shared_ptr<thread_pool_impl::task_impl<>> thread_pool_impl::dequeue(int& wo
       continue;
     }
     // We want to work on this loop, find out which worker we will be.
-    worker = --loop->workers;
+    worker = --loop->max_workers;
     if (worker < 0 || loop->all_work_started()) {
       // No more threads can start working on this loop.
       i = task_queue_.erase(i);
@@ -124,8 +124,8 @@ std::shared_ptr<thread_pool::task> thread_pool_impl::enqueue(std::size_t n, task
   return loop;
 }
 
-void thread_pool_impl::wait_for(task* l) {
-  task_impl<>* task = reinterpret_cast<task_impl<>*>(l);
+void thread_pool_impl::wait_for(task* t) {
+  task_impl<>* task = reinterpret_cast<task_impl<>*>(t);
   assert(std::find(task_stack.begin(), task_stack.end(), task) == task_stack.end());
   task_stack.push_back(task);
   bool completed = task->work();
